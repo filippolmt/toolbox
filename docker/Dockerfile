@@ -93,6 +93,9 @@ RUN set -eux; \
     glab version
 
 # -- Layer 7: Docker CLI standalone (TOOL-06, IMG-02) -------------------------
+# NOTE: Docker does not publish per-artifact .sha256 files for static binaries
+# (download.docker.com returns 404). Checksum verification is not possible here.
+# Accepted risk: T-01-08. Mitigated by HTTPS + version pinning.
 RUN set -eux; \
     case "${TARGETARCH}" in amd64) DOCKER_ARCH=x86_64;; arm64) DOCKER_ARCH=aarch64;; *) DOCKER_ARCH=${TARGETARCH};; esac; \
     curl -fsSL -o /tmp/docker.tgz \
