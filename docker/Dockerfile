@@ -1,6 +1,7 @@
 # ============================================================================
-# Toolbox — ambiente di sviluppo containerizzato
-# Build: docker build -f docker/Dockerfile .
+# Toolbox — containerized development environment
+# Build:  docker build -f docker/Dockerfile .
+# Test:   make test
 # ============================================================================
 
 FROM ghcr.io/astral-sh/uv:0.11.7 AS uv-source

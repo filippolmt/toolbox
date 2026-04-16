@@ -1,7 +1,7 @@
-# toolbox: alias + completions per shell interattive.
-# Caricato da /etc/bash.bashrc (vedi Dockerfile).
-# Non usare `set -e`: la sorgente non deve far crashare la shell se un tool
-# manca o una completion fallisce.
+# toolbox: aliases + completions for interactive shells.
+# Sourced from /etc/bash.bashrc (see Dockerfile).
+# Do not use `set -e`: sourced scripts must not crash the shell if a tool
+# is missing or a completion fails.
 
 # -- Alias (D-04) -----------------------------------------------------
 alias k=kubectl
@@ -49,8 +49,8 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 # -- Prompt (D-05) -----------------------------------------------------
-# Starship non dipende da getpwuid(), quindi funziona anche con
-# --user $(id -u):$(id -g) dove whoami stampa "I have no name!".
+# Starship does not depend on getpwuid(), so it works even with
+# --user $(id -u):$(id -g) where whoami prints "I have no name!".
 eval "$(starship init bash)"
 
 return 0
