@@ -74,7 +74,8 @@ RUN set -eux; \
       "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz"; \
     curl -fsSL -o /tmp/gh_checksums.txt \
       "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"; \
-    cd /tmp && grep "gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" gh_checksums.txt | sha256sum -c -; \
+    grep "gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" /tmp/gh_checksums.txt \
+      | awk '{print $1"  /tmp/gh.tar.gz"}' | sha256sum -c -; \
     tar -xzf /tmp/gh.tar.gz -C /usr/local --strip-components=1 "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh"; \
     rm /tmp/gh.tar.gz /tmp/gh_checksums.txt; \
     gh --version
@@ -93,16 +94,22 @@ RUN set -eux; \
 
 # -- Layer 7: Docker CLI standalone (TOOL-06, IMG-02) -------------------------
 RUN set -eux; \
+    case "${TARGETARCH}" in amd64) DOCKER_ARCH=x86_64;; arm64) DOCKER_ARCH=aarch64;; *) DOCKER_ARCH=${TARGETARCH};; esac; \
     curl -fsSL -o /tmp/docker.tgz \
-      "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz"; \
+      "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz"; \
     tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 docker/docker; \
     rm /tmp/docker.tgz; \
     docker --version
 
 # -- Layer 8: starship (D-05) -------------------------------------------------
 RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) STARSHIP_TARBALL="starship-x86_64-unknown-linux-gnu.tar.gz";; \
+      arm64) STARSHIP_TARBALL="starship-aarch64-unknown-linux-musl.tar.gz";; \
+      *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+    esac; \
     curl -fsSL -o /tmp/starship.tar.gz \
-      "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/starship-x86_64-unknown-linux-gnu.tar.gz"; \
+      "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/${STARSHIP_TARBALL}"; \
     tar -xzf /tmp/starship.tar.gz -C /usr/local/bin starship; \
     rm /tmp/starship.tar.gz; \
     starship --version
