@@ -127,13 +127,17 @@ RUN set -eux; \
     jq --version
 
 # -- Layer 10: yq (TOOL-07, IMG-02) -------------------------------------------
+# yq checksums file contains 31 hash algorithms per binary (see checksums_hashes_order).
+# Field layout: $1=filename, $2=CRC32, ..., $19=SHA-256, ..., $32=BLAKE2B.
+# We extract the SHA-256 column ($19) which is algorithm #18 in checksums_hashes_order.
 RUN set -eux; \
     curl -fsSL -o /usr/local/bin/yq \
       "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${TARGETARCH}"; \
     curl -fsSL -o /tmp/yq_checksums \
       "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/checksums"; \
-    grep "^yq_linux_${TARGETARCH} " /tmp/yq_checksums \
-      | awk '{print $19"  /usr/local/bin/yq"}' | sha256sum -c -; \
+    EXPECTED=$(grep "^yq_linux_${TARGETARCH} " /tmp/yq_checksums | awk '{print $19}'); \
+    test -n "${EXPECTED}" || { echo "ERROR: SHA-256 hash not found in checksums file"; exit 1; }; \
+    echo "${EXPECTED}  /usr/local/bin/yq" | sha256sum -c -; \
     chmod +x /usr/local/bin/yq; \
     rm /tmp/yq_checksums; \
     yq --version
