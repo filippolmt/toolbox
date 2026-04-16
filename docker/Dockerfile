@@ -19,6 +19,7 @@ ARG JQ_VERSION=1.8.1
 ARG YQ_VERSION=4.52.5
 ARG STARSHIP_VERSION=1.24.2
 ARG PNPM_VERSION=10.33.0
+ARG CLAUDE_CODE_VERSION=2.1.112
 
 # -- Layer 1: apt-get ---------------------------------------------------------
 RUN set -eux; \
@@ -157,7 +158,7 @@ COPY --from=uv-source /uv /uvx /usr/local/bin/
 
 # -- Layer 13: Claude Code (TOOL-01) ------------------------------------------
 RUN set -eux; \
-    npm install -g @anthropic-ai/claude-code; \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
     claude --version
 
 # -- Layer 14: COPY scripts ---------------------------------------------------
