@@ -18,10 +18,10 @@ check_tool() {
     shift
     if output=$("$@" 2>&1); then
         echo "OK: ${name} — ${output}"
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAILED: ${name}"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -31,7 +31,7 @@ check_tool "pnpm"       pnpm --version
 check_tool "claude"     claude --version
 check_tool "python3"    python3 --version
 check_tool "uv"         uv --version
-check_tool "kubectl"    kubectl version --client --short
+check_tool "kubectl"    kubectl version --client
 check_tool "helm"       helm version --short
 check_tool "tofu"       tofu version
 check_tool "gh"         gh --version
