@@ -18,6 +18,7 @@ ARG DOCKER_CLI_VERSION=29.4.0
 ARG JQ_VERSION=1.8.1
 ARG YQ_VERSION=4.52.5
 ARG STARSHIP_VERSION=1.24.2
+ARG PNPM_VERSION=10.33.0
 
 # -- Layer 1: apt-get ---------------------------------------------------------
 RUN set -eux; \
@@ -148,7 +149,7 @@ RUN set -eux; \
 # -- Layer 11: pnpm via corepack (TOOL-03) ------------------------------------
 RUN set -eux; \
     corepack enable; \
-    corepack prepare pnpm@latest --activate; \
+    corepack prepare pnpm@${PNPM_VERSION} --activate; \
     pnpm --version
 
 # -- Layer 12: uv via COPY --from (TOOL-04) -----------------------------------
