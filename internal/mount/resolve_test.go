@@ -34,7 +34,7 @@ func TestExpandHome(t *testing.T) {
 
 func TestResolveMountsSkipsMissing(t *testing.T) {
 	mounts := []config.Mount{
-		{Source: "/path/che/non/esiste/mai", Target: "/container/path", ReadOnly: false},
+		{Source: "/path/that/does/not/exist/ever", Target: "/container/path", ReadOnly: false},
 	}
 
 	resolved, warnings := ResolveMounts(mounts)
@@ -49,7 +49,7 @@ func TestResolveMountsSkipsMissing(t *testing.T) {
 }
 
 func TestResolveMountsFormat(t *testing.T) {
-	// Crea directory temporanea come source esistente
+	// Create a temporary directory as an existing source.
 	tmpDir := t.TempDir()
 
 	mounts := []config.Mount{
@@ -67,7 +67,7 @@ func TestResolveMountsFormat(t *testing.T) {
 		t.Fatalf("expected 2 resolved mounts, got %d", len(resolved))
 	}
 
-	// Verifica formato read-only
+	// Check read-only format.
 	if !strings.HasSuffix(resolved[0], ":ro") {
 		t.Errorf("expected :ro suffix, got %q", resolved[0])
 	}
@@ -75,7 +75,7 @@ func TestResolveMountsFormat(t *testing.T) {
 		t.Errorf("expected source path %q in mount, got %q", tmpDir, resolved[0])
 	}
 
-	// Verifica formato read-write
+	// Check read-write format.
 	if !strings.HasSuffix(resolved[1], ":rw") {
 		t.Errorf("expected :rw suffix, got %q", resolved[1])
 	}

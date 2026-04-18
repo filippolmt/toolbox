@@ -7,11 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var stopAll bool
+
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Ferma e rimuove il container toolbox",
-	Long: `Ferma il container toolbox in esecuzione e lo rimuove.
-Tutti i dati persistono sui volumi host montati.`,
+	Short: "Stop and remove toolbox containers",
+	Long: `Stop and remove the toolbox container bound to the current directory.
+With --all, stop and remove every toolbox container on the host.
+All persistent data lives on the host-mounted volumes, so nothing is lost.`,
 	RunE: runStop,
 }
 
@@ -23,9 +26,19 @@ func runStop(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 
 	ctx := context.Background()
-	return container.Stop(ctx, cli)
+
+	if stopAll {
+		return container.StopAll(ctx, cli)
+	}
+
+	workspace, err := resolveWorkspace()
+	if err != nil {
+		return err
+	}
+	return container.Stop(ctx, cli, workspace)
 }
 
 func init() {
+	stopCmd.Flags().BoolVar(&stopAll, "all", false, "Stop every toolbox container on the host")
 	rootCmd.AddCommand(stopCmd)
 }

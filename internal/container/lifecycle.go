@@ -2,9 +2,17 @@ package container
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 
@@ -13,68 +21,104 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// ContainerName e' il nome fisso del container toolbox (D-03).
-// Non configurabile: un solo container per host, sempre con questo nome.
-const ContainerName = "toolbox"
+// WorkspaceTarget is the fixed in-container path where the host CWD is mounted.
+const WorkspaceTarget = "/workspace"
 
-// execShellFn e' la funzione che attacca la shell al container.
-// Variabile package-level per permettere sostituzione nei test.
+// containerNamePrefix identifies containers managed by toolbox.
+const containerNamePrefix = "toolbox-"
+
+var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// execShellFn attaches an interactive shell to a container.
+// Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
 
-// NewClient crea un Docker client configurato dall'ambiente.
+// NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 }
 
-// Shell gestisce il ciclo di vita del container e attacca una sessione bash.
+// ContainerNameFor builds the container name for a given workspace path.
+// Format: toolbox-<basename>-<hash8>. The hash is over the absolute path so
+// that two directories sharing the same basename do not collide.
+func ContainerNameFor(workspace string) string {
+	abs, err := filepath.Abs(workspace)
+	if err != nil {
+		abs = workspace
+	}
+	abs = filepath.Clean(abs)
+
+	sum := sha256.Sum256([]byte(abs))
+	hash := hex.EncodeToString(sum[:])[:8]
+
+	base := strings.ToLower(filepath.Base(abs))
+	base = sanitizeRe.ReplaceAllString(base, "-")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "root"
+	}
+
+	return containerNamePrefix + base + "-" + hash
+}
+
+// Shell manages the container lifecycle and attaches a bash session.
+// The workspace host path is always mounted at /workspace and used as the
+// WorkingDir. On every invocation the image is refreshed via docker pull;
+// if the pull fails (offline, auth, etc.), execution continues with the
+// locally available image.
 // State machine:
-//   - running  -> exec diretto (nessun container creato)
-//   - stopped  -> start + exec
-//   - not found -> verifica immagine, create + start + exec
-func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config) error {
-	// Risolvere mount (D-09: path mancanti producono warning, non errori)
+//   - running   -> exec directly (no container created)
+//   - stopped   -> start + exec
+//   - not found -> ensure image, create + start + exec
+func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) error {
+	name := ContainerNameFor(workspace)
+
+	// Try to pull the latest image on every shell invocation. Failures are
+	// non-fatal: we fall back to whatever image is available locally.
+	pullImage(ctx, cli, cfg.ImageRef())
+
 	binds, warnings := mount.ResolveMounts(cfg.Mounts)
 	for _, w := range warnings {
 		ui.Warning("mount skipped: " + w)
 	}
 
-	inspect, err := cli.ContainerInspect(ctx, ContainerName)
+	// Workspace mount is always enabled: host CWD -> /workspace.
+	binds = append(binds, workspace+":"+WorkspaceTarget+":rw")
+
+	inspect, err := cli.ContainerInspect(ctx, name)
 
 	switch {
 	case err == nil && inspect.State.Running:
-		// Container gia' running: exec diretto
-		ui.Info("Connecting to running container...")
+		ui.Info("Connecting to running container " + name + "...")
 		return execShellFn(ctx, cli, inspect.ID)
 
 	case err == nil && !inspect.State.Running:
-		// Container esiste ma fermo: start + exec
-		ui.Info("Starting stopped container...")
+		ui.Info("Starting stopped container " + name + "...")
 		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
 			return fmt.Errorf("failed to start container: %w", startErr)
 		}
 		return execShellFn(ctx, cli, inspect.ID)
 
 	case errdefs.IsNotFound(err):
-		// Container non esiste: verificare immagine, creare, avviare
-		_, err := cli.ImageInspect(ctx, cfg.ImageRef())
-		if err != nil {
-			return fmt.Errorf("image %q not found locally, run 'toolbox build' first", cfg.ImageRef())
+		if _, inspectErr := cli.ImageInspect(ctx, cfg.ImageRef()); inspectErr != nil {
+			return fmt.Errorf("image %q not available locally, run 'toolbox build' first", cfg.ImageRef())
 		}
 
-		ui.Info("Creating container...")
+		ui.Info("Creating container " + name + "...")
 		resp, createErr := cli.ContainerCreate(ctx,
 			&container.Config{
-				Image:     cfg.ImageRef(),
-				Tty:       true,
-				OpenStdin: true,
-				Cmd:       []string{"/bin/bash"},
+				Image:      cfg.ImageRef(),
+				Tty:        true,
+				OpenStdin:  true,
+				Cmd:        []string{"/bin/bash"},
+				WorkingDir: WorkspaceTarget,
 			},
 			&container.HostConfig{
 				Binds: binds,
 			},
 			nil, // network config
 			nil, // platform
-			ContainerName,
+			name,
 		)
 		if createErr != nil {
 			return fmt.Errorf("failed to create container: %w", createErr)
@@ -91,25 +135,75 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config) error 
 	}
 }
 
-// Stop ferma e rimuove il container toolbox (D-02).
-// Force remove per evitare container zombie (Pitfall 5).
-func Stop(ctx context.Context, cli client.APIClient) error {
+// pullImage attempts to pull the image from its remote registry. Errors are
+// logged as warnings and swallowed: the caller proceeds with the local image.
+func pullImage(ctx context.Context, cli client.APIClient, ref string) {
+	ui.Info("Checking for image updates: " + ref + "...")
+	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
+	if err != nil {
+		ui.Warning("image pull failed, using local image if present: " + err.Error())
+		return
+	}
+	defer rc.Close()
+	// Drain the stream: the pull only completes once the body is fully read.
+	if _, err := io.Copy(io.Discard, rc); err != nil {
+		ui.Warning("image pull stream error, using local image if present: " + err.Error())
+		return
+	}
+	ui.Success("Image up to date: " + ref)
+}
+
+// Stop stops and removes the toolbox container associated with the workspace.
+func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
+	return stopOne(ctx, cli, ContainerNameFor(workspace))
+}
+
+// StopAll stops and removes every toolbox-managed container on the host.
+// Matches the "toolbox-" prefix as well as the legacy singleton name "toolbox".
+func StopAll(ctx context.Context, cli client.APIClient) error {
+	args := filters.NewArgs(filters.Arg("name", "toolbox"))
+	list, err := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	found := 0
+	for _, c := range list {
+		if len(c.Names) == 0 {
+			continue
+		}
+		name := strings.TrimPrefix(c.Names[0], "/")
+		if name != "toolbox" && !strings.HasPrefix(name, containerNamePrefix) {
+			continue
+		}
+		if err := stopOne(ctx, cli, name); err != nil {
+			return err
+		}
+		found++
+	}
+	if found == 0 {
+		ui.Warning("No toolbox containers found")
+	}
+	return nil
+}
+
+func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	timeout := 10
-	stopErr := cli.ContainerStop(ctx, ContainerName, container.StopOptions{Timeout: &timeout})
+	stopErr := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 
 	if errdefs.IsNotFound(stopErr) {
-		ui.Warning("No running container found")
+		ui.Warning("Container " + name + " not found")
 		return nil
 	}
 	if stopErr != nil {
-		return fmt.Errorf("failed to stop container: %w", stopErr)
+		return fmt.Errorf("failed to stop container %s: %w", name, stopErr)
 	}
 
-	rmErr := cli.ContainerRemove(ctx, ContainerName, container.RemoveOptions{Force: true})
+	rmErr := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
 	if rmErr != nil && !errdefs.IsNotFound(rmErr) {
-		return fmt.Errorf("failed to remove container: %w", rmErr)
+		return fmt.Errorf("failed to remove container %s: %w", name, rmErr)
 	}
 
-	ui.Success("Container stopped and removed")
+	ui.Success("Container " + name + " stopped and removed")
 	return nil
 }
