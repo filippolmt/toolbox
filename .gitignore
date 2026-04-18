@@ -3,3 +3,6 @@
 
 # Go binary
 toolbox
+
+# GoReleaser
+dist/
