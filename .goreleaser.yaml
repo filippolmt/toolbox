@@ -32,17 +32,17 @@ changelog:
       - "^docs:"
       - "^test:"
 
-homebrew_casks:
+brews:
   - name: toolbox
-    binaries:
-      - toolbox
     repository:
       owner: filippolmt
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    url:
-      template: "https://github.com/filippolmt/toolbox/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-      verified: "github.com/filippolmt/toolbox/"
+    directory: Formula
     homepage: "https://github.com/filippolmt/toolbox"
     description: "CLI per il toolbox di sviluppo containerizzato"
     commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
+    install: |
+      bin.install "toolbox"
+    test: |
+      system "#{bin}/toolbox", "--version"

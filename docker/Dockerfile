@@ -158,6 +158,9 @@ RUN set -eux; \
 COPY --from=uv-source /uv /uvx /usr/local/bin/
 
 # -- Layer 13: Claude Code (TOOL-01) ------------------------------------------
+# Disable auto-update: image versions are intentionally pinned; toolbox user lacks
+# write access to /usr/local/lib/node_modules (installed as root).
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 RUN set -eux; \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
     claude --version
