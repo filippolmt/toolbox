@@ -51,7 +51,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build and load for testing
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -64,7 +64,7 @@ jobs:
         run: docker/smoke-test.sh ${{ env.TEST_TAG }}
 
       - name: Build and push multi-arch
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
