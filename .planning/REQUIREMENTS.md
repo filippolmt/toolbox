@@ -77,11 +77,11 @@
 | TOOL-05 | Phase 01 | Complete |
 | TOOL-06 | Phase 01 | Complete |
 | TOOL-07 | Phase 01 | Complete |
-| CLI-01 | Phase 02 | Pending |
-| CLI-02 | Phase 02 | Pending |
-| CLI-03 | Phase 02 | Pending |
+| CLI-01 | Phase 02 | Complete |
+| CLI-02 | Phase 02 | Complete |
+| CLI-03 | Phase 02 | Complete |
 | CLI-04 | Phase 02 | Complete |
-| CLI-05 | Phase 02 | Pending |
+| CLI-05 | Phase 02 | Complete |
 | CICD-01 | Phase 03 | Pending |
 | CICD-02 | Phase 03 | Pending |
 | CICD-03 | Phase 03 | Pending |
