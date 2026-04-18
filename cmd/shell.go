@@ -19,8 +19,7 @@ var shellCmd = &cobra.Command{
 The current working directory is mounted at /workspace and the container
 name is derived from that path, so each directory gets its own dedicated
 container. If the container is already running, a new session is attached
-to the existing one. The image is refreshed from the registry on every
-invocation; if the pull fails, the locally available image is used.`,
+to the existing one.`,
 	RunE: runShell,
 }
 

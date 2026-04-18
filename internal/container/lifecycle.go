@@ -63,9 +63,7 @@ func ContainerNameFor(workspace string) string {
 
 // Shell manages the container lifecycle and attaches a bash session.
 // The workspace host path is always mounted at /workspace and used as the
-// WorkingDir. On every invocation the image is refreshed via docker pull;
-// if the pull fails (offline, auth, etc.), execution continues with the
-// locally available image.
+// WorkingDir.
 // State machine:
 //   - running   -> exec directly (no container created)
 //   - stopped   -> start + exec
@@ -73,9 +71,11 @@ func ContainerNameFor(workspace string) string {
 func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) error {
 	name := ContainerNameFor(workspace)
 
-	// Try to pull the latest image on every shell invocation. Failures are
-	// non-fatal: we fall back to whatever image is available locally.
-	pullImage(ctx, cli, cfg.ImageRef())
+	// Auto-pull is disabled for now: the default image ref is a local-only
+	// tag (toolbox:local) that is not on any registry, so the pull always
+	// fails and only adds noise. Re-enable once the default points to a
+	// registry-hosted image (e.g. ghcr.io/filippolmt/toolbox).
+	// pullImage(ctx, cli, cfg.ImageRef())
 
 	binds, warnings := mount.ResolveMounts(cfg.Mounts)
 	for _, w := range warnings {
