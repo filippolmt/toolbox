@@ -1,0 +1,48 @@
+version: 2
+
+builds:
+  - main: ./main.go
+    binary: toolbox
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/filippolmt/toolbox/cmd.version={{.Version}}
+      - -X github.com/filippolmt/toolbox/cmd.commit={{.Commit}}
+      - -X github.com/filippolmt/toolbox/cmd.date={{.Date}}
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+homebrew_casks:
+  - name: toolbox
+    binaries:
+      - toolbox
+    repository:
+      owner: filippolmt
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    url:
+      template: "https://github.com/filippolmt/toolbox/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+      verified: "github.com/filippolmt/toolbox/"
+    homepage: "https://github.com/filippolmt/toolbox"
+    description: "CLI per il toolbox di sviluppo containerizzato"
+    commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
