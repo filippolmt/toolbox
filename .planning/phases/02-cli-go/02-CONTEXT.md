@@ -30,7 +30,7 @@ Binary Go `toolbox` che gira sull'host e gestisce il ciclo di vita del container
 
 ### Output e UX della CLI
 - **D-10:** Output colorato con simboli — ✔ verdi, ⚠ gialli, ✖ rossi. Coerente con l'entrypoint della Phase 1.
-- **D-11:** Usare `charmbracelet/gum` per output TUI ricco e interattivo (spinner, confirm, choose).
+- **D-11:** Usare `charmbracelet/huh v2` + `lipgloss v2` per output TUI ricco e interattivo (spinner, confirm, choose). (Aggiornato: gum è un CLI tool per shell, huh v2 è la libreria Go equivalente — confermato dall'utente 2026-04-18)
 - **D-12:** `toolbox build` — stream output Docker in tempo reale, come `docker build` diretto. Utile per debug.
 
 ### Claude's Discretion
@@ -57,7 +57,7 @@ Binary Go `toolbox` che gira sull'host e gestisce il ciclo di vita del container
 - `.planning/phases/01-image-foundation/01-CONTEXT.md` — Decisioni Phase 1 (struttura flat docker/, build context da root)
 
 ### Librerie esterne
-- `https://github.com/charmbracelet/gum` — TUI tool Go per output ricco (spinner, confirm, choose). Da usare per l'output della CLI.
+- `https://charm.land/huh/v2` — Libreria Go TUI (spinner, confirm, choose) di charmbracelet. Confermata dall'utente come scelta per D-11 (huh v2 + lipgloss v2).
 
 </canonical_refs>
 
@@ -83,7 +83,7 @@ Binary Go `toolbox` che gira sull'host e gestisce il ciclo di vita del container
 ## Specific Ideas
 
 - Output CLI con simboli ✔/⚠/✖ — stesso linguaggio visivo dell'entrypoint Phase 1
-- `charmbracelet/gum` per spinner durante operazioni lunghe e output interattivo
+- `charmbracelet/huh v2` per spinner durante operazioni lunghe e output interattivo
 - Zero-config experience: `toolbox shell` funziona al primo lancio senza nessun file YAML
 - Mount skip con warning: mai bloccare l'avvio per un path mancante
 
