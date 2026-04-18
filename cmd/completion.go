@@ -8,12 +8,12 @@ import (
 
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish]",
-	Short: "Genera script di shell completion",
-	Long: `Genera script di shell completion per toolbox.
+	Short: "Generate shell completion scripts",
+	Long: `Generate shell completion scripts for toolbox.
 
 Bash:
   $ source <(toolbox completion bash)
-  # Permanente (macOS):
+  # Persistent (macOS):
   $ toolbox completion bash > $(brew --prefix)/etc/bash_completion.d/toolbox
 
 Zsh:

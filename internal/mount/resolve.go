@@ -8,13 +8,13 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-// ResolveMounts espande i path con ~ e verifica l'esistenza.
-// Path mancanti producono warning e vengono skippati (D-09).
-// T-02-01: filepath.Clean() applicato su tutti i path dopo espansione.
+// ResolveMounts expands ~ in source paths and verifies they exist.
+// Missing paths produce a warning and are skipped, not errored (D-09).
+// T-02-01: filepath.Clean() is applied to every path after expansion.
 func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		warnings = append(warnings, "impossibile determinare home directory: "+err.Error())
+		warnings = append(warnings, "unable to resolve home directory: "+err.Error())
 		return nil, warnings
 	}
 
@@ -23,7 +23,7 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 		src = filepath.Clean(src) // T-02-01: path sanitization
 
 		if _, err := os.Stat(src); os.IsNotExist(err) {
-			warnings = append(warnings, "path non trovato, mount skippato: "+m.Source)
+			warnings = append(warnings, "path not found, mount skipped: "+m.Source)
 			continue
 		}
 
@@ -37,7 +37,7 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 	return resolved, warnings
 }
 
-// expandHome sostituisce il prefisso ~ con la home directory.
+// expandHome replaces a leading ~ with the user's home directory.
 func expandHome(path string, home string) string {
 	if path == "~" {
 		return home

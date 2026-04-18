@@ -1,9 +1,11 @@
 package container
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -17,24 +19,26 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-// notFoundError implementa l'interfaccia errdefs per errori "not found".
+// notFoundError implements the errdefs "not found" interface.
 type notFoundError struct{ msg string }
 
-func (e *notFoundError) Error() string  { return e.msg }
-func (e *notFoundError) NotFound()      {}
-func (e *notFoundError) Unwrap() error  { return nil }
+func (e *notFoundError) Error() string { return e.msg }
+func (e *notFoundError) NotFound()     {}
+func (e *notFoundError) Unwrap() error { return nil }
 
-// mockClient implementa i metodi di client.APIClient necessari per i test.
-// I metodi non mockati panicano per evidenziare chiamate inattese.
+// mockClient implements the subset of client.APIClient used by the tests.
+// Unmocked methods panic to surface unexpected calls.
 type mockClient struct {
 	client.APIClient
 
-	inspectFn func(ctx context.Context, id string) (container.InspectResponse, error)
-	createFn  func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
-	startFn   func(ctx context.Context, id string, opts container.StartOptions) error
-	stopFn    func(ctx context.Context, id string, opts container.StopOptions) error
-	removeFn  func(ctx context.Context, id string, opts container.RemoveOptions) error
-	imgInspFn func(ctx context.Context, id string) (image.InspectResponse, error)
+	inspectFn  func(ctx context.Context, id string) (container.InspectResponse, error)
+	createFn   func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
+	startFn    func(ctx context.Context, id string, opts container.StartOptions) error
+	stopFn     func(ctx context.Context, id string, opts container.StopOptions) error
+	removeFn   func(ctx context.Context, id string, opts container.RemoveOptions) error
+	imgInspFn  func(ctx context.Context, id string) (image.InspectResponse, error)
+	imgPullFn  func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
+	listFn     func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container.InspectResponse, error) {
@@ -79,6 +83,21 @@ func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.Im
 	return image.InspectResponse{}, fmt.Errorf("ImageInspect not mocked")
 }
 
+func (m *mockClient) ImagePull(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error) {
+	if m.imgPullFn != nil {
+		return m.imgPullFn(ctx, ref, opts)
+	}
+	// Default: succeed with an empty body so Shell can proceed.
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (m *mockClient) ContainerList(ctx context.Context, opts container.ListOptions) ([]container.Summary, error) {
+	if m.listFn != nil {
+		return m.listFn(ctx, opts)
+	}
+	return nil, fmt.Errorf("ContainerList not mocked")
+}
+
 func (m *mockClient) Close() error { return nil }
 
 // --- Helpers ---
@@ -89,8 +108,13 @@ func testConfig() *config.Config {
 	}
 }
 
-// stubExecShell sostituisce execShellFn con un no-op per i test.
-// Ritorna una funzione di restore da chiamare in defer.
+// testWorkspace returns a stable workspace path for use in tests.
+func testWorkspace(t *testing.T) string {
+	t.Helper()
+	return t.TempDir()
+}
+
+// stubExecShell replaces execShellFn with a no-op and returns a restore callback.
 func stubExecShell() (called *bool, restore func()) {
 	c := false
 	orig := execShellFn
@@ -103,9 +127,30 @@ func stubExecShell() (called *bool, restore func()) {
 
 // --- Tests ---
 
-func TestContainerNameIsFixed(t *testing.T) {
-	if ContainerName != "toolbox" {
-		t.Fatalf("ContainerName = %q, want %q", ContainerName, "toolbox")
+func TestContainerNameForStableAndUnique(t *testing.T) {
+	a := ContainerNameFor("/Users/alice/project/toolbox")
+	b := ContainerNameFor("/Users/alice/project/toolbox")
+	if a != b {
+		t.Fatalf("ContainerNameFor should be deterministic: %q vs %q", a, b)
+	}
+
+	c := ContainerNameFor("/Users/bob/project/toolbox")
+	if a == c {
+		t.Fatalf("paths with same basename must produce different names: both %q", a)
+	}
+
+	if !strings.HasPrefix(a, "toolbox-") {
+		t.Fatalf("name should start with toolbox- prefix, got %q", a)
+	}
+	if !strings.Contains(a, "-toolbox-") {
+		t.Fatalf("name should embed basename, got %q", a)
+	}
+}
+
+func TestContainerNameForSanitizesBasename(t *testing.T) {
+	name := ContainerNameFor("/tmp/My Weird Dir!")
+	if strings.ContainsAny(name, " !") {
+		t.Fatalf("name must not contain spaces or special chars: %q", name)
 	}
 }
 
@@ -113,8 +158,14 @@ func TestShellExecInRunningContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
 
+	ws := testWorkspace(t)
+	want := ContainerNameFor(ws)
+
 	mock := &mockClient{
-		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			if id != want {
+				t.Errorf("inspect called with %q, want %q", id, want)
+			}
 			return container.InspectResponse{
 				ContainerJSONBase: &container.ContainerJSONBase{
 					ID:    "abc123",
@@ -124,7 +175,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig())
+	err := Shell(context.Background(), mock, testConfig(), ws)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -156,7 +207,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig())
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -172,8 +223,14 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
 
+	ws := testWorkspace(t)
+	wantName := ContainerNameFor(ws)
+
 	createCalled := false
 	startCalled := false
+	var capturedBinds []string
+	var capturedWorkDir string
+
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
@@ -181,8 +238,10 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
 			createCalled = true
+			capturedBinds = hostCfg.Binds
+			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 		startFn: func(_ context.Context, id string, _ container.StartOptions) error {
@@ -194,7 +253,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig())
+	err := Shell(context.Background(), mock, testConfig(), ws)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -206,6 +265,26 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	}
 	if !*called {
 		t.Fatal("execShellFn was not called after create+start")
+	}
+
+	if capturedWorkDir != WorkspaceTarget {
+		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, WorkspaceTarget)
+	}
+
+	expectedBind := ws + ":" + WorkspaceTarget + ":rw"
+	found := false
+	for _, b := range capturedBinds {
+		if b == expectedBind {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected workspace bind %q in %v", expectedBind, capturedBinds)
+	}
+
+	if !strings.HasPrefix(wantName, "toolbox-") {
+		t.Errorf("expected container name with toolbox- prefix, got %q", wantName)
 	}
 }
 
@@ -220,14 +299,47 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, &notFoundError{msg: "no such image"}
 		},
+		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+			// Pull fails (offline) and there is no local image either.
+			return nil, errors.New("pull failed")
+		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig())
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
 	if err == nil {
 		t.Fatal("Shell() should have returned error for missing image")
 	}
 	if !strings.Contains(err.Error(), "toolbox build") {
 		t.Fatalf("error should mention 'toolbox build', got: %v", err)
+	}
+}
+
+func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			// Local image exists even though pull failed.
+			return image.InspectResponse{}, nil
+		},
+		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+			return nil, errors.New("offline")
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
+	if err != nil {
+		t.Fatalf("Shell() should not error when pull fails but local image exists, got: %v", err)
+	}
+	if !*called {
+		t.Fatal("execShellFn was not called")
 	}
 }
 
@@ -248,7 +360,7 @@ func TestStopAndRemove(t *testing.T) {
 		},
 	}
 
-	err := Stop(context.Background(), mock)
+	err := Stop(context.Background(), mock, testWorkspace(t))
 	if err != nil {
 		t.Fatalf("Stop() error: %v", err)
 	}
@@ -270,17 +382,62 @@ func TestStopContainerNotFound(t *testing.T) {
 		},
 	}
 
-	err := Stop(context.Background(), mock)
+	err := Stop(context.Background(), mock, testWorkspace(t))
 	if err != nil {
 		t.Fatalf("Stop() should not error on NotFound, got: %v", err)
 	}
 }
 
-// Verify notFoundError satisfies errdefs.IsNotFound
+func TestStopAll(t *testing.T) {
+	stopped := map[string]bool{}
+	removed := map[string]bool{}
+
+	mock := &mockClient{
+		listFn: func(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+			return []container.Summary{
+				{Names: []string{"/toolbox-project-a-abcdef12"}},
+				{Names: []string{"/toolbox-project-b-11223344"}},
+				{Names: []string{"/toolbox"}}, // legacy singleton
+				{Names: []string{"/unrelated-toolbox-clone"}},
+			}, nil
+		},
+		stopFn: func(_ context.Context, name string, _ container.StopOptions) error {
+			stopped[name] = true
+			return nil
+		},
+		removeFn: func(_ context.Context, name string, _ container.RemoveOptions) error {
+			removed[name] = true
+			return nil
+		},
+	}
+
+	err := StopAll(context.Background(), mock)
+	if err != nil {
+		t.Fatalf("StopAll() error: %v", err)
+	}
+
+	expectedStopped := []string{
+		"toolbox-project-a-abcdef12",
+		"toolbox-project-b-11223344",
+		"toolbox",
+	}
+	for _, name := range expectedStopped {
+		if !stopped[name] {
+			t.Errorf("expected stop on %q", name)
+		}
+		if !removed[name] {
+			t.Errorf("expected remove on %q", name)
+		}
+	}
+	if stopped["unrelated-toolbox-clone"] {
+		t.Error("StopAll should not touch containers outside the toolbox- prefix")
+	}
+}
+
+// Verify notFoundError satisfies errdefs.IsNotFound.
 func TestNotFoundErrorSatisfiesErrdefs(t *testing.T) {
 	err := &notFoundError{msg: "test"}
 	if !errdefs.IsNotFound(err) {
 		t.Fatal("notFoundError should satisfy errdefs.IsNotFound")
 	}
-	_ = errors.New("suppress unused import")
 }

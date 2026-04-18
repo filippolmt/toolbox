@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -12,9 +14,12 @@ import (
 
 var shellCmd = &cobra.Command{
 	Use:   "shell",
-	Short: "Avvia una sessione shell nel container toolbox",
-	Long: `Avvia il container toolbox e apre una sessione bash interattiva.
-Se il container e' gia' running, apre una nuova sessione nello stesso container.`,
+	Short: "Start an interactive shell session in the toolbox container",
+	Long: `Start the toolbox container and attach an interactive bash session.
+The current working directory is mounted at /workspace and the container
+name is derived from that path, so each directory gets its own dedicated
+container. If the container is already running, a new session is attached
+to the existing one.`,
 	RunE: runShell,
 }
 
@@ -24,6 +29,11 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	workspace, err := resolveWorkspace()
+	if err != nil {
+		return err
+	}
+
 	cli, err := container.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
@@ -31,7 +41,19 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 
 	ctx := context.Background()
-	return container.Shell(ctx, cli, cfg)
+	return container.Shell(ctx, cli, cfg, workspace)
+}
+
+func resolveWorkspace() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path: %w", err)
+	}
+	return filepath.Clean(abs), nil
 }
 
 func init() {

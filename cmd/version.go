@@ -19,7 +19,7 @@ func init() {
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Mostra la versione di toolbox",
+	Short: "Print the toolbox version",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("toolbox %s (commit: %s, built: %s)\n", version, commit, date)
 	},

@@ -17,14 +17,14 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// buildMessage rappresenta un singolo messaggio JSON dallo streaming di build Docker.
+// buildMessage is a single JSON message from the Docker build output stream.
 type buildMessage struct {
 	Stream string `json:"stream"`
 	Error  string `json:"error"`
 }
 
-// BuildImage builda l'immagine Docker con output in streaming (D-12).
-// Crea un tar context rispettando .dockerignore e streamma l'output JSON linea per linea.
+// BuildImage builds the Docker image with streaming output (D-12).
+// Creates a tar context honoring .dockerignore and streams JSON output line by line.
 func BuildImage(ctx context.Context, cli client.APIClient, cfg *config.Config) error {
 	ui.Info("Building image " + cfg.ImageRef() + "...")
 
@@ -51,13 +51,13 @@ func BuildImage(ctx context.Context, cli client.APIClient, cfg *config.Config) e
 	return nil
 }
 
-// streamBuildOutput legge lo streaming JSON di Docker build e stampa l'output in tempo reale.
+// streamBuildOutput reads Docker's JSON build stream and prints output in real time.
 func streamBuildOutput(reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		var msg buildMessage
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
-			// Ignora linee non-JSON (possibili keep-alive)
+			// Ignore non-JSON lines (possible keep-alives).
 			continue
 		}
 		if msg.Error != "" {
@@ -70,7 +70,7 @@ func streamBuildOutput(reader io.Reader) error {
 	return scanner.Err()
 }
 
-// createTarContext crea un archivio tar del build context, rispettando .dockerignore (T-02-07).
+// createTarContext builds a tar archive of the build context honoring .dockerignore (T-02-07).
 func createTarContext(contextDir string) (io.Reader, error) {
 	ignorePatterns := readDockerignore(contextDir)
 
@@ -82,18 +82,18 @@ func createTarContext(contextDir string) (io.Reader, error) {
 				return err
 			}
 
-			// Calcola il path relativo al context
+			// Path relative to the context root.
 			relPath, err := filepath.Rel(contextDir, path)
 			if err != nil {
 				return err
 			}
 
-			// Salta la root stessa
+			// Skip the root itself.
 			if relPath == "." {
 				return nil
 			}
 
-			// Controlla se il path matcha un pattern di ignore
+			// Honor ignore patterns.
 			if shouldIgnore(relPath, info.IsDir(), ignorePatterns) {
 				if info.IsDir() {
 					return filepath.SkipDir
@@ -101,14 +101,14 @@ func createTarContext(contextDir string) (io.Reader, error) {
 				return nil
 			}
 
-			// Crea header tar
+			// Build the tar header.
 			header, err := tar.FileInfoHeader(info, "")
 			if err != nil {
 				return err
 			}
 			header.Name = relPath
 
-			// Per symlink, leggi il target
+			// For symlinks, record the target.
 			if info.Mode()&os.ModeSymlink != 0 {
 				link, err := os.Readlink(path)
 				if err != nil {
@@ -121,7 +121,7 @@ func createTarContext(contextDir string) (io.Reader, error) {
 				return err
 			}
 
-			// Scrivi contenuto solo per file regolari
+			// Write content only for regular files.
 			if !info.Mode().IsRegular() {
 				return nil
 			}
@@ -147,13 +147,13 @@ func createTarContext(contextDir string) (io.Reader, error) {
 	return pr, nil
 }
 
-// shouldIgnore verifica se un path deve essere ignorato in base ai pattern .dockerignore.
+// shouldIgnore reports whether a path matches one of the .dockerignore patterns.
 func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 	for _, pattern := range patterns {
-		// Pattern directory (terminano con /)
+		// Directory patterns (ending with /).
 		dirPattern := strings.TrimSuffix(pattern, "/")
 		if dirPattern != pattern {
-			// Era un pattern directory
+			// Was a directory pattern.
 			if isDir && (relPath == dirPattern || strings.HasPrefix(relPath, dirPattern+"/")) {
 				return true
 			}
@@ -163,12 +163,12 @@ func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 			continue
 		}
 
-		// Pattern glob (es. *.md)
+		// Glob pattern (e.g. *.md).
 		if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
 			return true
 		}
 
-		// Match esatto
+		// Exact match.
 		if relPath == pattern {
 			return true
 		}
@@ -176,7 +176,7 @@ func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
 	return false
 }
 
-// readDockerignore legge e parsa il file .dockerignore dal build context.
+// readDockerignore parses .dockerignore from the build context, returning its patterns.
 func readDockerignore(contextDir string) []string {
 	path := filepath.Join(contextDir, ".dockerignore")
 	data, err := os.ReadFile(path)

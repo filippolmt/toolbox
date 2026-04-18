@@ -11,9 +11,9 @@ import (
 
 var buildCmd = &cobra.Command{
 	Use:   "build",
-	Short: "Builda l'immagine Docker toolbox",
-	Long: `Builda l'immagine Docker toolbox localmente.
-Usa il Dockerfile e build context configurati in .toolbox.yaml.`,
+	Short: "Build the toolbox Docker image",
+	Long: `Build the toolbox Docker image locally.
+Uses the Dockerfile and build context configured in .toolbox.yaml.`,
 	RunE: runBuild,
 }
 

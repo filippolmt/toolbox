@@ -9,19 +9,19 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	// Deve ritornare 5 mount
+	// Must return 5 mounts.
 	if len(mounts) != 5 {
 		t.Fatalf("expected 5 default mounts, got %d", len(mounts))
 	}
 
-	// ~/.secrets NON deve essere presente (D-08)
+	// ~/.secrets must NOT be present (D-08).
 	for _, m := range mounts {
 		if m.Source == "~/.secrets" {
 			t.Error("~/.secrets should NOT be in default mounts (D-08)")
 		}
 	}
 
-	// ~/.claude deve essere ReadOnly=false
+	// ~/.claude must be ReadOnly=false.
 	found := false
 	for _, m := range mounts {
 		if m.Source == "~/.claude" {
@@ -35,7 +35,7 @@ func TestDefaultMounts(t *testing.T) {
 		t.Error("~/.claude not found in default mounts")
 	}
 
-	// ~/.ssh deve essere ReadOnly=true
+	// ~/.ssh must be ReadOnly=true.
 	for _, m := range mounts {
 		if m.Source == "~/.ssh" {
 			if !m.ReadOnly {
@@ -56,10 +56,10 @@ func TestImageRef(t *testing.T) {
 }
 
 func TestLoadWithoutConfig(t *testing.T) {
-	// Reset viper per test isolato
+	// Reset viper for an isolated test.
 	viper.Reset()
 
-	// Imposta defaults come fa cmd/root.go
+	// Mirror the defaults set by cmd/root.go.
 	viper.SetDefault("image.name", "toolbox")
 	viper.SetDefault("image.tag", "local")
 	viper.SetDefault("build.context", ".")
@@ -70,12 +70,12 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	// image.name deve essere "toolbox"
+	// image.name must be "toolbox".
 	if cfg.Image.Name != "toolbox" {
 		t.Errorf("Image.Name = %q, want %q", cfg.Image.Name, "toolbox")
 	}
 
-	// Deve avere 5 mount di default
+	// Must receive 5 default mounts.
 	if len(cfg.Mounts) != 5 {
 		t.Errorf("expected 5 default mounts, got %d", len(cfg.Mounts))
 	}

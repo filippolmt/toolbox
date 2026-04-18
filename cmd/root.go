@@ -11,11 +11,11 @@ var cfgFile string
 
 var rootCmd = &cobra.Command{
 	Use:   "toolbox",
-	Short: "Gestione del container di sviluppo toolbox",
-	Long:  "CLI per avviare, fermare e buildare il container toolbox.",
+	Short: "Manage the toolbox development container",
+	Long:  "CLI to start, stop, and build the toolbox container.",
 }
 
-// Execute esegue il root command. Chiamato da main.go.
+// Execute runs the root command. Invoked from main.go.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -32,29 +32,29 @@ func initConfig() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// 1. Defaults built-in
+		// 1. Built-in defaults
 		setDefaults()
 
-		// 2. Config globale (~/.toolbox.yaml)
+		// 2. Global config (~/.toolbox.yaml)
 		home, _ := os.UserHomeDir()
 		viper.SetConfigName(".toolbox")
 		viper.SetConfigType("yaml")
 		viper.AddConfigPath(home)
-		_ = viper.ReadInConfig() // ok se non esiste (D-05)
+		_ = viper.ReadInConfig() // ok if missing (D-05)
 
-		// 3. Config progetto (.toolbox.yaml) -- merge sopra globale (D-04)
+		// 3. Project config (.toolbox.yaml) -- merged on top of global (D-04)
 		viper.AddConfigPath(".")
-		_ = viper.MergeInConfig() // progetto vince su globale
+		_ = viper.MergeInConfig() // project wins over global
 	}
 
-	// 4. Env var override (TOOLBOX_IMAGE_NAME, etc.)
+	// 4. Env var overrides (TOOLBOX_IMAGE_NAME, etc.)
 	viper.SetEnvPrefix("TOOLBOX")
 	viper.AutomaticEnv()
 }
 
-// setDefaults imposta i valori di default per ogni campo individuale.
-// NON usare nested objects per evitare problemi con MergeInConfig (Pitfall 2).
-// I mounts di default sono gestiti in config.Load() come fallback.
+// setDefaults sets default values per individual field.
+// Do NOT use nested objects; that breaks MergeInConfig (Pitfall 2).
+// Default mounts are handled in config.Load() as a fallback.
 func setDefaults() {
 	viper.SetDefault("image.name", "toolbox")
 	viper.SetDefault("image.tag", "local")

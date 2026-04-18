@@ -4,39 +4,39 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config rappresenta la configurazione completa del toolbox.
+// Config is the top-level toolbox configuration.
 type Config struct {
 	Image  ImageConfig `mapstructure:"image"`
 	Mounts []Mount     `mapstructure:"mounts"`
 	Build  BuildConfig `mapstructure:"build"`
 }
 
-// ImageConfig configura l'immagine Docker.
+// ImageConfig configures the Docker image coordinates.
 type ImageConfig struct {
 	Name string `mapstructure:"name"`
 	Tag  string `mapstructure:"tag"`
 }
 
-// Mount rappresenta un volume mount host -> container.
+// Mount represents a host -> container volume bind.
 type Mount struct {
 	Source   string `mapstructure:"source"`
 	Target   string `mapstructure:"target"`
 	ReadOnly bool   `mapstructure:"readonly"`
 }
 
-// BuildConfig configura il build dell'immagine Docker.
+// BuildConfig configures the Docker image build.
 type BuildConfig struct {
 	Context    string `mapstructure:"context"`
 	Dockerfile string `mapstructure:"dockerfile"`
 }
 
-// ImageRef ritorna il riferimento completo dell'immagine (name:tag).
+// ImageRef returns the fully qualified image reference (name:tag).
 func (c *Config) ImageRef() string {
 	return c.Image.Name + ":" + c.Image.Tag
 }
 
-// DefaultMounts ritorna i mount di default (D-07).
-// ~/.secrets NON e' incluso di default (D-08).
+// DefaultMounts returns the default mount set (D-07).
+// ~/.secrets is intentionally NOT included (D-08).
 func DefaultMounts() []Mount {
 	return []Mount{
 		{Source: "~/.claude", Target: "/home/toolbox/.claude", ReadOnly: false},
@@ -47,14 +47,14 @@ func DefaultMounts() []Mount {
 	}
 }
 
-// Load carica la configurazione da Viper e applica i defaults.
+// Load reads the configuration from Viper and applies defaults.
 func Load() (*Config, error) {
 	cfg := &Config{}
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, err
 	}
 
-	// Se nessun mount configurato, usa i defaults (D-07)
+	// Fall back to default mounts if none configured (D-07).
 	if len(cfg.Mounts) == 0 {
 		cfg.Mounts = DefaultMounts()
 	}
