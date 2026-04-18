@@ -55,7 +55,9 @@ Plans:
   1. Un push su `main` (o `workflow_dispatch` manuale) avvia il workflow e pubblica l'immagine su GHCR senza intervento manuale
   2. L'immagine pubblicata e' accessibile con entrambi i tag `latest` e `sha-<commit>` su `ghcr.io`
   3. Lo smoke test viene eseguito come step di validazione nella pipeline e un fallimento blocca il push
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 03-01-PLAN.md — Workflow GitHub Actions: build, smoke test, push multi-arch su GHCR
 **UI hint**: no
 
 ---
@@ -66,7 +68,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 01. Image Foundation | — | Complete | 2026-04-17 |
 | 02. CLI Go | 3/3 | Complete | 2026-04-18 |
-| 03. CI/CD | 0/? | Not started | - |
+| 03. CI/CD | 0/1 | Not started | - |
 
 ---
 
