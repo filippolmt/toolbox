@@ -42,7 +42,7 @@
   5. `toolbox completion zsh` (e bash/fish) genera gli script di completion installabili nello shell
 **Plans:** 3 plans
 Plans:
-- [ ] 02-01-PLAN.md — Fondazione Go: modulo, root command, config YAML, mount resolver, UI helpers
+- [x] 02-01-PLAN.md — Fondazione Go: modulo, root command, config YAML, mount resolver, UI helpers
 - [ ] 02-02-PLAN.md — Comando shell: container lifecycle, TTY attach, signal forwarding
 - [ ] 02-03-PLAN.md — Comandi build, stop, completion
 **UI hint**: no
@@ -65,7 +65,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 01. Image Foundation | — | Complete | 2026-04-17 |
-| 02. CLI Go | 0/3 | Planning complete | - |
+| 02. CLI Go | 1/3 | Executing | - |
 | 03. CI/CD | 0/? | Not started | - |
 
 ---
