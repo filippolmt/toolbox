@@ -11,7 +11,7 @@
 
 - [x] **Phase 01: Image Foundation** - Docker image completa con tutti i tool a versioni pinnate e utente non-root
 - [x] **Phase 02: CLI Go** - Binary Go (Cobra + Viper) per gestione del ciclo di vita del container dall'host
-- [ ] **Phase 03: CI/CD** - GitHub Actions per build automatizzata e push su GHCR
+- [x] **Phase 03: CI/CD** - GitHub Actions per build automatizzata e push su GHCR (2026-04-18)
 
 ---
 
