@@ -57,7 +57,7 @@ Plans:
   3. Lo smoke test viene eseguito come step di validazione nella pipeline e un fallimento blocca il push
 **Plans:** 1 plan
 Plans:
-- [ ] 03-01-PLAN.md — Workflow GitHub Actions: build, smoke test, push multi-arch su GHCR
+- [x] 03-01-PLAN.md — Workflow GitHub Actions: build, smoke test, push multi-arch su GHCR (Task 2: human-verify pending)
 **UI hint**: no
 
 ---
@@ -68,7 +68,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 01. Image Foundation | — | Complete | 2026-04-17 |
 | 02. CLI Go | 3/3 | Complete | 2026-04-18 |
-| 03. CI/CD | 0/1 | Not started | - |
+| 03. CI/CD | 1/1 | Complete (human-verify pending) | 2026-04-18 |
 
 ---
 
@@ -94,9 +94,9 @@ Plans:
 | CLI-03 | Phase 02 | Pending |
 | CLI-04 | Phase 02 | Pending |
 | CLI-05 | Phase 02 | Pending |
-| CICD-01 | Phase 03 | Pending |
-| CICD-02 | Phase 03 | Pending |
-| CICD-03 | Phase 03 | Pending |
+| CICD-01 | Phase 03 | Complete |
+| CICD-02 | Phase 03 | Complete |
+| CICD-03 | Phase 03 | Complete |
 
 **v1.0 coverage: 20/20 requirements mapped. No orphans.**
 

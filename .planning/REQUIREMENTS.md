@@ -35,9 +35,9 @@
 
 ### CI/CD
 
-- [ ] **CICD-01**: GitHub Actions workflow che builda l'immagine su push a main e workflow_dispatch
-- [ ] **CICD-02**: Push su GHCR con tag `latest` e `sha-<commit>`
-- [ ] **CICD-03**: Smoke test eseguito come step di validazione nella pipeline prima del push
+- [x] **CICD-01**: GitHub Actions workflow che builda l'immagine su push a main e workflow_dispatch
+- [x] **CICD-02**: Push su GHCR con tag `latest` e `sha-<commit>`
+- [x] **CICD-03**: Smoke test eseguito come step di validazione nella pipeline prima del push
 
 ## Future Requirements
 
@@ -82,9 +82,9 @@
 | CLI-03 | Phase 02 | Complete |
 | CLI-04 | Phase 02 | Complete |
 | CLI-05 | Phase 02 | Complete |
-| CICD-01 | Phase 03 | Pending |
-| CICD-02 | Phase 03 | Pending |
-| CICD-03 | Phase 03 | Pending |
+| CICD-01 | Phase 03 | Complete |
+| CICD-02 | Phase 03 | Complete |
+| CICD-03 | Phase 03 | Complete |
 
 **Coverage:**
 - v1.0 requirements: 20 total

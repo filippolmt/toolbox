@@ -2,13 +2,13 @@
 
 ## Current Position
 
-Phase: 03-cicd (next)
-Plan: —
-Status: Phase 02 complete — ready for Phase 03
-Last activity: 2026-04-18 — Phase 02 verified and approved
+Phase: 03-cicd
+Plan: 03-01 (complete — Task 2 pending human verification)
+Status: Phase 03 Plan 01 auto tasks complete — awaiting workflow verification on GitHub
+Last activity: 2026-04-18 — Plan 03-01 Task 1 committed
 
 ```
-[######----] Phase 02/03 complete (67%)
+[#########-] Phase 03/03 in progress (90%)
 ```
 
 ## Project Reference
@@ -16,16 +16,17 @@ Last activity: 2026-04-18 — Phase 02 verified and approved
 See: .planning/PROJECT.md (updated 2026-04-17)
 
 **Core value:** Un singolo comando (`toolbox shell`) ti mette dentro un ambiente completo, isolato e riproducibile.
-**Current focus:** CLI Go per gestione container (Phase 02)
+**Current focus:** CI/CD workflow per build automatizzata e push su GHCR (Phase 03)
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases complete | 1/3 |
-| Requirements complete | 13/20 |
-| Plans complete | 1/3 (phase 02) |
+| Phases complete | 2/3 |
+| Requirements complete | 16/20 |
+| Plans complete | 1/1 (phase 03) |
 | 02-01 duration | 4m 23s |
+| 03-01 duration | 76s |
 
 ## Accumulated Context
 
@@ -55,6 +56,8 @@ See: .planning/PROJECT.md (updated 2026-04-17)
 | Moby client over shell exec | Typed SDK, piu' sicuro di string interpolation | Confirmed |
 | Docker SDK v28.5.2 (not v29.4.0) | v29.4.0 non esiste come Go module; v28.5.2 ultima stabile | Confirmed |
 | Multi-stage Dockerfile per CLI | Go toolchain fuori dalla final image | Pending impl |
+| Test-before-push pattern | Smoke test prima del push su GHCR, evita immagini rotte con tag latest | Confirmed |
+| cache-to solo sul primo build | Evita sovrascrittura scope cache tra i due build-push-action | Confirmed |
 
 ## Blockers
 
@@ -66,4 +69,4 @@ See: .planning/PROJECT.md (updated 2026-04-17)
 
 ---
 
-*Last updated: 2026-04-18 — plan 02-01 complete*
+*Last updated: 2026-04-18 — plan 03-01 auto tasks complete*
