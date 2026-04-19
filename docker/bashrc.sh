@@ -11,7 +11,7 @@
 if [ -n "${HOME:-}" ]; then
     _toolbox_hist_dir="${HOME}/.toolbox-state"
     mkdir -p "${_toolbox_hist_dir}" 2>/dev/null || true
-    if [ -w "${_toolbox_hist_dir}" ] || [ ! -e "${_toolbox_hist_dir}" ]; then
+    if [ -w "${_toolbox_hist_dir}" ]; then
         export HISTFILE="${_toolbox_hist_dir}/bash_history"
         export HISTSIZE=10000
         export HISTFILESIZE=20000
@@ -46,6 +46,7 @@ fi
 
 if command -v helm >/dev/null 2>&1; then
     source <(helm completion bash) 2>/dev/null || true
+    complete -o default -F __start_helm h 2>/dev/null || true
 fi
 
 if command -v tofu >/dev/null 2>&1; then
@@ -67,11 +68,26 @@ fi
 
 if command -v docker >/dev/null 2>&1; then
     source <(docker completion bash) 2>/dev/null || true
+    complete -o default -F __start_docker d 2>/dev/null || true
+fi
+
+# Git completion is lazy-loaded by bash-completion; source it explicitly so
+# the `g` alias can reuse __git_main without requiring the user to tab on
+# `git` first.
+if command -v git >/dev/null 2>&1; then
+    if [ -f /usr/share/bash-completion/completions/git ]; then
+        source /usr/share/bash-completion/completions/git 2>/dev/null || true
+    fi
+    if declare -F __git_main >/dev/null 2>&1; then
+        complete -o bashdefault -o default -o nospace -F __git_main g 2>/dev/null || true
+    fi
 fi
 
 # -- Prompt (D-05) -----------------------------------------------------
 # Starship does not depend on getpwuid(), so it works even with
 # --user $(id -u):$(id -g) where whoami prints "I have no name!".
-eval "$(starship init bash)"
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+fi
 
 return 0

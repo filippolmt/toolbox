@@ -35,8 +35,15 @@ help: ## Show available targets
 # --- Go CLI (containerised) ---
 BINARY := toolbox
 
-go-build: ## Build the Go CLI binary inside a golang container
-	$(GO_RUN) go build -o $(BINARY) .
+# Cross-compile for the host so the binary is runnable after `make go-build`.
+# The build still happens inside the Linux golang container, but GOOS/GOARCH
+# target the host's platform (darwin/arm64 on M-series Macs, linux/amd64 on
+# typical CI runners, …).
+HOST_OS    := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+HOST_ARCH  := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+
+go-build: ## Build the Go CLI binary for the host platform
+	$(GO_RUN) env GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -o $(BINARY) .
 
 go-test: ## Run Go tests inside a golang container
 	$(GO_RUN) go test ./... -count=1

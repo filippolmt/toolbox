@@ -77,9 +77,9 @@ func assertSymlink(t *testing.T, mounts []Mount, src, wantLink string) {
 
 func TestImageRef(t *testing.T) {
 	cfg := Config{
-		Image: ImageConfig{Name: "toolbox", Tag: "local"},
+		Image: ImageConfig{Name: "ghcr.io/filippolmt/toolbox", Tag: "latest"},
 	}
-	expected := "toolbox:local"
+	expected := "ghcr.io/filippolmt/toolbox:latest"
 	if got := cfg.ImageRef(); got != expected {
 		t.Errorf("ImageRef() = %q, want %q", got, expected)
 	}
@@ -90,8 +90,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 	viper.Reset()
 
 	// Mirror the defaults set by cmd/root.go.
-	viper.SetDefault("image.name", "toolbox")
-	viper.SetDefault("image.tag", "local")
+	viper.SetDefault("image.name", "ghcr.io/filippolmt/toolbox")
+	viper.SetDefault("image.tag", "latest")
 	viper.SetDefault("build.context", ".")
 	viper.SetDefault("build.dockerfile", "docker/Dockerfile")
 
@@ -100,9 +100,9 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	// image.name must be "toolbox".
-	if cfg.Image.Name != "toolbox" {
-		t.Errorf("Image.Name = %q, want %q", cfg.Image.Name, "toolbox")
+	// image.name must match the registry default.
+	if cfg.Image.Name != "ghcr.io/filippolmt/toolbox" {
+		t.Errorf("Image.Name = %q, want %q", cfg.Image.Name, "ghcr.io/filippolmt/toolbox")
 	}
 
 	// Must receive 8 default mounts.
