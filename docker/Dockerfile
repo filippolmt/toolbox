@@ -6,7 +6,7 @@
 
 FROM ghcr.io/astral-sh/uv:0.11.7 AS uv-source
 
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 # -- Version pinning (D-09) ---------------------------------------------------
 # Bumps are driven by Renovate (see renovate.json for the per-ARG mapping).
