@@ -23,7 +23,7 @@ ARG JQ_VERSION=1.8.1
 ARG YQ_VERSION=4.52.5
 ARG STARSHIP_VERSION=1.24.2
 ARG PNPM_VERSION=10.33.0
-ARG CLAUDE_CODE_VERSION=2.1.112
+ARG CLAUDE_CODE_VERSION=2.1.114
 
 # -- Layer 1: apt-get ---------------------------------------------------------
 RUN set -eux; \
