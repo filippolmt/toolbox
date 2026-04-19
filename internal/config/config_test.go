@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -75,38 +76,83 @@ func assertSymlink(t *testing.T, mounts []Mount, src, wantLink string) {
 	t.Errorf("mount %s not found in DefaultMounts()", src)
 }
 
-func TestImageRef(t *testing.T) {
-	cfg := Config{
-		Image: ImageConfig{Name: "ghcr.io/filippolmt/toolbox", Tag: "latest"},
-	}
-	expected := "ghcr.io/filippolmt/toolbox:latest"
-	if got := cfg.ImageRef(); got != expected {
-		t.Errorf("ImageRef() = %q, want %q", got, expected)
+// setToolsDefaults mirrors the per-leaf defaults from cmd/root.go.
+func setToolsDefaults() {
+	for _, k := range KnownTools {
+		viper.SetDefault("tools."+k, true)
 	}
 }
 
 func TestLoadWithoutConfig(t *testing.T) {
-	// Reset viper for an isolated test.
 	viper.Reset()
-
-	// Mirror the defaults set by cmd/root.go.
-	viper.SetDefault("image.name", "ghcr.io/filippolmt/toolbox")
-	viper.SetDefault("image.tag", "latest")
-	viper.SetDefault("build.context", ".")
-	viper.SetDefault("build.dockerfile", "docker/Dockerfile")
+	setToolsDefaults()
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	// image.name must match the registry default.
-	if cfg.Image.Name != "ghcr.io/filippolmt/toolbox" {
-		t.Errorf("Image.Name = %q, want %q", cfg.Image.Name, "ghcr.io/filippolmt/toolbox")
-	}
-
-	// Must receive 8 default mounts.
 	if len(cfg.Mounts) != 8 {
 		t.Errorf("expected 8 default mounts, got %d", len(cfg.Mounts))
+	}
+
+	if !IsDefaultTools(cfg.Tools) {
+		t.Errorf("Load() with no user config should yield default tools, got %v", cfg.Tools)
+	}
+	for _, k := range KnownTools {
+		if !cfg.Tools[k] {
+			t.Errorf("tool %q should default to true", k)
+		}
+	}
+}
+
+// TestLoadUserOverridePreservesOtherTools reproduces the merge semantics:
+// a .toolbox.yaml that flips a single tool must leave every other default
+// untouched. This is the main contract the user asked for — "override solo
+// le chiavi modificate, il resto eredita dalla globale".
+func TestLoadUserOverridePreservesOtherTools(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("tools:\n  gcloud: false\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Tools["gcloud"] {
+		t.Error("gcloud should be disabled after override")
+	}
+	for _, k := range KnownTools {
+		if k == "gcloud" {
+			continue
+		}
+		if !cfg.Tools[k] {
+			t.Errorf("tool %q should remain true — one-key override must not reset others", k)
+		}
+	}
+	if IsDefaultTools(cfg.Tools) {
+		t.Error("IsDefaultTools should be false once any tool is opted out")
+	}
+}
+
+func TestIsDefaultTools(t *testing.T) {
+	if !IsDefaultTools(DefaultTools()) {
+		t.Error("DefaultTools() should be recognised as default")
+	}
+	if !IsDefaultTools(nil) {
+		t.Error("nil map (no user config) should be treated as default")
+	}
+	if !IsDefaultTools(map[string]bool{}) {
+		t.Error("empty map should be treated as default (all keys default-true)")
+	}
+	custom := DefaultTools()
+	custom["gcloud"] = false
+	if IsDefaultTools(custom) {
+		t.Error("one tool disabled should not be considered default")
 	}
 }

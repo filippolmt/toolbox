@@ -3,17 +3,15 @@ package build
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
+	"io/fs"
 
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/client"
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -23,19 +21,32 @@ type buildMessage struct {
 	Error  string `json:"error"`
 }
 
-// BuildImage builds the Docker image with streaming output (D-12).
-// Creates a tar context honoring .dockerignore and streams JSON output line by line.
-func BuildImage(ctx context.Context, cli client.APIClient, cfg *config.Config) error {
-	ui.Info("Building image " + cfg.ImageRef() + "...")
+// Options tunes an image build.
+type Options struct {
+	// Tag applied to the built image (e.g. "toolbox:local-<hash>").
+	Tag string
+	// BuildArgs passed to docker build (e.g. INSTALL_GCLOUD=false).
+	BuildArgs map[string]*string
+	// NoCache forces a clean build ignoring Docker's layer cache.
+	NoCache bool
+}
 
-	buildCtx, err := createTarContext(cfg.Build.Context)
+// BuildImage builds the Docker image from the embedded build context.
+// The context (Dockerfile + scripts) is shipped inside the Go binary (see
+// embed.go), so the CLI does not depend on the user having a repo checkout.
+func BuildImage(ctx context.Context, cli client.APIClient, opts Options) error {
+	ui.Info("Building image " + opts.Tag + "...")
+
+	buildCtx, err := tarEmbeddedContext()
 	if err != nil {
 		return fmt.Errorf("creating build context: %w", err)
 	}
 
 	resp, err := cli.ImageBuild(ctx, buildCtx, build.ImageBuildOptions{
-		Dockerfile: cfg.Build.Dockerfile,
-		Tags:       []string{cfg.ImageRef()},
+		Dockerfile: "Dockerfile",
+		Tags:       []string{opts.Tag},
+		BuildArgs:  opts.BuildArgs,
+		NoCache:    opts.NoCache,
 		Remove:     true,
 	})
 	if err != nil {
@@ -47,13 +58,16 @@ func BuildImage(ctx context.Context, cli client.APIClient, cfg *config.Config) e
 		return err
 	}
 
-	ui.Success("Image " + cfg.ImageRef() + " built successfully")
+	ui.Success("Image " + opts.Tag + " built successfully")
 	return nil
 }
 
 // streamBuildOutput reads Docker's JSON build stream and prints output in real time.
 func streamBuildOutput(reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
+	// Buildx produces long lines with multi-line stream fragments; bump the
+	// per-line limit so we don't bail out on a large log message.
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		var msg buildMessage
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
@@ -70,129 +84,48 @@ func streamBuildOutput(reader io.Reader) error {
 	return scanner.Err()
 }
 
-// createTarContext builds a tar archive of the build context honoring .dockerignore (T-02-07).
-func createTarContext(contextDir string) (io.Reader, error) {
-	ignorePatterns := readDockerignore(contextDir)
+// tarEmbeddedContext serialises the embedded assets into an in-memory tar the
+// Docker daemon can consume as a build context. Filenames inside the tar are
+// the basenames of the assets — the Dockerfile's `COPY bashrc.sh …` resolves
+// to the tarred file of the same name.
+func tarEmbeddedContext() (io.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
 
-	pr, pw := io.Pipe()
-	go func() {
-		tw := tar.NewWriter(pw)
-		err := filepath.Walk(contextDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Path relative to the context root.
-			relPath, err := filepath.Rel(contextDir, path)
-			if err != nil {
-				return err
-			}
-
-			// Skip the root itself.
-			if relPath == "." {
-				return nil
-			}
-
-			// Honor ignore patterns.
-			if shouldIgnore(relPath, info.IsDir(), ignorePatterns) {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			// Build the tar header.
-			header, err := tar.FileInfoHeader(info, "")
-			if err != nil {
-				return err
-			}
-			header.Name = relPath
-
-			// For symlinks, record the target.
-			if info.Mode()&os.ModeSymlink != 0 {
-				link, err := os.Readlink(path)
-				if err != nil {
-					return err
-				}
-				header.Linkname = link
-			}
-
-			if err := tw.WriteHeader(header); err != nil {
-				return err
-			}
-
-			// Write content only for regular files.
-			if !info.Mode().IsRegular() {
-				return nil
-			}
-
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = f.Close() }()
-
-			_, err = io.Copy(tw, f)
-			return err
-		})
-
-		if closeErr := tw.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			pw.CloseWithError(err)
-		} else {
-			_ = pw.Close()
-		}
-	}()
-
-	return pr, nil
-}
-
-// shouldIgnore reports whether a path matches one of the .dockerignore patterns.
-func shouldIgnore(relPath string, isDir bool, patterns []string) bool {
-	for _, pattern := range patterns {
-		// Directory patterns (ending with /).
-		dirPattern := strings.TrimSuffix(pattern, "/")
-		if dirPattern != pattern {
-			// Was a directory pattern.
-			if isDir && (relPath == dirPattern || strings.HasPrefix(relPath, dirPattern+"/")) {
-				return true
-			}
-			if !isDir && strings.HasPrefix(relPath, dirPattern+"/") {
-				return true
-			}
-			continue
-		}
-
-		// Glob pattern (e.g. *.md).
-		if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
-			return true
-		}
-
-		// Exact match.
-		if relPath == pattern {
-			return true
-		}
-	}
-	return false
-}
-
-// readDockerignore parses .dockerignore from the build context, returning its patterns.
-func readDockerignore(contextDir string) []string {
-	path := filepath.Join(contextDir, ".dockerignore")
-	data, err := os.ReadFile(path)
+	entries, err := fs.ReadDir(Assets, AssetDir)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("read embedded assets: %w", err)
 	}
-
-	var patterns []string
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+	for _, e := range entries {
+		if e.IsDir() {
 			continue
 		}
-		patterns = append(patterns, line)
+		data, err := fs.ReadFile(Assets, AssetDir+"/"+e.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read embedded %s: %w", e.Name(), err)
+		}
+		info, err := e.Info()
+		if err != nil {
+			return nil, fmt.Errorf("stat embedded %s: %w", e.Name(), err)
+		}
+		mode := int64(0o644)
+		if info.Mode()&0o111 != 0 {
+			mode = 0o755
+		}
+		hdr := &tar.Header{
+			Name: e.Name(),
+			Mode: mode,
+			Size: int64(len(data)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, fmt.Errorf("tar header %s: %w", e.Name(), err)
+		}
+		if _, err := tw.Write(data); err != nil {
+			return nil, fmt.Errorf("tar write %s: %w", e.Name(), err)
+		}
 	}
-	return patterns
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("tar close: %w", err)
+	}
+	return &buf, nil
 }

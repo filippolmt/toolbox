@@ -1,8 +1,8 @@
 package build
 
 import (
-	"os"
-	"path/filepath"
+	"archive/tar"
+	"io"
 	"strings"
 	"testing"
 )
@@ -33,60 +33,34 @@ func TestStreamBuildOutputError(t *testing.T) {
 	}
 }
 
-func TestReadDockerignore(t *testing.T) {
-	dir := t.TempDir()
-
-	content := `.planning/
-.git/
-*.md`
-	err := os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte(content), 0644)
+// TestTarEmbeddedContext verifies the tar produced from the embedded assets
+// contains the Dockerfile and companion scripts at the root (no nested dirs),
+// so the Dockerfile's `COPY bashrc.sh …` resolves against the build context.
+func TestTarEmbeddedContext(t *testing.T) {
+	r, err := tarEmbeddedContext()
 	if err != nil {
-		t.Fatalf("failed to write .dockerignore: %v", err)
+		t.Fatalf("tarEmbeddedContext: %v", err)
 	}
 
-	patterns := readDockerignore(dir)
-	if len(patterns) != 3 {
-		t.Fatalf("expected 3 patterns, got %d: %v", len(patterns), patterns)
-	}
-
-	expected := []string{".planning/", ".git/", "*.md"}
-	for i, p := range patterns {
-		if p != expected[i] {
-			t.Errorf("pattern[%d]: expected %q, got %q", i, expected[i], p)
+	tr := tar.NewReader(r)
+	got := map[string]bool{}
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
 		}
-	}
-}
-
-func TestReadDockerignoreMissing(t *testing.T) {
-	dir := t.TempDir()
-
-	patterns := readDockerignore(dir)
-	if len(patterns) != 0 {
-		t.Fatalf("expected 0 patterns for missing .dockerignore, got %d: %v", len(patterns), patterns)
-	}
-}
-
-func TestShouldIgnore(t *testing.T) {
-	patterns := []string{".planning/", ".git/", "*.md", "CLAUDE.md"}
-
-	tests := []struct {
-		path   string
-		isDir  bool
-		expect bool
-	}{
-		{".planning", true, true},
-		{".planning/STATE.md", false, true},
-		{".git", true, true},
-		{"README.md", false, true},
-		{"docker/Dockerfile", false, false},
-		{"cmd/root.go", false, false},
-		{"CLAUDE.md", false, true},
+		if err != nil {
+			t.Fatalf("tar read: %v", err)
+		}
+		if strings.Contains(h.Name, "/") {
+			t.Errorf("unexpected nested path in tar: %q — expected flat layout", h.Name)
+		}
+		got[h.Name] = true
 	}
 
-	for _, tt := range tests {
-		got := shouldIgnore(tt.path, tt.isDir, patterns)
-		if got != tt.expect {
-			t.Errorf("shouldIgnore(%q, %v) = %v, want %v", tt.path, tt.isDir, got, tt.expect)
+	for _, want := range []string{"Dockerfile", "bashrc.sh", "entrypoint.sh"} {
+		if !got[want] {
+			t.Errorf("tar missing entry %q (got %v)", want, got)
 		}
 	}
 }

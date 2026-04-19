@@ -56,8 +56,20 @@ func initConfig() {
 // Do NOT use nested objects; that breaks MergeInConfig (Pitfall 2).
 // Default mounts are handled in config.Load() as a fallback.
 func setDefaults() {
-	viper.SetDefault("image.name", "ghcr.io/filippolmt/toolbox")
-	viper.SetDefault("image.tag", "latest")
-	viper.SetDefault("build.context", ".")
-	viper.SetDefault("build.dockerfile", "docker/Dockerfile")
+	// Every opt-out tool is on by default. Tool selection is applied at
+	// build time via `ARG INSTALL_<TOOL>` in internal/build/assets/Dockerfile.
+	// Keep this list in sync with config.KnownTools.
+	viper.SetDefault("tools.claude", true)
+	viper.SetDefault("tools.docker", true)
+	viper.SetDefault("tools.gcloud", true)
+	viper.SetDefault("tools.gh", true)
+	viper.SetDefault("tools.glab", true)
+	viper.SetDefault("tools.helm", true)
+	viper.SetDefault("tools.jq", true)
+	viper.SetDefault("tools.kubectl", true)
+	viper.SetDefault("tools.pnpm", true)
+	viper.SetDefault("tools.starship", true)
+	viper.SetDefault("tools.tofu", true)
+	viper.SetDefault("tools.uv", true)
+	viper.SetDefault("tools.yq", true)
 }

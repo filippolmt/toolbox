@@ -18,10 +18,10 @@ GO_RUN          := docker run --rm \
 .PHONY: build test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache
 
 build: ## Build the toolbox image
-	docker build -f docker/Dockerfile -t $(FULL) .
+	docker build -f internal/build/assets/Dockerfile -t $(FULL) internal/build/assets
 
 test: build ## Build the image and run the smoke test
-	docker/smoke-test.sh $(FULL)
+	internal/build/assets/smoke-test.sh $(FULL)
 
 shell: build ## Build the image and open an interactive shell in it
 	docker run --rm -it $(FULL) bash

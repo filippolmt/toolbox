@@ -17,9 +17,11 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 
+	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mount"
 	"github.com/filippolmt/toolbox/internal/ui"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // WorkspaceTarget is the fixed in-container path where the host CWD is mounted.
@@ -69,14 +71,18 @@ func ContainerNameFor(workspace string) string {
 //   - running   -> exec directly (no container created)
 //   - stopped   -> start + exec
 //   - not found -> ensure image, create + start + exec
+//
+// Image ensure strategy (see build.ResolveImage):
+//   - defaults config  -> pull the canonical GHCR image (best-effort)
+//   - custom tools     -> auto-build a hash-tagged local image if missing
 func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) error {
 	name := ContainerNameFor(workspace)
 
-	// Pull on every shell when the image points to a registry (name contains
-	// a "/"). Local-only tags like "toolbox:local" have no registry and are
-	// skipped to avoid a guaranteed-failing pull and the noise that follows.
-	if strings.Contains(cfg.Image.Name, "/") {
-		pullImage(ctx, cli, cfg.ImageRef())
+	ref, isLocal := build.ResolveImage(cfg, version.Version)
+
+	if !isLocal {
+		// Canonical registry image: refresh on every shell, best-effort.
+		pullImage(ctx, cli, ref)
 	}
 
 	binds, warnings := mount.ResolveMounts(cfg.Mounts)
@@ -102,14 +108,14 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		return execShellFn(ctx, cli, inspect.ID)
 
 	case cerrdefs.IsNotFound(err):
-		if _, inspectErr := cli.ImageInspect(ctx, cfg.ImageRef()); inspectErr != nil {
-			return fmt.Errorf("image %q not available locally, run 'toolbox build' first", cfg.ImageRef())
+		if ensureErr := ensureImage(ctx, cli, cfg, ref, isLocal); ensureErr != nil {
+			return ensureErr
 		}
 
 		ui.Info("Creating container " + name + "...")
 		resp, createErr := cli.ContainerCreate(ctx,
 			&container.Config{
-				Image:      cfg.ImageRef(),
+				Image:      ref,
 				Tty:        true,
 				OpenStdin:  true,
 				Cmd:        []string{"/bin/bash"},
@@ -136,6 +142,27 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	default:
 		return fmt.Errorf("failed to inspect container: %w", err)
 	}
+}
+
+// ensureImage guarantees the image referenced by ref exists locally.
+//   - registry tags: a failed pull already logged a warning; error now if the
+//     image is still absent.
+//   - local hash tags: auto-build from the embedded context using the config's
+//     tools map to derive the INSTALL_* build args.
+var ensureImage = func(ctx context.Context, cli client.APIClient, cfg *config.Config, ref string, isLocal bool) error {
+	if _, err := cli.ImageInspect(ctx, ref); err == nil {
+		return nil
+	}
+
+	if !isLocal {
+		return fmt.Errorf("image %q not available locally and pull failed — check registry access", ref)
+	}
+
+	ui.Info("Image not found locally — building " + ref + " for current tools config...")
+	return build.BuildImage(ctx, cli, build.Options{
+		Tag:       ref,
+		BuildArgs: build.BuildArgsFromTools(cfg.Tools),
+	})
 }
 
 // hostUserSpec returns the "<uid>:<gid>" of the user invoking toolbox, so the

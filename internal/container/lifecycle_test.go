@@ -103,9 +103,10 @@ func (m *mockClient) Close() error { return nil }
 // --- Helpers ---
 
 func testConfig() *config.Config {
-	return &config.Config{
-		Image: config.ImageConfig{Name: "toolbox", Tag: "test"},
-	}
+	// Empty Tools map is treated as default-true, so ResolveImage returns the
+	// canonical GHCR image with isLocal=false. That matches the existing test
+	// assumptions (pull path, not auto-build).
+	return &config.Config{Tools: config.DefaultTools()}
 }
 
 // testWorkspace returns a stable workspace path for use in tests.
@@ -309,8 +310,51 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 	if err == nil {
 		t.Fatal("Shell() should have returned error for missing image")
 	}
-	if !strings.Contains(err.Error(), "toolbox build") {
-		t.Fatalf("error should mention 'toolbox build', got: %v", err)
+	if !strings.Contains(err.Error(), "not available locally") {
+		t.Fatalf("error should mention that the image is not available locally, got: %v", err)
+	}
+}
+
+// TestShellAutoBuildsCustomImage covers the new opt-out path: when the user's
+// tools config differs from defaults, ResolveImage returns a local hash-tagged
+// ref; if the image is missing, Shell should trigger a build instead of
+// erroring out. The build call is stubbed by replacing ensureImage.
+func TestShellAutoBuildsCustomImage(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	cfg := &config.Config{Tools: config.DefaultTools()}
+	cfg.Tools["gcloud"] = false // triggers local hash tag
+
+	buildCalled := false
+	origEnsure := ensureImage
+	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+		if !isLocal {
+			t.Error("expected isLocal=true when tools differ from defaults")
+		}
+		buildCalled = true
+		return nil
+	}
+	defer func() { ensureImage = origEnsure }()
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	err := Shell(context.Background(), mock, cfg, testWorkspace(t))
+	if err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !buildCalled {
+		t.Fatal("ensureImage (auto-build) was not invoked for custom tools config")
+	}
+	if !*called {
+		t.Fatal("execShellFn was not called after auto-build")
 	}
 }
 
