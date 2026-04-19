@@ -130,17 +130,19 @@ func createTarContext(contextDir string) (io.Reader, error) {
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			_, err = io.Copy(tw, f)
 			return err
 		})
 
-		tw.Close()
+		if closeErr := tw.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			pw.CloseWithError(err)
 		} else {
-			pw.Close()
+			_ = pw.Close()
 		}
 	}()
 

@@ -4,9 +4,10 @@ FULL    := $(IMAGE):$(TAG)
 
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
-GO_IMAGE   := golang:1.26
-GO_MOD_VOL := toolbox-gomod
-GO_RUN     := docker run --rm \
+GO_IMAGE        := golang:1.26
+GOLANGCI_IMAGE  := golangci/golangci-lint:v2.11.4-alpine
+GO_MOD_VOL      := toolbox-gomod
+GO_RUN          := docker run --rm \
 	-v "$(CURDIR)":/src \
 	-v $(GO_MOD_VOL):/go \
 	-w /src \
@@ -14,7 +15,7 @@ GO_RUN     := docker run --rm \
 	-e CGO_ENABLED=0 \
 	$(GO_IMAGE)
 
-.PHONY: build test shell clean help go-build go-test go-test-verbose go-shell go-clean-cache
+.PHONY: build test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache
 
 build: ## Build the toolbox image
 	docker build -f docker/Dockerfile -t $(FULL) .
@@ -48,6 +49,14 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 		-e GOFLAGS=-mod=mod \
 		$(GO_IMAGE) \
 		go test -v -race ./...
+
+go-lint: ## Run golangci-lint inside a container
+	docker run --rm \
+		-v "$(CURDIR)":/src \
+		-v $(GO_MOD_VOL):/go \
+		-w /src \
+		$(GOLANGCI_IMAGE) \
+		golangci-lint run ./...
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it \

@@ -1,0 +1,31 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        # Close() on clients/streams is idiomatic fire-and-forget.
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (github.com/docker/docker/client.APIClient).Close
+        # Cobra completion generators in RunE — we return nil either way.
+        - (*github.com/spf13/cobra.Command).GenBashCompletionV2
+        - (*github.com/spf13/cobra.Command).GenZshCompletion
+        - (*github.com/spf13/cobra.Command).GenFishCompletion
+        # Terminal state restore is best-effort.
+        - golang.org/x/term.Restore
+
+formatters:
+  enable:
+    - gofmt

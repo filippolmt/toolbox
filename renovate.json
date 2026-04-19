@@ -2,5 +2,91 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GH_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "cli/cli",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GLAB_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "gitlab-releases",
+      "packageNameTemplate": "gitlab-org/cli",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+KUBECTL_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "kubernetes/kubernetes"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+HELM_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "helm/helm"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+TOFU_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "opentofu/opentofu",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+DOCKER_CLI_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "moby/moby",
+      "extractVersionTemplate": "^docker-v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+JQ_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "jqlang/jq",
+      "extractVersionTemplate": "^jq-(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+YQ_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "mikefarah/yq",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+STARSHIP_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "starship/starship",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+PNPM_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "pnpm"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+CLAUDE_CODE_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "@anthropic-ai/claude-code"
+    }
   ]
 }
