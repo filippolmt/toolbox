@@ -72,11 +72,12 @@ func ContainerNameFor(workspace string) string {
 func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) error {
 	name := ContainerNameFor(workspace)
 
-	// Auto-pull is disabled for now: the default image ref is a local-only
-	// tag (toolbox:local) that is not on any registry, so the pull always
-	// fails and only adds noise. Re-enable once the default points to a
-	// registry-hosted image (e.g. ghcr.io/filippolmt/toolbox).
-	// pullImage(ctx, cli, cfg.ImageRef())
+	// Pull on every shell when the image points to a registry (name contains
+	// a "/"). Local-only tags like "toolbox:local" have no registry and are
+	// skipped to avoid a guaranteed-failing pull and the noise that follows.
+	if strings.Contains(cfg.Image.Name, "/") {
+		pullImage(ctx, cli, cfg.ImageRef())
+	}
 
 	binds, warnings := mount.ResolveMounts(cfg.Mounts)
 	for _, w := range warnings {
@@ -146,10 +147,6 @@ func hostUserSpec() string {
 
 // pullImage attempts to pull the image from its remote registry. Errors are
 // logged as warnings and swallowed: the caller proceeds with the local image.
-// Kept but unused until Shell() wires it back in — see the note above the
-// commented-out pullImage call in Shell().
-//
-//nolint:unused // re-enabled once the default image ref points to a registry
 func pullImage(ctx context.Context, cli client.APIClient, ref string) {
 	ui.Info("Checking for image updates: " + ref + "...")
 	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})

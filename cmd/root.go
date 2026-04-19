@@ -56,8 +56,8 @@ func initConfig() {
 // Do NOT use nested objects; that breaks MergeInConfig (Pitfall 2).
 // Default mounts are handled in config.Load() as a fallback.
 func setDefaults() {
-	viper.SetDefault("image.name", "toolbox")
-	viper.SetDefault("image.tag", "local")
+	viper.SetDefault("image.name", "ghcr.io/filippolmt/toolbox")
+	viper.SetDefault("image.tag", "latest")
 	viper.SetDefault("build.context", ".")
 	viper.SetDefault("build.dockerfile", "docker/Dockerfile")
 }
