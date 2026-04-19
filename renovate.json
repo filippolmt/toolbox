@@ -6,7 +6,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GH_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "cli/cli",
@@ -14,7 +14,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GLAB_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "gitlab-releases",
       "packageNameTemplate": "gitlab-org/cli",
@@ -22,21 +22,21 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+KUBECTL_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "kubernetes/kubernetes"
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+HELM_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "helm/helm"
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+TOFU_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "opentofu/opentofu",
@@ -44,7 +44,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+DOCKER_CLI_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "moby/moby",
@@ -52,7 +52,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+JQ_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "jqlang/jq",
@@ -60,7 +60,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+YQ_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "mikefarah/yq",
@@ -68,7 +68,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+STARSHIP_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "starship/starship",
@@ -76,17 +76,32 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+PNPM_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "pnpm"
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^docker/Dockerfile$/"],
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+CLAUDE_CODE_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "@anthropic-ai/claude-code"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GCLOUD_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "google/cloud-sdk",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+UV_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "astral-sh/uv"
     }
   ]
 }

@@ -53,21 +53,21 @@ jobs:
       - name: Build and load for testing
         uses: docker/build-push-action@v7
         with:
-          context: .
-          file: docker/Dockerfile
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
           load: true
           tags: ${{ env.TEST_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke test
-        run: docker/smoke-test.sh ${{ env.TEST_TAG }}
+        run: internal/build/assets/smoke-test.sh ${{ env.TEST_TAG }}
 
       - name: Build and push multi-arch
         uses: docker/build-push-action@v7
         with:
-          context: .
-          file: docker/Dockerfile
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

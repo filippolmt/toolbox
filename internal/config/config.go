@@ -5,16 +5,14 @@ import (
 )
 
 // Config is the top-level toolbox configuration.
+//
+// Image selection is no longer controlled by explicit image.name/image.tag
+// fields — it is derived from the Tools map by build.ResolveImage. If the
+// user needs a custom registry image, the escape hatch is to point at a
+// locally-built one via `toolbox build` + manual `docker tag`.
 type Config struct {
-	Image  ImageConfig `mapstructure:"image"`
-	Mounts []Mount     `mapstructure:"mounts"`
-	Build  BuildConfig `mapstructure:"build"`
-}
-
-// ImageConfig configures the Docker image coordinates.
-type ImageConfig struct {
-	Name string `mapstructure:"name"`
-	Tag  string `mapstructure:"tag"`
+	Mounts []Mount         `mapstructure:"mounts"`
+	Tools  map[string]bool `mapstructure:"tools"`
 }
 
 // Mount represents a host -> container volume bind.
@@ -30,17 +28,6 @@ type Mount struct {
 	// (e.g. ~/.toolbox/ssh -> ~/.ssh). If SymlinkFrom itself is missing, the
 	// mount is skipped with a warning.
 	SymlinkFrom string `mapstructure:"symlink_from"`
-}
-
-// BuildConfig configures the Docker image build.
-type BuildConfig struct {
-	Context    string `mapstructure:"context"`
-	Dockerfile string `mapstructure:"dockerfile"`
-}
-
-// ImageRef returns the fully qualified image reference (name:tag).
-func (c *Config) ImageRef() string {
-	return c.Image.Name + ":" + c.Image.Tag
 }
 
 // DefaultMounts returns the default mount set (D-07).
@@ -85,6 +72,17 @@ func Load() (*Config, error) {
 	// Fall back to default mounts if none configured (D-07).
 	if len(cfg.Mounts) == 0 {
 		cfg.Mounts = DefaultMounts()
+	}
+
+	// Fill in defaults for every known tool so downstream callers (hashing,
+	// build-arg translation) don't need to branch on missing keys.
+	if cfg.Tools == nil {
+		cfg.Tools = map[string]bool{}
+	}
+	for _, k := range KnownTools {
+		if _, ok := cfg.Tools[k]; !ok {
+			cfg.Tools[k] = true
+		}
 	}
 
 	return cfg, nil

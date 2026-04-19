@@ -13,9 +13,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/filippolmt/toolbox/cmd.version={{.Version}}
-      - -X github.com/filippolmt/toolbox/cmd.commit={{.Commit}}
-      - -X github.com/filippolmt/toolbox/cmd.date={{.Date}}
+      - -X github.com/filippolmt/toolbox/internal/version.Version={{.Version}}
+      - -X github.com/filippolmt/toolbox/internal/version.Commit={{.Commit}}
+      - -X github.com/filippolmt/toolbox/internal/version.Date={{.Date}}
 
 archives:
   - formats:

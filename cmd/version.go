@@ -3,14 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/filippolmt/toolbox/internal/version"
 	"github.com/spf13/cobra"
-)
-
-// Set via ldflags at build time.
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
 )
 
 func init() {
@@ -21,6 +15,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the toolbox version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("toolbox %s (commit: %s, built: %s)\n", version, commit, date)
+		fmt.Printf("toolbox %s (commit: %s, built: %s)\n",
+			version.Version, version.Commit, version.Date)
 	},
 }
