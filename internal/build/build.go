@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"runtime"
 
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/client"
@@ -45,7 +46,7 @@ func BuildImage(ctx context.Context, cli client.APIClient, opts Options) error {
 	resp, err := cli.ImageBuild(ctx, buildCtx, build.ImageBuildOptions{
 		Dockerfile: "Dockerfile",
 		Tags:       []string{opts.Tag},
-		BuildArgs:  opts.BuildArgs,
+		BuildArgs:  mergeBuildArgs(opts.BuildArgs),
 		NoCache:    opts.NoCache,
 		Remove:     true,
 	})
@@ -82,6 +83,21 @@ func streamBuildOutput(reader io.Reader) error {
 		}
 	}
 	return scanner.Err()
+}
+
+// mergeBuildArgs injects the host-derived build args required by the
+// Dockerfile on top of the caller-provided map. BuildKit auto-populates
+// TARGETARCH for multi-arch builds, but the classic Docker builder used by
+// the Go SDK's ImageBuild API does not — we must supply it ourselves.
+// Caller-provided values take precedence.
+func mergeBuildArgs(args map[string]*string) map[string]*string {
+	out := map[string]*string{}
+	arch := runtime.GOARCH // "amd64" or "arm64" — matches Docker's TARGETARCH naming.
+	out["TARGETARCH"] = &arch
+	for k, v := range args {
+		out[k] = v
+	}
+	return out
 }
 
 // tarEmbeddedContext serialises the embedded assets into an in-memory tar the

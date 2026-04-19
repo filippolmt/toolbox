@@ -3,6 +3,7 @@ package build
 import (
 	"archive/tar"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,42 @@ func TestTarEmbeddedContext(t *testing.T) {
 		if !got[want] {
 			t.Errorf("tar missing entry %q (got %v)", want, got)
 		}
+	}
+}
+
+// TestMergeBuildArgsInjectsTargetArch protects against a regression the
+// real Docker build surfaced: the classic Docker builder (what the Go SDK
+// uses) does not auto-populate TARGETARCH like BuildKit does, so every
+// `${TARGETARCH}` reference in the Dockerfile would expand to empty.
+func TestMergeBuildArgsInjectsTargetArch(t *testing.T) {
+	out := mergeBuildArgs(nil)
+	v, ok := out["TARGETARCH"]
+	if !ok {
+		t.Fatal("mergeBuildArgs must always emit TARGETARCH")
+	}
+	if v == nil || *v != runtime.GOARCH {
+		t.Errorf("TARGETARCH = %v, want pointer to %q", v, runtime.GOARCH)
+	}
+}
+
+func TestMergeBuildArgsPreservesCaller(t *testing.T) {
+	disabled := "false"
+	out := mergeBuildArgs(map[string]*string{"INSTALL_GCLOUD": &disabled})
+	v, ok := out["INSTALL_GCLOUD"]
+	if !ok || v == nil || *v != "false" {
+		t.Errorf("caller INSTALL_GCLOUD lost during merge: %v", v)
+	}
+	if _, ok := out["TARGETARCH"]; !ok {
+		t.Error("TARGETARCH should still be injected alongside caller args")
+	}
+}
+
+func TestMergeBuildArgsCallerWinsOverride(t *testing.T) {
+	// A caller explicitly setting TARGETARCH (e.g. cross-build scenarios)
+	// must be honoured. The injected host arch is just a fallback.
+	custom := "amd64"
+	out := mergeBuildArgs(map[string]*string{"TARGETARCH": &custom})
+	if v := out["TARGETARCH"]; v == nil || *v != "amd64" {
+		t.Errorf("caller-provided TARGETARCH was overwritten: %v", v)
 	}
 }
