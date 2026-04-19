@@ -9,6 +9,9 @@ FROM ghcr.io/astral-sh/uv:0.11.7 AS uv-source
 FROM node:22-bookworm-slim
 
 # -- Version pinning (D-09) ---------------------------------------------------
+# Bumps are driven by Renovate (see renovate.json for the per-ARG mapping).
+# The verification steps below fetch the matching SHA256 from upstream at
+# build time, so changing only the version here keeps checksums correct.
 ARG TARGETARCH
 ARG GH_VERSION=2.90.0
 ARG GLAB_VERSION=1.92.1
@@ -29,6 +32,7 @@ RUN set -eux; \
       curl \
       ca-certificates \
       git \
+      openssh-client \
       bash-completion \
       python3 \
       python3-pip \
@@ -177,11 +181,17 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
 # -- Layer 15: User setup (IMG-03) --------------------------------------------
+# The container is launched with --user <host-uid>:<host-gid> (see
+# internal/container/lifecycle.go) so bind-mounted host files retain correct
+# ownership. The runtime uid usually won't match the "toolbox" uid baked here,
+# so /home/toolbox is made writable to every uid.
 RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
-    usermod -d /home/toolbox -m toolbox
+    usermod -d /home/toolbox -m toolbox; \
+    chmod -R a+rwX /home/toolbox
 
+ENV HOME=/home/toolbox
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

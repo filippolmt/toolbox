@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/errdefs"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -31,14 +31,14 @@ func (e *notFoundError) Unwrap() error { return nil }
 type mockClient struct {
 	client.APIClient
 
-	inspectFn  func(ctx context.Context, id string) (container.InspectResponse, error)
-	createFn   func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
-	startFn    func(ctx context.Context, id string, opts container.StartOptions) error
-	stopFn     func(ctx context.Context, id string, opts container.StopOptions) error
-	removeFn   func(ctx context.Context, id string, opts container.RemoveOptions) error
-	imgInspFn  func(ctx context.Context, id string) (image.InspectResponse, error)
-	imgPullFn  func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
-	listFn     func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
+	inspectFn func(ctx context.Context, id string) (container.InspectResponse, error)
+	createFn  func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
+	startFn   func(ctx context.Context, id string, opts container.StartOptions) error
+	stopFn    func(ctx context.Context, id string, opts container.StopOptions) error
+	removeFn  func(ctx context.Context, id string, opts container.RemoveOptions) error
+	imgInspFn func(ctx context.Context, id string) (image.InspectResponse, error)
+	imgPullFn func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
+	listFn    func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container.InspectResponse, error) {
@@ -434,10 +434,10 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
-// Verify notFoundError satisfies errdefs.IsNotFound.
+// Verify notFoundError satisfies cerrdefs.IsNotFound.
 func TestNotFoundErrorSatisfiesErrdefs(t *testing.T) {
 	err := &notFoundError{msg: "test"}
-	if !errdefs.IsNotFound(err) {
-		t.Fatal("notFoundError should satisfy errdefs.IsNotFound")
+	if !cerrdefs.IsNotFound(err) {
+		t.Fatal("notFoundError should satisfy cerrdefs.IsNotFound")
 	}
 }

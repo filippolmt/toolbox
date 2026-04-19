@@ -3,6 +3,27 @@
 # Do not use `set -e`: sourced scripts must not crash the shell if a tool
 # is missing or a completion fails.
 
+# -- Persistent shell history ----------------------------------------
+# HISTFILE points at the ~/.toolbox/state mount, so every toolbox shell
+# across every project writes to and reads from the same file.
+# histappend + "history -a; history -n" in PROMPT_COMMAND make concurrent
+# shells see each other's commands without stomping the file on exit.
+if [ -n "${HOME:-}" ]; then
+    _toolbox_hist_dir="${HOME}/.toolbox-state"
+    mkdir -p "${_toolbox_hist_dir}" 2>/dev/null || true
+    if [ -w "${_toolbox_hist_dir}" ] || [ ! -e "${_toolbox_hist_dir}" ]; then
+        export HISTFILE="${_toolbox_hist_dir}/bash_history"
+        export HISTSIZE=10000
+        export HISTFILESIZE=20000
+        export HISTCONTROL=ignoredups:erasedups
+        shopt -s histappend
+        history -c 2>/dev/null || true
+        history -r "${HISTFILE}" 2>/dev/null || true
+        PROMPT_COMMAND="history -a; history -n${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+    fi
+    unset _toolbox_hist_dir
+fi
+
 # -- Alias (D-04) -----------------------------------------------------
 alias k=kubectl
 alias tf=tofu

@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.go) docker run --rm -v \"$(dirname \"$f\")\":/src -w /src golang:1.26 gofmt -w \"$(basename \"$f\")\" ;; esac; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
+  }
+}

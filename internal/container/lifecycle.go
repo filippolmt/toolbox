@@ -6,15 +6,16 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/errdefs"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mount"
@@ -99,7 +100,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		}
 		return execShellFn(ctx, cli, inspect.ID)
 
-	case errdefs.IsNotFound(err):
+	case cerrdefs.IsNotFound(err):
 		if _, inspectErr := cli.ImageInspect(ctx, cfg.ImageRef()); inspectErr != nil {
 			return fmt.Errorf("image %q not available locally, run 'toolbox build' first", cfg.ImageRef())
 		}
@@ -112,6 +113,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				OpenStdin:  true,
 				Cmd:        []string{"/bin/bash"},
 				WorkingDir: WorkspaceTarget,
+				User:       hostUserSpec(),
 			},
 			&container.HostConfig{
 				Binds: binds,
@@ -135,8 +137,19 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	}
 }
 
+// hostUserSpec returns the "<uid>:<gid>" of the user invoking toolbox, so the
+// container runs with the host user's identity. This keeps bind-mounted files
+// (Claude credentials, ssh keys) readable/writable without uid mismatch.
+func hostUserSpec() string {
+	return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+}
+
 // pullImage attempts to pull the image from its remote registry. Errors are
 // logged as warnings and swallowed: the caller proceeds with the local image.
+// Kept but unused until Shell() wires it back in — see the note above the
+// commented-out pullImage call in Shell().
+//
+//nolint:unused // re-enabled once the default image ref points to a registry
 func pullImage(ctx context.Context, cli client.APIClient, ref string) {
 	ui.Info("Checking for image updates: " + ref + "...")
 	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
@@ -191,7 +204,7 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	timeout := 10
 	stopErr := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 
-	if errdefs.IsNotFound(stopErr) {
+	if cerrdefs.IsNotFound(stopErr) {
 		ui.Warning("Container " + name + " not found")
 		return nil
 	}
@@ -200,7 +213,7 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	}
 
 	rmErr := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
-	if rmErr != nil && !errdefs.IsNotFound(rmErr) {
+	if rmErr != nil && !cerrdefs.IsNotFound(rmErr) {
 		return fmt.Errorf("failed to remove container %s: %w", name, rmErr)
 	}
 

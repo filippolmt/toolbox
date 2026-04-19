@@ -22,6 +22,14 @@ type Mount struct {
 	Source   string `mapstructure:"source"`
 	Target   string `mapstructure:"target"`
 	ReadOnly bool   `mapstructure:"readonly"`
+	// CreateIfMissing creates the source directory (mode 0700) when absent,
+	// instead of skipping the mount. Used for toolbox-managed state dirs.
+	CreateIfMissing bool `mapstructure:"create_if_missing"`
+	// SymlinkFrom is a host path the Source is symlinked to when the Source
+	// does not exist yet. Used to keep toolbox state in sync with host files
+	// (e.g. ~/.toolbox/ssh -> ~/.ssh). If SymlinkFrom itself is missing, the
+	// mount is skipped with a warning.
+	SymlinkFrom string `mapstructure:"symlink_from"`
 }
 
 // BuildConfig configures the Docker image build.
@@ -37,12 +45,32 @@ func (c *Config) ImageRef() string {
 
 // DefaultMounts returns the default mount set (D-07).
 // ~/.secrets is intentionally NOT included (D-08).
+//
+// Every auth/state path is addressed through ~/.toolbox/ on the host:
+//   - Claude / state / gh / glab live there as real dirs (isolated from
+//     the host's own ~/.claude, ~/.config/gh, etc.).
+//   - ssh / gitconfig / gitconfig-dbm are symlinks to the host's versions,
+//     so `ssh-keygen` and `git config` stay in sync with the container.
+//
+// If a symlink target is missing on the host, that mount is skipped with
+// a warning; the user can add it later without re-running any command.
 func DefaultMounts() []Mount {
 	return []Mount{
-		{Source: "~/.claude", Target: "/home/toolbox/.claude", ReadOnly: false},
-		{Source: "~/.gitconfig", Target: "/home/toolbox/.gitconfig", ReadOnly: true},
-		{Source: "~/.gitconfig-dbm", Target: "/home/toolbox/.gitconfig-dbm", ReadOnly: true},
-		{Source: "~/.ssh", Target: "/home/toolbox/.ssh", ReadOnly: true},
+		// Claude Code config + credentials.
+		{Source: "~/.toolbox/.claude", Target: "/home/toolbox/.claude", ReadOnly: false, CreateIfMissing: true},
+		// Bash history and other shell state, shared across every toolbox shell.
+		{Source: "~/.toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
+		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,
+		// so changes made with `ssh-keygen` / `git config` on the host are
+		// immediately visible inside the container (and vice versa).
+		{Source: "~/.toolbox/ssh", Target: "/home/toolbox/.ssh", ReadOnly: true, SymlinkFrom: "~/.ssh"},
+		{Source: "~/.toolbox/gitconfig", Target: "/home/toolbox/.gitconfig", ReadOnly: true, SymlinkFrom: "~/.gitconfig"},
+		{Source: "~/.toolbox/gitconfig-dbm", Target: "/home/toolbox/.gitconfig-dbm", ReadOnly: true, SymlinkFrom: "~/.gitconfig-dbm"},
+		// GitHub CLI auth — populated by `gh auth login` inside the container.
+		{Source: "~/.toolbox/gh", Target: "/home/toolbox/.config/gh", ReadOnly: false, CreateIfMissing: true},
+		// GitLab CLI auth — populated by `glab auth login` inside the container.
+		{Source: "~/.toolbox/glab", Target: "/home/toolbox/.config/glab-cli", ReadOnly: false, CreateIfMissing: true},
+		// Docker socket for DinD-free container access.
 		{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}
 }
