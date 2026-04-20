@@ -56,6 +56,7 @@ check_required "git"        git --version
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version
 check_optional  "playwright" playwright playwright --version
+check_optional  "playwright-cli" playwright-cli playwright-cli --version
 check_optional  "uv"        uv       uv --version
 check_optional  "kubectl"   kubectl  kubectl version --client
 check_optional  "helm"      helm     helm version --short

@@ -71,6 +71,7 @@ func setDefaults() {
 	viper.SetDefault("tools.kubectl", true)
 	viper.SetDefault("tools.oci", true)
 	viper.SetDefault("tools.playwright", true)
+	viper.SetDefault("tools.playwright_cli", true)
 	viper.SetDefault("tools.pnpm", true)
 	viper.SetDefault("tools.starship", true)
 	viper.SetDefault("tools.tofu", true)
