@@ -74,7 +74,7 @@ func TestResolveImageChangesWithToolsFlip(t *testing.T) {
 func TestBuildArgsFromToolsOnlyEmitsDisabled(t *testing.T) {
 	tools := config.DefaultTools()
 	tools["gcloud"] = false
-	tools["azure"] = false // unknown key, should be skipped
+	tools["nosuchtool"] = false // unknown key, should be skipped
 
 	args := BuildArgsFromTools(tools)
 

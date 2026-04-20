@@ -4,7 +4,9 @@ package config
 // Keep this ordered alphabetically so the hash that drives local image tags
 // is stable across refactors.
 var KnownTools = []string{
+	"azure",
 	"claude",
+	"compose",
 	"docker",
 	"gcloud",
 	"gh",
@@ -12,6 +14,8 @@ var KnownTools = []string{
 	"helm",
 	"jq",
 	"kubectl",
+	"oci",
+	"playwright",
 	"pnpm",
 	"starship",
 	"tofu",
@@ -23,19 +27,23 @@ var KnownTools = []string{
 // the Dockerfile expects. The Dockerfile wraps each tool layer with
 // `ARG INSTALL_<ARG>=true` + an `if` conditional.
 var ToolBuildArg = map[string]string{
-	"claude":   "INSTALL_CLAUDE_CODE",
-	"docker":   "INSTALL_DOCKER_CLI",
-	"gcloud":   "INSTALL_GCLOUD",
-	"gh":       "INSTALL_GH",
-	"glab":     "INSTALL_GLAB",
-	"helm":     "INSTALL_HELM",
-	"jq":       "INSTALL_JQ",
-	"kubectl":  "INSTALL_KUBECTL",
-	"pnpm":     "INSTALL_PNPM",
-	"starship": "INSTALL_STARSHIP",
-	"tofu":     "INSTALL_TOFU",
-	"uv":       "INSTALL_UV",
-	"yq":       "INSTALL_YQ",
+	"azure":      "INSTALL_AZURE",
+	"claude":     "INSTALL_CLAUDE_CODE",
+	"compose":    "INSTALL_COMPOSE",
+	"docker":     "INSTALL_DOCKER_CLI",
+	"gcloud":     "INSTALL_GCLOUD",
+	"gh":         "INSTALL_GH",
+	"glab":       "INSTALL_GLAB",
+	"helm":       "INSTALL_HELM",
+	"jq":         "INSTALL_JQ",
+	"kubectl":    "INSTALL_KUBECTL",
+	"oci":        "INSTALL_OCI",
+	"playwright": "INSTALL_PLAYWRIGHT",
+	"pnpm":       "INSTALL_PNPM",
+	"starship":   "INSTALL_STARSHIP",
+	"tofu":       "INSTALL_TOFU",
+	"uv":         "INSTALL_UV",
+	"yq":         "INSTALL_YQ",
 }
 
 // DefaultTools returns the canonical default tools map: every known tool enabled.

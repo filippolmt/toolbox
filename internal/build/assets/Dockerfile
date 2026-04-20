@@ -29,6 +29,10 @@ ARG PNPM_VERSION=10.33.0
 ARG UV_VERSION=0.11.7
 ARG CLAUDE_CODE_VERSION=2.1.114
 ARG GCLOUD_VERSION=565.0.0
+ARG AZURE_CLI_VERSION=2.70.0
+ARG OCI_VERSION=3.57.0
+ARG PLAYWRIGHT_VERSION=1.55.0
+ARG COMPOSE_VERSION=2.30.0
 
 # -- Opt-out flags (one per tool, driven by tools.<key> in .toolbox.yaml) -----
 ARG INSTALL_KUBECTL=true
@@ -44,6 +48,10 @@ ARG INSTALL_PNPM=true
 ARG INSTALL_UV=true
 ARG INSTALL_CLAUDE_CODE=true
 ARG INSTALL_GCLOUD=true
+ARG INSTALL_AZURE=true
+ARG INSTALL_OCI=true
+ARG INSTALL_PLAYWRIGHT=true
+ARG INSTALL_COMPOSE=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -283,7 +291,82 @@ RUN set -eux; \
       gcloud --version; \
     fi
 
-# -- Layer 15: COPY scripts ---------------------------------------------------
+# -- Layer 15: Azure CLI (TOOL-02, IMG-02) ------------------------------------
+# Installed from Microsoft's Debian apt repository (the upstream-recommended
+# path — no standalone binary release is published). Version pinned against
+# the repo; trust anchor is the Microsoft GPG key on the repo metadata.
+RUN set -eux; \
+    if [ "${INSTALL_AZURE}" != "true" ]; then \
+      echo "Skipping azure-cli (tools.azure=false)"; \
+    else \
+      install -d -m 0755 /etc/apt/keyrings; \
+      curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+        | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
+      echo "deb [arch=${TARGETARCH} signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bookworm main" \
+        > /etc/apt/sources.list.d/azure-cli.list; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
+      az --version; \
+    fi
+
+# -- Layer 16: OCI CLI (TOOL-02, IMG-02) --------------------------------------
+# Installed via pip: Oracle does not publish a standalone binary release, and
+# the upstream install.sh bootstraps into a venv we do not need here. Uses
+# --break-system-packages to opt out of PEP 668 — accepted for this single-
+# purpose image. Transitive deps are locked by pip's dependency resolver at
+# install time against the pinned OCI_VERSION.
+RUN set -eux; \
+    if [ "${INSTALL_OCI}" != "true" ]; then \
+      echo "Skipping oci-cli (tools.oci=false)"; \
+    else \
+      pip install --break-system-packages --no-cache-dir \
+        --timeout 300 --retries 5 \
+        "oci-cli==${OCI_VERSION}"; \
+      oci --version; \
+    fi
+
+# -- Layer 17: Playwright CLI (TOOL-01) ---------------------------------------
+# Global npm install of the Playwright CLI only. Browsers (~500MB) are fetched
+# on demand with `playwright install` — see the ~/.toolbox/playwright-cache
+# bind-mount in internal/config/config.go which persists them across restarts.
+RUN set -eux; \
+    if [ "${INSTALL_PLAYWRIGHT}" != "true" ]; then \
+      echo "Skipping playwright (tools.playwright=false)"; \
+    else \
+      npm install -g "playwright@${PLAYWRIGHT_VERSION}"; \
+      playwright --version; \
+    fi
+
+# -- Layer 18: Docker Compose plugin (TOOL-06, IMG-02) ------------------------
+# Installs as a CLI plugin for the static docker binary baked in Layer 7.
+# Useless without tools.docker=true — that mismatch is a documented user error,
+# not enforced at build time. SHA256 is published alongside each binary, so
+# the checksum verification pattern matches gh/glab.
+RUN set -eux; \
+    if [ "${INSTALL_COMPOSE}" != "true" ]; then \
+      echo "Skipping docker-compose (tools.compose=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) COMPOSE_ARCH=x86_64;; \
+        arm64) COMPOSE_ARCH=aarch64;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      COMPOSE_BIN="docker-compose-linux-${COMPOSE_ARCH}"; \
+      install -d -m 0755 /usr/local/libexec/docker/cli-plugins; \
+      curl -fsSL -o /usr/local/libexec/docker/cli-plugins/docker-compose \
+        "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/${COMPOSE_BIN}"; \
+      curl -fsSL -o /tmp/compose.sha256 \
+        "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/${COMPOSE_BIN}.sha256"; \
+      EXPECTED=$(awk '{print $1}' /tmp/compose.sha256); \
+      echo "${EXPECTED}  /usr/local/libexec/docker/cli-plugins/docker-compose" | sha256sum -c -; \
+      chmod +x /usr/local/libexec/docker/cli-plugins/docker-compose; \
+      rm /tmp/compose.sha256; \
+      /usr/local/libexec/docker/cli-plugins/docker-compose version; \
+    fi
+
+# -- Layer 19: COPY scripts ---------------------------------------------------
 COPY bashrc.sh /etc/toolbox-bashrc.sh
 RUN set -eux; \
     echo '' >> /etc/bash.bashrc; \
@@ -294,7 +377,7 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
-# -- Layer 16: User setup (IMG-03) --------------------------------------------
+# -- Layer 20: User setup (IMG-03) --------------------------------------------
 # The container is launched with --user <host-uid>:<host-gid> (see
 # internal/container/lifecycle.go) so bind-mounted host files retain correct
 # ownership. The runtime uid usually won't match the "toolbox" uid baked here,
@@ -303,9 +386,12 @@ RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
     usermod -d /home/toolbox -m toolbox; \
+    mkdir -p /home/toolbox/.npm-global /home/toolbox/.toolbox-startup.d; \
     chmod -R a+rwX /home/toolbox
 
-ENV HOME=/home/toolbox
+ENV HOME=/home/toolbox \
+    NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
+ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

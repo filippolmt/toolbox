@@ -3,6 +3,20 @@
   "extends": [
     "config:recommended"
   ],
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "Automerge all non-major updates once required PR checks pass.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Major bumps always need a human — breaking changes likely.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
@@ -102,6 +116,50 @@
       "matchStrings": ["ARG\\s+UV_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "astral-sh/uv"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+AZURE_CLI_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "Azure/azure-cli",
+      "extractVersionTemplate": "^azure-cli-(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+OCI_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "pypi",
+      "packageNameTemplate": "oci-cli"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+PLAYWRIGHT_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "playwright"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+COMPOSE_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "docker/compose",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": ["GO_IMAGE\\s*:?=\\s*golang:(?<currentValue>\\S+)"],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "golang"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": ["GOLANGCI_IMAGE\\s*:?=\\s*golangci/golangci-lint:(?<currentValue>\\S+)"],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "golangci/golangci-lint"
     }
   ]
 }

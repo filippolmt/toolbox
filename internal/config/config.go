@@ -57,6 +57,23 @@ func DefaultMounts() []Mount {
 		{Source: "~/.toolbox/gh", Target: "/home/toolbox/.config/gh", ReadOnly: false, CreateIfMissing: true},
 		// GitLab CLI auth — populated by `glab auth login` inside the container.
 		{Source: "~/.toolbox/glab", Target: "/home/toolbox/.config/glab-cli", ReadOnly: false, CreateIfMissing: true},
+		// gcloud auth + config — populated by `gcloud auth login` inside the container.
+		{Source: "~/.toolbox/gcloud", Target: "/home/toolbox/.config/gcloud", ReadOnly: false, CreateIfMissing: true},
+		// Azure CLI auth + config — populated by `az login` inside the container.
+		{Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
+		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
+		{Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// Playwright browser cache — populated by `playwright install`; keeps the
+		// ~500MB of Chromium/Firefox/Webkit binaries across container restarts.
+		{Source: "~/.toolbox/playwright-cache", Target: "/home/toolbox/.cache/ms-playwright", ReadOnly: false, CreateIfMissing: true},
+		// User-defined startup hooks. Any *.sh file here is executed by the
+		// entrypoint before handing control to the shell — read-only to prevent
+		// in-container tampering; edits happen on the host.
+		{Source: "~/.toolbox/startup.d", Target: "/home/toolbox/.toolbox-startup.d", ReadOnly: true, CreateIfMissing: true},
+		// Per-user npm global prefix. Keeps runtime `npm install -g` writable
+		// without root and persistent across container recreations. The prefix
+		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.
+		{Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
 		{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}
