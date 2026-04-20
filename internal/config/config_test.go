@@ -11,9 +11,8 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	// Must return 8 mounts.
-	if len(mounts) != 14 {
-		t.Fatalf("expected 14 default mounts, got %d", len(mounts))
+	if len(mounts) != 15 {
+		t.Fatalf("expected 15 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -41,6 +40,7 @@ func TestDefaultMounts(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/gcloud", false, true)
 	assertMount(t, mounts, "~/.toolbox/azure", false, true)
 	assertMount(t, mounts, "~/.toolbox/oci", false, true)
+	assertMount(t, mounts, "~/.toolbox/kube", false, true)
 	assertMount(t, mounts, "~/.toolbox/playwright-cache", false, true)
 	// User-defined hooks dir: read-only, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/startup.d", true, true)
@@ -100,8 +100,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 14 {
-		t.Errorf("expected 14 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 15 {
+		t.Errorf("expected 15 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {
