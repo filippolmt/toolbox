@@ -38,6 +38,38 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
 
+// ShellMismatchError is returned when the requested shell cannot be launched
+// because the corresponding tools entry is disabled. Callers pattern-match
+// on this type to print a remediation message and exit non-zero (SHELL-03,
+// D-18). The Error() message MUST include both the `shell: <name>` and
+// `tools.<name>: false` substrings — a smoke assertion greps for them.
+type ShellMismatchError struct {
+	Shell string
+}
+
+func (e *ShellMismatchError) Error() string {
+	return fmt.Sprintf(
+		"toolbox: shell %q requested but tools.%s is disabled.\n"+
+			"  shell: %s\n"+
+			"  tools.%s: false\n"+
+			"  • set `tools.%s: true` in ~/.toolbox.yaml, OR\n"+
+			"  • set `shell: bash` to use bash instead",
+		e.Shell, e.Shell, e.Shell, e.Shell, e.Shell)
+}
+
+// ResolveShellCmd returns the container command for the configured shell, or a
+// typed *ShellMismatchError when the combination is incoherent (SHELL-02 +
+// SHELL-03, D-17). `cfg.Shell` is assumed to have already been validated by
+// config.Load(); this function does NOT re-check the enum.
+func ResolveShellCmd(cfg *config.Config) ([]string, error) {
+	if cfg.Shell == "zsh" {
+		if enabled, ok := cfg.Tools["zsh"]; ok && !enabled {
+			return nil, &ShellMismatchError{Shell: "zsh"}
+		}
+	}
+	return []string{"/bin/" + cfg.Shell}, nil
+}
+
 // NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -88,6 +120,15 @@ func ContainerNameFor(workspace string) string {
 func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) (err error) {
 	name := ContainerNameFor(workspace)
 
+	// SHELL-02 + SHELL-03: resolve the shell BEFORE any Docker work so an
+	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
+	// clear message and no container/image side-effects (D-17, D-18).
+	shellCmd, resolveErr := ResolveShellCmd(cfg)
+	if resolveErr != nil {
+		fmt.Fprintln(os.Stderr, resolveErr)
+		return resolveErr
+	}
+
 	ref, isLocal := build.ResolveImage(cfg, version.Version)
 
 	if !isLocal {
@@ -129,7 +170,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				Image:      ref,
 				Tty:        true,
 				OpenStdin:  true,
-				Cmd:        []string{"/bin/bash"},
+				Cmd:        shellCmd,
 				WorkingDir: WorkspaceTarget,
 				User:       hostUserSpec(),
 			},
@@ -164,7 +205,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		}
 	}()
 
-	return execShellFn(ctx, cli, containerID)
+	return execShellFn(ctx, cli, cfg, containerID)
 }
 
 // ensureImage guarantees the image referenced by ref exists locally.
