@@ -3,9 +3,12 @@ package build
 import (
 	"archive/tar"
 	"io"
+	"io/fs"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 func TestStreamBuildOutput(t *testing.T) {
@@ -100,5 +103,26 @@ func TestMergeBuildArgsCallerWinsOverride(t *testing.T) {
 	out := mergeBuildArgs(map[string]*string{"TARGETARCH": &custom})
 	if v := out["TARGETARCH"]; v == nil || *v != "amd64" {
 		t.Errorf("caller-provided TARGETARCH was overwritten: %v", v)
+	}
+}
+
+// TestDockerfilePreCreatesMountParents enforces that every parent dir of a
+// DefaultMounts target under /home/toolbox/ is pre-created by the Dockerfile.
+// When Docker auto-creates a mount-target parent at runtime it owns it as
+// root:root 0755 — locking out the non-root runtime user and breaking tools
+// that write siblings (e.g. helm under ~/.config, starship under ~/.cache).
+// The fix lives in Dockerfile Layer 21; this test catches the case where a
+// new default mount introduces a parent the Dockerfile has forgotten to list.
+func TestDockerfilePreCreatesMountParents(t *testing.T) {
+	data, err := fs.ReadFile(Assets, AssetDir+"/Dockerfile")
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	content := string(data)
+
+	for _, parent := range config.MountParentDirs(config.DefaultMounts()) {
+		if !strings.Contains(content, parent) {
+			t.Errorf("Dockerfile must pre-create %q (parent of a DefaultMounts target; otherwise Docker creates it as root:root 0755 at runtime)", parent)
+		}
 	}
 }
