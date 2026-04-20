@@ -66,6 +66,12 @@ if command -v yq >/dev/null 2>&1; then
     source <(yq shell-completion bash) 2>/dev/null || true
 fi
 
+# gcloud ships completion as a static file rather than a subcommand, so guard
+# on the file (absent when INSTALL_GCLOUD=false).
+if [ -f /opt/google-cloud-sdk/completion.bash.inc ]; then
+    source /opt/google-cloud-sdk/completion.bash.inc 2>/dev/null || true
+fi
+
 if command -v docker >/dev/null 2>&1; then
     source <(docker completion bash) 2>/dev/null || true
     complete -o default -F __start_docker d 2>/dev/null || true
