@@ -68,16 +68,24 @@ func ContainerNameFor(workspace string) string {
 
 // Shell manages the container lifecycle and attaches a bash session.
 // The workspace host path is always mounted at /workspace and used as the
-// WorkingDir.
+// WorkingDir. When the attached shell exits the container is stopped and
+// removed — all persistent state lives on bind-mounted volumes under
+// ~/.toolbox/ (creds, bash history, caches), so nothing is lost by trashing
+// the container itself.
+//
 // State machine:
-//   - running   -> exec directly (no container created)
-//   - stopped   -> start + exec
-//   - not found -> ensure image, create + start + exec
+//   - running   -> exec directly (recover from a concurrent shell / crash)
+//   - stopped   -> start + exec (same)
+//   - not found -> ensure image, create + start + exec (common path)
 //
 // Image ensure strategy (see build.ResolveImage):
 //   - defaults config  -> pull the canonical GHCR image (best-effort)
 //   - custom tools     -> auto-build a hash-tagged local image if missing
-func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) error {
+//
+// Multi-session caveat: if two terminals open a shell into the same
+// workspace, both attach to the same container. When either exits the
+// container is removed and the other session dies with it.
+func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) (err error) {
 	name := ContainerNameFor(workspace)
 
 	ref, isLocal := build.ResolveImage(cfg, version.Version)
@@ -95,21 +103,22 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	// Workspace mount is always enabled: host CWD -> /workspace.
 	binds = append(binds, workspace+":"+WorkspaceTarget+":rw")
 
-	inspect, err := cli.ContainerInspect(ctx, name)
+	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 
+	var containerID string
 	switch {
-	case err == nil && inspect.State.Running:
+	case inspectErr == nil && inspect.State.Running:
 		ui.Info("Connecting to running container " + name + "...")
-		return execShellFn(ctx, cli, inspect.ID)
+		containerID = inspect.ID
 
-	case err == nil && !inspect.State.Running:
+	case inspectErr == nil && !inspect.State.Running:
 		ui.Info("Starting stopped container " + name + "...")
 		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
 			return fmt.Errorf("failed to start container: %w", startErr)
 		}
-		return execShellFn(ctx, cli, inspect.ID)
+		containerID = inspect.ID
 
-	case cerrdefs.IsNotFound(err):
+	case cerrdefs.IsNotFound(inspectErr):
 		if ensureErr := ensureImage(ctx, cli, cfg, ref, isLocal); ensureErr != nil {
 			return ensureErr
 		}
@@ -140,11 +149,22 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 			return fmt.Errorf("failed to start container: %w", startErr)
 		}
 		ui.Success("Container started")
-		return execShellFn(ctx, cli, resp.ID)
+		containerID = resp.ID
 
 	default:
-		return fmt.Errorf("failed to inspect container: %w", err)
+		return fmt.Errorf("failed to inspect container: %w", inspectErr)
 	}
+
+	// Auto-remove on exit. Use a fresh context so cleanup still runs if the
+	// shell exited because ctx was cancelled (Ctrl+C). The shell's own exit
+	// error wins over any cleanup error — a failed stop is noisy, not fatal.
+	defer func() {
+		if stopErr := stopOne(context.Background(), cli, name); stopErr != nil && err == nil {
+			err = stopErr
+		}
+	}()
+
+	return execShellFn(ctx, cli, containerID)
 }
 
 // ensureImage guarantees the image referenced by ref exists locally.
