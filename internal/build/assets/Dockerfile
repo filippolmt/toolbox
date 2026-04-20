@@ -412,11 +412,18 @@ RUN chmod +x /usr/local/bin/entrypoint
 # internal/container/lifecycle.go) so bind-mounted host files retain correct
 # ownership. The runtime uid usually won't match the "toolbox" uid baked here,
 # so /home/toolbox is made writable to every uid.
+#
+# .cache is pre-created here because Docker would otherwise create it as
+# root:root 0755 at runtime (as the parent of the playwright-cache bind
+# mount), blocking starship / any tool that writes to ~/.cache/<tool>.
 RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
     usermod -d /home/toolbox -m toolbox; \
-    mkdir -p /home/toolbox/.npm-global /home/toolbox/.toolbox-startup.d; \
+    mkdir -p \
+      /home/toolbox/.npm-global \
+      /home/toolbox/.toolbox-startup.d \
+      /home/toolbox/.cache; \
     chmod -R a+rwX /home/toolbox
 
 ENV HOME=/home/toolbox \
