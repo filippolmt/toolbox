@@ -287,10 +287,13 @@ RUN set -eux; \
         "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${GCLOUD_TARBALL}"; \
       tar -xzf "/tmp/${GCLOUD_TARBALL}" -C /opt; \
       rm "/tmp/${GCLOUD_TARBALL}"; \
+      /opt/google-cloud-sdk/bin/gcloud components install gke-gcloud-auth-plugin --quiet; \
       ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud; \
       ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil; \
       ln -s /opt/google-cloud-sdk/bin/bq /usr/local/bin/bq; \
+      ln -s /opt/google-cloud-sdk/bin/gke-gcloud-auth-plugin /usr/local/bin/gke-gcloud-auth-plugin; \
       gcloud --version; \
+      gke-gcloud-auth-plugin --version; \
     fi
 
 # -- Layer 15: Azure CLI (TOOL-02, IMG-02) ------------------------------------
