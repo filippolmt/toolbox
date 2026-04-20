@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Inject a passwd/group entry for the runtime UID/GID when missing.
+# The container runs with --user <host-uid>:<host-gid>, which rarely matches
+# the baked "toolbox" user (uid 1000). Tools that call getpwuid() — notably
+# ssh — abort with "No user exists for uid NNN" otherwise, breaking git over
+# ssh://. /etc/passwd and /etc/group are chmod 0666 in the Dockerfile so this
+# append works without root.
+_uid=$(id -u)
+_gid=$(id -g)
+if ! getent passwd "${_uid}" >/dev/null 2>&1; then
+    echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/bash" >> /etc/passwd
+fi
+if ! getent group "${_gid}" >/dev/null 2>&1; then
+    echo "toolbox:x:${_gid}:" >> /etc/group
+fi
+unset _uid _gid
+
 echo "Toolbox credential check:"
 
 # gh (GitHub CLI)
