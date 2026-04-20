@@ -66,6 +66,7 @@ check_optional  "glab"      glab     glab --version
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
+check_optional  "gke-gcloud-auth-plugin" gke-gcloud-auth-plugin gke-gcloud-auth-plugin --version
 check_optional  "azure"     az       az --version
 check_optional  "oci"       oci      oci --version
 check_optional  "jq"        jq       jq --version
