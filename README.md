@@ -10,6 +10,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | pnpm | 10.33.x |
 | Claude Code | 2.1.x |
 | Playwright CLI | 1.55.x |
+| Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
 | Python 3 | 3.11 |
 | uv | 0.11.x |
 | kubectl | 1.35.x |

@@ -142,6 +142,13 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+PLAYWRIGHT_CLI_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "@playwright/cli"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+COMPOSE_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "docker/compose",

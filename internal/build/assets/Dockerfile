@@ -32,6 +32,7 @@ ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.79.0
 ARG PLAYWRIGHT_VERSION=1.55.0
+ARG PLAYWRIGHT_CLI_VERSION=0.1.8
 ARG COMPOSE_VERSION=2.40.3
 
 # -- Opt-out flags (one per tool, driven by tools.<key> in .toolbox.yaml) -----
@@ -51,6 +52,7 @@ ARG INSTALL_GCLOUD=true
 ARG INSTALL_AZURE=true
 ARG INSTALL_OCI=true
 ARG INSTALL_PLAYWRIGHT=true
+ARG INSTALL_PLAYWRIGHT_CLI=true
 ARG INSTALL_COMPOSE=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
@@ -327,19 +329,47 @@ RUN set -eux; \
       oci --version; \
     fi
 
-# -- Layer 17: Playwright CLI (TOOL-01) ---------------------------------------
-# Global npm install of the Playwright CLI only. Browsers (~500MB) are fetched
-# on demand with `playwright install` — see the ~/.toolbox/playwright-cache
-# bind-mount in internal/config/config.go which persists them across restarts.
+# -- Layer 17: Playwright CLI + Chromium deps (TOOL-01) -----------------------
+# Installs the CLI globally and the system libraries Chromium needs at
+# runtime (fonts, libnss3, libgbm, libasound2, libxcb-*, …). `playwright
+# install-deps chromium` resolves the exact apt list for the current image
+# and runs apt-get install — which needs root, so it must happen at build
+# time (the runtime user has no sudo). Firefox/WebKit deps are skipped to
+# keep the image lean; opt in via `playwright install-deps firefox` etc. at
+# build-time overrides if needed.
+#
+# Browsers (~170MB chromium, much more for full matrix) are NOT pre-baked.
+# They are fetched on demand with `playwright install` into the
+# ~/.toolbox/playwright-cache bind-mount (internal/config/config.go), which
+# persists them across container restarts.
 RUN set -eux; \
     if [ "${INSTALL_PLAYWRIGHT}" != "true" ]; then \
       echo "Skipping playwright (tools.playwright=false)"; \
     else \
       npm install -g "playwright@${PLAYWRIGHT_VERSION}"; \
       playwright --version; \
+      apt-get update -qqy; \
+      playwright install-deps chromium; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
-# -- Layer 18: Docker Compose plugin (TOOL-06, IMG-02) ------------------------
+# -- Layer 18: Playwright CLI with SKILLS (TOOL-01) ---------------------------
+# Agent-oriented companion to the `playwright` CLI above. Installs as the
+# `playwright-cli` binary (note the `-cli` suffix — different from the
+# `playwright` binary in Layer 17). Ships pre-made Claude Code skills for
+# browser automation; install them at runtime with `playwright-cli install
+# --skills`. Kept as a separate opt-out because not everyone using Playwright
+# wants the agent flow, and vice-versa.
+RUN set -eux; \
+    if [ "${INSTALL_PLAYWRIGHT_CLI}" != "true" ]; then \
+      echo "Skipping @playwright/cli (tools.playwright_cli=false)"; \
+    else \
+      npm install -g "@playwright/cli@${PLAYWRIGHT_CLI_VERSION}"; \
+      playwright-cli --version; \
+    fi
+
+# -- Layer 19: Docker Compose plugin (TOOL-06, IMG-02) ------------------------
 # Installs as a CLI plugin for the static docker binary baked in Layer 7.
 # Useless without tools.docker=true — that mismatch is a documented user error,
 # not enforced at build time. SHA256 is published alongside each binary, so
@@ -366,7 +396,7 @@ RUN set -eux; \
       /usr/local/libexec/docker/cli-plugins/docker-compose version; \
     fi
 
-# -- Layer 19: COPY scripts ---------------------------------------------------
+# -- Layer 20: COPY scripts ---------------------------------------------------
 COPY bashrc.sh /etc/toolbox-bashrc.sh
 RUN set -eux; \
     echo '' >> /etc/bash.bashrc; \
@@ -377,7 +407,7 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
-# -- Layer 20: User setup (IMG-03) --------------------------------------------
+# -- Layer 21: User setup (IMG-03) --------------------------------------------
 # The container is launched with --user <host-uid>:<host-gid> (see
 # internal/container/lifecycle.go) so bind-mounted host files retain correct
 # ownership. The runtime uid usually won't match the "toolbox" uid baked here,
