@@ -77,3 +77,17 @@ echo ""
 echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 [ "$FAIL" -eq 0 ] || exit 1
 '
+
+echo ""
+echo "=== UID mapping check (runtime UID not baked in image) ==="
+# Simulates macOS host UID (501) to verify the entrypoint injects /etc/passwd.
+# Without the injection, ssh aborts with "No user exists for uid 501" and every
+# git-over-ssh operation fails.
+docker run --rm --user 501:20 "${IMAGE}" bash -c '
+set -e
+getent passwd "$(id -u)" >/dev/null || { echo "FAILED: no passwd entry for uid $(id -u)"; exit 1; }
+ssh -V 2>&1 | grep -q OpenSSH || { echo "FAILED: ssh missing"; exit 1; }
+ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=1 nonexistent.invalid true 2>&1 \
+    | grep -q "No user exists for uid" && { echo "FAILED: ssh still reports missing uid"; exit 1; }
+echo "OK: passwd entry injected for uid $(id -u)"
+'

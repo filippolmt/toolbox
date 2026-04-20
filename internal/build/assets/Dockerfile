@@ -427,6 +427,12 @@ RUN chmod +x /usr/local/bin/entrypoint
 # playwright-cache / gh / glab-cli / gcloud bind mounts), blocking any
 # tool that writes a sibling subdir — e.g. starship under ~/.cache,
 # helm under ~/.config.
+#
+# /etc/passwd and /etc/group are made world-writable so the entrypoint can
+# inject a passwd entry for the runtime UID/GID. Without it, tools that call
+# getpwuid() fail — notably ssh ("No user exists for uid NNN"), which breaks
+# every git operation over ssh://. OpenShift-style fix: safe because the
+# container is ephemeral and neither file carries secrets.
 RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
@@ -436,7 +442,8 @@ RUN set -eux; \
       /home/toolbox/.toolbox-startup.d \
       /home/toolbox/.cache \
       /home/toolbox/.config; \
-    chmod -R a+rwX /home/toolbox
+    chmod -R a+rwX /home/toolbox; \
+    chmod 0666 /etc/passwd /etc/group
 
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
