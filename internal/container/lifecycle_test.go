@@ -106,7 +106,12 @@ func testConfig() *config.Config {
 	// Empty Tools map is treated as default-true, so ResolveImage returns the
 	// canonical GHCR image with isLocal=false. That matches the existing test
 	// assumptions (pull path, not auto-build).
-	return &config.Config{Tools: config.DefaultTools()}
+	// Shell: "zsh" matches the Load() default (D-16) so ResolveShellCmd
+	// succeeds and tests exercise the SHELL-02 default path.
+	return &config.Config{
+		Shell: "zsh",
+		Tools: config.DefaultTools(),
+	}
 }
 
 // testWorkspace returns a stable workspace path for use in tests.
@@ -119,7 +124,7 @@ func testWorkspace(t *testing.T) string {
 func stubExecShell() (called *bool, restore func()) {
 	c := false
 	orig := execShellFn
-	execShellFn = func(ctx context.Context, cli client.APIClient, containerID string) error {
+	execShellFn = func(ctx context.Context, cli client.APIClient, cfg *config.Config, containerID string) error {
 		c = true
 		return nil
 	}
@@ -323,7 +328,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
 
-	cfg := &config.Config{Tools: config.DefaultTools()}
+	cfg := &config.Config{Shell: "zsh", Tools: config.DefaultTools()}
 	cfg.Tools["gcloud"] = false // triggers local hash tag
 
 	buildCalled := false
