@@ -3,7 +3,8 @@
 #
 # Decisioni implementate: D-01..D-14 da 03-CONTEXT.md
 # Pitfall mitigati: permessi espliciti, no load+platforms, QEMU prima di Buildx,
-#                   cache-to solo sul primo build.
+#                   cache GHA con scope per piattaforma (amd64 scritto dal test,
+#                   arm64 scritto dal multi-arch) per evitare overwrite tra step.
 
 name: Docker Publish
 
@@ -57,8 +58,10 @@ jobs:
           file: internal/build/assets/Dockerfile
           load: true
           tags: ${{ env.TEST_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=amd64
+            type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=amd64
 
       - name: Smoke test
         run: internal/build/assets/smoke-test.sh ${{ env.TEST_TAG }}
@@ -72,4 +75,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          cache-from: |
+            type=gha,scope=amd64
+            type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
