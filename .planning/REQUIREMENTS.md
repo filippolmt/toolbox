@@ -2,6 +2,7 @@
 
 **Defined:** 2026-04-16
 **Reconstructed:** 2026-04-17
+**v1.1 opened:** 2026-04-20
 **Core Value:** Un singolo comando (`toolbox shell`) ti mette dentro un ambiente completo, isolato e riproducibile.
 
 ## v1.0 Requirements
@@ -27,17 +28,41 @@
 
 ### CLI
 
-- [ ] **CLI-01**: Comando `toolbox shell` che avvia il container e attacca stdin/stdout/stderr con TTY
-- [ ] **CLI-02**: Comando `toolbox build` che builda l'immagine Docker localmente
-- [ ] **CLI-03**: Comando `toolbox stop` che ferma e rimuove il container in esecuzione
+- [x] **CLI-01**: Comando `toolbox shell` che avvia il container e attacca stdin/stdout/stderr con TTY
+- [x] **CLI-02**: Comando `toolbox build` che builda l'immagine Docker localmente
+- [x] **CLI-03**: Comando `toolbox stop` che ferma e rimuove il container in esecuzione
 - [x] **CLI-04**: File di configurazione YAML (`~/.toolbox.yaml`) con mount path, immagine, nome container
-- [ ] **CLI-05**: Shell completion nativa per bash, zsh e fish via Cobra
+- [x] **CLI-05**: Shell completion nativa per bash, zsh e fish via Cobra
 
 ### CI/CD
 
 - [x] **CICD-01**: GitHub Actions workflow che builda l'immagine su push a main e workflow_dispatch
 - [x] **CICD-02**: Push su GHCR con tag `latest` e `sha-<commit>`
 - [x] **CICD-03**: Smoke test eseguito come step di validazione nella pipeline prima del push
+
+## v1.1 Requirements — Shell & DX enhancements
+
+**Milestone goal:** Rendere zsh la shell interattiva di default nel container toolbox, con Oh-My-Zsh e plugin di produttività, pur mantenendo bash come fallback opzionale.
+
+**Source:** Issue [#37](https://github.com/filippolmt/toolbox/issues/37) (con deviazione: Oh-My-Zsh è in scope, non "out of scope").
+
+### Shell bundle
+
+- [ ] **ZSH-01**: zsh installato nell'immagine, gated da `tools.zsh: true` (default true, opt-out)
+- [ ] **ZSH-02**: Oh-My-Zsh installato come framework quando `tools.zsh: true`
+- [ ] **ZSH-03**: Plugin `zsh-autosuggestions`, `zsh-syntax-highlighting`, `zsh-completions` abilitati in `.zshrc` via OMZ plugins o caricamento esplicito
+- [ ] **ZSH-04**: `.zshrc` configurato con alias (`k`, `h`, `tf`, `d`), PROMPT_COMMAND-equivalent per history sharing, starship prompt e completions per kubectl/helm/gh/glab/yq/docker/git/gcloud
+
+### Shell selection
+
+- [ ] **SHELL-01**: Nuova chiave `shell` in `~/.toolbox.yaml` (valori: `zsh` | `bash`), default `zsh`
+- [ ] **SHELL-02**: Go CLI legge `shell` da Viper e lancia `/bin/zsh` o `/bin/bash` come comando interattivo in `toolbox shell`
+- [ ] **SHELL-03**: Se `shell: zsh` (o default) ma `tools.zsh: false` nella config merged, `toolbox shell` esce con codice non-zero e messaggio chiaro su stderr
+- [ ] **SHELL-04**: Valori di `shell` non supportati fanno fallire `toolbox shell` prima di avviare il container, con lista dei valori accettati
+
+### Image validation
+
+- [ ] **ZSH-05**: Smoke test aggiornato per validare presenza di `zsh`, Oh-My-Zsh (directory `~/.oh-my-zsh`) e i tre plugin quando `tools.zsh: true`
 
 ## Future Requirements
 
@@ -51,6 +76,11 @@
 - **IMG-07**: Tool aggiuntivi (bat, fd, dust) come layer opzionale
 - **IMG-08**: Supporto multi-arch (amd64 + arm64) nel CI
 
+### Estensioni Shell (post v1.1)
+
+- **SHELL-05**: Supporto fish come terza opzione di `shell`
+- **SHELL-06**: Tema OMZ personalizzato o p10k come alternativa a starship
+
 ## Out of Scope
 
 | Feature | Reason |
@@ -59,6 +89,8 @@
 | Alpine base image | musl libc rompe npm install di Claude Code (native bindings) |
 | GUI/Desktop app | CLI-only tool, nessuna interfaccia grafica necessaria |
 | Viper v2 | API non stabile — usare v1.21.0 |
+| prezto framework | Duplicato funzionale di OMZ — un solo framework supportato |
+| fish shell (in v1.1) | Aggiungere una shell POSIX-incompatibile richiede refactor alias/completions — rimandata a SHELL-05 |
 
 ## Traceability
 
@@ -85,12 +117,21 @@
 | CICD-01 | Phase 03 | Complete |
 | CICD-02 | Phase 03 | Complete |
 | CICD-03 | Phase 03 | Complete |
+| ZSH-01 | Phase 04 | Pending |
+| ZSH-02 | Phase 04 | Pending |
+| ZSH-03 | Phase 04 | Pending |
+| ZSH-04 | Phase 04 | Pending |
+| ZSH-05 | Phase 04 | Pending |
+| SHELL-01 | Phase 04 | Pending |
+| SHELL-02 | Phase 04 | Pending |
+| SHELL-03 | Phase 04 | Pending |
+| SHELL-04 | Phase 04 | Pending |
 
 **Coverage:**
-- v1.0 requirements: 20 total
-- Mapped to phases: 20
+- v1.0 requirements: 20 total, 20 mapped ✓
+- v1.1 requirements: 9 total, 9 mapped ✓
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-16*
-*Last updated: 2026-04-17 after reconstruction*
+*Last updated: 2026-04-20 — v1.1 milestone opened (Shell & DX)*

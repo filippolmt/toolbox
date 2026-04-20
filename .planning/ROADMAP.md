@@ -1,17 +1,23 @@
-# Roadmap: Toolbox v1.0
+# Roadmap: Toolbox
 
-**Milestone:** v1.0 Toolbox
-**Goal:** Ambiente di sviluppo containerizzato completo con CLI Go per gestione ciclo di vita e CI/CD per build automatizzate su GHCR.
-**Created:** 2026-04-17 (reconstructed)
+**Current milestone:** v1.1 Shell & DX enhancements
+**Goal:** Rendere zsh la shell interattiva di default nel container toolbox con Oh-My-Zsh, mantenendo bash selezionabile via config.
+**Previous milestone:** v1.0 Toolbox (3 phases, complete 2026-04-18)
 **Granularity:** Standard
 
 ---
 
 ## Phases
 
+### v1.0 (complete)
+
 - [x] **Phase 01: Image Foundation** - Docker image completa con tutti i tool a versioni pinnate e utente non-root
 - [x] **Phase 02: CLI Go** - Binary Go (Cobra + Viper) per gestione del ciclo di vita del container dall'host
-- [x] **Phase 03: CI/CD** - GitHub Actions per build automatizzata e push su GHCR (2026-04-18)
+- [x] **Phase 03: CI/CD** - GitHub Actions per build automatizzata e push su GHCR
+
+### v1.1 (in progress)
+
+- [ ] **Phase 04: Zsh Shell Bundle** - zsh + Oh-My-Zsh + plugin come shell di default, selezionabile via `shell` in `~/.toolbox.yaml`
 
 ---
 
@@ -60,6 +66,20 @@ Plans:
 - [x] 03-01-PLAN.md — Workflow GitHub Actions: build, smoke test, push multi-arch su GHCR (Task 2: human-verify pending)
 **UI hint**: no
 
+### Phase 04: Zsh Shell Bundle
+**Goal**: `toolbox shell` avvia zsh (con Oh-My-Zsh e plugin di produttività) come default, mantenendo bash come opzione configurabile da `~/.toolbox.yaml` e degradando con errore chiaro se lo stato di config è incoerente.
+**Depends on**: Phase 02 (CLI Go config pipeline), Phase 01 (image build pipeline)
+**Requirements**: ZSH-01, ZSH-02, ZSH-03, ZSH-04, ZSH-05, SHELL-01, SHELL-02, SHELL-03, SHELL-04
+**Success Criteria** (what must be TRUE):
+  1. Con config di default, `toolbox shell` entra in zsh con Oh-My-Zsh, starship prompt, autosuggestions e syntax highlighting attivi
+  2. Impostando `shell: bash` in `~/.toolbox.yaml`, `toolbox shell` entra in bash senza toccare zsh
+  3. Impostando `shell: zsh` e `tools.zsh: false`, `toolbox shell` esce con errore non-zero e messaggio chiaro su stderr prima di avviare il container
+  4. Un valore `shell` non supportato fa fallire la CLI con lista dei valori accettati
+  5. Smoke test verde con `tools.zsh: true`: zsh presente, `~/.oh-my-zsh` popolata, i tre plugin caricati
+  6. Alias infra (`k`, `h`, `tf`, `d`) e completions per kubectl/helm/gh/glab/yq/docker/git/gcloud funzionano in zsh come in bash
+**Plans**: TBD (da creare via `/gsd-plan-phase 4`)
+**Status**: Not started
+
 ---
 
 ## Progress
@@ -69,10 +89,13 @@ Plans:
 | 01. Image Foundation | — | Complete | 2026-04-17 |
 | 02. CLI Go | 3/3 | Complete | 2026-04-18 |
 | 03. CI/CD | 1/1 | Complete (human-verify pending) | 2026-04-18 |
+| 04. Zsh Shell Bundle | 0/? | Not started | — |
 
 ---
 
 ## Coverage
+
+### v1.0
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -89,17 +112,34 @@ Plans:
 | TOOL-05 | Phase 01 | Complete |
 | TOOL-06 | Phase 01 | Complete |
 | TOOL-07 | Phase 01 | Complete |
-| CLI-01 | Phase 02 | Pending |
-| CLI-02 | Phase 02 | Pending |
-| CLI-03 | Phase 02 | Pending |
-| CLI-04 | Phase 02 | Pending |
-| CLI-05 | Phase 02 | Pending |
+| CLI-01 | Phase 02 | Complete |
+| CLI-02 | Phase 02 | Complete |
+| CLI-03 | Phase 02 | Complete |
+| CLI-04 | Phase 02 | Complete |
+| CLI-05 | Phase 02 | Complete |
 | CICD-01 | Phase 03 | Complete |
 | CICD-02 | Phase 03 | Complete |
 | CICD-03 | Phase 03 | Complete |
 
 **v1.0 coverage: 20/20 requirements mapped. No orphans.**
 
+### v1.1
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| ZSH-01 | Phase 04 | Pending |
+| ZSH-02 | Phase 04 | Pending |
+| ZSH-03 | Phase 04 | Pending |
+| ZSH-04 | Phase 04 | Pending |
+| ZSH-05 | Phase 04 | Pending |
+| SHELL-01 | Phase 04 | Pending |
+| SHELL-02 | Phase 04 | Pending |
+| SHELL-03 | Phase 04 | Pending |
+| SHELL-04 | Phase 04 | Pending |
+
+**v1.1 coverage: 9/9 requirements mapped. No orphans.**
+
 ---
 
 *Created: 2026-04-17 (reconstruction after Phase 01 completion)*
+*Updated: 2026-04-20 — v1.1 milestone opened, Phase 04 added*
