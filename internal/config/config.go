@@ -67,6 +67,11 @@ func DefaultMounts() []Mount {
 		{Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// kubeconfig — populated by `gcloud container clusters get-credentials`,
+		// `aws eks update-kubeconfig`, manual edits, etc. Persists across the
+		// auto-remove-on-exit container lifecycle so cluster context survives
+		// a reopened shell.
+		{Source: "~/.toolbox/kube", Target: "/home/toolbox/.kube", ReadOnly: false, CreateIfMissing: true},
 		// Playwright browser cache — populated by `playwright install`; keeps the
 		// ~500MB of Chromium/Firefox/Webkit binaries across container restarts.
 		{Source: "~/.toolbox/playwright-cache", Target: "/home/toolbox/.cache/ms-playwright", ReadOnly: false, CreateIfMissing: true},
