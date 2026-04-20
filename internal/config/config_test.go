@@ -12,8 +12,8 @@ func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
 	// Must return 8 mounts.
-	if len(mounts) != 8 {
-		t.Fatalf("expected 8 default mounts, got %d", len(mounts))
+	if len(mounts) != 14 {
+		t.Fatalf("expected 14 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -35,9 +35,17 @@ func TestDefaultMounts(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/.claude", false, true)
 	// ~/.toolbox/state must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/state", false, true)
-	// ~/.toolbox/gh / ~/.toolbox/glab must be rw and auto-created.
+	// Every cloud / forge CLI must have a rw, auto-created state dir.
 	assertMount(t, mounts, "~/.toolbox/gh", false, true)
 	assertMount(t, mounts, "~/.toolbox/glab", false, true)
+	assertMount(t, mounts, "~/.toolbox/gcloud", false, true)
+	assertMount(t, mounts, "~/.toolbox/azure", false, true)
+	assertMount(t, mounts, "~/.toolbox/oci", false, true)
+	assertMount(t, mounts, "~/.toolbox/playwright-cache", false, true)
+	// User-defined hooks dir: read-only, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/startup.d", true, true)
+	// Per-user npm prefix: read-write, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/npm-global", false, true)
 
 	// ssh + git config follow the host via symlinks, not copies.
 	assertSymlink(t, mounts, "~/.toolbox/ssh", "~/.ssh")
@@ -92,8 +100,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 8 {
-		t.Errorf("expected 8 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 14 {
+		t.Errorf("expected 14 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {

@@ -55,6 +55,7 @@ check_required "git"        git --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version
+check_optional  "playwright" playwright playwright --version
 check_optional  "uv"        uv       uv --version
 check_optional  "kubectl"   kubectl  kubectl version --client
 check_optional  "helm"      helm     helm version --short
@@ -62,7 +63,10 @@ check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
 check_optional  "docker"    docker   docker --version
+check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
+check_optional  "azure"     az       az --version
+check_optional  "oci"       oci      oci --version
 check_optional  "jq"        jq       jq --version
 check_optional  "yq"        yq       yq --version
 check_optional  "starship"  starship starship --version

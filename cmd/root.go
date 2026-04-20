@@ -59,7 +59,9 @@ func setDefaults() {
 	// Every opt-out tool is on by default. Tool selection is applied at
 	// build time via `ARG INSTALL_<TOOL>` in internal/build/assets/Dockerfile.
 	// Keep this list in sync with config.KnownTools.
+	viper.SetDefault("tools.azure", true)
 	viper.SetDefault("tools.claude", true)
+	viper.SetDefault("tools.compose", true)
 	viper.SetDefault("tools.docker", true)
 	viper.SetDefault("tools.gcloud", true)
 	viper.SetDefault("tools.gh", true)
@@ -67,6 +69,8 @@ func setDefaults() {
 	viper.SetDefault("tools.helm", true)
 	viper.SetDefault("tools.jq", true)
 	viper.SetDefault("tools.kubectl", true)
+	viper.SetDefault("tools.oci", true)
+	viper.SetDefault("tools.playwright", true)
 	viper.SetDefault("tools.pnpm", true)
 	viper.SetDefault("tools.starship", true)
 	viper.SetDefault("tools.tofu", true)
