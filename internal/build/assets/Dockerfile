@@ -259,7 +259,13 @@ RUN set -eux; \
 # -- Layer 13: Claude Code (TOOL-01) ------------------------------------------
 # Disable auto-update: image versions are intentionally pinned; toolbox user lacks
 # write access to /usr/local/lib/node_modules (installed as root).
-ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+#
+# CLAUDE_CONFIG_DIR relocates both .credentials.json and .claude.json into the
+# single bind-mounted /home/toolbox/.claude dir. Without it, .claude.json lives
+# at $HOME/.claude.json — outside the mount — so OAuth session state is lost
+# on every container recreate and the user has to /login each shell.
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 RUN set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
       echo "Skipping Claude Code (tools.claude=false)"; \
