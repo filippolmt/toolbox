@@ -51,7 +51,10 @@ if command -v az >/dev/null 2>&1; then
 fi
 
 if command -v oci >/dev/null 2>&1; then
-    if oci iam region list --output table >/dev/null 2>&1; then
+    # </dev/null: oci prompts "Do you want to create a new config file? [Y/n]"
+    # when ~/.oci/config is missing. Without a closed stdin it would block the
+    # entrypoint on the container's TTY and never reach the startup hooks.
+    if oci iam region list --output table </dev/null >/dev/null 2>&1; then
         echo "  oci: configured"
     else
         echo "  oci: not configured"
