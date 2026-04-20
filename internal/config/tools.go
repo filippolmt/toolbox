@@ -22,6 +22,7 @@ var KnownTools = []string{
 	"tofu",
 	"uv",
 	"yq",
+	"zsh",
 }
 
 // ToolBuildArg maps a tool key in the user's config to the Docker ARG name
@@ -46,6 +47,7 @@ var ToolBuildArg = map[string]string{
 	"tofu":           "INSTALL_TOFU",
 	"uv":             "INSTALL_UV",
 	"yq":             "INSTALL_YQ",
+	"zsh":            "INSTALL_ZSH",
 }
 
 // DefaultTools returns the canonical default tools map: every known tool enabled.

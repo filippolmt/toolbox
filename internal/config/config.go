@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 type Config struct {
 	Mounts []Mount         `mapstructure:"mounts"`
 	Tools  map[string]bool `mapstructure:"tools"`
+	Shell  string          `mapstructure:"shell"`
 }
 
 // Mount represents a host -> container volume bind.
@@ -94,6 +96,24 @@ func DefaultMounts() []Mount {
 // against.
 const HomeMountParents = "/home/toolbox/"
 
+// SupportedShells is the canonical list of values accepted by the `shell`
+// key in ~/.toolbox.yaml. Exposed so tests and error messages can consume a
+// single source of truth (D-14).
+var SupportedShells = []string{"zsh", "bash"}
+
+// ValidateShell returns nil when s is a supported shell, or an error listing
+// the accepted values (D-15). Used by Load() and (defensively) by the
+// container shell resolver in a later plan.
+func ValidateShell(s string) error {
+	for _, sh := range SupportedShells {
+		if s == sh {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported shell %q: must be one of %s",
+		s, strings.Join(SupportedShells, ", "))
+}
+
 // MountParentDirs returns the distinct parent directories of mount targets
 // under /home/toolbox/, excluding /home/toolbox itself. These are the dirs
 // Docker would otherwise auto-create as root:root 0755 at runtime (as the
@@ -133,6 +153,15 @@ func Load() (*Config, error) {
 	// Fall back to default mounts if none configured (D-07).
 	if len(cfg.Mounts) == 0 {
 		cfg.Mounts = DefaultMounts()
+	}
+
+	// Shell default + validation (D-16). Missing or empty => "zsh". Any other
+	// non-supported value fails Load() before any downstream consumer runs.
+	if cfg.Shell == "" {
+		cfg.Shell = "zsh"
+	}
+	if err := ValidateShell(cfg.Shell); err != nil {
+		return nil, err
 	}
 
 	// Fill in defaults for every known tool so downstream callers (hashing,
