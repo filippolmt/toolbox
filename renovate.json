@@ -156,6 +156,64 @@
     },
     {
       "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+OMZ_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "ohmyzsh/ohmyzsh",
+      "packageNameTemplate": "https://github.com/ohmyzsh/ohmyzsh",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+ZSH_AUTOSUGGESTIONS_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "zsh-users/zsh-autosuggestions",
+      "packageNameTemplate": "https://github.com/zsh-users/zsh-autosuggestions",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+ZSH_SYNTAX_HIGHLIGHTING_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "zsh-users/zsh-syntax-highlighting",
+      "packageNameTemplate": "https://github.com/zsh-users/zsh-syntax-highlighting",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+ZSH_COMPLETIONS_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "zsh-users/zsh-completions",
+      "packageNameTemplate": "https://github.com/zsh-users/zsh-completions",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+FZF_TAB_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "Aloxaf/fzf-tab",
+      "packageNameTemplate": "https://github.com/Aloxaf/fzf-tab",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+ZOXIDE_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "ajeetdsouza/zoxide",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": ["GO_IMAGE\\s*:?=\\s*golang:(?<currentValue>\\S+)"],
       "datasourceTemplate": "docker",
