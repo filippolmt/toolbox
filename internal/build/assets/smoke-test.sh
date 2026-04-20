@@ -52,6 +52,7 @@ check_required "node"       node --version
 check_required "npm"        npm --version
 check_required "python3"    python3 --version
 check_required "git"        git --version
+check_required "make"       make --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version

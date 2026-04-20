@@ -67,6 +67,7 @@ RUN set -eux; \
       git \
       openssh-client \
       bash-completion \
+      make \
       python3 \
       python3-pip \
       gnupg; \
