@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +15,8 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/jsonmessage"
+	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
@@ -174,6 +175,9 @@ func hostUserSpec() string {
 
 // pullImage attempts to pull the image from its remote registry. Errors are
 // logged as warnings and swallowed: the caller proceeds with the local image.
+// The pull stream is rendered with per-layer progress bars on a TTY, or as
+// plain status lines otherwise — the caller gets real-time feedback instead
+// of a silent hang while layers download.
 func pullImage(ctx context.Context, cli client.APIClient, ref string) {
 	ui.Info("Checking for image updates: " + ref + "...")
 	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
@@ -182,8 +186,10 @@ func pullImage(ctx context.Context, cli client.APIClient, ref string) {
 		return
 	}
 	defer rc.Close()
-	// Drain the stream: the pull only completes once the body is fully read.
-	if _, err := io.Copy(io.Discard, rc); err != nil {
+
+	fd := os.Stdout.Fd()
+	isTerm := term.IsTerminal(int(fd))
+	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stdout, fd, isTerm, nil); err != nil {
 		ui.Warning("image pull stream error, using local image if present: " + err.Error())
 		return
 	}
