@@ -16,6 +16,7 @@ The Go CLI runs on the HOST. The image runs INSIDE the container. They are separ
 |---------|--------------|
 | `make go-test` | `go test ./... -count=1` (standard suite — use this) |
 | `make go-test-verbose` | `go test -v -race ./...` (requires CGO, separate target) |
+| `make go-lint` | `golangci-lint run ./...` (matches CI version) |
 | `make go-build` | Build the `toolbox` binary |
 | `make go-shell` | Open a shell in the golang container for ad-hoc Go work |
 | `make go-clean-cache` | Drop the module/build cache volume |
@@ -28,7 +29,7 @@ Never suggest `go test` or `go build` directly — the host has no Go toolchain.
 ## Code & language
 
 - **Code, comments, and CLI output: English.** The chat with the user is Italian, but anything checked into the repo is English (variable names, log/user-facing strings, doc comments).
-- Standard Go style (`gofmt` defaults). No custom linter config yet — don't invent one.
+- Standard Go style (`gofmt` defaults). Lint config in `.golangci.yml` — enforced by CI.
 - CLI follows cobra + viper conventions (see `cmd/` and `internal/config`).
 
 ## Commits & PRs
@@ -42,7 +43,7 @@ Never suggest `go test` or `go build` directly — the host has no Go toolchain.
 
 - Push a `v*` tag → `.github/workflows/release.yml` runs GoReleaser, publishes GitHub release assets, and pushes the Homebrew formula to `filippolmt/homebrew-tap` (needs `HOMEBREW_TAP_TOKEN`).
 - Push to `main` → `.github/workflows/docker-publish.yml` builds multi-arch (amd64+arm64), smoke-tests amd64 locally, then pushes `ghcr.io/filippolmt/toolbox:{latest,sha-<short>}`.
-- There is **no PR CI for Go tests or lint**. Run `make go-test` locally before pushing.
+- PR CI (`.github/workflows/ci.yml`) runs `go test`, `golangci-lint`, and the Docker smoke-test on every PR. Run `make go-test` / `make go-lint` locally for faster feedback.
 
 ## Non-obvious gotchas
 

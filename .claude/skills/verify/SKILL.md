@@ -1,11 +1,11 @@
 ---
 name: verify
-description: Run the toolbox repo's pre-push validation — lint, tests, and (when the image is built) the bundled-CLI smoke test. Use this before marking any code change "done", before opening a PR, or any time the user says things like "verify", "check it passes", "are we good to push", "è tutto a posto prima del commit". Always prefer this over running `go test` / `go build` ad-hoc, because Go is not installed on the host and this skill already encodes the containerised pattern.
+description: Run the toolbox repo's pre-push validation — golangci-lint, go tests, and (when the image is built) the bundled-CLI smoke test. Mirrors the PR CI in `.github/workflows/ci.yml`, so green locally means green on CI. Use this before marking any code change "done", before opening a PR, or any time the user says things like "verify", "check it passes", "are we good to push", "è tutto a posto prima del commit". Always prefer this over running `go test` or `golangci-lint` ad-hoc, because Go is not installed on the host and this skill already encodes the containerised pattern.
 ---
 
 # /verify
 
-Validate the toolbox repo the way the human would before pushing. The host has no Go toolchain — every Go command has to go through the `golang:1.26` container via the Makefile. Skipping that turns into "command not found: go", which wastes a round trip.
+Validate the toolbox repo the way the human would before pushing. These are the same three jobs PR CI runs (`.github/workflows/ci.yml`: `lint`, `test`, `docker-build`), so passing locally means passing on CI — just faster feedback. The host has no Go toolchain; every Go command has to go through the `golang:1.26` container via the Makefile. Skipping that turns into "command not found: go", which wastes a round trip.
 
 ## Order matters
 
