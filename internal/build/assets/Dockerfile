@@ -35,6 +35,27 @@ ARG PLAYWRIGHT_VERSION=1.59.1
 ARG PLAYWRIGHT_CLI_VERSION=0.1.8
 ARG COMPOSE_VERSION=5.1.3
 
+# -- zsh bundle pinning (D-01) ------------------------------------------------
+# OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
+# Renovate manages bumps via customManagers on these ARG names (see renovate.json).
+# SHAs MUST be full 40-char form (abbreviated SHAs break `git fetch --depth=1`).
+# Baseline SHAs verified 2026-04-20 from RESEARCH.md Standard Stack table;
+# Renovate's first scan after merge will rewrite them to current HEAD.
+ARG OMZ_COMMIT=349b9e49ced7682e27927ffb34b6522f011f3e74
+ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
+ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
+ARG ZSH_COMPLETIONS_COMMIT=47e40c923ca038b5a0259ea0460326c56344dc64
+ARG FZF_TAB_COMMIT=0983009f8666f11e91a2ee1f88cfdb748d14f656
+ARG ZOXIDE_VERSION=0.9.9
+# zoxide v0.9.9 does NOT publish a per-release sha256sums file (tofu/helm
+# pattern not applicable — upstream simply does not ship one). SHA256 is
+# pinned per-arch below; Renovate bumps ZOXIDE_VERSION and the maintainer
+# refreshes these two literals in the same PR. Accepted risk analogous to
+# T-01-08 for Docker CLI / gcloud (HTTPS + version pin), but tighter because
+# we still verify a cryptographic hash.
+ARG ZOXIDE_SHA256_AMD64=4ff057d3c4d957946937274c2b8be7af2a9bbae7f90a1b5e9baaa7cb65a20caa
+ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d93315cb0
+
 # -- Opt-out flags (one per tool, driven by tools.<key> in .toolbox.yaml) -----
 ARG INSTALL_KUBECTL=true
 ARG INSTALL_HELM=true
@@ -54,6 +75,7 @@ ARG INSTALL_OCI=true
 ARG INSTALL_PLAYWRIGHT=true
 ARG INSTALL_PLAYWRIGHT_CLI=true
 ARG INSTALL_COMPOSE=true
+ARG INSTALL_ZSH=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -417,6 +439,116 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
+# -- Layer 20b: zsh + Oh-My-Zsh + 4 custom plugins (ZSH-01/02/03/04/07) -------
+# One RUN layer covers: apt-install zsh+fzf, clone OMZ at pinned SHA, clone the
+# 3 custom plugins + fzf-tab at pinned SHAs, install zshrc.sh system-wide.
+#
+# The COPY is UNCONDITIONAL and stages to /etc/toolbox-zshrc.sh (mirrors the
+# Layer 20 /etc/toolbox-bashrc.sh pattern). It CANNOT go directly to
+# /etc/zsh/zshrc because /etc/zsh/ does not exist in node:24-bookworm-slim
+# until `apt-get install zsh` creates it — so the gated RUN either (a) rm's
+# the staged file on opt-out, or (b) `mkdir -p /etc/zsh && mv` into place on
+# opt-in after the apt install has run.
+#
+# `.git` is retained (per R-05): SPEC ZSH-02 acceptance asserts
+# `git -C /home/toolbox/.oh-my-zsh rev-parse HEAD` equals OMZ_COMMIT.
+# Delta ~24 MB, within the 50 MB budget documented in SPEC constraints.
+#
+# IMPORTANT — home directory: we write into `/home/node/.oh-my-zsh` (the base
+# image's current home for the `node` user) NOT `/home/toolbox/`. Layer 21
+# runs `usermod -d /home/toolbox -m toolbox` which relocates the home dir and
+# its contents. `usermod -m` refuses to move if `/home/toolbox` already
+# exists, so any directory we create under the target path here would break
+# the user-setup step. End state after Layer 21: `/home/toolbox/.oh-my-zsh`.
+#
+# Pattern: `git init + remote add + fetch --depth=1 <sha> + checkout FETCH_HEAD`.
+# `git clone --depth=1 --branch <sha>` FAILS — --branch accepts named refs only.
+# GitHub enables `uploadpack.allowReachableSHA1InWant=true`, so full-SHA fetches
+# work. Abbreviated SHAs do NOT work — always use the full 40-char form.
+COPY zshrc.sh /etc/toolbox-zshrc.sh
+RUN set -eux; \
+    if [ "${INSTALL_ZSH}" != "true" ]; then \
+      echo "Skipping zsh + Oh-My-Zsh (tools.zsh=false)"; \
+      rm -f /etc/toolbox-zshrc.sh; \
+    else \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends zsh fzf; \
+      apt-get clean; rm -rf /var/lib/apt/lists/*; \
+      mkdir -p /home/node/.oh-my-zsh/custom/plugins; \
+      git -c init.defaultBranch=master init /home/node/.oh-my-zsh; \
+      git -C /home/node/.oh-my-zsh remote add origin https://github.com/ohmyzsh/ohmyzsh.git; \
+      git -C /home/node/.oh-my-zsh fetch --depth=1 origin "${OMZ_COMMIT}"; \
+      git -C /home/node/.oh-my-zsh checkout FETCH_HEAD; \
+      for triplet in \
+        "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|${ZSH_AUTOSUGGESTIONS_COMMIT}" \
+        "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git|${ZSH_SYNTAX_HIGHLIGHTING_COMMIT}" \
+        "zsh-completions|https://github.com/zsh-users/zsh-completions.git|${ZSH_COMPLETIONS_COMMIT}" \
+        "fzf-tab|https://github.com/Aloxaf/fzf-tab.git|${FZF_TAB_COMMIT}" ; do \
+        name=$(echo "$triplet" | cut -d'|' -f1); \
+        url=$(echo "$triplet"  | cut -d'|' -f2); \
+        sha=$(echo "$triplet"  | cut -d'|' -f3); \
+        dir="/home/node/.oh-my-zsh/custom/plugins/$name"; \
+        git init "$dir"; \
+        git -C "$dir" remote add origin "$url"; \
+        git -C "$dir" fetch --depth=1 origin "$sha"; \
+        git -C "$dir" checkout FETCH_HEAD; \
+      done; \
+      mkdir -p /etc/zsh; \
+      mv /etc/toolbox-zshrc.sh /etc/zsh/zshrc; \
+      echo '# managed by toolbox — see /etc/zsh/zshrc' > /home/node/.zshrc; \
+      zsh --version; \
+      fzf --version; \
+    fi
+
+# -- Layer 20c: zoxide binary (ZSH-07) ----------------------------------------
+# Pattern variant: tarball + SHA256 verification against a build-arg pinned
+# hash (NOT a per-release checksums file — zoxide v0.9.9 upstream does not
+# publish one; see the Rule 1 deviation in 04-03-SUMMARY.md). Both arches use
+# musl (static binary — glibc availability on x86_64 is irrelevant and upstream
+# only publishes musl for arm64).
+RUN set -eux; \
+    if [ "${INSTALL_ZSH}" != "true" ]; then \
+      echo "Skipping zoxide (tools.zsh=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) ZOXIDE_ARCH=x86_64-unknown-linux-musl; ZOXIDE_SHA256="${ZOXIDE_SHA256_AMD64}";; \
+        arm64) ZOXIDE_ARCH=aarch64-unknown-linux-musl; ZOXIDE_SHA256="${ZOXIDE_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      ZOXIDE_TARBALL="zoxide-${ZOXIDE_VERSION}-${ZOXIDE_ARCH}.tar.gz"; \
+      curl -fsSL -o "/tmp/${ZOXIDE_TARBALL}" \
+        "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/${ZOXIDE_TARBALL}"; \
+      echo "${ZOXIDE_SHA256}  /tmp/${ZOXIDE_TARBALL}" | sha256sum -c -; \
+      tar -xzf "/tmp/${ZOXIDE_TARBALL}" -C /usr/local/bin zoxide; \
+      chmod +x /usr/local/bin/zoxide; \
+      rm "/tmp/${ZOXIDE_TARBALL}"; \
+      zoxide --version; \
+    fi
+
+# -- Layer 20d: precompute zsh completions (ZSH-05) ---------------------------
+# Writes _<tool> files to Debian's vendor-completions dir (automatically in
+# $fpath). Per R-02/R-03, tofu and gcloud are NOT listed — their OMZ plugins
+# handle completion via bashcompinit / auto-source respectively.
+#
+# X-14: NO `|| true` guards. If a tool is installed, its `completion zsh`
+# subcommand MUST succeed — a broken generator means the image ships a broken
+# completion definition, and fail-fast is correct. The `if [ INSTALL_X=true ]`
+# gate suppresses the call when the tool isn't installed (the common case
+# where silent-skip would otherwise be tempting).
+RUN set -eux; \
+    if [ "${INSTALL_ZSH}" != "true" ]; then \
+      echo "Skipping completion precompute (tools.zsh=false)"; \
+    else \
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      if [ "${INSTALL_KUBECTL}" = "true" ];    then kubectl completion zsh  > /usr/share/zsh/vendor-completions/_kubectl;  fi; \
+      if [ "${INSTALL_HELM}" = "true" ];       then helm completion zsh     > /usr/share/zsh/vendor-completions/_helm;     fi; \
+      if [ "${INSTALL_GH}" = "true" ];         then gh completion -s zsh    > /usr/share/zsh/vendor-completions/_gh;       fi; \
+      if [ "${INSTALL_GLAB}" = "true" ];       then glab completion -s zsh  > /usr/share/zsh/vendor-completions/_glab;     fi; \
+      if [ "${INSTALL_YQ}" = "true" ];         then yq shell-completion zsh > /usr/share/zsh/vendor-completions/_yq;       fi; \
+      if [ "${INSTALL_DOCKER_CLI}" = "true" ]; then docker completion zsh   > /usr/share/zsh/vendor-completions/_docker;   fi; \
+      ls /usr/share/zsh/vendor-completions; \
+    fi
+
 # -- Layer 21: User setup (IMG-03) --------------------------------------------
 # The container is launched with --user <host-uid>:<host-gid> (see
 # internal/container/lifecycle.go) so bind-mounted host files retain correct
@@ -452,4 +584,4 @@ ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
-CMD ["bash"]
+CMD ["zsh"]
