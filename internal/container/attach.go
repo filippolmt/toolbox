@@ -80,6 +80,12 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 		case <-sigCh:
 			restoreTerm()
 			cancel()
+			// Close the hijacked stream so the blocking io.Copy on
+			// resp.Reader returns and execShell unwinds through its
+			// defers — without this, an external SIGTERM would cancel
+			// the session context but leave the CLI parked on stdout.
+			// Double close with the outer defer is safe (errors ignored).
+			_ = resp.Conn.Close()
 		case <-sessionCtx.Done():
 		}
 	}()

@@ -72,6 +72,7 @@ func setDefaults() {
 	viper.SetDefault("tools.gcloud", true)
 	viper.SetDefault("tools.gh", true)
 	viper.SetDefault("tools.glab", true)
+	viper.SetDefault("tools.go", true)
 	viper.SetDefault("tools.helm", true)
 	viper.SetDefault("tools.jq", true)
 	viper.SetDefault("tools.kubectl", true)
@@ -83,4 +84,5 @@ func setDefaults() {
 	viper.SetDefault("tools.tofu", true)
 	viper.SetDefault("tools.uv", true)
 	viper.SetDefault("tools.yq", true)
+	viper.SetDefault("tools.zsh", true)
 }
