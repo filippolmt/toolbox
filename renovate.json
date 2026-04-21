@@ -4,6 +4,7 @@
     "config:recommended"
   ],
   "platformAutomerge": true,
+  "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
       "description": "Automerge all non-major updates once required PR checks pass.",
