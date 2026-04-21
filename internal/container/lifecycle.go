@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -158,13 +159,18 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 
+	// Docker SDK guarantees inspect.State is non-nil on success, but mocks
+	// and unexpected daemon edge cases could violate that — treat a nil
+	// State as "not running" instead of panicking on the dereference.
+	running := inspectErr == nil && inspect.State != nil && inspect.State.Running
+
 	var containerID string
 	switch {
-	case inspectErr == nil && inspect.State.Running:
+	case inspectErr == nil && running:
 		ui.Info("Connecting to running container " + name + "...")
 		containerID = inspect.ID
 
-	case inspectErr == nil && !inspect.State.Running:
+	case inspectErr == nil && !running:
 		ui.Info("Starting stopped container " + name + "...")
 		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
 			return fmt.Errorf("failed to start container: %w", startErr)
@@ -332,6 +338,8 @@ func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
 
 // StopAll stops and removes every toolbox-managed container on the host.
 // Matches the "toolbox-" prefix as well as the legacy singleton name "toolbox".
+// Failures on a single container don't short-circuit the rest — partial
+// cleanup beats fail-fast when `--all` is meant to be a bulk sweep.
 func StopAll(ctx context.Context, cli client.APIClient) error {
 	args := filters.NewArgs(filters.Arg("name", "toolbox"))
 	list, err := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
@@ -340,6 +348,7 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 	}
 
 	found := 0
+	var errs []error
 	for _, c := range list {
 		if len(c.Names) == 0 {
 			continue
@@ -349,12 +358,16 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 			continue
 		}
 		if err := stopOne(ctx, cli, name); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		found++
 	}
-	if found == 0 {
+	if found == 0 && len(errs) == 0 {
 		ui.Warning("No toolbox containers found")
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }
