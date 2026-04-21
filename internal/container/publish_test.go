@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"testing"
 
@@ -12,28 +13,31 @@ import (
 
 func TestParsePublishSpecs(t *testing.T) {
 	cases := []struct {
-		name     string
-		specs    []string
-		wantPort string
-		wantHost string
-		wantHP   string
-		wantErr  bool
+		name       string
+		specs      []string
+		wantPort   string
+		wantHost   string
+		wantHP     string
+		wantErrSub string // non-empty => want error containing this substring
 	}{
-		{"empty", nil, "", "", "", false},
-		{"port only defaults to localhost", []string{"7171"}, "7171/tcp", "127.0.0.1", "", false},
-		{"host:container defaults to localhost", []string{"7171:7171"}, "7171/tcp", "127.0.0.1", "7171", false},
-		{"explicit host IP preserved", []string{"0.0.0.0:7171:7171"}, "7171/tcp", "0.0.0.0", "7171", false},
-		{"explicit loopback preserved", []string{"127.0.0.1:7171:7171"}, "7171/tcp", "127.0.0.1", "7171", false},
-		{"udp proto", []string{"7171:7171/udp"}, "7171/udp", "127.0.0.1", "7171", false},
-		{"invalid spec", []string{"not-a-port"}, "", "", "", true},
+		{name: "empty", specs: nil},
+		{name: "port only defaults to localhost", specs: []string{"7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1"},
+		{name: "host:container defaults to localhost", specs: []string{"7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "explicit host IP preserved", specs: []string{"0.0.0.0:7171:7171"}, wantPort: "7171/tcp", wantHost: "0.0.0.0", wantHP: "7171"},
+		{name: "explicit loopback preserved", specs: []string{"127.0.0.1:7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "udp proto", specs: []string{"7171:7171/udp"}, wantPort: "7171/udp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "invalid spec", specs: []string{"not-a-port"}, wantErrSub: "--publish"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			exposed, bindings, err := parsePublishSpecs(tc.specs)
-			if tc.wantErr {
+			if tc.wantErrSub != "" {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrSub) {
+					t.Fatalf("error should contain %q, got: %v", tc.wantErrSub, err)
 				}
 				return
 			}
@@ -64,14 +68,42 @@ func TestParsePublishSpecs(t *testing.T) {
 	}
 }
 
-func TestParsePublishSpecsInvalidErrorMessage(t *testing.T) {
-	_, _, err := parsePublishSpecs([]string{"bad"})
-	if err == nil {
-		t.Fatal("expected error")
+func TestMissingPublishPorts(t *testing.T) {
+	wanted := nat.PortMap{
+		"7171/tcp": nil,
+		"8080/tcp": nil,
 	}
-	if !strings.Contains(err.Error(), "--publish") {
-		t.Fatalf("error should mention --publish, got: %v", err)
-	}
+
+	t.Run("nil HostConfig returns empty", func(t *testing.T) {
+		got := missingPublishPorts(container.InspectResponse{}, wanted)
+		if len(got) != 0 {
+			t.Fatalf("want empty, got %v", got)
+		}
+	})
+
+	t.Run("all ports already bound returns empty", func(t *testing.T) {
+		inspect := container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{HostConfig: &container.HostConfig{
+				PortBindings: nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
+			}},
+		}
+		if got := missingPublishPorts(inspect, wanted); len(got) != 0 {
+			t.Fatalf("want empty, got %v", got)
+		}
+	})
+
+	t.Run("partial overlap reports only missing", func(t *testing.T) {
+		inspect := container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{HostConfig: &container.HostConfig{
+				PortBindings: nat.PortMap{"7171/tcp": nil},
+			}},
+		}
+		got := missingPublishPorts(inspect, wanted)
+		sort.Strings(got)
+		if len(got) != 1 || got[0] != "8080/tcp" {
+			t.Fatalf("want [8080/tcp], got %v", got)
+		}
+	})
 }
 
 // TestShellPublishPopulatesBindings verifies the happy path: --publish values

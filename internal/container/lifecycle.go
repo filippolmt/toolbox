@@ -404,17 +404,9 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	return nil
 }
 
-// parsePublishSpecs turns user-supplied "--publish" values into Docker's
-// ExposedPorts + PortBindings. Accepted forms match the daemon's own parser:
-//
-//	"7171"                      → 127.0.0.1:<random>:7171/tcp (implicit localhost)
-//	"7171:7171"                 → 127.0.0.1:7171:7171/tcp
-//	"127.0.0.1:7171:7171"       → explicit
-//	"127.0.0.1:7171:7171/tcp"   → explicit protocol
-//
-// When the host IP is omitted we default to 127.0.0.1 rather than 0.0.0.0 —
-// OAuth callbacks (gh/glab) only need localhost, and binding to the wildcard
-// would needlessly expose a container port to the LAN.
+// parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
+// ExposedPorts + PortBindings. Defaults the host IP to 127.0.0.1 (not 0.0.0.0)
+// so OAuth callbacks stay loopback-only instead of being exposed to the LAN.
 func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 	if len(specs) == 0 {
 		return nil, nil, nil
@@ -438,13 +430,12 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 	return exposed, bindings, nil
 }
 
-// warnMissingPublish prints a warning when the user asks for ports that the
-// existing container was not created with. PortBindings are fixed at create
-// time, so "--publish 7171" on a reused container is a silent no-op unless we
-// tell the user to recreate it.
-func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
-	if inspect.HostConfig == nil {
-		return
+// missingPublishPorts returns the wanted ports that the existing container was
+// not created with. PortBindings are fixed at create time, so "--publish" on a
+// reused container is a silent no-op for any port not in this list.
+func missingPublishPorts(inspect container.InspectResponse, wanted nat.PortMap) []string {
+	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
+		return nil
 	}
 	current := inspect.HostConfig.PortBindings
 	var missing []string
@@ -453,6 +444,11 @@ func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
 			missing = append(missing, string(port))
 		}
 	}
+	return missing
+}
+
+func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
+	missing := missingPublishPorts(inspect, wanted)
 	if len(missing) == 0 {
 		return
 	}
