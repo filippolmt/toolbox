@@ -19,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/go-connections/nat"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
@@ -129,8 +130,13 @@ func ContainerNameFor(workspace string) string {
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
-func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) (err error) {
+func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string, publish []string) (err error) {
 	name := ContainerNameFor(workspace)
+
+	exposed, bindings, parseErr := parsePublishSpecs(publish)
+	if parseErr != nil {
+		return parseErr
+	}
 
 	// SHELL-02 + SHELL-03: resolve the shell BEFORE any Docker work so an
 	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
@@ -163,6 +169,10 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	// State as "not running" instead of panicking on the dereference.
 	running := inspectErr == nil && inspect.State != nil && inspect.State.Running
 
+	if inspectErr == nil && len(bindings) > 0 {
+		warnMissingPublish(inspect, bindings)
+	}
+
 	var containerID string
 	switch {
 	case inspectErr == nil && running:
@@ -184,16 +194,18 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		ui.Info("Creating container " + name + "...")
 		resp, createErr := cli.ContainerCreate(ctx,
 			&container.Config{
-				Image:      ref,
-				Tty:        true,
-				OpenStdin:  true,
-				Cmd:        shellCmd,
-				WorkingDir: WorkspaceTarget,
-				User:       hostUserSpec(),
+				Image:        ref,
+				Tty:          true,
+				OpenStdin:    true,
+				Cmd:          shellCmd,
+				WorkingDir:   WorkspaceTarget,
+				User:         hostUserSpec(),
+				ExposedPorts: exposed,
 			},
 			&container.HostConfig{
-				Binds:    binds,
-				GroupAdd: dockerSockGroups(binds),
+				Binds:        binds,
+				GroupAdd:     dockerSockGroups(binds),
+				PortBindings: bindings,
 			},
 			nil, // network config
 			nil, // platform
@@ -390,4 +402,62 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 
 	ui.Success("Container " + name + " stopped and removed")
 	return nil
+}
+
+// parsePublishSpecs turns user-supplied "--publish" values into Docker's
+// ExposedPorts + PortBindings. Accepted forms match the daemon's own parser:
+//
+//	"7171"                      → 127.0.0.1:<random>:7171/tcp (implicit localhost)
+//	"7171:7171"                 → 127.0.0.1:7171:7171/tcp
+//	"127.0.0.1:7171:7171"       → explicit
+//	"127.0.0.1:7171:7171/tcp"   → explicit protocol
+//
+// When the host IP is omitted we default to 127.0.0.1 rather than 0.0.0.0 —
+// OAuth callbacks (gh/glab) only need localhost, and binding to the wildcard
+// would needlessly expose a container port to the LAN.
+func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
+	if len(specs) == 0 {
+		return nil, nil, nil
+	}
+	exposed := nat.PortSet{}
+	bindings := nat.PortMap{}
+	for _, spec := range specs {
+		mappings, err := nat.ParsePortSpec(spec)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
+		}
+		for _, m := range mappings {
+			exposed[m.Port] = struct{}{}
+			b := m.Binding
+			if b.HostIP == "" {
+				b.HostIP = "127.0.0.1"
+			}
+			bindings[m.Port] = append(bindings[m.Port], b)
+		}
+	}
+	return exposed, bindings, nil
+}
+
+// warnMissingPublish prints a warning when the user asks for ports that the
+// existing container was not created with. PortBindings are fixed at create
+// time, so "--publish 7171" on a reused container is a silent no-op unless we
+// tell the user to recreate it.
+func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
+	if inspect.HostConfig == nil {
+		return
+	}
+	current := inspect.HostConfig.PortBindings
+	var missing []string
+	for port := range wanted {
+		if _, ok := current[port]; !ok {
+			missing = append(missing, string(port))
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	ui.Warning(fmt.Sprintf(
+		"existing container has no publish for %s — run 'toolbox stop' then retry to apply",
+		strings.Join(missing, ", "),
+	))
 }

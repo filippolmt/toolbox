@@ -100,7 +100,7 @@ func TestShellEarlyExitOnShellMismatch(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, cfg, testWorkspace(t))
+	err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil)
 	if err == nil {
 		t.Fatal("Shell() should have returned an error for shell:zsh + tools.zsh:false")
 	}
@@ -170,7 +170,7 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 				Tools: config.DefaultTools(),
 			}
 
-			if err := Shell(context.Background(), mock, cfg, testWorkspace(t)); err != nil {
+			if err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			if !*called {
