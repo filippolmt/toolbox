@@ -45,10 +45,20 @@ jobs:
     # Validates renovate.json with the official validator so that future edits
     # to customManagers (GO_VERSION, GOPLS_VERSION, GOIMPORTS_VERSION, …) do
     # not silently produce an invalid config.
+    #
+    # Node 24 is required: renovate@43.x (current latest) declares
+    # `engines.node: ^24.11.0`. Without setup-node, ubuntu-latest ships Node
+    # 20 and npx silently falls back to renovate@39.x — which predates the
+    # `managerFilePatterns` field and rejects the whole config.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
 
       - name: Validate renovate.json
         run: npx --yes --package renovate renovate-config-validator renovate.json
