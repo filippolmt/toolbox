@@ -26,6 +26,10 @@ The Go CLI runs on the HOST. The image runs INSIDE the container. They are separ
 
 Never suggest `go test` or `go build` directly — the host has no Go toolchain.
 
+Single test or package: `make go-shell`, then `go test ./internal/mount -run TestFoo -count=1`. The `toolbox-gomod` volume persists module/build cache, so subsequent runs are fast.
+
+**Pre-push validation: use the `/verify` skill** (`.claude/skills/verify/SKILL.md`). Runs lint → test → (conditional) smoke-test in the same order as `.github/workflows/ci.yml`. Green locally = green on CI. Prefer it over invoking `go test` / `golangci-lint` ad-hoc.
+
 ## Code & language
 
 - **Code, comments, and CLI output: English.** The chat with the user is Italian, but anything checked into the repo is English (variable names, log/user-facing strings, doc comments).
@@ -51,7 +55,7 @@ Never suggest `go test` or `go build` directly — the host has no Go toolchain.
 - **Auth isolation under `~/.toolbox/`**: every credential path the container sees lives under `~/.toolbox/` on the host (`.claude`, `state`, `gh`, `glab`) or is a symlink to the host's real file (`ssh`, `gitconfig`, `gitconfig-dbm`). See `internal/config/config.go` `DefaultMounts()`. `~/.secrets` is intentionally NOT mounted.
 - **Shared bash history**: `~/.toolbox/state/bash_history` is the `HISTFILE` for every toolbox shell across every project; `PROMPT_COMMAND` syncs concurrent sessions.
 - **Docker CLI checksum**: Layer 7 of `internal/build/assets/Dockerfile` has no upstream `.sha256` (Docker doesn't publish one for static binaries). Version pin + HTTPS is the only guard — documented as accepted risk T-01-08.
-- **Two Docker version streams, intentionally independent**: `DOCKER_CLI_VERSION` in the Dockerfile (currently 29.4.0) pins the CLI binary inside the container; `github.com/docker/docker` in `go.mod` (currently v28.5.2+incompatible — the highest Go module upstream publishes) is the SDK the CLI launcher uses. The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically — there is no v29 Go module.
+- **Two Docker version streams, intentionally independent**: `DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); `github.com/docker/docker` in `go.mod` is the SDK the CLI launcher uses (pinned to the highest v28.x `+incompatible` tag, since upstream publishes no v29 Go module). The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically.
 - **Tool versions pinned**: every external binary in `internal/build/assets/Dockerfile` is pinned by version + SHA256 (except the Docker CLI and gcloud). Renovate bumps them. When adding a tool, follow the same pattern — download + verify `sha256sum` before installing. Every optional tool is guarded by an `ARG INSTALL_<TOOL>=true` flag wired to `tools.<key>` in `.toolbox.yaml`.
 - **Image selection**: `toolbox shell` pulls `ghcr.io/filippolmt/toolbox:latest` only when the merged `tools:` config matches the defaults (all true). Any override auto-builds `toolbox:local-<hash>` from the embedded Dockerfile — see `internal/build/tag.go` `ResolveImage`. `toolbox build` is an explicit escape hatch (supports `--no-cache`).
 - **Claude Code auto-update is disabled** via `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` — the toolbox user can't write to `/usr/local/lib/node_modules` (installed as root). Bump `CLAUDE_CODE_VERSION` in the Dockerfile and rebuild.

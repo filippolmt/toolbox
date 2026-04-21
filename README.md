@@ -9,7 +9,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Node.js | 24 LTS |
 | pnpm | 10.33.x |
 | Claude Code | 2.1.x |
-| Playwright CLI | 1.55.x |
+| Playwright CLI | 1.59.x |
 | Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
 | Python 3 | 3.11 |
 | uv | 0.11.x |
@@ -19,10 +19,10 @@ A containerized development environment (Debian slim) bundling all the tools you
 | GitHub CLI (gh) | 2.90.x |
 | GitLab CLI (glab) | 1.92.x |
 | Docker CLI | 29.4.x |
-| Docker Compose | 2.30.x |
+| Docker Compose | 5.1.x |
 | Google Cloud SDK (gcloud) | 565.x |
-| Azure CLI (az) | 2.70.x |
-| Oracle OCI CLI | 3.57.x |
+| Azure CLI (az) | 2.85.x |
+| Oracle OCI CLI | 3.80.x |
 | jq, yq, starship, git | latest stable |
 
 Every optional tool above can be disabled per-project — see [Configuration](#configuration).
