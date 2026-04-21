@@ -56,7 +56,7 @@ ZSH_THEME=""  # intentionally blank — starship owns the prompt.
 plugins=(
     # Infrastructure (bundled — silent-skip when binary missing)
     git docker docker-compose kubectl helm kubectx
-    terraform opentofu gh gcloud fzf direnv
+    terraform opentofu gh gcloud
     # DX (bundled)
     aliases colored-man-pages
     # Custom — completion definitions (adds _<tool> files to fpath)
