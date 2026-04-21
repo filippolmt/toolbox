@@ -19,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/go-connections/nat"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
@@ -129,8 +130,13 @@ func ContainerNameFor(workspace string) string {
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
-func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string) (err error) {
+func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string, publish []string) (err error) {
 	name := ContainerNameFor(workspace)
+
+	exposed, bindings, parseErr := parsePublishSpecs(publish)
+	if parseErr != nil {
+		return parseErr
+	}
 
 	// SHELL-02 + SHELL-03: resolve the shell BEFORE any Docker work so an
 	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
@@ -163,6 +169,10 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	// State as "not running" instead of panicking on the dereference.
 	running := inspectErr == nil && inspect.State != nil && inspect.State.Running
 
+	if inspectErr == nil && len(bindings) > 0 {
+		warnMissingPublish(inspect, bindings)
+	}
+
 	var containerID string
 	switch {
 	case inspectErr == nil && running:
@@ -184,16 +194,18 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		ui.Info("Creating container " + name + "...")
 		resp, createErr := cli.ContainerCreate(ctx,
 			&container.Config{
-				Image:      ref,
-				Tty:        true,
-				OpenStdin:  true,
-				Cmd:        shellCmd,
-				WorkingDir: WorkspaceTarget,
-				User:       hostUserSpec(),
+				Image:        ref,
+				Tty:          true,
+				OpenStdin:    true,
+				Cmd:          shellCmd,
+				WorkingDir:   WorkspaceTarget,
+				User:         hostUserSpec(),
+				ExposedPorts: exposed,
 			},
 			&container.HostConfig{
-				Binds:    binds,
-				GroupAdd: dockerSockGroups(binds),
+				Binds:        binds,
+				GroupAdd:     dockerSockGroups(binds),
+				PortBindings: bindings,
 			},
 			nil, // network config
 			nil, // platform
@@ -390,4 +402,58 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 
 	ui.Success("Container " + name + " stopped and removed")
 	return nil
+}
+
+// parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
+// ExposedPorts + PortBindings. Defaults the host IP to 127.0.0.1 (not 0.0.0.0)
+// so OAuth callbacks stay loopback-only instead of being exposed to the LAN.
+func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
+	if len(specs) == 0 {
+		return nil, nil, nil
+	}
+	exposed := nat.PortSet{}
+	bindings := nat.PortMap{}
+	for _, spec := range specs {
+		mappings, err := nat.ParsePortSpec(spec)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
+		}
+		for _, m := range mappings {
+			exposed[m.Port] = struct{}{}
+			b := m.Binding
+			if b.HostIP == "" {
+				b.HostIP = "127.0.0.1"
+			}
+			bindings[m.Port] = append(bindings[m.Port], b)
+		}
+	}
+	return exposed, bindings, nil
+}
+
+// missingPublishPorts returns the wanted ports that the existing container was
+// not created with. PortBindings are fixed at create time, so "--publish" on a
+// reused container is a silent no-op for any port not in this list.
+func missingPublishPorts(inspect container.InspectResponse, wanted nat.PortMap) []string {
+	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
+		return nil
+	}
+	current := inspect.HostConfig.PortBindings
+	var missing []string
+	for port := range wanted {
+		if _, ok := current[port]; !ok {
+			missing = append(missing, string(port))
+		}
+	}
+	return missing
+}
+
+func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
+	missing := missingPublishPorts(inspect, wanted)
+	if len(missing) == 0 {
+		return
+	}
+	ui.Warning(fmt.Sprintf(
+		"existing container has no publish for %s — run 'toolbox stop' then retry to apply",
+		strings.Join(missing, ", "),
+	))
 }

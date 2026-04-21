@@ -181,7 +181,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), ws)
+	err := Shell(context.Background(), mock, testConfig(), ws, nil)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), ws)
+	err := Shell(context.Background(), mock, testConfig(), ws, nil)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
 	if err == nil {
 		t.Fatal("Shell() should have returned error for missing image")
 	}
@@ -351,7 +351,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, cfg, testWorkspace(t))
+	err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil)
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t))
+	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
 	if err != nil {
 		t.Fatalf("Shell() should not error when pull fails but local image exists, got: %v", err)
 	}

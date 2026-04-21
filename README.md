@@ -112,6 +112,22 @@ Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be exe
 
 See [`examples/startup.d/`](examples/startup.d/) for a ready-to-copy example that installs and self-updates [Get-Shit-Done](https://github.com/gsd-build/get-shit-done).
 
+### Publishing ports
+
+By default the container has no host port bindings — it talks to the outside world through bind-mounted sockets, not TCP. When a tool inside the container needs to receive a connection from the host (typical case: an OAuth callback from `glab`, `gh`, or `gcloud` that listens on `http://localhost:<port>`), pass `--publish`/`-p` to `toolbox shell`:
+
+```bash
+# Forward host port 7171 to the same port in the container.
+toolbox shell -p 7171
+
+# Repeatable, full docker-style syntax supported.
+toolbox shell -p 3000:3000 -p 127.0.0.1:9229:9229 -p 5353/udp
+```
+
+Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<host>:<container>`, optional `/tcp|/udp` suffix). When the host IP is omitted it defaults to `127.0.0.1` — the port is reachable from your machine only, not the LAN.
+
+Port bindings are fixed when the container is created. If a container already exists for the current workspace, run `toolbox stop` before `toolbox shell -p …` so the new container picks up the flag.
+
 ### Loading order
 
 Configuration is loaded from (highest priority first):
@@ -126,7 +142,7 @@ Configuration is loaded from (highest priority first):
 
 | Command | Description |
 |---------|-------------|
-| `toolbox shell` | Start or attach to the toolbox container |
+| `toolbox shell` | Start or attach to the toolbox container (use `-p <port>` to publish ports for OAuth callbacks / dev servers) |
 | `toolbox stop` | Stop and remove the container |
 | `toolbox build` | Build the Docker image locally |
 | `toolbox version` | Show version info |
