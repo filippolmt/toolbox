@@ -34,7 +34,7 @@ setopt HIST_REDUCE_BLANKS
 setopt INC_APPEND_HISTORY
 
 # -- Oh-My-Zsh ---------------------------------------------------------------
-export ZSH="${HOME}/.oh-my-zsh"
+export ZSH="${HOME:-/home/toolbox}/.oh-my-zsh"
 ZSH_THEME=""  # intentionally blank — starship owns the prompt.
 
 # Plugin load order — DO NOT REORDER WITHOUT READING THE COMMENTS.
