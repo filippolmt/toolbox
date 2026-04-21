@@ -48,6 +48,115 @@ check_optional() {
     fi
 }
 
+# Bundled zsh stack (ZSH-01..07). Gate on `command -v zsh` so an
+# INSTALL_ZSH=false image SKIPs the whole block without failing.
+#
+# Each sub-check is a named function (`_zsh_<name>_check`); the `_zsh_assert`
+# reporter invokes it and feeds PASS/FAIL into the outer counters. This
+# replaces an earlier nested `sh -c` design that was fragile under quote
+# escaping (especially for $HISTFILE / $plugins probes).
+check_zsh() {
+    if ! command -v zsh >/dev/null 2>&1; then
+        echo "SKIP: zsh bundle (not installed)"
+        SKIP=$((SKIP+1))
+        return
+    fi
+
+    _zsh_assert() {
+        local name="$1"
+        local fn="$2"
+        if output=$("$fn" 2>&1); then
+            echo "OK: zsh/${name} — ${output}"
+            PASS=$((PASS+1))
+        else
+            echo "FAILED: zsh/${name} — ${output}"
+            FAIL=$((FAIL+1))
+        fi
+    }
+
+    # a. zsh binary is executable at /usr/bin/zsh or /bin/zsh
+    _zsh_binary_check() {
+        test -x /usr/bin/zsh || test -x /bin/zsh
+    }
+
+    # b. oh-my-zsh.sh entrypoint is a file
+    _zsh_omz_sh_check() {
+        test -f /home/toolbox/.oh-my-zsh/oh-my-zsh.sh
+    }
+
+    # c-helper for each of the 4 custom plugins (see loop below)
+    _zsh_plugin_check() {
+        test -f "/home/toolbox/.oh-my-zsh/custom/plugins/$1/$1.plugin.zsh"
+    }
+
+    # d. .git retained, HEAD is a 40-char SHA (R-05 / SPEC ZSH-02)
+    _zsh_omz_git_check() {
+        head=$(git -c safe.directory=/home/toolbox/.oh-my-zsh -C /home/toolbox/.oh-my-zsh rev-parse HEAD 2>&1) || return 1
+        printf "%s" "$head" | grep -Eq "^[a-f0-9]{40}$"
+    }
+
+    # e. fzf + zoxide in PATH
+    _zsh_fzf_check()    { command -v fzf    >/dev/null; }
+    _zsh_zoxide_check() { command -v zoxide >/dev/null; }
+
+    # f. system-wide /etc/zsh/zshrc has the compfix env var
+    _zsh_zshrc_compfix_check() {
+        test -f /etc/zsh/zshrc && grep -q ZSH_DISABLE_COMPFIX /etc/zsh/zshrc
+    }
+
+    # g. interactive shell starts clean — no [oh-my-zsh] warnings on stderr
+    _zsh_interactive_clean_check() {
+        zsh -i -c : 2>/tmp/zsh_stderr || return 1
+        ! grep -q "\[oh-my-zsh\]" /tmp/zsh_stderr
+    }
+
+    # h. HISTFILE resolves to the expected path (zsh-interactive probe)
+    _zsh_histfile_check() {
+        result=$(zsh -i -c "echo \$HISTFILE" 2>/dev/null)
+        [ "$result" = "/home/toolbox/.toolbox-state/zsh_history" ]
+    }
+
+    # i. `plugins` array has exactly 19 entries after zshrc is sourced
+    _zsh_plugin_count_check() {
+        count=$(zsh -i -c "echo \$plugins | wc -w" 2>/dev/null)
+        [ "$count" -eq 19 ]
+    }
+
+    # j. R-01 / Pitfall 3 — our tf=tofu override wins over OMZ terraform plugin
+    _zsh_alias_tf_check() {
+        zsh -i -c "alias tf" 2>/dev/null | grep -q "tf=tofu"
+    }
+
+    # k. zoxide registered its `z` function
+    _zsh_z_function_check() {
+        zsh -i -c "type z" 2>/dev/null | grep -q function
+    }
+
+    # l. vendor-completions populated (expect >= 6 files on default build)
+    _zsh_vendor_completions_check() {
+        count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
+        [ "$count" -ge 6 ]
+    }
+
+    # Run the assertions in order. The per-plugin loop expands to 4 entries.
+    _zsh_assert "binary"                       _zsh_binary_check
+    _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
+    for p in zsh-autosuggestions zsh-syntax-highlighting zsh-completions fzf-tab; do
+        _plugin_named_check() { _zsh_plugin_check "$p"; }
+        _zsh_assert "plugin/${p}"              _plugin_named_check
+    done
+    _zsh_assert "omz .git retained"            _zsh_omz_git_check
+    _zsh_assert "fzf binary"                   _zsh_fzf_check
+    _zsh_assert "zoxide binary"                _zsh_zoxide_check
+    _zsh_assert "/etc/zsh/zshrc ZSH_DISABLE_COMPFIX" _zsh_zshrc_compfix_check
+    _zsh_assert "interactive shell clean"      _zsh_interactive_clean_check
+    _zsh_assert "HISTFILE"                     _zsh_histfile_check
+    _zsh_assert "19 plugins loaded"            _zsh_plugin_count_check
+    _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
+    _zsh_assert "zoxide z function"            _zsh_z_function_check
+    _zsh_assert "vendor-completions >= 6"      _zsh_vendor_completions_check
+}
+
 check_required "node"       node --version
 check_required "npm"        npm --version
 check_required "python3"    python3 --version
@@ -73,6 +182,8 @@ check_optional  "oci"       oci      oci --version
 check_optional  "jq"        jq       jq --version
 check_optional  "yq"        yq       yq --version
 check_optional  "starship"  starship starship --version
+
+check_zsh
 
 echo ""
 echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
