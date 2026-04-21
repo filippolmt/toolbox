@@ -40,7 +40,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/filippolmt/toolbox"
-    description: "CLI per il toolbox di sviluppo containerizzato"
+    description: "CLI for the containerized dev toolbox"
     commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
     install: |
       bin.install "toolbox"
