@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/docker/docker/api/types/container"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/ui"
 )
 
 // execShell attaches an interactive shell session (zsh or bash per cfg.Shell)
@@ -41,53 +43,85 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 	var oldState *term.State
 	if term.IsTerminal(fd) {
 		oldState, err = term.MakeRaw(fd)
-		if err == nil {
-			// Pitfall 1: defer Restore IMMEDIATELY after MakeRaw.
-			defer term.Restore(fd, oldState)
+		if err != nil {
+			return err
 		}
 	}
 
-	// Signal handler that restores the terminal on crash/kill.
-	// In raw mode, ctrl+c is sent as a byte to the container via stdin (io.Copy),
-	// not as a signal to the Go process. This handler catches external SIGTERM.
+	// Restore TTY exactly once, whether via defer or the signal handler.
+	var restoreOnce sync.Once
+	restoreTerm := func() {
+		if oldState == nil {
+			return
+		}
+		restoreOnce.Do(func() {
+			if rerr := term.Restore(fd, oldState); rerr != nil {
+				ui.Warning("terminal restore failed: " + rerr.Error())
+			}
+		})
+	}
+	defer restoreTerm()
+
+	// Cancellable child context scopes the signal and resize goroutines so
+	// they exit cleanly when execShell returns.
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// External SIGINT/SIGTERM: in raw mode the user's ctrl+c is a byte
+	// delivered via stdin, so this only catches OS-level kills. Restore the
+	// TTY and cancel the session; do NOT os.Exit here — that would skip the
+	// caller's container-teardown defers in Shell().
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
 	go func() {
-		<-sigCh
-		if oldState != nil {
-			term.Restore(fd, oldState)
+		select {
+		case <-sigCh:
+			restoreTerm()
+			cancel()
+			// Unblock the main io.Copy on resp.Reader; ctx alone doesn't.
+			_ = resp.Conn.Close()
+		case <-sessionCtx.Done():
 		}
-		os.Exit(0)
 	}()
 
 	// Forward terminal resize (SIGWINCH) to the container exec session.
 	if oldState != nil {
+		winchCh := make(chan os.Signal, 1)
+		signal.Notify(winchCh, syscall.SIGWINCH)
+		defer signal.Stop(winchCh)
+
 		go func() {
-			winchCh := make(chan os.Signal, 1)
-			signal.Notify(winchCh, syscall.SIGWINCH)
-			for range winchCh {
-				w, h, sizeErr := term.GetSize(fd)
-				if sizeErr == nil {
-					_ = cli.ContainerExecResize(ctx, execResp.ID, container.ResizeOptions{
+			for {
+				select {
+				case <-winchCh:
+					w, h, sizeErr := term.GetSize(fd)
+					if sizeErr != nil {
+						continue
+					}
+					_ = cli.ContainerExecResize(sessionCtx, execResp.ID, container.ResizeOptions{
 						Height: uint(h),
 						Width:  uint(w),
 					})
+				case <-sessionCtx.Done():
+					return
 				}
 			}
 		}()
 
 		// Initial resize to sync dimensions.
-		w, h, sizeErr := term.GetSize(fd)
-		if sizeErr == nil {
-			_ = cli.ContainerExecResize(ctx, execResp.ID, container.ResizeOptions{
+		if w, h, sizeErr := term.GetSize(fd); sizeErr == nil {
+			_ = cli.ContainerExecResize(sessionCtx, execResp.ID, container.ResizeOptions{
 				Height: uint(h),
 				Width:  uint(w),
 			})
 		}
 	}
 
-	// Bidirectional I/O: stdin -> container, container -> stdout.
-	// When the user exits (ctrl+d), the reader copy terminates and we return.
+	// Bidirectional I/O; the stdout copy drives lifecycle. The stdin
+	// goroutine leaks until process exit (portable stdin interruption
+	// isn't available on Linux/macOS), which is fine for a CLI.
 	go func() { _, _ = io.Copy(resp.Conn, os.Stdin) }()
 	_, _ = io.Copy(os.Stdout, resp.Reader)
 

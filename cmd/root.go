@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -35,12 +36,16 @@ func initConfig() {
 		// 1. Built-in defaults
 		setDefaults()
 
-		// 2. Global config (~/.toolbox.yaml)
-		home, _ := os.UserHomeDir()
+		// 2. Global config (~/.toolbox.yaml). Skip if HOME is unresolvable
+		// — AddConfigPath("") would silently read from CWD.
 		viper.SetConfigName(".toolbox")
 		viper.SetConfigType("yaml")
-		viper.AddConfigPath(home)
-		_ = viper.ReadInConfig() // ok if missing (D-05)
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			viper.AddConfigPath(home)
+			_ = viper.ReadInConfig() // ok if missing (D-05)
+		} else if err != nil {
+			fmt.Fprintln(os.Stderr, "toolbox: skipping global config: "+err.Error())
+		}
 
 		// 3. Project config (.toolbox.yaml) -- merged on top of global (D-04)
 		viper.AddConfigPath(".")
@@ -66,6 +71,7 @@ func setDefaults() {
 	viper.SetDefault("tools.gcloud", true)
 	viper.SetDefault("tools.gh", true)
 	viper.SetDefault("tools.glab", true)
+	viper.SetDefault("tools.go", true)
 	viper.SetDefault("tools.helm", true)
 	viper.SetDefault("tools.jq", true)
 	viper.SetDefault("tools.kubectl", true)
@@ -77,4 +83,5 @@ func setDefaults() {
 	viper.SetDefault("tools.tofu", true)
 	viper.SetDefault("tools.uv", true)
 	viper.SetDefault("tools.yq", true)
+	viper.SetDefault("tools.zsh", true)
 }

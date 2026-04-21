@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"context"
-
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +23,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	ctx, stopSig := signalCtx()
+	defer stopSig()
 
 	if stopAll {
 		return container.StopAll(ctx, cli)

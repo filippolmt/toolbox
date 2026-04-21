@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"context"
-
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
@@ -47,7 +45,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		ui.Info("Config matches defaults — rebuilding the canonical image locally as " + ref)
 	}
 
-	ctx := context.Background()
+	ctx, stopSig := signalCtx()
+	defer stopSig()
+
 	return build.BuildImage(ctx, cli, build.Options{
 		Tag:       ref,
 		BuildArgs: build.BuildArgsFromTools(cfg.Tools),

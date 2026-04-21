@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +39,11 @@ func runShell(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
+	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
+	// signal context only fires during pull/build or on external kill.
+	ctx, stop := signalCtx()
+	defer stop()
+
 	return container.Shell(ctx, cli, cfg, workspace)
 }
 
