@@ -34,6 +34,9 @@ ARG OCI_VERSION=3.79.0
 ARG PLAYWRIGHT_VERSION=1.59.1
 ARG PLAYWRIGHT_CLI_VERSION=0.1.8
 ARG COMPOSE_VERSION=5.1.3
+ARG GO_VERSION=1.26.2
+ARG GOPLS_VERSION=0.21.1
+ARG GOIMPORTS_VERSION=0.44.0
 
 # -- zsh bundle pinning (D-01) ------------------------------------------------
 # OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
@@ -62,6 +65,7 @@ ARG INSTALL_HELM=true
 ARG INSTALL_TOFU=true
 ARG INSTALL_GH=true
 ARG INSTALL_GLAB=true
+ARG INSTALL_GO=true
 ARG INSTALL_DOCKER_CLI=true
 ARG INSTALL_STARSHIP=true
 ARG INSTALL_JQ=true
@@ -324,6 +328,81 @@ RUN set -eux; \
       gcloud --version; \
       gke-gcloud-auth-plugin --version; \
     fi
+
+# -- Layer 14a: Go toolchain + gopls + goimports (GO-01, GO-02, GO-03) --------
+# Single RUN gated by INSTALL_GO: downloads the Go tarball (SHA256-verified
+# against the hash published in go.dev's release JSON index), extracts to
+# /usr/local/go, then runs `go install` for gopls (LSP used by Claude Code)
+# and goimports (formatter).
+#
+# Pattern rationale (see .planning/phases/05-go-toolchain-lsp/05-CONTEXT.md):
+#   - D-03: tarball -> verify -> extract -> go install (gopls + goimports) -> cleanup, all in one RUN
+#   - D-06: -ldflags="-s -w" strips debug info + symbol table on gopls/goimports (~30% smaller)
+#   - D-08/D-09: no ENV GOPATH / GOROOT -- Go defaults resolve correctly
+#     (GOPATH=$HOME/go=/home/toolbox/go matches the bind-mount target;
+#     GOROOT is auto-detected from /usr/local/go/bin/go exec path).
+#   - D-10: HOME=/tmp/go-install applies ONLY to this RUN's `go install`
+#     (inline var), so the global HOME=/home/toolbox (Layer 21) stays intact.
+#
+# SHA256 source deviation (Rule 1, documented in 05-01-SUMMARY.md):
+# The plan assumed `https://go.dev/dl/<tarball>.sha256` returns a raw hash,
+# but that URL currently redirects to the HTML documentation page
+# (meta refresh to /dl/#<tarball>.sha256). The hash is still published by
+# upstream -- canonically in the JSON index at https://go.dev/dl/?mode=json.
+# We fetch the JSON, extract the sha256 via jq (installed in Layer 9), then
+# verify with `sha256sum -c -`. Same trust anchor (HTTPS to go.dev), same
+# cryptographic guarantee.
+#
+# Trigger: Claude Code LSP failing with 'Executable not found in $PATH: "gopls"'.
+RUN set -eux; \
+    if [ "${INSTALL_GO}" != "true" ]; then \
+      echo "Skipping Go toolchain (tools.go=false)"; \
+    else \
+      GO_TARBALL="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+      curl -fsSL -o "/tmp/${GO_TARBALL}" \
+        "https://go.dev/dl/${GO_TARBALL}"; \
+      curl -fsSL "https://go.dev/dl/?mode=json&include=all" \
+        -o /tmp/go_dl_index.json; \
+      EXPECTED=$(jq -r --arg f "${GO_TARBALL}" \
+        '.[].files[]? | select(.filename == $f) | .sha256' \
+        /tmp/go_dl_index.json | head -n1); \
+      test -n "${EXPECTED}" || { echo "ERROR: SHA-256 hash not found for ${GO_TARBALL} in go.dev index"; exit 1; }; \
+      echo "${EXPECTED}  /tmp/${GO_TARBALL}" | sha256sum -c -; \
+      tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"; \
+      rm "/tmp/${GO_TARBALL}" /tmp/go_dl_index.json; \
+      # gopls and goimports live in different Go modules (gopls is its own
+      # module; goimports is in golang.org/x/tools) so `go install` has to be
+      # invoked twice — a single invocation fails with
+      # "all arguments must refer to packages in the same module at the same version".
+      HOME=/tmp/go-install \
+      GOPATH=/tmp/go-install \
+      GOCACHE=/tmp/go-install/cache \
+      GOMODCACHE=/tmp/go-install/pkg/mod \
+      GOBIN=/usr/local/bin \
+      /usr/local/go/bin/go install -ldflags="-s -w" \
+        "golang.org/x/tools/gopls@v${GOPLS_VERSION}"; \
+      HOME=/tmp/go-install \
+      GOPATH=/tmp/go-install \
+      GOCACHE=/tmp/go-install/cache \
+      GOMODCACHE=/tmp/go-install/pkg/mod \
+      GOBIN=/usr/local/bin \
+      /usr/local/go/bin/go install -ldflags="-s -w" \
+        "golang.org/x/tools/cmd/goimports@v${GOIMPORTS_VERSION}"; \
+      rm -rf /tmp/go-install; \
+      /usr/local/go/bin/go version; \
+      gopls version; \
+      # goimports at runtime invokes `go list`, so it needs `go` on PATH.
+      # The ENV PATH that prepends /usr/local/go/bin is applied by the next
+      # Dockerfile line (after this RUN), so a functional invocation like
+      # `echo "" | goimports` would fail here. Presence-check is enough —
+      # smoke-test.sh runs the functional check against the final image.
+      test -x /usr/local/bin/goimports; \
+    fi
+
+# Go binaries in PATH for every subsequent layer + runtime.
+# Applied unconditionally: when INSTALL_GO=false the path simply resolves
+# to a non-existent dir and has no effect (matches npm-global PATH idiom).
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # -- Layer 15: Azure CLI (TOOL-02, IMG-02) ------------------------------------
 # Installed from Microsoft's Debian apt repository (the upstream-recommended

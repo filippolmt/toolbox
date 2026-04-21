@@ -41,11 +41,38 @@ jobs:
         with:
           version: v2.11.4
 
+  renovate-validate:
+    # Validates renovate.json with the official validator so that future edits
+    # to customManagers (GO_VERSION, GOPLS_VERSION, GOIMPORTS_VERSION, …) do
+    # not silently produce an invalid config.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate renovate.json
+        run: npx --yes --package renovate renovate-config-validator renovate.json
+
   docker-build:
     # Builds the runtime image and runs the smoke-test on every PR so that
     # Dockerfile ARG bumps (azure-cli, oci-cli, playwright, …) are validated
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
+    #
+    # Matrix:
+    #   default   — all tools enabled; smoke-test must report OK for go/gopls/goimports
+    #   go-optout — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
+    #               Go bundle (validates the tools.go cascade off: GO-04)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: default
+            build_args: ""
+            tag: toolbox:ci
+          - variant: go-optout
+            build_args: INSTALL_GO=false
+            tag: toolbox:ci-go-optout
+    name: docker-build (${{ matrix.variant }})
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -59,9 +86,25 @@ jobs:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
           load: true
-          tags: toolbox:ci
+          tags: ${{ matrix.tag }}
+          build-args: ${{ matrix.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke test
-        run: internal/build/assets/smoke-test.sh toolbox:ci
+        run: internal/build/assets/smoke-test.sh ${{ matrix.tag }}
+
+      - name: Assert 3 SKIP lines for Go bundle (go-optout only)
+        if: matrix.variant == 'go-optout'
+        run: |
+          output=$(internal/build/assets/smoke-test.sh ${{ matrix.tag }} 2>&1)
+          skip_count=$(echo "$output" | grep -c '^SKIP:.*not installed' || true)
+          for tool in go gopls goimports; do
+            if ! echo "$output" | grep -q "^SKIP: ${tool} (not installed)"; then
+              echo "ERROR: expected 'SKIP: ${tool} (not installed)' in smoke-test output but not found"
+              echo "--- smoke-test output ---"
+              echo "$output"
+              exit 1
+            fi
+          done
+          echo "OK: all 3 Go bundle tools correctly SKIP when INSTALL_GO=false (found ${skip_count} SKIP lines)"

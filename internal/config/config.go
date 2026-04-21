@@ -85,6 +85,14 @@ func DefaultMounts() []Mount {
 		// without root and persistent across container recreations. The prefix
 		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.
 		{Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
+		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
+		// to /home/toolbox/go inside the container; this bind-mount persists
+		// the module cache (`pkg/mod`) and `go install` binaries (`bin/`)
+		// across container recreations. Unconditional — matches the
+		// playwright-cache / npm-global pattern (D-11). No GOROOT/GOPATH
+		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
+		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
+		{Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
 		{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}

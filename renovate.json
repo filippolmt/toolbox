@@ -214,6 +214,29 @@
     },
     {
       "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GO_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "golang"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GOPLS_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "go",
+      "packageNameTemplate": "golang.org/x/tools/gopls",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GOIMPORTS_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "go",
+      "packageNameTemplate": "golang.org/x/tools",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": ["GO_IMAGE\\s*:?=\\s*golang:(?<currentValue>\\S+)"],
       "datasourceTemplate": "docker",

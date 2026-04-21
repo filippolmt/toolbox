@@ -11,8 +11,8 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	if len(mounts) != 15 {
-		t.Fatalf("expected 15 default mounts, got %d", len(mounts))
+	if len(mounts) != 16 {
+		t.Fatalf("expected 16 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -46,6 +46,8 @@ func TestDefaultMounts(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/startup.d", true, true)
 	// Per-user npm prefix: read-write, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/npm-global", false, true)
+	// Per-user Go workspace (GOPATH): read-write, create-if-missing (GO-05).
+	assertMount(t, mounts, "~/.toolbox/go", false, true)
 
 	// ssh + git config follow the host via symlinks, not copies.
 	assertSymlink(t, mounts, "~/.toolbox/ssh", "~/.ssh")
@@ -100,8 +102,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 15 {
-		t.Errorf("expected 15 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 16 {
+		t.Errorf("expected 16 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {
@@ -162,5 +164,14 @@ func TestIsDefaultTools(t *testing.T) {
 	custom["gcloud"] = false
 	if IsDefaultTools(custom) {
 		t.Error("one tool disabled should not be considered default")
+	}
+}
+
+// TestToolBuildArgGo cross-checks that the Go toolchain key maps to the
+// correct Dockerfile ARG. This is the in-code half of GO-04 cascade; the
+// Dockerfile half is enforced end-to-end by the smoke test in Plan 03.
+func TestToolBuildArgGo(t *testing.T) {
+	if got := ToolBuildArg["go"]; got != "INSTALL_GO" {
+		t.Errorf("ToolBuildArg[\"go\"] = %q, want %q", got, "INSTALL_GO")
 	}
 }

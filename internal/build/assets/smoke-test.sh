@@ -182,6 +182,9 @@ check_optional  "azure"     az       az --version
 check_optional  "oci"       oci      oci --version
 check_optional  "jq"        jq       jq --version
 check_optional  "yq"        yq       yq --version
+check_optional  "go"        go       go version
+check_optional  "gopls"     gopls    gopls version
+check_optional  "goimports" goimports sh -c '"'"'echo "" | goimports'"'"'
 check_optional  "starship"  starship starship --version
 
 check_zsh
