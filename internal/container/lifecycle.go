@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
@@ -25,6 +27,12 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
 )
+
+// cleanupTimeout bounds the best-effort container stop+remove that runs on
+// exit with a fresh context. Long enough for Docker's own 10s stop grace
+// period plus remove overhead; short enough that a frozen daemon doesn't
+// hang the CLI forever.
+const cleanupTimeout = 30 * time.Second
 
 // WorkspaceTarget is the fixed in-container path where the host CWD is mounted.
 const WorkspaceTarget = "/workspace"
@@ -59,9 +67,13 @@ func (e *ShellMismatchError) Error() string {
 
 // ResolveShellCmd returns the container command for the configured shell, or a
 // typed *ShellMismatchError when the combination is incoherent (SHELL-02 +
-// SHELL-03, D-17). `cfg.Shell` is assumed to have already been validated by
-// config.Load(); this function does NOT re-check the enum.
+// SHELL-03, D-17). Re-validates cfg.Shell defensively: Load() already rejects
+// unsupported values, but callers that bypass Load() (tests, future entry
+// points) must not be able to smuggle an arbitrary string into /bin/<x>.
 func ResolveShellCmd(cfg *config.Config) ([]string, error) {
+	if err := config.ValidateShell(cfg.Shell); err != nil {
+		return nil, err
+	}
 	if cfg.Shell == "zsh" {
 		if enabled, ok := cfg.Tools["zsh"]; ok && !enabled {
 			return nil, &ShellMismatchError{Shell: "zsh"}
@@ -196,11 +208,15 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		return fmt.Errorf("failed to inspect container: %w", inspectErr)
 	}
 
-	// Auto-remove on exit. Use a fresh context so cleanup still runs if the
-	// shell exited because ctx was cancelled (Ctrl+C). The shell's own exit
-	// error wins over any cleanup error — a failed stop is noisy, not fatal.
+	// Auto-remove on exit. Use a fresh context (with a bounded timeout) so
+	// cleanup still runs if the shell exited because ctx was cancelled
+	// (Ctrl+C), but a frozen Docker daemon can't hang the CLI. The shell's
+	// own exit error wins over any cleanup error — a failed stop is noisy,
+	// not fatal.
 	defer func() {
-		if stopErr := stopOne(context.Background(), cli, name); stopErr != nil && err == nil {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancelCleanup()
+		if stopErr := stopOne(cleanupCtx, cli, name); stopErr != nil && err == nil {
 			err = stopErr
 		}
 	}()
@@ -267,7 +283,7 @@ func dockerSockGroups(binds []string) []string {
 
 	groups := []string{"0"}
 	if gid, ok := statSockGID(sockPath); ok && gid != 0 {
-		groups = append(groups, fmt.Sprintf("%d", gid))
+		groups = append(groups, strconv.FormatUint(uint64(gid), 10))
 	}
 	return groups
 }

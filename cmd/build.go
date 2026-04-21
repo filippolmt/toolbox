@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
@@ -47,7 +50,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		ui.Info("Config matches defaults — rebuilding the canonical image locally as " + ref)
 	}
 
-	ctx := context.Background()
+	ctx, stopSig := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSig()
+
 	return build.BuildImage(ctx, cli, build.Options{
 		Tag:       ref,
 		BuildArgs: build.BuildArgsFromTools(cfg.Tools),

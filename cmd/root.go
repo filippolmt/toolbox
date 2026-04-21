@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -35,12 +36,17 @@ func initConfig() {
 		// 1. Built-in defaults
 		setDefaults()
 
-		// 2. Global config (~/.toolbox.yaml)
-		home, _ := os.UserHomeDir()
+		// 2. Global config (~/.toolbox.yaml). When HOME is unresolvable the
+		// global config lookup is skipped — a leading "" AddConfigPath would
+		// silently read from CWD, clobbering the project-config precedence.
 		viper.SetConfigName(".toolbox")
 		viper.SetConfigType("yaml")
-		viper.AddConfigPath(home)
-		_ = viper.ReadInConfig() // ok if missing (D-05)
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			viper.AddConfigPath(home)
+			_ = viper.ReadInConfig() // ok if missing (D-05)
+		} else if err != nil {
+			fmt.Fprintln(os.Stderr, "toolbox: warning: unable to resolve home directory, skipping global config: "+err.Error())
+		}
 
 		// 3. Project config (.toolbox.yaml) -- merged on top of global (D-04)
 		viper.AddConfigPath(".")
