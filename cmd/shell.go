@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -42,12 +39,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	// Cancel on SIGINT/SIGTERM so a Ctrl+C during `docker pull`/`build`
-	// unwinds cleanly instead of hanging. Once the interactive shell is
-	// attached the raw-mode TTY delivers Ctrl+C as a byte to the container,
-	// so this context cancellation only fires for pre-attach phases or
-	// external kills.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
+	// signal context only fires during pull/build or on external kill.
+	ctx, stop := signalCtx()
 	defer stop()
 
 	return container.Shell(ctx, cli, cfg, workspace)

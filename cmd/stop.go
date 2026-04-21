@@ -1,11 +1,6 @@
 package cmd
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +23,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	ctx, stopSig := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stopSig := signalCtx()
 	defer stopSig()
 
 	if stopAll {

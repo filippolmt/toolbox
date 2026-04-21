@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -289,7 +288,7 @@ func dockerSockGroups(binds []string) []string {
 
 	groups := []string{"0"}
 	if gid, ok := statSockGID(sockPath); ok && gid != 0 {
-		groups = append(groups, strconv.FormatUint(uint64(gid), 10))
+		groups = append(groups, fmt.Sprintf("%d", gid))
 	}
 	return groups
 }

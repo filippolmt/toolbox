@@ -80,11 +80,7 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 		case <-sigCh:
 			restoreTerm()
 			cancel()
-			// Close the hijacked stream so the blocking io.Copy on
-			// resp.Reader returns and execShell unwinds through its
-			// defers — without this, an external SIGTERM would cancel
-			// the session context but leave the CLI parked on stdout.
-			// Double close with the outer defer is safe (errors ignored).
+			// Unblock the main io.Copy on resp.Reader; ctx alone doesn't.
 			_ = resp.Conn.Close()
 		case <-sessionCtx.Done():
 		}
@@ -123,11 +119,9 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 		}
 	}
 
-	// Bidirectional I/O. stdout drives the lifecycle: when the user exits
-	// (ctrl+d / `exit`) the container tears down the pty and this copy
-	// returns. The stdin goroutine stays blocked on os.Stdin.Read until
-	// process exit — portable stdin interruption isn't available across
-	// Linux/macOS, and the process exits moments later anyway.
+	// Bidirectional I/O; the stdout copy drives lifecycle. The stdin
+	// goroutine leaks until process exit (portable stdin interruption
+	// isn't available on Linux/macOS), which is fine for a CLI.
 	go func() { _, _ = io.Copy(resp.Conn, os.Stdin) }()
 	_, _ = io.Copy(os.Stdout, resp.Reader)
 
