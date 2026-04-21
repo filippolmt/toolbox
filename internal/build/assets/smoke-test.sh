@@ -116,10 +116,11 @@ check_zsh() {
         [ "$result" = "/home/toolbox/.toolbox-state/zsh_history" ]
     }
 
-    # i. `plugins` array has exactly 19 entries after zshrc is sourced
+    # i. `plugins` array has exactly 17 entries after zshrc is sourced
+    # (19 in the original plan; fzf + direnv removed — see zshrc.sh rationale).
     _zsh_plugin_count_check() {
         count=$(zsh -i -c "echo \$plugins | wc -w" 2>/dev/null)
-        [ "$count" -eq 19 ]
+        [ "$count" -eq 17 ]
     }
 
     # j. R-01 / Pitfall 3 — our tf=tofu override wins over OMZ terraform plugin
@@ -151,7 +152,7 @@ check_zsh() {
     _zsh_assert "/etc/zsh/zshrc ZSH_DISABLE_COMPFIX" _zsh_zshrc_compfix_check
     _zsh_assert "interactive shell clean"      _zsh_interactive_clean_check
     _zsh_assert "HISTFILE"                     _zsh_histfile_check
-    _zsh_assert "19 plugins loaded"            _zsh_plugin_count_check
+    _zsh_assert "17 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
     _zsh_assert "vendor-completions >= 6"      _zsh_vendor_completions_check
