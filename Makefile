@@ -26,6 +26,9 @@ test: build ## Build the image and run the smoke test
 shell: build ## Build the image and open an interactive shell in it (uses default CMD, zsh)
 	docker run --rm -it $(FULL)
 
+shell-bash: build ## Build the image and open an interactive bash shell (override default zsh)
+	docker run --rm -it $(FULL) bash
+
 clean: ## Remove the toolbox image
 	docker rmi $(FULL) 2>/dev/null || true
 
