@@ -23,8 +23,8 @@ build: ## Build the toolbox image
 test: build ## Build the image and run the smoke test
 	internal/build/assets/smoke-test.sh $(FULL)
 
-shell: build ## Build the image and open an interactive shell in it
-	docker run --rm -it $(FULL) bash
+shell: build ## Build the image and open an interactive shell in it (uses default CMD, zsh)
+	docker run --rm -it $(FULL)
 
 clean: ## Remove the toolbox image
 	docker rmi $(FULL) 2>/dev/null || true

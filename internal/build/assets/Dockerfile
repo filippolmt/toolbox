@@ -583,4 +583,4 @@ ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
-CMD ["bash"]
+CMD ["zsh"]
