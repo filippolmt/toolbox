@@ -37,6 +37,7 @@ ARG COMPOSE_VERSION=5.1.3
 ARG GO_VERSION=1.26.2
 ARG GOPLS_VERSION=0.21.1
 ARG GOIMPORTS_VERSION=0.44.0
+ARG TINI_VERSION=0.19.0
 
 # -- zsh bundle pinning (D-01) ------------------------------------------------
 # OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
@@ -515,6 +516,27 @@ RUN set -eux; \
     echo '[ -f /etc/toolbox-bashrc.sh ] && source /etc/toolbox-bashrc.sh' \
       >> /etc/bash.bashrc
 
+# -- Layer 20a: tini (PID 1 init / signal handler) ----------------------------
+# zsh is the CMD and becomes PID 1 via `exec "$@"` in entrypoint.sh. Interactive
+# shells (zsh/bash) ignore SIGTERM when they own the TTY with job control, so
+# `docker stop` hangs until the 10s timeout and falls back to SIGKILL. tini is
+# a minimal init that forwards signals properly and reaps zombies. `-g`
+# forwards signals to the entire process group (not just the direct child), so
+# shells receive SIGTERM and exit cleanly.
+#
+# Not opt-out: the binary is ~400 KB and correcting PID-1 semantics is a
+# cross-cutting concern (every shell/exec/attach path benefits).
+RUN set -eux; \
+    curl -fsSL -o /usr/bin/tini \
+      "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}"; \
+    curl -fsSL -o /tmp/tini.sha256sum \
+      "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}.sha256sum"; \
+    EXPECTED=$(awk '{print $1}' /tmp/tini.sha256sum); \
+    echo "${EXPECTED}  /usr/bin/tini" | sha256sum -c -; \
+    chmod +x /usr/bin/tini; \
+    rm /tmp/tini.sha256sum; \
+    /usr/bin/tini --version
+
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
@@ -662,5 +684,5 @@ ENV HOME=/home/toolbox \
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
 CMD ["zsh"]
