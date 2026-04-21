@@ -495,6 +495,7 @@ RUN set -eux; \
       done; \
       mkdir -p /etc/zsh; \
       mv /etc/toolbox-zshrc.sh /etc/zsh/zshrc; \
+      echo '# managed by toolbox — see /etc/zsh/zshrc' > /home/node/.zshrc; \
       zsh --version; \
       fzf --version; \
     fi
