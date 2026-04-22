@@ -5,6 +5,7 @@ package config
 // is stable across refactors.
 var KnownTools = []string{
 	"azure",
+	"bat",
 	"claude",
 	"compose",
 	"docker",
@@ -31,6 +32,7 @@ var KnownTools = []string{
 // `ARG INSTALL_<ARG>=true` + an `if` conditional.
 var ToolBuildArg = map[string]string{
 	"azure":          "INSTALL_AZURE",
+	"bat":            "INSTALL_BAT",
 	"claude":         "INSTALL_CLAUDE_CODE",
 	"compose":        "INSTALL_COMPOSE",
 	"docker":         "INSTALL_DOCKER_CLI",

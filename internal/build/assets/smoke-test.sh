@@ -187,6 +187,7 @@ check_optional  "go"        go       go version
 check_optional  "gopls"     gopls    gopls version
 check_optional  "goimports" goimports sh -c '"'"'echo "" | goimports'"'"'
 check_optional  "starship"  starship starship --version
+check_optional  "bat"       bat      bat --version
 
 check_zsh
 

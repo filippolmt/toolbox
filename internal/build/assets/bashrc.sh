@@ -34,6 +34,10 @@ alias ll='ls -la'
 alias la='ls -A'
 alias l='ls -CF'
 
+if command -v bat >/dev/null 2>&1; then
+    alias cat=bat
+fi
+
 # -- Completions (D-06) -----------------------------------------------
 if [ -f /usr/share/bash-completion/bash_completion ]; then
     source /usr/share/bash-completion/bash_completion
