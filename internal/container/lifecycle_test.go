@@ -282,24 +282,144 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		t.Fatal("execShellFn was not called after create+start")
 	}
 
-	if capturedWorkDir != WorkspaceTarget {
-		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, WorkspaceTarget)
+	mirror, mirrorOK := workspaceMirrorPath(ws)
+	wantWorkDir := WorkspaceTarget
+	if mirrorOK {
+		wantWorkDir = mirror
+	}
+	if capturedWorkDir != wantWorkDir {
+		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, wantWorkDir)
 	}
 
-	expectedBind := ws + ":" + WorkspaceTarget + ":rw"
-	found := false
-	for _, b := range capturedBinds {
-		if b == expectedBind {
-			found = true
-			break
-		}
+	expectedBinds := []string{ws + ":" + WorkspaceTarget + ":rw"}
+	if mirrorOK {
+		expectedBinds = append(expectedBinds, ws+":"+mirror+":rw")
 	}
-	if !found {
-		t.Errorf("expected workspace bind %q in %v", expectedBind, capturedBinds)
+	for _, want := range expectedBinds {
+		if !slices.Contains(capturedBinds, want) {
+			t.Errorf("expected workspace bind %q in %v", want, capturedBinds)
+		}
 	}
 
 	if !strings.HasPrefix(wantName, "toolbox-") {
 		t.Errorf("expected container name with toolbox- prefix, got %q", wantName)
+	}
+}
+
+// TestShellMirrorsWorkspaceAtHostPath verifies that a workspace with a safe
+// absolute host path is bind-mounted at BOTH /workspace and its own host path,
+// and the shell WorkingDir is set to the host path so that $PWD-based bind
+// mounts issued from inside the shell (DooD) pass a host-resolvable path to
+// the daemon.
+func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	ws := "/Users/alice/projects/demo"
+
+	var capturedBinds []string
+	var capturedWorkDir string
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+			capturedBinds = hostCfg.Binds
+			capturedWorkDir = cfg.WorkingDir
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	if capturedWorkDir != ws {
+		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, ws)
+	}
+	wantCanonical := ws + ":" + WorkspaceTarget + ":rw"
+	wantMirror := ws + ":" + ws + ":rw"
+	if !slices.Contains(capturedBinds, wantCanonical) {
+		t.Errorf("missing canonical bind %q in %v", wantCanonical, capturedBinds)
+	}
+	if !slices.Contains(capturedBinds, wantMirror) {
+		t.Errorf("missing mirror bind %q in %v", wantMirror, capturedBinds)
+	}
+}
+
+// TestShellSkipsMirrorForReservedPath verifies that a workspace nested under a
+// reserved in-container directory (e.g. /home/toolbox) is mounted ONLY at
+// /workspace to avoid shadowing the container's own filesystem.
+func TestShellSkipsMirrorForReservedPath(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	ws := "/home/toolbox/demo"
+
+	var capturedBinds []string
+	var capturedWorkDir string
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+			capturedBinds = hostCfg.Binds
+			capturedWorkDir = cfg.WorkingDir
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	if capturedWorkDir != WorkspaceTarget {
+		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, WorkspaceTarget)
+	}
+	mirrorBind := ws + ":" + ws + ":rw"
+	if slices.Contains(capturedBinds, mirrorBind) {
+		t.Errorf("mirror bind must be skipped for reserved path, got %v", capturedBinds)
+	}
+	canonical := ws + ":" + WorkspaceTarget + ":rw"
+	if !slices.Contains(capturedBinds, canonical) {
+		t.Errorf("expected canonical bind %q in %v", canonical, capturedBinds)
+	}
+}
+
+func TestWorkspaceMirrorPath(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"/Users/alice/project", "/Users/alice/project", true},
+		{"/home/alice/code", "/home/alice/code", true},
+		{"/mnt/data/repo", "/mnt/data/repo", true},
+		{"/tmp/work/x", "/tmp/work/x", true},
+		{"/", "", false},
+		{WorkspaceTarget, "", false},
+		{WorkspaceTarget + "/nested", "", false},
+		{"/home/toolbox", "", false},
+		{"/home/toolbox/app", "", false},
+		{"/usr/local/src", "", false},
+		{"/etc/toolbox", "", false},
+		{"", "", false},
+		{"relative/path", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := workspaceMirrorPath(tc.in)
+		if ok != tc.wantOK || got != tc.want {
+			t.Errorf("workspaceMirrorPath(%q) = (%q, %v), want (%q, %v)",
+				tc.in, got, ok, tc.want, tc.wantOK)
+		}
 	}
 }
 
@@ -531,6 +651,15 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 	want := "TOOLBOX_HOST_WORKSPACE=" + ws
 	if !slices.Contains(capturedEnv, want) {
 		t.Errorf("expected env %q in %v", want, capturedEnv)
+	}
+
+	mirror, ok := workspaceMirrorPath(ws)
+	wantPWD := "PWD=" + WorkspaceTarget
+	if ok {
+		wantPWD = "PWD=" + mirror
+	}
+	if !slices.Contains(capturedEnv, wantPWD) {
+		t.Errorf("expected env %q in %v", wantPWD, capturedEnv)
 	}
 }
 
