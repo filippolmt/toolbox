@@ -9,10 +9,12 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Node.js | 24 LTS |
 | pnpm | 10.33.x |
 | Claude Code | 2.1.x |
+| Pyright language server (`pyright-langserver`) | 1.1.x |
 | Playwright CLI | 1.59.x |
 | Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
 | Python 3 | 3.11 |
 | uv | 0.11.x |
+| Go toolchain + gopls + goimports | 1.26.x |
 | kubectl | 1.35.x |
 | Helm | 4.1.x |
 | OpenTofu | 1.11.x |
@@ -23,7 +25,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Google Cloud SDK (gcloud) | 565.x |
 | Azure CLI (az) | 2.85.x |
 | Oracle OCI CLI | 3.80.x |
-| jq, yq, starship, git | latest stable |
+| jq, yq, starship, bat, git | latest stable |
 
 Every optional tool above can be disabled per-project — see [Configuration](#configuration).
 

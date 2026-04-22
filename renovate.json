@@ -106,6 +106,13 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+PYRIGHT_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "pyright"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GCLOUD_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "docker",
       "packageNameTemplate": "google/cloud-sdk",

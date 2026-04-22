@@ -28,6 +28,7 @@ ARG STARSHIP_VERSION=1.25.0
 ARG PNPM_VERSION=10.33.0
 ARG UV_VERSION=0.11.7
 ARG CLAUDE_CODE_VERSION=2.1.117
+ARG PYRIGHT_VERSION=1.1.409
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.80.0
@@ -89,6 +90,7 @@ ARG INSTALL_PLAYWRIGHT_CLI=true
 ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
 ARG INSTALL_BAT=true
+ARG INSTALL_PYRIGHT=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -333,6 +335,18 @@ RUN set -eux; \
     else \
       npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
       claude --version; \
+    fi
+
+# -- Layer 13a: Pyright language server (TOOL-01) ----------------------------
+# Python LSP used by the pyright-lsp Claude Code plugin. Installed as a global
+# npm package so `pyright-langserver` lands in /usr/local/bin without needing
+# pipx/venv wiring. Gated by INSTALL_PYRIGHT (tools.pyright).
+RUN set -eux; \
+    if [ "${INSTALL_PYRIGHT}" != "true" ]; then \
+      echo "Skipping pyright (tools.pyright=false)"; \
+    else \
+      npm install -g pyright@${PYRIGHT_VERSION}; \
+      pyright --version; \
     fi
 
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------
