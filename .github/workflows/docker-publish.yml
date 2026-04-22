@@ -11,6 +11,9 @@ name: Docker Publish
 on:
   push:
     branches: [main]
+    paths:
+      - 'internal/build/assets/**'
+      - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
 
 env:
