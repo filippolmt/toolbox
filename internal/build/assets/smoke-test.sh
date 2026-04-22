@@ -167,6 +167,7 @@ check_required "tini"       /usr/bin/tini --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version
+check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
 check_optional  "uv"        uv       uv --version

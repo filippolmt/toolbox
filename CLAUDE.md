@@ -60,6 +60,12 @@ Single test or package: `make go-shell`, then `go test ./internal/mount -run Tes
 - **Image selection**: `toolbox shell` pulls `ghcr.io/filippolmt/toolbox:latest` only when the merged `tools:` config matches the defaults (all true). Any override auto-builds `toolbox:local-<hash>` from the embedded Dockerfile — see `internal/build/tag.go` `ResolveImage`. `toolbox build` is an explicit escape hatch (supports `--no-cache`).
 - **Claude Code auto-update is disabled** via `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` — the toolbox user can't write to `/usr/local/lib/node_modules` (installed as root). Bump `CLAUDE_CODE_VERSION` in the Dockerfile and rebuild.
 
+## Runtime container (shell session)
+
+- **PID 1 is `tini`** (baked into the image) — reaps zombies and forwards signals cleanly so `Ctrl-C` and container stop behave the same as host processes. Don't replace it with a plain `bash` entrypoint.
+- **MCP plugin auto-build on shell start**: `internal/build/assets/entrypoint.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells are cached.
+- **User config is `.toolbox.yaml`** (project root) merged with `~/.toolbox.yaml` (global). Schema matches `internal/config/config.go` `Config` struct. `tools.<key>: false` opts out of optional layers and drives the local image hash via `ResolveImage` — see `internal/build/tag.go`.
+
 ## Layout
 
 ```
