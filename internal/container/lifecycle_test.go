@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,14 +32,15 @@ func (e *notFoundError) Unwrap() error { return nil }
 type mockClient struct {
 	client.APIClient
 
-	inspectFn func(ctx context.Context, id string) (container.InspectResponse, error)
-	createFn  func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
-	startFn   func(ctx context.Context, id string, opts container.StartOptions) error
-	stopFn    func(ctx context.Context, id string, opts container.StopOptions) error
-	removeFn  func(ctx context.Context, id string, opts container.RemoveOptions) error
-	imgInspFn func(ctx context.Context, id string) (image.InspectResponse, error)
-	imgPullFn func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
-	listFn    func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
+	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
+	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
+	startFn       func(ctx context.Context, id string, opts container.StartOptions) error
+	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
+	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
+	imgInspFn     func(ctx context.Context, id string) (image.InspectResponse, error)
+	imgPullFn     func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
+	listFn        func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
+	execInspectFn func(ctx context.Context, execID string) (container.ExecInspect, error)
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container.InspectResponse, error) {
@@ -96,6 +98,13 @@ func (m *mockClient) ContainerList(ctx context.Context, opts container.ListOptio
 		return m.listFn(ctx, opts)
 	}
 	return nil, fmt.Errorf("ContainerList not mocked")
+}
+
+func (m *mockClient) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+	if m.execInspectFn != nil {
+		return m.execInspectFn(ctx, execID)
+	}
+	return container.ExecInspect{}, fmt.Errorf("ContainerExecInspect not mocked")
 }
 
 func (m *mockClient) Close() error { return nil }
@@ -488,5 +497,110 @@ func TestNotFoundErrorSatisfiesErrdefs(t *testing.T) {
 	err := &notFoundError{msg: "test"}
 	if !cerrdefs.IsNotFound(err) {
 		t.Fatal("notFoundError should satisfy cerrdefs.IsNotFound")
+	}
+}
+
+// TestShellSetsHostWorkspaceEnv verifies that ContainerCreate receives
+// TOOLBOX_HOST_WORKSPACE set to the absolute host workspace path, so that
+// nested `docker run -v` invocations against the bind-mounted host socket
+// can resolve /workspace/* to a path the host daemon knows.
+func TestShellSetsHostWorkspaceEnv(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	ws := testWorkspace(t)
+	var capturedEnv []string
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+			capturedEnv = cfg.Env
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	want := "TOOLBOX_HOST_WORKSPACE=" + ws
+	if !slices.Contains(capturedEnv, want) {
+		t.Errorf("expected env %q in %v", want, capturedEnv)
+	}
+}
+
+// TestShellSkipsStopWhenSiblingExecRunning simulates a second terminal
+// attached to the same container: on exit of the current shell, the
+// ExecIDs list still includes a Running exec, so the container must NOT
+// be stopped — otherwise sibling terminals lose their shell.
+func TestShellSkipsStopWhenSiblingExecRunning(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	stopCalled := false
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:      "abc123",
+					State:   &container.State{Running: true},
+					ExecIDs: []string{"sibling-exec"},
+				},
+			}, nil
+		},
+		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
+			return container.ExecInspect{Running: true}, nil
+		},
+		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+			stopCalled = true
+			return nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if stopCalled {
+		t.Fatal("ContainerStop must not be called while a sibling exec is still Running")
+	}
+}
+
+// TestShellStopsWhenNoSiblingExecs covers the symmetric path: the only
+// exec recorded on the container is already exited (ours), so teardown
+// must proceed as normal.
+func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	stopCalled := false
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					ID:      "abc123",
+					State:   &container.State{Running: true},
+					ExecIDs: []string{"our-exec"},
+				},
+			}, nil
+		},
+		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
+			return container.ExecInspect{Running: false}, nil
+		},
+		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+			stopCalled = true
+			return nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !stopCalled {
+		t.Fatal("ContainerStop should be called when no sibling exec is running")
 	}
 }

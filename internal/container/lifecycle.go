@@ -201,6 +201,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				WorkingDir:   WorkspaceTarget,
 				User:         hostUserSpec(),
 				ExposedPorts: exposed,
+				Env:          shellEnv(workspace),
 			},
 			&container.HostConfig{
 				Binds:        binds,
@@ -225,14 +226,20 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		return fmt.Errorf("failed to inspect container: %w", inspectErr)
 	}
 
-	// Auto-remove on exit. Use a fresh context (with a bounded timeout) so
-	// cleanup still runs if the shell exited because ctx was cancelled
-	// (Ctrl+C), but a frozen Docker daemon can't hang the CLI. The shell's
-	// own exit error wins over any cleanup error — a failed stop is noisy,
-	// not fatal.
+	// Auto-remove on exit, unless another shell is still attached to the
+	// same container (same workspace opened in multiple terminals). In that
+	// case leaving the container running keeps the sibling sessions alive.
+	// Use a fresh context (with a bounded timeout) so cleanup still runs if
+	// the shell exited because ctx was cancelled (Ctrl+C), but a frozen
+	// Docker daemon can't hang the CLI. The shell's own exit error wins
+	// over any cleanup error — a failed stop is noisy, not fatal.
 	defer func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), cleanupTimeout)
 		defer cancelCleanup()
+		if hasActiveExecs(cleanupCtx, cli, name) {
+			ui.Info("Container " + name + " still has active sessions — leaving it running")
+			return
+		}
 		if stopErr := stopOne(cleanupCtx, cli, name); stopErr != nil && err == nil {
 			err = stopErr
 		}
@@ -402,6 +409,42 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 
 	ui.Success("Container " + name + " stopped and removed")
 	return nil
+}
+
+// shellEnv returns the env vars injected into every shell spawned by the
+// container. TOOLBOX_HOST_WORKSPACE holds the absolute host path mounted at
+// /workspace so that Makefiles and compose files can pass a host-resolvable
+// path to `docker run -v` under the bind-mounted socket (DooD): a literal
+// "/workspace/foo" is meaningless to the host daemon.
+func shellEnv(workspace string) []string {
+	return []string{"TOOLBOX_HOST_WORKSPACE=" + workspace}
+}
+
+// hasActiveExecs reports whether the named container has any still-running
+// exec session. Called on shell exit: the invoking exec has already drained
+// (io.Copy returned) and is Running:false by the time this runs, so it does
+// not self-report. A true result means a sibling terminal is still attached,
+// and stopping the container would kill it — the caller skips teardown.
+// Inspect errors are treated as "no active execs" so a transient daemon
+// hiccup does not strand a container that nobody will ever clean up.
+func hasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool {
+	inspect, err := cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return false
+	}
+	if inspect.ContainerJSONBase == nil {
+		return false
+	}
+	for _, execID := range inspect.ExecIDs {
+		exec, err := cli.ContainerExecInspect(ctx, execID)
+		if err != nil {
+			continue
+		}
+		if exec.Running {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
