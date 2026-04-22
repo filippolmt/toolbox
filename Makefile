@@ -11,11 +11,11 @@ GO_RUN          := docker run --rm \
 	-v "$(CURDIR)":/src \
 	-v $(GO_MOD_VOL):/go \
 	-w /src \
-	-e GOFLAGS=-mod=mod \
+	-e GOFLAGS="-mod=mod -buildvcs=false" \
 	-e CGO_ENABLED=0 \
 	$(GO_IMAGE)
 
-.PHONY: build test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache
+.PHONY: build test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
 
 build: ## Build the toolbox image
 	docker build -f internal/build/assets/Dockerfile -t $(FULL) internal/build/assets
@@ -56,7 +56,7 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 		-v "$(CURDIR)":/src \
 		-v $(GO_MOD_VOL):/go \
 		-w /src \
-		-e GOFLAGS=-mod=mod \
+		-e GOFLAGS="-mod=mod -buildvcs=false" \
 		$(GO_IMAGE) \
 		go test -v -race ./...
 
@@ -73,9 +73,20 @@ go-shell: ## Open a shell in the golang container for ad-hoc commands
 		-v "$(CURDIR)":/src \
 		-v $(GO_MOD_VOL):/go \
 		-w /src \
-		-e GOFLAGS=-mod=mod \
+		-e GOFLAGS="-mod=mod -buildvcs=false" \
 		-e CGO_ENABLED=0 \
 		$(GO_IMAGE) bash
 
 go-clean-cache: ## Remove the shared Go module/build cache volume
 	docker volume rm $(GO_MOD_VOL) 2>/dev/null || true
+
+# go-run / go-run-clean are HOST-ONLY dogfood targets. Building the CLI and
+# then invoking it from inside a toolbox shell re-enters DooD and hits the
+# same bind-mount surprise the CLI itself is trying to smooth over, so these
+# are meant to be run from a native host terminal.
+go-run: go-build ## Build the CLI and open a toolbox shell via the freshly built binary (host-only)
+	./$(BINARY) shell
+
+go-run-clean: go-build ## Like go-run but stop the existing container first so ContainerCreate-time changes (Env, mounts) take effect
+	-./$(BINARY) stop
+	./$(BINARY) shell
