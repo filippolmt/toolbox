@@ -84,6 +84,10 @@ alias ll='ls -la'
 alias la='ls -A'
 alias l='ls -CF'
 
+if command -v bat >/dev/null 2>&1; then
+    alias cat=bat
+fi
+
 # -- zoxide (ZSH-07) — after compinit (which ran inside oh-my-zsh.sh) ---------
 # Registers the `z` function and the `__zoxide_z` ZLE widget.
 if command -v zoxide >/dev/null 2>&1; then

@@ -38,6 +38,13 @@ ARG GO_VERSION=1.26.2
 ARG GOPLS_VERSION=0.21.1
 ARG GOIMPORTS_VERSION=0.44.0
 ARG TINI_VERSION=0.19.0
+ARG BAT_VERSION=0.26.1
+# sharkdp/bat does not publish per-release checksum files — SHA256 is pinned
+# per-arch as a build arg (same pattern as ZOXIDE_SHA256_*). Renovate bumps
+# BAT_VERSION; the maintainer refreshes these two hashes in the same PR.
+# Accepted risk: analogous to T-01-08 but tighter (hash still verified).
+ARG BAT_SHA256_AMD64=726f04c8f576a7fd18b7634f1bbf2f915c43494c1c0f013baa3287edb0d5a2a3
+ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6564aa
 
 # -- zsh bundle pinning (D-01) ------------------------------------------------
 # OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
@@ -81,6 +88,7 @@ ARG INSTALL_PLAYWRIGHT=true
 ARG INSTALL_PLAYWRIGHT_CLI=true
 ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
+ARG INSTALL_BAT=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -247,6 +255,31 @@ RUN set -eux; \
       chmod +x /usr/local/bin/yq; \
       rm /tmp/yq_checksums; \
       yq --version; \
+    fi
+
+# -- Layer 10a: bat (pretty-printer / cat replacement) ------------------------
+# sharkdp/bat does not publish checksum files with releases, so SHA256 is
+# pinned per-arch via BAT_SHA256_{AMD64,ARM64} build args (same pattern as
+# zoxide — see Layer 20c). Both Linux tarballs are the `unknown-linux-gnu`
+# variant to match Debian bookworm's glibc.
+RUN set -eux; \
+    if [ "${INSTALL_BAT}" != "true" ]; then \
+      echo "Skipping bat (tools.bat=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) BAT_ARCH=x86_64-unknown-linux-gnu;   BAT_SHA256="${BAT_SHA256_AMD64}";; \
+        arm64) BAT_ARCH=aarch64-unknown-linux-gnu;  BAT_SHA256="${BAT_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      BAT_TARBALL="bat-v${BAT_VERSION}-${BAT_ARCH}.tar.gz"; \
+      curl -fsSL -o "/tmp/${BAT_TARBALL}" \
+        "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/${BAT_TARBALL}"; \
+      echo "${BAT_SHA256}  /tmp/${BAT_TARBALL}" | sha256sum -c -; \
+      tar -xzf "/tmp/${BAT_TARBALL}" -C /usr/local/bin --strip-components=1 \
+        "bat-v${BAT_VERSION}-${BAT_ARCH}/bat"; \
+      chmod +x /usr/local/bin/bat; \
+      rm "/tmp/${BAT_TARBALL}"; \
+      bat --version; \
     fi
 
 # -- Layer 11: pnpm via corepack (TOOL-03) ------------------------------------
