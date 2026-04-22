@@ -16,7 +16,7 @@ FROM node:24-bookworm-slim
 # The verification steps below fetch the matching SHA256 from upstream at
 # build time, so changing only the version here keeps checksums correct.
 ARG TARGETARCH
-ARG GH_VERSION=2.90.0
+ARG GH_VERSION=2.91.0
 ARG GLAB_VERSION=1.92.1
 ARG KUBECTL_VERSION=v1.35.4
 ARG HELM_VERSION=v4.1.4
