@@ -35,8 +35,23 @@ import (
 // hang the CLI forever.
 const cleanupTimeout = 30 * time.Second
 
-// WorkspaceTarget is the fixed in-container path where the host CWD is mounted.
+// WorkspaceTarget is the canonical in-container path where the host CWD is
+// mounted. When it is safe to do so, the same host directory is also mirrored
+// at its own absolute host path (see workspaceMirrorPath) and used as the
+// shell WorkingDir, so `$PWD`-based bind mounts from inside the container
+// resolve to a path the host daemon knows under DooD.
 const WorkspaceTarget = "/workspace"
+
+// reservedMirrorPrefixes lists in-container directories that must not be
+// shadowed by the host-path mirror of the workspace. A host path equal to or
+// nested under any of these is mounted only at WorkspaceTarget.
+var reservedMirrorPrefixes = []string{
+	WorkspaceTarget,
+	"/home/toolbox",
+	"/root",
+	"/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
+	"/boot", "/dev", "/etc", "/proc", "/run", "/sys", "/usr", "/var",
+}
 
 // containerNamePrefix identifies containers managed by toolbox.
 const containerNamePrefix = "toolbox-"
@@ -131,6 +146,13 @@ func ContainerNameFor(workspace string) string {
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
 func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string, publish []string) (err error) {
+	// Normalize once so every downstream consumer (container name, bind
+	// sources, env vars) sees the same absolute, cleaned path. Callers
+	// already do this, but defensive normalization keeps bind source and
+	// mirror target identical regardless of input quirks.
+	if abs, absErr := filepath.Abs(workspace); absErr == nil {
+		workspace = filepath.Clean(abs)
+	}
 	name := ContainerNameFor(workspace)
 
 	exposed, bindings, parseErr := parsePublishSpecs(publish)
@@ -161,6 +183,16 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 
 	// Workspace mount is always enabled: host CWD -> /workspace.
 	binds = append(binds, workspace+":"+WorkspaceTarget+":rw")
+
+	// Mirror the workspace at its own absolute host path when safe, so that
+	// $PWD-based bind mounts issued from inside the shell (DooD) pass a path
+	// the host daemon can resolve. WorkingDir falls back to WorkspaceTarget
+	// when the host path would shadow a reserved container directory.
+	workingDir := WorkspaceTarget
+	if mirror, ok := workspaceMirrorPath(workspace); ok {
+		binds = append(binds, workspace+":"+mirror+":rw")
+		workingDir = mirror
+	}
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 
@@ -198,10 +230,10 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				Tty:          true,
 				OpenStdin:    true,
 				Cmd:          shellCmd,
-				WorkingDir:   WorkspaceTarget,
+				WorkingDir:   workingDir,
 				User:         hostUserSpec(),
 				ExposedPorts: exposed,
-				Env:          shellEnv(workspace),
+				Env:          shellEnv(workspace, workingDir),
 			},
 			&container.HostConfig{
 				Binds:        binds,
@@ -415,9 +447,41 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 // container. TOOLBOX_HOST_WORKSPACE holds the absolute host path mounted at
 // /workspace so that Makefiles and compose files can pass a host-resolvable
 // path to `docker run -v` under the bind-mounted socket (DooD): a literal
-// "/workspace/foo" is meaningless to the host daemon.
-func shellEnv(workspace string) []string {
-	return []string{"TOOLBOX_HOST_WORKSPACE=" + workspace}
+// "/workspace/foo" is meaningless to the host daemon. PWD is set explicitly
+// to workingDir so that scripts reading $PWD directly (without a getcwd
+// fallback) see the same path bash exposes after starting in WorkingDir.
+func shellEnv(workspace, workingDir string) []string {
+	return []string{
+		"TOOLBOX_HOST_WORKSPACE=" + workspace,
+		"PWD=" + workingDir,
+	}
+}
+
+// workspaceMirrorPath returns the in-container path at which the workspace
+// should be mirrored in addition to WorkspaceTarget, plus true when the
+// mirror is safe to create. The mirror is the workspace's own absolute host
+// path, which makes `$PWD` inside the shell match what the host daemon sees
+// — the key ingredient for DooD bind mounts to resolve without rewriting.
+//
+// The mirror is skipped when:
+//   - the path is empty, relative, or equal to the filesystem root;
+//   - the path equals WorkspaceTarget (already mounted there);
+//   - the path would shadow a reserved container directory (see
+//     reservedMirrorPrefixes) — e.g. /home/toolbox, /usr, /etc.
+func workspaceMirrorPath(workspace string) (string, bool) {
+	if workspace == "" || !filepath.IsAbs(workspace) {
+		return "", false
+	}
+	abs := filepath.Clean(workspace)
+	if abs == "/" || abs == WorkspaceTarget {
+		return "", false
+	}
+	for _, r := range reservedMirrorPrefixes {
+		if abs == r || strings.HasPrefix(abs, r+"/") {
+			return "", false
+		}
+	}
+	return abs, true
 }
 
 // hasActiveExecs reports whether the named container has any still-running

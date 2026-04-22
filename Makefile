@@ -7,8 +7,13 @@ FULL    := $(IMAGE):$(TAG)
 GO_IMAGE        := golang:1.26
 GOLANGCI_IMAGE  := golangci/golangci-lint:v2.11.4-alpine
 GO_MOD_VOL      := toolbox-gomod
+# When running inside a toolbox shell we are talking to the host daemon over
+# the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
+# usually /workspace) is not resolvable by that daemon. Fall back to the
+# absolute host path exposed via TOOLBOX_HOST_WORKSPACE when it is set.
+HOST_SRC        := $(if $(TOOLBOX_HOST_WORKSPACE),$(TOOLBOX_HOST_WORKSPACE),$(CURDIR))
 GO_RUN          := docker run --rm \
-	-v "$(CURDIR)":/src \
+	-v "$(HOST_SRC)":/src \
 	-v $(GO_MOD_VOL):/go \
 	-w /src \
 	-e GOFLAGS="-mod=mod -buildvcs=false" \
@@ -53,7 +58,7 @@ go-test: ## Run Go tests inside a golang container
 
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 	docker run --rm \
-		-v "$(CURDIR)":/src \
+		-v "$(HOST_SRC)":/src \
 		-v $(GO_MOD_VOL):/go \
 		-w /src \
 		-e GOFLAGS="-mod=mod -buildvcs=false" \
@@ -62,7 +67,7 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 
 go-lint: ## Run golangci-lint inside a container
 	docker run --rm \
-		-v "$(CURDIR)":/src \
+		-v "$(HOST_SRC)":/src \
 		-v $(GO_MOD_VOL):/go \
 		-w /src \
 		$(GOLANGCI_IMAGE) \
@@ -70,7 +75,7 @@ go-lint: ## Run golangci-lint inside a container
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it \
-		-v "$(CURDIR)":/src \
+		-v "$(HOST_SRC)":/src \
 		-v $(GO_MOD_VOL):/go \
 		-w /src \
 		-e GOFLAGS="-mod=mod -buildvcs=false" \
