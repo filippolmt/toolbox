@@ -15,16 +15,18 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Python 3 | 3.11 |
 | uv | 0.11.x |
 | Go toolchain + gopls + goimports | 1.26.x |
-| kubectl | 1.35.x |
+| kubectl | 1.36.x |
 | Helm | 4.1.x |
 | OpenTofu | 1.11.x |
-| GitHub CLI (gh) | 2.90.x |
+| GitHub CLI (gh) | 2.91.x |
 | GitLab CLI (glab) | 1.92.x |
+| Google Workspace CLI (`gws`) | 0.22.x |
 | Docker CLI | 29.4.x |
 | Docker Compose | 5.1.x |
 | Google Cloud SDK (gcloud) | 565.x |
 | Azure CLI (az) | 2.85.x |
 | Oracle OCI CLI | 3.80.x |
+| Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | jq, yq, starship, bat, git | latest stable |
 
 Every optional tool above can be disabled per-project — see [Configuration](#configuration).
@@ -41,7 +43,7 @@ brew install filippolmt/tap/toolbox
 
 ### From source
 
-Requires Go 1.22+:
+Requires Go 1.26+:
 
 ```bash
 go install github.com/filippolmt/toolbox@latest
