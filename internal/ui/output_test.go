@@ -1,0 +1,88 @@
+package ui
+
+import (
+	"io"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// captureStderr swaps os.Stderr for a pipe, runs fn, restores os.Stderr, and
+// returns what fn wrote. Used to verify diagnostic output lands on stderr —
+// stdout must remain reserved for program output so pipelines stay clean.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	var got strings.Builder
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		_, _ = io.Copy(&got, r)
+	})
+
+	fn()
+
+	_ = w.Close()
+	wg.Wait()
+	os.Stderr = old
+	return got.String()
+}
+
+func TestSuccessWritesToStderr(t *testing.T) {
+	out := captureStderr(t, func() { Success("ready") })
+	if !strings.Contains(out, "OK: ready") {
+		t.Errorf("stderr = %q, want to contain %q", out, "OK: ready")
+	}
+}
+
+func TestWarningWritesToStderr(t *testing.T) {
+	out := captureStderr(t, func() { Warning("careful") })
+	if !strings.Contains(out, "WARN: careful") {
+		t.Errorf("stderr = %q, want to contain %q", out, "WARN: careful")
+	}
+}
+
+func TestInfoWritesToStderr(t *testing.T) {
+	out := captureStderr(t, func() { Info("pulling image") })
+	if !strings.Contains(out, "pulling image") {
+		t.Errorf("stderr = %q, want to contain %q", out, "pulling image")
+	}
+}
+
+// TestOutputDoesNotWriteToStdout locks the stdout/stderr discipline in place:
+// if ui ever regresses to fmt.Println (stdout), pipelines like
+// `toolbox shell | grep foo` get corrupted by diagnostic lines.
+func TestOutputDoesNotWriteToStdout(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout })
+
+	var got strings.Builder
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		_, _ = io.Copy(&got, r)
+	})
+
+	_ = captureStderr(t, func() {
+		Success("a")
+		Warning("b")
+		Info("c")
+	})
+
+	_ = w.Close()
+	wg.Wait()
+
+	if got.Len() != 0 {
+		t.Errorf("ui functions must not write to stdout, got %q", got.String())
+	}
+}

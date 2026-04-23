@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -22,16 +20,17 @@ Zsh:
 Fish:
   $ toolbox completion fish > ~/.config/fish/completions/toolbox.fish`,
 	ValidArgs:             []string{"bash", "zsh", "fish"},
-	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+	Args:                  usageArgs(cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)),
 	DisableFlagsInUseLine: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		out := cmd.OutOrStdout()
 		switch args[0] {
 		case "bash":
-			return cmd.Root().GenBashCompletionV2(os.Stdout, true)
+			return cmd.Root().GenBashCompletionV2(out, true)
 		case "zsh":
-			return cmd.Root().GenZshCompletion(os.Stdout)
+			return cmd.Root().GenZshCompletion(out)
 		case "fish":
-			return cmd.Root().GenFishCompletion(os.Stdout, true)
+			return cmd.Root().GenFishCompletion(out, true)
 		}
 		return nil
 	},

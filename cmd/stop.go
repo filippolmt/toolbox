@@ -13,6 +13,7 @@ var stopCmd = &cobra.Command{
 	Long: `Stop and remove the toolbox container bound to the current directory.
 With --all, stop and remove every toolbox container on the host.
 All persistent data lives on the host-mounted volumes, so nothing is lost.`,
+	Args: usageArgs(cobra.NoArgs),
 	RunE: runStop,
 }
 

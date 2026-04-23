@@ -73,7 +73,7 @@ type ShellMismatchError struct {
 
 func (e *ShellMismatchError) Error() string {
 	return fmt.Sprintf(
-		"toolbox: shell %q requested but tools.%s is disabled.\n"+
+		"shell %q requested but tools.%s is disabled.\n"+
 			"  shell: %s\n"+
 			"  tools.%s: false\n"+
 			"  • set `tools.%s: true` in ~/.toolbox.yaml, OR\n"+
@@ -105,7 +105,9 @@ func NewClient() (client.APIClient, error) {
 
 // ContainerNameFor builds the container name for a given workspace path.
 // Format: toolbox-<basename>-<hash8>. The hash is over the absolute path so
-// that two directories sharing the same basename do not collide.
+// that two directories sharing the same basename do not collide. Output is
+// capped at 63 characters to respect Docker's conventional name length: the
+// basename is truncated first so the stable prefix and hash suffix survive.
 func ContainerNameFor(workspace string) string {
 	abs, err := filepath.Abs(workspace)
 	if err != nil {
@@ -121,6 +123,15 @@ func ContainerNameFor(workspace string) string {
 	base = strings.Trim(base, "-")
 	if base == "" {
 		base = "root"
+	}
+
+	// 63 (Docker convention) - len("toolbox-") - len("-") - 8 (hash) = 46.
+	const maxBasename = 46
+	if len(base) > maxBasename {
+		base = strings.TrimRight(base[:maxBasename], "-")
+		if base == "" {
+			base = "root"
+		}
 	}
 
 	return containerNamePrefix + base + "-" + hash
@@ -163,9 +174,9 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	// SHELL-02 + SHELL-03: resolve the shell BEFORE any Docker work so an
 	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
 	// clear message and no container/image side-effects (D-17, D-18).
+	// Error printing is handled by cmd.Execute().
 	shellCmd, resolveErr := ResolveShellCmd(cfg)
 	if resolveErr != nil {
-		fmt.Fprintln(os.Stderr, resolveErr)
 		return resolveErr
 	}
 
@@ -372,9 +383,10 @@ func pullImage(ctx context.Context, cli client.APIClient, ref string) {
 	}
 	defer rc.Close()
 
-	fd := os.Stdout.Fd()
+	// Pull progress is diagnostic; keep stdout clean for program output.
+	fd := os.Stderr.Fd()
 	isTerm := term.IsTerminal(int(fd))
-	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stdout, fd, isTerm, nil); err != nil {
+	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, fd, isTerm, nil); err != nil {
 		ui.Warning("image pull stream error, using local image if present: " + err.Error())
 		return
 	}

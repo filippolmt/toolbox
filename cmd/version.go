@@ -14,8 +14,9 @@ func init() {
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the toolbox version",
+	Args:  usageArgs(cobra.NoArgs),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("toolbox %s (commit: %s, built: %s)\n",
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "toolbox %s (commit: %s, built: %s)\n",
 			version.Version, version.Commit, version.Date)
 	},
 }

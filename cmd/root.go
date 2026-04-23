@@ -1,24 +1,57 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 var cfgFile string
 
+// usageError marks a flag- or argument-parsing failure so Execute can map it
+// to the conventional exit code 2 (vs. 1 for runtime errors).
+type usageError struct{ err error }
+
+func (e *usageError) Error() string { return e.err.Error() }
+func (e *usageError) Unwrap() error { return e.err }
+
+// usageArgs wraps a cobra positional-args validator so that any failure
+// surfaces as *usageError. Cobra routes flag-parsing errors through
+// SetFlagErrorFunc but gives no equivalent hook for positional-args
+// validators — this bridges that gap so `toolbox shell extra` exits 2 like
+// `toolbox --bad-flag`.
+func usageArgs(v cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if v == nil {
+			return nil
+		}
+		if err := v(cmd, args); err != nil {
+			return &usageError{err: err}
+		}
+		return nil
+	}
+}
+
 var rootCmd = &cobra.Command{
-	Use:   "toolbox",
-	Short: "Manage the toolbox development container",
-	Long:  "CLI to start, stop, and build the toolbox container.",
+	Use:           "toolbox",
+	Short:         "Manage the toolbox development container",
+	Long:          "CLI to start, stop, and build the toolbox container.",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // Execute runs the root command. Invoked from main.go.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "toolbox: "+err.Error())
+		if _, ok := errors.AsType[*usageError](err); ok {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
@@ -27,15 +60,26 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
 		"config file (default: .toolbox.yaml, ~/.toolbox.yaml)")
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &usageError{err: err}
+	})
 }
 
 func initConfig() {
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// 1. Built-in defaults
-		setDefaults()
+	// 1. Built-in defaults apply to every config-resolution path so that
+	//    missing keys (e.g. a new tool added in code but not yet in the user's
+	//    yaml) resolve to the documented default value.
+	setDefaults()
 
+	if cfgFile != "" {
+		// Explicit --config: must be read; failure is hard. User asked for
+		// this file on purpose.
+		viper.SetConfigFile(cfgFile)
+		if err := viper.ReadInConfig(); err != nil {
+			fmt.Fprintln(os.Stderr, "toolbox: failed to read "+cfgFile+": "+err.Error())
+			os.Exit(1)
+		}
+	} else {
 		// 2. Global config (~/.toolbox.yaml). Skip if HOME is unresolvable
 		// — AddConfigPath("") would silently read from CWD.
 		viper.SetConfigName(".toolbox")
@@ -63,25 +107,8 @@ func initConfig() {
 func setDefaults() {
 	// Every opt-out tool is on by default. Tool selection is applied at
 	// build time via `ARG INSTALL_<TOOL>` in internal/build/assets/Dockerfile.
-	// Keep this list in sync with config.KnownTools.
-	viper.SetDefault("tools.azure", true)
-	viper.SetDefault("tools.claude", true)
-	viper.SetDefault("tools.compose", true)
-	viper.SetDefault("tools.docker", true)
-	viper.SetDefault("tools.gcloud", true)
-	viper.SetDefault("tools.gh", true)
-	viper.SetDefault("tools.glab", true)
-	viper.SetDefault("tools.go", true)
-	viper.SetDefault("tools.helm", true)
-	viper.SetDefault("tools.jq", true)
-	viper.SetDefault("tools.kubectl", true)
-	viper.SetDefault("tools.oci", true)
-	viper.SetDefault("tools.playwright", true)
-	viper.SetDefault("tools.playwright_cli", true)
-	viper.SetDefault("tools.pnpm", true)
-	viper.SetDefault("tools.starship", true)
-	viper.SetDefault("tools.tofu", true)
-	viper.SetDefault("tools.uv", true)
-	viper.SetDefault("tools.yq", true)
-	viper.SetDefault("tools.zsh", true)
+	// Derived from config.KnownTools so the two lists can't drift.
+	for _, k := range config.KnownTools {
+		viper.SetDefault("tools."+k, true)
+	}
 }
