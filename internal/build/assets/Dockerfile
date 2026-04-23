@@ -18,6 +18,7 @@ FROM node:24-bookworm-slim
 ARG TARGETARCH
 ARG GH_VERSION=2.91.0
 ARG GLAB_VERSION=1.92.1
+ARG GWS_VERSION=0.22.5
 ARG KUBECTL_VERSION=v1.36.0
 ARG HELM_VERSION=v4.1.4
 ARG TOFU_VERSION=1.11.6
@@ -74,6 +75,7 @@ ARG INSTALL_HELM=true
 ARG INSTALL_TOFU=true
 ARG INSTALL_GH=true
 ARG INSTALL_GLAB=true
+ARG INSTALL_GWS=true
 ARG INSTALL_GO=true
 ARG INSTALL_DOCKER_CLI=true
 ARG INSTALL_STARSHIP=true
@@ -190,6 +192,34 @@ RUN set -eux; \
       glab version; \
     fi
 
+# -- Layer 6a: gws (Google Workspace CLI) -------------------------------------
+# Pre-1.0 Rust binary from googleworkspace/cli. MUSL variant is used because the
+# GNU build targets GLIBC 2.39 while the base image (node:24-bookworm-slim) is
+# bookworm with GLIBC 2.36 — the `-gnu` tarball fails at runtime with
+# "version `GLIBC_2.39' not found". The musl build is statically linked and
+# runs on any kernel, matching the zoxide (Layer 20c) strategy. Per-asset
+# `<file>.sha256` is published in standard sha256sum format.
+RUN set -eux; \
+    if [ "${INSTALL_GWS}" != "true" ]; then \
+      echo "Skipping gws (tools.gws=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) GWS_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) GWS_ARCH=aarch64-unknown-linux-musl;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      GWS_TARBALL="google-workspace-cli-${GWS_ARCH}.tar.gz"; \
+      curl -fsSL -o "/tmp/${GWS_TARBALL}" \
+        "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_TARBALL}"; \
+      curl -fsSL -o /tmp/gws.sha256 \
+        "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_TARBALL}.sha256"; \
+      cd /tmp && sha256sum -c gws.sha256; \
+      tar -xzf "/tmp/${GWS_TARBALL}" -C /usr/local/bin --strip-components=1 ./gws; \
+      chmod +x /usr/local/bin/gws; \
+      rm "/tmp/${GWS_TARBALL}" /tmp/gws.sha256; \
+      gws --version; \
+    fi
+
 # -- Layer 7: Docker CLI standalone (TOOL-06, IMG-02) -------------------------
 # NOTE: Docker does not publish per-artifact .sha256 files for static binaries
 # (download.docker.com returns 404). Checksum verification is not possible here.
@@ -280,6 +310,15 @@ RUN set -eux; \
       tar -xzf "/tmp/${BAT_TARBALL}" -C /usr/local/bin --strip-components=1 \
         "bat-v${BAT_VERSION}-${BAT_ARCH}/bat"; \
       chmod +x /usr/local/bin/bat; \
+      # Ship the `#compdef bat` generator from the release tarball. Written to
+      # vendor-completions unconditionally: if INSTALL_ZSH=false the file is
+      # orphaned (~10KB) but harmless; if true, Layer 20d picks it up via the
+      # same dir. No `bat completion zsh` subcommand exists — static file is
+      # the only upstream path.
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      tar -xzf "/tmp/${BAT_TARBALL}" -C /tmp --strip-components=2 \
+        "bat-v${BAT_VERSION}-${BAT_ARCH}/autocomplete/bat.zsh"; \
+      mv /tmp/bat.zsh /usr/share/zsh/vendor-completions/_bat; \
       rm "/tmp/${BAT_TARBALL}"; \
       bat --version; \
     fi
@@ -694,6 +733,9 @@ RUN set -eux; \
       if [ "${INSTALL_GLAB}" = "true" ];       then glab completion -s zsh  > /usr/share/zsh/vendor-completions/_glab;     fi; \
       if [ "${INSTALL_YQ}" = "true" ];         then yq shell-completion zsh > /usr/share/zsh/vendor-completions/_yq;       fi; \
       if [ "${INSTALL_DOCKER_CLI}" = "true" ]; then docker completion zsh   > /usr/share/zsh/vendor-completions/_docker;   fi; \
+      if [ "${INSTALL_UV}" = "true" ];         then uv generate-shell-completion zsh > /usr/share/zsh/vendor-completions/_uv; fi; \
+      if [ "${INSTALL_PNPM}" = "true" ];       then pnpm completion zsh     > /usr/share/zsh/vendor-completions/_pnpm;     fi; \
+      if [ "${INSTALL_STARSHIP}" = "true" ];   then starship completions zsh > /usr/share/zsh/vendor-completions/_starship; fi; \
       ls /usr/share/zsh/vendor-completions; \
     fi
 

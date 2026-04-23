@@ -133,10 +133,11 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 6 files on default build)
+    # l. vendor-completions populated (expect >= 10 files on default build:
+    # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat)
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 6 ]
+        [ "$count" -ge 10 ]
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -155,7 +156,7 @@ check_zsh() {
     _zsh_assert "17 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
-    _zsh_assert "vendor-completions >= 6"      _zsh_vendor_completions_check
+    _zsh_assert "vendor-completions >= 10"     _zsh_vendor_completions_check
 }
 
 check_required "node"       node --version
@@ -176,6 +177,7 @@ check_optional  "helm"      helm     helm version --short
 check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
+check_optional  "gws"       gws      gws --version
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
