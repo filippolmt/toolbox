@@ -17,7 +17,7 @@ FROM node:24-bookworm-slim
 # build time, so changing only the version here keeps checksums correct.
 ARG TARGETARCH
 ARG GH_VERSION=2.91.0
-ARG GLAB_VERSION=1.92.1
+ARG GLAB_VERSION=1.93.0
 ARG GWS_VERSION=0.22.5
 ARG KUBECTL_VERSION=v1.36.0
 ARG HELM_VERSION=v4.1.4
