@@ -25,6 +25,7 @@ The resulting image tag mirrors what 'toolbox shell' would look for:
 - When tools match the defaults, the canonical ghcr.io tag.
 - When any tool is opted out, a content-hashed local tag
   (toolbox:local-<hash>) so different configs don't clobber each other.`,
+	Args: usageArgs(cobra.NoArgs),
 	RunE: runBuild,
 }
 

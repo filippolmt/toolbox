@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
+	"os"
 	"runtime"
 
 	"github.com/docker/docker/api/types/build"
@@ -79,7 +81,8 @@ func streamBuildOutput(reader io.Reader) error {
 			return fmt.Errorf("build error: %s", msg.Error)
 		}
 		if msg.Stream != "" {
-			fmt.Print(msg.Stream)
+			// Build log is diagnostic output; keep stdout clean for program output.
+			fmt.Fprint(os.Stderr, msg.Stream)
 		}
 	}
 	return scanner.Err()
@@ -94,9 +97,7 @@ func mergeBuildArgs(args map[string]*string) map[string]*string {
 	out := map[string]*string{}
 	arch := runtime.GOARCH // "amd64" or "arm64" — matches Docker's TARGETARCH naming.
 	out["TARGETARCH"] = &arch
-	for k, v := range args {
-		out[k] = v
-	}
+	maps.Copy(out, args)
 	return out
 }
 

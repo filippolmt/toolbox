@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -27,6 +28,7 @@ same formats as "docker run -p" (e.g. "7171", "7171:7171",
 "127.0.0.1:7171:7171"). When the host IP is omitted it defaults to
 127.0.0.1 — useful for OAuth callbacks from tools like gh/glab that listen
 on localhost inside the container.`,
+	Args: usageArgs(cobra.NoArgs),
 	RunE: runShell,
 }
 
@@ -64,7 +66,23 @@ func resolveWorkspace() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path: %w", err)
 	}
-	return filepath.Clean(abs), nil
+	clean := filepath.Clean(abs)
+	if err := validateWorkspacePath(clean); err != nil {
+		return "", err
+	}
+	return clean, nil
+}
+
+// validateWorkspacePath rejects paths incompatible with Docker's legacy
+// Binds format (host:container:options). A ':' in the host path would be
+// silently re-parsed as a field separator — e.g. /Users/foo:bar/project
+// becomes bind source "/Users/foo", target "bar/project". Fail loudly so
+// the user either renames the directory or opens toolbox from a safe path.
+func validateWorkspacePath(p string) error {
+	if strings.ContainsRune(p, ':') {
+		return fmt.Errorf("workspace path %q contains ':' — Docker bind-mount format uses ':' as a separator; rename the directory or cd into a different path", p)
+	}
+	return nil
 }
 
 func init() {

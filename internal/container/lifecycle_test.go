@@ -169,6 +169,27 @@ func TestContainerNameForSanitizesBasename(t *testing.T) {
 	}
 }
 
+// TestContainerNameForRespects63CharLimit: Docker's conventional name limit is
+// 63 chars. A workspace basename longer than ~46 chars would overflow — the
+// helper must truncate the basename so the stable prefix and hash suffix
+// survive intact.
+func TestContainerNameForRespects63CharLimit(t *testing.T) {
+	long := "/tmp/" + strings.Repeat("a", 200)
+	name := ContainerNameFor(long)
+	if len(name) > 63 {
+		t.Errorf("name length %d exceeds 63-char cap: %q", len(name), name)
+	}
+	if !strings.HasPrefix(name, "toolbox-") {
+		t.Errorf("name must still start with toolbox- after truncation, got %q", name)
+	}
+	// The hash suffix must still be 8 hex chars appended after the last '-'.
+	parts := strings.Split(name, "-")
+	hash := parts[len(parts)-1]
+	if len(hash) != 8 {
+		t.Errorf("hash suffix length = %d, want 8 — truncation should only trim basename: %q", len(hash), name)
+	}
+}
+
 func TestShellExecInRunningContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
