@@ -133,11 +133,11 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 10 files on default build:
-    # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat)
+    # l. vendor-completions populated (expect >= 11 files on default build:
+    # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat, codex)
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 10 ]
+        [ "$count" -ge 11 ]
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -168,6 +168,7 @@ check_required "tini"       /usr/bin/tini --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version
+check_optional  "codex"     codex    codex --version
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
