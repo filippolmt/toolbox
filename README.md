@@ -9,6 +9,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Node.js | 24 LTS |
 | pnpm | 10.33.x |
 | Claude Code | 2.1.x |
+| OpenAI Codex CLI | 0.124.x |
 | Pyright language server (`pyright-langserver`) | 1.1.x |
 | Playwright CLI | 1.59.x |
 | Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |

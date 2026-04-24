@@ -11,8 +11,8 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	if len(mounts) != 16 {
-		t.Fatalf("expected 16 default mounts, got %d", len(mounts))
+	if len(mounts) != 17 {
+		t.Fatalf("expected 17 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -32,6 +32,8 @@ func TestDefaultMounts(t *testing.T) {
 
 	// ~/.toolbox/.claude must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/.claude", false, true)
+	// ~/.toolbox/.codex must be rw and auto-created.
+	assertMount(t, mounts, "~/.toolbox/.codex", false, true)
 	// ~/.toolbox/state must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/state", false, true)
 	// Every cloud / forge CLI must have a rw, auto-created state dir.
@@ -102,8 +104,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 16 {
-		t.Errorf("expected 16 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 17 {
+		t.Errorf("expected 17 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {
