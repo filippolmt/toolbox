@@ -425,9 +425,9 @@ RUN set -eux; \
       curl -fsSL -o "/tmp/${CODEX_TARBALL}" \
         "https://github.com/openai/codex/releases/download/rust-v${CODEX_CLI_VERSION}/${CODEX_TARBALL}"; \
       echo "${CODEX_SHA256}  /tmp/${CODEX_TARBALL}" | sha256sum -c -; \
-      tar -xzf "/tmp/${CODEX_TARBALL}" -C /tmp; \
-      install -m 0755 "/tmp/codex-${CODEX_ARCH}" /usr/local/bin/codex; \
-      rm -f "/tmp/${CODEX_TARBALL}" "/tmp/codex-${CODEX_ARCH}"; \
+      tar -xzOf "/tmp/${CODEX_TARBALL}" "codex-${CODEX_ARCH}" \
+        | install -m 0755 /dev/stdin /usr/local/bin/codex; \
+      rm -f "/tmp/${CODEX_TARBALL}"; \
       codex --version; \
     fi
 
