@@ -29,15 +29,7 @@ ARG STARSHIP_VERSION=1.25.0
 ARG PNPM_VERSION=10.33.2
 ARG UV_VERSION=0.11.7
 ARG CLAUDE_CODE_VERSION=2.1.119
-ARG CODEX_CLI_VERSION=0.124.0
-# OpenAI Codex CLI ships neither a per-release checksums file nor per-asset
-# `.sha256` siblings (only Sigstore `.sigstore` bundles). SHA256 is pinned
-# per-arch below, same pattern as zoxide / bat — Renovate bumps CODEX_CLI_VERSION
-# and the maintainer refreshes these two hashes in the same PR.
-# Accepted risk analogous to T-01-08 (HTTPS + version pin), but tighter: the
-# hash is still cryptographically verified at build time.
-ARG CODEX_CLI_SHA256_AMD64=70948cbaa8d7318e526da430fbbad1140cd7bd08ba78afb282392a11e7bcacf5
-ARG CODEX_CLI_SHA256_ARM64=1301b1624c9ee89c41a501b77b95107a8dc3c8c285624d72edcda7921be6332e
+ARG CODEX_CLI_VERSION=0.125.0
 ARG PYRIGHT_VERSION=1.1.409
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
@@ -399,35 +391,18 @@ RUN set -eux; \
     fi
 
 # -- Layer 13b: OpenAI Codex CLI (TOOL-01) -----------------------------------
-# Rust binary from openai/codex. MUSL variant is used (statically linked,
-# independent of the base image's GLIBC) matching the gws / zoxide pattern.
-# Upstream publishes only Sigstore `.sigstore` bundles for releases — no
-# per-asset `.sha256` — so SHA256 is pinned per-arch via the build args above.
-# Renovate bumps CODEX_CLI_VERSION; the maintainer refreshes the two hashes in
-# the same PR (analogous to zoxide / bat).
+# Installed as a global npm package — npm registry artefacts ship with SLSA
+# provenance + integrity hash auto-resolved by npm, and per-arch native binaries
+# are pulled via `optionalDependencies` (linux-x64 / linux-arm64). Single
+# version source for Renovate, no per-arch SHA pinning needed.
 #
 # Zsh completion is generated at build time by `codex completion zsh` in
-# Layer 20d, same pattern as kubectl / helm / gh. The separate
-# `codex-zsh-*.tar.gz` asset upstream is a helper ELF binary, NOT a static
-# completion file — do not install it here.
+# Layer 20d, same pattern as kubectl / helm / gh.
 RUN set -eux; \
     if [ "${INSTALL_CODEX_CLI}" != "true" ]; then \
       echo "Skipping Codex CLI (tools.codex=false)"; \
     else \
-      case "${TARGETARCH}" in \
-        amd64) CODEX_ARCH=x86_64-unknown-linux-musl; \
-               CODEX_SHA256="${CODEX_CLI_SHA256_AMD64}";; \
-        arm64) CODEX_ARCH=aarch64-unknown-linux-musl; \
-               CODEX_SHA256="${CODEX_CLI_SHA256_ARM64}";; \
-        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
-      esac; \
-      CODEX_TARBALL="codex-${CODEX_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${CODEX_TARBALL}" \
-        "https://github.com/openai/codex/releases/download/rust-v${CODEX_CLI_VERSION}/${CODEX_TARBALL}"; \
-      echo "${CODEX_SHA256}  /tmp/${CODEX_TARBALL}" | sha256sum -c -; \
-      tar -xzOf "/tmp/${CODEX_TARBALL}" "codex-${CODEX_ARCH}" \
-        | install -m 0755 /dev/stdin /usr/local/bin/codex; \
-      rm -f "/tmp/${CODEX_TARBALL}"; \
+      npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
     fi
 
