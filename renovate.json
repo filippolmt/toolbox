@@ -115,9 +115,8 @@
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+CODEX_CLI_VERSION=(?<currentValue>\\S+)"],
-      "datasourceTemplate": "github-releases",
-      "packageNameTemplate": "openai/codex",
-      "extractVersionTemplate": "^rust-v(?<version>.*)$"
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "@openai/codex"
     },
     {
       "customType": "regex",
