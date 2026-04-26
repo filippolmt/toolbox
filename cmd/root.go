@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -91,14 +93,55 @@ func initConfig() {
 			fmt.Fprintln(os.Stderr, "toolbox: skipping global config: "+err.Error())
 		}
 
-		// 3. Project config (.toolbox.yaml) -- merged on top of global (D-04)
-		viper.AddConfigPath(".")
-		_ = viper.MergeInConfig() // project wins over global
+		// 3. Project config (.toolbox.yaml) -- merged on top of global (D-04).
+		// Walks up from CWD to support running `toolbox shell` from any subdir
+		// of the workspace (mirrors how git resolves .gitignore / .git).
+		// Stops at HOME and at the filesystem root so a project file directly
+		// under HOME can't shadow the global config silently.
+		if cwd, err := os.Getwd(); err == nil {
+			if path := findProjectConfig(cwd); path != "" {
+				data, rerr := os.ReadFile(path)
+				if rerr != nil {
+					fmt.Fprintln(os.Stderr, "toolbox: failed to read "+path+": "+rerr.Error())
+					os.Exit(1)
+				}
+				if merr := viper.MergeConfig(bytes.NewReader(data)); merr != nil {
+					fmt.Fprintln(os.Stderr, "toolbox: failed to parse "+path+": "+merr.Error())
+					os.Exit(1)
+				}
+			}
+		}
 	}
 
 	// 4. Env var overrides (TOOLBOX_IMAGE_NAME, etc.)
 	viper.SetEnvPrefix("TOOLBOX")
 	viper.AutomaticEnv()
+}
+
+// findProjectConfig walks up from start looking for a `.toolbox.yaml` file
+// and returns the first match's absolute path. Search stops at the user's
+// HOME directory (so the global ~/.toolbox.yaml is not re-read as a
+// project file) and at the filesystem root. Returns "" when no project
+// config is found along the way.
+func findProjectConfig(start string) string {
+	home, _ := os.UserHomeDir()
+	cur := filepath.Clean(start)
+	for {
+		// HOME is the last directory we will *not* read a project config from
+		// — its `.toolbox.yaml` is the global and is handled separately.
+		if home != "" && cur == home {
+			return ""
+		}
+		candidate := filepath.Join(cur, ".toolbox.yaml")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ""
+		}
+		cur = parent
+	}
 }
 
 // setDefaults sets default values per individual field.
