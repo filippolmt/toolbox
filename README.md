@@ -92,24 +92,56 @@ When the `tools:` map matches the defaults, `toolbox shell` pulls the prebuilt `
 
 ### Overriding mounts
 
-The defaults isolate every credential path under `~/.toolbox/` on the host, so the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly. To add or replace a mount:
+The defaults isolate every credential path under `~/.toolbox/` on the host, so the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly. The `mounts:` list is merged on top of the defaults — you only declare what changes.
+
+Each user entry is interpreted by `name`:
+
+| Form | Behavior |
+|------|----------|
+| `name` matches a default, `target` omitted | **Patch**: only the fields you set override the default (typically `source`). |
+| `name` matches a default, `target` set | **Replace**: the entire default entry is swapped for yours. |
+| `name` not a default (or omitted) | **Append**: added after the default set. |
+| `name` matches a default, `disabled: true` | **Remove**: the default is dropped from the resolved set. |
+
+Default mount names: `claude`, `codex`, `state`, `ssh`, `gitconfig`, `gh`, `glab`, `gcloud`, `gws`, `azure`, `oci`, `kube`, `playwright-cache`, `startup.d`, `npm-global`, `go`, `docker-sock`. A patch referencing an unknown name fails at startup so typos surface immediately.
+
+Examples:
 
 ```yaml
 mounts:
-  - source: ~/.toolbox/.claude
-    target: /home/toolbox/.claude
-    readonly: false
-    create_if_missing: true
-  - source: ~/.toolbox/ssh
-    target: /home/toolbox/.ssh
+  # Retarget the gws auth dir to a custom host path.
+  - name: gws
+    source: /Volumes/work/creds/gws
+
+  # Drop the Docker socket bind for a project that shouldn't see it.
+  - name: docker-sock
+    disabled: true
+
+  # Add an extra project-specific mount.
+  - name: project-data
+    source: /opt/data
+    target: /data
     readonly: true
-    symlink_from: ~/.ssh
-  - source: /var/run/docker.sock
-    target: /var/run/docker.sock
-    readonly: false
 ```
 
-Declaring `mounts:` replaces the default set — copy the defaults from `internal/config/config.go` (`DefaultMounts`) before adding entries.
+Bool fields in a *patch* can flip `false → true` but not `true → false` (mapstructure can't tell "not set" from `false`). For that case, use the replace form by also setting `target`.
+
+Validation: any entry that sets `target` (replace or anonymous append) must also set a non-empty `source`. An empty source would silently bind the current working directory, so it's rejected at startup.
+
+`source` accepts:
+- absolute paths (`/Volumes/work/creds/gws`),
+- home-relative paths (`~/credentials/github` — `~` expands to the host user's home),
+- CWD-relative paths (`./test`, `../shared/data`, or plain `data`) — resolved against the directory you invoked `toolbox shell` from, which is normally the project root.
+
+CWD resolution lets per-project `.toolbox.yaml` reference paths inside the project without hardcoding absolute prefixes:
+
+```yaml
+mounts:
+  - name: project-data
+    source: ./fixtures
+    target: /workspace/fixtures
+    create_if_missing: true
+```
 
 ### Startup hooks
 

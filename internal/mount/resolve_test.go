@@ -187,6 +187,73 @@ func TestResolveMountsKeepsNonEmptyDirEvenWithSymlinkFrom(t *testing.T) {
 	}
 }
 
+// TestResolveMountsRelativeSourceUsesCWD: ./ paths must resolve to the
+// process CWD, so users can write `source: ./test` in .toolbox.yaml and
+// have it bound from the project root they invoked toolbox shell from.
+func TestResolveMountsRelativeSourceUsesCWD(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmp, "test"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	prevCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prevCWD) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	mounts := []config.Mount{
+		{Source: "./test", Target: "/container/test", ReadOnly: false},
+	}
+
+	resolved, warnings := ResolveMounts(mounts)
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved mount, got %d", len(resolved))
+	}
+
+	// EvalSymlinks normalises tmp on macOS (/var → /private/var). Match
+	// the same normalisation the resolver applies.
+	wantPrefix, err := filepath.EvalSymlinks(filepath.Join(tmp, "test"))
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if !strings.HasPrefix(resolved[0], wantPrefix+":") {
+		t.Errorf("expected bind to start with %q, got %q", wantPrefix, resolved[0])
+	}
+}
+
+// TestResolveMountsRelativeSourceCreatesUnderCWD: relative source + CreateIfMissing
+// must create the dir under CWD, not under the literal "./test" string.
+func TestResolveMountsRelativeSourceCreatesUnderCWD(t *testing.T) {
+	tmp := t.TempDir()
+
+	prevCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prevCWD) })
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	mounts := []config.Mount{
+		{Source: "./auto", Target: "/container/auto", ReadOnly: false, CreateIfMissing: true},
+	}
+
+	if _, warnings := ResolveMounts(mounts); len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "auto")); err != nil {
+		t.Fatalf("expected ./auto to be created under CWD: %v", err)
+	}
+}
+
 func TestResolveMountsFormat(t *testing.T) {
 	// Create a temporary directory as an existing source.
 	tmpDir := t.TempDir()
