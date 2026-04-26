@@ -19,6 +19,13 @@ type Config struct {
 	Mounts []Mount         `mapstructure:"mounts"`
 	Tools  map[string]bool `mapstructure:"tools"`
 	Shell  string          `mapstructure:"shell"`
+	// MountsRoot retargets every default mount whose Source lives under
+	// ~/.toolbox/ to the given prefix. Useful when the user wants every
+	// toolbox-managed credential / state dir to live somewhere other than
+	// the host home (e.g. an encrypted volume). Empty = use ~/.toolbox/ as
+	// before. Per-mount patches in mounts: still win — applied after the
+	// root rewrite, so a single override remains possible.
+	MountsRoot string `mapstructure:"mounts_root"`
 }
 
 // Mount represents a host -> container volume bind.
@@ -145,6 +152,60 @@ func ValidateShell(s string) error {
 		s, strings.Join(SupportedShells, ", "))
 }
 
+// mountsRootPrefix is the source-path prefix that ApplyMountsRoot rewrites.
+// Every default mount whose Source begins with this prefix is retargeted
+// when the user sets mounts_root in their config.
+const mountsRootPrefix = "~/.toolbox/"
+
+// ValidateMountsRoot rejects mounts_root values that would silently bind
+// the wrong path. Empty is allowed (no override). The value must be either
+// absolute (/path) or strictly home-relative with a sub-path (~/sub) so
+// the resolver can expand it deterministically. Bare "~" is refused on
+// purpose: it would rewrite ~/.toolbox/<x> to ~/<x>, dropping the
+// isolation namespace and writing toolbox state straight onto the host
+// home (~/.claude, ~/.gitconfig, …) — the exact leak the default mount
+// set is designed to prevent. Relative paths are refused too: they would
+// resolve against the CWD at toolbox-shell invocation, which is almost
+// never what the user wants for a global override.
+func ValidateMountsRoot(s string) error {
+	if s == "" {
+		return nil
+	}
+	if s == "~" {
+		return fmt.Errorf("mounts_root %q is too broad: it would write toolbox state directly under the host home, defeating credential isolation; use a sub-path (e.g. ~/toolbox-state) or an absolute path", s)
+	}
+	if strings.HasPrefix(s, "~/") {
+		return nil
+	}
+	if path.IsAbs(s) {
+		return nil
+	}
+	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
+}
+
+// ApplyMountsRoot returns a copy of base with every Source under
+// ~/.toolbox/ rewritten to live under root instead. Mounts whose Source
+// is outside that prefix (e.g. /var/run/docker.sock) are left untouched,
+// as is SymlinkFrom (which references the real host path, not the
+// toolbox-managed mirror). Empty root returns base unchanged.
+func ApplyMountsRoot(base []Mount, root string) []Mount {
+	if root == "" {
+		return base
+	}
+	// Strip a trailing slash so joining with the rest gives a clean path.
+	trimmed := strings.TrimSuffix(root, "/")
+	out := make([]Mount, len(base))
+	copy(out, base)
+	for i := range out {
+		if !strings.HasPrefix(out[i].Source, mountsRootPrefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(out[i].Source, mountsRootPrefix)
+		out[i].Source = trimmed + "/" + rest
+	}
+	return out
+}
+
 // MergeMounts combines a base mount set (typically DefaultMounts()) with a
 // user-declared list, applying these rules per user entry:
 //
@@ -262,9 +323,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Validate and apply the global mounts_root override (if any) before
+	// merging user patches: this lets a user redirect every ~/.toolbox/<x>
+	// default to <mounts_root>/<x> in a single line, and still override
+	// individual entries via mounts: patches afterwards.
+	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
+		return nil, err
+	}
+	defaults := ApplyMountsRoot(DefaultMounts(), cfg.MountsRoot)
+
 	// Merge user-declared mounts on top of the defaults: by-Name patches /
 	// replacements / disables, plus appended additions. See MergeMounts.
-	merged, err := MergeMounts(DefaultMounts(), cfg.Mounts)
+	merged, err := MergeMounts(defaults, cfg.Mounts)
 	if err != nil {
 		return nil, err
 	}

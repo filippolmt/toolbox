@@ -363,6 +363,255 @@ func TestLoadMountDisableDefault(t *testing.T) {
 	}
 }
 
+// TestLoadMountsRootRetargetsAllDefaults: setting mounts_root rewrites every
+// default mount whose Source lives under ~/.toolbox/ to live under the new
+// root, leaving Targets, ReadOnly flags, and SymlinkFrom values untouched.
+func TestLoadMountsRootRetargetsAllDefaults(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: /custom/root\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	for _, d := range DefaultMounts() {
+		got := findMount(cfg.Mounts, d.Name)
+		if got == nil {
+			t.Errorf("mount %q missing after mounts_root override", d.Name)
+			continue
+		}
+		if !strings.HasPrefix(d.Source, "~/.toolbox/") {
+			// Sources outside ~/.toolbox/ (e.g. /var/run/docker.sock) must
+			// stay verbatim — the global root only retargets toolbox-managed
+			// state dirs, not host references.
+			if got.Source != d.Source {
+				t.Errorf("mount %q Source drifted: got %q, want %q", d.Name, got.Source, d.Source)
+			}
+			continue
+		}
+		want := "/custom/root/" + strings.TrimPrefix(d.Source, "~/.toolbox/")
+		if got.Source != want {
+			t.Errorf("mount %q Source = %q, want %q", d.Name, got.Source, want)
+		}
+		if got.Target != d.Target {
+			t.Errorf("mount %q Target drifted: got %q, want %q", d.Name, got.Target, d.Target)
+		}
+		if got.ReadOnly != d.ReadOnly {
+			t.Errorf("mount %q ReadOnly drifted", d.Name)
+		}
+		if got.SymlinkFrom != d.SymlinkFrom {
+			t.Errorf("mount %q SymlinkFrom drifted: got %q, want %q", d.Name, got.SymlinkFrom, d.SymlinkFrom)
+		}
+	}
+}
+
+// TestLoadMountsRootHomeRelative: mounts_root accepts ~/-prefixed paths
+// without trying to expand them at config-load time. Expansion happens
+// later in ResolveMounts.
+func TestLoadMountsRootHomeRelative(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: ~/work/toolbox-state\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	gws := findMount(cfg.Mounts, "gws")
+	if gws == nil {
+		t.Fatal("gws mount missing")
+	}
+	if gws.Source != "~/work/toolbox-state/gws" {
+		t.Errorf("gws Source = %q, want %q", gws.Source, "~/work/toolbox-state/gws")
+	}
+}
+
+// TestLoadMountsRootCombinedWithPatch: a per-name patch wins over the
+// global root rewrite, so a user can move every default to /custom/root
+// AND keep gws somewhere else entirely.
+func TestLoadMountsRootCombinedWithPatch(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "" +
+		"mounts_root: /custom/root\n" +
+		"mounts:\n" +
+		"  - name: gws\n" +
+		"    source: /elsewhere/gws\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	gws := findMount(cfg.Mounts, "gws")
+	if gws == nil {
+		t.Fatal("gws mount missing")
+	}
+	if gws.Source != "/elsewhere/gws" {
+		t.Errorf("gws Source = %q, want per-mount patch %q", gws.Source, "/elsewhere/gws")
+	}
+
+	// Other defaults still follow the root rewrite.
+	claude := findMount(cfg.Mounts, "claude")
+	if claude == nil || claude.Source != "/custom/root/.claude" {
+		t.Errorf("claude Source should follow mounts_root, got %+v", claude)
+	}
+}
+
+// TestLoadMountsRootBareTildeRejected: a bare "~" would rewrite
+// ~/.toolbox/<x> to ~/<x> — dropping the isolation namespace and writing
+// toolbox state directly under the host home (the exact leak DefaultMounts
+// guards against). Refuse it loudly with a message that points to the fix.
+func TestLoadMountsRootBareTildeRejected(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: \"~\"\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() should reject bare ~ as mounts_root")
+	}
+	if !strings.Contains(err.Error(), "mounts_root") || !strings.Contains(err.Error(), "isolation") {
+		t.Errorf("error should explain the isolation footgun, got: %v", err)
+	}
+}
+
+// TestLoadMountsRootWithAnonymousAppend: an anonymous append (e.g. a
+// project-local data dir) is unaffected by mounts_root — only default
+// mounts under ~/.toolbox/ are retargeted.
+func TestLoadMountsRootWithAnonymousAppend(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "" +
+		"mounts_root: /custom/root\n" +
+		"mounts:\n" +
+		"  - name: project-data\n" +
+		"    source: /opt/project/data\n" +
+		"    target: /workspace/data\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	added := findMount(cfg.Mounts, "project-data")
+	if added == nil {
+		t.Fatal("project-data mount missing")
+	}
+	if added.Source != "/opt/project/data" {
+		t.Errorf("anonymous append source must not be touched by mounts_root: got %q, want %q",
+			added.Source, "/opt/project/data")
+	}
+}
+
+// TestApplyMountsRootDoesNotMutateBase: callers reuse DefaultMounts()
+// across Load() invocations, so ApplyMountsRoot must return a copy and
+// leave the input slice untouched. Mirrors TestMergeMountsDoesNotMutateBase.
+func TestApplyMountsRootDoesNotMutateBase(t *testing.T) {
+	base := DefaultMounts()
+	originalSource := findMount(base, "claude").Source
+
+	out := ApplyMountsRoot(base, "/custom/root")
+
+	if got := findMount(base, "claude").Source; got != originalSource {
+		t.Errorf("base mutated: claude.Source = %q, want %q", got, originalSource)
+	}
+	if got := findMount(out, "claude").Source; got != "/custom/root/.claude" {
+		t.Errorf("returned slice not retargeted: claude.Source = %q, want %q",
+			got, "/custom/root/.claude")
+	}
+}
+
+// TestLoadMountsRootRelativeRejected: a relative mounts_root is a likely
+// mistake — refuse it loudly instead of silently resolving against CWD.
+func TestLoadMountsRootRelativeRejected(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: ./relative\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should reject relative mounts_root")
+	} else if !strings.Contains(err.Error(), "mounts_root") {
+		t.Errorf("error should mention mounts_root, got: %v", err)
+	}
+}
+
+// TestLoadMountsRootEmptyIsNoop: an empty mounts_root keeps every default
+// Source verbatim — guards against accidental rewrites when the field is
+// declared but left blank.
+func TestLoadMountsRootEmptyIsNoop(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: \"\"\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	for _, d := range DefaultMounts() {
+		got := findMount(cfg.Mounts, d.Name)
+		if got == nil || got.Source != d.Source {
+			t.Errorf("mount %q Source drifted with empty mounts_root: got %+v, want %q", d.Name, got, d.Source)
+		}
+	}
+}
+
+// TestLoadMountsRootTrailingSlash: a trailing slash on mounts_root must
+// not produce double slashes in rewritten Sources.
+func TestLoadMountsRootTrailingSlash(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: /custom/root/\n")); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	gws := findMount(cfg.Mounts, "gws")
+	if gws == nil || gws.Source != "/custom/root/gws" {
+		t.Errorf("gws Source = %v, want /custom/root/gws (no double slash)", gws)
+	}
+}
+
 func findMount(mounts []Mount, name string) *Mount {
 	for i := range mounts {
 		if mounts[i].Name == name {
