@@ -35,19 +35,11 @@ Single test or package: `make go-shell`, then `go test ./internal/mount -run Tes
 - **Code, comments, and CLI output: English.** The chat with the user is Italian, but anything checked into the repo is English (variable names, log/user-facing strings, doc comments).
 - Standard Go style (`gofmt` defaults). Lint config in `.golangci.yml` — enforced by CI.
 - CLI follows cobra + viper conventions (see `cmd/` and `internal/config`).
+- `AGENTS.md` is a symlink to this file so Codex CLI reads the same guidance. Don't duplicate content; don't delete the symlink unless dropping Codex support.
 
-## Commits & PRs
+## Commits, PRs, releases
 
-- Conventional-commits style: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`…
-- **No `Co-Authored-By: Claude` / Anthropic trailer** on commits.
-- Branches: `feat/<slug>`, `fix/<slug>`. Renovate owns `renovate/*`.
-- PRs merged to `main` trigger the Docker image publish workflow.
-
-## Release flow
-
-- Push a `v*` tag → `.github/workflows/release.yml` runs GoReleaser, publishes GitHub release assets, and pushes the Homebrew formula to `filippolmt/homebrew-tap` (needs `HOMEBREW_TAP_TOKEN`).
-- Push to `main` → `.github/workflows/docker-publish.yml` builds multi-arch (amd64+arm64), smoke-tests amd64 locally, then pushes `ghcr.io/filippolmt/toolbox:{latest,sha-<short>}`.
-- PR CI (`.github/workflows/ci.yml`) runs `go test`, `golangci-lint`, and the Docker smoke-test on every PR. Run `make go-test` / `make go-lint` locally for faster feedback.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Key: `v*` tag triggers GoReleaser + Homebrew push; merge to `main` triggers image publish to GHCR.
 
 ## Non-obvious gotchas
 
@@ -59,23 +51,12 @@ Single test or package: `make go-shell`, then `go test ./internal/mount -run Tes
 - **Tool versions pinned**: every external binary in `internal/build/assets/Dockerfile` is pinned by version + SHA256 (except the Docker CLI and gcloud). Renovate bumps them. When adding a tool, follow the same pattern — download + verify `sha256sum` before installing. Every optional tool is guarded by an `ARG INSTALL_<TOOL>=true` flag wired to `tools.<key>` in `.toolbox.yaml`.
 - **Image selection**: `toolbox shell` pulls `ghcr.io/filippolmt/toolbox:latest` only when the merged `tools:` config matches the defaults (all true). Any override auto-builds `toolbox:local-<hash>` from the embedded Dockerfile — see `internal/build/tag.go` `ResolveImage`. `toolbox build` is an explicit escape hatch (supports `--no-cache`).
 - **Claude Code auto-update is disabled** via `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` — the toolbox user can't write to `/usr/local/lib/node_modules` (installed as root). Bump `CLAUDE_CODE_VERSION` in the Dockerfile and rebuild.
+- **Port bindings are fixed at container creation**: `toolbox shell -p <port>` takes effect only when the container is first created. To change or add bindings on an existing workspace, run `toolbox stop` before re-invoking `toolbox shell -p …`. Accepted formats mirror `docker run -p`; host IP defaults to `127.0.0.1` when omitted.
 
 ## Runtime container (shell session)
 
 - **PID 1 is `tini`** (baked into the image) — reaps zombies and forwards signals cleanly so `Ctrl-C` and container stop behave the same as host processes. Don't replace it with a plain `bash` entrypoint.
 - **MCP plugin auto-build on shell start**: `internal/build/assets/entrypoint.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells are cached.
 - **User config is `.toolbox.yaml`** (project root) merged with `~/.toolbox.yaml` (global). Schema matches `internal/config/config.go` `Config` struct. `tools.<key>: false` opts out of optional layers and drives the local image hash via `ResolveImage` — see `internal/build/tag.go`.
-
-## Layout
-
-```
-cmd/                           Cobra commands (root, shell, stop, build, version, completion)
-internal/config/               Viper config, Mount struct, DefaultMounts, Tools map
-internal/container/            Docker SDK lifecycle (create, start, exec, attach, stop)
-internal/mount/                Bind-mount source resolution (symlinks, auto-create)
-internal/build/                Image build wrapper, embed.FS, ResolveImage tag logic
-internal/build/assets/         Dockerfile + bashrc.sh + entrypoint.sh (embedded) + smoke-test.sh
-internal/version/              CLI version/commit/date (populated by ldflags)
-internal/ui/                   Colored output + spinner
-.claude/skills/                Project skills (see /verify)
-```
+- **Config load order** (highest priority first): `--config` flag → `./.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env vars → built-in defaults.
+- **Startup hooks**: `~/.toolbox/startup.d/*.sh` run as the `toolbox` user on every `toolbox shell`, before the prompt. Hooks share mounted credentials and can write to `~/.toolbox/npm-global/` without root. Ready-to-copy example in `examples/startup.d/`.

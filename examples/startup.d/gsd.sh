@@ -9,6 +9,8 @@
 # and does it idempotently. Reinstall is triggered by:
 #   - missing GSD install dir under ~/.claude/get-shit-done
 #   - missing `gsd-tools.cjs` runtime
+#   - missing `gsd-sdk` binary on PATH (workflows shell out to `gsd-sdk query …`;
+#     the installer builds `@gsd-build/sdk` from source into ~/.npm-global)
 #   - version drift between the VERSION file shipped by the package and the
 #     pinned GSD_VERSION below
 #
@@ -24,6 +26,8 @@ VERSION_FILE="$INSTALL_DIR/VERSION"
 
 need_install=false
 if [ ! -x "$TOOLS_BIN" ]; then
+    need_install=true
+elif ! command -v gsd-sdk >/dev/null 2>&1; then
     need_install=true
 elif [ ! -f "$VERSION_FILE" ] || [ "$(cat "$VERSION_FILE")" != "$GSD_VERSION" ]; then
     need_install=true
@@ -41,4 +45,12 @@ else
     echo "    gsd: install failed (see /tmp/gsd-install.log)"
     tail -5 /tmp/gsd-install.log | sed 's/^/      /'
     exit 1
+fi
+
+# Upstream installer (get-shit-done-cc <=1.38.3) forgets to chmod +x the
+# resolved gsd-sdk target, so the symlink exists but execution yields
+# "permission denied". Ensure the real file is executable.
+if gsd_sdk_target="$(readlink -f "$(command -v gsd-sdk 2>/dev/null)" 2>/dev/null)" \
+    && [ -n "$gsd_sdk_target" ] && [ -f "$gsd_sdk_target" ] && [ ! -x "$gsd_sdk_target" ]; then
+    chmod +x "$gsd_sdk_target"
 fi
