@@ -22,7 +22,20 @@ type Config struct {
 }
 
 // Mount represents a host -> container volume bind.
+//
+// Inside the user's mounts: list, an entry is interpreted as:
+//   - a *patch* of a default when Name matches a default and Target is empty
+//     (only non-zero fields override the default; useful for retargeting a
+//     single Source);
+//   - a *replace* of a default when Name matches a default and Target is set
+//     (the entire default entry is swapped for the user's);
+//   - an *addition* otherwise (appended after the defaults).
+//
+// See MergeMounts for the full contract.
 type Mount struct {
+	// Name is a stable alias used by patch/replace targeting. Default mounts
+	// populate it; user-declared mounts set it to override a default by name.
+	Name     string `mapstructure:"name"`
 	Source   string `mapstructure:"source"`
 	Target   string `mapstructure:"target"`
 	ReadOnly bool   `mapstructure:"readonly"`
@@ -34,6 +47,10 @@ type Mount struct {
 	// (e.g. ~/.toolbox/ssh -> ~/.ssh). If SymlinkFrom itself is missing, the
 	// mount is skipped with a warning.
 	SymlinkFrom string `mapstructure:"symlink_from"`
+	// Disabled removes the mount from the resolved set. Used in patches to
+	// opt out of a default (e.g. drop the Docker socket) without forcing a
+	// full mounts: redeclaration.
+	Disabled bool `mapstructure:"disabled"`
 }
 
 // DefaultMounts returns the default mount set (D-07).
@@ -42,56 +59,55 @@ type Mount struct {
 // Every auth/state path is addressed through ~/.toolbox/ on the host:
 //   - Claude / state / gh / glab live there as real dirs (isolated from
 //     the host's own ~/.claude, ~/.config/gh, etc.).
-//   - ssh / gitconfig / gitconfig-dbm are symlinks to the host's versions,
-//     so `ssh-keygen` and `git config` stay in sync with the container.
+//   - ssh / gitconfig are symlinks to the host's versions, so `ssh-keygen`
+//     and `git config` stay in sync with the container.
 //
 // If a symlink target is missing on the host, that mount is skipped with
 // a warning; the user can add it later without re-running any command.
 func DefaultMounts() []Mount {
 	return []Mount{
 		// Claude Code config + credentials.
-		{Source: "~/.toolbox/.claude", Target: "/home/toolbox/.claude", ReadOnly: false, CreateIfMissing: true},
+		{Name: "claude", Source: "~/.toolbox/.claude", Target: "/home/toolbox/.claude", ReadOnly: false, CreateIfMissing: true},
 		// OpenAI Codex CLI auth + config — populated by `codex login` inside the container.
-		{Source: "~/.toolbox/.codex", Target: "/home/toolbox/.codex", ReadOnly: false, CreateIfMissing: true},
+		{Name: "codex", Source: "~/.toolbox/.codex", Target: "/home/toolbox/.codex", ReadOnly: false, CreateIfMissing: true},
 		// Bash history and other shell state, shared across every toolbox shell.
-		{Source: "~/.toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
+		{Name: "state", Source: "~/.toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
 		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,
 		// so changes made with `ssh-keygen` / `git config` on the host are
 		// immediately visible inside the container (and vice versa).
-		{Source: "~/.toolbox/ssh", Target: "/home/toolbox/.ssh", ReadOnly: true, SymlinkFrom: "~/.ssh"},
-		{Source: "~/.toolbox/gitconfig", Target: "/home/toolbox/.gitconfig", ReadOnly: true, SymlinkFrom: "~/.gitconfig"},
-		{Source: "~/.toolbox/gitconfig-dbm", Target: "/home/toolbox/.gitconfig-dbm", ReadOnly: true, SymlinkFrom: "~/.gitconfig-dbm"},
+		{Name: "ssh", Source: "~/.toolbox/ssh", Target: "/home/toolbox/.ssh", ReadOnly: true, SymlinkFrom: "~/.ssh"},
+		{Name: "gitconfig", Source: "~/.toolbox/gitconfig", Target: "/home/toolbox/.gitconfig", ReadOnly: true, SymlinkFrom: "~/.gitconfig"},
 		// GitHub CLI auth — populated by `gh auth login` inside the container.
-		{Source: "~/.toolbox/gh", Target: "/home/toolbox/.config/gh", ReadOnly: false, CreateIfMissing: true},
+		{Name: "gh", Source: "~/.toolbox/gh", Target: "/home/toolbox/.config/gh", ReadOnly: false, CreateIfMissing: true},
 		// GitLab CLI auth — populated by `glab auth login` inside the container.
-		{Source: "~/.toolbox/glab", Target: "/home/toolbox/.config/glab-cli", ReadOnly: false, CreateIfMissing: true},
+		{Name: "glab", Source: "~/.toolbox/glab", Target: "/home/toolbox/.config/glab-cli", ReadOnly: false, CreateIfMissing: true},
 		// gcloud auth + config — populated by `gcloud auth login` inside the container.
-		{Source: "~/.toolbox/gcloud", Target: "/home/toolbox/.config/gcloud", ReadOnly: false, CreateIfMissing: true},
+		{Name: "gcloud", Source: "~/.toolbox/gcloud", Target: "/home/toolbox/.config/gcloud", ReadOnly: false, CreateIfMissing: true},
 		// Google Workspace CLI auth + config — populated by `gws auth login` inside the container.
 		// Default config dir is ~/.config/gws (overridable via GOOGLE_WORKSPACE_CLI_CONFIG_DIR).
 		// The image sets GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file so the encryption key lands
 		// in this bind-mount instead of an OS keyring (unavailable inside the container).
-		{Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws", ReadOnly: false, CreateIfMissing: true},
+		{Name: "gws", Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws", ReadOnly: false, CreateIfMissing: true},
 		// Azure CLI auth + config — populated by `az login` inside the container.
-		{Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
+		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
-		{Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
 		// kubeconfig — populated by `gcloud container clusters get-credentials`,
 		// `aws eks update-kubeconfig`, manual edits, etc. Persists across the
 		// auto-remove-on-exit container lifecycle so cluster context survives
 		// a reopened shell.
-		{Source: "~/.toolbox/kube", Target: "/home/toolbox/.kube", ReadOnly: false, CreateIfMissing: true},
+		{Name: "kube", Source: "~/.toolbox/kube", Target: "/home/toolbox/.kube", ReadOnly: false, CreateIfMissing: true},
 		// Playwright browser cache — populated by `playwright install`; keeps the
 		// ~500MB of Chromium/Firefox/Webkit binaries across container restarts.
-		{Source: "~/.toolbox/playwright-cache", Target: "/home/toolbox/.cache/ms-playwright", ReadOnly: false, CreateIfMissing: true},
+		{Name: "playwright-cache", Source: "~/.toolbox/playwright-cache", Target: "/home/toolbox/.cache/ms-playwright", ReadOnly: false, CreateIfMissing: true},
 		// User-defined startup hooks. Any *.sh file here is executed by the
 		// entrypoint before handing control to the shell — read-only to prevent
 		// in-container tampering; edits happen on the host.
-		{Source: "~/.toolbox/startup.d", Target: "/home/toolbox/.toolbox-startup.d", ReadOnly: true, CreateIfMissing: true},
+		{Name: "startup.d", Source: "~/.toolbox/startup.d", Target: "/home/toolbox/.toolbox-startup.d", ReadOnly: true, CreateIfMissing: true},
 		// Per-user npm global prefix. Keeps runtime `npm install -g` writable
 		// without root and persistent across container recreations. The prefix
 		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.
-		{Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
+		{Name: "npm-global", Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
 		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
 		// to /home/toolbox/go inside the container; this bind-mount persists
 		// the module cache (`pkg/mod`) and `go install` binaries (`bin/`)
@@ -99,9 +115,9 @@ func DefaultMounts() []Mount {
 		// playwright-cache / npm-global pattern (D-11). No GOROOT/GOPATH
 		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
 		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
-		{Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
+		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
-		{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
+		{Name: "docker-sock", Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}
 }
 
@@ -127,6 +143,87 @@ func ValidateShell(s string) error {
 	}
 	return fmt.Errorf("unsupported shell %q: must be one of %s",
 		s, strings.Join(SupportedShells, ", "))
+}
+
+// MergeMounts combines a base mount set (typically DefaultMounts()) with a
+// user-declared list, applying these rules per user entry:
+//
+//   - Name set, Target empty → patch the matching base entry. Only non-zero
+//     user fields override the base; bool fields can flip false→true via the
+//     patch but cannot flip true→false (mapstructure can't distinguish "not
+//     set" from false). Use the replace form if you need that.
+//   - Name set, Target set → if Name matches a base entry, replace it
+//     entirely; otherwise append.
+//   - Name empty → append (anonymous mount).
+//
+// After merging, any entry with Disabled=true is removed from the result so
+// users can opt out of a default (e.g. docker-sock) without redeclaring the
+// rest of the list. Patches referencing an unknown Name fail loudly.
+func MergeMounts(base, user []Mount) ([]Mount, error) {
+	out := make([]Mount, len(base))
+	copy(out, base)
+	nameIdx := map[string]int{}
+	for i, m := range out {
+		if m.Name != "" {
+			nameIdx[m.Name] = i
+		}
+	}
+
+	var unknown []string
+	for _, u := range user {
+		switch {
+		case u.Name != "" && u.Target == "":
+			idx, ok := nameIdx[u.Name]
+			if !ok {
+				unknown = append(unknown, u.Name)
+				continue
+			}
+			if u.Source != "" {
+				out[idx].Source = u.Source
+			}
+			if u.SymlinkFrom != "" {
+				out[idx].SymlinkFrom = u.SymlinkFrom
+			}
+			if u.ReadOnly {
+				out[idx].ReadOnly = true
+			}
+			if u.CreateIfMissing {
+				out[idx].CreateIfMissing = true
+			}
+			if u.Disabled {
+				out[idx].Disabled = true
+			}
+		case u.Name != "":
+			if u.Source == "" {
+				return nil, fmt.Errorf("mounts[%q]: source must not be empty when target is set", u.Name)
+			}
+			if idx, ok := nameIdx[u.Name]; ok {
+				out[idx] = u
+			} else {
+				nameIdx[u.Name] = len(out)
+				out = append(out, u)
+			}
+		default:
+			if u.Source == "" {
+				return nil, fmt.Errorf("mounts: anonymous mount (target %q) must declare a non-empty source", u.Target)
+			}
+			out = append(out, u)
+		}
+	}
+
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return nil, fmt.Errorf("mounts: patch references unknown mount name(s): %s", strings.Join(unknown, ", "))
+	}
+
+	final := make([]Mount, 0, len(out))
+	for _, m := range out {
+		if m.Disabled {
+			continue
+		}
+		final = append(final, m)
+	}
+	return final, nil
 }
 
 // MountParentDirs returns the distinct parent directories of mount targets
@@ -165,10 +262,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// Fall back to default mounts if none configured (D-07).
-	if len(cfg.Mounts) == 0 {
-		cfg.Mounts = DefaultMounts()
+	// Merge user-declared mounts on top of the defaults: by-Name patches /
+	// replacements / disables, plus appended additions. See MergeMounts.
+	merged, err := MergeMounts(DefaultMounts(), cfg.Mounts)
+	if err != nil {
+		return nil, err
 	}
+	cfg.Mounts = merged
 
 	// Shell default + validation (D-16). Missing or empty => "zsh". Any other
 	// non-supported value fails Load() before any downstream consumer runs.

@@ -11,8 +11,8 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	if len(mounts) != 18 {
-		t.Fatalf("expected 18 default mounts, got %d", len(mounts))
+	if len(mounts) != 17 {
+		t.Fatalf("expected 17 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -55,7 +55,6 @@ func TestDefaultMounts(t *testing.T) {
 	// ssh + git config follow the host via symlinks, not copies.
 	assertSymlink(t, mounts, "~/.toolbox/ssh", "~/.ssh")
 	assertSymlink(t, mounts, "~/.toolbox/gitconfig", "~/.gitconfig")
-	assertSymlink(t, mounts, "~/.toolbox/gitconfig-dbm", "~/.gitconfig-dbm")
 }
 
 func assertMount(t *testing.T, mounts []Mount, src string, wantRO, wantCreate bool) {
@@ -105,8 +104,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 18 {
-		t.Errorf("expected 18 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 17 {
+		t.Errorf("expected 17 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {
@@ -176,5 +175,325 @@ func TestIsDefaultTools(t *testing.T) {
 func TestToolBuildArgGo(t *testing.T) {
 	if got := ToolBuildArg["go"]; got != "INSTALL_GO" {
 		t.Errorf("ToolBuildArg[\"go\"] = %q, want %q", got, "INSTALL_GO")
+	}
+}
+
+// TestDefaultMountsHaveNames guards the Name-based merge contract: every
+// default mount must carry a non-empty, unique Name so mounts: patches and
+// replacements can target it.
+func TestDefaultMountsHaveNames(t *testing.T) {
+	mounts := DefaultMounts()
+	seen := map[string]struct{}{}
+	for _, m := range mounts {
+		if m.Name == "" {
+			t.Errorf("default mount with target %q has empty Name", m.Target)
+			continue
+		}
+		if _, dup := seen[m.Name]; dup {
+			t.Errorf("default mount Name %q is not unique", m.Name)
+		}
+		seen[m.Name] = struct{}{}
+	}
+}
+
+// TestLoadMountPatchRetargetsSource is the main contract for the unified
+// mounts: knob: a name-only patch must change only the Source of the named
+// mount and leave every other mount untouched.
+func TestLoadMountPatchRetargetsSource(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "mounts:\n  - name: gws\n    source: /custom/gws\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	gws := findMount(cfg.Mounts, "gws")
+	if gws == nil {
+		t.Fatal("gws mount missing after patch")
+	}
+	if gws.Source != "/custom/gws" {
+		t.Errorf("gws Source = %q, want %q", gws.Source, "/custom/gws")
+	}
+	if gws.Target != "/home/toolbox/.config/gws" {
+		t.Errorf("gws Target should be untouched, got %q", gws.Target)
+	}
+	if !gws.CreateIfMissing {
+		t.Error("gws CreateIfMissing should remain true (default), patch must not reset it")
+	}
+
+	// Every other default Source must remain intact.
+	for _, d := range DefaultMounts() {
+		if d.Name == "gws" {
+			continue
+		}
+		got := findMount(cfg.Mounts, d.Name)
+		if got == nil {
+			t.Errorf("mount %q missing after unrelated patch", d.Name)
+			continue
+		}
+		if got.Source != d.Source {
+			t.Errorf("mount %q Source drifted: got %q, want %q", d.Name, got.Source, d.Source)
+		}
+	}
+}
+
+// TestLoadMountPatchUnknownNameErrors guards the typo-detection contract:
+// a name-only patch referencing a non-existent mount must fail Load().
+func TestLoadMountPatchUnknownNameErrors(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "mounts:\n  - name: nonexistent\n    source: /tmp/x\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should fail when a patch references an unknown name")
+	} else if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error should mention the unknown name, got: %v", err)
+	}
+}
+
+// TestLoadMountReplaceByName: a user entry with the same Name as a default
+// AND a Target must replace the default entry wholesale.
+func TestLoadMountReplaceByName(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "" +
+		"mounts:\n" +
+		"  - name: gws\n" +
+		"    source: /custom/gws\n" +
+		"    target: /opt/gws\n" +
+		"    readonly: true\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	gws := findMount(cfg.Mounts, "gws")
+	if gws == nil {
+		t.Fatal("gws mount missing after replace")
+	}
+	if gws.Target != "/opt/gws" {
+		t.Errorf("gws Target = %q, want %q", gws.Target, "/opt/gws")
+	}
+	if !gws.ReadOnly {
+		t.Error("gws ReadOnly should be true after replace")
+	}
+	if gws.CreateIfMissing {
+		t.Error("gws CreateIfMissing should be false after replace (user did not set it)")
+	}
+
+	// Mount count unchanged: replace, not append.
+	if len(cfg.Mounts) != len(DefaultMounts()) {
+		t.Errorf("expected %d mounts after replace, got %d", len(DefaultMounts()), len(cfg.Mounts))
+	}
+}
+
+// TestLoadMountAppendNewName: a user entry whose Name is not in the defaults
+// (or anonymous) is appended to the resolved set.
+func TestLoadMountAppendNewName(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "" +
+		"mounts:\n" +
+		"  - name: project-data\n" +
+		"    source: /opt/data\n" +
+		"    target: /data\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.Mounts) != len(DefaultMounts())+1 {
+		t.Errorf("expected %d mounts, got %d", len(DefaultMounts())+1, len(cfg.Mounts))
+	}
+	added := findMount(cfg.Mounts, "project-data")
+	if added == nil {
+		t.Fatal("project-data mount missing after append")
+	}
+	if added.Target != "/data" {
+		t.Errorf("project-data Target = %q, want %q", added.Target, "/data")
+	}
+}
+
+// TestLoadMountDisableDefault: a patch with disabled: true removes the
+// default from the resolved set.
+func TestLoadMountDisableDefault(t *testing.T) {
+	viper.Reset()
+	setToolsDefaults()
+
+	viper.SetConfigType("yaml")
+	yaml := "mounts:\n  - name: docker-sock\n    disabled: true\n"
+	if err := viper.ReadConfig(bytes.NewBufferString(yaml)); err != nil {
+		t.Fatalf("viper.ReadConfig: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if findMount(cfg.Mounts, "docker-sock") != nil {
+		t.Error("docker-sock should be removed after disabled patch")
+	}
+	if len(cfg.Mounts) != len(DefaultMounts())-1 {
+		t.Errorf("expected %d mounts after disable, got %d", len(DefaultMounts())-1, len(cfg.Mounts))
+	}
+}
+
+func findMount(mounts []Mount, name string) *Mount {
+	for i := range mounts {
+		if mounts[i].Name == name {
+			return &mounts[i]
+		}
+	}
+	return nil
+}
+
+// TestMergeMountsPatchFlipsReadOnly: a name-only patch can flip ReadOnly
+// false→true on a default that defaults to false.
+func TestMergeMountsPatchFlipsReadOnly(t *testing.T) {
+	base := []Mount{
+		{Name: "data", Source: "/a", Target: "/b", ReadOnly: false, CreateIfMissing: true},
+	}
+	user := []Mount{{Name: "data", ReadOnly: true}}
+
+	merged, err := MergeMounts(base, user)
+	if err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+	if !merged[0].ReadOnly {
+		t.Error("patch should flip ReadOnly to true")
+	}
+	if merged[0].Source != "/a" || merged[0].Target != "/b" {
+		t.Error("patch must not touch unrelated fields")
+	}
+	if !merged[0].CreateIfMissing {
+		t.Error("CreateIfMissing should remain true (default)")
+	}
+}
+
+// TestMergeMountsPatchSetsSymlinkFrom: a patch can set SymlinkFrom on a
+// default that did not have one.
+func TestMergeMountsPatchSetsSymlinkFrom(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{{Name: "x", SymlinkFrom: "~/real"}}
+
+	merged, err := MergeMounts(base, user)
+	if err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+	if merged[0].SymlinkFrom != "~/real" {
+		t.Errorf("SymlinkFrom = %q, want %q", merged[0].SymlinkFrom, "~/real")
+	}
+}
+
+// TestMergeMountsAnonymousAppend: a user entry without Name is appended
+// (legacy/anonymous mount), but rejected if Source is empty.
+func TestMergeMountsAnonymousAppend(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{{Source: "/extra", Target: "/extra-c"}}
+
+	merged, err := MergeMounts(base, user)
+	if err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+	if len(merged) != 2 || merged[1].Source != "/extra" {
+		t.Errorf("anonymous append failed: %+v", merged)
+	}
+}
+
+// TestMergeMountsAnonymousEmptySourceErrors: an anonymous entry with no
+// source is a likely typo (would silently bind CWD), reject it.
+func TestMergeMountsAnonymousEmptySourceErrors(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{{Target: "/extra"}}
+
+	if _, err := MergeMounts(base, user); err == nil {
+		t.Fatal("MergeMounts should reject anonymous mount with empty source")
+	}
+}
+
+// TestMergeMountsReplaceEmptySourceErrors: a replace branch (name + target)
+// without a source is a likely typo — reject loud instead of clobbering
+// the default's Source with "".
+func TestMergeMountsReplaceEmptySourceErrors(t *testing.T) {
+	base := []Mount{{Name: "gws", Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws"}}
+	user := []Mount{{Name: "gws", Target: "/home/toolbox/.config/gws"}}
+
+	if _, err := MergeMounts(base, user); err == nil {
+		t.Fatal("MergeMounts should reject replace with empty source")
+	}
+}
+
+// TestMergeMountsReplaceUnknownNameAppends: a user entry with a fresh Name
+// and a Target is treated as a new mount, not an error.
+func TestMergeMountsReplaceUnknownNameAppends(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{{Name: "fresh", Source: "/c", Target: "/d"}}
+
+	merged, err := MergeMounts(base, user)
+	if err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+	if len(merged) != 2 || merged[1].Name != "fresh" {
+		t.Errorf("expected appended fresh mount, got %+v", merged)
+	}
+}
+
+// TestMergeMountsMultipleUnknownPatchesSorted: when several patches refer
+// to unknown names, the error must list them sorted so the message is
+// stable across map-iteration order.
+func TestMergeMountsMultipleUnknownPatchesSorted(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{
+		{Name: "zzz", Source: "/x"},
+		{Name: "aaa", Source: "/y"},
+		{Name: "mmm", Source: "/z"},
+	}
+
+	_, err := MergeMounts(base, user)
+	if err == nil {
+		t.Fatal("expected error for unknown patches")
+	}
+	if !strings.Contains(err.Error(), "aaa, mmm, zzz") {
+		t.Errorf("unknown names should be sorted in message, got: %v", err)
+	}
+}
+
+// TestMergeMountsDoesNotMutateBase: MergeMounts must not mutate the slice
+// passed as base, since callers reuse DefaultMounts() across calls.
+func TestMergeMountsDoesNotMutateBase(t *testing.T) {
+	base := DefaultMounts()
+	originalSource := findMount(base, "gws").Source
+
+	if _, err := MergeMounts(base, []Mount{{Name: "gws", Source: "/changed"}}); err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+
+	if got := findMount(base, "gws").Source; got != originalSource {
+		t.Errorf("base mutated: gws.Source = %q, want %q", got, originalSource)
 	}
 }

@@ -20,7 +20,25 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 	}
 
 	for _, m := range mounts {
-		src := filepath.Clean(expandHome(m.Source, home))
+		// An empty source would resolve to CWD via filepath.Abs("") and
+		// silently bind the project dir. Defend at the resolver too — the
+		// validation in MergeMounts only covers config-file paths, not
+		// programmatic Mount{} construction by callers.
+		if m.Source == "" {
+			warnings = append(warnings, "mount with empty source skipped (target "+m.Target+")")
+			continue
+		}
+
+		src := expandHome(m.Source, home)
+		// Relative sources (./test, ../foo, plain "data") are resolved
+		// against the CWD at toolbox-shell invocation time — typically the
+		// project root. Docker bind mounts require absolute paths.
+		if !filepath.IsAbs(src) {
+			if abs, err := filepath.Abs(src); err == nil {
+				src = abs
+			}
+		}
+		src = filepath.Clean(src)
 
 		// Migration: if a previous run auto-created an empty dir where we now
 		// want a symlink, drop it. rmdir is a no-op on non-empty dirs, so
