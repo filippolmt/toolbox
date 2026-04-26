@@ -126,6 +126,43 @@ mounts:
 
 Bool fields in a *patch* can flip `false → true` but not `true → false` (mapstructure can't tell "not set" from `false`). For that case, use the replace form by also setting `target`.
 
+#### Retargeting every default at once
+
+When you want every toolbox-managed credential / state dir to live somewhere other than `~/.toolbox/` (encrypted volume, shared work drive, alternate user home), set `mounts_root` instead of patching each entry individually:
+
+```yaml
+# Move ~/.toolbox/.claude → /Volumes/work/toolbox/.claude,
+# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every default.
+mounts_root: /Volumes/work/toolbox
+
+mounts:
+  # Per-mount patches still win — gws stays on a different drive.
+  - name: gws
+    source: /Volumes/secure/gws
+```
+
+`mounts_root` accepts absolute paths (`/Volumes/work/toolbox`) and home-relative paths (`~/work/toolbox-state`). Relative paths are rejected at startup. Mounts whose source already lives outside `~/.toolbox/` (e.g. `docker-sock` → `/var/run/docker.sock`, `ssh`/`gitconfig` symlink targets) are not touched — only the toolbox-managed mirrors are retargeted.
+
+**Scope: global vs per-project.** `mounts_root` follows the same precedence as every other config field:
+
+| Where you set it | Effect |
+|------------------|--------|
+| `~/.toolbox.yaml` only | Applied to every `toolbox shell`, in every project. |
+| `./.toolbox.yaml` only | Applied only when `toolbox shell` runs in that project directory. |
+| Both | Project file replaces the global value for that project; other projects keep the global one. (Scalar field — no concatenation.) |
+
+`mounts_root` is applied first to retarget every default; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
+
+**Migration note.** `mounts_root` only changes where the container *binds* its state — it does not move data. If you already have credentials and history in `~/.toolbox/` and switch to a new root, the new directories are auto-created empty (per default `create_if_missing: true`) and the original `~/.toolbox/` data is left untouched. Move it yourself before the next `toolbox shell` if you want continuity:
+
+```bash
+# Stop any running toolbox, then carry your state over.
+toolbox stop
+mv ~/.toolbox /Volumes/work/toolbox
+```
+
+Bare `~` is rejected — it would rewrite `~/.toolbox/.claude` to `~/.claude`, exposing toolbox state on the real host home and defeating credential isolation. Use a sub-path (`~/toolbox-state`) or an absolute path.
+
 Validation: any entry that sets `target` (replace or anonymous append) must also set a non-empty `source`. An empty source would silently bind the current working directory, so it's rejected at startup.
 
 `source` accepts:

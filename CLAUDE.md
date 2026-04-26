@@ -18,6 +18,8 @@ The Go CLI runs on the HOST. The image runs INSIDE the container. They are separ
 | `make go-test-verbose` | `go test -v -race ./...` (requires CGO, separate target) |
 | `make go-lint` | `golangci-lint run ./...` (matches CI version) |
 | `make go-build` | Build the `toolbox` binary |
+| `make go-run` | Build CLI + open `toolbox shell` via the fresh binary (host-only smoke loop) |
+| `make go-run-clean` | Like `go-run` but stops the existing container first — required when iterating on env vars / mounts (those are fixed at ContainerCreate time) |
 | `make go-shell` | Open a shell in the golang container for ad-hoc Go work |
 | `make go-clean-cache` | Drop the module/build cache volume |
 | `make build` | Build the Docker runtime image (`toolbox:local`) |
@@ -46,6 +48,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Key: `v*` tag triggers GoReleaser + Ho
 - **Host UID mapping**: the CLI runs the container with `--user $(id -u):$(id -g)`. `/home/toolbox` is world-writable in the image because the runtime UID rarely matches the baked `toolbox` user. Don't revert to a fixed UID without understanding why.
 - **Auth isolation under `~/.toolbox/`**: every credential path the container sees lives under `~/.toolbox/` on the host (`.claude`, `state`, `gh`, `glab`) or is a symlink to the host's real file (`ssh`, `gitconfig`). See `internal/config/config.go` `DefaultMounts()`. `~/.secrets` is intentionally NOT mounted.
 - **`mounts:` is merged, not replaced**: user-declared mounts in `.toolbox.yaml` patch / replace / append / disable defaults by `name` (see `MergeMounts` in `internal/config/config.go`). A name-only entry patches the matching default; adding `target` replaces it; an unknown name is appended; `disabled: true` drops a default. A patch referencing a name that doesn't exist fails Load() loudly. Sources accept absolute, `~/`, and CWD-relative paths (resolved by `ResolveMounts` against the dir from which `toolbox shell` was invoked).
+- **`mounts_root` retargets every default in one line**: setting `mounts_root: /custom/path` rewrites every default mount whose Source starts with `~/.toolbox/` to live under the new root, applied *before* `MergeMounts`. Per-mount patches still win, so a global root + a single per-name override coexist. `docker-sock` and `SymlinkFrom` targets are not touched (they reference real host paths, not toolbox-managed mirrors). Relative values are rejected at startup. See `ApplyMountsRoot` in `internal/config/config.go`.
 - **Shared bash history**: `~/.toolbox/state/bash_history` is the `HISTFILE` for every toolbox shell across every project; `PROMPT_COMMAND` syncs concurrent sessions.
 - **Docker CLI checksum**: Layer 7 of `internal/build/assets/Dockerfile` has no upstream `.sha256` (Docker doesn't publish one for static binaries). Version pin + HTTPS is the only guard — documented as accepted risk T-01-08.
 - **Two Docker version streams, intentionally independent**: `DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); `github.com/docker/docker` in `go.mod` is the SDK the CLI launcher uses (pinned to the highest v28.x `+incompatible` tag, since upstream publishes no v29 Go module). The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically.
