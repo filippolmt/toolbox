@@ -201,6 +201,13 @@ RUN set -eux; \
 # "version `GLIBC_2.39' not found". The musl build is statically linked and
 # runs on any kernel, matching the zoxide (Layer 20c) strategy. Per-asset
 # `<file>.sha256` is published in standard sha256sum format.
+#
+# GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file forces the encryption key for
+# `gws auth login` to be written to ~/.config/gws/.encryption_key instead of
+# an OS keyring. There's no D-Bus / Secret Service inside the container, so
+# the default keyring backend would fail; the file backend persists across
+# container recreations via the ~/.toolbox/gws bind-mount (DefaultMounts).
+ENV GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file
 RUN set -eux; \
     if [ "${INSTALL_GWS}" != "true" ]; then \
       echo "Skipping gws (tools.gws=false)"; \

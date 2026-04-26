@@ -67,6 +67,11 @@ func DefaultMounts() []Mount {
 		{Source: "~/.toolbox/glab", Target: "/home/toolbox/.config/glab-cli", ReadOnly: false, CreateIfMissing: true},
 		// gcloud auth + config — populated by `gcloud auth login` inside the container.
 		{Source: "~/.toolbox/gcloud", Target: "/home/toolbox/.config/gcloud", ReadOnly: false, CreateIfMissing: true},
+		// Google Workspace CLI auth + config — populated by `gws auth login` inside the container.
+		// Default config dir is ~/.config/gws (overridable via GOOGLE_WORKSPACE_CLI_CONFIG_DIR).
+		// The image sets GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file so the encryption key lands
+		// in this bind-mount instead of an OS keyring (unavailable inside the container).
+		{Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws", ReadOnly: false, CreateIfMissing: true},
 		// Azure CLI auth + config — populated by `az login` inside the container.
 		{Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
