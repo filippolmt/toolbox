@@ -19,7 +19,7 @@
 
 set -eu
 
-GSD_VERSION="${GSD_VERSION:-1.38.3}"
+GSD_VERSION="${GSD_VERSION:-1.38.5}"
 INSTALL_DIR="$HOME/.claude/get-shit-done"
 TOOLS_BIN="$INSTALL_DIR/bin/gsd-tools.cjs"
 VERSION_FILE="$INSTALL_DIR/VERSION"
@@ -39,7 +39,14 @@ if ! $need_install; then
 fi
 
 echo "    gsd: installing v${GSD_VERSION}..."
-if npx --yes "get-shit-done-cc@${GSD_VERSION}" --claude --global >/tmp/gsd-install.log 2>&1; then
+# Install globally instead of `npx --yes`. The upstream installer creates a
+# symlink `@gsd-build/sdk` → its own `sdk/` directory; under `npx` that path
+# lives in `~/.npm/_npx/<hash>/...` and is reaped on the next npx run with
+# different deps, leaving `gsd-sdk` dangling. `npm install -g` puts the
+# package at a stable path under `~/.npm-global/lib/node_modules/`, so the
+# symlink survives across shells.
+if npm install -g --silent "get-shit-done-cc@${GSD_VERSION}" >/tmp/gsd-install.log 2>&1 \
+    && get-shit-done-cc --claude --global >>/tmp/gsd-install.log 2>&1; then
     echo "    gsd: installed"
 else
     echo "    gsd: install failed (see /tmp/gsd-install.log)"
@@ -47,7 +54,7 @@ else
     exit 1
 fi
 
-# Upstream installer (get-shit-done-cc <=1.38.3) forgets to chmod +x the
+# Upstream installer (get-shit-done-cc <=1.38.5) forgets to chmod +x the
 # resolved gsd-sdk target, so the symlink exists but execution yields
 # "permission denied". Ensure the real file is executable.
 if gsd_sdk_target="$(readlink -f "$(command -v gsd-sdk 2>/dev/null)" 2>/dev/null)" \
