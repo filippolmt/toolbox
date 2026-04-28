@@ -423,18 +423,22 @@ RUN set -eux; \
 # runs `rtk init -g` on every shell so the hook stays wired even after a fresh
 # ~/.toolbox/.claude bind-mount.
 #
-# Per-arch tarball variant (mirrors zoxide / gws): amd64 ships static MUSL,
-# arm64 ships GNU (upstream does not publish aarch64-musl). Per-release
-# checksums.txt has standard `<sha256>  <filename>` lines (gh/glab pattern).
+# amd64 ships static MUSL, runs anywhere.
+#
+# arm64 is INTENTIONALLY SKIPPED. Upstream only publishes
+# `aarch64-unknown-linux-gnu` for arm64 Linux, which links against GLIBC 2.39.
+# Base image (node:24-bookworm-slim) ships GLIBC 2.36 — `rtk --version` aborts
+# with `version 'GLIBC_2.39' not found`. There is no aarch64-musl release.
+# Re-evaluate when upstream publishes one or when the base image moves to
+# Debian trixie (GLIBC 2.41+). Smoke-test SKIPs rtk automatically when the
+# binary is absent.
 RUN set -eux; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
       echo "Skipping rtk (tools.rtk=false)"; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then \
+      echo "Skipping rtk on arm64: upstream aarch64-unknown-linux-gnu build requires GLIBC 2.39 but base image ships 2.36. Re-enable when upstream publishes aarch64-musl."; \
     else \
-      case "${TARGETARCH}" in \
-        amd64) RTK_ARCH=x86_64-unknown-linux-musl;; \
-        arm64) RTK_ARCH=aarch64-unknown-linux-gnu;; \
-        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
-      esac; \
+      RTK_ARCH=x86_64-unknown-linux-musl; \
       RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
       curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${RTK_TARBALL}" \
         "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
