@@ -507,7 +507,7 @@ RUN set -eux; \
       GO_TARBALL="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
       curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${GO_TARBALL}" \
         "https://go.dev/dl/${GO_TARBALL}"; \
-      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors"https://go.dev/dl/?mode=json&include=all" \
+      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "https://go.dev/dl/?mode=json&include=all" \
         -o /tmp/go_dl_index.json; \
       EXPECTED=$(jq -r --arg f "${GO_TARBALL}" \
         '.[].files[]? | select(.filename == $f) | .sha256' \
@@ -559,7 +559,7 @@ RUN set -eux; \
       echo "Skipping azure-cli (tools.azure=false)"; \
     else \
       install -d -m 0755 /etc/apt/keyrings; \
-      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errorshttps://packages.microsoft.com/keys/microsoft.asc \
+      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors https://packages.microsoft.com/keys/microsoft.asc \
         | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
       echo "deb [arch=${TARGETARCH} signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bookworm main" \
         > /etc/apt/sources.list.d/azure-cli.list; \
