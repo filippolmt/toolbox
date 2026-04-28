@@ -32,6 +32,22 @@ Single test or package: `make go-shell`, then `go test ./internal/mount -run Tes
 
 **Pre-push validation: use the `/verify` skill** (`.claude/skills/verify/SKILL.md`). Runs lint → test → (conditional) smoke-test in the same order as `.github/workflows/ci.yml`. Green locally = green on CI. Prefer it over invoking `go test` / `golangci-lint` ad-hoc.
 
+## Architecture
+
+Two artefacts in one repo:
+
+- **Host CLI** (`cmd/` + `main.go`): cobra commands (`shell`, `build`, `stop`, `version`, `completion`) wired in `cmd/root.go` via viper. `cmd/root.go` also owns the config walk-up (`findProjectConfig`) that resolves the nearest `.toolbox.yaml`. `cmd/shell.go` is the hot path: merges config → resolves mounts → asks `internal/container` to ensure-and-attach.
+- **Runtime image** (`internal/build/assets/Dockerfile` + `entrypoint.sh` + `smoke-test.sh` + `zshrc.sh`): everything that gets baked into `ghcr.io/filippolmt/toolbox`. The Go CLI embeds these via `internal/build` so `toolbox build` can rebuild from any host without a separate checkout.
+
+Internal packages, in order of "you'll touch this most":
+
+- `internal/config` — `.toolbox.yaml` schema, `DefaultMounts()`, `MergeMounts`, `ApplyMountsRoot`, `KnownTools`. Single source of truth for what gets mounted and which Dockerfile `INSTALL_<TOOL>` ARGs flip.
+- `internal/container` — Docker SDK client wrapper. `lifecycle.go` (ensure / start / stop / attach), `attach.go` (TTY + signal forwarding). Calls `client.WithAPIVersionNegotiation()` so the SDK pin in `go.mod` need not match the runtime CLI version.
+- `internal/mount` — turns `[]config.Mount` into Docker bind specs, creating missing source dirs and resolving `SymlinkFrom` targets against the host.
+- `internal/build` — embeds the Dockerfile + assets and computes the local image tag (`toolbox:local-<hash>`) from the active tool set. `tag.go` `ResolveImage` is what decides "pull `:latest` or build locally".
+- `internal/ui` — tiny print helpers (`Success` / `Warning` / etc.) used by `cmd/`.
+- `internal/version` — build-time metadata (`-ldflags` populated by Makefile + GoReleaser). Don't hard-code; tests assert defaults.
+
 ## Code & language
 
 - **Code, comments, and CLI output: English.** The chat with the user is Italian, but anything checked into the repo is English (variable names, log/user-facing strings, doc comments).
