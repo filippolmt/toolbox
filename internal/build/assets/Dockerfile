@@ -102,7 +102,6 @@ ARG COMPOSE_VERSION=5.1.3
 ARG GO_VERSION=1.26.2
 ARG GOPLS_VERSION=0.21.1
 ARG GOIMPORTS_VERSION=0.44.0
-ARG TINI_VERSION=0.19.0
 ARG BAT_VERSION=0.26.1
 # sharkdp/bat does not publish per-release checksum files — SHA256 is pinned
 # per-arch as a build arg (same pattern as ZOXIDE_SHA256_*). Renovate bumps
@@ -790,32 +789,6 @@ RUN set -eux; \
     echo '[ -f /etc/toolbox-bashrc.sh ] && source /etc/toolbox-bashrc.sh' \
       >> /etc/bash.bashrc
 
-# -- Layer 20a: tini (PID 1 init / signal handler) ----------------------------
-# `sleep infinity` is the CMD and becomes the PID-1 child via `exec "$@"` in
-# entrypoint.sh — chosen specifically because interactive shells (zsh/bash)
-# ignore SIGTERM when they own the TTY with job control, so an interactive
-# shell as CMD makes `docker stop` hang the full 10s grace before SIGKILL.
-# `sleep` exits instantly on SIGTERM, so shell teardown is sub-second. The
-# user's interactive shell is launched via `docker exec` from the Go CLI, not
-# from CMD; nothing about user UX depends on CMD being a shell. tini is a
-# minimal init that forwards signals properly and reaps zombies. `-g`
-# forwards signals to the entire process group (not just the direct child),
-# so the sleep (and any background entrypoint side-effects) receive SIGTERM
-# and the container exits cleanly.
-#
-# Not opt-out: the binary is ~400 KB and correcting PID-1 semantics is a
-# cross-cutting concern (every shell/exec/attach path benefits).
-RUN set -eux; \
-    curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /usr/bin/tini \
-      "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}"; \
-    curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/tini.sha256sum \
-      "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}.sha256sum"; \
-    EXPECTED=$(awk '{print $1}' /tmp/tini.sha256sum); \
-    echo "${EXPECTED}  /usr/bin/tini" | sha256sum -c -; \
-    chmod +x /usr/bin/tini; \
-    rm /tmp/tini.sha256sum; \
-    /usr/bin/tini --version
-
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
@@ -969,6 +942,12 @@ ENV HOME=/home/toolbox \
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
-ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
-# See Layer 20a for why CMD is `sleep infinity` rather than a shell.
+ENTRYPOINT ["/usr/local/bin/entrypoint"]
+# CMD is `sleep infinity` (not a shell) so SIGTERM reaches a process that
+# actually terminates: interactive zsh/bash ignore SIGTERM when they own
+# the TTY, which would force `docker stop` to wait the full grace period
+# and fall back to SIGKILL. `sleep` exits instantly on SIGTERM, so shell
+# teardown is sub-second. The user's interactive shell is launched via
+# `docker exec` from the Go CLI; nothing about user UX depends on CMD
+# being a shell.
 CMD ["sleep", "infinity"]
