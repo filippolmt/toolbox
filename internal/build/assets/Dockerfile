@@ -9,6 +9,41 @@
 # and its files are absent from the final image.
 # ============================================================================
 
+# -- Builder stage: rtk arm64 from source (TOOL-RTK) --------------------------
+# Upstream rtk-ai/rtk publishes only `aarch64-unknown-linux-gnu` for arm64
+# Linux, linked against GLIBC 2.39 — incompatible with the bookworm base
+# (GLIBC 2.36). There is no aarch64-musl release. Build from source via
+# cargo on arm64 only; amd64 keeps the static MUSL tarball path in Layer 13c.
+#
+# Stage runs even on amd64 (Buildx evaluates COPY --from regardless of
+# branch reachability) but the RUN body is a no-op in that case, so the
+# wasted work is bounded to the rust:1-bookworm-slim pull (~700MB, cached
+# in GHA across builds). Re-evaluate when upstream publishes
+# aarch64-unknown-linux-musl OR when Microsoft Azure CLI repo gains a
+# trixie suite (currently bookworm-only — blocks bumping the base image
+# to GLIBC 2.41+).
+# Global ARG (declared before first FROM) so both rtk-builder and the main
+# stage share a single version pin. Redeclared inside each stage with no
+# default — Docker copies the global value on use.
+ARG RTK_VERSION=0.37.2
+
+FROM rust:1-bookworm-slim AS rtk-builder
+ARG TARGETARCH
+ARG RTK_VERSION
+ARG INSTALL_RTK=true
+RUN set -eux; \
+    mkdir -p /out/bin; \
+    if [ "${INSTALL_RTK}" != "true" ] || [ "${TARGETARCH}" != "arm64" ]; then \
+      echo "rtk-builder: skip (TARGETARCH=${TARGETARCH}, INSTALL_RTK=${INSTALL_RTK})"; \
+      : > /out/bin/rtk; \
+    else \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends build-essential pkg-config; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
+      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
+    fi
+
 FROM node:24-bookworm-slim
 
 # -- Version pinning (D-09) ---------------------------------------------------
@@ -31,7 +66,10 @@ ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.121
 ARG CODEX_CLI_VERSION=0.125.0
 ARG PYRIGHT_VERSION=1.1.409
-ARG RTK_VERSION=0.37.2
+# RTK_VERSION default lives in the global ARG block at the top of the file
+# (shared with the rtk-builder stage). Redeclared here without a default to
+# pull the value into the main stage scope.
+ARG RTK_VERSION
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.80.0
@@ -423,21 +461,28 @@ RUN set -eux; \
 # runs `rtk init -g` on every shell so the hook stays wired even after a fresh
 # ~/.toolbox/.claude bind-mount.
 #
-# amd64 ships static MUSL, runs anywhere.
+# Two install paths:
+#   amd64 → download static MUSL tarball + verify SHA256 against upstream
+#           checksums.txt (gh/glab pattern).
+#   arm64 → COPY the binary built from source by the `rtk-builder` stage
+#           (top of file). Upstream's only aarch64-linux release links
+#           against GLIBC 2.39 which bookworm doesn't ship; building from
+#           source against the bookworm sysroot keeps it ABI-compatible.
 #
-# arm64 is INTENTIONALLY SKIPPED. Upstream only publishes
-# `aarch64-unknown-linux-gnu` for arm64 Linux, which links against GLIBC 2.39.
-# Base image (node:24-bookworm-slim) ships GLIBC 2.36 — `rtk --version` aborts
-# with `version 'GLIBC_2.39' not found`. There is no aarch64-musl release.
-# Re-evaluate when upstream publishes one or when the base image moves to
-# Debian trixie (GLIBC 2.41+). Smoke-test SKIPs rtk automatically when the
-# binary is absent.
+# COPY runs on every build (Docker can't conditionally COPY); /tmp/rtk-from-src
+# is removed in the amd64 branch and the placeholder file (empty `:>` from the
+# builder stage when arm64 isn't selected) is harmless.
+COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-src
 RUN set -eux; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
       echo "Skipping rtk (tools.rtk=false)"; \
+      rm -f /tmp/rtk-from-src; \
     elif [ "${TARGETARCH}" = "arm64" ]; then \
-      echo "Skipping rtk on arm64: upstream aarch64-unknown-linux-gnu build requires GLIBC 2.39 but base image ships 2.36. Re-enable when upstream publishes aarch64-musl."; \
+      mv /tmp/rtk-from-src /usr/local/bin/rtk; \
+      chmod +x /usr/local/bin/rtk; \
+      rtk --version; \
     else \
+      rm -f /tmp/rtk-from-src; \
       RTK_ARCH=x86_64-unknown-linux-musl; \
       RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
       curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${RTK_TARBALL}" \
