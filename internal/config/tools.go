@@ -3,6 +3,13 @@ package config
 // KnownTools is the canonical list of opt-out tools baked into the Dockerfile.
 // Keep this ordered alphabetically so the hash that drives local image tags
 // is stable across refactors.
+//
+// Hash invalidation: ADDING (or removing) an entry here invalidates the
+// `toolbox:local-<hash>` tag for every user who has any non-default tools
+// config — the hash is computed over the sorted Tools map, so a new key
+// shifts the digest even if the user never set it. Their next `toolbox
+// shell` will see an "Image not found locally — building …" line and
+// rebuild once. Document this in the release notes when bumping this list.
 var KnownTools = []string{
 	"azure",
 	"bat",
@@ -14,6 +21,8 @@ var KnownTools = []string{
 	"gh",
 	"glab",
 	"go",
+	"goimports",
+	"gopls",
 	"gws",
 	"helm",
 	"jq",
@@ -45,6 +54,8 @@ var ToolBuildArg = map[string]string{
 	"gh":             "INSTALL_GH",
 	"glab":           "INSTALL_GLAB",
 	"go":             "INSTALL_GO",
+	"goimports":      "INSTALL_GOIMPORTS",
+	"gopls":          "INSTALL_GOPLS",
 	"gws":            "INSTALL_GWS",
 	"helm":           "INSTALL_HELM",
 	"jq":             "INSTALL_JQ",

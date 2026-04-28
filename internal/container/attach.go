@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -28,12 +29,12 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 		Cmd:          []string{"/bin/" + cfg.Shell},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("create exec for container %s: %w", containerID, err)
 	}
 
 	resp, err := cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{Tty: true})
 	if err != nil {
-		return err
+		return fmt.Errorf("attach exec %s: %w", execResp.ID, err)
 	}
 	defer resp.Close()
 
@@ -44,7 +45,7 @@ func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, co
 	if term.IsTerminal(fd) {
 		oldState, err = term.MakeRaw(fd)
 		if err != nil {
-			return err
+			return fmt.Errorf("set stdin to raw mode: %w", err)
 		}
 	}
 

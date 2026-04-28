@@ -140,6 +140,13 @@ ARG INSTALL_GH=true
 ARG INSTALL_GLAB=true
 ARG INSTALL_GWS=true
 ARG INSTALL_GO=true
+# gopls / goimports are independently opt-out-able even when INSTALL_GO=true.
+# Each is gated inside Layer 14a so users who want the Go runtime without the
+# LSP / formatter (smaller image, no background indexer) can flip them off
+# while keeping the toolchain. Both flags are no-ops when INSTALL_GO=false —
+# the entire layer skips.
+ARG INSTALL_GOPLS=true
+ARG INSTALL_GOIMPORTS=true
 ARG INSTALL_DOCKER_CLI=true
 ARG INSTALL_STARSHIP=true
 ARG INSTALL_JQ=true
@@ -637,29 +644,39 @@ RUN set -eux; \
       # module; goimports is in golang.org/x/tools) so `go install` has to be
       # invoked twice — a single invocation fails with
       # "all arguments must refer to packages in the same module at the same version".
-      HOME=/tmp/go-install \
-      GOPATH=/tmp/go-install \
-      GOCACHE=/tmp/go-install/cache \
-      GOMODCACHE=/tmp/go-install/pkg/mod \
-      GOBIN=/usr/local/bin \
-      /usr/local/go/bin/go install -ldflags="-s -w" \
-        "golang.org/x/tools/gopls@v${GOPLS_VERSION}"; \
-      HOME=/tmp/go-install \
-      GOPATH=/tmp/go-install \
-      GOCACHE=/tmp/go-install/cache \
-      GOMODCACHE=/tmp/go-install/pkg/mod \
-      GOBIN=/usr/local/bin \
-      /usr/local/go/bin/go install -ldflags="-s -w" \
-        "golang.org/x/tools/cmd/goimports@v${GOIMPORTS_VERSION}"; \
+      # Each is independently opt-out-able via INSTALL_GOPLS / INSTALL_GOIMPORTS
+      # so users can ship the Go runtime without the LSP / formatter.
+      if [ "${INSTALL_GOPLS}" = "true" ]; then \
+        HOME=/tmp/go-install \
+        GOPATH=/tmp/go-install \
+        GOCACHE=/tmp/go-install/cache \
+        GOMODCACHE=/tmp/go-install/pkg/mod \
+        GOBIN=/usr/local/bin \
+        /usr/local/go/bin/go install -ldflags="-s -w" \
+          "golang.org/x/tools/gopls@v${GOPLS_VERSION}"; \
+        gopls version; \
+      else \
+        echo "Skipping gopls (tools.gopls=false)"; \
+      fi; \
+      if [ "${INSTALL_GOIMPORTS}" = "true" ]; then \
+        HOME=/tmp/go-install \
+        GOPATH=/tmp/go-install \
+        GOCACHE=/tmp/go-install/cache \
+        GOMODCACHE=/tmp/go-install/pkg/mod \
+        GOBIN=/usr/local/bin \
+        /usr/local/go/bin/go install -ldflags="-s -w" \
+          "golang.org/x/tools/cmd/goimports@v${GOIMPORTS_VERSION}"; \
+        # goimports at runtime invokes `go list`, so it needs `go` on PATH.
+        # The ENV PATH that prepends /usr/local/go/bin is applied by the next
+        # Dockerfile line (after this RUN), so a functional invocation like
+        # `echo "" | goimports` would fail here. Presence-check is enough —
+        # smoke-test.sh runs the functional check against the final image.
+        test -x /usr/local/bin/goimports; \
+      else \
+        echo "Skipping goimports (tools.goimports=false)"; \
+      fi; \
       rm -rf /tmp/go-install; \
       /usr/local/go/bin/go version; \
-      gopls version; \
-      # goimports at runtime invokes `go list`, so it needs `go` on PATH.
-      # The ENV PATH that prepends /usr/local/go/bin is applied by the next
-      # Dockerfile line (after this RUN), so a functional invocation like
-      # `echo "" | goimports` would fail here. Presence-check is enough —
-      # smoke-test.sh runs the functional check against the final image.
-      test -x /usr/local/bin/goimports; \
     fi
 
 # Go binaries in PATH for every subsequent layer + runtime.

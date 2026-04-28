@@ -1,6 +1,7 @@
 package mount
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,15 +51,15 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 		}
 
 		if _, err := os.Lstat(src); os.IsNotExist(err) {
-			w, created := ensureSource(m, src, home)
-			if w != "" {
-				warnings = append(warnings, w)
+			ready, ensureErr := ensureSource(m, src, home)
+			if ensureErr != nil {
+				warnings = append(warnings, ensureErr.Error())
 			}
-			if !created {
+			if !ready {
 				continue
 			}
 		} else if err != nil {
-			warnings = append(warnings, "failed to stat mount source "+m.Source+": "+err.Error())
+			warnings = append(warnings, fmt.Sprintf("failed to stat mount source %s: %s", m.Source, err.Error()))
 			continue
 		}
 
@@ -78,31 +79,33 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 }
 
 // ensureSource creates the mount source according to the Mount spec.
-// Returns a warning message (empty when none) and whether the source is now
-// ready to be mounted.
-func ensureSource(m config.Mount, src, home string) (warning string, ready bool) {
+// Returns whether the source is now ready and an error to surface as a
+// warning when not. OS-level failures are wrapped with %w so callers can
+// errors.Is/errors.As against fs errors (e.g. fs.ErrPermission) instead of
+// matching message substrings.
+func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 	switch {
 	case m.SymlinkFrom != "":
 		target := filepath.Clean(expandHome(m.SymlinkFrom, home))
-		if _, err := os.Stat(target); err != nil {
-			return "symlink target missing, mount skipped: " + m.SymlinkFrom, false
+		if _, statErr := os.Stat(target); statErr != nil {
+			return false, fmt.Errorf("symlink target missing, mount skipped: %s: %w", m.SymlinkFrom, statErr)
 		}
-		if err := os.MkdirAll(filepath.Dir(src), 0o700); err != nil {
-			return "failed to create parent dir for " + m.Source + ": " + err.Error(), false
+		if mkErr := os.MkdirAll(filepath.Dir(src), 0o700); mkErr != nil {
+			return false, fmt.Errorf("failed to create parent dir for %s: %w", m.Source, mkErr)
 		}
-		if err := os.Symlink(target, src); err != nil {
-			return "failed to symlink " + m.Source + " -> " + m.SymlinkFrom + ": " + err.Error(), false
+		if linkErr := os.Symlink(target, src); linkErr != nil {
+			return false, fmt.Errorf("failed to symlink %s -> %s: %w", m.Source, m.SymlinkFrom, linkErr)
 		}
-		return "", true
+		return true, nil
 
 	case m.CreateIfMissing:
-		if err := os.MkdirAll(src, 0o700); err != nil {
-			return "failed to create mount source " + m.Source + ": " + err.Error(), false
+		if mkErr := os.MkdirAll(src, 0o700); mkErr != nil {
+			return false, fmt.Errorf("failed to create mount source %s: %w", m.Source, mkErr)
 		}
-		return "", true
+		return true, nil
 
 	default:
-		return "path not found, mount skipped: " + m.Source, false
+		return false, fmt.Errorf("path not found, mount skipped: %s", m.Source)
 	}
 }
 

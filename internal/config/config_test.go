@@ -734,6 +734,82 @@ func TestMergeMountsMultipleUnknownPatchesSorted(t *testing.T) {
 	}
 }
 
+// TestMergeMountsDisableAndPatchSameName: a user list that combines a
+// disable patch and a regular patch on the same Name results in the mount
+// being removed (Disabled wins at the final filter, regardless of order).
+// Locks the contract for "I want to opt out of a default but also document
+// what its source would have been if re-enabled".
+func TestMergeMountsDisableAndPatchSameName(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+
+	disableFirst := []Mount{
+		{Name: "x", Disabled: true},
+		{Name: "x", Source: "/changed"},
+	}
+	merged, err := MergeMounts(base, disableFirst)
+	if err != nil {
+		t.Fatalf("MergeMounts(disable-first): %v", err)
+	}
+	if len(merged) != 0 {
+		t.Errorf("disable-first: expected mount to be removed, got %+v", merged)
+	}
+
+	patchFirst := []Mount{
+		{Name: "x", Source: "/changed"},
+		{Name: "x", Disabled: true},
+	}
+	merged, err = MergeMounts(base, patchFirst)
+	if err != nil {
+		t.Fatalf("MergeMounts(patch-first): %v", err)
+	}
+	if len(merged) != 0 {
+		t.Errorf("patch-first: expected mount to be removed, got %+v", merged)
+	}
+}
+
+// TestMergeMountsUnknownPatchPlusLaterAppend: a typo'd patch on an unknown
+// Name fails Load() even when a later user entry would have made the same
+// Name valid via the append branch. The patch typo is the loud failure
+// signal — silently shadowing it with a later append would mask config
+// mistakes.
+func TestMergeMountsUnknownPatchPlusLaterAppend(t *testing.T) {
+	base := []Mount{{Name: "x", Source: "/a", Target: "/b"}}
+	user := []Mount{
+		{Name: "fresh", Source: "/c"},               // patch on unknown
+		{Name: "fresh", Source: "/c", Target: "/d"}, // would be a valid append on its own
+	}
+
+	if _, err := MergeMounts(base, user); err == nil {
+		t.Fatal("expected error: patch on unknown name must fail even when followed by a valid append")
+	} else if !strings.Contains(err.Error(), "fresh") {
+		t.Errorf("error should mention the unknown name 'fresh', got: %v", err)
+	}
+}
+
+// TestMergeMountsNoOpPatch: a patch that only carries Name (no Source,
+// SymlinkFrom, ReadOnly, CreateIfMissing, Disabled) is a documented no-op —
+// every field stays at the base value. Locks the contract so a refactor
+// cannot accidentally start clobbering defaults to zero values.
+func TestMergeMountsNoOpPatch(t *testing.T) {
+	base := []Mount{{
+		Name: "x", Source: "/a", Target: "/b",
+		ReadOnly: true, CreateIfMissing: true, SymlinkFrom: "/host",
+	}}
+	user := []Mount{{Name: "x"}}
+
+	merged, err := MergeMounts(base, user)
+	if err != nil {
+		t.Fatalf("MergeMounts: %v", err)
+	}
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 mount, got %d", len(merged))
+	}
+	got := merged[0]
+	if got.Source != "/a" || got.Target != "/b" || !got.ReadOnly || !got.CreateIfMissing || got.SymlinkFrom != "/host" {
+		t.Errorf("no-op patch must preserve every field, got %+v", got)
+	}
+}
+
 // TestMergeMountsDoesNotMutateBase: MergeMounts must not mutate the slice
 // passed as base, since callers reuse DefaultMounts() across calls.
 func TestMergeMountsDoesNotMutateBase(t *testing.T) {

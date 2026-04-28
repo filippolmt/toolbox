@@ -3,6 +3,7 @@ package build
 import (
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/filippolmt/toolbox/internal/config"
 )
@@ -96,5 +97,80 @@ func TestBuildArgsFromToolsEmptyWhenAllDefault(t *testing.T) {
 	args := BuildArgsFromTools(config.DefaultTools())
 	if len(args) != 0 {
 		t.Errorf("default tools should produce no build args, got %v", args)
+	}
+}
+
+// TestComputeImageHashStableForSameAssets locks the determinism contract:
+// identical asset filesystem + identical inputs must yield identical hashes
+// across calls. Without it, ResolveImage would request a fresh build on
+// every invocation even when nothing changed.
+func TestComputeImageHashStableForSameAssets(t *testing.T) {
+	assets := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM scratch\n")},
+		"a/entrypoint": &fstest.MapFile{Data: []byte("#!/bin/sh\nexec \"$@\"\n")},
+	}
+	tools := map[string]bool{"go": true, "rtk": false}
+
+	h1, err := computeImageHashFromFS(assets, "a", "v1.0.0", tools)
+	if err != nil {
+		t.Fatalf("computeImageHashFromFS #1: %v", err)
+	}
+	h2, err := computeImageHashFromFS(assets, "a", "v1.0.0", tools)
+	if err != nil {
+		t.Fatalf("computeImageHashFromFS #2: %v", err)
+	}
+	if h1 != h2 {
+		t.Errorf("hash not stable across calls with identical inputs: %q vs %q", h1, h2)
+	}
+	if len(h1) != 12 {
+		t.Errorf("hash length = %d, want 12", len(h1))
+	}
+}
+
+// TestComputeImageHashChangesOnAssetEdit guards the cache-invalidation
+// contract: any byte-level change to an embedded asset (Dockerfile,
+// entrypoint, …) must produce a fresh hash so users on a stale
+// toolbox:local-<hash> image get rebuilt automatically.
+func TestComputeImageHashChangesOnAssetEdit(t *testing.T) {
+	tools := map[string]bool{"go": true}
+
+	before := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM debian:bookworm\n")},
+	}
+	after := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM debian:trixie\n")},
+	}
+
+	hBefore, err := computeImageHashFromFS(before, "a", "v1.0.0", tools)
+	if err != nil {
+		t.Fatalf("hash before: %v", err)
+	}
+	hAfter, err := computeImageHashFromFS(after, "a", "v1.0.0", tools)
+	if err != nil {
+		t.Fatalf("hash after: %v", err)
+	}
+	if hBefore == hAfter {
+		t.Errorf("editing an embedded asset must change the hash, got %q for both", hBefore)
+	}
+}
+
+// TestComputeImageHashChangesOnAssetAdd guards the case where a new asset
+// file is added to the embedded set (e.g. a new shell rc file): it must
+// invalidate the hash even if no existing file changed.
+func TestComputeImageHashChangesOnAssetAdd(t *testing.T) {
+	tools := map[string]bool{"go": true}
+
+	before := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM scratch\n")},
+	}
+	after := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM scratch\n")},
+		"a/zshrc.sh":   &fstest.MapFile{Data: []byte("# new file\n")},
+	}
+
+	hBefore, _ := computeImageHashFromFS(before, "a", "v1.0.0", tools)
+	hAfter, _ := computeImageHashFromFS(after, "a", "v1.0.0", tools)
+	if hBefore == hAfter {
+		t.Errorf("adding a new asset must change the hash, got %q for both", hBefore)
 	}
 }

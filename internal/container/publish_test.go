@@ -68,6 +68,59 @@ func TestParsePublishSpecs(t *testing.T) {
 	}
 }
 
+func TestFormatPublishMismatch(t *testing.T) {
+	wanted := nat.PortMap{
+		"7171/tcp": nil,
+		"8080/tcp": nil,
+	}
+
+	t.Run("empty when nothing missing", func(t *testing.T) {
+		inspect := container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{HostConfig: &container.HostConfig{
+				PortBindings: nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
+			}},
+		}
+		if got := formatPublishMismatch(inspect, wanted); got != "" {
+			t.Errorf("expected empty string when fully bound, got %q", got)
+		}
+	})
+
+	t.Run("structured message lists wanted, actual, missing", func(t *testing.T) {
+		inspect := container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{HostConfig: &container.HostConfig{
+				PortBindings: nat.PortMap{"7171/tcp": nil},
+			}},
+		}
+		got := formatPublishMismatch(inspect, wanted)
+		// Order is sorted, so the expected substrings are deterministic.
+		for _, sub := range []string{
+			"wanted [7171/tcp, 8080/tcp]",
+			"container has [7171/tcp]",
+			"missing [8080/tcp]",
+			"toolbox stop",
+		} {
+			if !strings.Contains(got, sub) {
+				t.Errorf("message missing %q\n  full: %s", sub, got)
+			}
+		}
+	})
+
+	t.Run("empty PortBindings reports actual=none", func(t *testing.T) {
+		// HostConfig is non-nil (so missingPublishPorts proceeds) but the
+		// container has zero published ports — the user sees "actual=[none]"
+		// rather than an empty pair of brackets.
+		inspect := container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{HostConfig: &container.HostConfig{
+				PortBindings: nat.PortMap{},
+			}},
+		}
+		got := formatPublishMismatch(inspect, wanted)
+		if !strings.Contains(got, "container has [none]") {
+			t.Errorf("expected actual=none with empty PortBindings, got: %s", got)
+		}
+	})
+}
+
 func TestMissingPublishPorts(t *testing.T) {
 	wanted := nat.PortMap{
 		"7171/tcp": nil,
