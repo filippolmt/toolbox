@@ -99,10 +99,21 @@ func DefaultMounts() []Mount {
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
-		// rtk token-savings history — populated by `rtk` proxy invocations and read
-		// by `rtk gain`. Default state dir is ~/.config/rtk; bind-mounting it keeps
-		// the analytics database across container recreations.
-		{Name: "rtk", Source: "~/.toolbox/rtk", Target: "/home/toolbox/.config/rtk", ReadOnly: false, CreateIfMissing: true},
+		// rtk follows XDG, which means it splits state across ~/.config/rtk
+		// (config) and ~/.local/share/rtk (data). Both bind sources are
+		// nested under a single ~/.toolbox/rtk/ root on the host so all rtk
+		// state lives under one parent dir; inside the container the two
+		// XDG-compliant targets stay separate because rtk hard-codes the
+		// data path (RTK_DB_PATH only partially redirects writes).
+		//
+		// "rtk" — config.toml (also stores GDPR telemetry consent in
+		// [telemetry]) and filters.toml. Written by `rtk config --create`
+		// and `rtk init`.
+		{Name: "rtk", Source: "~/.toolbox/rtk/config", Target: "/home/toolbox/.config/rtk", ReadOnly: false, CreateIfMissing: true},
+		// "rtk-data" — analytics database (history.db, read by `rtk gain`),
+		// the telemetry salt file, and tee dumps. Without this bind the
+		// savings history wipes on every `toolbox stop`.
+		{Name: "rtk-data", Source: "~/.toolbox/rtk/data", Target: "/home/toolbox/.local/share/rtk", ReadOnly: false, CreateIfMissing: true},
 		// kubeconfig — populated by `gcloud container clusters get-credentials`,
 		// `aws eks update-kubeconfig`, manual edits, etc. Persists across the
 		// auto-remove-on-exit container lifecycle so cluster context survives

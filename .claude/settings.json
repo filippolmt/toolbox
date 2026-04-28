@@ -20,7 +20,6 @@
     "security-guidance@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
-    "shell-scripting@claude-code-workflows": true
+    "commit-commands@claude-plugins-official": true
   }
 }
