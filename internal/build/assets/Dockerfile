@@ -454,11 +454,18 @@ RUN set -eux; \
 #       set. Plugins live under the user-writable ~/.claude/plugins bind so
 #       refresh works without permission errors. /reload-plugins notification
 #       is shown when an update lands.
-#   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC was previously set here for
-#   privacy (telemetry / analytics suppression). Removed: it appears to be
-#   an umbrella flag that also affects OAuth refresh paths and was correlated
-#   with intermittent "/login" prompts on long-lived shells. DISABLE_AUTOUPDATER
-#   covers the CLI-update concern explicitly; telemetry is the price.
+#   DISABLE_TELEMETRY=1
+#       Granular kill-switch for telemetry / session-quality surveys
+#       (https://code.claude.com/docs/en/env-vars).
+#       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 was previously used here
+#       and is documented as the equivalent of DISABLE_AUTOUPDATER +
+#       DISABLE_FEEDBACK_COMMAND + DISABLE_ERROR_REPORTING + DISABLE_TELEMETRY.
+#       The umbrella flag was correlated with intermittent "/login" prompts
+#       on long-lived shells, so we replace it with the granular pair we
+#       actually want (TELEMETRY + AUTOUPDATER) and leave error-reporting
+#       and the feedback command untouched. If logout returns, the next
+#       suspect is DISABLE_TELEMETRY itself; otherwise the umbrella flag
+#       had undocumented side effects.
 #
 #   CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 #       Relocates both .credentials.json and .claude.json into the single
@@ -468,6 +475,7 @@ RUN set -eux; \
 #       /login each shell.
 ENV DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
+    DISABLE_TELEMETRY=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 RUN set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
