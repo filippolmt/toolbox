@@ -118,7 +118,7 @@ jobs:
         # the GHA logs so a maintainer can decide if a tool bump is warranted.
         # Pinned to a known-good tag (Renovate can bump it via the
         # github-releases datasource if/when added to renovate.json).
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
           # Pin by digest so the scan targets exactly the image we just pushed —
