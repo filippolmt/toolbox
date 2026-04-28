@@ -537,7 +537,22 @@ RUN set -eux; \
 # off by default in upstream too, but this env var blocks every code path
 # regardless of consent state, so a user accidentally running
 # `rtk telemetry enable` inside a toolbox shell still sends nothing.
-ENV RTK_TELEMETRY_DISABLED=1
+#
+# RTK_TEE=0: hard kill-switch for the tee feature, which by default writes
+# failed-command stdout/stderr to ~/.local/share/rtk/tee/*.log (up to 20 files
+# x 1MB). Inside a toolbox shell those failures often carry tokens or PII
+# (`gh auth status`, `aws sts ...`, `curl -H Authorization:`) so persisting
+# them to a host-bound directory is a leakage surface. The entrypoint also
+# pre-seeds [tee] enabled = false in config.toml on first launch, but this
+# env var is the primary defense because:
+#   - it covers users with a stale config.toml from before the seed existed
+#     (the seed is gated on file absence, the bind-mount persists old files)
+#   - it survives `rtk telemetry enable/disable` rewriting the whole TOML
+#     and resetting [tee] back to upstream's enabled = true default
+# Source-side override is checked at src/core/tee.rs (rtk-ai/rtk v0.37.2,
+# lines 152 and 200).
+ENV RTK_TELEMETRY_DISABLED=1 \
+    RTK_TEE=0
 COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
 RUN set -eux; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
