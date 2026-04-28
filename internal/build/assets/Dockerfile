@@ -791,12 +791,17 @@ RUN set -eux; \
       >> /etc/bash.bashrc
 
 # -- Layer 20a: tini (PID 1 init / signal handler) ----------------------------
-# zsh is the CMD and becomes PID 1 via `exec "$@"` in entrypoint.sh. Interactive
-# shells (zsh/bash) ignore SIGTERM when they own the TTY with job control, so
-# `docker stop` hangs until the 10s timeout and falls back to SIGKILL. tini is
-# a minimal init that forwards signals properly and reaps zombies. `-g`
-# forwards signals to the entire process group (not just the direct child), so
-# shells receive SIGTERM and exit cleanly.
+# `sleep infinity` is the CMD and becomes the PID-1 child via `exec "$@"` in
+# entrypoint.sh — chosen specifically because interactive shells (zsh/bash)
+# ignore SIGTERM when they own the TTY with job control, so an interactive
+# shell as CMD makes `docker stop` hang the full 10s grace before SIGKILL.
+# `sleep` exits instantly on SIGTERM, so shell teardown is sub-second. The
+# user's interactive shell is launched via `docker exec` from the Go CLI, not
+# from CMD; nothing about user UX depends on CMD being a shell. tini is a
+# minimal init that forwards signals properly and reaps zombies. `-g`
+# forwards signals to the entire process group (not just the direct child),
+# so the sleep (and any background entrypoint side-effects) receive SIGTERM
+# and the container exits cleanly.
 #
 # Not opt-out: the binary is ~400 KB and correcting PID-1 semantics is a
 # cross-cutting concern (every shell/exec/attach path benefits).
@@ -965,4 +970,5 @@ ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
-CMD ["zsh"]
+# See Layer 20a for why CMD is `sleep infinity` rather than a shell.
+CMD ["sleep", "infinity"]
