@@ -11,6 +11,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Claude Code | 2.1.x |
 | OpenAI Codex CLI | 0.125.x |
 | Pyright language server (`pyright-langserver`) | 1.1.x |
+| rtk (LLM token-saving CLI proxy) | 0.37.x |
 | Playwright CLI | 1.59.x |
 | Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
 | Python 3 | 3.11 |

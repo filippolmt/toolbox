@@ -31,6 +31,7 @@ ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.121
 ARG CODEX_CLI_VERSION=0.125.0
 ARG PYRIGHT_VERSION=1.1.409
+ARG RTK_VERSION=0.37.2
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.80.0
@@ -95,6 +96,7 @@ ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
 ARG INSTALL_BAT=true
 ARG INSTALL_PYRIGHT=true
+ARG INSTALL_RTK=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -411,6 +413,38 @@ RUN set -eux; \
     else \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
+    fi
+
+# -- Layer 13c: rtk (CLI proxy that compresses output for LLM agents) ---------
+# Rust binary from rtk-ai/rtk. Wraps common dev commands (git/grep/cat/test
+# runners/...) and emits token-optimized output before it hits the LLM context.
+# Companion to Claude Code / Codex — `rtk init -g` writes hooks into
+# ~/.claude/settings.json so Bash tool calls get auto-rewritten. The entrypoint
+# runs `rtk init -g` on every shell so the hook stays wired even after a fresh
+# ~/.toolbox/.claude bind-mount.
+#
+# Per-arch tarball variant (mirrors zoxide / gws): amd64 ships static MUSL,
+# arm64 ships GNU (upstream does not publish aarch64-musl). Per-release
+# checksums.txt has standard `<sha256>  <filename>` lines (gh/glab pattern).
+RUN set -eux; \
+    if [ "${INSTALL_RTK}" != "true" ]; then \
+      echo "Skipping rtk (tools.rtk=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) RTK_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) RTK_ARCH=aarch64-unknown-linux-gnu;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
+      curl -fsSL -o "/tmp/${RTK_TARBALL}" \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
+      curl -fsSL -o /tmp/rtk_checksums.txt \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
+      cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
+      tar -xzf "/tmp/${RTK_TARBALL}" -C /usr/local/bin rtk; \
+      chmod +x /usr/local/bin/rtk; \
+      rm "/tmp/${RTK_TARBALL}" /tmp/rtk_checksums.txt; \
+      rtk --version; \
     fi
 
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------
