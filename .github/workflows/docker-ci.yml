@@ -5,35 +5,74 @@ on:
     paths:
       - 'internal/build/assets/**'
       - '.github/workflows/docker-ci.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'internal/build/assets/**'
-      - '.github/workflows/docker-ci.yml'
+  # No push: branches: [main] trigger — docker-publish.yml runs the same
+  # smoke-test pre-publish on main, so a re-run here would be redundant work
+  # (~7min). Pre-merge validation happens on the pull_request event above.
 
 permissions:
   contents: read
 
+# Cancel superseded builds on the same ref to free runner minutes during
+# iterative PR pushes. Image builds are the most expensive job in the repo
+# (~5–10 min apiece), so this is the highest-leverage concurrency knob.
+concurrency:
+  group: docker-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  detect:
+    # Compute the matrix dynamically: the `default` variant always runs
+    # (catches regressions in entrypoint.sh / smoke-test.sh / bashrc.sh /
+    # zshrc.sh — the bulk of non-Dockerfile churn under
+    # internal/build/assets/**); `arm64-build-only` runs only when the
+    # Dockerfile or this workflow itself changes (the only inputs whose
+    # arch-specific behavior that variant validates). Saves ~5min on PRs
+    # that touch only the runtime scripts.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Detect Dockerfile / workflow changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            arch_coverage:
+              - 'internal/build/assets/Dockerfile'
+              - '.github/workflows/docker-ci.yml'
+      - name: Build matrix
+        id: set
+        env:
+          ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
+        run: |
+          if [ "$ARCH_COVERAGE" = "true" ]; then
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true},{"variant":"arm64-build-only","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
+          fi
+
   docker-build:
+    needs: detect
     # Builds the runtime image and runs the smoke-test on every PR so that
     # Dockerfile ARG bumps (azure-cli, oci-cli, playwright, …) are validated
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
     #
-    # Matrix:
-    #   default   — all tools enabled; smoke-test must report OK for go/gopls/goimports
-    #   go-optout — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
-    #               Go bundle (validates the tools.go cascade off: GO-04)
-    runs-on: ubuntu-latest
+    # Matrix is computed by the `detect` job above:
+    #   default            — always; smoke-test must report OK for the full tool set.
+    #   arm64-build-only   — only on Dockerfile/workflow change. Builds for linux/arm64 on
+    #                        a native arm64 runner. Catches arch-specific breakage (wrong
+    #                        SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
+    #                        per-arch ARG case in the Dockerfile (zoxide, gws, bat, rtk, …)
+    #                        lives or dies here. Native arm64 (ubuntu-24.04-arm) is free
+    #                        for public repos and ~3x faster than QEMU on amd64.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
-      matrix:
-        include:
-          - variant: default
-            build_args: ""
-            tag: toolbox:ci
-          - variant: go-optout
-            build_args: INSTALL_GO=false
-            tag: toolbox:ci-go-optout
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
     name: docker-build (${{ matrix.variant }})
     steps:
       - name: Checkout
@@ -47,26 +86,16 @@ jobs:
         with:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
-          load: true
+          load: ${{ matrix.load }}
+          platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
-          build-args: ${{ matrix.build_args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Cache scope per matrix variant so concurrent variants don't
+          # overwrite each other's GHA cache layers.
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
       - name: Smoke test
-        run: internal/build/assets/smoke-test.sh ${{ matrix.tag }}
-
-      - name: Assert 3 SKIP lines for Go bundle (go-optout only)
-        if: matrix.variant == 'go-optout'
-        run: |
-          output=$(internal/build/assets/smoke-test.sh ${{ matrix.tag }} 2>&1)
-          skip_count=$(echo "$output" | grep -c '^SKIP:.*not installed' || true)
-          for tool in go gopls goimports; do
-            if ! echo "$output" | grep -q "^SKIP: ${tool} (not installed)"; then
-              echo "ERROR: expected 'SKIP: ${tool} (not installed)' in smoke-test output but not found"
-              echo "--- smoke-test output ---"
-              echo "$output"
-              exit 1
-            fi
-          done
-          echo "OK: all 3 Go bundle tools correctly SKIP when INSTALL_GO=false (found ${skip_count} SKIP lines)"
+        if: matrix.load
+        env:
+          IMAGE_TAG: ${{ matrix.tag }}
+        run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"

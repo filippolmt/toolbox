@@ -276,6 +276,14 @@
     },
     {
       "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+RTK_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "rtk-ai/rtk",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],
       "matchStrings": ["GO_IMAGE\\s*:?=\\s*golang:(?<currentValue>\\S+)"],
       "datasourceTemplate": "docker",

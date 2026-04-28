@@ -116,6 +116,31 @@ if [ -d "$_plugins_cache" ] && command -v npm >/dev/null 2>&1 && command -v node
 fi
 unset _plugins_cache
 
+# Re-register the rtk hooks globally on every shell start.
+# `rtk init -g` writes the Bash-tool hook into ~/.claude/settings.json (Claude
+# Code default); `rtk init -g --codex` does the same for ~/.codex/config.toml.
+# Both hook files live in bind-mounted dirs (~/.toolbox/.claude, ~/.toolbox/.codex),
+# so a fresh container or a settings reset would otherwise leave the user
+# without the wiring. Idempotent — re-running on an already-wired config is a
+# no-op. Output suppressed; failures logged but non-fatal.
+#
+# Gated on `command -v <ai-cli>` AND directory presence: the bind-mounts
+# auto-create both ~/.claude and ~/.codex even when the corresponding tool is
+# opted out (tools.claude=false / tools.codex=false), so a dir-only check would
+# happily inject hooks into config files no AI CLI ever reads.
+if command -v rtk >/dev/null 2>&1; then
+    if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+        if ! rtk init -g >/dev/null 2>&1; then
+            echo "  rtk: init -g failed (non-fatal)"
+        fi
+    fi
+    if command -v codex >/dev/null 2>&1 && [ -d "$HOME/.codex" ]; then
+        if ! rtk init -g --codex >/dev/null 2>&1; then
+            echo "  rtk: init -g --codex failed (non-fatal)"
+        fi
+    fi
+fi
+
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.
 # Each *.sh file runs sequentially before the shell starts. Failures are
 # logged but never abort the entrypoint — one bad hook cannot block access.

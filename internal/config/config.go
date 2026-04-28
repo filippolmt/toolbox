@@ -99,6 +99,10 @@ func DefaultMounts() []Mount {
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// rtk token-savings history — populated by `rtk` proxy invocations and read
+		// by `rtk gain`. Default state dir is ~/.config/rtk; bind-mounting it keeps
+		// the analytics database across container recreations.
+		{Name: "rtk", Source: "~/.toolbox/rtk", Target: "/home/toolbox/.config/rtk", ReadOnly: false, CreateIfMissing: true},
 		// kubeconfig — populated by `gcloud container clusters get-credentials`,
 		// `aws eks update-kubeconfig`, manual edits, etc. Persists across the
 		// auto-remove-on-exit container lifecycle so cluster context survives

@@ -5,9 +5,68 @@
 #
 # Every optional tool below is guarded by an INSTALL_<TOOL>=true build arg.
 # The toolbox CLI translates the user's `tools:` config into these build args.
-# When INSTALL_<TOOL>=false, the layer is a no-op — the tool is not installed
-# and its files are absent from the final image.
+# When INSTALL_<TOOL>=false, the corresponding install block short-circuits
+# and the tool's files are absent from the final image. (rtk's flag also
+# gates the multi-stage `rtk-builder` so opting out skips the cargo build
+# entirely on arm64 — see the stage's own block for details.)
 # ============================================================================
+
+# -- Builder stage: rtk binary (TOOL-RTK) -------------------------------------
+# Single source for the rtk binary across both arches. Output: /out/bin/rtk.
+#
+#   amd64 → curl static MUSL tarball + verify SHA256 against upstream
+#           checksums.txt (gh/glab pattern). Fast path.
+#   arm64 → cargo install --git from source against the bookworm sysroot.
+#           Upstream's `aarch64-unknown-linux-gnu` build links against
+#           GLIBC 2.39 which bookworm (2.36) doesn't ship; there is no
+#           aarch64-musl release. Building locally fixes the ABI mismatch.
+#
+# Centralising both branches in one builder stage keeps Layer 13c in the
+# main image trivial (single COPY + version check). When INSTALL_RTK=false,
+# the RUN short-circuits to a placeholder so opting out doesn't pay either
+# the cargo build (arm64) or the tarball download (amd64) cost.
+#
+# Re-evaluate the arm64 cargo build when upstream publishes
+# aarch64-unknown-linux-musl OR when Microsoft Azure CLI's apt repo gains
+# a trixie suite (currently bookworm-only — blocks bumping the base image
+# to GLIBC 2.41+, which would let arm64 use the upstream gnu binary).
+ARG RTK_VERSION=0.37.2
+
+FROM rust:1-slim-bookworm AS rtk-builder
+ARG TARGETARCH
+ARG RTK_VERSION
+ARG INSTALL_RTK=true
+# rust:1-slim-bookworm has cargo + git but ships no curl / ca-certificates, so
+# apt installs them up front for the amd64 tarball path. arm64 also needs
+# build-essential + pkg-config for the cargo build (rusqlite's bundled SQLite
+# pulls in `cc`).
+RUN set -eux; \
+    mkdir -p /out/bin; \
+    if [ "${INSTALL_RTK}" != "true" ]; then \
+      echo "rtk-builder: skip (INSTALL_RTK=${INSTALL_RTK})"; \
+      : > /out/bin/rtk; \
+      exit 0; \
+    fi; \
+    apt-get update -qqy; \
+    apt-get install -qqy --no-install-recommends curl ca-certificates; \
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+      RTK_ARCH=x86_64-unknown-linux-musl; \
+      RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${RTK_TARBALL}" \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/rtk_checksums.txt \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
+      cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
+      tar -xzf "/tmp/${RTK_TARBALL}" -C /out/bin rtk; \
+      chmod +x /out/bin/rtk; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then \
+      apt-get install -qqy --no-install-recommends build-essential pkg-config; \
+      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
+    else \
+      echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
+    fi; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 FROM node:24-bookworm-slim
 
@@ -31,6 +90,9 @@ ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.121
 ARG CODEX_CLI_VERSION=0.125.0
 ARG PYRIGHT_VERSION=1.1.409
+# RTK_VERSION lives in the global ARG block at the top of the file
+# (consumed only by the rtk-builder stage; the main stage just COPYs the
+# resulting binary, so it doesn't need to redeclare the ARG here).
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.80.0
@@ -95,6 +157,7 @@ ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
 ARG INSTALL_BAT=true
 ARG INSTALL_PYRIGHT=true
+ARG INSTALL_RTK=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
@@ -120,8 +183,8 @@ RUN set -eux; \
     if [ "${INSTALL_KUBECTL}" != "true" ]; then \
       echo "Skipping kubectl (tools.kubectl=false)"; \
     else \
-      curl -fsSLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
-      curl -fsSL -o kubectl.sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -O "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o kubectl.sha256 \
         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl.sha256"; \
       echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -; \
       chmod +x kubectl; \
@@ -136,9 +199,9 @@ RUN set -eux; \
       echo "Skipping helm (tools.helm=false)"; \
     else \
       HELM_TARBALL="helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${HELM_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${HELM_TARBALL}" \
         "https://get.helm.sh/${HELM_TARBALL}"; \
-      curl -fsSL -o /tmp/helm.sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/helm.sha256 \
         "https://get.helm.sh/${HELM_TARBALL}.sha256sum"; \
       cd /tmp && grep "${HELM_TARBALL}" helm.sha256 | sha256sum -c -; \
       tar -xzf "/tmp/${HELM_TARBALL}" -C /usr/local/bin "linux-${TARGETARCH}/helm" --strip-components=1; \
@@ -152,9 +215,9 @@ RUN set -eux; \
       echo "Skipping tofu (tools.tofu=false)"; \
     else \
       TOFU_TARBALL="tofu_${TOFU_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${TOFU_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${TOFU_TARBALL}" \
         "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/${TOFU_TARBALL}"; \
-      curl -fsSL -o /tmp/tofu_SHA256SUMS \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/tofu_SHA256SUMS \
         "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_SHA256SUMS"; \
       cd /tmp && grep "${TOFU_TARBALL}" tofu_SHA256SUMS | sha256sum -c -; \
       tar -xzf "/tmp/${TOFU_TARBALL}" -C /usr/local/bin tofu; \
@@ -167,9 +230,9 @@ RUN set -eux; \
     if [ "${INSTALL_GH}" != "true" ]; then \
       echo "Skipping gh (tools.gh=false)"; \
     else \
-      curl -fsSL -o /tmp/gh.tar.gz \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/gh.tar.gz \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-      curl -fsSL -o /tmp/gh_checksums.txt \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/gh_checksums.txt \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"; \
       grep "gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" /tmp/gh_checksums.txt \
         | awk '{print $1"  /tmp/gh.tar.gz"}' | sha256sum -c -; \
@@ -184,9 +247,9 @@ RUN set -eux; \
       echo "Skipping glab (tools.glab=false)"; \
     else \
       GLAB_TARBALL="glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${GLAB_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${GLAB_TARBALL}" \
         "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/${GLAB_TARBALL}"; \
-      curl -fsSL -o /tmp/glab_checksums.txt \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/glab_checksums.txt \
         "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/checksums.txt"; \
       cd /tmp && grep "${GLAB_TARBALL}" glab_checksums.txt | sha256sum -c -; \
       tar -xzf "/tmp/${GLAB_TARBALL}" -C /usr/local/bin bin/glab --strip-components=1; \
@@ -218,9 +281,9 @@ RUN set -eux; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       GWS_TARBALL="google-workspace-cli-${GWS_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${GWS_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${GWS_TARBALL}" \
         "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_TARBALL}"; \
-      curl -fsSL -o /tmp/gws.sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/gws.sha256 \
         "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_TARBALL}.sha256"; \
       cd /tmp && sha256sum -c gws.sha256; \
       tar -xzf "/tmp/${GWS_TARBALL}" -C /usr/local/bin --strip-components=1 ./gws; \
@@ -238,7 +301,7 @@ RUN set -eux; \
       echo "Skipping docker CLI (tools.docker=false)"; \
     else \
       case "${TARGETARCH}" in amd64) DOCKER_ARCH=x86_64;; arm64) DOCKER_ARCH=aarch64;; *) DOCKER_ARCH=${TARGETARCH};; esac; \
-      curl -fsSL -o /tmp/docker.tgz \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/docker.tgz \
         "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz"; \
       tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 docker/docker; \
       rm /tmp/docker.tgz; \
@@ -255,7 +318,7 @@ RUN set -eux; \
         arm64) STARSHIP_TARBALL="starship-aarch64-unknown-linux-musl.tar.gz";; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
-      curl -fsSL -o /tmp/starship.tar.gz \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/starship.tar.gz \
         "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/${STARSHIP_TARBALL}"; \
       tar -xzf /tmp/starship.tar.gz -C /usr/local/bin starship; \
       rm /tmp/starship.tar.gz; \
@@ -267,9 +330,9 @@ RUN set -eux; \
     if [ "${INSTALL_JQ}" != "true" ]; then \
       echo "Skipping jq (tools.jq=false)"; \
     else \
-      curl -fsSL -o /usr/local/bin/jq \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /usr/local/bin/jq \
         "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-${TARGETARCH}"; \
-      curl -fsSL -o /tmp/jq_sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/jq_sha256 \
         "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/sha256sum.txt"; \
       grep "jq-linux-${TARGETARCH}$" /tmp/jq_sha256 \
         | awk '{print $1"  /usr/local/bin/jq"}' | sha256sum -c -; \
@@ -286,9 +349,9 @@ RUN set -eux; \
     if [ "${INSTALL_YQ}" != "true" ]; then \
       echo "Skipping yq (tools.yq=false)"; \
     else \
-      curl -fsSL -o /usr/local/bin/yq \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /usr/local/bin/yq \
         "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${TARGETARCH}"; \
-      curl -fsSL -o /tmp/yq_checksums \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/yq_checksums \
         "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/checksums"; \
       EXPECTED=$(grep "^yq_linux_${TARGETARCH} " /tmp/yq_checksums | awk '{print $19}'); \
       test -n "${EXPECTED}" || { echo "ERROR: SHA-256 hash not found in checksums file"; exit 1; }; \
@@ -313,7 +376,7 @@ RUN set -eux; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       BAT_TARBALL="bat-v${BAT_VERSION}-${BAT_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${BAT_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${BAT_TARBALL}" \
         "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/${BAT_TARBALL}"; \
       echo "${BAT_SHA256}  /tmp/${BAT_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${BAT_TARBALL}" -C /usr/local/bin --strip-components=1 \
@@ -355,9 +418,9 @@ RUN set -eux; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       UV_TARBALL="uv-${UV_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${UV_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${UV_TARBALL}" \
         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${UV_TARBALL}"; \
-      curl -fsSL -o /tmp/uv.sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/uv.sha256 \
         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${UV_TARBALL}.sha256"; \
       EXPECTED=$(awk '{print $1}' /tmp/uv.sha256); \
       echo "${EXPECTED}  /tmp/${UV_TARBALL}" | sha256sum -c -; \
@@ -413,6 +476,30 @@ RUN set -eux; \
       codex --version; \
     fi
 
+# -- Layer 13c: rtk (CLI proxy that compresses output for LLM agents) ---------
+# Rust binary from rtk-ai/rtk. Wraps common dev commands (git/grep/cat/test
+# runners/...) and emits token-optimized output before it hits the LLM context.
+# Companion to Claude Code / Codex — `rtk init -g` writes hooks into
+# ~/.claude/settings.json so Bash tool calls get auto-rewritten. The entrypoint
+# runs `rtk init -g` on every shell so the hook stays wired even after a fresh
+# ~/.toolbox/.claude bind-mount.
+#
+# Both arches' install logic lives in the `rtk-builder` stage (top of file)
+# so this layer is a trivial COPY: amd64 receives the upstream MUSL binary,
+# arm64 receives a binary built from source against the bookworm sysroot.
+# When INSTALL_RTK=false the builder produces an empty placeholder which we
+# discard here.
+COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
+RUN set -eux; \
+    if [ "${INSTALL_RTK}" != "true" ]; then \
+      echo "Skipping rtk (tools.rtk=false)"; \
+      rm -f /tmp/rtk-from-builder; \
+    else \
+      mv /tmp/rtk-from-builder /usr/local/bin/rtk; \
+      chmod +x /usr/local/bin/rtk; \
+      rtk --version; \
+    fi
+
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------
 # NOTE: Google does not publish per-version SHA256 files for Cloud SDK archives
 # (the docs list checksums only for the unversioned "latest" URL, which shift on
@@ -428,7 +515,7 @@ RUN set -eux; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       GCLOUD_TARBALL="google-cloud-cli-${GCLOUD_VERSION}-linux-${GCLOUD_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${GCLOUD_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${GCLOUD_TARBALL}" \
         "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${GCLOUD_TARBALL}"; \
       tar -xzf "/tmp/${GCLOUD_TARBALL}" -C /opt; \
       rm "/tmp/${GCLOUD_TARBALL}"; \
@@ -471,9 +558,9 @@ RUN set -eux; \
       echo "Skipping Go toolchain (tools.go=false)"; \
     else \
       GO_TARBALL="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${GO_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${GO_TARBALL}" \
         "https://go.dev/dl/${GO_TARBALL}"; \
-      curl -fsSL "https://go.dev/dl/?mode=json&include=all" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 "https://go.dev/dl/?mode=json&include=all" \
         -o /tmp/go_dl_index.json; \
       EXPECTED=$(jq -r --arg f "${GO_TARBALL}" \
         '.[].files[]? | select(.filename == $f) | .sha256' \
@@ -525,7 +612,7 @@ RUN set -eux; \
       echo "Skipping azure-cli (tools.azure=false)"; \
     else \
       install -d -m 0755 /etc/apt/keyrings; \
-      curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 https://packages.microsoft.com/keys/microsoft.asc \
         | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
       echo "deb [arch=${TARGETARCH} signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bookworm main" \
         > /etc/apt/sources.list.d/azure-cli.list; \
@@ -608,9 +695,9 @@ RUN set -eux; \
       esac; \
       COMPOSE_BIN="docker-compose-linux-${COMPOSE_ARCH}"; \
       install -d -m 0755 /usr/local/libexec/docker/cli-plugins; \
-      curl -fsSL -o /usr/local/libexec/docker/cli-plugins/docker-compose \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /usr/local/libexec/docker/cli-plugins/docker-compose \
         "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/${COMPOSE_BIN}"; \
-      curl -fsSL -o /tmp/compose.sha256 \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/compose.sha256 \
         "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/${COMPOSE_BIN}.sha256"; \
       EXPECTED=$(awk '{print $1}' /tmp/compose.sha256); \
       echo "${EXPECTED}  /usr/local/libexec/docker/cli-plugins/docker-compose" | sha256sum -c -; \
@@ -638,9 +725,9 @@ RUN set -eux; \
 # Not opt-out: the binary is ~400 KB and correcting PID-1 semantics is a
 # cross-cutting concern (every shell/exec/attach path benefits).
 RUN set -eux; \
-    curl -fsSL -o /usr/bin/tini \
+    curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /usr/bin/tini \
       "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}"; \
-    curl -fsSL -o /tmp/tini.sha256sum \
+    curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/tini.sha256sum \
       "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}.sha256sum"; \
     EXPECTED=$(awk '{print $1}' /tmp/tini.sha256sum); \
     echo "${EXPECTED}  /usr/bin/tini" | sha256sum -c -; \
@@ -728,7 +815,7 @@ RUN set -eux; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       ZOXIDE_TARBALL="zoxide-${ZOXIDE_VERSION}-${ZOXIDE_ARCH}.tar.gz"; \
-      curl -fsSL -o "/tmp/${ZOXIDE_TARBALL}" \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${ZOXIDE_TARBALL}" \
         "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/${ZOXIDE_TARBALL}"; \
       echo "${ZOXIDE_SHA256}  /tmp/${ZOXIDE_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${ZOXIDE_TARBALL}" -C /usr/local/bin zoxide; \
