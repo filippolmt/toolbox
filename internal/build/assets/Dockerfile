@@ -115,8 +115,7 @@ ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6
 # OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
 # Renovate manages bumps via customManagers on these ARG names (see renovate.json).
 # SHAs MUST be full 40-char form (abbreviated SHAs break `git fetch --depth=1`).
-# Baseline SHAs verified 2026-04-20 from RESEARCH.md Standard Stack table;
-# Renovate's first scan after merge will rewrite them to current HEAD.
+# Renovate keeps these pinned to the current HEAD of each upstream branch.
 ARG OMZ_COMMIT=2d5841740a7555fe10b4592673c4069713e66aba
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
