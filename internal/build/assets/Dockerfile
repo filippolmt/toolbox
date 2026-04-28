@@ -55,7 +55,7 @@ ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6
 # SHAs MUST be full 40-char form (abbreviated SHAs break `git fetch --depth=1`).
 # Baseline SHAs verified 2026-04-20 from RESEARCH.md Standard Stack table;
 # Renovate's first scan after merge will rewrite them to current HEAD.
-ARG OMZ_COMMIT=278ee100fc6061b498820487e7733e0a1b1a3a72
+ARG OMZ_COMMIT=2d5841740a7555fe10b4592673c4069713e66aba
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=d3578edb5f2728c2b3c8d82501ca81d3e0ab575e
