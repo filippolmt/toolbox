@@ -32,16 +32,24 @@
 # to GLIBC 2.41+, which would let arm64 use the upstream gnu binary).
 ARG RTK_VERSION=0.37.2
 
-FROM rust:1-bookworm-slim AS rtk-builder
+FROM rust:1-slim-bookworm AS rtk-builder
 ARG TARGETARCH
 ARG RTK_VERSION
 ARG INSTALL_RTK=true
+# rust:1-slim-bookworm has cargo + git but ships no curl / ca-certificates, so
+# apt installs them up front for the amd64 tarball path. arm64 also needs
+# build-essential + pkg-config for the cargo build (rusqlite's bundled SQLite
+# pulls in `cc`).
 RUN set -eux; \
     mkdir -p /out/bin; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
       echo "rtk-builder: skip (INSTALL_RTK=${INSTALL_RTK})"; \
       : > /out/bin/rtk; \
-    elif [ "${TARGETARCH}" = "amd64" ]; then \
+      exit 0; \
+    fi; \
+    apt-get update -qqy; \
+    apt-get install -qqy --no-install-recommends curl ca-certificates; \
+    if [ "${TARGETARCH}" = "amd64" ]; then \
       RTK_ARCH=x86_64-unknown-linux-musl; \
       RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
       curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${RTK_TARBALL}" \
@@ -52,14 +60,13 @@ RUN set -eux; \
       tar -xzf "/tmp/${RTK_TARBALL}" -C /out/bin rtk; \
       chmod +x /out/bin/rtk; \
     elif [ "${TARGETARCH}" = "arm64" ]; then \
-      apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends build-essential pkg-config; \
-      apt-get clean; \
-      rm -rf /var/lib/apt/lists/*; \
       cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
     else \
       echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
-    fi
+    fi; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 FROM node:24-bookworm-slim
 
