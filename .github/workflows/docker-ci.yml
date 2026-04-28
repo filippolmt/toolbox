@@ -5,11 +5,9 @@ on:
     paths:
       - 'internal/build/assets/**'
       - '.github/workflows/docker-ci.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'internal/build/assets/**'
-      - '.github/workflows/docker-ci.yml'
+  # No push: branches: [main] trigger — docker-publish.yml runs the same
+  # smoke-test pre-publish on main, so a re-run here would be redundant work
+  # (~7min). Pre-merge validation happens on the pull_request event above.
 
 permissions:
   contents: read
@@ -31,27 +29,34 @@ jobs:
     #   default            — all tools enabled; smoke-test must report OK for go/gopls/goimports
     #   go-optout          — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
     #                        Go bundle (validates the tools.go cascade off: GO-04)
-    #   arm64-build-only   — build for linux/arm64 via QEMU (no smoke-test, no load).
-    #                        Catches arch-specific breakage (wrong SHA, GLIBC mismatch)
-    #                        BEFORE the multi-arch publish step. Every per-arch ARG case
-    #                        in the Dockerfile (zoxide, gws, bat, rtk, …) lives or dies here.
-    runs-on: ubuntu-latest
+    #   arm64-build-only   — build for linux/arm64 on a native arm64 runner
+    #                        (no smoke-test, no load). Catches arch-specific
+    #                        breakage (wrong SHA, GLIBC mismatch) BEFORE the
+    #                        multi-arch publish step. Every per-arch ARG case
+    #                        in the Dockerfile (zoxide, gws, bat, rtk, …) lives
+    #                        or dies here. Native arm64 (ubuntu-24.04-arm) is
+    #                        free for public repos and ~3x faster than QEMU
+    #                        emulation on amd64 — saves ~10min per PR.
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - variant: default
+            runner: ubuntu-latest
             build_args: ""
             tag: toolbox:ci
             platforms: linux/amd64
             load: true
           - variant: go-optout
+            runner: ubuntu-latest
             build_args: INSTALL_GO=false
             tag: toolbox:ci-go-optout
             platforms: linux/amd64
             load: true
           - variant: arm64-build-only
+            runner: ubuntu-24.04-arm
             build_args: ""
             tag: toolbox:ci-arm64
             platforms: linux/arm64
@@ -60,10 +65,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        if: matrix.platforms != 'linux/amd64'
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
