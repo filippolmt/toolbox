@@ -115,8 +115,7 @@ ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6
 # OMZ + plugins are pinned by commit SHA (reproducibility — `master` drifts).
 # Renovate manages bumps via customManagers on these ARG names (see renovate.json).
 # SHAs MUST be full 40-char form (abbreviated SHAs break `git fetch --depth=1`).
-# Baseline SHAs verified 2026-04-20 from RESEARCH.md Standard Stack table;
-# Renovate's first scan after merge will rewrite them to current HEAD.
+# Renovate keeps these pinned to the current HEAD of each upstream branch.
 ARG OMZ_COMMIT=2d5841740a7555fe10b4592673c4069713e66aba
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
@@ -140,6 +139,13 @@ ARG INSTALL_GH=true
 ARG INSTALL_GLAB=true
 ARG INSTALL_GWS=true
 ARG INSTALL_GO=true
+# gopls / goimports are independently opt-out-able even when INSTALL_GO=true.
+# Each is gated inside Layer 14a so users who want the Go runtime without the
+# LSP / formatter (smaller image, no background indexer) can flip them off
+# while keeping the toolchain. Both flags are no-ops when INSTALL_GO=false —
+# the entire layer skips.
+ARG INSTALL_GOPLS=true
+ARG INSTALL_GOIMPORTS=true
 ARG INSTALL_DOCKER_CLI=true
 ARG INSTALL_STARSHIP=true
 ARG INSTALL_JQ=true
@@ -406,8 +412,8 @@ RUN set -eux; \
     fi
 
 # -- Layer 12: uv (TOOL-04) ---------------------------------------------------
-# Migrated from the multi-stage `COPY --from=uv-source` pattern to a pinned
-# tarball install so the layer can be gated by INSTALL_UV like the others.
+# Pinned tarball install (not a multi-stage `COPY --from=uv-source`) so the
+# layer can be gated by INSTALL_UV like the others.
 RUN set -eux; \
     if [ "${INSTALL_UV}" != "true" ]; then \
       echo "Skipping uv (tools.uv=false)"; \
@@ -598,25 +604,21 @@ RUN set -eux; \
 # /usr/local/go, then runs `go install` for gopls (LSP used by Claude Code)
 # and goimports (formatter).
 #
-# Pattern rationale (see .planning/phases/05-go-toolchain-lsp/05-CONTEXT.md):
-#   - D-03: tarball -> verify -> extract -> go install (gopls + goimports) -> cleanup, all in one RUN
-#   - D-06: -ldflags="-s -w" strips debug info + symbol table on gopls/goimports (~30% smaller)
-#   - D-08/D-09: no ENV GOPATH / GOROOT -- Go defaults resolve correctly
+# Pattern rationale:
+#   - tarball -> verify -> extract -> go install (gopls + goimports) -> cleanup, all in one RUN
+#   - -ldflags="-s -w" strips debug info + symbol table on gopls/goimports (~30% smaller)
+#   - no ENV GOPATH / GOROOT — Go defaults resolve correctly
 #     (GOPATH=$HOME/go=/home/toolbox/go matches the bind-mount target;
 #     GOROOT is auto-detected from /usr/local/go/bin/go exec path).
-#   - D-10: HOME=/tmp/go-install applies ONLY to this RUN's `go install`
+#   - HOME=/tmp/go-install applies ONLY to this RUN's `go install`
 #     (inline var), so the global HOME=/home/toolbox (Layer 21) stays intact.
 #
-# SHA256 source deviation (Rule 1, documented in 05-01-SUMMARY.md):
-# The plan assumed `https://go.dev/dl/<tarball>.sha256` returns a raw hash,
-# but that URL currently redirects to the HTML documentation page
-# (meta refresh to /dl/#<tarball>.sha256). The hash is still published by
-# upstream -- canonically in the JSON index at https://go.dev/dl/?mode=json.
-# We fetch the JSON, extract the sha256 via jq (installed in Layer 9), then
-# verify with `sha256sum -c -`. Same trust anchor (HTTPS to go.dev), same
-# cryptographic guarantee.
-#
-# Trigger: Claude Code LSP failing with 'Executable not found in $PATH: "gopls"'.
+# SHA256 source: `https://go.dev/dl/<tarball>.sha256` redirects to the HTML
+# documentation page (meta refresh to /dl/#<tarball>.sha256), so the raw hash
+# isn't reachable that way. Canonical source is the JSON index at
+# https://go.dev/dl/?mode=json — we extract the sha256 via jq (installed in
+# Layer 9) and verify with `sha256sum -c -`. Same trust anchor (HTTPS to
+# go.dev), same cryptographic guarantee.
 RUN set -eux; \
     if [ "${INSTALL_GO}" != "true" ]; then \
       echo "Skipping Go toolchain (tools.go=false)"; \
@@ -637,29 +639,39 @@ RUN set -eux; \
       # module; goimports is in golang.org/x/tools) so `go install` has to be
       # invoked twice — a single invocation fails with
       # "all arguments must refer to packages in the same module at the same version".
-      HOME=/tmp/go-install \
-      GOPATH=/tmp/go-install \
-      GOCACHE=/tmp/go-install/cache \
-      GOMODCACHE=/tmp/go-install/pkg/mod \
-      GOBIN=/usr/local/bin \
-      /usr/local/go/bin/go install -ldflags="-s -w" \
-        "golang.org/x/tools/gopls@v${GOPLS_VERSION}"; \
-      HOME=/tmp/go-install \
-      GOPATH=/tmp/go-install \
-      GOCACHE=/tmp/go-install/cache \
-      GOMODCACHE=/tmp/go-install/pkg/mod \
-      GOBIN=/usr/local/bin \
-      /usr/local/go/bin/go install -ldflags="-s -w" \
-        "golang.org/x/tools/cmd/goimports@v${GOIMPORTS_VERSION}"; \
+      # Each is independently opt-out-able via INSTALL_GOPLS / INSTALL_GOIMPORTS
+      # so users can ship the Go runtime without the LSP / formatter.
+      if [ "${INSTALL_GOPLS}" = "true" ]; then \
+        HOME=/tmp/go-install \
+        GOPATH=/tmp/go-install \
+        GOCACHE=/tmp/go-install/cache \
+        GOMODCACHE=/tmp/go-install/pkg/mod \
+        GOBIN=/usr/local/bin \
+        /usr/local/go/bin/go install -ldflags="-s -w" \
+          "golang.org/x/tools/gopls@v${GOPLS_VERSION}"; \
+        gopls version; \
+      else \
+        echo "Skipping gopls (tools.gopls=false)"; \
+      fi; \
+      if [ "${INSTALL_GOIMPORTS}" = "true" ]; then \
+        HOME=/tmp/go-install \
+        GOPATH=/tmp/go-install \
+        GOCACHE=/tmp/go-install/cache \
+        GOMODCACHE=/tmp/go-install/pkg/mod \
+        GOBIN=/usr/local/bin \
+        /usr/local/go/bin/go install -ldflags="-s -w" \
+          "golang.org/x/tools/cmd/goimports@v${GOIMPORTS_VERSION}"; \
+        # goimports at runtime invokes `go list`, so it needs `go` on PATH.
+        # The ENV PATH that prepends /usr/local/go/bin is applied by the next
+        # Dockerfile line (after this RUN), so a functional invocation like
+        # `echo "" | goimports` would fail here. Presence-check is enough —
+        # smoke-test.sh runs the functional check against the final image.
+        test -x /usr/local/bin/goimports; \
+      else \
+        echo "Skipping goimports (tools.goimports=false)"; \
+      fi; \
       rm -rf /tmp/go-install; \
       /usr/local/go/bin/go version; \
-      gopls version; \
-      # goimports at runtime invokes `go list`, so it needs `go` on PATH.
-      # The ENV PATH that prepends /usr/local/go/bin is applied by the next
-      # Dockerfile line (after this RUN), so a functional invocation like
-      # `echo "" | goimports` would fail here. Presence-check is enough —
-      # smoke-test.sh runs the functional check against the final image.
-      test -x /usr/local/bin/goimports; \
     fi
 
 # Go binaries in PATH for every subsequent layer + runtime.
@@ -865,10 +877,9 @@ RUN set -eux; \
 
 # -- Layer 20c: zoxide binary (ZSH-07) ----------------------------------------
 # Pattern variant: tarball + SHA256 verification against a build-arg pinned
-# hash (NOT a per-release checksums file — zoxide v0.9.9 upstream does not
-# publish one; see the Rule 1 deviation in 04-03-SUMMARY.md). Both arches use
-# musl (static binary — glibc availability on x86_64 is irrelevant and upstream
-# only publishes musl for arm64).
+# hash (NOT a per-release checksums file — zoxide upstream does not publish
+# one). Both arches use musl (static binary — glibc availability on x86_64
+# is irrelevant and upstream only publishes musl for arm64).
 RUN set -eux; \
     if [ "${INSTALL_ZSH}" != "true" ]; then \
       echo "Skipping zoxide (tools.zsh=false)"; \

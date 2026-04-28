@@ -102,17 +102,28 @@ if [ -d "$_plugins_cache" ] && command -v npm >/dev/null 2>&1 && command -v node
             _header_printed=1
         fi
         echo "  $(basename "$(dirname "$(dirname "$_mcp_dir")")")"
+        # Capture stderr to a per-plugin log so a failed build leaves
+        # actionable diagnostics behind. The log lives next to the
+        # `.toolbox-built` marker (same bind-mounted plugin dir), so it
+        # survives container restarts and the user can inspect it from any
+        # later shell. Removed on success to keep the dir tidy.
+        _build_log="$_mcp_dir/.toolbox-build-error.log"
+        rm -f "$_build_log"
         if (
             cd "$_mcp_dir"
-            npm install --silent --no-audit --no-fund >/dev/null 2>&1 &&
-            npm run build --silent >/dev/null 2>&1
+            npm install --silent --no-audit --no-fund >/dev/null 2>>"$_build_log" &&
+            npm run build --silent >/dev/null 2>>"$_build_log"
         ); then
             touch "$_mcp_dir/.toolbox-built"
+            rm -f "$_build_log"
         else
-            echo "    build failed"
+            echo "    build failed (log: $_build_log)"
+            if [ -s "$_build_log" ]; then
+                tail -n 5 "$_build_log" | sed 's/^/      /'
+            fi
         fi
     done
-    unset _mcp_dirs _mcp_dir _header_printed _has_build
+    unset _mcp_dirs _mcp_dir _header_printed _has_build _build_log
 fi
 unset _plugins_cache
 

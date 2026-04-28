@@ -87,6 +87,8 @@ func validateWorkspacePath(p string) error {
 
 func init() {
 	shellCmd.Flags().StringSliceVarP(&shellPublish, "publish", "p", nil,
-		"publish a container port to the host (repeatable, e.g. 7171 or 127.0.0.1:7171:7171)")
+		"publish a container port to the host (repeatable). Format: '[host_ip:]host_port:container_port' or 'port'. "+
+			"Examples: 7171, 7171:7171, 127.0.0.1:7171:7171, 0.0.0.0:8000:8000. "+
+			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
 	rootCmd.AddCommand(shellCmd)
 }

@@ -68,12 +68,20 @@ func BuildArgsFromTools(tools map[string]bool) map[string]*string {
 //   - embedded build context bytes (any Dockerfile / script change → new tag)
 //   - opt-out tools map (any config flip → new tag)
 func computeImageHash(cliVersion string, tools map[string]bool) (string, error) {
+	return computeImageHashFromFS(Assets, AssetDir, cliVersion, tools)
+}
+
+// computeImageHashFromFS is the core hashing routine, parameterised on the
+// asset filesystem so tests can swap the embedded build context for a
+// fixture and verify that asset edits produce a different hash without
+// rebuilding the binary.
+func computeImageHashFromFS(assets fs.FS, dir, cliVersion string, tools map[string]bool) (string, error) {
 	h := sha256.New()
 
 	_, _ = fmt.Fprintf(h, "version:%s\n", cliVersion)
 
 	// Embedded assets — iterate in a stable order.
-	entries, err := fs.ReadDir(Assets, AssetDir)
+	entries, err := fs.ReadDir(assets, dir)
 	if err != nil {
 		return "", fmt.Errorf("read embedded assets: %w", err)
 	}
@@ -83,7 +91,7 @@ func computeImageHash(cliVersion string, tools map[string]bool) (string, error) 
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		data, err := fs.ReadFile(Assets, AssetDir+"/"+name)
+		data, err := fs.ReadFile(assets, dir+"/"+name)
 		if err != nil {
 			return "", fmt.Errorf("read embedded %s: %w", name, err)
 		}

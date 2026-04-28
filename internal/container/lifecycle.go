@@ -2,13 +2,10 @@ package container
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +16,6 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/docker/go-connections/nat"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
@@ -34,29 +30,6 @@ import (
 // period plus remove overhead; short enough that a frozen daemon doesn't
 // hang the CLI forever.
 const cleanupTimeout = 30 * time.Second
-
-// WorkspaceTarget is the canonical in-container path where the host CWD is
-// mounted. When it is safe to do so, the same host directory is also mirrored
-// at its own absolute host path (see workspaceMirrorPath) and used as the
-// shell WorkingDir, so `$PWD`-based bind mounts from inside the container
-// resolve to a path the host daemon knows under DooD.
-const WorkspaceTarget = "/workspace"
-
-// reservedMirrorPrefixes lists in-container directories that must not be
-// shadowed by the host-path mirror of the workspace. A host path equal to or
-// nested under any of these is mounted only at WorkspaceTarget.
-var reservedMirrorPrefixes = []string{
-	WorkspaceTarget,
-	"/home/toolbox",
-	"/root",
-	"/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
-	"/boot", "/dev", "/etc", "/proc", "/run", "/sys", "/usr", "/var",
-}
-
-// containerNamePrefix identifies containers managed by toolbox.
-const containerNamePrefix = "toolbox-"
-
-var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // execShellFn attaches an interactive shell to a container.
 // Exposed as a package-level var so tests can substitute it.
@@ -101,40 +74,6 @@ func ResolveShellCmd(cfg *config.Config) ([]string, error) {
 // NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-}
-
-// ContainerNameFor builds the container name for a given workspace path.
-// Format: toolbox-<basename>-<hash8>. The hash is over the absolute path so
-// that two directories sharing the same basename do not collide. Output is
-// capped at 63 characters to respect Docker's conventional name length: the
-// basename is truncated first so the stable prefix and hash suffix survive.
-func ContainerNameFor(workspace string) string {
-	abs, err := filepath.Abs(workspace)
-	if err != nil {
-		abs = workspace
-	}
-	abs = filepath.Clean(abs)
-
-	sum := sha256.Sum256([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:8]
-
-	base := strings.ToLower(filepath.Base(abs))
-	base = sanitizeRe.ReplaceAllString(base, "-")
-	base = strings.Trim(base, "-")
-	if base == "" {
-		base = "root"
-	}
-
-	// 63 (Docker convention) - len("toolbox-") - len("-") - 8 (hash) = 46.
-	const maxBasename = 46
-	if len(base) > maxBasename {
-		base = strings.TrimRight(base[:maxBasename], "-")
-		if base == "" {
-			base = "root"
-		}
-	}
-
-	return containerNamePrefix + base + "-" + hash
 }
 
 // Shell manages the container lifecycle and attaches a bash session.
@@ -455,47 +394,6 @@ func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	return nil
 }
 
-// shellEnv returns the env vars injected into every shell spawned by the
-// container. TOOLBOX_HOST_WORKSPACE holds the absolute host path mounted at
-// /workspace so that Makefiles and compose files can pass a host-resolvable
-// path to `docker run -v` under the bind-mounted socket (DooD): a literal
-// "/workspace/foo" is meaningless to the host daemon. PWD is set explicitly
-// to workingDir so that scripts reading $PWD directly (without a getcwd
-// fallback) see the same path bash exposes after starting in WorkingDir.
-func shellEnv(workspace, workingDir string) []string {
-	return []string{
-		"TOOLBOX_HOST_WORKSPACE=" + workspace,
-		"PWD=" + workingDir,
-	}
-}
-
-// workspaceMirrorPath returns the in-container path at which the workspace
-// should be mirrored in addition to WorkspaceTarget, plus true when the
-// mirror is safe to create. The mirror is the workspace's own absolute host
-// path, which makes `$PWD` inside the shell match what the host daemon sees
-// — the key ingredient for DooD bind mounts to resolve without rewriting.
-//
-// The mirror is skipped when:
-//   - the path is empty, relative, or equal to the filesystem root;
-//   - the path equals WorkspaceTarget (already mounted there);
-//   - the path would shadow a reserved container directory (see
-//     reservedMirrorPrefixes) — e.g. /home/toolbox, /usr, /etc.
-func workspaceMirrorPath(workspace string) (string, bool) {
-	if workspace == "" || !filepath.IsAbs(workspace) {
-		return "", false
-	}
-	abs := filepath.Clean(workspace)
-	if abs == "/" || abs == WorkspaceTarget {
-		return "", false
-	}
-	for _, r := range reservedMirrorPrefixes {
-		if abs == r || strings.HasPrefix(abs, r+"/") {
-			return "", false
-		}
-	}
-	return abs, true
-}
-
 // hasActiveExecs reports whether the named container has any still-running
 // exec session. Called on shell exit: the invoking exec has already drained
 // (io.Copy returned) and is Running:false by the time this runs, so it does
@@ -521,58 +419,4 @@ func hasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool
 		}
 	}
 	return false
-}
-
-// parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
-// ExposedPorts + PortBindings. Defaults the host IP to 127.0.0.1 (not 0.0.0.0)
-// so OAuth callbacks stay loopback-only instead of being exposed to the LAN.
-func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
-	if len(specs) == 0 {
-		return nil, nil, nil
-	}
-	exposed := nat.PortSet{}
-	bindings := nat.PortMap{}
-	for _, spec := range specs {
-		mappings, err := nat.ParsePortSpec(spec)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
-		}
-		for _, m := range mappings {
-			exposed[m.Port] = struct{}{}
-			b := m.Binding
-			if b.HostIP == "" {
-				b.HostIP = "127.0.0.1"
-			}
-			bindings[m.Port] = append(bindings[m.Port], b)
-		}
-	}
-	return exposed, bindings, nil
-}
-
-// missingPublishPorts returns the wanted ports that the existing container was
-// not created with. PortBindings are fixed at create time, so "--publish" on a
-// reused container is a silent no-op for any port not in this list.
-func missingPublishPorts(inspect container.InspectResponse, wanted nat.PortMap) []string {
-	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
-		return nil
-	}
-	current := inspect.HostConfig.PortBindings
-	var missing []string
-	for port := range wanted {
-		if _, ok := current[port]; !ok {
-			missing = append(missing, string(port))
-		}
-	}
-	return missing
-}
-
-func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
-	missing := missingPublishPorts(inspect, wanted)
-	if len(missing) == 0 {
-		return
-	}
-	ui.Warning(fmt.Sprintf(
-		"existing container has no publish for %s — run 'toolbox stop' then retry to apply",
-		strings.Join(missing, ", "),
-	))
 }
