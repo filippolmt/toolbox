@@ -20,47 +20,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect:
+    # Compute the matrix dynamically: the `default` variant always runs
+    # (catches regressions in entrypoint.sh / smoke-test.sh / bashrc.sh /
+    # zshrc.sh — the bulk of non-Dockerfile churn under
+    # internal/build/assets/**), and the heavier `go-optout` and
+    # `arm64-build-only` variants run only when the Dockerfile or this
+    # workflow itself changes (the only inputs whose semantics those
+    # variants validate). Saves ~12min on PRs that touch only the runtime
+    # scripts.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Detect Dockerfile / workflow changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            arch_coverage:
+              - 'internal/build/assets/Dockerfile'
+              - '.github/workflows/docker-ci.yml'
+      - name: Build matrix
+        id: set
+        env:
+          ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
+        run: |
+          if [ "$ARCH_COVERAGE" = "true" ]; then
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","build_args":"","tag":"toolbox:ci","platforms":"linux/amd64","load":true},{"variant":"go-optout","runner":"ubuntu-latest","build_args":"INSTALL_GO=false","tag":"toolbox:ci-go-optout","platforms":"linux/amd64","load":true},{"variant":"arm64-build-only","runner":"ubuntu-24.04-arm","build_args":"","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","build_args":"","tag":"toolbox:ci","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
+          fi
+
   docker-build:
+    needs: detect
     # Builds the runtime image and runs the smoke-test on every PR so that
     # Dockerfile ARG bumps (azure-cli, oci-cli, playwright, …) are validated
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
     #
-    # Matrix:
-    #   default            — all tools enabled; smoke-test must report OK for go/gopls/goimports
-    #   go-optout          — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
-    #                        Go bundle (validates the tools.go cascade off: GO-04)
-    #   arm64-build-only   — build for linux/arm64 on a native arm64 runner
-    #                        (no smoke-test, no load). Catches arch-specific
-    #                        breakage (wrong SHA, GLIBC mismatch) BEFORE the
-    #                        multi-arch publish step. Every per-arch ARG case
-    #                        in the Dockerfile (zoxide, gws, bat, rtk, …) lives
-    #                        or dies here. Native arm64 (ubuntu-24.04-arm) is
-    #                        free for public repos and ~3x faster than QEMU
-    #                        emulation on amd64 — saves ~10min per PR.
+    # Matrix is computed by the `detect` job above:
+    #   default            — always; smoke-test must report OK for go/gopls/goimports.
+    #   go-optout          — only on Dockerfile/workflow change. INSTALL_GO=false; smoke-test
+    #                        must report 3 SKIP lines for the Go bundle (validates the
+    #                        tools.go cascade off: GO-04).
+    #   arm64-build-only   — only on Dockerfile/workflow change. Builds for linux/arm64 on
+    #                        a native arm64 runner. Catches arch-specific breakage (wrong
+    #                        SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
+    #                        per-arch ARG case in the Dockerfile (zoxide, gws, bat, rtk, …)
+    #                        lives or dies here. Native arm64 (ubuntu-24.04-arm) is free
+    #                        for public repos and ~3x faster than QEMU on amd64.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - variant: default
-            runner: ubuntu-latest
-            build_args: ""
-            tag: toolbox:ci
-            platforms: linux/amd64
-            load: true
-          - variant: go-optout
-            runner: ubuntu-latest
-            build_args: INSTALL_GO=false
-            tag: toolbox:ci-go-optout
-            platforms: linux/amd64
-            load: true
-          - variant: arm64-build-only
-            runner: ubuntu-24.04-arm
-            build_args: ""
-            tag: toolbox:ci-arm64
-            platforms: linux/arm64
-            load: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
     name: docker-build (${{ matrix.variant }})
     steps:
       - name: Checkout
