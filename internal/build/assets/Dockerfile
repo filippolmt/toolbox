@@ -412,8 +412,8 @@ RUN set -eux; \
     fi
 
 # -- Layer 12: uv (TOOL-04) ---------------------------------------------------
-# Migrated from the multi-stage `COPY --from=uv-source` pattern to a pinned
-# tarball install so the layer can be gated by INSTALL_UV like the others.
+# Pinned tarball install (not a multi-stage `COPY --from=uv-source`) so the
+# layer can be gated by INSTALL_UV like the others.
 RUN set -eux; \
     if [ "${INSTALL_UV}" != "true" ]; then \
       echo "Skipping uv (tools.uv=false)"; \
@@ -604,25 +604,21 @@ RUN set -eux; \
 # /usr/local/go, then runs `go install` for gopls (LSP used by Claude Code)
 # and goimports (formatter).
 #
-# Pattern rationale (see .planning/phases/05-go-toolchain-lsp/05-CONTEXT.md):
-#   - D-03: tarball -> verify -> extract -> go install (gopls + goimports) -> cleanup, all in one RUN
-#   - D-06: -ldflags="-s -w" strips debug info + symbol table on gopls/goimports (~30% smaller)
-#   - D-08/D-09: no ENV GOPATH / GOROOT -- Go defaults resolve correctly
+# Pattern rationale:
+#   - tarball -> verify -> extract -> go install (gopls + goimports) -> cleanup, all in one RUN
+#   - -ldflags="-s -w" strips debug info + symbol table on gopls/goimports (~30% smaller)
+#   - no ENV GOPATH / GOROOT — Go defaults resolve correctly
 #     (GOPATH=$HOME/go=/home/toolbox/go matches the bind-mount target;
 #     GOROOT is auto-detected from /usr/local/go/bin/go exec path).
-#   - D-10: HOME=/tmp/go-install applies ONLY to this RUN's `go install`
+#   - HOME=/tmp/go-install applies ONLY to this RUN's `go install`
 #     (inline var), so the global HOME=/home/toolbox (Layer 21) stays intact.
 #
-# SHA256 source deviation (Rule 1, documented in 05-01-SUMMARY.md):
-# The plan assumed `https://go.dev/dl/<tarball>.sha256` returns a raw hash,
-# but that URL currently redirects to the HTML documentation page
-# (meta refresh to /dl/#<tarball>.sha256). The hash is still published by
-# upstream -- canonically in the JSON index at https://go.dev/dl/?mode=json.
-# We fetch the JSON, extract the sha256 via jq (installed in Layer 9), then
-# verify with `sha256sum -c -`. Same trust anchor (HTTPS to go.dev), same
-# cryptographic guarantee.
-#
-# Trigger: Claude Code LSP failing with 'Executable not found in $PATH: "gopls"'.
+# SHA256 source: `https://go.dev/dl/<tarball>.sha256` redirects to the HTML
+# documentation page (meta refresh to /dl/#<tarball>.sha256), so the raw hash
+# isn't reachable that way. Canonical source is the JSON index at
+# https://go.dev/dl/?mode=json — we extract the sha256 via jq (installed in
+# Layer 9) and verify with `sha256sum -c -`. Same trust anchor (HTTPS to
+# go.dev), same cryptographic guarantee.
 RUN set -eux; \
     if [ "${INSTALL_GO}" != "true" ]; then \
       echo "Skipping Go toolchain (tools.go=false)"; \
@@ -881,10 +877,9 @@ RUN set -eux; \
 
 # -- Layer 20c: zoxide binary (ZSH-07) ----------------------------------------
 # Pattern variant: tarball + SHA256 verification against a build-arg pinned
-# hash (NOT a per-release checksums file — zoxide v0.9.9 upstream does not
-# publish one; see the Rule 1 deviation in 04-03-SUMMARY.md). Both arches use
-# musl (static binary — glibc availability on x86_64 is irrelevant and upstream
-# only publishes musl for arm64).
+# hash (NOT a per-release checksums file — zoxide upstream does not publish
+# one). Both arches use musl (static binary — glibc availability on x86_64
+# is irrelevant and upstream only publishes musl for arm64).
 RUN set -eux; \
     if [ "${INSTALL_ZSH}" != "true" ]; then \
       echo "Skipping zoxide (tools.zsh=false)"; \
