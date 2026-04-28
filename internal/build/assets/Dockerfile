@@ -431,14 +431,56 @@ RUN set -eux; \
     fi
 
 # -- Layer 13: Claude Code (TOOL-01) ------------------------------------------
-# Disable auto-update: image versions are intentionally pinned; toolbox user lacks
-# write access to /usr/local/lib/node_modules (installed as root).
+# Auto-update strategy:
+#   - CLI binary: pinned. The CLI lives at /usr/local/lib/node_modules
+#     (installed as root via `npm install -g`) and the runtime UID has no
+#     write access there, so background self-update would fail every shell.
+#     Bumps happen via CLAUDE_CODE_VERSION + image rebuild (Renovate-driven).
+#   - Plugins: kept fresh. Plugins live under ~/.claude/plugins (user-writable
+#     bind-mount), so Claude Code's native plugin auto-updater can refresh
+#     them without permission errors.
 #
-# CLAUDE_CONFIG_DIR relocates both .credentials.json and .claude.json into the
-# single bind-mounted /home/toolbox/.claude dir. Without it, .claude.json lives
-# at $HOME/.claude.json — outside the mount — so OAuth session state is lost
-# on every container recreate and the user has to /login each shell.
-ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+# Env vars:
+#   DISABLE_AUTOUPDATER=1
+#       Documented kill-switch for the background CLI auto-update check
+#       (https://code.claude.com/docs/en/setup#disable-auto-updates).
+#       Required: the CLI binary lives in /usr/local/lib/node_modules,
+#       installed as root, so the runtime UID can't write to it — auto-update
+#       would only generate noisy errors.
+#   FORCE_AUTOUPDATE_PLUGINS=1
+#       Documented escape hatch
+#       (https://code.claude.com/docs/en/discover-plugins#configure-auto-updates):
+#       keeps plugin auto-updates running even when DISABLE_AUTOUPDATER is
+#       set. Plugins live under the user-writable ~/.claude/plugins bind so
+#       refresh works without permission errors. /reload-plugins notification
+#       is shown when an update lands.
+#   DISABLE_TELEMETRY=1
+#   DISABLE_FEEDBACK_COMMAND=1
+#   DISABLE_ERROR_REPORTING=1
+#       Granular privacy kill-switches (https://code.claude.com/docs/en/env-vars).
+#       Together with DISABLE_AUTOUPDATER above, this set covers exactly the
+#       four flags that the docs say CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+#       expands to. We use the granular flags instead of the umbrella because
+#       baking NONESSENTIAL_TRAFFIC=1 into the image was correlated with
+#       intermittent "/login" prompts on long-lived shells, even though none
+#       of the four documented sub-flags is supposed to affect auth — the
+#       umbrella appears to gate undocumented behaviour beyond its stated
+#       composition. Granular flags reproduce the privacy posture without
+#       triggering whatever the umbrella does extra. If a logout regression
+#       appears here too, narrow down by removing one flag at a time
+#       (DISABLE_TELEMETRY first, since AUTOUPDATER cannot affect auth).
+#
+#   CLAUDE_CONFIG_DIR=/home/toolbox/.claude
+#       Relocates both .credentials.json and .claude.json into the single
+#       bind-mounted /home/toolbox/.claude dir. Without it, .claude.json
+#       lives at $HOME/.claude.json — outside the mount — so OAuth session
+#       state is lost on every container recreate and the user has to
+#       /login each shell.
+ENV DISABLE_AUTOUPDATER=1 \
+    FORCE_AUTOUPDATE_PLUGINS=1 \
+    DISABLE_TELEMETRY=1 \
+    DISABLE_FEEDBACK_COMMAND=1 \
+    DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 RUN set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
@@ -489,6 +531,13 @@ RUN set -eux; \
 # arm64 receives a binary built from source against the bookworm sysroot.
 # When INSTALL_RTK=false the builder produces an empty placeholder which we
 # discard here.
+#
+# RTK_TELEMETRY_DISABLED=1: hard kill-switch for rtk's GDPR-gated telemetry
+# (https://github.com/rtk-ai/rtk/blob/main/docs/TELEMETRY.md). Telemetry is
+# off by default in upstream too, but this env var blocks every code path
+# regardless of consent state, so a user accidentally running
+# `rtk telemetry enable` inside a toolbox shell still sends nothing.
+ENV RTK_TELEMETRY_DISABLED=1
 COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
 RUN set -eux; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
@@ -858,11 +907,13 @@ RUN set -eux; \
 # ownership. The runtime uid usually won't match the "toolbox" uid baked here,
 # so /home/toolbox is made writable to every uid.
 #
-# .cache and .config are pre-created here because Docker would otherwise
-# create them as root:root 0755 at runtime (as the parent of the
-# playwright-cache / gh / glab-cli / gcloud bind mounts), blocking any
-# tool that writes a sibling subdir — e.g. starship under ~/.cache,
-# helm under ~/.config.
+# .cache, .config, and .local/share are pre-created here because Docker
+# would otherwise create them as root:root 0755 at runtime (as the parent of
+# the playwright-cache / gh / glab-cli / gcloud / rtk-data bind mounts),
+# blocking any tool that writes a sibling subdir — e.g. starship under
+# ~/.cache, helm under ~/.config. ~/.local/share currently has only one
+# child mount (rtk-data) but is created the same way so any future XDG-
+# compliant tool that lands a subdir there does not hit a root-owned parent.
 #
 # /etc/passwd and /etc/group are made world-writable so the entrypoint can
 # inject a passwd entry for the runtime UID/GID. Without it, tools that call
@@ -877,7 +928,8 @@ RUN set -eux; \
       /home/toolbox/.npm-global \
       /home/toolbox/.toolbox-startup.d \
       /home/toolbox/.cache \
-      /home/toolbox/.config; \
+      /home/toolbox/.config \
+      /home/toolbox/.local/share; \
     chmod -R a+rwX /home/toolbox; \
     chmod 0666 /etc/passwd /etc/group
 
