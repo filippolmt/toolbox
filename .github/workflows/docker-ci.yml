@@ -14,6 +14,13 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded builds on the same ref to free runner minutes during
+# iterative PR pushes. Image builds are the most expensive job in the repo
+# (~5–10 min apiece), so this is the highest-leverage concurrency knob.
+concurrency:
+  group: docker-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docker-build:
     # Builds the runtime image and runs the smoke-test on every PR so that
@@ -21,23 +28,42 @@ jobs:
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
     #
     # Matrix:
-    #   default   — all tools enabled; smoke-test must report OK for go/gopls/goimports
-    #   go-optout — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
-    #               Go bundle (validates the tools.go cascade off: GO-04)
+    #   default            — all tools enabled; smoke-test must report OK for go/gopls/goimports
+    #   go-optout          — INSTALL_GO=false; smoke-test must report 3 SKIP lines for the
+    #                        Go bundle (validates the tools.go cascade off: GO-04)
+    #   arm64-build-only   — build for linux/arm64 via QEMU (no smoke-test, no load).
+    #                        Catches arch-specific breakage (wrong SHA, GLIBC mismatch)
+    #                        BEFORE the multi-arch publish step. Every per-arch ARG case
+    #                        in the Dockerfile (zoxide, gws, bat, rtk, …) lives or dies here.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
           - variant: default
             build_args: ""
             tag: toolbox:ci
+            platforms: linux/amd64
+            load: true
           - variant: go-optout
             build_args: INSTALL_GO=false
             tag: toolbox:ci-go-optout
+            platforms: linux/amd64
+            load: true
+          - variant: arm64-build-only
+            build_args: ""
+            tag: toolbox:ci-arm64
+            platforms: linux/arm64
+            load: false
     name: docker-build (${{ matrix.variant }})
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        if: matrix.platforms != 'linux/amd64'
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -47,19 +73,28 @@ jobs:
         with:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
-          load: true
+          load: ${{ matrix.load }}
+          platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
           build-args: ${{ matrix.build_args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Cache scope per matrix variant so concurrent variants don't
+          # overwrite each other's GHA cache layers (was a single shared scope
+          # before — second variant always ate the first's cache).
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
       - name: Smoke test
-        run: internal/build/assets/smoke-test.sh ${{ matrix.tag }}
+        if: matrix.load
+        env:
+          IMAGE_TAG: ${{ matrix.tag }}
+        run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
 
       - name: Assert 3 SKIP lines for Go bundle (go-optout only)
         if: matrix.variant == 'go-optout'
+        env:
+          IMAGE_TAG: ${{ matrix.tag }}
         run: |
-          output=$(internal/build/assets/smoke-test.sh ${{ matrix.tag }} 2>&1)
+          output=$(internal/build/assets/smoke-test.sh "$IMAGE_TAG" 2>&1)
           skip_count=$(echo "$output" | grep -c '^SKIP:.*not installed' || true)
           for tool in go gopls goimports; do
             if ! echo "$output" | grep -q "^SKIP: ${tool} (not installed)"; then

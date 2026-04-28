@@ -15,6 +15,19 @@ on:
       - 'internal/build/assets/**'
       - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
+  # NOTE: tag-driven semver image publish (vX.Y.Z → ghcr) is intentionally
+  # NOT wired here. GitHub Actions ANDs `paths:` with every push event, so
+  # adding `tags: ['v*']` would only fire when both the tag matches AND a
+  # path under internal/build/assets changed in that commit — a rare and
+  # surprising condition. A clean fix needs a dedicated tag-only workflow
+  # (or hooking into release.yml after GoReleaser); tracked as a follow-up.
+
+# Tag-triggered (release) and main-triggered (latest) runs must NOT cancel
+# each other — both are durable artifact pushes. Distinct group per run
+# disables cancellation while keeping the knob present for future tweaks.
+concurrency:
+  group: docker-publish-${{ github.run_id }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -24,6 +37,7 @@ env:
 jobs:
   build-test-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -70,6 +84,7 @@ jobs:
         run: internal/build/assets/smoke-test.sh ${{ env.TEST_TAG }}
 
       - name: Build and push multi-arch
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: internal/build/assets
@@ -78,7 +93,30 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SLSA build provenance + SPDX SBOM attached as OCI attestations
+          # so consumers can verify supply-chain integrity from `cosign verify`
+          # / `docker buildx imagetools inspect`.
+          provenance: mode=max
+          sbom: true
           cache-from: |
             type=gha,scope=amd64
             type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
+
+      - name: Scan published image for HIGH/CRITICAL CVEs (advisory)
+        # Advisory only — never blocks a publish. Surfaces vulnerabilities in
+        # the GHA logs so a maintainer can decide if a tool bump is warranted.
+        # Pinned to a known-good tag (Renovate can bump it via the
+        # github-releases datasource if/when added to renovate.json).
+        uses: aquasecurity/trivy-action@0.36.0
+        continue-on-error: true
+        with:
+          # Pin by digest so the scan targets exactly the image we just pushed —
+          # safe across both tag-triggered runs (no `latest`) and main-triggered
+          # runs (`latest` exists). Output of build-push-action is the manifest
+          # list digest for multi-arch images.
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
