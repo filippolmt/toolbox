@@ -105,7 +105,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=arm64
 
       - name: Cache Trivy vuln DB
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/trivy
           key: trivy-db-${{ runner.os }}-${{ github.run_id }}

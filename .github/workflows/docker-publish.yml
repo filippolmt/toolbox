@@ -106,7 +106,7 @@ jobs:
         # between runs cuts ~30s off cold scans (DB is ~500MB and refreshes
         # daily). The key uses run_id so the latest run always writes; older
         # restore-keys hit yesterday's DB while it's still valid.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/trivy
           key: trivy-db-${{ runner.os }}-${{ github.run_id }}
