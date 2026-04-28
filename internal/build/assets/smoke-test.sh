@@ -164,7 +164,6 @@ check_required "npm"        npm --version
 check_required "python3"    python3 --version
 check_required "git"        git --version
 check_required "make"       make --version
-check_required "tini"       /usr/bin/tini --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "claude"    claude   claude --version
@@ -202,11 +201,13 @@ echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 '
 
 echo ""
-echo "=== Signal handling check (SIGTERM propagates via tini) ==="
+echo "=== Signal handling check (SIGTERM exits cleanly, no SIGKILL fallback) ==="
 # Regression guard for the "docker stop hangs 10s then SIGKILLs" class of bugs:
-# interactive zsh/bash ignore SIGTERM when they own the TTY, so without a
-# proper PID-1 init (tini) the shell only dies via SIGKILL fallback. tini -g
-# forwards signals to the process group so the shell exits clean.
+# the default CMD is `sleep infinity` precisely so PID 1 terminates on SIGTERM.
+# An interactive shell as CMD would ignore SIGTERM (zsh/bash own the TTY with
+# job control) and force the full grace period before SIGKILL. Test overrides
+# CMD with `sleep 3600` to validate the path that matters: any non-shell PID-1
+# child must exit clean.
 cid=$(docker run -d "${IMAGE}" sleep 3600)
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 start=$(date +%s)
@@ -215,7 +216,7 @@ elapsed=$(( $(date +%s) - start ))
 if [ "$elapsed" -lt 5 ]; then
     echo "OK: container stopped in ${elapsed}s (no SIGKILL fallback)"
 else
-    echo "FAILED: container took ${elapsed}s — SIGTERM likely ignored (tini missing or misconfigured)"
+    echo "FAILED: container took ${elapsed}s — SIGTERM likely ignored"
     exit 1
 fi
 docker rm -f "$cid" >/dev/null 2>&1 || true
