@@ -21,7 +21,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Helm | 4.1.x |
 | OpenTofu | 1.11.x |
 | GitHub CLI (gh) | 2.91.x |
-| GitLab CLI (glab) | 1.92.x |
+| GitLab CLI (glab) | 1.93.x |
 | Google Workspace CLI (`gws`) | 0.22.x |
 | Docker CLI | 29.4.x |
 | Docker Compose | 5.1.x |
@@ -208,8 +208,8 @@ Port bindings are fixed when the container is created. If a container already ex
 Configuration is loaded from (highest priority first):
 
 1. `--config` flag
-2. `.toolbox.yaml` in the current directory
-3. `~/.toolbox.yaml`
+2. The nearest `.toolbox.yaml` walking up from the current working directory (search stops at `$HOME` or the filesystem root) — running `toolbox shell` from any subdirectory of a workspace still picks up that workspace's project config
+3. `~/.toolbox.yaml` (global)
 4. `TOOLBOX_*` environment variables
 5. Built-in defaults
 

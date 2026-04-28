@@ -5,26 +5,31 @@
 #
 # Every optional tool below is guarded by an INSTALL_<TOOL>=true build arg.
 # The toolbox CLI translates the user's `tools:` config into these build args.
-# When INSTALL_<TOOL>=false, the layer is a no-op — the tool is not installed
-# and its files are absent from the final image.
+# When INSTALL_<TOOL>=false, the corresponding install block short-circuits
+# and the tool's files are absent from the final image. (rtk's flag also
+# gates the multi-stage `rtk-builder` so opting out skips the cargo build
+# entirely on arm64 — see the stage's own block for details.)
 # ============================================================================
 
-# -- Builder stage: rtk arm64 from source (TOOL-RTK) --------------------------
-# Upstream rtk-ai/rtk publishes only `aarch64-unknown-linux-gnu` for arm64
-# Linux, linked against GLIBC 2.39 — incompatible with the bookworm base
-# (GLIBC 2.36). There is no aarch64-musl release. Build from source via
-# cargo on arm64 only; amd64 keeps the static MUSL tarball path in Layer 13c.
+# -- Builder stage: rtk binary (TOOL-RTK) -------------------------------------
+# Single source for the rtk binary across both arches. Output: /out/bin/rtk.
 #
-# Stage runs even on amd64 (Buildx evaluates COPY --from regardless of
-# branch reachability) but the RUN body is a no-op in that case, so the
-# wasted work is bounded to the rust:1-bookworm-slim pull (~700MB, cached
-# in GHA across builds). Re-evaluate when upstream publishes
-# aarch64-unknown-linux-musl OR when Microsoft Azure CLI repo gains a
-# trixie suite (currently bookworm-only — blocks bumping the base image
-# to GLIBC 2.41+).
-# Global ARG (declared before first FROM) so both rtk-builder and the main
-# stage share a single version pin. Redeclared inside each stage with no
-# default — Docker copies the global value on use.
+#   amd64 → curl static MUSL tarball + verify SHA256 against upstream
+#           checksums.txt (gh/glab pattern). Fast path.
+#   arm64 → cargo install --git from source against the bookworm sysroot.
+#           Upstream's `aarch64-unknown-linux-gnu` build links against
+#           GLIBC 2.39 which bookworm (2.36) doesn't ship; there is no
+#           aarch64-musl release. Building locally fixes the ABI mismatch.
+#
+# Centralising both branches in one builder stage keeps Layer 13c in the
+# main image trivial (single COPY + version check). When INSTALL_RTK=false,
+# the RUN short-circuits to a placeholder so opting out doesn't pay either
+# the cargo build (arm64) or the tarball download (amd64) cost.
+#
+# Re-evaluate the arm64 cargo build when upstream publishes
+# aarch64-unknown-linux-musl OR when Microsoft Azure CLI's apt repo gains
+# a trixie suite (currently bookworm-only — blocks bumping the base image
+# to GLIBC 2.41+, which would let arm64 use the upstream gnu binary).
 ARG RTK_VERSION=0.37.2
 
 FROM rust:1-bookworm-slim AS rtk-builder
@@ -33,15 +38,27 @@ ARG RTK_VERSION
 ARG INSTALL_RTK=true
 RUN set -eux; \
     mkdir -p /out/bin; \
-    if [ "${INSTALL_RTK}" != "true" ] || [ "${TARGETARCH}" != "arm64" ]; then \
-      echo "rtk-builder: skip (TARGETARCH=${TARGETARCH}, INSTALL_RTK=${INSTALL_RTK})"; \
+    if [ "${INSTALL_RTK}" != "true" ]; then \
+      echo "rtk-builder: skip (INSTALL_RTK=${INSTALL_RTK})"; \
       : > /out/bin/rtk; \
-    else \
+    elif [ "${TARGETARCH}" = "amd64" ]; then \
+      RTK_ARCH=x86_64-unknown-linux-musl; \
+      RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
+      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${RTK_TARBALL}" \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
+      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o /tmp/rtk_checksums.txt \
+        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
+      cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
+      tar -xzf "/tmp/${RTK_TARBALL}" -C /out/bin rtk; \
+      chmod +x /out/bin/rtk; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends build-essential pkg-config; \
       apt-get clean; \
       rm -rf /var/lib/apt/lists/*; \
       cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
+    else \
+      echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi
 
 FROM node:24-bookworm-slim
@@ -66,10 +83,9 @@ ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.121
 ARG CODEX_CLI_VERSION=0.125.0
 ARG PYRIGHT_VERSION=1.1.409
-# RTK_VERSION default lives in the global ARG block at the top of the file
-# (shared with the rtk-builder stage). Redeclared here without a default to
-# pull the value into the main stage scope.
-ARG RTK_VERSION
+# RTK_VERSION lives in the global ARG block at the top of the file
+# (consumed only by the rtk-builder stage; the main stage just COPYs the
+# resulting binary, so it doesn't need to redeclare the ARG here).
 ARG GCLOUD_VERSION=565.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.80.0
@@ -461,38 +477,19 @@ RUN set -eux; \
 # runs `rtk init -g` on every shell so the hook stays wired even after a fresh
 # ~/.toolbox/.claude bind-mount.
 #
-# Two install paths:
-#   amd64 → download static MUSL tarball + verify SHA256 against upstream
-#           checksums.txt (gh/glab pattern).
-#   arm64 → COPY the binary built from source by the `rtk-builder` stage
-#           (top of file). Upstream's only aarch64-linux release links
-#           against GLIBC 2.39 which bookworm doesn't ship; building from
-#           source against the bookworm sysroot keeps it ABI-compatible.
-#
-# COPY runs on every build (Docker can't conditionally COPY); /tmp/rtk-from-src
-# is removed in the amd64 branch and the placeholder file (empty `:>` from the
-# builder stage when arm64 isn't selected) is harmless.
-COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-src
+# Both arches' install logic lives in the `rtk-builder` stage (top of file)
+# so this layer is a trivial COPY: amd64 receives the upstream MUSL binary,
+# arm64 receives a binary built from source against the bookworm sysroot.
+# When INSTALL_RTK=false the builder produces an empty placeholder which we
+# discard here.
+COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
 RUN set -eux; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
       echo "Skipping rtk (tools.rtk=false)"; \
-      rm -f /tmp/rtk-from-src; \
-    elif [ "${TARGETARCH}" = "arm64" ]; then \
-      mv /tmp/rtk-from-src /usr/local/bin/rtk; \
-      chmod +x /usr/local/bin/rtk; \
-      rtk --version; \
+      rm -f /tmp/rtk-from-builder; \
     else \
-      rm -f /tmp/rtk-from-src; \
-      RTK_ARCH=x86_64-unknown-linux-musl; \
-      RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
-      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "/tmp/${RTK_TARBALL}" \
-        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
-      curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o /tmp/rtk_checksums.txt \
-        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
-      cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
-      tar -xzf "/tmp/${RTK_TARBALL}" -C /usr/local/bin rtk; \
+      mv /tmp/rtk-from-builder /usr/local/bin/rtk; \
       chmod +x /usr/local/bin/rtk; \
-      rm "/tmp/${RTK_TARBALL}" /tmp/rtk_checksums.txt; \
       rtk --version; \
     fi
 
