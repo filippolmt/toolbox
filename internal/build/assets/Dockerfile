@@ -455,17 +455,20 @@ RUN set -eux; \
 #       refresh works without permission errors. /reload-plugins notification
 #       is shown when an update lands.
 #   DISABLE_TELEMETRY=1
-#       Granular kill-switch for telemetry / session-quality surveys
-#       (https://code.claude.com/docs/en/env-vars).
-#       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 was previously used here
-#       and is documented as the equivalent of DISABLE_AUTOUPDATER +
-#       DISABLE_FEEDBACK_COMMAND + DISABLE_ERROR_REPORTING + DISABLE_TELEMETRY.
-#       The umbrella flag was correlated with intermittent "/login" prompts
-#       on long-lived shells, so we replace it with the granular pair we
-#       actually want (TELEMETRY + AUTOUPDATER) and leave error-reporting
-#       and the feedback command untouched. If logout returns, the next
-#       suspect is DISABLE_TELEMETRY itself; otherwise the umbrella flag
-#       had undocumented side effects.
+#   DISABLE_FEEDBACK_COMMAND=1
+#   DISABLE_ERROR_REPORTING=1
+#       Granular privacy kill-switches (https://code.claude.com/docs/en/env-vars).
+#       Together with DISABLE_AUTOUPDATER above, this set covers exactly the
+#       four flags that the docs say CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+#       expands to. We use the granular flags instead of the umbrella because
+#       baking NONESSENTIAL_TRAFFIC=1 into the image was correlated with
+#       intermittent "/login" prompts on long-lived shells, even though none
+#       of the four documented sub-flags is supposed to affect auth — the
+#       umbrella appears to gate undocumented behaviour beyond its stated
+#       composition. Granular flags reproduce the privacy posture without
+#       triggering whatever the umbrella does extra. If a logout regression
+#       appears here too, narrow down by removing one flag at a time
+#       (DISABLE_TELEMETRY first, since AUTOUPDATER cannot affect auth).
 #
 #   CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 #       Relocates both .credentials.json and .claude.json into the single
@@ -476,6 +479,8 @@ RUN set -eux; \
 ENV DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_TELEMETRY=1 \
+    DISABLE_FEEDBACK_COMMAND=1 \
+    DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude
 RUN set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
