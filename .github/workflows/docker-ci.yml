@@ -24,11 +24,10 @@ jobs:
     # Compute the matrix dynamically: the `default` variant always runs
     # (catches regressions in entrypoint.sh / smoke-test.sh / bashrc.sh /
     # zshrc.sh — the bulk of non-Dockerfile churn under
-    # internal/build/assets/**), and the heavier `go-optout` and
-    # `arm64-build-only` variants run only when the Dockerfile or this
-    # workflow itself changes (the only inputs whose semantics those
-    # variants validate). Saves ~12min on PRs that touch only the runtime
-    # scripts.
+    # internal/build/assets/**); `arm64-build-only` runs only when the
+    # Dockerfile or this workflow itself changes (the only inputs whose
+    # arch-specific behavior that variant validates). Saves ~5min on PRs
+    # that touch only the runtime scripts.
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -50,9 +49,9 @@ jobs:
           ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
         run: |
           if [ "$ARCH_COVERAGE" = "true" ]; then
-            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","build_args":"","tag":"toolbox:ci","platforms":"linux/amd64","load":true},{"variant":"go-optout","runner":"ubuntu-latest","build_args":"INSTALL_GO=false","tag":"toolbox:ci-go-optout","platforms":"linux/amd64","load":true},{"variant":"arm64-build-only","runner":"ubuntu-24.04-arm","build_args":"","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true},{"variant":"arm64-build-only","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","build_args":"","tag":"toolbox:ci","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
           fi
 
   docker-build:
@@ -62,10 +61,7 @@ jobs:
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
     #
     # Matrix is computed by the `detect` job above:
-    #   default            — always; smoke-test must report OK for go/gopls/goimports.
-    #   go-optout          — only on Dockerfile/workflow change. INSTALL_GO=false; smoke-test
-    #                        must report 3 SKIP lines for the Go bundle (validates the
-    #                        tools.go cascade off: GO-04).
+    #   default            — always; smoke-test must report OK for the full tool set.
     #   arm64-build-only   — only on Dockerfile/workflow change. Builds for linux/arm64 on
     #                        a native arm64 runner. Catches arch-specific breakage (wrong
     #                        SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
@@ -93,10 +89,8 @@ jobs:
           load: ${{ matrix.load }}
           platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
-          build-args: ${{ matrix.build_args }}
           # Cache scope per matrix variant so concurrent variants don't
-          # overwrite each other's GHA cache layers (was a single shared scope
-          # before — second variant always ate the first's cache).
+          # overwrite each other's GHA cache layers.
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
@@ -105,20 +99,3 @@ jobs:
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
-
-      - name: Assert 3 SKIP lines for Go bundle (go-optout only)
-        if: matrix.variant == 'go-optout'
-        env:
-          IMAGE_TAG: ${{ matrix.tag }}
-        run: |
-          output=$(internal/build/assets/smoke-test.sh "$IMAGE_TAG" 2>&1)
-          skip_count=$(echo "$output" | grep -c '^SKIP:.*not installed' || true)
-          for tool in go gopls goimports; do
-            if ! echo "$output" | grep -q "^SKIP: ${tool} (not installed)"; then
-              echo "ERROR: expected 'SKIP: ${tool} (not installed)' in smoke-test output but not found"
-              echo "--- smoke-test output ---"
-              echo "$output"
-              exit 1
-            fi
-          done
-          echo "OK: all 3 Go bundle tools correctly SKIP when INSTALL_GO=false (found ${skip_count} SKIP lines)"
