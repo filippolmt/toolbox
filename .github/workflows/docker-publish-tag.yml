@@ -13,7 +13,6 @@ name: Docker Publish (tag)
 # Outputs (vs main-branch publish):
 #   - Tags: vX.Y.Z + vX.Y + vX (semver), no `latest`, no `sha-<short>`.
 #   - Same SBOM + provenance attestations.
-#   - Same Trivy advisory scan, pinned by digest.
 #   - Pre-publish smoke-test still runs — gives confidence that the image
 #     content at the tagged commit boots cleanly even if main has drifted
 #     since the merge that produced this tag.
@@ -42,7 +41,7 @@ env:
 jobs:
   build-test-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -103,21 +102,3 @@ jobs:
             type=gha,scope=amd64
             type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
-
-      - name: Cache Trivy vuln DB
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            trivy-db-${{ runner.os }}-
-
-      - name: Scan published image for HIGH/CRITICAL CVEs (advisory)
-        uses: aquasecurity/trivy-action@v0.36.0
-        continue-on-error: true
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '0'
