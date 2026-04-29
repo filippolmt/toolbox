@@ -91,6 +91,8 @@ tools:
 
 When the `tools:` map matches the defaults, `toolbox shell` pulls the prebuilt `ghcr.io/filippolmt/toolbox:latest` image. Any opt-out triggers a local rebuild tagged `toolbox:local-<hash>` — the hash is derived from the selected tool set, so the same config always resolves to the same image.
 
+Because Codex is enabled by default, newly-created toolbox containers run with Docker `seccomp=unconfined` so Codex's built-in bubblewrap sandbox can create nested user namespaces. Set `tools.codex: false` if you want to keep Docker's default seccomp profile and do not need Codex inside toolbox.
+
 ### Overriding mounts
 
 The defaults isolate every credential path under `~/.toolbox/` on the host, so the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly. The `mounts:` list is merged on top of the defaults — you only declare what changes.

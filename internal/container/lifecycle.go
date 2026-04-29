@@ -83,6 +83,17 @@ func ResolveShellCmd(cfg *config.Config) ([]string, error) {
 	return []string{"/bin/" + cfg.Shell}, nil
 }
 
+// nestedSandboxSecurityOpt returns Docker security options needed by tools
+// that create their own Linux sandbox inside toolbox. Codex's built-in
+// sandbox uses bubblewrap, which needs user namespaces; Docker's default
+// seccomp profile blocks the required clone/unshare calls.
+func nestedSandboxSecurityOpt(cfg *config.Config) []string {
+	if enabled, ok := cfg.Tools["codex"]; ok && !enabled {
+		return nil
+	}
+	return []string{"seccomp=unconfined"}
+}
+
 // NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -210,6 +221,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				Binds:        binds,
 				GroupAdd:     dockerSockGroups(binds),
 				PortBindings: bindings,
+				SecurityOpt:  nestedSandboxSecurityOpt(cfg),
 			},
 			nil, // network config
 			nil, // platform

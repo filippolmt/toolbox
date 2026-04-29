@@ -327,6 +327,67 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	}
 }
 
+func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	var capturedSecurityOpt []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+			capturedSecurityOpt = hostCfg.SecurityOpt
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !slices.Contains(capturedSecurityOpt, "seccomp=unconfined") {
+		t.Errorf("expected seccomp=unconfined for default Codex-enabled config, got %v", capturedSecurityOpt)
+	}
+}
+
+func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	cfg := testConfig()
+	cfg.Tools["codex"] = false
+
+	origEnsure := ensureImage
+	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+		if !isLocal {
+			t.Error("expected isLocal=true when Codex is disabled")
+		}
+		return nil
+	}
+	defer func() { ensureImage = origEnsure }()
+
+	var capturedSecurityOpt []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+			capturedSecurityOpt = hostCfg.SecurityOpt
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if len(capturedSecurityOpt) != 0 {
+		t.Errorf("expected no security opts when Codex is disabled, got %v", capturedSecurityOpt)
+	}
+}
+
 // TestShellMirrorsWorkspaceAtHostPath verifies that a workspace with a safe
 // absolute host path is bind-mounted at BOTH /workspace and its own host path,
 // and the shell WorkingDir is set to the host path so that $PWD-based bind
