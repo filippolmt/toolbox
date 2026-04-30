@@ -1,4 +1,5 @@
 name: Toolbox Docker PR
+run-name: Toolbox Docker PR #${{ github.event.pull_request.number }}
 
 on:
   pull_request:

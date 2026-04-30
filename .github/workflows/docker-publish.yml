@@ -7,6 +7,7 @@
 #                   arm64 scritto dal multi-arch) per evitare overwrite tra step.
 
 name: Toolbox Docker Publish
+run-name: Toolbox Docker Publish @ ${{ github.ref_name }}
 
 on:
   push:

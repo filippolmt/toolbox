@@ -1,4 +1,5 @@
 name: Toolbox Docker Release
+run-name: Toolbox Docker Release @ ${{ github.ref_name }}
 
 # Sibling of docker-publish.yml that runs on `v*` tag pushes only.
 #
