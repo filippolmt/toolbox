@@ -25,13 +25,13 @@ concurrency:
 
 jobs:
   detect:
-    # Compute the matrix dynamically: the `default` variant always runs
+    # Compute the matrix dynamically: the `amd64` variant always runs
     # (catches regressions in entrypoint.sh / smoke-test.sh / bashrc.sh /
     # zshrc.sh — the bulk of non-Dockerfile churn under
-    # internal/build/assets/**); `arm64-build-only` runs only when the
-    # Dockerfile or this workflow itself changes (the only inputs whose
-    # arch-specific behavior that variant validates). Saves ~5min on PRs
-    # that touch only the runtime scripts.
+    # internal/build/assets/**); `arm64` runs only when the Dockerfile or
+    # this workflow itself changes (the only inputs whose arch-specific
+    # behavior that variant validates). Saves ~5min on PRs that touch only
+    # the runtime scripts.
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -53,9 +53,9 @@ jobs:
           ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
         run: |
           if [ "$ARCH_COVERAGE" = "true" ]; then
-            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true},{"variant":"arm64-build-only","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","load":true},{"variant":"arm64","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"variant":"default","runner":"ubuntu-latest","tag":"toolbox:ci","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
           fi
 
   docker-build:
@@ -65,13 +65,13 @@ jobs:
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
     #
     # Matrix is computed by the `detect` job above:
-    #   default            — always; smoke-test must report OK for the full tool set.
-    #   arm64-build-only   — only on Dockerfile/workflow change. Builds for linux/arm64 on
-    #                        a native arm64 runner. Catches arch-specific breakage (wrong
-    #                        SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
-    #                        per-arch ARG case in the Dockerfile (zoxide, gws, bat, rtk, …)
-    #                        lives or dies here. Native arm64 (ubuntu-24.04-arm) is free
-    #                        for public repos and ~3x faster than QEMU on amd64.
+    #   amd64   — always; smoke-test must report OK for the full tool set.
+    #   arm64   — only on Dockerfile/workflow change. Builds for linux/arm64 on
+    #             a native arm64 runner. Catches arch-specific breakage (wrong
+    #             SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
+    #             per-arch ARG case in the Dockerfile (zoxide, gws, bat, rtk, …)
+    #             lives or dies here. Native arm64 (ubuntu-24.04-arm) is free
+    #             for public repos and ~3x faster than QEMU on amd64.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
