@@ -1,4 +1,4 @@
-name: Docker Publish (tag)
+name: Toolbox Docker Release
 
 # Sibling of docker-publish.yml that runs on `v*` tag pushes only.
 #
@@ -36,6 +36,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  CACHE_IMAGE: ghcr.io/${{ github.repository }}:latest
   TEST_TAG: ghcr.io/${{ github.repository }}:test
 
 jobs:
@@ -77,7 +78,7 @@ jobs:
           load: true
           tags: ${{ env.TEST_TAG }}
           cache-from: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            type=registry,ref=${{ env.CACHE_IMAGE }}
             type=gha,scope=amd64
             type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=amd64
@@ -100,7 +101,7 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            type=registry,ref=${{ env.CACHE_IMAGE }}
             type=gha,scope=amd64
             type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
