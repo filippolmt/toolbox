@@ -177,6 +177,7 @@ RUN set -eux; \
       ca-certificates \
       git \
       openssh-client \
+      ripgrep \
       bash-completion \
       make \
       python3 \
