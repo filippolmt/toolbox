@@ -75,6 +75,7 @@ FROM node:24-bookworm-slim
 # The verification steps below fetch the matching SHA256 from upstream at
 # build time, so changing only the version here keeps checksums correct.
 ARG TARGETARCH
+ARG DEBIAN_FRONTEND=noninteractive
 ARG GH_VERSION=2.92.0
 ARG GLAB_VERSION=1.93.0
 ARG GWS_VERSION=0.22.5
@@ -520,54 +521,12 @@ RUN set -eux; \
     if [ "${INSTALL_CODEX_CLI}" != "true" ]; then \
       echo "Skipping Codex CLI (tools.codex=false)"; \
     else \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends bubblewrap; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
-    fi
-
-# -- Layer 13c: rtk (CLI proxy that compresses output for LLM agents) ---------
-# Rust binary from rtk-ai/rtk. Wraps common dev commands (git/grep/cat/test
-# runners/...) and emits token-optimized output before it hits the LLM context.
-# Companion to Claude Code / Codex — `rtk init -g` writes hooks into
-# ~/.claude/settings.json so Bash tool calls get auto-rewritten. The entrypoint
-# runs `rtk init -g` on every shell so the hook stays wired even after a fresh
-# ~/.toolbox/.claude bind-mount.
-#
-# Both arches' install logic lives in the `rtk-builder` stage (top of file)
-# so this layer is a trivial COPY: amd64 receives the upstream MUSL binary,
-# arm64 receives a binary built from source against the bookworm sysroot.
-# When INSTALL_RTK=false the builder produces an empty placeholder which we
-# discard here.
-#
-# RTK_TELEMETRY_DISABLED=1: hard kill-switch for rtk's GDPR-gated telemetry
-# (https://github.com/rtk-ai/rtk/blob/main/docs/TELEMETRY.md). Telemetry is
-# off by default in upstream too, but this env var blocks every code path
-# regardless of consent state, so a user accidentally running
-# `rtk telemetry enable` inside a toolbox shell still sends nothing.
-#
-# RTK_TEE=0: hard kill-switch for the tee feature, which by default writes
-# failed-command stdout/stderr to ~/.local/share/rtk/tee/*.log (up to 20 files
-# x 1MB). Inside a toolbox shell those failures often carry tokens or PII
-# (`gh auth status`, `aws sts ...`, `curl -H Authorization:`) so persisting
-# them to a host-bound directory is a leakage surface. The entrypoint also
-# pre-seeds [tee] enabled = false in config.toml on first launch, but this
-# env var is the primary defense because:
-#   - it covers users with a stale config.toml from before the seed existed
-#     (the seed is gated on file absence, the bind-mount persists old files)
-#   - it survives `rtk telemetry enable/disable` rewriting the whole TOML
-#     and resetting [tee] back to upstream's enabled = true default
-# Source-side override is checked at src/core/tee.rs (rtk-ai/rtk v0.37.2,
-# lines 152 and 200).
-ENV RTK_TELEMETRY_DISABLED=1 \
-    RTK_TEE=0
-COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
-RUN set -eux; \
-    if [ "${INSTALL_RTK}" != "true" ]; then \
-      echo "Skipping rtk (tools.rtk=false)"; \
-      rm -f /tmp/rtk-from-builder; \
-    else \
-      mv /tmp/rtk-from-builder /usr/local/bin/rtk; \
-      chmod +x /usr/local/bin/rtk; \
-      rtk --version; \
     fi
 
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------
@@ -930,6 +889,52 @@ RUN set -eux; \
       if [ "${INSTALL_STARSHIP}" = "true" ];   then starship completions zsh > /usr/share/zsh/vendor-completions/_starship; fi; \
       if [ "${INSTALL_CODEX_CLI}" = "true" ];  then codex completion zsh    > /usr/share/zsh/vendor-completions/_codex;    fi; \
       ls /usr/share/zsh/vendor-completions; \
+    fi
+
+# -- Layer 20e: rtk (CLI proxy that compresses output for LLM agents) ---------
+# Rust binary from rtk-ai/rtk. Wraps common dev commands (git/grep/cat/test
+# runners/...) and emits token-optimized output before it hits the LLM context.
+# Companion to Claude Code / Codex — `rtk init -g` writes hooks into
+# ~/.claude/settings.json so Bash tool calls get auto-rewritten. The entrypoint
+# runs `rtk init -g` on every shell so the hook stays wired even after a fresh
+# ~/.toolbox/.claude bind-mount.
+#
+# Both arches' install logic lives in the `rtk-builder` stage (top of file)
+# so this layer is a trivial COPY: amd64 receives the upstream MUSL binary,
+# arm64 receives a binary built from source against the bookworm sysroot.
+# When INSTALL_RTK=false the builder produces an empty placeholder which we
+# discard here.
+#
+# RTK_TELEMETRY_DISABLED=1: hard kill-switch for rtk's GDPR-gated telemetry
+# (https://github.com/rtk-ai/rtk/blob/main/docs/TELEMETRY.md). Telemetry is
+# off by default in upstream too, but this env var blocks every code path
+# regardless of consent state, so a user accidentally running
+# `rtk telemetry enable` inside a toolbox shell still sends nothing.
+#
+# RTK_TEE=0: hard kill-switch for the tee feature, which by default writes
+# failed-command stdout/stderr to ~/.local/share/rtk/tee/*.log (up to 20 files
+# x 1MB). Inside a toolbox shell those failures often carry tokens or PII
+# (`gh auth status`, `aws sts ...`, `curl -H Authorization:`) so persisting
+# them to a host-bound directory is a leakage surface. The entrypoint also
+# pre-seeds [tee] enabled = false in config.toml on first launch, but this
+# env var is the primary defense because:
+#   - it covers users with a stale config.toml from before the seed existed
+#     (the seed is gated on file absence, the bind-mount persists old files)
+#   - it survives `rtk telemetry enable/disable` rewriting the whole TOML
+#     and resetting [tee] back to upstream's enabled = true default
+# Source-side override is checked at src/core/tee.rs (rtk-ai/rtk v0.37.2,
+# lines 152 and 200).
+ENV RTK_TELEMETRY_DISABLED=1 \
+    RTK_TEE=0
+COPY --from=rtk-builder /out/bin/rtk /tmp/rtk-from-builder
+RUN set -eux; \
+    if [ "${INSTALL_RTK}" != "true" ]; then \
+      echo "Skipping rtk (tools.rtk=false)"; \
+      rm -f /tmp/rtk-from-builder; \
+    else \
+      mv /tmp/rtk-from-builder /usr/local/bin/rtk; \
+      chmod +x /usr/local/bin/rtk; \
+      rtk --version; \
     fi
 
 # -- Layer 21: User setup (IMG-03) --------------------------------------------
