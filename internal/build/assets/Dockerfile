@@ -89,7 +89,7 @@ ARG STARSHIP_VERSION=1.25.0
 ARG PNPM_VERSION=10.33.2
 ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.123
-ARG CODEX_CLI_VERSION=0.125.0
+ARG CODEX_CLI_VERSION=0.128.0
 ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
