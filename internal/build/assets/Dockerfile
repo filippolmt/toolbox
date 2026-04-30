@@ -75,6 +75,7 @@ FROM node:24-bookworm-slim
 # The verification steps below fetch the matching SHA256 from upstream at
 # build time, so changing only the version here keeps checksums correct.
 ARG TARGETARCH
+ARG DEBIAN_FRONTEND=noninteractive
 ARG GH_VERSION=2.92.0
 ARG GLAB_VERSION=1.93.0
 ARG GWS_VERSION=0.22.5
@@ -520,6 +521,10 @@ RUN set -eux; \
     if [ "${INSTALL_CODEX_CLI}" != "true" ]; then \
       echo "Skipping Codex CLI (tools.codex=false)"; \
     else \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends bubblewrap; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/*; \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
     fi
