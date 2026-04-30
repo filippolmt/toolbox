@@ -32,7 +32,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   # Dedicated BuildKit registry cache, separate from the image tags.
-  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache
+  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache-main
   TEST_TAG: ghcr.io/${{ github.repository }}:test
 
 jobs:
