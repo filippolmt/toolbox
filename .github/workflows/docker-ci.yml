@@ -91,7 +91,9 @@ jobs:
           tags: ${{ matrix.tag }}
           # Cache scope per matrix variant so concurrent variants don't
           # overwrite each other's GHA cache layers.
-          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository }}:latest
+            type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
       - name: Smoke test
