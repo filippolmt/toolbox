@@ -14,7 +14,8 @@ permissions:
   contents: read
 
 env:
-  CACHE_IMAGE: ghcr.io/${{ github.repository }}:latest
+  # Dedicated BuildKit registry cache, separate from the image tags.
+  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache
 
 # Cancel superseded builds on the same ref to free runner minutes during
 # iterative PR pushes. Image builds are the most expensive job in the repo
@@ -96,7 +97,7 @@ jobs:
           # Cache scope per matrix variant so concurrent variants don't
           # overwrite each other's GHA cache layers.
           cache-from: |
-            type=registry,ref=${{ env.CACHE_IMAGE }}
+            type=registry,ref=${{ env.CACHE_REF }}
             type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
