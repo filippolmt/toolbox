@@ -135,7 +135,6 @@ ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d
 
 # -- Opt-out flags (one per tool, driven by tools.<key> in .toolbox.yaml) -----
 ARG INSTALL_KUBECTL=true
-ARG INSTALL_KUBECTX=true
 ARG INSTALL_HELM=true
 ARG INSTALL_TOFU=true
 ARG INSTALL_GH=true
@@ -205,14 +204,17 @@ RUN set -eux; \
 
 # -- Layer 2a: kubectx + kubens (kubectl context/namespace switchers) ---------
 # Both binaries ship in the same ahmetb/kubectx release with a shared
-# checksums.txt (gh-style). One INSTALL flag + one version pin covers both.
-# Linux assets are named with the GNU arch suffix (x86_64 / arm64) — translate
-# from Docker's TARGETARCH (amd64 / arm64) before building the URL.
-# Aliases (kctx/kc/kns/kn) come from OMZ's kubectx plugin which is already
-# listed in zshrc.sh; the plugin silent-skips when the binaries are absent.
+# checksums.txt (gh-style). One version pin covers both. Linux assets use the
+# GNU arch suffix (x86_64 / arm64) — translate from Docker's TARGETARCH
+# (amd64 / arm64) before building the URL.
+#
+# Gated on INSTALL_KUBECTL because kubens shells out to `kubectl get
+# namespaces` (no value without kubectl on PATH) and kubectx is meaningless
+# without a kubeconfig managed alongside kubectl. Same dependent-tool pattern
+# as gopls/goimports under INSTALL_GO.
 RUN set -eux; \
-    if [ "${INSTALL_KUBECTX}" != "true" ]; then \
-      echo "Skipping kubectx (tools.kubectx=false)"; \
+    if [ "${INSTALL_KUBECTL}" != "true" ]; then \
+      echo "Skipping kubectx + kubens (tools.kubectl=false)"; \
     else \
       case "${TARGETARCH}" in \
         amd64) KUBECTX_ARCH=x86_64;; \
