@@ -18,6 +18,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | uv | 0.11.x |
 | Go toolchain + gopls + goimports | 1.26.x |
 | kubectl | 1.36.x |
+| kubectx + kubens (kubectl context/namespace switchers) | 0.11.x |
 | Helm | 4.1.x |
 | OpenTofu | 1.11.x |
 | GitHub CLI (gh) | 2.91.x |

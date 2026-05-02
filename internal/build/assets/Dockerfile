@@ -80,6 +80,7 @@ ARG GH_VERSION=2.92.0
 ARG GLAB_VERSION=1.93.0
 ARG GWS_VERSION=0.22.5
 ARG KUBECTL_VERSION=v1.36.0
+ARG KUBECTX_VERSION=0.11.0
 ARG HELM_VERSION=v4.1.4
 ARG TOFU_VERSION=1.11.6
 ARG DOCKER_CLI_VERSION=29.4.1
@@ -134,6 +135,7 @@ ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d
 
 # -- Opt-out flags (one per tool, driven by tools.<key> in .toolbox.yaml) -----
 ARG INSTALL_KUBECTL=true
+ARG INSTALL_KUBECTX=true
 ARG INSTALL_HELM=true
 ARG INSTALL_TOFU=true
 ARG INSTALL_GH=true
@@ -199,6 +201,38 @@ RUN set -eux; \
       mv kubectl /usr/local/bin/kubectl; \
       rm kubectl.sha256; \
       kubectl version --client; \
+    fi
+
+# -- Layer 2a: kubectx + kubens (kubectl context/namespace switchers) ---------
+# Both binaries ship in the same ahmetb/kubectx release with a shared
+# checksums.txt (gh-style). One INSTALL flag + one version pin covers both.
+# Linux assets are named with the GNU arch suffix (x86_64 / arm64) — translate
+# from Docker's TARGETARCH (amd64 / arm64) before building the URL.
+# Aliases (kctx/kc/kns/kn) come from OMZ's kubectx plugin which is already
+# listed in zshrc.sh; the plugin silent-skips when the binaries are absent.
+RUN set -eux; \
+    if [ "${INSTALL_KUBECTX}" != "true" ]; then \
+      echo "Skipping kubectx (tools.kubectx=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) KUBECTX_ARCH=x86_64;; \
+        arm64) KUBECTX_ARCH=arm64;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/kubectx_checksums.txt \
+        "https://github.com/ahmetb/kubectx/releases/download/v${KUBECTX_VERSION}/checksums.txt"; \
+      for tool in kubectx kubens; do \
+        TARBALL="${tool}_v${KUBECTX_VERSION}_linux_${KUBECTX_ARCH}.tar.gz"; \
+        curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${TARBALL}" \
+          "https://github.com/ahmetb/kubectx/releases/download/v${KUBECTX_VERSION}/${TARBALL}"; \
+        (cd /tmp && grep "${TARBALL}" kubectx_checksums.txt | sha256sum -c -); \
+        tar -xzf "/tmp/${TARBALL}" -C /usr/local/bin "${tool}"; \
+        chmod +x "/usr/local/bin/${tool}"; \
+        rm "/tmp/${TARBALL}"; \
+      done; \
+      rm /tmp/kubectx_checksums.txt; \
+      kubectx --version; \
+      kubens --version; \
     fi
 
 # -- Layer 3: helm (TOOL-05, IMG-02) ------------------------------------------

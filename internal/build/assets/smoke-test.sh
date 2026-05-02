@@ -175,6 +175,8 @@ check_optional  "playwright" playwright playwright --version
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
 check_optional  "uv"        uv       uv --version
 check_optional  "kubectl"   kubectl  kubectl version --client
+check_optional  "kubectx"   kubectx  kubectx --version
+check_optional  "kubens"    kubens   kubens --version
 check_optional  "helm"      helm     helm version --short
 check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
