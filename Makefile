@@ -5,7 +5,7 @@ FULL    := $(IMAGE):$(TAG)
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
 GO_IMAGE        := golang:1.26
-GOLANGCI_IMAGE  := golangci/golangci-lint:v2.12.0-alpine
+GOLANGCI_IMAGE  := golangci/golangci-lint:v2.12.1-alpine
 GO_MOD_VOL      := toolbox-gomod
 # When running inside a toolbox shell we are talking to the host daemon over
 # the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
