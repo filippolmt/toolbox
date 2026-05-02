@@ -91,6 +91,7 @@ ARG PNPM_VERSION=10.33.2
 ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.126
 ARG CODEX_CLI_VERSION=0.128.0
+ARG CF_CLI_VERSION=0.0.5
 ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
@@ -156,6 +157,7 @@ ARG INSTALL_PNPM=true
 ARG INSTALL_UV=true
 ARG INSTALL_CLAUDE_CODE=true
 ARG INSTALL_CODEX_CLI=true
+ARG INSTALL_CF=true
 ARG INSTALL_GCLOUD=true
 ARG INSTALL_AZURE=true
 ARG INSTALL_OCI=true
@@ -577,6 +579,27 @@ RUN set -eux; \
       rm -rf /var/lib/apt/lists/*; \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
+    fi
+
+# -- Layer 13c: Cloudflare CLI `cf` (TOOL-02) --------------------------------
+# Technical preview of the next-generation Cloudflare CLI (Wrangler successor),
+# distributed as a single npm package whose `bin` entry exposes `cf`. Same
+# install pattern as Claude Code / Codex: registry-shipped tarball with built-in
+# integrity, no per-arch SHA pin, single version source for Renovate.
+#
+# Persistent state splits across two upstream paths (both hard-coded — no env
+# override on either):
+#   ~/.cf/config.toml             OAuth access_token + refresh_token (auth)
+#   ~/.config/cf/config.json      context defaults, completion-install marker
+# Both are bound from ~/.toolbox/cf/{auth,config} via DefaultMounts() (rtk
+# split pattern). Without the .cf bind specifically, `cf auth login` would
+# wipe on every `toolbox stop`.
+RUN set -eux; \
+    if [ "${INSTALL_CF}" != "true" ]; then \
+      echo "Skipping cf (tools.cf=false)"; \
+    else \
+      npm install -g "cf@${CF_CLI_VERSION}"; \
+      cf --version; \
     fi
 
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------

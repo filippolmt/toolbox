@@ -99,6 +99,19 @@ func DefaultMounts() []Mount {
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// Cloudflare CLI (`cf`, Wrangler vNext preview) splits state across two
+		// hard-coded upstream paths (no env override on either), so we follow the
+		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
+		// on the host (flat layout) while the container keeps the upstream split.
+		//
+		// "cf-auth" — ~/.cf/config.toml stores the OAuth access_token + refresh_token
+		// written by `cf auth login`. Without this bind the auth wipes on every
+		// `toolbox stop`.
+		{Name: "cf-auth", Source: "~/.toolbox/cf/auth", Target: "/home/toolbox/.cf", ReadOnly: false, CreateIfMissing: true},
+		// "cf-config" — ~/.config/cf/config.json stores context defaults
+		// (`cf context set …`), the shell-completion install marker, and other
+		// UI prefs. Lighter than the auth file but still useful to persist.
+		{Name: "cf-config", Source: "~/.toolbox/cf/config", Target: "/home/toolbox/.config/cf", ReadOnly: false, CreateIfMissing: true},
 		// rtk follows XDG, which means it splits state across ~/.config/rtk
 		// (config) and ~/.local/share/rtk (data). Both bind sources are
 		// nested under a single ~/.toolbox/rtk/ root on the host so all rtk
