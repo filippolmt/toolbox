@@ -231,6 +231,19 @@ RUN set -eux; \
         rm "/tmp/${TARBALL}"; \
       done; \
       rm /tmp/kubectx_checksums.txt; \
+      # Zsh completions: upstream ships static `_<tool>.zsh` files in the repo
+      # but NOT in the release tarball, and the binary has no `completion zsh`
+      # subcommand. Fetch the per-tag files and drop them into vendor-completions
+      # under the bare `_<tool>` name so zsh autoloads them via fpath. Same
+      # write-unconditionally rationale as bat (Layer 10a): a few KB orphaned
+      # when INSTALL_ZSH=false, harmless. No upstream checksum exists for these
+      # raw files — accepted risk T-01-08 class (HTTPS + tag pin).
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      for tool in kubectx kubens; do \
+        curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 \
+          -o "/usr/share/zsh/vendor-completions/_${tool}" \
+          "https://raw.githubusercontent.com/ahmetb/kubectx/v${KUBECTX_VERSION}/completion/_${tool}.zsh"; \
+      done; \
       kubectx --version; \
       kubens --version; \
     fi
