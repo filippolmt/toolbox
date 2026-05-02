@@ -29,6 +29,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Google Cloud SDK (gcloud) | 565.x |
 | Azure CLI (az) | 2.85.x |
 | Oracle OCI CLI | 3.80.x |
+| Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | jq, yq, starship, bat, git | latest stable |
 
