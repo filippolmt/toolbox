@@ -169,6 +169,7 @@ check_required "make"       make --version
 check_required "tini"       /usr/bin/tini --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
+check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
 check_optional  "codex"     codex    codex --version
 check_optional  "pyright"   pyright-langserver pyright --version

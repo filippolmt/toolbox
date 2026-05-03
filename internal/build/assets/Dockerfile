@@ -88,6 +88,7 @@ ARG JQ_VERSION=1.8.1
 ARG YQ_VERSION=4.53.2
 ARG STARSHIP_VERSION=1.25.1
 ARG PNPM_VERSION=10.33.2
+ARG BUN_VERSION=1.3.13
 ARG UV_VERSION=0.11.8
 ARG CLAUDE_CODE_VERSION=2.1.126
 ARG CODEX_CLI_VERSION=0.128.0
@@ -154,6 +155,7 @@ ARG INSTALL_STARSHIP=true
 ARG INSTALL_JQ=true
 ARG INSTALL_YQ=true
 ARG INSTALL_PNPM=true
+ARG INSTALL_BUN=true
 ARG INSTALL_UV=true
 ARG INSTALL_CLAUDE_CODE=true
 ARG INSTALL_CODEX_CLI=true
@@ -463,6 +465,56 @@ RUN set -eux; \
       corepack prepare pnpm@${PNPM_VERSION} --activate; \
       pnpm --version; \
     fi
+
+# -- Layer 11a: bun (JavaScript runtime + package manager + bundler) ----------
+# oven-sh/bun ships per-arch zip archives plus a per-release SHASUMS256.txt
+# (standard `<sha>  <file>` format — gh/glab pattern, but zip instead of
+# tar.gz). The GLIBC variant (NOT `-musl`) is used because the base image
+# (node:24-bookworm-slim) ships glibc and no musl loader: bun's musl build
+# is dynamically linked against /lib/ld-musl-x86_64.so.1, which doesn't
+# exist on Debian — invoking the binary then fails ENOENT on the
+# interpreter and the kernel reports "not found", masquerading as a
+# missing binary. Bun's GLIBC build targets ≥ 2.27 (Ubuntu 18.04);
+# bookworm ships 2.36, well above the floor. Opposite of the gws/zoxide
+# MUSL rationale, which kicks in only when upstream targets a newer glibc
+# than the base image.
+#
+# Extraction uses Python's stdlib `zipfile` module (python3 is already in
+# Layer 1) so we avoid pulling in `apt-get install unzip` for a one-shot
+# extract.
+#
+# Persistent state lives at ~/.bun (install cache, global packages, per-user
+# bin). Bound from ~/.toolbox/bun via DefaultMounts() so `bun add -g <pkg>`
+# survives `toolbox stop`. ~/.bun/bin is prepended to PATH below so global
+# binaries run without the user editing shell rcfiles.
+RUN set -eux; \
+    if [ "${INSTALL_BUN}" != "true" ]; then \
+      echo "Skipping bun (tools.bun=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) BUN_ARCH=x64;; \
+        arm64) BUN_ARCH=aarch64;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      BUN_DIR="bun-linux-${BUN_ARCH}"; \
+      BUN_ZIP="${BUN_DIR}.zip"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${BUN_ZIP}" \
+        "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${BUN_ZIP}"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/bun_SHASUMS256.txt \
+        "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/SHASUMS256.txt"; \
+      cd /tmp && grep "${BUN_ZIP}" bun_SHASUMS256.txt | sha256sum -c -; \
+      python3 -m zipfile -e "/tmp/${BUN_ZIP}" /tmp/; \
+      mv "/tmp/${BUN_DIR}/bun" /usr/local/bin/bun; \
+      chmod +x /usr/local/bin/bun; \
+      ln -sf /usr/local/bin/bun /usr/local/bin/bunx; \
+      rm -rf "/tmp/${BUN_ZIP}" /tmp/bun_SHASUMS256.txt "/tmp/${BUN_DIR}"; \
+      bun --version; \
+    fi
+
+# Per-user bun global bin in PATH for every subsequent layer + runtime.
+# Same rationale as the npm-global PATH idiom: when INSTALL_BUN=false the
+# path resolves to a non-existent dir and has no effect.
+ENV PATH="/home/toolbox/.bun/bin:${PATH}"
 
 # -- Layer 12: uv (TOOL-04) ---------------------------------------------------
 # Pinned tarball install (not a multi-stage `COPY --from=uv-source`) so the

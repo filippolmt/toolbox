@@ -8,6 +8,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 |------|---------|
 | Node.js | 24 LTS |
 | pnpm | 10.33.x |
+| bun (JavaScript runtime + package manager + bundler) | 1.3.x |
 | Claude Code | 2.1.x |
 | OpenAI Codex CLI | 0.125.x |
 | Pyright language server (`pyright-langserver`) | 1.1.x |

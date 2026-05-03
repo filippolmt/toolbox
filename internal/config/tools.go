@@ -13,6 +13,7 @@ package config
 var KnownTools = []string{
 	"azure",
 	"bat",
+	"bun",
 	"cf",
 	"claude",
 	"codex",
@@ -47,6 +48,7 @@ var KnownTools = []string{
 var ToolBuildArg = map[string]string{
 	"azure":          "INSTALL_AZURE",
 	"bat":            "INSTALL_BAT",
+	"bun":            "INSTALL_BUN",
 	"cf":             "INSTALL_CF",
 	"claude":         "INSTALL_CLAUDE_CODE",
 	"codex":          "INSTALL_CODEX_CLI",
