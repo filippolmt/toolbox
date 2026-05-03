@@ -190,6 +190,7 @@ check_optional  "gcloud"    gcloud   gcloud --version
 check_optional  "gke-gcloud-auth-plugin" gke-gcloud-auth-plugin gke-gcloud-auth-plugin --version
 check_optional  "azure"     az       az --version
 check_optional  "oci"       oci      oci --version
+check_optional  "graphify"  graphify graphify --version
 check_optional  "cf"        cf       cf --version
 check_optional  "jq"        jq       jq --version
 check_optional  "yq"        yq       yq --version

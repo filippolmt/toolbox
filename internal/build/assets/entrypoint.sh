@@ -269,6 +269,44 @@ EOF
     unset _cf_skill_file
 fi
 
+# Install the `graphify` Claude Code skill on every shell start.
+# Always runs `graphify install` when graphify + ~/.claude are present, so the
+# SKILL.md tracks the currently-installed `graphifyy` package version on every
+# bump. Different from the cf block above (which writes only when absent):
+# graphify ships its skill via the upstream package, so the canonical content
+# is whatever `graphify install` writes — re-running on every shell keeps the
+# skill in sync with the package. Cost is ~50ms per shell.
+#
+# Side-effect: user edits to ~/.claude/skills/graphify/SKILL.md are
+# overwritten on the next shell. Customisations belong in a wrapper skill or
+# the upstream graphify repo, not in this auto-managed file.
+#
+# Gated on `command -v graphify` AND ~/.claude presence: tools.graphify=false
+# skips entirely so opted-out users don't see a skill they can't use. Failure
+# is non-fatal — logged and swallowed so a broken `graphify install` never
+# blocks shell access.
+if command -v graphify >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+    graphify install >/dev/null 2>&1 || \
+        echo "toolbox: graphify install failed (non-fatal — run \`graphify install\` manually to retry)"
+fi
+
+# Install the `playwright-cli` Claude Code skills on every shell start.
+# Same always-run rationale as the graphify block above: the skills ship with
+# the upstream `@playwright/cli` npm package, so re-running keeps them in
+# sync on every PLAYWRIGHT_CLI_VERSION bump. `--skills claude` is the
+# default; explicit here for clarity.
+#
+# Side-effect: user edits under ~/.claude/skills/playwright-cli/ (or wherever
+# the installer writes) are overwritten on the next shell. Same trade-off as
+# graphify — customisations belong in a wrapper skill.
+#
+# Gated on `command -v playwright-cli` AND ~/.claude presence:
+# tools.playwright_cli=false skips entirely. Failure is non-fatal.
+if command -v playwright-cli >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+    playwright-cli install --skills claude >/dev/null 2>&1 || \
+        echo "toolbox: playwright-cli install --skills failed (non-fatal — run \`playwright-cli install --skills\` manually to retry)"
+fi
+
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.
 # Each *.sh file runs sequentially before the shell starts. Failures are
 # logged but never abort the entrypoint — one bad hook cannot block access.
