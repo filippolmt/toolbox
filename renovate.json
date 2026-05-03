@@ -181,6 +181,13 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+GRAPHIFY_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "pypi",
+      "packageNameTemplate": "graphifyy"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+PLAYWRIGHT_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "playwright"

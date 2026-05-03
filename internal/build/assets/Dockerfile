@@ -100,6 +100,7 @@ ARG PYRIGHT_VERSION=1.1.409
 ARG GCLOUD_VERSION=566.0.0
 ARG AZURE_CLI_VERSION=2.85.0
 ARG OCI_VERSION=3.81.0
+ARG GRAPHIFY_VERSION=0.7.0
 ARG PLAYWRIGHT_VERSION=1.59.1
 ARG PLAYWRIGHT_CLI_VERSION=0.1.11
 ARG COMPOSE_VERSION=5.1.3
@@ -163,6 +164,7 @@ ARG INSTALL_CF=true
 ARG INSTALL_GCLOUD=true
 ARG INSTALL_AZURE=true
 ARG INSTALL_OCI=true
+ARG INSTALL_GRAPHIFY=true
 ARG INSTALL_PLAYWRIGHT=true
 ARG INSTALL_PLAYWRIGHT_CLI=true
 ARG INSTALL_COMPOSE=true
@@ -797,6 +799,27 @@ RUN set -eux; \
         --timeout 300 --retries 5 \
         "oci-cli==${OCI_VERSION}"; \
       oci --version; \
+    fi
+
+# -- Layer 16a: graphify (knowledge-graph builder, Claude Code skill) ---------
+# Installed via pip (oci pattern). Upstream PyPI name is `graphifyy` (double y)
+# while the upstream `graphify` name is being reclaimed; the CLI binary and
+# Claude Code skill command are still `graphify`. Same --break-system-packages
+# rationale as Layer 16. Skill is NOT auto-installed at entrypoint — users run
+# `graphify install` once after first `toolbox shell` to write
+# ~/.claude/skills/graphify/SKILL.md (persists via the .claude bind-mount).
+RUN set -eux; \
+    if [ "${INSTALL_GRAPHIFY}" != "true" ]; then \
+      echo "Skipping graphify (tools.graphify=false)"; \
+    else \
+      pip install --break-system-packages --no-cache-dir \
+        --timeout 300 --retries 5 \
+        "graphifyy==${GRAPHIFY_VERSION}"; \
+      # Upstream CLI has no `--version` / `version` subcommand (subcommands
+      # are install/path/explain/clone/merge-driver/…). `--help` exits 0 and
+      # validates the entry point; pip show prints the installed version.
+      graphify --help >/dev/null; \
+      pip show graphifyy | grep ^Version:; \
     fi
 
 # -- Layer 17: Playwright CLI + Chromium deps (TOOL-01) -----------------------
