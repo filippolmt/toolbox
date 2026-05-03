@@ -19,21 +19,25 @@ unset _uid _gid
 
 echo "Toolbox credential check:"
 
-# gh (GitHub CLI)
-if gh auth status >/dev/null 2>&1; then
-    echo "  gh: configured"
-else
-    echo "  gh: not configured"
+# gh (GitHub CLI) — gated on binary presence so tools.gh=false skips the
+# block instead of mislabelling "not installed" as "not configured".
+if command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1; then
+        echo "  gh: configured"
+    else
+        echo "  gh: not configured"
+    fi
 fi
 
-# glab (GitLab CLI)
-if glab auth status >/dev/null 2>&1; then
-    echo "  glab: configured"
-else
-    echo "  glab: not configured"
+# glab (GitLab CLI) — same binary-presence gating as gh above.
+if command -v glab >/dev/null 2>&1; then
+    if glab auth status >/dev/null 2>&1; then
+        echo "  glab: configured"
+    else
+        echo "  glab: not configured"
+    fi
 fi
 
-# Conditional checks for cloud CLIs (may be volume-mounted from host)
 if command -v gcloud >/dev/null 2>&1; then
     if gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
         echo "  gcloud: configured"
@@ -51,10 +55,17 @@ if command -v az >/dev/null 2>&1; then
 fi
 
 if command -v oci >/dev/null 2>&1; then
+    # Fast path: skip the live API call when no config file exists. `oci iam
+    # region list` is a real network round-trip (~200-500ms when configured,
+    # multi-second timeout otherwise); checking the config file first keeps
+    # entrypoint snappy for users who haven't run `oci setup config`.
+    #
     # </dev/null: oci prompts "Do you want to create a new config file? [Y/n]"
     # when ~/.oci/config is missing. Without a closed stdin it would block the
     # entrypoint on the container's TTY and never reach the startup hooks.
-    if oci iam region list --output table </dev/null >/dev/null 2>&1; then
+    if [ ! -f "$HOME/.oci/config" ]; then
+        echo "  oci: not configured"
+    elif oci iam region list --output table </dev/null >/dev/null 2>&1; then
         echo "  oci: configured"
     else
         echo "  oci: not configured"
@@ -143,8 +154,6 @@ unset _plugins_cache
 #                 no settings.json to patch — it just writes AGENTS.md/RTK.md).
 #   </dev/null    belt-and-braces: any future prompt rtk adds gets EOF instead
 #                 of a hung container.
-# Telemetry is killed at the env layer (RTK_TELEMETRY_DISABLED=1 in the
-# Dockerfile), independent of whatever consent state rtk persists locally.
 #
 # Gated on `command -v <ai-cli>` AND directory presence: the bind-mounts
 # auto-create both ~/.claude and ~/.codex even when the corresponding tool is
@@ -203,8 +212,7 @@ fi
 # Install the `cf` Cloudflare CLI Claude Code skill on every shell start.
 # Idempotent — only writes when the file is absent (so a fresh
 # ~/.toolbox/.claude bind-mount always re-materialises the skill, but a user
-# edit on disk is preserved). Same belt-and-braces motivation as the rtk
-# config.toml pre-seed above.
+# edit on disk is preserved).
 #
 # The skill itself is hand-written (not generated from `cf agent-context`)
 # because the universal guide + product-specific contexts are huge (~107
@@ -213,9 +221,11 @@ fi
 # product the user actually mentioned. Single small skill file, fresh
 # product context per call, no version-tracking needed.
 #
-# Gated on `command -v cf` AND directory presence: tools.cf=false skips the
-# install entirely so opted-out users don't see a skill they can't use.
-if command -v cf >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+# Gated on `command -v cf` AND `command -v claude` AND directory presence.
+# The double-CLI gate matches the rtk pattern above: the bind-mount auto-
+# creates ~/.claude even when tools.claude=false, so a dir-only check would
+# write a skill into a directory Claude Code never reads.
+if command -v cf >/dev/null 2>&1 && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
     _cf_skill_file="$HOME/.claude/skills/cf/SKILL.md"
     if [ ! -f "$_cf_skill_file" ]; then
         mkdir -p "$(dirname "$_cf_skill_file")"
@@ -281,11 +291,13 @@ fi
 # overwritten on the next shell. Customisations belong in a wrapper skill or
 # the upstream graphify repo, not in this auto-managed file.
 #
-# Gated on `command -v graphify` AND ~/.claude presence: tools.graphify=false
-# skips entirely so opted-out users don't see a skill they can't use. Failure
-# is non-fatal — logged and swallowed so a broken `graphify install` never
-# blocks shell access.
-if command -v graphify >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+# Gated on `command -v graphify` AND `command -v claude` AND ~/.claude
+# presence. The `command -v claude` gate matches rtk's pattern: the bind-
+# mount auto-creates ~/.claude even with tools.claude=false, so a dir-only
+# check would write a skill into a directory Claude Code never reads.
+# Failure is non-fatal — logged and swallowed so a broken `graphify install`
+# never blocks shell access.
+if command -v graphify >/dev/null 2>&1 && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
     graphify install >/dev/null 2>&1 || \
         echo "toolbox: graphify install failed (non-fatal — run \`graphify install\` manually to retry)"
 fi
@@ -300,9 +312,10 @@ fi
 # the installer writes) are overwritten on the next shell. Same trade-off as
 # graphify — customisations belong in a wrapper skill.
 #
-# Gated on `command -v playwright-cli` AND ~/.claude presence:
-# tools.playwright_cli=false skips entirely. Failure is non-fatal.
-if command -v playwright-cli >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+# Gated on `command -v playwright-cli` AND `command -v claude` AND
+# ~/.claude presence (same double-CLI pattern as the cf/graphify blocks).
+# Failure is non-fatal.
+if command -v playwright-cli >/dev/null 2>&1 && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
     playwright-cli install --skills claude >/dev/null 2>&1 || \
         echo "toolbox: playwright-cli install --skills failed (non-fatal — run \`playwright-cli install --skills\` manually to retry)"
 fi
