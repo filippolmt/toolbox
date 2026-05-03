@@ -143,6 +143,11 @@ func DefaultMounts() []Mount {
 		// without root and persistent across container recreations. The prefix
 		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.
 		{Name: "npm-global", Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
+		// bun state — install cache + global packages + per-user bin (~/.bun/bin).
+		// `bun add -g <pkg>` writes here; without this bind, every `toolbox stop`
+		// wipes the global package set and re-downloads the install cache.
+		// PATH augmentation for ~/.bun/bin is wired in the Dockerfile (Layer 11a).
+		{Name: "bun", Source: "~/.toolbox/bun", Target: "/home/toolbox/.bun", ReadOnly: false, CreateIfMissing: true},
 		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
 		// to /home/toolbox/go inside the container; this bind-mount persists
 		// the module cache (`pkg/mod`) and `go install` binaries (`bin/`)

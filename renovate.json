@@ -115,6 +115,14 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+BUN_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "oven-sh/bun",
+      "extractVersionTemplate": "^bun-v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+CLAUDE_CODE_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "@anthropic-ai/claude-code"
