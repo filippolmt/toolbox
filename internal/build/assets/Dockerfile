@@ -815,7 +815,11 @@ RUN set -eux; \
       pip install --break-system-packages --no-cache-dir \
         --timeout 300 --retries 5 \
         "graphifyy==${GRAPHIFY_VERSION}"; \
-      graphify --version; \
+      # Upstream CLI has no `--version` / `version` subcommand (subcommands
+      # are install/path/explain/clone/merge-driver/…). `--help` exits 0 and
+      # validates the entry point; pip show prints the installed version.
+      graphify --help >/dev/null; \
+      pip show graphifyy | grep ^Version:; \
     fi
 
 # -- Layer 17: Playwright CLI + Chromium deps (TOOL-01) -----------------------
