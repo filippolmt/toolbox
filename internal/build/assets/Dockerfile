@@ -469,11 +469,19 @@ RUN set -eux; \
 # -- Layer 11a: bun (JavaScript runtime + package manager + bundler) ----------
 # oven-sh/bun ships per-arch zip archives plus a per-release SHASUMS256.txt
 # (standard `<sha>  <file>` format — gh/glab pattern, but zip instead of
-# tar.gz). MUSL variant is used because the GNU build targets a newer glibc
-# than node:24-bookworm-slim ships — same rationale as gws (Layer 6a) and
-# zoxide (Layer 20c). Extraction uses Python's stdlib `zipfile` module
-# (python3 is already in Layer 1) so we avoid pulling in `apt-get install
-# unzip` for a one-shot extract.
+# tar.gz). The GLIBC variant (NOT `-musl`) is used because the base image
+# (node:24-bookworm-slim) ships glibc and no musl loader: bun's musl build
+# is dynamically linked against /lib/ld-musl-x86_64.so.1, which doesn't
+# exist on Debian — invoking the binary then fails ENOENT on the
+# interpreter and the kernel reports "not found", masquerading as a
+# missing binary. Bun's GLIBC build targets ≥ 2.27 (Ubuntu 18.04);
+# bookworm ships 2.36, well above the floor. Opposite of the gws/zoxide
+# MUSL rationale, which kicks in only when upstream targets a newer glibc
+# than the base image.
+#
+# Extraction uses Python's stdlib `zipfile` module (python3 is already in
+# Layer 1) so we avoid pulling in `apt-get install unzip` for a one-shot
+# extract.
 #
 # Persistent state lives at ~/.bun (install cache, global packages, per-user
 # bin). Bound from ~/.toolbox/bun via DefaultMounts() so `bun add -g <pkg>`
@@ -488,7 +496,7 @@ RUN set -eux; \
         arm64) BUN_ARCH=aarch64;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
-      BUN_DIR="bun-linux-${BUN_ARCH}-musl"; \
+      BUN_DIR="bun-linux-${BUN_ARCH}"; \
       BUN_ZIP="${BUN_DIR}.zip"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${BUN_ZIP}" \
         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${BUN_ZIP}"; \
