@@ -1,4 +1,4 @@
-package mount
+package mountplan
 
 import (
 	"fmt"
@@ -9,21 +9,19 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-// ResolveMounts expands ~ in source paths, creates or symlinks missing
-// toolbox-managed sources, and returns Docker bind specs.
+// resolveAll expands ~ in source paths, creates or symlinks missing
+// toolbox-managed sources, and returns Docker bind specs as typed Binds.
 // Missing paths without a create/symlink rule produce a warning and are
 // skipped (D-09). T-02-01: filepath.Clean() is applied to every path.
-func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		warnings = append(warnings, "unable to resolve home directory: "+err.Error())
-		return nil, warnings
-	}
-
+//
+// home is the resolved user home directory; Plan handles the lookup so a
+// failing UserHomeDir() can hard-fail before this point instead of silently
+// dropping every ~/.toolbox/* default.
+func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []string) {
 	for _, m := range mounts {
 		// An empty source would resolve to CWD via filepath.Abs("") and
 		// silently bind the project dir. Defend at the resolver too — the
-		// validation in MergeMounts only covers config-file paths, not
+		// validation in mergeMounts only covers config-file paths, not
 		// programmatic Mount{} construction by callers.
 		if m.Source == "" {
 			warnings = append(warnings, "mount with empty source skipped (target "+m.Target+")")
@@ -72,10 +70,10 @@ func ResolveMounts(mounts []config.Mount) (resolved []string, warnings []string)
 		if m.ReadOnly {
 			mode = "ro"
 		}
-		resolved = append(resolved, src+":"+m.Target+":"+mode)
+		binds = append(binds, Bind{Source: src, Target: m.Target, Mode: mode})
 	}
 
-	return resolved, warnings
+	return binds, warnings
 }
 
 // ensureSource creates the mount source according to the Mount spec.
@@ -110,12 +108,12 @@ func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 }
 
 // expandHome replaces a leading ~ with the user's home directory.
-func expandHome(path string, home string) string {
-	if path == "~" {
+func expandHome(p string, home string) string {
+	if p == "~" {
 		return home
 	}
-	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(home, path[2:])
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
 	}
-	return path
+	return p
 }

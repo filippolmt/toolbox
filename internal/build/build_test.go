@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
 func TestStreamBuildOutput(t *testing.T) {
@@ -120,7 +120,7 @@ func TestDockerfilePreCreatesMountParents(t *testing.T) {
 	}
 	content := string(data)
 
-	for _, parent := range config.MountParentDirs(config.DefaultMounts()) {
+	for _, parent := range mountplan.ParentDirs(mountplan.Defaults()) {
 		if !strings.Contains(content, parent) {
 			t.Errorf("Dockerfile must pre-create %q (parent of a DefaultMounts target; otherwise Docker creates it as root:root 0755 at runtime)", parent)
 		}

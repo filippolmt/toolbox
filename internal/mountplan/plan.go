@@ -1,0 +1,95 @@
+// Package mountplan owns the full pipeline that turns a toolbox Config into
+// the slice of Docker bind specs handed to ContainerCreate.
+//
+// The pipeline is intentionally a single concept exposed at one external
+// seam — Plan(cfg, workspace) — even though internally it walks four
+// distinct stages (defaults, mounts_root retarget, user-merge, filesystem
+// resolve) plus the workspace + DooD-mirror append. Callers and tests both
+// cross the same seam.
+//
+// The legacy split — config.{Default,Merge,ApplyMountsRoot}Mounts +
+// internal/mount.ResolveMounts + lifecycle.Shell appending workspace binds
+// — fragmented one concept across two packages and three call sites. This
+// package consolidates them and keeps internal/config free of filesystem
+// side-effects.
+package mountplan
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/filippolmt/toolbox/internal/config"
+)
+
+// Bind is the typed representation of a Docker bind spec. lifecycle.Shell
+// stringifies these via Bind.String at the daemon edge so internal callers
+// and tests deal with structured fields instead of "src:target:mode" strings.
+type Bind struct {
+	Source string
+	Target string
+	Mode   string // "rw" | "ro"
+}
+
+// String returns the Docker SDK bind spec format ("src:target:mode") used by
+// container.HostConfig.Binds.
+func (b Bind) String() string { return b.Source + ":" + b.Target + ":" + b.Mode }
+
+// Result is the output of Plan: the full bind set to hand to ContainerCreate
+// plus the WorkingDir (set to the host-path mirror when safe, falling back
+// to WorkspaceTarget) and any per-mount soft skips for the caller to surface.
+type Result struct {
+	Binds      []Bind
+	Warnings   []string
+	WorkingDir string
+}
+
+// Plan walks the full mount pipeline for cfg and returns the bind set + the
+// shell WorkingDir for ContainerCreate.
+//
+// Hard fails when the user's home directory cannot be resolved (every
+// ~/.toolbox/<x> default would silently disappear, leaving the container
+// without credential mounts) or when Merge rejects the user list (typo on a
+// name-only patch, anonymous mount with empty source, …). Per-mount issues
+// (missing source without a create rule, missing symlink target, …) stay
+// soft skips surfaced via Warnings.
+func Plan(cfg *config.Config, workspace string) (Result, error) {
+	merged, err := Merge(cfg)
+	if err != nil {
+		return Result{}, err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve home directory: %w", err)
+	}
+
+	binds, warnings := resolveAll(merged, home)
+
+	binds = append(binds, Bind{Source: workspace, Target: WorkspaceTarget, Mode: "rw"})
+
+	workingDir := WorkspaceTarget
+	if mirror, ok := WorkspaceMirrorPath(workspace); ok {
+		binds = append(binds, Bind{Source: workspace, Target: mirror, Mode: "rw"})
+		workingDir = mirror
+	}
+
+	return Result{Binds: binds, Warnings: warnings, WorkingDir: workingDir}, nil
+}
+
+// Merge returns the post-merge mount list (defaults retargeted by
+// MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts).
+// Pure: no filesystem side-effects, no workspace bind. Used by tests
+// asserting merge contracts and by callers that want to inspect the
+// resolved set without materialising sources.
+func Merge(cfg *config.Config) ([]config.Mount, error) {
+	if err := config.ValidateMountsRoot(cfg.MountsRoot); err != nil {
+		return nil, err
+	}
+	base := applyMountsRoot(defaults(), cfg.MountsRoot)
+	return mergeMounts(base, cfg.Mounts)
+}
+
+// Defaults returns the canonical default mount set. Exported so build tests
+// can cross-check the Dockerfile against the same source of truth used at
+// runtime; runtime callers should go through Plan instead.
+func Defaults() []config.Mount { return defaults() }
