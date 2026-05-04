@@ -135,6 +135,14 @@ func DefaultMounts() []Mount {
 		// Playwright browser cache — populated by `playwright install`; keeps the
 		// ~500MB of Chromium/Firefox/Webkit binaries across container restarts.
 		{Name: "playwright-cache", Source: "~/.toolbox/playwright-cache", Target: "/home/toolbox/.cache/ms-playwright", ReadOnly: false, CreateIfMissing: true},
+		// Playwright-cli workspace config — `playwright-cli install` writes
+		// `cli.config.json` (browser channel + launchOptions) into the CWD's
+		// `.playwright/` dir, and the entrypoint runs the install from $HOME so
+		// the file lands here. The install is non-destructive on existing
+		// configs, so user customisations survive subsequent shell starts.
+		// Without this bind-mount the config would be wiped on every
+		// `toolbox stop` (auto-remove-on-exit container lifecycle).
+		{Name: "playwright-config", Source: "~/.toolbox/playwright-config", Target: "/home/toolbox/.playwright", ReadOnly: false, CreateIfMissing: true},
 		// User-defined startup hooks. Any *.sh file here is executed by the
 		// entrypoint before handing control to the shell — read-only to prevent
 		// in-container tampering; edits happen on the host.
