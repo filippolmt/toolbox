@@ -22,7 +22,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/mount"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
 )
@@ -158,23 +158,18 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 		}
 	}
 
-	binds, warnings := mount.ResolveMounts(cfg.Mounts)
-	for _, w := range warnings {
+	plan, planErr := mountplan.Plan(cfg, workspace)
+	if planErr != nil {
+		return planErr
+	}
+	for _, w := range plan.Warnings {
 		ui.Warning("mount skipped: " + w)
 	}
-
-	// Workspace mount is always enabled: host CWD -> /workspace.
-	binds = append(binds, workspace+":"+WorkspaceTarget+":rw")
-
-	// Mirror the workspace at its own absolute host path when safe, so that
-	// $PWD-based bind mounts issued from inside the shell (DooD) pass a path
-	// the host daemon can resolve. WorkingDir falls back to WorkspaceTarget
-	// when the host path would shadow a reserved container directory.
-	workingDir := WorkspaceTarget
-	if mirror, ok := workspaceMirrorPath(workspace); ok {
-		binds = append(binds, workspace+":"+mirror+":rw")
-		workingDir = mirror
+	binds := make([]string, len(plan.Binds))
+	for i, b := range plan.Binds {
+		binds[i] = b.String()
 	}
+	workingDir := plan.WorkingDir
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 

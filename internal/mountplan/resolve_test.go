@@ -1,4 +1,4 @@
-package mount
+package mountplan
 
 import (
 	"os"
@@ -32,15 +32,16 @@ func TestExpandHome(t *testing.T) {
 	}
 }
 
-func TestResolveMountsSkipsMissing(t *testing.T) {
+func TestResolveAllSkipsMissing(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	mounts := []config.Mount{
 		{Source: "/path/that/does/not/exist/ever", Target: "/container/path", ReadOnly: false},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
+	binds, warnings := resolveAll(mounts, home)
 
-	if len(resolved) != 0 {
-		t.Errorf("expected 0 resolved mounts for missing path, got %d", len(resolved))
+	if len(binds) != 0 {
+		t.Errorf("expected 0 resolved mounts for missing path, got %d", len(binds))
 	}
 
 	if len(warnings) == 0 {
@@ -48,7 +49,8 @@ func TestResolveMountsSkipsMissing(t *testing.T) {
 	}
 }
 
-func TestResolveMountsCreatesMissingWhenRequested(t *testing.T) {
+func TestResolveAllCreatesMissingWhenRequested(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "nested", "autocreate")
 
@@ -56,20 +58,21 @@ func TestResolveMountsCreatesMissingWhenRequested(t *testing.T) {
 		{Source: target, Target: "/container/auto", ReadOnly: false, CreateIfMissing: true},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
+	binds, warnings := resolveAll(mounts, home)
 
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
-	if len(resolved) != 1 {
-		t.Fatalf("expected 1 resolved mount, got %d", len(resolved))
+	if len(binds) != 1 {
+		t.Fatalf("expected 1 resolved mount, got %d", len(binds))
 	}
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("source dir should have been created: %v", err)
 	}
 }
 
-func TestResolveMountsSymlinkFromCreatesLink(t *testing.T) {
+func TestResolveAllSymlinkFromCreatesLink(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	hostTarget := filepath.Join(tmp, "host-real")
 	if err := os.Mkdir(hostTarget, 0o755); err != nil {
@@ -81,12 +84,12 @@ func TestResolveMountsSymlinkFromCreatesLink(t *testing.T) {
 		{Source: src, Target: "/container/link", ReadOnly: true, SymlinkFrom: hostTarget},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
+	binds, warnings := resolveAll(mounts, home)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
-	if len(resolved) != 1 {
-		t.Fatalf("expected 1 resolved mount, got %d", len(resolved))
+	if len(binds) != 1 {
+		t.Fatalf("expected 1 resolved mount, got %d", len(binds))
 	}
 
 	linfo, err := os.Lstat(src)
@@ -102,12 +105,13 @@ func TestResolveMountsSymlinkFromCreatesLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvalSymlinks(hostTarget): %v", err)
 	}
-	if !strings.HasPrefix(resolved[0], realTarget+":") {
-		t.Errorf("expected bind to start with real path %q, got %q", realTarget, resolved[0])
+	if binds[0].Source != realTarget {
+		t.Errorf("expected bind Source %q, got %q", realTarget, binds[0].Source)
 	}
 }
 
-func TestResolveMountsSymlinkFromSkipsWhenTargetMissing(t *testing.T) {
+func TestResolveAllSymlinkFromSkipsWhenTargetMissing(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "link")
 	bogus := filepath.Join(tmp, "does-not-exist")
@@ -116,9 +120,9 @@ func TestResolveMountsSymlinkFromSkipsWhenTargetMissing(t *testing.T) {
 		{Source: src, Target: "/container/x", ReadOnly: true, SymlinkFrom: bogus},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
-	if len(resolved) != 0 {
-		t.Fatalf("expected 0 resolved mounts, got %d", len(resolved))
+	binds, warnings := resolveAll(mounts, home)
+	if len(binds) != 0 {
+		t.Fatalf("expected 0 resolved mounts, got %d", len(binds))
 	}
 	if len(warnings) == 0 {
 		t.Fatal("expected warning when symlink target is missing")
@@ -128,7 +132,8 @@ func TestResolveMountsSymlinkFromSkipsWhenTargetMissing(t *testing.T) {
 	}
 }
 
-func TestResolveMountsReplacesEmptyDirWithSymlink(t *testing.T) {
+func TestResolveAllReplacesEmptyDirWithSymlink(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	hostTarget := filepath.Join(tmp, "host-real")
 	if err := os.Mkdir(hostTarget, 0o755); err != nil {
@@ -143,7 +148,7 @@ func TestResolveMountsReplacesEmptyDirWithSymlink(t *testing.T) {
 		{Source: src, Target: "/container/x", ReadOnly: true, SymlinkFrom: hostTarget},
 	}
 
-	_, warnings := ResolveMounts(mounts)
+	_, warnings := resolveAll(mounts, home)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
@@ -156,7 +161,8 @@ func TestResolveMountsReplacesEmptyDirWithSymlink(t *testing.T) {
 	}
 }
 
-func TestResolveMountsKeepsNonEmptyDirEvenWithSymlinkFrom(t *testing.T) {
+func TestResolveAllKeepsNonEmptyDirEvenWithSymlinkFrom(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	hostTarget := filepath.Join(tmp, "host-real")
 	if err := os.Mkdir(hostTarget, 0o755); err != nil {
@@ -174,7 +180,7 @@ func TestResolveMountsKeepsNonEmptyDirEvenWithSymlinkFrom(t *testing.T) {
 		{Source: src, Target: "/container/x", ReadOnly: true, SymlinkFrom: hostTarget},
 	}
 
-	_, warnings := ResolveMounts(mounts)
+	_, warnings := resolveAll(mounts, home)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
@@ -187,10 +193,11 @@ func TestResolveMountsKeepsNonEmptyDirEvenWithSymlinkFrom(t *testing.T) {
 	}
 }
 
-// TestResolveMountsRelativeSourceUsesCWD: ./ paths must resolve to the
+// TestResolveAllRelativeSourceUsesCWD: ./ paths must resolve to the
 // process CWD, so users can write `source: ./test` in .toolbox.yaml and
 // have it bound from the project root they invoked toolbox shell from.
-func TestResolveMountsRelativeSourceUsesCWD(t *testing.T) {
+func TestResolveAllRelativeSourceUsesCWD(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 	if err := os.Mkdir(filepath.Join(tmp, "test"), 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -209,28 +216,28 @@ func TestResolveMountsRelativeSourceUsesCWD(t *testing.T) {
 		{Source: "./test", Target: "/container/test", ReadOnly: false},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
+	binds, warnings := resolveAll(mounts, home)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
-	if len(resolved) != 1 {
-		t.Fatalf("expected 1 resolved mount, got %d", len(resolved))
+	if len(binds) != 1 {
+		t.Fatalf("expected 1 resolved mount, got %d", len(binds))
 	}
 
-	// EvalSymlinks normalises tmp on macOS (/var → /private/var). Match
-	// the same normalisation the resolver applies.
 	wantPrefix, err := filepath.EvalSymlinks(filepath.Join(tmp, "test"))
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	if !strings.HasPrefix(resolved[0], wantPrefix+":") {
-		t.Errorf("expected bind to start with %q, got %q", wantPrefix, resolved[0])
+	if binds[0].Source != wantPrefix {
+		t.Errorf("expected bind Source %q, got %q", wantPrefix, binds[0].Source)
 	}
 }
 
-// TestResolveMountsRelativeSourceCreatesUnderCWD: relative source + CreateIfMissing
-// must create the dir under CWD, not under the literal "./test" string.
-func TestResolveMountsRelativeSourceCreatesUnderCWD(t *testing.T) {
+// TestResolveAllRelativeSourceCreatesUnderCWD: relative source +
+// CreateIfMissing must create the dir under CWD, not under the literal
+// "./test" string.
+func TestResolveAllRelativeSourceCreatesUnderCWD(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
 
 	prevCWD, err := os.Getwd()
@@ -246,7 +253,7 @@ func TestResolveMountsRelativeSourceCreatesUnderCWD(t *testing.T) {
 		{Source: "./auto", Target: "/container/auto", ReadOnly: false, CreateIfMissing: true},
 	}
 
-	if _, warnings := ResolveMounts(mounts); len(warnings) != 0 {
+	if _, warnings := resolveAll(mounts, home); len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "auto")); err != nil {
@@ -254,8 +261,8 @@ func TestResolveMountsRelativeSourceCreatesUnderCWD(t *testing.T) {
 	}
 }
 
-func TestResolveMountsFormat(t *testing.T) {
-	// Create a temporary directory as an existing source.
+func TestResolveAllReadOnlyMode(t *testing.T) {
+	home, _ := os.UserHomeDir()
 	tmpDir := t.TempDir()
 
 	mounts := []config.Mount{
@@ -263,26 +270,46 @@ func TestResolveMountsFormat(t *testing.T) {
 		{Source: tmpDir, Target: "/container/test-rw", ReadOnly: false},
 	}
 
-	resolved, warnings := ResolveMounts(mounts)
+	binds, warnings := resolveAll(mounts, home)
 
 	if len(warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
 	}
 
-	if len(resolved) != 2 {
-		t.Fatalf("expected 2 resolved mounts, got %d", len(resolved))
+	if len(binds) != 2 {
+		t.Fatalf("expected 2 resolved mounts, got %d", len(binds))
 	}
 
-	// Check read-only format.
-	if !strings.HasSuffix(resolved[0], ":ro") {
-		t.Errorf("expected :ro suffix, got %q", resolved[0])
+	if binds[0].Mode != "ro" {
+		t.Errorf("expected ro mode, got %q", binds[0].Mode)
 	}
-	if !strings.Contains(resolved[0], tmpDir+":") {
-		t.Errorf("expected source path %q in mount, got %q", tmpDir, resolved[0])
+	if !strings.HasPrefix(binds[0].Source, tmpDir) && binds[0].Source != tmpDir {
+		// macOS may resolve /var → /private/var
+		realTmp, _ := filepath.EvalSymlinks(tmpDir)
+		if binds[0].Source != realTmp {
+			t.Errorf("expected source %q (or resolved), got %q", tmpDir, binds[0].Source)
+		}
 	}
 
-	// Check read-write format.
-	if !strings.HasSuffix(resolved[1], ":rw") {
-		t.Errorf("expected :rw suffix, got %q", resolved[1])
+	if binds[1].Mode != "rw" {
+		t.Errorf("expected rw mode, got %q", binds[1].Mode)
+	}
+}
+
+// TestBindString sanity-checks the daemon-edge stringification: lifecycle
+// hands these to container.HostConfig.Binds verbatim, so any drift here
+// reaches the Docker daemon as a malformed bind spec.
+func TestBindString(t *testing.T) {
+	tests := []struct {
+		bind Bind
+		want string
+	}{
+		{Bind{Source: "/host", Target: "/container", Mode: "rw"}, "/host:/container:rw"},
+		{Bind{Source: "/host", Target: "/container", Mode: "ro"}, "/host:/container:ro"},
+	}
+	for _, tc := range tests {
+		if got := tc.bind.String(); got != tc.want {
+			t.Errorf("Bind.String() = %q, want %q", got, tc.want)
+		}
 	}
 }

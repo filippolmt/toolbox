@@ -18,6 +18,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
 // notFoundError implements the errdefs "not found" interface.
@@ -303,8 +304,8 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		t.Fatal("execShellFn was not called after create+start")
 	}
 
-	mirror, mirrorOK := workspaceMirrorPath(ws)
-	wantWorkDir := WorkspaceTarget
+	mirror, mirrorOK := mountplan.WorkspaceMirrorPath(ws)
+	wantWorkDir := mountplan.WorkspaceTarget
 	if mirrorOK {
 		wantWorkDir = mirror
 	}
@@ -312,7 +313,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, wantWorkDir)
 	}
 
-	expectedBinds := []string{ws + ":" + WorkspaceTarget + ":rw"}
+	expectedBinds := []string{ws + ":" + mountplan.WorkspaceTarget + ":rw"}
 	if mirrorOK {
 		expectedBinds = append(expectedBinds, ws+":"+mirror+":rw")
 	}
@@ -423,7 +424,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 	if capturedWorkDir != ws {
 		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, ws)
 	}
-	wantCanonical := ws + ":" + WorkspaceTarget + ":rw"
+	wantCanonical := ws + ":" + mountplan.WorkspaceTarget + ":rw"
 	wantMirror := ws + ":" + ws + ":rw"
 	if !slices.Contains(capturedBinds, wantCanonical) {
 		t.Errorf("missing canonical bind %q in %v", wantCanonical, capturedBinds)
@@ -463,45 +464,16 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
-	if capturedWorkDir != WorkspaceTarget {
-		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, WorkspaceTarget)
+	if capturedWorkDir != mountplan.WorkspaceTarget {
+		t.Errorf("WorkingDir = %q, want %q", capturedWorkDir, mountplan.WorkspaceTarget)
 	}
 	mirrorBind := ws + ":" + ws + ":rw"
 	if slices.Contains(capturedBinds, mirrorBind) {
 		t.Errorf("mirror bind must be skipped for reserved path, got %v", capturedBinds)
 	}
-	canonical := ws + ":" + WorkspaceTarget + ":rw"
+	canonical := ws + ":" + mountplan.WorkspaceTarget + ":rw"
 	if !slices.Contains(capturedBinds, canonical) {
 		t.Errorf("expected canonical bind %q in %v", canonical, capturedBinds)
-	}
-}
-
-func TestWorkspaceMirrorPath(t *testing.T) {
-	cases := []struct {
-		in     string
-		want   string
-		wantOK bool
-	}{
-		{"/Users/alice/project", "/Users/alice/project", true},
-		{"/home/alice/code", "/home/alice/code", true},
-		{"/mnt/data/repo", "/mnt/data/repo", true},
-		{"/tmp/work/x", "/tmp/work/x", true},
-		{"/", "", false},
-		{WorkspaceTarget, "", false},
-		{WorkspaceTarget + "/nested", "", false},
-		{"/home/toolbox", "", false},
-		{"/home/toolbox/app", "", false},
-		{"/usr/local/src", "", false},
-		{"/etc/toolbox", "", false},
-		{"", "", false},
-		{"relative/path", "", false},
-	}
-	for _, tc := range cases {
-		got, ok := workspaceMirrorPath(tc.in)
-		if ok != tc.wantOK || got != tc.want {
-			t.Errorf("workspaceMirrorPath(%q) = (%q, %v), want (%q, %v)",
-				tc.in, got, ok, tc.want, tc.wantOK)
-		}
 	}
 }
 
@@ -735,8 +707,8 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 		t.Errorf("expected env %q in %v", want, capturedEnv)
 	}
 
-	mirror, ok := workspaceMirrorPath(ws)
-	wantPWD := "PWD=" + WorkspaceTarget
+	mirror, ok := mountplan.WorkspaceMirrorPath(ws)
+	wantPWD := "PWD=" + mountplan.WorkspaceTarget
 	if ok {
 		wantPWD = "PWD=" + mirror
 	}
