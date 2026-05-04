@@ -308,16 +308,24 @@ fi
 # sync on every PLAYWRIGHT_CLI_VERSION bump. `--skills claude` is the
 # default; explicit here for clarity.
 #
-# Side-effect: user edits under ~/.claude/skills/playwright-cli/ (or wherever
-# the installer writes) are overwritten on the next shell. Same trade-off as
-# graphify — customisations belong in a wrapper skill.
+# `playwright-cli install` writes `.claude/skills/playwright-cli/` and
+# `.playwright/cli.config.json` into the **current working directory** — the
+# CLI exposes no flag for a global target. Running it from `/workspace`
+# (the default CWD on `toolbox shell`) would pollute every repo. We `cd $HOME`
+# first so the skill lands in `~/.claude/skills/playwright-cli/` (persisted
+# via the `~/.toolbox/.claude` bind-mount) and the config in
+# `~/.playwright/cli.config.json` — both global, both invisible to repos.
+#
+# Side-effect: user edits under `~/.claude/skills/playwright-cli/` are
+# overwritten on the next shell. Same trade-off as graphify — customisations
+# belong in a wrapper skill.
 #
 # Gated on `command -v playwright-cli` AND `command -v claude` AND
 # ~/.claude presence (same double-CLI pattern as the cf/graphify blocks).
 # Failure is non-fatal.
 if command -v playwright-cli >/dev/null 2>&1 && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    playwright-cli install --skills claude >/dev/null 2>&1 || \
-        echo "toolbox: playwright-cli install --skills failed (non-fatal — run \`playwright-cli install --skills\` manually to retry)"
+    (cd "$HOME" && playwright-cli install --skills claude) >/dev/null 2>&1 || \
+        echo "toolbox: playwright-cli install --skills failed (non-fatal — run \`(cd ~ && playwright-cli install --skills claude)\` manually to retry)"
 fi
 
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.
