@@ -121,7 +121,7 @@ ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6
 # Renovate manages bumps via customManagers on these ARG names (see renovate.json).
 # SHAs MUST be full 40-char form (abbreviated SHAs break `git fetch --depth=1`).
 # Renovate keeps these pinned to the current HEAD of each upstream branch.
-ARG OMZ_COMMIT=e7aa0c56e68348afefdd6af4c5bdb314a2bd6640
+ARG OMZ_COMMIT=e64912e0c1eaa32181c3b5e5e4bf8042ecd0e8a7
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=d4d30592c2e5e81c052ce4fec29a8a1ea23383f5
