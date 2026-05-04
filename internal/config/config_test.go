@@ -11,8 +11,8 @@ import (
 func TestDefaultMounts(t *testing.T) {
 	mounts := DefaultMounts()
 
-	if len(mounts) != 22 {
-		t.Fatalf("expected 22 default mounts, got %d", len(mounts))
+	if len(mounts) != 23 {
+		t.Fatalf("expected 23 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -49,6 +49,8 @@ func TestDefaultMounts(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/rtk/data", false, true)
 	assertMount(t, mounts, "~/.toolbox/kube", false, true)
 	assertMount(t, mounts, "~/.toolbox/playwright-cache", false, true)
+	// Playwright-cli workspace config: read-write, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/playwright-config", false, true)
 	// User-defined hooks dir: read-only, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/startup.d", true, true)
 	// Per-user npm prefix: read-write, create-if-missing.
@@ -110,8 +112,8 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if len(cfg.Mounts) != 22 {
-		t.Errorf("expected 22 default mounts, got %d", len(cfg.Mounts))
+	if len(cfg.Mounts) != 23 {
+		t.Errorf("expected 23 default mounts, got %d", len(cfg.Mounts))
 	}
 
 	if !IsDefaultTools(cfg.Tools) {
