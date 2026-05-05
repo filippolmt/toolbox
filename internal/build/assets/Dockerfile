@@ -98,7 +98,7 @@ ARG PYRIGHT_VERSION=1.1.409
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
 # resulting binary, so it doesn't need to redeclare the ARG here).
 ARG GCLOUD_VERSION=566.0.0
-ARG AZURE_CLI_VERSION=2.85.0
+ARG AZURE_CLI_VERSION=2.86.0
 ARG OCI_VERSION=3.81.0
 ARG GRAPHIFY_VERSION=0.7.5
 ARG PLAYWRIGHT_VERSION=1.59.1
