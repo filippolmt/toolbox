@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
@@ -40,7 +41,7 @@ func TestInitConfigExplicitFileIsRead(t *testing.T) {
 		t.Error("gcloud should be false after --config read — initConfig must call ReadInConfig")
 	}
 	// Every other tool must stay at its default value (true).
-	for _, k := range config.KnownTools {
+	for _, k := range catalog.Keys() {
 		if k == "gcloud" {
 			continue
 		}
@@ -211,7 +212,7 @@ func TestInitConfigAppliesDefaults(t *testing.T) {
 
 	initConfig()
 
-	for _, k := range config.KnownTools {
+	for _, k := range catalog.Keys() {
 		if !viper.GetBool("tools." + k) {
 			t.Errorf("default tools.%s should be true after initConfig, got false", k)
 		}

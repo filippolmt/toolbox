@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // setToolsDefaults mirrors the per-leaf defaults from cmd/root.go.
 func setToolsDefaults() {
-	for _, k := range KnownTools {
+	for _, k := range catalog.Keys() {
 		viper.SetDefault("tools."+k, true)
 	}
 }
@@ -34,7 +36,7 @@ func TestLoadWithoutConfig(t *testing.T) {
 	if !IsDefaultTools(cfg.Tools) {
 		t.Errorf("Load() with no user config should yield default tools, got %v", cfg.Tools)
 	}
-	for _, k := range KnownTools {
+	for _, k := range catalog.Keys() {
 		if !cfg.Tools[k] {
 			t.Errorf("tool %q should default to true", k)
 		}
@@ -61,7 +63,7 @@ func TestLoadUserOverridePreservesOtherTools(t *testing.T) {
 	if cfg.Tools["gcloud"] {
 		t.Error("gcloud should be disabled after override")
 	}
-	for _, k := range KnownTools {
+	for _, k := range catalog.Keys() {
 		if k == "gcloud" {
 			continue
 		}
@@ -95,8 +97,8 @@ func TestIsDefaultTools(t *testing.T) {
 // correct Dockerfile ARG. This is the in-code half of GO-04 cascade; the
 // Dockerfile half is enforced end-to-end by the smoke test in Plan 03.
 func TestToolBuildArgGo(t *testing.T) {
-	if got := ToolBuildArg["go"]; got != "INSTALL_GO" {
-		t.Errorf("ToolBuildArg[\"go\"] = %q, want %q", got, "INSTALL_GO")
+	if got := catalog.BuildArg("go"); got != "INSTALL_GO" {
+		t.Errorf("catalog.BuildArg(\"go\") = %q, want %q", got, "INSTALL_GO")
 	}
 }
 

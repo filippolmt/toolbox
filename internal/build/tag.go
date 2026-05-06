@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
@@ -25,7 +26,7 @@ const DefaultRegistryImage = "ghcr.io/filippolmt/toolbox:latest"
 // build context, and the opt-out selection; the caller should build it locally
 // if it is not already present.
 func ResolveImage(cfg *config.Config, cliVersion string) (ref string, isLocal bool) {
-	if config.IsDefaultTools(cfg.Tools) {
+	if catalog.IsDefault(cfg.Tools) {
 		return DefaultRegistryImage, false
 	}
 	h, err := computeImageHash(cliVersion, cfg.Tools)
@@ -38,27 +39,34 @@ func ResolveImage(cfg *config.Config, cliVersion string) (ref string, isLocal bo
 	return "toolbox:local-" + h, true
 }
 
-// BuildArgsFromTools turns the tools map into Docker build args. Only disabled
-// tools are emitted — enabled tools rely on the Dockerfile's `ARG …=true` defaults,
-// which keeps the tag hash stable when a user explicitly writes `foo: true` in
-// their config (it has no effect vs. omitting the key).
+// BuildArgsFromTools turns the tools map into Docker build args. Only entries
+// whose resolved enabled-bool DIFFERS from their catalog Default are emitted —
+// matches-default entries rely on the Dockerfile's baked-in `ARG INSTALL_X=<default>`,
+// which keeps the local-image hash stable when a user explicitly writes the
+// default value in their config (it has no effect vs. omitting the key).
+//
+// A missing key is treated as the catalog Default (the catalog is the source
+// of truth, so the same rule applies whether a tool is opt-in or opt-out).
+//
+// When the catalog ships an entry with Default:false, the Dockerfile's
+// `ARG INSTALL_X=` directive must match (`=false`) for the no-emit-on-match
+// invariant to hold; the CAT-04 bijection test enforces ARG-name parity but
+// does not assert default-value parity, so add a Dockerfile-side default
+// alignment when introducing any opt-in tool.
 func BuildArgsFromTools(tools map[string]bool) map[string]*string {
 	out := map[string]*string{}
-	for _, k := range config.KnownTools {
-		enabled, ok := tools[k]
+	for _, e := range catalog.Entries {
+		resolved, ok := tools[e.Key]
 		if !ok {
-			// Missing key means default-true.
+			// Missing key → catalog Default; matches the Dockerfile ARG default.
 			continue
 		}
-		if enabled {
+		if resolved == e.Default {
+			// User-supplied value matches catalog Default → no override needed.
 			continue
 		}
-		arg, ok := config.ToolBuildArg[k]
-		if !ok {
-			continue
-		}
-		v := "false"
-		out[arg] = &v
+		v := strconv.FormatBool(resolved)
+		out[e.BuildArg] = &v
 	}
 	return out
 }
@@ -100,14 +108,14 @@ func computeImageHashFromFS(assets fs.FS, dir, cliVersion string, tools map[stri
 		_, _ = h.Write([]byte("\n"))
 	}
 
-	// Tools map — sorted by key for determinism.
-	keys := make([]string, 0, len(tools))
-	for k := range tools {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		_, _ = fmt.Fprintf(h, "tool:%s=%s\n", k, strconv.FormatBool(tools[k]))
+	// Tools section — encoded by the Tool Catalog's canonical encoder (D-09, CAT-05).
+	// Optional Entry fields (Description, InitScript, SmokeTest) are EXCLUDED from
+	// the encoding (D-10) so Phase 10 populating them is hash-neutral for users.
+	// The structural guarantee for D-10 lives at the catalog layer
+	// (TestCanonicalEncodingIsNeutralToOptionalFieldPopulation in
+	// internal/catalog/catalog_test.go); this site only needs to delegate.
+	if err := catalog.WriteCanonical(h, tools); err != nil {
+		return "", err
 	}
 
 	sum := h.Sum(nil)
