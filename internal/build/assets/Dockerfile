@@ -171,7 +171,6 @@ ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
 ARG INSTALL_BAT=true
 ARG INSTALL_PYRIGHT=true
-ARG INSTALL_RTK=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
