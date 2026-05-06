@@ -3,19 +3,17 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
-// During Plan 01 the Plan body is still a stub (not yet implemented).
-// These tests pin walk-up behaviour through the unexported walkUp helper
-// (legal because the test lives in package config). Plan 02 swaps the
-// assertions over to the real *Config returned by Plan; until then we
-// guarantee CFG-04 invariants here.
-//
-// All tests use t.Setenv to override HOME (Pitfall 3 — auto-restoring;
-// blocks t.Parallel). The non-restoring stdlib variant is forbidden, as is
-// any global viper reset (D-09 — Plan owns its own *viper.Viper; no global
-// churn).
+// Plan-level fs tests live alongside the unexported walkUp tests so HOME
+// overrides via t.Setenv stay package-local. Pitfall 3: t.Setenv blocks
+// t.Parallel and auto-restores; the non-restoring stdlib variant is
+// forbidden, as is any global viper reset (D-09 — Plan owns its own
+// *viper.Viper; no global churn).
 
 // TestWalkUpStopsAtHome pins invariant 1 from RESEARCH §Walk-Up Termination
 // Semantics: a CWD inside HOME with a project file at HOME itself must not
@@ -120,16 +118,128 @@ func TestWalkUpIgnoresDirectoryNamedToolboxYaml(t *testing.T) {
 	}
 }
 
-// Bridging stubs — Plan 02 fills these in once Plan body is wired.
-
-func TestPlanExplicitOverrideShortCircuits(t *testing.T) {
-	t.Skip("Plan 02: Plan body must be wired before this test can assert *Config")
-}
-
-func TestPlanWalksUpFromSubdir(t *testing.T) {
-	t.Skip("Plan 02: same as above — bridging stub during Plan 01")
-}
-
+// TestPlanCanonicalPipeline runs the pure-defaults canonical pipeline — no
+// global, no project, no override. Asserts every catalog tool comes back
+// default-true and Shell defaults to "zsh".
 func TestPlanCanonicalPipeline(t *testing.T) {
-	t.Skip("Plan 02: defaults + validation must land before canonical pipeline asserts")
+	cwd := t.TempDir()
+	home := t.TempDir() // empty HOME — no global ~/.toolbox.yaml
+	t.Setenv("HOME", home)
+
+	cfg, err := Plan(cwd, "")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (default)", cfg.Shell)
+	}
+	for _, k := range catalog.Keys() {
+		if !cfg.Tools[k] {
+			t.Errorf("tool %q should default to true after canonical Plan, got false", k)
+		}
+	}
+	if cfg.MountsRoot != "" {
+		t.Errorf("MountsRoot should be empty by default, got %q", cfg.MountsRoot)
+	}
+}
+
+// TestPlanWalksUpFromSubdir pins CFG-04 invariant via the Plan Seam: a
+// project .toolbox.yaml at the workspace root is found from a deep subdir.
+// Source: 08-RESEARCH §Code Examples §Example 3.
+func TestPlanWalksUpFromSubdir(t *testing.T) {
+	workspace := t.TempDir()
+	mountsRoot := filepath.Join(workspace, "mounts")
+	yaml := "mounts_root: " + mountsRoot + "\n"
+	if err := os.WriteFile(filepath.Join(workspace, ".toolbox.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	nested := filepath.Join(workspace, "deep", "nested", "subdir")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	emptyHome := t.TempDir()
+	t.Setenv("HOME", emptyHome)
+
+	cfg, err := Plan(nested, "")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if cfg.MountsRoot != mountsRoot {
+		t.Errorf("walk-up did not find workspace .toolbox.yaml: got %q, want %q", cfg.MountsRoot, mountsRoot)
+	}
+}
+
+// TestPlanExplicitOverrideShortCircuits pins CFG-04 invariant 4: --config
+// short-circuits both global and project file reads. Source: 08-RESEARCH
+// §Code Examples §Example 3.
+func TestPlanExplicitOverrideShortCircuits(t *testing.T) {
+	dir := t.TempDir()
+	explicit := filepath.Join(dir, "custom.yaml")
+	if err := os.WriteFile(explicit, []byte("tools:\n  gcloud: false\n"), 0o600); err != nil {
+		t.Fatalf("write explicit: %v", err)
+	}
+	// Global at HOME and a project file at CWD that should both be ignored.
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("shell: bash\n"), 0o600); err != nil {
+		t.Fatalf("write home: %v", err)
+	}
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, ".toolbox.yaml"), []byte("mounts_root: /should-not-load\n"), 0o600); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	cfg, err := Plan(cwd, explicit)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if cfg.Tools["gcloud"] {
+		t.Error("gcloud should be false from --config")
+	}
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (global must NOT be read when --config set)", cfg.Shell)
+	}
+	if cfg.MountsRoot != "" {
+		t.Errorf("MountsRoot = %q, want \"\" (project must NOT be read when --config set)", cfg.MountsRoot)
+	}
+}
+
+// TestPlanRejectsInvalidShell asserts ValidateShell runs inside Plan's tail
+// (CFG-05). Migrated semantically from internal/config/config_shell_test.go::
+// TestLoadShellInvalid; that test stays in place targeting the deprecated
+// Load() wrapper (Plan 05).
+func TestPlanRejectsInvalidShell(t *testing.T) {
+	dir := t.TempDir()
+	explicit := filepath.Join(dir, "bad-shell.yaml")
+	if err := os.WriteFile(explicit, []byte("shell: fish\n"), 0o600); err != nil {
+		t.Fatalf("write explicit: %v", err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := Plan(dir, explicit)
+	if err == nil {
+		t.Fatal("Plan should reject shell: fish")
+	}
+	if !strings.Contains(err.Error(), "fish") {
+		t.Errorf("error should mention the rejected shell value, got: %v", err)
+	}
+}
+
+// TestPlanRejectsRelativeMountsRoot asserts ValidateMountsRoot runs inside
+// Plan's tail (CFG-05).
+func TestPlanRejectsRelativeMountsRoot(t *testing.T) {
+	dir := t.TempDir()
+	explicit := filepath.Join(dir, "bad-mounts.yaml")
+	if err := os.WriteFile(explicit, []byte("mounts_root: ./relative\n"), 0o600); err != nil {
+		t.Fatalf("write explicit: %v", err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := Plan(dir, explicit)
+	if err == nil {
+		t.Fatal("Plan should reject relative mounts_root")
+	}
+	if !strings.Contains(err.Error(), "mounts_root") {
+		t.Errorf("error should mention mounts_root, got: %v", err)
+	}
 }

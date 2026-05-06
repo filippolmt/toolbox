@@ -9,7 +9,6 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,10 +30,41 @@ import (
 // how to surface failure. Plan owns walk-up + file IO; Merge (the pure-
 // inspection sibling) owns the byte-level merge mechanics.
 func Plan(searchFrom string, explicitOverride string) (*Config, error) {
-	if explicitOverride == "" {
-		_ = walkUp(searchFrom) // wired in Plan 02 — full body
+	var globalBytes, projectBytes, explicitBytes []byte
+
+	if explicitOverride != "" {
+		b, err := os.ReadFile(explicitOverride)
+		if err != nil {
+			return nil, fmt.Errorf("read --config %q: %w", explicitOverride, err)
+		}
+		explicitBytes = b
+	} else {
+		// Global ~/.toolbox.yaml — optional. Missing file is non-fatal
+		// (Pitfall 5 + cmd/root.go pre-Plan-08 line 91).
+		if home, herr := os.UserHomeDir(); herr == nil && home != "" {
+			globalPath := filepath.Join(home, ".toolbox.yaml")
+			b, rerr := os.ReadFile(globalPath)
+			switch {
+			case rerr == nil:
+				globalBytes = b
+			case os.IsNotExist(rerr):
+				// OK — global is optional.
+			default:
+				return nil, fmt.Errorf("read global config %q: %w", globalPath, rerr)
+			}
+		}
+
+		// Project .toolbox.yaml via walk-up — optional.
+		if path := walkUp(searchFrom); path != "" {
+			b, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil, fmt.Errorf("read project config %q: %w", path, rerr)
+			}
+			projectBytes = b
+		}
 	}
-	return nil, errors.New("config.Plan: not yet implemented")
+
+	return Merge(globalBytes, projectBytes, explicitBytes)
 }
 
 // Merge layers global / project / explicit YAML byte buffers (any of which may
