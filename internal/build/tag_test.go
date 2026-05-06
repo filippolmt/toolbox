@@ -1,6 +1,8 @@
 package build
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -172,5 +174,73 @@ func TestComputeImageHashChangesOnAssetAdd(t *testing.T) {
 	hAfter, _ := computeImageHashFromFS(after, "a", "v1.0.0", tools)
 	if hBefore == hAfter {
 		t.Errorf("adding a new asset must change the hash, got %q for both", hBefore)
+	}
+}
+
+// TestComputeImageHashPinnedDigest pins the canonical encoding (CAT-05, D-12).
+// Any future change to internal/catalog.WriteCanonical's byte format, the
+// catalog's Entry list, or the asset-section hash logic will trip this test.
+// When the encoding intentionally changes, update the literal AFTER confirming
+// the new digest is reproducible across two `make go-test` runs.
+func TestComputeImageHashPinnedDigest(t *testing.T) {
+	assets := fstest.MapFS{
+		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM scratch\n")},
+		"a/entrypoint": &fstest.MapFile{Data: []byte("#!/bin/sh\nexec \"$@\"\n")},
+	}
+	// Use a fixed tools subset (NOT catalog.Defaults() — that would re-couple the
+	// pin to the catalog table size; this fixture is decoupled).
+	tools := map[string]bool{
+		"azure": true,
+		"go":    false,
+		"rtk":   true,
+	}
+	got, err := computeImageHashFromFS(assets, "a", "v1.2.3-pin", tools)
+	if err != nil {
+		t.Fatalf("computeImageHashFromFS: %v", err)
+	}
+	const want = "a94fa8dacf9e"
+	if got != want {
+		t.Errorf("pinned digest changed: got %q, want %q\n"+
+			"If this is intentional (catalog encoding changed), update `want` "+
+			"to %q after confirming reproducibility.", got, want, got)
+	}
+}
+
+// TestComputeImageHashUsesCatalogCanonicalEncoder verifies that the build-layer
+// hash function delegates the tools-section encoding to internal/catalog.
+// The D-10 invariant — populating Description / InitScript / SmokeTest must
+// not shift the canonical bytes — is enforced at the catalog layer by
+// TestCanonicalEncodingIsNeutralToOptionalFieldPopulation (in
+// internal/catalog/catalog_test.go). This test is the wiring assertion that
+// ensures computeImageHashFromFS consumes that encoder, so the catalog-layer
+// guarantee transitively applies to every user's `toolbox:local-<hash>`.
+//
+// If a future contributor inlines the tools-section encoding (skipping
+// catalog.WriteCanonical), this test fails and the D-10 chain breaks.
+func TestComputeImageHashUsesCatalogCanonicalEncoder(t *testing.T) {
+	src, err := os.ReadFile("tag.go")
+	if err != nil {
+		t.Fatalf("read tag.go: %v", err)
+	}
+	// Locate the computeImageHashFromFS function body.
+	const fnSig = "func computeImageHashFromFS("
+	start := bytes.Index(src, []byte(fnSig))
+	if start < 0 {
+		t.Fatalf("computeImageHashFromFS not found in tag.go")
+	}
+	// Extract from the function start to the next top-level `func ` keyword
+	// (or to EOF if it's the last function in the file).
+	rest := src[start:]
+	nextFn := bytes.Index(rest[len(fnSig):], []byte("\nfunc "))
+	var body []byte
+	if nextFn < 0 {
+		body = rest
+	} else {
+		body = rest[:len(fnSig)+nextFn]
+	}
+	if !bytes.Contains(body, []byte("catalog.WriteCanonical")) {
+		t.Errorf("computeImageHashFromFS does not call catalog.WriteCanonical "+
+			"(or catalog.WriteCanonicalEntries); D-10 chain is broken.\n"+
+			"Function body:\n%s", body)
 	}
 }
