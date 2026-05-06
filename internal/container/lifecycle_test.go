@@ -34,7 +34,7 @@ type mockClient struct {
 	client.APIClient
 
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
-	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
+	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, name string) (container.CreateResponse, error)
 	startFn       func(ctx context.Context, id string, opts container.StartOptions) error
 	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
 	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
@@ -53,7 +53,7 @@ func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container
 
 func (m *mockClient) ContainerCreate(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, name string) (container.CreateResponse, error) {
 	if m.createFn != nil {
-		return m.createFn(ctx, cfg, hostCfg)
+		return m.createFn(ctx, cfg, hostCfg, name)
 	}
 	return container.CreateResponse{}, fmt.Errorf("ContainerCreate not mocked")
 }
@@ -275,7 +275,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			createCalled = true
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
@@ -340,7 +340,7 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedSecurityOpt = hostCfg.SecurityOpt
 			return container.CreateResponse{ID: "new123"}, nil
 		},
@@ -375,7 +375,7 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedSecurityOpt = hostCfg.SecurityOpt
 			return container.CreateResponse{ID: "new123"}, nil
 		},
@@ -410,7 +410,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
@@ -453,7 +453,7 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
@@ -529,7 +529,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 	}
@@ -561,7 +561,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
 			return nil, errors.New("offline")
 		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 	}
@@ -692,7 +692,7 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedEnv = cfg.Env
 			return container.CreateResponse{ID: "new123"}, nil
 		},

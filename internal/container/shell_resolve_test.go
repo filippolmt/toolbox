@@ -94,7 +94,7 @@ func TestShellEarlyExitOnShellMismatch(t *testing.T) {
 			inspectCalls++
 			return container.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			createCalls++
 			return container.CreateResponse{}, nil
 		},
@@ -159,7 +159,7 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 				imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
 					return nil, errors.New("offline — use local image")
 				},
-				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 					capturedCmd = cfg.Cmd
 					return container.CreateResponse{ID: "new"}, nil
 				},

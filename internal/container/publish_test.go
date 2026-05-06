@@ -176,7 +176,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedCfg = cfg
 			capturedHost = hostCfg
 			return container.CreateResponse{ID: "new123"}, nil
