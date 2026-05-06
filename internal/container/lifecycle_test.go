@@ -143,51 +143,141 @@ func stubExecShell() (called *bool, restore func()) {
 
 // --- Tests ---
 
-func TestContainerNameForStableAndUnique(t *testing.T) {
-	a := containerNameFor("/Users/alice/project/toolbox")
-	b := containerNameFor("/Users/alice/project/toolbox")
-	if a != b {
-		t.Fatalf("containerNameFor should be deterministic: %q vs %q", a, b)
+// TestShellContainerNaming exercises the container-naming behaviour through
+// the public Shell seam: each subtest invokes Shell with a workspace path and
+// asserts on the `name` argument captured from ContainerCreate. Replaces the
+// three former TestContainerNameFor* unit tests (D-01 / D-02): behaviour is
+// observed only through Shell, never by calling containerNameFor directly.
+func TestShellContainerNaming(t *testing.T) {
+	// Sandbox HOME so any filesystem touch by mountplan.Plan lands in tmp,
+	// not the real ~/.toolbox/. Mirrors internal/mountplan/plan_test.go.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cases := []struct {
+		name       string
+		workspace  string
+		assertName func(t *testing.T, got string)
+	}{
+		{
+			name:      "stable and unique with deterministic hash",
+			workspace: "/Users/alice/project/toolbox",
+			assertName: func(t *testing.T, got string) {
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("name should start with toolbox- prefix, got %q", got)
+				}
+				if !strings.Contains(got, "-toolbox-") {
+					t.Errorf("name should embed basename, got %q", got)
+				}
+			},
+		},
+		{
+			name:      "different absolute path with same basename produces different name",
+			workspace: "/Users/bob/project/toolbox",
+			assertName: func(t *testing.T, got string) {
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing: %q", got)
+				}
+			},
+		},
+		{
+			name:      "sanitises basename of paths with spaces and punctuation",
+			workspace: "/tmp/My Weird Dir!",
+			assertName: func(t *testing.T, got string) {
+				if strings.ContainsAny(got, " !") {
+					t.Errorf("name must not contain spaces or special chars: %q", got)
+				}
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing: %q", got)
+				}
+			},
+		},
+		{
+			name:      "respects 63-char Docker name cap by truncating basename only",
+			workspace: "/tmp/" + strings.Repeat("a", 200),
+			assertName: func(t *testing.T, got string) {
+				if len(got) > 63 {
+					t.Errorf("name length %d exceeds 63-char cap: %q", len(got), got)
+				}
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing after truncation: %q", got)
+				}
+				// Hash suffix must still be 8 hex chars after the final '-'.
+				parts := strings.Split(got, "-")
+				hash := parts[len(parts)-1]
+				if len(hash) != 8 {
+					t.Errorf("hash suffix length = %d, want 8: %q", len(hash), got)
+				}
+			},
+		},
 	}
 
-	c := containerNameFor("/Users/bob/project/toolbox")
-	if a == c {
-		t.Fatalf("paths with same basename must produce different names: both %q", a)
+	// Capture each subtest's resolved name so we can also assert
+	// uniqueness across two cases sharing a basename and determinism
+	// across a re-run on the same workspace.
+	var firstAlice, firstBob string
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			var capturedName string
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+					capturedName = name
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+
+			if err := Shell(context.Background(), mock, testConfig(), tc.workspace, nil); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			tc.assertName(t, capturedName)
+
+			// Cross-case determinism + uniqueness checks.
+			switch tc.workspace {
+			case "/Users/alice/project/toolbox":
+				firstAlice = capturedName
+			case "/Users/bob/project/toolbox":
+				firstBob = capturedName
+				if firstAlice != "" && firstBob == firstAlice {
+					t.Errorf("paths with same basename must produce different names: alice=%q bob=%q", firstAlice, firstBob)
+				}
+			}
+		})
 	}
 
-	if !strings.HasPrefix(a, "toolbox-") {
-		t.Fatalf("name should start with toolbox- prefix, got %q", a)
-	}
-	if !strings.Contains(a, "-toolbox-") {
-		t.Fatalf("name should embed basename, got %q", a)
-	}
-}
-
-func TestContainerNameForSanitizesBasename(t *testing.T) {
-	name := containerNameFor("/tmp/My Weird Dir!")
-	if strings.ContainsAny(name, " !") {
-		t.Fatalf("name must not contain spaces or special chars: %q", name)
-	}
-}
-
-// TestContainerNameForRespects63CharLimit: Docker's conventional name limit is
-// 63 chars. A workspace basename longer than ~46 chars would overflow — the
-// helper must truncate the basename so the stable prefix and hash suffix
-// survive intact.
-func TestContainerNameForRespects63CharLimit(t *testing.T) {
-	long := "/tmp/" + strings.Repeat("a", 200)
-	name := containerNameFor(long)
-	if len(name) > 63 {
-		t.Errorf("name length %d exceeds 63-char cap: %q", len(name), name)
-	}
-	if !strings.HasPrefix(name, "toolbox-") {
-		t.Errorf("name must still start with toolbox- after truncation, got %q", name)
-	}
-	// The hash suffix must still be 8 hex chars appended after the last '-'.
-	parts := strings.Split(name, "-")
-	hash := parts[len(parts)-1]
-	if len(hash) != 8 {
-		t.Errorf("hash suffix length = %d, want 8 — truncation should only trim basename: %q", len(hash), name)
+	// Determinism: re-running Shell on alice's path must yield the same name.
+	if firstAlice != "" {
+		_, restore := stubExecShell()
+		defer restore()
+		var second string
+		mock := &mockClient{
+			inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+				return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			},
+			imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+				return image.InspectResponse{}, nil
+			},
+			createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+				second = name
+				return container.CreateResponse{ID: "x"}, nil
+			},
+		}
+		if err := Shell(context.Background(), mock, testConfig(), "/Users/alice/project/toolbox", nil); err != nil {
+			t.Fatalf("Shell() error on rerun: %v", err)
+		}
+		if second != firstAlice {
+			t.Errorf("containerNameFor not deterministic via Shell: first=%q second=%q", firstAlice, second)
+		}
 	}
 }
 
