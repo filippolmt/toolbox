@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 var cfgFile string
@@ -150,8 +150,8 @@ func findProjectConfig(start string) string {
 func setDefaults() {
 	// Every opt-out tool is on by default. Tool selection is applied at
 	// build time via `ARG INSTALL_<TOOL>` in internal/build/assets/Dockerfile.
-	// Derived from config.KnownTools so the two lists can't drift.
-	for _, k := range config.KnownTools {
+	// Derived from catalog.Keys() so the two lists can't drift.
+	for _, k := range catalog.Keys() {
 		viper.SetDefault("tools."+k, true)
 	}
 }

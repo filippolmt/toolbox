@@ -25,7 +25,7 @@ const DefaultRegistryImage = "ghcr.io/filippolmt/toolbox:latest"
 // build context, and the opt-out selection; the caller should build it locally
 // if it is not already present.
 func ResolveImage(cfg *config.Config, cliVersion string) (ref string, isLocal bool) {
-	if config.IsDefaultTools(cfg.Tools) {
+	if catalog.IsDefault(cfg.Tools) {
 		return DefaultRegistryImage, false
 	}
 	h, err := computeImageHash(cliVersion, cfg.Tools)
