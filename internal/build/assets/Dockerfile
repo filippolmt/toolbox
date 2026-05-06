@@ -171,6 +171,16 @@ ARG INSTALL_COMPOSE=true
 ARG INSTALL_ZSH=true
 ARG INSTALL_BAT=true
 ARG INSTALL_PYRIGHT=true
+# INSTALL_RTK is ALSO declared in the rtk-builder stage above (~line 38),
+# but Dockerfile ARGs are stage-scoped — the main stage needs its own
+# declaration so the conditional `if [ "${INSTALL_RTK}" != "true" ]`
+# branches (Layer 13c rtk install, plus the COPY-from-rtk-builder logic)
+# resolve to a real value at build time. Removing this line silently
+# disables rtk in default builds — the CAT-04 bijection test does not
+# catch it because it uses set semantics over the entire file (line 38
+# alone satisfies "INSTALL_RTK appears in Dockerfile") even though Docker
+# itself sees two distinct stage-scoped ARGs.
+ARG INSTALL_RTK=true
 
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # These are transitive deps of almost every other tool (TLS, git clone, Python
