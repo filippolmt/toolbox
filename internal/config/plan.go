@@ -46,10 +46,28 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 // first match's absolute path. Search stops at the user's HOME directory (so
 // the global ~/.toolbox.yaml is not re-read as a project file) and at the
 // filesystem root. Returns "" when no project config is found.
+//
+// HOME-resolution failures are swallowed deliberately (Pitfall 5 in
+// 08-RESEARCH.md): a misconfigured HOME must not prevent walk-up from
+// reaching the filesystem root. The home == "" short-circuit at the top of
+// the loop becomes a no-op in that case.
 func walkUp(start string) string {
-	_ = filepath.Clean(start)
-	_ = os.Stat
-	return ""
+	home, _ := os.UserHomeDir()
+	cur := filepath.Clean(start)
+	for {
+		if home != "" && cur == home {
+			return ""
+		}
+		candidate := filepath.Join(cur, ".toolbox.yaml")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ""
+		}
+		cur = parent
+	}
 }
 
 // =============================================================================
