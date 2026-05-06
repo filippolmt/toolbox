@@ -144,13 +144,13 @@ func stubExecShell() (called *bool, restore func()) {
 // --- Tests ---
 
 func TestContainerNameForStableAndUnique(t *testing.T) {
-	a := ContainerNameFor("/Users/alice/project/toolbox")
-	b := ContainerNameFor("/Users/alice/project/toolbox")
+	a := containerNameFor("/Users/alice/project/toolbox")
+	b := containerNameFor("/Users/alice/project/toolbox")
 	if a != b {
-		t.Fatalf("ContainerNameFor should be deterministic: %q vs %q", a, b)
+		t.Fatalf("containerNameFor should be deterministic: %q vs %q", a, b)
 	}
 
-	c := ContainerNameFor("/Users/bob/project/toolbox")
+	c := containerNameFor("/Users/bob/project/toolbox")
 	if a == c {
 		t.Fatalf("paths with same basename must produce different names: both %q", a)
 	}
@@ -164,7 +164,7 @@ func TestContainerNameForStableAndUnique(t *testing.T) {
 }
 
 func TestContainerNameForSanitizesBasename(t *testing.T) {
-	name := ContainerNameFor("/tmp/My Weird Dir!")
+	name := containerNameFor("/tmp/My Weird Dir!")
 	if strings.ContainsAny(name, " !") {
 		t.Fatalf("name must not contain spaces or special chars: %q", name)
 	}
@@ -176,7 +176,7 @@ func TestContainerNameForSanitizesBasename(t *testing.T) {
 // survive intact.
 func TestContainerNameForRespects63CharLimit(t *testing.T) {
 	long := "/tmp/" + strings.Repeat("a", 200)
-	name := ContainerNameFor(long)
+	name := containerNameFor(long)
 	if len(name) > 63 {
 		t.Errorf("name length %d exceeds 63-char cap: %q", len(name), name)
 	}
@@ -196,7 +196,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	want := ContainerNameFor(ws)
+	want := containerNameFor(ws)
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
@@ -261,7 +261,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	wantName := ContainerNameFor(ws)
+	wantName := containerNameFor(ws)
 
 	createCalled := false
 	startCalled := false
