@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
-	"strconv"
 
+	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
@@ -44,8 +44,8 @@ func ResolveImage(cfg *config.Config, cliVersion string) (ref string, isLocal bo
 // their config (it has no effect vs. omitting the key).
 func BuildArgsFromTools(tools map[string]bool) map[string]*string {
 	out := map[string]*string{}
-	for _, k := range config.KnownTools {
-		enabled, ok := tools[k]
+	for _, e := range catalog.Entries {
+		enabled, ok := tools[e.Key]
 		if !ok {
 			// Missing key means default-true.
 			continue
@@ -53,12 +53,8 @@ func BuildArgsFromTools(tools map[string]bool) map[string]*string {
 		if enabled {
 			continue
 		}
-		arg, ok := config.ToolBuildArg[k]
-		if !ok {
-			continue
-		}
 		v := "false"
-		out[arg] = &v
+		out[e.BuildArg] = &v
 	}
 	return out
 }
@@ -100,14 +96,14 @@ func computeImageHashFromFS(assets fs.FS, dir, cliVersion string, tools map[stri
 		_, _ = h.Write([]byte("\n"))
 	}
 
-	// Tools map — sorted by key for determinism.
-	keys := make([]string, 0, len(tools))
-	for k := range tools {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		_, _ = fmt.Fprintf(h, "tool:%s=%s\n", k, strconv.FormatBool(tools[k]))
+	// Tools section — encoded by the Tool Catalog's canonical encoder (D-09, CAT-05).
+	// Optional Entry fields (Description, InitScript, SmokeTest) are EXCLUDED from
+	// the encoding (D-10) so Phase 10 populating them is hash-neutral for users.
+	// The structural guarantee for D-10 lives at the catalog layer
+	// (TestCanonicalEncodingIsNeutralToOptionalFieldPopulation in
+	// internal/catalog/catalog_test.go); this site only needs to delegate.
+	if err := catalog.WriteCanonical(h, tools); err != nil {
+		return "", err
 	}
 
 	sum := h.Sum(nil)
