@@ -337,29 +337,36 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 
-	// Docker SDK guarantees inspect.State is non-nil on success, but mocks
-	// and unexpected daemon edge cases could violate that — treat a nil
-	// State as "not running" instead of panicking on the dereference.
-	running := inspectErr == nil && inspect.State != nil && inspect.State.Running
+	// inspect.State, inspect.ID, and friends are promoted fields through the
+	// embedded *ContainerJSONBase pointer, so a nil ContainerJSONBase panics
+	// before any `!= nil` check on the inner field ever runs. Guard the
+	// embedded pointer first. Daemon protocol and the happy-path SDK contract
+	// make ContainerJSONBase non-nil on success, but mocks, future SDK shape
+	// changes, and unexpected daemon edge cases can violate that. A nil base
+	// means we have no usable container record (no ID to start, no State to
+	// inspect) — treat it as the not-found path so Shell creates a fresh
+	// container instead of dereferencing a nil pointer.
+	hasInspectData := inspectErr == nil && inspect.ContainerJSONBase != nil
+	running := hasInspectData && inspect.State != nil && inspect.State.Running
 
-	if inspectErr == nil && len(bindings) > 0 {
+	if hasInspectData && len(bindings) > 0 {
 		warnMissingPublish(inspect, bindings)
 	}
 
 	var containerID string
 	switch {
-	case inspectErr == nil && running:
+	case hasInspectData && running:
 		ui.Info("Connecting to running container " + name + "...")
 		containerID = inspect.ID
 
-	case inspectErr == nil && !running:
+	case hasInspectData && !running:
 		ui.Info("Starting stopped container " + name + "...")
 		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
 			return fmt.Errorf("failed to start container: %w", startErr)
 		}
 		containerID = inspect.ID
 
-	case cerrdefs.IsNotFound(inspectErr):
+	case inspectErr == nil || cerrdefs.IsNotFound(inspectErr):
 		if ensureErr := ensureImage(ctx, cli, cfg, ref, isLocal); ensureErr != nil {
 			return ensureErr
 		}
