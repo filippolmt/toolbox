@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
-	"github.com/filippolmt/toolbox/internal/config"
 )
 
 // TestCatalogShape asserts every Entry has non-empty Key + BuildArg and
@@ -39,43 +38,6 @@ func TestCatalogAlphabeticalByKey(t *testing.T) {
 	sort.Strings(sorted)
 	if !reflect.DeepEqual(keys, sorted) {
 		t.Errorf("catalog.Entries must be alphabetical by Key:\n  got: %v\n want: %v", keys, sorted)
-	}
-}
-
-// TestCatalogContainsLegacyKnownTools is the bridging invariant during the
-// Phase 07 migration: the catalog Entry-key set must equal the legacy
-// config.KnownTools set exactly. REMOVED in Plan 07-03 BEFORE the legacy
-// literals are deleted, to keep every intermediate commit compiling.
-func TestCatalogContainsLegacyKnownTools(t *testing.T) {
-	catKeys := map[string]struct{}{}
-	for _, e := range catalog.Entries {
-		catKeys[e.Key] = struct{}{}
-	}
-	for _, k := range config.KnownTools {
-		if _, ok := catKeys[k]; !ok {
-			t.Errorf("catalog missing legacy KnownTools entry %q", k)
-		}
-	}
-	if len(catKeys) != len(config.KnownTools) {
-		t.Errorf("catalog has %d entries, legacy KnownTools has %d — sets must match exactly",
-			len(catKeys), len(config.KnownTools))
-	}
-}
-
-// TestCatalogBuildArgMatchesLegacyMap is the second bridging invariant:
-// every Entry.BuildArg matches the legacy config.ToolBuildArg map. REMOVED
-// in Plan 07-03 alongside TestCatalogContainsLegacyKnownTools.
-func TestCatalogBuildArgMatchesLegacyMap(t *testing.T) {
-	for _, e := range catalog.Entries {
-		want, ok := config.ToolBuildArg[e.Key]
-		if !ok {
-			t.Errorf("catalog entry %q has no legacy ToolBuildArg mapping", e.Key)
-			continue
-		}
-		if e.BuildArg != want {
-			t.Errorf("catalog entry %q BuildArg=%q, legacy ToolBuildArg[%q]=%q",
-				e.Key, e.BuildArg, e.Key, want)
-		}
 	}
 }
 
