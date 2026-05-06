@@ -1042,6 +1042,76 @@ func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
 	}
 }
 
+// TestShellInspectNilContainerJSONBase pins the IN-03 / CONT-05 regression:
+// when ContainerInspect returns an InspectResponse whose embedded
+// *ContainerJSONBase is nil (e.g. a future SDK shape change, a misbehaving
+// daemon, or a hand-rolled mock returning the zero value), Shell must not
+// panic on the promoted-field access. inspect.State is a promoted field
+// through the embedded pointer, but so are inspect.ID, inspect.HostConfig,
+// inspect.ExecIDs, etc. Guarding only the running derivation leaves
+// inspect.ID accesses on the start-by-ID branch unprotected. The fix lifts
+// the nil-base check into a single hasInspectData boolean that gates every
+// promoted-field access; a nil base falls through to the create-fresh
+// branch (logically: "no usable container record, must create"). The test
+// asserts: (a) Shell does not panic, (b) the running derivation evaluates
+// to false, (c) warnMissingPublish does not emit a "publish mismatch"
+// warning even when the user passed --publish, (d) Shell falls through to
+// ContainerCreate (no usable inspect data ⇒ create from scratch).
+func TestShellInspectNilContainerJSONBase(t *testing.T) {
+	// Stub the real exec — no Docker attach during the test.
+	_, restore := stubExecShell()
+	defer restore()
+
+	// Sandbox HOME so mountplan.Plan's filesystem touches (~/.toolbox/...)
+	// land in tmp. Mirrors TestShellContainerNaming.
+	t.Setenv("HOME", t.TempDir())
+
+	ws := testWorkspace(t)
+
+	createCalled := false
+	startCalled := false
+	mock := &mockClient{
+		// Zero-value InspectResponse — embedded *ContainerJSONBase is naturally nil.
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			createCalled = true
+			return container.CreateResponse{ID: "fresh"}, nil
+		},
+		startFn: func(_ context.Context, _ string, _ container.StartOptions) error {
+			startCalled = true
+			return nil
+		},
+	}
+
+	// Non-empty publish bindings — exercises both the nil-base running
+	// derivation and the warnMissingPublish call path on the nil-base path.
+	publish := []string{"127.0.0.1:8080:8080"}
+
+	captured := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, testConfig(), ws, publish); err != nil {
+			t.Fatalf("Shell returned error: %v", err)
+		}
+	})
+
+	if !createCalled {
+		t.Fatalf("expected Shell to fall through to ContainerCreate when inspect data is unusable (nil ContainerJSONBase)")
+	}
+	if !startCalled {
+		t.Fatalf("expected Shell to call ContainerStart on the freshly created container")
+	}
+	// Use Contains against the publish-mismatch substring — captureStderr
+	// can also pick up unrelated warnings (mount-skipped, etc.), matching
+	// TestShellPublishMismatchWarning's pattern.
+	if strings.Contains(captured, "publish mismatch") {
+		t.Fatalf("expected no publish-mismatch warning on nil-base path, got stderr: %q", captured)
+	}
+}
+
 // TestShellPublishMismatchWarning exercises the wanted-vs-actual mismatch
 // warning emitted by warnMissingPublish when --publish is passed against an
 // already-running container whose PortBindings were fixed at create time.
