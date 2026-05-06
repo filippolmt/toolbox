@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -875,5 +877,242 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 	}
 	if !stopCalled {
 		t.Fatal("ContainerStop should be called when no sibling exec is running")
+	}
+}
+
+// captureStderr swaps os.Stderr for a pipe during fn() and returns whatever
+// was written there. Used by TestShellPublishMismatchWarning to observe the
+// warning emitted via ui.Warning without intercepting the function itself
+// (D-02: behaviour observed only through the public Shell seam).
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stderr = orig
+	return <-done
+}
+
+// TestShellPublishPopulatesBindings verifies the happy path: --publish values
+// end up as both ExposedPorts on the container config and PortBindings on the
+// host config when a new container is created. Table-driven absorption of the
+// former TestParsePublishSpecs happy-path cases (D-01).
+func TestShellPublishPopulatesBindings(t *testing.T) {
+	cases := []struct {
+		name     string
+		specs    []string
+		wantPort string
+		wantHost string
+		wantHP   string // "" if no specific host port asserted
+	}{
+		{name: "port only defaults to localhost", specs: []string{"7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1"},
+		{name: "host:container defaults to localhost", specs: []string{"7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "explicit host IP preserved", specs: []string{"0.0.0.0:7171:7171"}, wantPort: "7171/tcp", wantHost: "0.0.0.0", wantHP: "7171"},
+		{name: "explicit loopback preserved", specs: []string{"127.0.0.1:7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "udp proto", specs: []string{"7171:7171/udp"}, wantPort: "7171/udp", wantHost: "127.0.0.1", wantHP: "7171"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			var capturedCfg *container.Config
+			var capturedHost *container.HostConfig
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCfg = cfg
+					capturedHost = hostCfg
+					return container.CreateResponse{ID: "new123"}, nil
+				},
+			}
+
+			if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			if capturedCfg == nil || capturedHost == nil {
+				t.Fatal("ContainerCreate was not invoked")
+			}
+			port := nat.Port(tc.wantPort)
+			if _, ok := capturedCfg.ExposedPorts[port]; !ok {
+				t.Errorf("ExposedPorts missing %q: %v", port, capturedCfg.ExposedPorts)
+			}
+			binds := capturedHost.PortBindings[port]
+			if len(binds) != 1 {
+				t.Fatalf("want 1 host binding, got %d", len(binds))
+			}
+			if binds[0].HostIP != tc.wantHost {
+				t.Errorf("HostIP = %q, want %q", binds[0].HostIP, tc.wantHost)
+			}
+			if tc.wantHP != "" && binds[0].HostPort != tc.wantHP {
+				t.Errorf("HostPort = %q, want %q", binds[0].HostPort, tc.wantHP)
+			}
+		})
+	}
+}
+
+// TestShellPublishInvalidSpecFailsFast verifies bad publish specs are rejected
+// BEFORE any Docker call — a typo on the flag should not create / start /
+// inspect anything. Table-driven absorption of the former TestParsePublishSpecs
+// error cases plus the original "empty input → no error, no inspect" case
+// (D-01).
+func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
+	cases := []struct {
+		name       string
+		specs      []string
+		wantErr    bool
+		wantErrSub string
+	}{
+		{name: "empty specs no error no inspect", specs: nil, wantErr: false},
+		{name: "garbage spec returns wrapped error", specs: []string{"totally-bogus"}, wantErr: true, wantErrSub: "--publish"},
+		{name: "not-a-port returns wrapped error", specs: []string{"not-a-port"}, wantErr: true, wantErrSub: "--publish"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			inspectCalls := 0
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					inspectCalls++
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+
+			err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantErrSub)
+				}
+				if inspectCalls != 0 {
+					t.Errorf("ContainerInspect must not be called on parse error, got %d calls", inspectCalls)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestShellPublishMismatchWarning exercises the wanted-vs-actual mismatch
+// warning emitted by warnMissingPublish when --publish is passed against an
+// already-running container whose PortBindings were fixed at create time.
+// Table-driven absorption of the former TestFormatPublishMismatch +
+// TestMissingPublishPorts cases (D-01); the warning is observed via stderr
+// capture, never by calling formatPublishMismatch directly (D-02).
+func TestShellPublishMismatchWarning(t *testing.T) {
+	cases := []struct {
+		name          string
+		specs         []string
+		nilHostConfig bool        // simulate a running container with nil HostConfig
+		existingBinds nat.PortMap // existing container's PortBindings (when !nilHostConfig)
+		wantWarnSubs  []string    // substrings expected in the captured warning
+		wantNoWarn    bool        // expect no "publish mismatch" warning
+	}{
+		{
+			name:          "no mismatch when wanted ports already bound",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
+			wantNoWarn:    true,
+		},
+		{
+			name:          "structured message lists wanted, actual, missing",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{"7171/tcp": nil},
+			wantWarnSubs: []string{
+				"wanted [7171/tcp, 8080/tcp]",
+				"container has [7171/tcp]",
+				"missing [8080/tcp]",
+				"toolbox stop",
+			},
+		},
+		{
+			name:          "empty PortBindings reports actual=none",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{},
+			wantWarnSubs:  []string{"container has [none]", "missing"},
+		},
+		{
+			name:          "nil HostConfig produces no warning",
+			specs:         []string{"7171:7171"},
+			nilHostConfig: true,
+			wantNoWarn:    true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					if tc.nilHostConfig {
+						return container.InspectResponse{
+							ContainerJSONBase: &container.ContainerJSONBase{
+								State: &container.State{Running: true},
+							},
+						}, nil
+					}
+					return container.InspectResponse{
+						ContainerJSONBase: &container.ContainerJSONBase{
+							HostConfig: &container.HostConfig{PortBindings: tc.existingBinds},
+							State:      &container.State{Running: true},
+						},
+					}, nil
+				},
+			}
+
+			out := captureStderr(t, func() {
+				if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
+					t.Fatalf("Shell() error: %v", err)
+				}
+			})
+
+			if tc.wantNoWarn {
+				if strings.Contains(out, "publish mismatch") {
+					t.Errorf("expected no publish mismatch warning, got: %s", out)
+				}
+				return
+			}
+			for _, sub := range tc.wantWarnSubs {
+				if !strings.Contains(out, sub) {
+					t.Errorf("warning missing %q\n  full: %s", sub, out)
+				}
+			}
+		})
 	}
 }
