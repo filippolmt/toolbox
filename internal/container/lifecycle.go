@@ -1,3 +1,13 @@
+// Package container owns the toolbox-container lifecycle: ensuring the
+// image, creating/starting/stopping the per-workspace container, and
+// attaching an interactive shell. Public seams: Shell, Stop, StopAll,
+// ResolveShellCmd, NewClient, ShellMismatchError.
+//
+// The orchestration Module lives in lifecycle.go (this file), sectioned
+// into Naming, Workspace Env, Port Bindings, Lifecycle, and Cleanup
+// helpers. The TTY/signal Adapter lives in attach.go and is kept as a
+// separate file because its concern (raw mode, signal forwarding) is
+// independent from Docker SDK orchestration.
 package container
 
 import (
@@ -8,6 +18,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +30,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/go-connections/nat"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
@@ -46,6 +59,157 @@ const stopShellGrace = 2
 // execShellFn attaches an interactive shell to a container.
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
+
+// --- Naming ---
+
+// containerNamePrefix identifies containers managed by toolbox.
+const containerNamePrefix = "toolbox-"
+
+var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// containerNameFor builds the container name for a given workspace path.
+// Format: toolbox-<basename>-<hash8>. The hash is over the absolute path so
+// that two directories sharing the same basename do not collide. Output is
+// capped at 63 characters to respect Docker's conventional name length: the
+// basename is truncated first so the stable prefix and hash suffix survive.
+func containerNameFor(workspace string) string {
+	abs, err := filepath.Abs(workspace)
+	if err != nil {
+		abs = workspace
+	}
+	abs = filepath.Clean(abs)
+
+	sum := sha256.Sum256([]byte(abs))
+	hash := hex.EncodeToString(sum[:])[:8]
+
+	base := strings.ToLower(filepath.Base(abs))
+	base = sanitizeRe.ReplaceAllString(base, "-")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "root"
+	}
+
+	// 63 (Docker convention) - len("toolbox-") - len("-") - 8 (hash) = 46.
+	const maxBasename = 46
+	if len(base) > maxBasename {
+		base = strings.TrimRight(base[:maxBasename], "-")
+		if base == "" {
+			base = "root"
+		}
+	}
+
+	return containerNamePrefix + base + "-" + hash
+}
+
+// --- Workspace Env ---
+
+// shellEnv returns the env vars injected into every shell spawned by the
+// container. TOOLBOX_HOST_WORKSPACE holds the absolute host path mounted at
+// the canonical workspace target so that Makefiles and compose files can
+// pass a host-resolvable path to `docker run -v` under the bind-mounted
+// socket (DooD): a literal "/workspace/foo" is meaningless to the host
+// daemon. PWD is set explicitly to workingDir so that scripts reading $PWD
+// directly (without a getcwd fallback) see the same path bash exposes after
+// starting in WorkingDir.
+//
+// The workspace target itself and the host-path mirror logic live in
+// internal/mountplan; lifecycle.Shell consults mountplan.Plan to learn
+// workingDir and forwards it here.
+func shellEnv(workspace, workingDir string) []string {
+	return []string{
+		"TOOLBOX_HOST_WORKSPACE=" + workspace,
+		"PWD=" + workingDir,
+	}
+}
+
+// --- Port Bindings ---
+
+// parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
+// ExposedPorts + PortBindings. Defaults the host IP to 127.0.0.1 (not 0.0.0.0)
+// so OAuth callbacks stay loopback-only instead of being exposed to the LAN.
+func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
+	if len(specs) == 0 {
+		return nil, nil, nil
+	}
+	exposed := nat.PortSet{}
+	bindings := nat.PortMap{}
+	for _, spec := range specs {
+		mappings, err := nat.ParsePortSpec(spec)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
+		}
+		for _, m := range mappings {
+			exposed[m.Port] = struct{}{}
+			b := m.Binding
+			if b.HostIP == "" {
+				b.HostIP = "127.0.0.1"
+			}
+			bindings[m.Port] = append(bindings[m.Port], b)
+		}
+	}
+	return exposed, bindings, nil
+}
+
+// missingPublishPorts returns the wanted ports that the existing container was
+// not created with. PortBindings are fixed at create time, so "--publish" on a
+// reused container is a silent no-op for any port not in this list.
+func missingPublishPorts(inspect container.InspectResponse, wanted nat.PortMap) []string {
+	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
+		return nil
+	}
+	current := inspect.HostConfig.PortBindings
+	var missing []string
+	for port := range wanted {
+		if _, ok := current[port]; !ok {
+			missing = append(missing, string(port))
+		}
+	}
+	return missing
+}
+
+func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
+	if msg := formatPublishMismatch(inspect, wanted); msg != "" {
+		ui.Warning(msg)
+	}
+}
+
+// formatPublishMismatch builds the warning string emitted when a reused
+// container does not have every port the user asked for. Returns "" when
+// every wanted port is already bound on the existing container, signalling
+// the caller to stay quiet. Extracted from warnMissingPublish so tests can
+// pin the message format without intercepting stderr.
+func formatPublishMismatch(inspect container.InspectResponse, wanted nat.PortMap) string {
+	missing := missingPublishPorts(inspect, wanted)
+	if len(missing) == 0 {
+		return ""
+	}
+	sort.Strings(missing)
+
+	wantedPorts := make([]string, 0, len(wanted))
+	for port := range wanted {
+		wantedPorts = append(wantedPorts, string(port))
+	}
+	sort.Strings(wantedPorts)
+
+	actual := []string{}
+	if inspect.HostConfig != nil {
+		for port := range inspect.HostConfig.PortBindings {
+			actual = append(actual, string(port))
+		}
+		sort.Strings(actual)
+	}
+	actualMsg := "none"
+	if len(actual) > 0 {
+		actualMsg = strings.Join(actual, ", ")
+	}
+
+	return fmt.Sprintf(
+		"publish mismatch on existing container: wanted [%s], container has [%s], missing [%s] — run 'toolbox stop' then retry to apply",
+		strings.Join(wantedPorts, ", "), actualMsg, strings.Join(missing, ", "),
+	)
+}
+
+// --- Lifecycle ---
 
 // ShellMismatchError is returned when the requested shell cannot be launched
 // because the corresponding tools entry is disabled. Callers pattern-match
@@ -126,7 +290,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	if abs, absErr := filepath.Abs(workspace); absErr == nil {
 		workspace = filepath.Clean(abs)
 	}
-	name := ContainerNameFor(workspace)
+	name := containerNameFor(workspace)
 
 	exposed, bindings, parseErr := parsePublishSpecs(publish)
 	if parseErr != nil {
@@ -257,6 +421,49 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 
 	return execShellFn(ctx, cli, cfg, containerID)
 }
+
+// Stop stops and removes the toolbox container associated with the workspace.
+func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
+	return stopOne(ctx, cli, containerNameFor(workspace))
+}
+
+// StopAll stops and removes every toolbox-managed container on the host.
+// Matches the "toolbox-" prefix as well as the legacy singleton name "toolbox".
+// Failures on a single container don't short-circuit the rest — partial
+// cleanup beats fail-fast when `--all` is meant to be a bulk sweep.
+func StopAll(ctx context.Context, cli client.APIClient) error {
+	args := filters.NewArgs(filters.Arg("name", "toolbox"))
+	list, err := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	found := 0
+	var errs []error
+	for _, c := range list {
+		if len(c.Names) == 0 {
+			continue
+		}
+		name := strings.TrimPrefix(c.Names[0], "/")
+		if name != "toolbox" && !strings.HasPrefix(name, containerNamePrefix) {
+			continue
+		}
+		if err := stopOne(ctx, cli, name); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		found++
+	}
+	if found == 0 && len(errs) == 0 {
+		ui.Warning("No toolbox containers found")
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+// --- Cleanup helpers ---
 
 // ensureImage guarantees the image referenced by ref exists locally.
 //   - registry tags: a failed pull already logged a warning; error now if the
@@ -414,47 +621,6 @@ func recordPull(ref string) {
 		return
 	}
 	_ = os.WriteFile(path, nil, 0o644)
-}
-
-// Stop stops and removes the toolbox container associated with the workspace.
-func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
-	return stopOne(ctx, cli, ContainerNameFor(workspace))
-}
-
-// StopAll stops and removes every toolbox-managed container on the host.
-// Matches the "toolbox-" prefix as well as the legacy singleton name "toolbox".
-// Failures on a single container don't short-circuit the rest — partial
-// cleanup beats fail-fast when `--all` is meant to be a bulk sweep.
-func StopAll(ctx context.Context, cli client.APIClient) error {
-	args := filters.NewArgs(filters.Arg("name", "toolbox"))
-	list, err := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	found := 0
-	var errs []error
-	for _, c := range list {
-		if len(c.Names) == 0 {
-			continue
-		}
-		name := strings.TrimPrefix(c.Names[0], "/")
-		if name != "toolbox" && !strings.HasPrefix(name, containerNamePrefix) {
-			continue
-		}
-		if err := stopOne(ctx, cli, name); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		found++
-	}
-	if found == 0 && len(errs) == 0 {
-		ui.Warning("No toolbox containers found")
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
 }
 
 func stopOne(ctx context.Context, cli client.APIClient, name string) error {
