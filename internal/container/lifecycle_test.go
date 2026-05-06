@@ -976,12 +976,13 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 // (D-01).
 func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
 	cases := []struct {
-		name       string
-		specs      []string
-		wantErr    bool
-		wantErrSub string
+		name           string
+		specs          []string
+		wantErr        bool
+		wantErrSub     string
+		wantEmptyPorts bool // for the wantErr==false branch: assert no ExposedPorts/PortBindings populated
 	}{
-		{name: "empty specs no error no inspect", specs: nil, wantErr: false},
+		{name: "empty specs yield zero exposed/bindings", specs: nil, wantErr: false, wantEmptyPorts: true},
 		{name: "garbage spec returns wrapped error", specs: []string{"totally-bogus"}, wantErr: true, wantErrSub: "--publish"},
 		{name: "not-a-port returns wrapped error", specs: []string{"not-a-port"}, wantErr: true, wantErrSub: "--publish"},
 	}
@@ -993,6 +994,8 @@ func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
 			defer restore()
 
 			inspectCalls := 0
+			var capturedCfg *container.Config
+			var capturedHost *container.HostConfig
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 					inspectCalls++
@@ -1001,7 +1004,9 @@ func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
 				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 					return image.InspectResponse{}, nil
 				},
-				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCfg = cfg
+					capturedHost = hostCfg
 					return container.CreateResponse{ID: "x"}, nil
 				},
 			}
@@ -1021,6 +1026,17 @@ func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantEmptyPorts {
+				if capturedCfg == nil || capturedHost == nil {
+					t.Fatal("ContainerCreate was not invoked")
+				}
+				if len(capturedCfg.ExposedPorts) != 0 {
+					t.Errorf("ExposedPorts must be empty for nil specs, got %v", capturedCfg.ExposedPorts)
+				}
+				if len(capturedHost.PortBindings) != 0 {
+					t.Errorf("PortBindings must be empty for nil specs, got %v", capturedHost.PortBindings)
+				}
 			}
 		})
 	}
