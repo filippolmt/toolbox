@@ -8,9 +8,15 @@
 package config
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/viper"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // =============================================================================
@@ -35,7 +41,49 @@ func Plan(searchFrom string, explicitOverride string) (*Config, error) {
 // be nil) into a fully-validated *Config. Pure: no filesystem side-effects.
 // Each invocation uses a fresh *viper.Viper so callers see no cross-call state.
 func Merge(global, project, explicit []byte) (*Config, error) {
-	return nil, errors.New("config.Merge: not yet implemented")
+	vp := viper.New()
+	vp.SetConfigType("yaml")
+
+	// Defaults Seeding stage.
+	seedToolDefaults(vp)
+
+	// File Load stage. explicit short-circuits global + project — mirrors
+	// cmd/root.go::initConfig (pre-Plan-08) lines 76-114.
+	if len(explicit) > 0 {
+		if err := vp.MergeConfig(bytes.NewReader(explicit)); err != nil {
+			return nil, fmt.Errorf("parse --config bytes: %w", err)
+		}
+	} else {
+		if len(global) > 0 {
+			if err := vp.MergeConfig(bytes.NewReader(global)); err != nil {
+				return nil, fmt.Errorf("parse global config bytes: %w", err)
+			}
+		}
+		if len(project) > 0 {
+			if err := vp.MergeConfig(bytes.NewReader(project)); err != nil {
+				return nil, fmt.Errorf("parse project config bytes: %w", err)
+			}
+		}
+	}
+
+	// Env-prefix overrides — applied to this instance only (D-09).
+	vp.SetEnvPrefix("TOOLBOX")
+	vp.AutomaticEnv()
+
+	// Unmarshal.
+	cfg := &Config{}
+	if err := vp.Unmarshal(cfg); err != nil {
+		return nil, err
+	}
+
+	// Tool-defaults backstop (Pitfall 1 — Unmarshal misses defaulted map keys).
+	fillToolDefaultsBackstop(cfg)
+
+	// Validation tail.
+	if err := applyValidationTail(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // =============================================================================
@@ -74,22 +122,67 @@ func walkUp(start string) string {
 // Defaults Seeding
 // =============================================================================
 
-// (Plan 02 lands seedToolDefaults here.)
+// seedToolDefaults applies catalog.Keys() to vp as tools.<key>=true.
+// Phase 08 D-10: Plan owns this seeding; cmd/root.go::setDefaults is
+// deleted in Plan 04 alongside initConfig thinning.
+//
+// Pitfall 2 in 08-RESEARCH: dotted-key SetDefault per scalar. Do NOT
+// SetDefault a nested object (breaks MergeConfig).
+//
+// Pitfall 8: mount defaults are NOT seeded here — that responsibility
+// stays inside the mount-plan package. Seeding the mounts slice from
+// here would double-merge against the mount-plan internal defaults,
+// producing duplicate binds.
+func seedToolDefaults(vp *viper.Viper) {
+	for _, k := range catalog.Keys() {
+		vp.SetDefault("tools."+k, true)
+	}
+}
 
 // =============================================================================
 // File Load
 // =============================================================================
 
-// (Plan 02 lands the global / project read helpers here, if extracted.)
+// (Plan 02 keeps the file-read logic inline inside Plan. If a future plan
+// extracts read helpers, they land under this banner.)
 
 // =============================================================================
 // Validation
 // =============================================================================
 
-// (Plan 02 lands the validation tail helper here, if extracted.)
+// applyValidationTail runs ValidateMountsRoot, the shell default
+// fallback, and ValidateShell. Phase 08 D-12: validators run inside the
+// Seam; cmd/* never calls Validate* directly. Migrating Load() in Plan
+// 05 keeps the same call order so the deprecated wrapper preserves
+// today's error surface.
+func applyValidationTail(cfg *Config) error {
+	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
+		return err
+	}
+	if cfg.Shell == "" {
+		cfg.Shell = "zsh"
+	}
+	if err := ValidateShell(cfg.Shell); err != nil {
+		return err
+	}
+	return nil
+}
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
-// (Catch-all for future utilities.)
+// fillToolDefaultsBackstop fills cfg.Tools entries that the YAML did
+// not override. Mirrors Load() lines 144-151 verbatim — Unmarshal does
+// not pull viper's SetDefault entries into a map[string]bool when the
+// YAML omits them.
+func fillToolDefaultsBackstop(cfg *Config) {
+	if cfg.Tools == nil {
+		cfg.Tools = map[string]bool{}
+	}
+	for _, k := range catalog.Keys() {
+		if _, ok := cfg.Tools[k]; !ok {
+			cfg.Tools[k] = true
+		}
+	}
+}
