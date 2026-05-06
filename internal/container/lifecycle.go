@@ -337,10 +337,13 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, name)
 
-	// Docker SDK guarantees inspect.State is non-nil on success, but mocks
-	// and unexpected daemon edge cases could violate that — treat a nil
-	// State as "not running" instead of panicking on the dereference.
-	running := inspectErr == nil && inspect.State != nil && inspect.State.Running
+	// inspect.State is a promoted field through the embedded *ContainerJSONBase
+	// pointer, so a nil ContainerJSONBase panics before the inspect.State != nil
+	// check ever runs. Guard the embedded pointer first. Daemon protocol and the
+	// happy-path SDK contract make ContainerJSONBase non-nil on success, but
+	// mocks, future SDK shape changes, and unexpected daemon edge cases can
+	// violate that — treat a nil base as "no inspect data, not running".
+	running := inspectErr == nil && inspect.ContainerJSONBase != nil && inspect.State != nil && inspect.State.Running
 
 	if inspectErr == nil && len(bindings) > 0 {
 		warnMissingPublish(inspect, bindings)
