@@ -182,6 +182,11 @@ func TestComputeImageHashChangesOnAssetAdd(t *testing.T) {
 // catalog's Entry list, or the asset-section hash logic will trip this test.
 // When the encoding intentionally changes, update the literal AFTER confirming
 // the new digest is reproducible across two `make go-test` runs.
+//
+// The fixture below is a synthetic fstest.MapFS, intentionally decoupled from
+// the real internal/build/assets/Dockerfile so single-line Dockerfile cleanups
+// (e.g. Plan 07-05's ARG INSTALL_RTK dedupe) don't churn this pin. Confirmed
+// reproducible across two `make go-test` runs after Plan 07-05.
 func TestComputeImageHashPinnedDigest(t *testing.T) {
 	assets := fstest.MapFS{
 		"a/Dockerfile": &fstest.MapFile{Data: []byte("FROM scratch\n")},
