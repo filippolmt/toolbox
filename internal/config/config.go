@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // Config is the top-level toolbox configuration.
@@ -142,7 +144,7 @@ func Load() (*Config, error) {
 	if cfg.Tools == nil {
 		cfg.Tools = map[string]bool{}
 	}
-	for _, k := range KnownTools {
+	for _, k := range catalog.Keys() {
 		if _, ok := cfg.Tools[k]; !ok {
 			cfg.Tools[k] = true
 		}
