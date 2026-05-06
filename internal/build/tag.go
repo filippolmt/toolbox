@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strconv"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
@@ -38,22 +39,33 @@ func ResolveImage(cfg *config.Config, cliVersion string) (ref string, isLocal bo
 	return "toolbox:local-" + h, true
 }
 
-// BuildArgsFromTools turns the tools map into Docker build args. Only disabled
-// tools are emitted — enabled tools rely on the Dockerfile's `ARG …=true` defaults,
-// which keeps the tag hash stable when a user explicitly writes `foo: true` in
-// their config (it has no effect vs. omitting the key).
+// BuildArgsFromTools turns the tools map into Docker build args. Only entries
+// whose resolved enabled-bool DIFFERS from their catalog Default are emitted —
+// matches-default entries rely on the Dockerfile's baked-in `ARG INSTALL_X=<default>`,
+// which keeps the local-image hash stable when a user explicitly writes the
+// default value in their config (it has no effect vs. omitting the key).
+//
+// A missing key is treated as the catalog Default (the catalog is the source
+// of truth, so the same rule applies whether a tool is opt-in or opt-out).
+//
+// When the catalog ships an entry with Default:false, the Dockerfile's
+// `ARG INSTALL_X=` directive must match (`=false`) for the no-emit-on-match
+// invariant to hold; the CAT-04 bijection test enforces ARG-name parity but
+// does not assert default-value parity, so add a Dockerfile-side default
+// alignment when introducing any opt-in tool.
 func BuildArgsFromTools(tools map[string]bool) map[string]*string {
 	out := map[string]*string{}
 	for _, e := range catalog.Entries {
-		enabled, ok := tools[e.Key]
+		resolved, ok := tools[e.Key]
 		if !ok {
-			// Missing key means default-true.
+			// Missing key → catalog Default; matches the Dockerfile ARG default.
 			continue
 		}
-		if enabled {
+		if resolved == e.Default {
+			// User-supplied value matches catalog Default → no override needed.
 			continue
 		}
-		v := "false"
+		v := strconv.FormatBool(resolved)
 		out[e.BuildArg] = &v
 	}
 	return out

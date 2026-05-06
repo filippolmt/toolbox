@@ -125,9 +125,11 @@ func Defaults() map[string]bool {
 }
 
 // IsDefault reports whether the given user tools map matches the catalog
-// defaults. A missing key is treated as enabled (the Viper default is
-// `true`), so a config that never mentions `tools:` evaluates as default.
-// Mirrors legacy config.IsDefaultTools semantics verbatim.
+// defaults. A missing key is treated as that entry's Default — the catalog
+// is the source of truth, so a config that never mentions `tools:` evaluates
+// as default regardless of which tools are opt-in vs opt-out.
+// Mirrors legacy config.IsDefaultTools semantics for the all-default-true
+// catalog and extends them coherently if any future entry ships Default:false.
 func IsDefault(m map[string]bool) bool {
 	for _, e := range Entries {
 		enabled, present := m[e.Key]
