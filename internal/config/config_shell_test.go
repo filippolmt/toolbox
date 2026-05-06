@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // TestLoadDefaultShellIsZsh verifies SHELL-01: a config without `shell:` key
@@ -93,16 +95,16 @@ func TestValidateShellRejectsUnknown(t *testing.T) {
 // the build system recognises, wired to INSTALL_ZSH.
 func TestKnownToolsIncludesZsh(t *testing.T) {
 	found := false
-	for _, k := range KnownTools {
+	for _, k := range catalog.Keys() {
 		if k == "zsh" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("KnownTools should contain \"zsh\" (alphabetic, after \"yq\")")
+		t.Error("catalog.Keys() should contain \"zsh\" (alphabetic, after \"yq\")")
 	}
-	if got := ToolBuildArg["zsh"]; got != "INSTALL_ZSH" {
-		t.Errorf("ToolBuildArg[\"zsh\"] = %q, want %q", got, "INSTALL_ZSH")
+	if got := catalog.BuildArg("zsh"); got != "INSTALL_ZSH" {
+		t.Errorf("catalog.BuildArg(\"zsh\") = %q, want %q", got, "INSTALL_ZSH")
 	}
 }
