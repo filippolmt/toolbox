@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -34,7 +36,7 @@ type mockClient struct {
 	client.APIClient
 
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
-	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error)
+	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, name string) (container.CreateResponse, error)
 	startFn       func(ctx context.Context, id string, opts container.StartOptions) error
 	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
 	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
@@ -53,7 +55,7 @@ func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container
 
 func (m *mockClient) ContainerCreate(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, name string) (container.CreateResponse, error) {
 	if m.createFn != nil {
-		return m.createFn(ctx, cfg, hostCfg)
+		return m.createFn(ctx, cfg, hostCfg, name)
 	}
 	return container.CreateResponse{}, fmt.Errorf("ContainerCreate not mocked")
 }
@@ -143,51 +145,141 @@ func stubExecShell() (called *bool, restore func()) {
 
 // --- Tests ---
 
-func TestContainerNameForStableAndUnique(t *testing.T) {
-	a := ContainerNameFor("/Users/alice/project/toolbox")
-	b := ContainerNameFor("/Users/alice/project/toolbox")
-	if a != b {
-		t.Fatalf("ContainerNameFor should be deterministic: %q vs %q", a, b)
+// TestShellContainerNaming exercises the container-naming behaviour through
+// the public Shell seam: each subtest invokes Shell with a workspace path and
+// asserts on the `name` argument captured from ContainerCreate. Replaces the
+// three former TestContainerNameFor* unit tests (D-01 / D-02): behaviour is
+// observed only through Shell, never by calling containerNameFor directly.
+func TestShellContainerNaming(t *testing.T) {
+	// Sandbox HOME so any filesystem touch by mountplan.Plan lands in tmp,
+	// not the real ~/.toolbox/. Mirrors internal/mountplan/plan_test.go.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	cases := []struct {
+		name       string
+		workspace  string
+		assertName func(t *testing.T, got string)
+	}{
+		{
+			name:      "stable and unique with deterministic hash",
+			workspace: "/Users/alice/project/toolbox",
+			assertName: func(t *testing.T, got string) {
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("name should start with toolbox- prefix, got %q", got)
+				}
+				if !strings.Contains(got, "-toolbox-") {
+					t.Errorf("name should embed basename, got %q", got)
+				}
+			},
+		},
+		{
+			name:      "different absolute path with same basename produces different name",
+			workspace: "/Users/bob/project/toolbox",
+			assertName: func(t *testing.T, got string) {
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing: %q", got)
+				}
+			},
+		},
+		{
+			name:      "sanitises basename of paths with spaces and punctuation",
+			workspace: "/tmp/My Weird Dir!",
+			assertName: func(t *testing.T, got string) {
+				if strings.ContainsAny(got, " !") {
+					t.Errorf("name must not contain spaces or special chars: %q", got)
+				}
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing: %q", got)
+				}
+			},
+		},
+		{
+			name:      "respects 63-char Docker name cap by truncating basename only",
+			workspace: "/tmp/" + strings.Repeat("a", 200),
+			assertName: func(t *testing.T, got string) {
+				if len(got) > 63 {
+					t.Errorf("name length %d exceeds 63-char cap: %q", len(got), got)
+				}
+				if !strings.HasPrefix(got, "toolbox-") {
+					t.Errorf("toolbox- prefix missing after truncation: %q", got)
+				}
+				// Hash suffix must still be 8 hex chars after the final '-'.
+				parts := strings.Split(got, "-")
+				hash := parts[len(parts)-1]
+				if len(hash) != 8 {
+					t.Errorf("hash suffix length = %d, want 8: %q", len(hash), got)
+				}
+			},
+		},
 	}
 
-	c := ContainerNameFor("/Users/bob/project/toolbox")
-	if a == c {
-		t.Fatalf("paths with same basename must produce different names: both %q", a)
+	// Capture each subtest's resolved name so we can also assert
+	// uniqueness across two cases sharing a basename and determinism
+	// across a re-run on the same workspace.
+	var firstAlice, firstBob string
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			var capturedName string
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+					capturedName = name
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+
+			if err := Shell(context.Background(), mock, testConfig(), tc.workspace, nil); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			tc.assertName(t, capturedName)
+
+			// Cross-case determinism + uniqueness checks.
+			switch tc.workspace {
+			case "/Users/alice/project/toolbox":
+				firstAlice = capturedName
+			case "/Users/bob/project/toolbox":
+				firstBob = capturedName
+				if firstAlice != "" && firstBob == firstAlice {
+					t.Errorf("paths with same basename must produce different names: alice=%q bob=%q", firstAlice, firstBob)
+				}
+			}
+		})
 	}
 
-	if !strings.HasPrefix(a, "toolbox-") {
-		t.Fatalf("name should start with toolbox- prefix, got %q", a)
-	}
-	if !strings.Contains(a, "-toolbox-") {
-		t.Fatalf("name should embed basename, got %q", a)
-	}
-}
-
-func TestContainerNameForSanitizesBasename(t *testing.T) {
-	name := ContainerNameFor("/tmp/My Weird Dir!")
-	if strings.ContainsAny(name, " !") {
-		t.Fatalf("name must not contain spaces or special chars: %q", name)
-	}
-}
-
-// TestContainerNameForRespects63CharLimit: Docker's conventional name limit is
-// 63 chars. A workspace basename longer than ~46 chars would overflow — the
-// helper must truncate the basename so the stable prefix and hash suffix
-// survive intact.
-func TestContainerNameForRespects63CharLimit(t *testing.T) {
-	long := "/tmp/" + strings.Repeat("a", 200)
-	name := ContainerNameFor(long)
-	if len(name) > 63 {
-		t.Errorf("name length %d exceeds 63-char cap: %q", len(name), name)
-	}
-	if !strings.HasPrefix(name, "toolbox-") {
-		t.Errorf("name must still start with toolbox- after truncation, got %q", name)
-	}
-	// The hash suffix must still be 8 hex chars appended after the last '-'.
-	parts := strings.Split(name, "-")
-	hash := parts[len(parts)-1]
-	if len(hash) != 8 {
-		t.Errorf("hash suffix length = %d, want 8 — truncation should only trim basename: %q", len(hash), name)
+	// Determinism: re-running Shell on alice's path must yield the same name.
+	if firstAlice != "" {
+		_, restore := stubExecShell()
+		defer restore()
+		var second string
+		mock := &mockClient{
+			inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+				return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			},
+			imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+				return image.InspectResponse{}, nil
+			},
+			createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+				second = name
+				return container.CreateResponse{ID: "x"}, nil
+			},
+		}
+		if err := Shell(context.Background(), mock, testConfig(), "/Users/alice/project/toolbox", nil); err != nil {
+			t.Fatalf("Shell() error on rerun: %v", err)
+		}
+		if second != firstAlice {
+			t.Errorf("containerNameFor not deterministic via Shell: first=%q second=%q", firstAlice, second)
+		}
 	}
 }
 
@@ -196,7 +288,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	want := ContainerNameFor(ws)
+	want := containerNameFor(ws)
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
@@ -261,7 +353,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	wantName := ContainerNameFor(ws)
+	wantName := containerNameFor(ws)
 
 	createCalled := false
 	startCalled := false
@@ -275,7 +367,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			createCalled = true
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
@@ -340,7 +432,7 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedSecurityOpt = hostCfg.SecurityOpt
 			return container.CreateResponse{ID: "new123"}, nil
 		},
@@ -375,7 +467,7 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedSecurityOpt = hostCfg.SecurityOpt
 			return container.CreateResponse{ID: "new123"}, nil
 		},
@@ -410,7 +502,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
@@ -453,7 +545,7 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
 			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
@@ -529,7 +621,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 	}
@@ -561,7 +653,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
 			return nil, errors.New("offline")
 		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 	}
@@ -692,7 +784,7 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
 			return image.InspectResponse{}, nil
 		},
-		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig) (container.CreateResponse, error) {
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedEnv = cfg.Env
 			return container.CreateResponse{ID: "new123"}, nil
 		},
@@ -785,5 +877,328 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 	}
 	if !stopCalled {
 		t.Fatal("ContainerStop should be called when no sibling exec is running")
+	}
+}
+
+// captureStderr swaps os.Stderr for a pipe during fn() and returns whatever
+// was written there. Used by TestShellPublishMismatchWarning to observe the
+// warning emitted via ui.Warning without intercepting the function itself
+// (D-02: behaviour observed only through the public Shell seam).
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stderr = orig
+	return <-done
+}
+
+// TestShellPublishPopulatesBindings verifies the happy path: --publish values
+// end up as both ExposedPorts on the container config and PortBindings on the
+// host config when a new container is created. Table-driven absorption of the
+// former TestParsePublishSpecs happy-path cases (D-01).
+func TestShellPublishPopulatesBindings(t *testing.T) {
+	cases := []struct {
+		name     string
+		specs    []string
+		wantPort string
+		wantHost string
+		wantHP   string // "" if no specific host port asserted
+	}{
+		{name: "port only defaults to localhost", specs: []string{"7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1"},
+		{name: "host:container defaults to localhost", specs: []string{"7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "explicit host IP preserved", specs: []string{"0.0.0.0:7171:7171"}, wantPort: "7171/tcp", wantHost: "0.0.0.0", wantHP: "7171"},
+		{name: "explicit loopback preserved", specs: []string{"127.0.0.1:7171:7171"}, wantPort: "7171/tcp", wantHost: "127.0.0.1", wantHP: "7171"},
+		{name: "udp proto", specs: []string{"7171:7171/udp"}, wantPort: "7171/udp", wantHost: "127.0.0.1", wantHP: "7171"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			var capturedCfg *container.Config
+			var capturedHost *container.HostConfig
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCfg = cfg
+					capturedHost = hostCfg
+					return container.CreateResponse{ID: "new123"}, nil
+				},
+			}
+
+			if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			if capturedCfg == nil || capturedHost == nil {
+				t.Fatal("ContainerCreate was not invoked")
+			}
+			port := nat.Port(tc.wantPort)
+			if _, ok := capturedCfg.ExposedPorts[port]; !ok {
+				t.Errorf("ExposedPorts missing %q: %v", port, capturedCfg.ExposedPorts)
+			}
+			binds := capturedHost.PortBindings[port]
+			if len(binds) != 1 {
+				t.Fatalf("want 1 host binding, got %d", len(binds))
+			}
+			if binds[0].HostIP != tc.wantHost {
+				t.Errorf("HostIP = %q, want %q", binds[0].HostIP, tc.wantHost)
+			}
+			if tc.wantHP != "" && binds[0].HostPort != tc.wantHP {
+				t.Errorf("HostPort = %q, want %q", binds[0].HostPort, tc.wantHP)
+			}
+		})
+	}
+}
+
+// TestShellPublishInvalidSpecFailsFast verifies bad publish specs are rejected
+// BEFORE any Docker call — a typo on the flag should not create / start /
+// inspect anything. Table-driven absorption of the former TestParsePublishSpecs
+// error cases plus the original "empty input → no error, no inspect" case
+// (D-01).
+func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
+	cases := []struct {
+		name           string
+		specs          []string
+		wantErr        bool
+		wantErrSub     string
+		wantEmptyPorts bool // for the wantErr==false branch: assert no ExposedPorts/PortBindings populated
+	}{
+		{name: "empty specs yield zero exposed/bindings", specs: nil, wantErr: false, wantEmptyPorts: true},
+		{name: "garbage spec returns wrapped error", specs: []string{"totally-bogus"}, wantErr: true, wantErrSub: "--publish"},
+		{name: "not-a-port returns wrapped error", specs: []string{"not-a-port"}, wantErr: true, wantErrSub: "--publish"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			inspectCalls := 0
+			var capturedCfg *container.Config
+			var capturedHost *container.HostConfig
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					inspectCalls++
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCfg = cfg
+					capturedHost = hostCfg
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+
+			err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tc.wantErrSub)
+				}
+				if inspectCalls != 0 {
+					t.Errorf("ContainerInspect must not be called on parse error, got %d calls", inspectCalls)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantEmptyPorts {
+				if capturedCfg == nil || capturedHost == nil {
+					t.Fatal("ContainerCreate was not invoked")
+				}
+				if len(capturedCfg.ExposedPorts) != 0 {
+					t.Errorf("ExposedPorts must be empty for nil specs, got %v", capturedCfg.ExposedPorts)
+				}
+				if len(capturedHost.PortBindings) != 0 {
+					t.Errorf("PortBindings must be empty for nil specs, got %v", capturedHost.PortBindings)
+				}
+			}
+		})
+	}
+}
+
+// TestShellInspectNilContainerJSONBase pins the IN-03 / CONT-05 regression:
+// when ContainerInspect returns an InspectResponse whose embedded
+// *ContainerJSONBase is nil (e.g. a future SDK shape change, a misbehaving
+// daemon, or a hand-rolled mock returning the zero value), Shell must not
+// panic on the promoted-field access. inspect.State is a promoted field
+// through the embedded pointer, but so are inspect.ID, inspect.HostConfig,
+// inspect.ExecIDs, etc. Guarding only the running derivation leaves
+// inspect.ID accesses on the start-by-ID branch unprotected. The fix lifts
+// the nil-base check into a single hasInspectData boolean that gates every
+// promoted-field access; a nil base falls through to the create-fresh
+// branch (logically: "no usable container record, must create"). The test
+// asserts: (a) Shell does not panic, (b) the running derivation evaluates
+// to false, (c) warnMissingPublish does not emit a "publish mismatch"
+// warning even when the user passed --publish, (d) Shell falls through to
+// ContainerCreate (no usable inspect data ⇒ create from scratch).
+func TestShellInspectNilContainerJSONBase(t *testing.T) {
+	// Stub the real exec — no Docker attach during the test.
+	_, restore := stubExecShell()
+	defer restore()
+
+	// Sandbox HOME so mountplan.Plan's filesystem touches (~/.toolbox/...)
+	// land in tmp. Mirrors TestShellContainerNaming.
+	t.Setenv("HOME", t.TempDir())
+
+	ws := testWorkspace(t)
+
+	createCalled := false
+	startCalled := false
+	mock := &mockClient{
+		// Zero-value InspectResponse — embedded *ContainerJSONBase is naturally nil.
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			createCalled = true
+			return container.CreateResponse{ID: "fresh"}, nil
+		},
+		startFn: func(_ context.Context, _ string, _ container.StartOptions) error {
+			startCalled = true
+			return nil
+		},
+	}
+
+	// Non-empty publish bindings — exercises both the nil-base running
+	// derivation and the warnMissingPublish call path on the nil-base path.
+	publish := []string{"127.0.0.1:8080:8080"}
+
+	captured := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, testConfig(), ws, publish); err != nil {
+			t.Fatalf("Shell returned error: %v", err)
+		}
+	})
+
+	if !createCalled {
+		t.Fatalf("expected Shell to fall through to ContainerCreate when inspect data is unusable (nil ContainerJSONBase)")
+	}
+	if !startCalled {
+		t.Fatalf("expected Shell to call ContainerStart on the freshly created container")
+	}
+	// Use Contains against the publish-mismatch substring — captureStderr
+	// can also pick up unrelated warnings (mount-skipped, etc.), matching
+	// TestShellPublishMismatchWarning's pattern.
+	if strings.Contains(captured, "publish mismatch") {
+		t.Fatalf("expected no publish-mismatch warning on nil-base path, got stderr: %q", captured)
+	}
+}
+
+// TestShellPublishMismatchWarning exercises the wanted-vs-actual mismatch
+// warning emitted by warnMissingPublish when --publish is passed against an
+// already-running container whose PortBindings were fixed at create time.
+// Table-driven absorption of the former TestFormatPublishMismatch +
+// TestMissingPublishPorts cases (D-01); the warning is observed via stderr
+// capture, never by calling formatPublishMismatch directly (D-02).
+func TestShellPublishMismatchWarning(t *testing.T) {
+	cases := []struct {
+		name          string
+		specs         []string
+		nilHostConfig bool        // simulate a running container with nil HostConfig
+		existingBinds nat.PortMap // existing container's PortBindings (when !nilHostConfig)
+		wantWarnSubs  []string    // substrings expected in the captured warning
+		wantNoWarn    bool        // expect no "publish mismatch" warning
+	}{
+		{
+			name:          "no mismatch when wanted ports already bound",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
+			wantNoWarn:    true,
+		},
+		{
+			name:          "structured message lists wanted, actual, missing",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{"7171/tcp": nil},
+			wantWarnSubs: []string{
+				"wanted [7171/tcp, 8080/tcp]",
+				"container has [7171/tcp]",
+				"missing [8080/tcp]",
+				"toolbox stop",
+			},
+		},
+		{
+			name:          "empty PortBindings reports actual=none",
+			specs:         []string{"7171:7171", "8080:8080"},
+			existingBinds: nat.PortMap{},
+			wantWarnSubs:  []string{"container has [none]", "missing"},
+		},
+		{
+			name:          "nil HostConfig produces no warning",
+			specs:         []string{"7171:7171"},
+			nilHostConfig: true,
+			wantNoWarn:    true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					if tc.nilHostConfig {
+						return container.InspectResponse{
+							ContainerJSONBase: &container.ContainerJSONBase{
+								State: &container.State{Running: true},
+							},
+						}, nil
+					}
+					return container.InspectResponse{
+						ContainerJSONBase: &container.ContainerJSONBase{
+							HostConfig: &container.HostConfig{PortBindings: tc.existingBinds},
+							State:      &container.State{Running: true},
+						},
+					}, nil
+				},
+			}
+
+			out := captureStderr(t, func() {
+				if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
+					t.Fatalf("Shell() error: %v", err)
+				}
+			})
+
+			if tc.wantNoWarn {
+				if strings.Contains(out, "publish mismatch") {
+					t.Errorf("expected no publish mismatch warning, got: %s", out)
+				}
+				return
+			}
+			for _, sub := range tc.wantWarnSubs {
+				if !strings.Contains(out, sub) {
+					t.Errorf("warning missing %q\n  full: %s", sub, out)
+				}
+			}
+		})
 	}
 }
