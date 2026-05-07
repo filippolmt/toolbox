@@ -198,7 +198,8 @@ RUN set -eux; \
       make \
       python3 \
       python3-pip \
-      gnupg; \
+      gnupg \
+      vim-tiny; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
@@ -1129,6 +1130,10 @@ RUN set -eux; \
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+# Default editor for `kubectl edit`, `git commit`, `crontab -e`, etc.
+# vim-tiny is installed in Layer 1 (always-on base).
+ENV EDITOR=vi \
+    KUBE_EDITOR=vi
 
 # Per-tool init manifest. Placed last so an init.d/* edit invalidates only
 # this single layer instead of the heavyweight zsh/rtk/user-setup layers
