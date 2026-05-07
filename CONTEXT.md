@@ -49,3 +49,30 @@ meant editing three files plus the Dockerfile install layer; missing
 one site silently broke either the build args, the image hash, or
 (eventually) the boot init. The "Tool Catalog" name turns three
 fan-outs into one declaration with typed accessors.
+
+### Config Plan
+
+The full pipeline that turns the cobra `--config` flag plus the host's
+`.toolbox.yaml` files into a fully-resolved, fully-validated `*Config`
+handed to subcommands.
+
+Concretely: `viper-defaults (per-call viper.New) → walk-up search from
+CWD for the nearest .toolbox.yaml → file-load (global ~/.toolbox.yaml +
+project + explicit --config when set) → tool-defaults from
+catalog.Keys() → mount-defaults (no-op on *Config; mountplan.Plan owns
+the actual mount-defaults) → validate (ValidateMountsRoot +
+ValidateShell)`. Owned by `internal/config`. The single seam runtime
+callers and tests cross is `config.Plan(searchFrom, explicitOverride)`;
+pure merge inspection (no filesystem, byte-input only) is exposed as
+`config.Merge(global, project, explicit []byte)`. Each invocation uses
+a fresh `*viper.Viper` so callers see no cross-call state.
+
+Why the term exists: before this concept was named, the same logic was
+split across `cmd/root.go::initConfig` (walk-up + viper-seeding +
+file-load + env-prefix) and `internal/config/Load` (unmarshal +
+validate). Reading either site alone missed half the contract;
+subcommand tests primed the global viper singleton to drive `Load`,
+forcing `viper.Reset()` ceremony in every test body. The "Config Plan"
+name turns one fragmented init flow into one deep module mirroring
+the Mount Plan + Tool Catalog deepening pattern, and the per-call
+`viper.New()` instance retires `viper.Reset()` from the test surface.
