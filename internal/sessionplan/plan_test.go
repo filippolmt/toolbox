@@ -302,8 +302,10 @@ func TestMergeIsPure(t *testing.T) {
 		t.Error("Merge.Binds empty; expected post-merge defaults")
 	}
 	// Binds is the post-merge config.Mount slice (asymmetric vs Plan's
-	// []mountplan.Bind). Type-check via field access.
-	var _ []config.Mount = merged.Binds
+	// []mountplan.Bind). Type-check via assignment to a typed var; the
+	// staticcheck-friendly form uses an explicit blank identifier
+	// rather than a redundant type declaration.
+	_ = []config.Mount(merged.Binds)
 
 	// WorkingDir defaults to mountplan.WorkspaceTarget at the pure-merge
 	// tier (mirror predicate is fs-aware, only available in Plan).

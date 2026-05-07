@@ -78,10 +78,43 @@ type MergedSessionPlan struct {
 // be parsed, or when the home directory cannot be resolved. Per-mount
 // soft skips surface via SessionPlan.Warnings.
 func Plan(cfg *config.Config, workspace string, ports []string, cliVersion string) (*SessionPlan, error) {
-	// STUB — wired in Task 2. Returns zero-value plan + nil error so the
-	// package compiles. Task 2 fills in: workspace normalize → port parse
-	// → image resolve → mountplan.Plan → ContainerNameFor → shellEnv.
-	return &SessionPlan{}, nil
+	// Workspace normalization once at the top (Pitfall 8): every
+	// downstream consumer (container name, bind sources, env vars) sees
+	// the same absolute, cleaned path. Lifecycle no longer normalizes
+	// after Plan 02.
+	if abs, absErr := filepath.Abs(workspace); absErr == nil {
+		workspace = filepath.Clean(abs)
+	}
+
+	// Port stage (SESS-04): parse --publish specs into typed Docker
+	// ExposedPorts + PortBindings with 127.0.0.1 default HostIP.
+	exposed, bindings, err := parsePublishSpecs(ports)
+	if err != nil {
+		return nil, err
+	}
+
+	// Image stage (SESS-03): compose build.ResolveImage inside Plan
+	// instead of having the caller invoke it inline.
+	ref, isLocal := build.ResolveImage(cfg, cliVersion)
+
+	// Mount stage (SESS-01 mount delegation): mountplan.Plan owns the
+	// full mount pipeline — fs side effects (mkdir, symlinks) happen
+	// inside this call. Per-mount soft skips ride out on Warnings.
+	mp, err := mountplan.Plan(cfg, workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SessionPlan{
+		Image:         Image{Ref: ref, IsLocal: isLocal},
+		Binds:         mp.Binds,
+		Warnings:      mp.Warnings,
+		WorkingDir:    mp.WorkingDir,
+		ExposedPorts:  exposed,
+		PortBindings:  bindings,
+		Env:           shellEnv(workspace, mp.WorkingDir),
+		ContainerName: ContainerNameFor(workspace),
+	}, nil
 }
 
 // Merge returns the pure-data plan shape: identical to Plan but composes
@@ -89,8 +122,40 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 // config.Mount slice. Tests asserting the contract construct merged plans
 // without t.TempDir / HOME setup.
 func Merge(cfg *config.Config, workspace string, ports []string, cliVersion string) (*MergedSessionPlan, error) {
-	// STUB — wired in Task 2. Returns zero-value plan + nil error.
-	return &MergedSessionPlan{}, nil
+	if abs, absErr := filepath.Abs(workspace); absErr == nil {
+		workspace = filepath.Clean(abs)
+	}
+
+	exposed, bindings, err := parsePublishSpecs(ports)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, isLocal := build.ResolveImage(cfg, cliVersion)
+
+	// Mount stage: mountplan.Merge is pure (no fs side effects). Tests
+	// construct merged plans without t.TempDir / HOME setup.
+	merged, err := mountplan.Merge(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// WorkingDir: pure-data Merge cannot consult the fs to decide
+	// whether the mirror path is safe (mountplan.WorkspaceMirrorPath
+	// inspects nothing today, but the asymmetry is documented so a
+	// future fs-aware predicate stays Plan-only). Default to
+	// mountplan.WorkspaceTarget in the pure-merge view.
+	workingDir := mountplan.WorkspaceTarget
+
+	return &MergedSessionPlan{
+		Image:         Image{Ref: ref, IsLocal: isLocal},
+		Binds:         merged,
+		WorkingDir:    workingDir,
+		ExposedPorts:  exposed,
+		PortBindings:  bindings,
+		Env:           shellEnv(workspace, workingDir),
+		ContainerName: ContainerNameFor(workspace),
+	}, nil
 }
 
 // MissingPublishPorts returns the wanted publish ports that the existing
@@ -206,8 +271,3 @@ func shellEnv(workspace, workingDir string) []string {
 		"PWD=" + workingDir,
 	}
 }
-
-// _ silences the unused-import linter while Plan/Merge bodies are stubs.
-// Removed in Task 2 once both Seam bodies are wired.
-var _ = build.ResolveImage
-var _ = mountplan.Plan
