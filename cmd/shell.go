@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 var shellPublish []string
@@ -37,6 +39,13 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// SESS-02: build the typed plan once; lifecycle.Shell becomes a
+	// pure consumer. version.Version is a var string (NOT a function).
+	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
+	if err != nil {
+		return err
+	}
+
 	cli, err := container.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
@@ -48,7 +57,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return container.Shell(ctx, cli, cfg, workspace, shellPublish)
+	return container.Shell(ctx, cli, plan)
 }
 
 func resolveWorkspace() (string, error) {

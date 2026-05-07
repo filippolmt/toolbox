@@ -1,14 +1,18 @@
 // Package container owns the toolbox-container lifecycle: ensuring the
 // image, creating/starting/stopping the per-workspace container, and
 // attaching an interactive shell. Public seams: Shell, Stop, StopAll,
-// NewClient. ResolveShellCmd / NestedSandboxSecurityOpt /
-// ShellMismatchError live in internal/shellcmd (cycle-breaker).
+// NewClient. The Shell signature is (ctx, cli, *sessionplan.SessionPlan)
+// — every input that used to be parsed inline (publish specs, image
+// resolution, mount plan, container name, env, security opts) now rides
+// in the typed plan composed by internal/sessionplan.Plan.
+//
+// ResolveShellCmd / NestedSandboxSecurityOpt / ShellMismatchError live
+// in internal/shellcmd (cycle-breaker so sessionplan can compose them).
 //
 // The orchestration Module lives in lifecycle.go (this file), sectioned
-// into Naming, Workspace Env, Port Bindings, Lifecycle, and Cleanup
-// helpers. The TTY/signal Adapter lives in attach.go and is kept as a
-// separate file because its concern (raw mode, signal forwarding) is
-// independent from Docker SDK orchestration.
+// into Lifecycle and Cleanup helpers. The TTY/signal Adapter lives in
+// attach.go and is kept as a separate file because its concern (raw
+// mode, signal forwarding) is independent from Docker SDK orchestration.
 package container
 
 import (
@@ -19,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -31,15 +34,12 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/docker/go-connections/nat"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/shellcmd"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
-	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // cleanupTimeout bounds the best-effort container stop+remove that runs on
@@ -62,133 +62,20 @@ const stopShellGrace = 2
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
 
-// --- Naming ---
-
-// containerNamePrefix identifies containers managed by toolbox.
-const containerNamePrefix = "toolbox-"
-
-var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
-
-// containerNameFor builds the container name for a given workspace path.
-// Format: toolbox-<basename>-<hash8>. The hash is over the absolute path so
-// that two directories sharing the same basename do not collide. Output is
-// capped at 63 characters to respect Docker's conventional name length: the
-// basename is truncated first so the stable prefix and hash suffix survive.
-func containerNameFor(workspace string) string {
-	abs, err := filepath.Abs(workspace)
-	if err != nil {
-		abs = workspace
-	}
-	abs = filepath.Clean(abs)
-
-	sum := sha256.Sum256([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:8]
-
-	base := strings.ToLower(filepath.Base(abs))
-	base = sanitizeRe.ReplaceAllString(base, "-")
-	base = strings.Trim(base, "-")
-	if base == "" {
-		base = "root"
-	}
-
-	// 63 (Docker convention) - len("toolbox-") - len("-") - 8 (hash) = 46.
-	const maxBasename = 46
-	if len(base) > maxBasename {
-		base = strings.TrimRight(base[:maxBasename], "-")
-		if base == "" {
-			base = "root"
-		}
-	}
-
-	return containerNamePrefix + base + "-" + hash
-}
-
-// --- Workspace Env ---
-
-// shellEnv returns the env vars injected into every shell spawned by the
-// container. TOOLBOX_HOST_WORKSPACE holds the absolute host path mounted at
-// the canonical workspace target so that Makefiles and compose files can
-// pass a host-resolvable path to `docker run -v` under the bind-mounted
-// socket (DooD): a literal "/workspace/foo" is meaningless to the host
-// daemon. PWD is set explicitly to workingDir so that scripts reading $PWD
-// directly (without a getcwd fallback) see the same path bash exposes after
-// starting in WorkingDir.
-//
-// The workspace target itself and the host-path mirror logic live in
-// internal/mountplan; lifecycle.Shell consults mountplan.Plan to learn
-// workingDir and forwards it here.
-func shellEnv(workspace, workingDir string) []string {
-	return []string{
-		"TOOLBOX_HOST_WORKSPACE=" + workspace,
-		"PWD=" + workingDir,
-	}
-}
-
-// --- Port Bindings ---
-
-// parsePublishSpecs parses "docker run -p"-style publish specs into Docker's
-// ExposedPorts + PortBindings. Defaults the host IP to 127.0.0.1 (not 0.0.0.0)
-// so OAuth callbacks stay loopback-only instead of being exposed to the LAN.
-func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
-	if len(specs) == 0 {
-		return nil, nil, nil
-	}
-	exposed := nat.PortSet{}
-	bindings := nat.PortMap{}
-	for _, spec := range specs {
-		mappings, err := nat.ParsePortSpec(spec)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
-		}
-		for _, m := range mappings {
-			exposed[m.Port] = struct{}{}
-			b := m.Binding
-			if b.HostIP == "" {
-				b.HostIP = "127.0.0.1"
-			}
-			bindings[m.Port] = append(bindings[m.Port], b)
-		}
-	}
-	return exposed, bindings, nil
-}
-
-// missingPublishPorts returns the wanted ports that the existing container was
-// not created with. PortBindings are fixed at create time, so "--publish" on a
-// reused container is a silent no-op for any port not in this list.
-func missingPublishPorts(inspect container.InspectResponse, wanted nat.PortMap) []string {
-	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
-		return nil
-	}
-	current := inspect.HostConfig.PortBindings
-	var missing []string
-	for port := range wanted {
-		if _, ok := current[port]; !ok {
-			missing = append(missing, string(port))
-		}
-	}
-	return missing
-}
-
-func warnMissingPublish(inspect container.InspectResponse, wanted nat.PortMap) {
-	if msg := formatPublishMismatch(inspect, wanted); msg != "" {
-		ui.Warning(msg)
-	}
-}
-
 // formatPublishMismatch builds the warning string emitted when a reused
 // container does not have every port the user asked for. Returns "" when
 // every wanted port is already bound on the existing container, signalling
-// the caller to stay quiet. Extracted from warnMissingPublish so tests can
-// pin the message format without intercepting stderr.
-func formatPublishMismatch(inspect container.InspectResponse, wanted nat.PortMap) string {
-	missing := missingPublishPorts(inspect, wanted)
+// the caller to stay quiet. UI-formatting concern stays in lifecycle (D-13
+// split criterion); sessionplan.MissingPublishPorts produces the typed
+// missing-list and lifecycle composes the human-readable message.
+func formatPublishMismatch(plan *sessionplan.SessionPlan, inspect container.InspectResponse, missing []string) string {
 	if len(missing) == 0 {
 		return ""
 	}
 	sort.Strings(missing)
 
-	wantedPorts := make([]string, 0, len(wanted))
-	for port := range wanted {
+	wantedPorts := make([]string, 0, len(plan.PortBindings))
+	for port := range plan.PortBindings {
 		wantedPorts = append(wantedPorts, string(port))
 	}
 	sort.Strings(wantedPorts)
@@ -237,60 +124,26 @@ func NewClient() (client.APIClient, error) {
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
-func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, workspace string, publish []string) (err error) {
-	// Normalize once so every downstream consumer (container name, bind
-	// sources, env vars) sees the same absolute, cleaned path. Callers
-	// already do this, but defensive normalization keeps bind source and
-	// mirror target identical regardless of input quirks.
-	if abs, absErr := filepath.Abs(workspace); absErr == nil {
-		workspace = filepath.Clean(abs)
-	}
-	name := containerNameFor(workspace)
-
-	exposed, bindings, parseErr := parsePublishSpecs(publish)
-	if parseErr != nil {
-		return parseErr
+func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (err error) {
+	for _, w := range plan.Warnings {
+		ui.Warning("mount skipped: " + w)
 	}
 
-	// SHELL-02 + SHELL-03: resolve the shell BEFORE any Docker work so an
-	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
-	// clear message and no container/image side-effects (D-17, D-18).
-	// Error printing is handled by cmd.Execute().
-	shellCmd, resolveErr := shellcmd.ResolveShellCmd(cfg)
-	if resolveErr != nil {
-		return resolveErr
-	}
-
-	ref, isLocal := build.ResolveImage(cfg, version.Version)
-
-	if !isLocal {
+	if !plan.Image.IsLocal {
 		// Canonical registry image: refresh on every shell, best-effort —
 		// but skip the manifest round-trip when we already pulled the same
 		// ref within pullCacheTTL. The cache lives on disk under
 		// ~/.toolbox/state/pull-cache/ so it survives across CLI runs; only
 		// successful pulls record, so a network blip doesn't poison the
 		// next invocation into staleness. See pullCached/recordPull.
-		if !pullCached(ref) {
-			if pullImage(ctx, cli, ref) {
-				recordPull(ref)
+		if !pullCached(plan.Image.Ref) {
+			if pullImage(ctx, cli, plan.Image.Ref) {
+				recordPull(plan.Image.Ref)
 			}
 		}
 	}
 
-	plan, planErr := mountplan.Plan(cfg, workspace)
-	if planErr != nil {
-		return planErr
-	}
-	for _, w := range plan.Warnings {
-		ui.Warning("mount skipped: " + w)
-	}
-	binds := make([]string, len(plan.Binds))
-	for i, b := range plan.Binds {
-		binds[i] = b.String()
-	}
-	workingDir := plan.WorkingDir
-
-	inspect, inspectErr := cli.ContainerInspect(ctx, name)
+	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
 
 	// inspect.State, inspect.ID, and friends are promoted fields through the
 	// embedded *ContainerJSONBase pointer, so a nil ContainerJSONBase panics
@@ -304,49 +157,56 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	hasInspectData := inspectErr == nil && inspect.ContainerJSONBase != nil
 	running := hasInspectData && inspect.State != nil && inspect.State.Running
 
-	if hasInspectData && len(bindings) > 0 {
-		warnMissingPublish(inspect, bindings)
+	if hasInspectData && len(plan.PortBindings) > 0 {
+		if missing := sessionplan.MissingPublishPorts(plan, inspect); len(missing) > 0 {
+			ui.Warning(formatPublishMismatch(plan, inspect, missing))
+		}
 	}
 
 	var containerID string
 	switch {
 	case hasInspectData && running:
-		ui.Info("Connecting to running container " + name + "...")
+		ui.Info("Connecting to running container " + plan.ContainerName + "...")
 		containerID = inspect.ID
 
 	case hasInspectData && !running:
-		ui.Info("Starting stopped container " + name + "...")
+		ui.Info("Starting stopped container " + plan.ContainerName + "...")
 		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
 			return fmt.Errorf("failed to start container: %w", startErr)
 		}
 		containerID = inspect.ID
 
 	case inspectErr == nil || cerrdefs.IsNotFound(inspectErr):
-		if ensureErr := ensureImage(ctx, cli, cfg, ref, isLocal); ensureErr != nil {
+		if ensureErr := ensureImage(ctx, cli, plan.Cfg, plan.Image.Ref, plan.Image.IsLocal); ensureErr != nil {
 			return ensureErr
 		}
 
-		ui.Info("Creating container " + name + "...")
+		binds := make([]string, len(plan.Binds))
+		for i, b := range plan.Binds {
+			binds[i] = b.String()
+		}
+
+		ui.Info("Creating container " + plan.ContainerName + "...")
 		resp, createErr := cli.ContainerCreate(ctx,
 			&container.Config{
-				Image:        ref,
+				Image:        plan.Image.Ref,
 				Tty:          true,
 				OpenStdin:    true,
-				Cmd:          shellCmd,
-				WorkingDir:   workingDir,
+				Cmd:          plan.Cmd,
+				WorkingDir:   plan.WorkingDir,
 				User:         hostUserSpec(),
-				ExposedPorts: exposed,
-				Env:          shellEnv(workspace, workingDir),
+				ExposedPorts: plan.ExposedPorts,
+				Env:          plan.Env,
 			},
 			&container.HostConfig{
 				Binds:        binds,
 				GroupAdd:     dockerSockGroups(binds),
-				PortBindings: bindings,
-				SecurityOpt:  shellcmd.NestedSandboxSecurityOpt(cfg),
+				PortBindings: plan.PortBindings,
+				SecurityOpt:  plan.SecurityOpt,
 			},
 			nil, // network config
 			nil, // platform
-			name,
+			plan.ContainerName,
 		)
 		if createErr != nil {
 			return fmt.Errorf("failed to create container: %w", createErr)
@@ -372,21 +232,21 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	defer func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), cleanupTimeout)
 		defer cancelCleanup()
-		if hasActiveExecs(cleanupCtx, cli, name) {
-			ui.Info("Container " + name + " still has active sessions — leaving it running")
+		if hasActiveExecs(cleanupCtx, cli, plan.ContainerName) {
+			ui.Info("Container " + plan.ContainerName + " still has active sessions — leaving it running")
 			return
 		}
-		if stopErr := stopOne(cleanupCtx, cli, name); stopErr != nil && err == nil {
+		if stopErr := stopOne(cleanupCtx, cli, plan.ContainerName); stopErr != nil && err == nil {
 			err = stopErr
 		}
 	}()
 
-	return execShellFn(ctx, cli, cfg, containerID)
+	return execShellFn(ctx, cli, plan.Cfg, containerID)
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.
 func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
-	return stopOne(ctx, cli, containerNameFor(workspace))
+	return stopOne(ctx, cli, sessionplan.ContainerNameFor(workspace))
 }
 
 // StopAll stops and removes every toolbox-managed container on the host.
@@ -407,7 +267,7 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
-		if name != "toolbox" && !strings.HasPrefix(name, containerNamePrefix) {
+		if name != "toolbox" && !strings.HasPrefix(name, sessionplan.ContainerNamePrefix) {
 			continue
 		}
 		if err := stopOne(ctx, cli, name); err != nil {
