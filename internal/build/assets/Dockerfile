@@ -935,15 +935,6 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
-# Per-tool init manifest. Embedded into the Go binary via internal/build/
-# embed.go so `toolbox build` can rebuild without a repo checkout. The chmod
-# is belt-and-braces: tarEmbeddedContext already sets 0755 in the tar but
-# embed.FS strips exec bits to 0444 and BuildKit may normalise permissions.
-# Co-located with the entrypoint COPY so init.d/ edits don't invalidate
-# downstream zsh/rtk/user-setup layers.
-COPY init.d/ /usr/local/lib/toolbox/init.d/
-RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
-
 # -- Layer 20b: zsh + Oh-My-Zsh + 4 custom plugins (ZSH-01/02/03/04/07) -------
 # One RUN layer covers: apt-install zsh+fzf, clone OMZ at pinned SHA, clone the
 # 3 custom plugins + fzf-tab at pinned SHAs, install zshrc.sh system-wide.
@@ -1138,6 +1129,16 @@ RUN set -eux; \
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+
+# Per-tool init manifest. Placed last so an init.d/* edit invalidates only
+# this single layer instead of the heavyweight zsh/rtk/user-setup layers
+# above. Embedded into the Go binary via internal/build/embed.go so
+# `toolbox build` can rebuild without a repo checkout. The chmod is
+# belt-and-braces: tarEmbeddedContext already sets 0755 in the tar but
+# embed.FS strips exec bits to 0444 and BuildKit may normalise permissions.
+COPY init.d/ /usr/local/lib/toolbox/init.d/
+RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
+
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
