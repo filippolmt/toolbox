@@ -38,8 +38,15 @@ func TestStreamBuildOutputError(t *testing.T) {
 }
 
 // TestTarEmbeddedContext verifies the tar produced from the embedded assets
-// contains the Dockerfile and companion scripts at the root (no nested dirs),
-// so the Dockerfile's `COPY bashrc.sh …` resolves against the build context.
+// contains the Dockerfile and companion scripts at the root, so the
+// Dockerfile's `COPY bashrc.sh …` resolves against the build context.
+//
+// Phase 10 (INIT-05): the previous "no nested paths" assertion was relaxed.
+// init.d/<NN>-<tool>.sh entries are intentionally nested under init.d/ so the
+// Dockerfile's `COPY init.d/ /usr/local/lib/toolbox/init.d/` ships the whole
+// subtree. Top-level files (Dockerfile, bashrc.sh, entrypoint.sh, zshrc.sh)
+// must still be at the root; init.d/* must live exclusively under init.d/;
+// nothing else may introduce a new nesting level.
 func TestTarEmbeddedContext(t *testing.T) {
 	r, err := tarEmbeddedContext()
 	if err != nil {
@@ -56,8 +63,8 @@ func TestTarEmbeddedContext(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tar read: %v", err)
 		}
-		if strings.Contains(h.Name, "/") {
-			t.Errorf("unexpected nested path in tar: %q — expected flat layout", h.Name)
+		if strings.Contains(h.Name, "/") && !strings.HasPrefix(h.Name, "init.d/") {
+			t.Errorf("unexpected nested path in tar: %q — only init.d/* may be nested", h.Name)
 		}
 		got[h.Name] = true
 	}
@@ -65,6 +72,62 @@ func TestTarEmbeddedContext(t *testing.T) {
 	for _, want := range []string{"Dockerfile", "bashrc.sh", "entrypoint.sh", "zshrc.sh"} {
 		if !got[want] {
 			t.Errorf("tar missing entry %q (got %v)", want, got)
+		}
+	}
+}
+
+// TestEmbedAssetsContainsInitDDir asserts the //go:embed directive ships the
+// init.d/ subtree (Phase 10 INIT-05). Without the bare-directory pattern the
+// 5 placeholder scripts would never reach the build context tar.
+func TestEmbedAssetsContainsInitDDir(t *testing.T) {
+	entries, err := fs.ReadDir(Assets, AssetDir+"/init.d")
+	if err != nil {
+		t.Fatalf("ReadDir init.d: %v", err)
+	}
+	if len(entries) < 5 {
+		t.Fatalf("init.d/ has %d entries, want >= 5 (10-rtk.sh, 20-cf.sh, 30-graphify.sh, 40-playwright-cli.sh, 50-mcp-plugins.sh)", len(entries))
+	}
+}
+
+// TestTarEmbeddedContextShipsInitDDir asserts the build-context tar ships
+// init.d/<name>.sh entries with header.Mode == 0755. embed.FS strips
+// executable bits to 0444 (research hazard #2 / Pitfall 2); tarEmbeddedContext
+// must compensate so the Dockerfile COPY arrives with executable scripts even
+// if the downstream chmod -R 0755 is removed in a future cleanup.
+func TestTarEmbeddedContextShipsInitDDir(t *testing.T) {
+	r, err := tarEmbeddedContext()
+	if err != nil {
+		t.Fatalf("tarEmbeddedContext: %v", err)
+	}
+	tr := tar.NewReader(r)
+	found := map[string]int64{}
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar.Next: %v", err)
+		}
+		if strings.HasPrefix(h.Name, "init.d/") {
+			found[h.Name] = h.Mode
+		}
+	}
+	want := []string{
+		"init.d/10-rtk.sh",
+		"init.d/20-cf.sh",
+		"init.d/30-graphify.sh",
+		"init.d/40-playwright-cli.sh",
+		"init.d/50-mcp-plugins.sh",
+	}
+	for _, n := range want {
+		mode, ok := found[n]
+		if !ok {
+			t.Errorf("tar missing %s", n)
+			continue
+		}
+		if mode != 0o755 {
+			t.Errorf("%s mode=%o, want 0755 (research hazard #2: embed.FS strips exec bits to 0444)", n, mode)
 		}
 	}
 }

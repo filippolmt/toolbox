@@ -935,6 +935,17 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
+# Phase 10 INIT-05 / D-11: ship the per-tool init manifest. The directory is
+# embedded into the Go binary via internal/build/embed.go so `toolbox build`
+# can rebuild without a repo checkout. The chmod is required even though
+# tarEmbeddedContext sets mode 0755 inside the tar (research hazard #2):
+# embed.FS strips executable bits to 0444 and Dockerfile COPY may normalise
+# permissions on certain BuildKit configurations. Belt-and-braces.
+# Co-located with the entrypoint COPY (Pitfall 7 — cache locality): edits to
+# init.d/ do not invalidate the zsh / rtk / user-setup layers downstream.
+COPY init.d/ /usr/local/lib/toolbox/init.d/
+RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
+
 # -- Layer 20b: zsh + Oh-My-Zsh + 4 custom plugins (ZSH-01/02/03/04/07) -------
 # One RUN layer covers: apt-install zsh+fzf, clone OMZ at pinned SHA, clone the
 # 3 custom plugins + fzf-tab at pinned SHAs, install zshrc.sh system-wide.

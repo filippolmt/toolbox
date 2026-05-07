@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
@@ -83,28 +84,51 @@ func computeImageHash(cliVersion string, tools map[string]bool) (string, error) 
 // asset filesystem so tests can swap the embedded build context for a
 // fixture and verify that asset edits produce a different hash without
 // rebuilding the binary.
+//
+// Phase 10: walks the asset tree recursively (fs.WalkDir) so the new
+// assets/init.d/ subtree contributes to the hash. The walk emits asset
+// records keyed by the path relative to dir (e.g. "Dockerfile",
+// "init.d/10-rtk.sh"), so a fstest.MapFS with only flat files at the dir
+// root produces the same record stream as the prior ReadDir loop —
+// preserving the pinned digest in TestComputeImageHashPinnedDigest.
 func computeImageHashFromFS(assets fs.FS, dir, cliVersion string, tools map[string]bool) (string, error) {
 	h := sha256.New()
 
 	_, _ = fmt.Fprintf(h, "version:%s\n", cliVersion)
 
-	// Embedded assets — iterate in a stable order.
-	entries, err := fs.ReadDir(assets, dir)
-	if err != nil {
-		return "", fmt.Errorf("read embedded assets: %w", err)
+	// Collect every non-directory entry under dir, then iterate in a stable
+	// alphabetical order so the digest is deterministic regardless of the
+	// underlying fs.FS walk order.
+	type asset struct {
+		rel  string
+		data []byte
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		data, err := fs.ReadFile(assets, dir+"/"+name)
-		if err != nil {
-			return "", fmt.Errorf("read embedded %s: %w", name, err)
+	var assetsList []asset
+	walkErr := fs.WalkDir(assets, dir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		_, _ = fmt.Fprintf(h, "asset:%s:%d\n", name, len(data))
-		_, _ = h.Write(data)
+		if d.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(assets, p)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", p, err)
+		}
+		rel := p
+		if dir != "" {
+			rel = strings.TrimPrefix(p, dir+"/")
+		}
+		assetsList = append(assetsList, asset{rel: rel, data: data})
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("read embedded assets: %w", walkErr)
+	}
+	sort.Slice(assetsList, func(i, j int) bool { return assetsList[i].rel < assetsList[j].rel })
+	for _, a := range assetsList {
+		_, _ = fmt.Fprintf(h, "asset:%s:%d\n", a.rel, len(a.data))
+		_, _ = h.Write(a.data)
 		_, _ = h.Write([]byte("\n"))
 	}
 
