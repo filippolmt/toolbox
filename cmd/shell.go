@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
 )
 
@@ -33,12 +32,6 @@ on localhost inside the container.`,
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
-	//nolint:staticcheck // SA1019: Phase 09 (Session Plan) migrates this off Load.
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
 	workspace, err := resolveWorkspace()
 	if err != nil {
 		return err

@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -102,7 +102,7 @@ func ValidateMountsRoot(s string) error {
 	if strings.HasPrefix(s, "~/") {
 		return nil
 	}
-	if path.IsAbs(s) {
+	if filepath.IsAbs(s) {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
@@ -120,6 +120,9 @@ func ValidateMountsRoot(s string) error {
 // New code MUST call Plan(searchFrom, explicitOverride) directly. Tests for
 // the byte-merge logic should target Merge — see internal/config/merge_test.go.
 func Load() (*Config, error) {
+	// os.Getwd() error is intentionally ignored: empty cwd resolves to "."
+	// inside Plan via filepath.Clean(""), which still triggers the walk-up
+	// search from the current process directory. Mirrors cmd/root.go::initConfig.
 	cwd, _ := os.Getwd()
 	return Plan(cwd, "")
 }
