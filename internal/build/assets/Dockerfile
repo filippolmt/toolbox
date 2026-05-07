@@ -1128,12 +1128,10 @@ RUN set -eux; \
     chmod 0666 /etc/passwd /etc/group
 
 ENV HOME=/home/toolbox \
-    NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
-ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
-# Default editor for `kubectl edit`, `git commit`, `crontab -e`, etc.
-# vim-tiny is installed in Layer 1 (always-on base).
-ENV EDITOR=vi \
+    NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
+    EDITOR=vi \
     KUBE_EDITOR=vi
+ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 
 # Per-tool init manifest. Placed last so an init.d/* edit invalidates only
 # this single layer instead of the heavyweight zsh/rtk/user-setup layers
