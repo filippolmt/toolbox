@@ -41,6 +41,11 @@ func defaults() []config.Mount {
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// Docker CLI config (~/.docker/config.json) — credHelpers + auths written by
+		// `docker login`, `gcloud auth configure-docker`, `aws ecr get-login-password`,
+		// etc. Without this bind every registry login wipes on `toolbox stop`. The
+		// docker socket itself is mounted separately below as "docker-sock".
+		{Name: "docker", Source: "~/.toolbox/docker", Target: "/home/toolbox/.docker", ReadOnly: false, CreateIfMissing: true},
 		// Cloudflare CLI (`cf`, Wrangler vNext preview) splits state across two
 		// hard-coded upstream paths (no env override on either), so we follow the
 		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
