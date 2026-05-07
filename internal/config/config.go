@@ -2,13 +2,10 @@ package config
 
 import (
 	"fmt"
-	"path"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/spf13/viper"
-
-	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // Config is the top-level toolbox configuration.
@@ -105,50 +102,27 @@ func ValidateMountsRoot(s string) error {
 	if strings.HasPrefix(s, "~/") {
 		return nil
 	}
-	if path.IsAbs(s) {
+	if filepath.IsAbs(s) {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
 }
 
-// Load reads the configuration from Viper and applies defaults.
+// Load reads the configuration via config.Plan, walking up from CWD and
+// honouring the explicit --config flag when set elsewhere in cmd/.
 //
-// cfg.Mounts is left as the user declared it (or empty). The full mount
-// pipeline — defaults, mounts_root retarget, user-merge, filesystem
-// resolve, workspace bind — lives behind mountplan.Plan, which is the
-// single seam runtime callers and tests cross.
+// Deprecated: Load is a thin compatibility wrapper around Plan, retained for
+// the duration of one release cycle. Subcommand callers (cmd/build.go,
+// cmd/shell.go, cmd/stop.go) migrate to consuming the *Config produced by
+// initConfig directly during Phase 09 (Session Plan); after the Phase 09 /
+// Phase 10 sweep this wrapper is deleted.
+//
+// New code MUST call Plan(searchFrom, explicitOverride) directly. Tests for
+// the byte-merge logic should target Merge — see internal/config/merge_test.go.
 func Load() (*Config, error) {
-	cfg := &Config{}
-	if err := viper.Unmarshal(cfg); err != nil {
-		return nil, err
-	}
-
-	// Validate the global mounts_root override at the edge: mountplan.Merge
-	// re-validates defensively, but failing here keeps bad config visible at
-	// CLI startup instead of at first shell.
-	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
-		return nil, err
-	}
-
-	// Shell default + validation (D-16). Missing or empty => "zsh". Any other
-	// non-supported value fails Load() before any downstream consumer runs.
-	if cfg.Shell == "" {
-		cfg.Shell = "zsh"
-	}
-	if err := ValidateShell(cfg.Shell); err != nil {
-		return nil, err
-	}
-
-	// Fill in defaults for every known tool so downstream callers (hashing,
-	// build-arg translation) don't need to branch on missing keys.
-	if cfg.Tools == nil {
-		cfg.Tools = map[string]bool{}
-	}
-	for _, k := range catalog.Keys() {
-		if _, ok := cfg.Tools[k]; !ok {
-			cfg.Tools[k] = true
-		}
-	}
-
-	return cfg, nil
+	// os.Getwd() error is intentionally ignored: empty cwd resolves to "."
+	// inside Plan via filepath.Clean(""), which still triggers the walk-up
+	// search from the current process directory. Mirrors cmd/root.go::initConfig.
+	cwd, _ := os.Getwd()
+	return Plan(cwd, "")
 }

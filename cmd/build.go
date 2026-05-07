@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"github.com/filippolmt/toolbox/internal/build"
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -30,11 +29,6 @@ The resulting image tag mirrors what 'toolbox shell' would look for:
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
 	cli, err := container.NewClient()
 	if err != nil {
 		return err
