@@ -39,18 +39,32 @@ func Plan(searchFrom string, explicitOverride string) (*Config, error) {
 		}
 		explicitBytes = b
 	} else {
-		// Global ~/.toolbox.yaml — optional. Missing file is non-fatal
-		// (Pitfall 5 + cmd/root.go pre-Plan-08 line 91).
+		// Global ~/.toolbox.yaml — best-effort. Read AND parse failures are
+		// non-fatal: pre-Plan-08 cmd/root.go::initConfig used
+		// `_ = viper.ReadInConfig()` (line 91), swallowing every error so
+		// commands that don't need configuration (e.g. `stop --all`) still
+		// run when the global file is broken. Codex review on PR #152
+		// flagged the original Plan implementation as a regression for
+		// returning hard on non-ENOENT errors. Errors go to stderr so the
+		// user notices the broken file even though startup keeps going.
 		if home, herr := os.UserHomeDir(); herr == nil && home != "" {
 			globalPath := filepath.Join(home, ".toolbox.yaml")
 			b, rerr := os.ReadFile(globalPath)
 			switch {
 			case rerr == nil:
-				globalBytes = b
+				if perr := dryParseYAML(b); perr != nil {
+					fmt.Fprintf(os.Stderr,
+						"toolbox: skipping global config %q: %v\n",
+						globalPath, perr)
+				} else {
+					globalBytes = b
+				}
 			case os.IsNotExist(rerr):
 				// OK — global is optional.
 			default:
-				return nil, fmt.Errorf("read global config %q: %w", globalPath, rerr)
+				fmt.Fprintf(os.Stderr,
+					"toolbox: skipping global config %q: %v\n",
+					globalPath, rerr)
 			}
 		}
 
@@ -215,4 +229,12 @@ func fillToolDefaultsBackstop(cfg *Config) {
 			cfg.Tools[k] = true
 		}
 	}
+}
+
+// dryParseYAML reports whether b is parseable as YAML. Used by Plan to
+// skip a malformed global ~/.toolbox.yaml without failing startup.
+func dryParseYAML(b []byte) error {
+	vp := viper.New()
+	vp.SetConfigType("yaml")
+	return vp.ReadConfig(bytes.NewReader(b))
 }

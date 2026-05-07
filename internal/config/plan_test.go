@@ -225,6 +225,54 @@ func TestPlanRejectsInvalidShell(t *testing.T) {
 	}
 }
 
+// TestPlanGlobalMalformedIsBestEffort pins the Codex-PR-152 fix: a malformed
+// ~/.toolbox.yaml must NOT fail Plan; the broken layer is dropped and Plan
+// continues with project + defaults so commands like `stop --all` still
+// run. Pre-Plan-08 cmd/root.go::initConfig swallowed every error from
+// viper.ReadInConfig — this test pins that contract at the Plan layer.
+func TestPlanGlobalMalformedIsBestEffort(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte(":\n  not: yaml\n  -bad\n"), 0o600); err != nil {
+		t.Fatalf("write malformed home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	cwd := t.TempDir() // no project file, no walk-up match
+
+	cfg, err := Plan(cwd, "")
+	if err != nil {
+		t.Fatalf("Plan must not fail on malformed global config: %v", err)
+	}
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (defaults survive a dropped global)", cfg.Shell)
+	}
+	for _, k := range catalog.Keys() {
+		if !cfg.Tools[k] {
+			t.Errorf("tool %q should default to true after global drop, got false", k)
+		}
+	}
+}
+
+// TestPlanGlobalUnreadableIsBestEffort pins the read-error branch of the
+// same fix: an unreadable ~/.toolbox.yaml (here, a directory at that
+// path) must NOT fail Plan. Using a directory is portable across
+// containers running as root where chmod 000 is bypassed.
+func TestPlanGlobalUnreadableIsBestEffort(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".toolbox.yaml"), 0o755); err != nil {
+		t.Fatalf("mkdir global as dir: %v", err)
+	}
+	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+
+	cfg, err := Plan(cwd, "")
+	if err != nil {
+		t.Fatalf("Plan must not fail on unreadable global config: %v", err)
+	}
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh", cfg.Shell)
+	}
+}
+
 // TestPlanRejectsRelativeMountsRoot asserts ValidateMountsRoot runs inside
 // Plan's tail (CFG-05).
 func TestPlanRejectsRelativeMountsRoot(t *testing.T) {
