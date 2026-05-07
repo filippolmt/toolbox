@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/client"
@@ -103,43 +104,56 @@ func mergeBuildArgs(args map[string]*string) map[string]*string {
 
 // tarEmbeddedContext serialises the embedded assets into an in-memory tar the
 // Docker daemon can consume as a build context. Filenames inside the tar are
-// the basenames of the assets — the Dockerfile's `COPY bashrc.sh …` resolves
-// to the tarred file of the same name.
+// the path of each asset relative to AssetDir — top-level files keep their
+// basename (so `COPY bashrc.sh …` resolves) and nested entries (e.g.
+// `init.d/10-rtk.sh`) keep their subdirectory prefix so `COPY init.d/ …`
+// resolves too.
+//
+// Files under init.d/ get tar mode 0755 unconditionally because embed.FS
+// strips executable bits to 0444 — the in-tar mode is the belt half of the
+// belt-and-braces guarantee with the Dockerfile chmod.
 func tarEmbeddedContext() (io.Reader, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	entries, err := fs.ReadDir(Assets, AssetDir)
-	if err != nil {
-		return nil, fmt.Errorf("read embedded assets: %w", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	walkErr := fs.WalkDir(Assets, AssetDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		data, err := fs.ReadFile(Assets, AssetDir+"/"+e.Name())
-		if err != nil {
-			return nil, fmt.Errorf("read embedded %s: %w", e.Name(), err)
+		if d.IsDir() {
+			return nil
 		}
-		info, err := e.Info()
+		rel := strings.TrimPrefix(p, AssetDir+"/")
+		data, err := fs.ReadFile(Assets, p)
 		if err != nil {
-			return nil, fmt.Errorf("stat embedded %s: %w", e.Name(), err)
+			return fmt.Errorf("read embedded %s: %w", p, err)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("stat embedded %s: %w", p, err)
 		}
 		mode := int64(0o644)
-		if info.Mode()&0o111 != 0 {
+		switch {
+		case strings.HasPrefix(rel, "init.d/"):
+			mode = 0o755
+		case info.Mode()&0o111 != 0:
 			mode = 0o755
 		}
 		hdr := &tar.Header{
-			Name: e.Name(),
+			Name: rel,
 			Mode: mode,
 			Size: int64(len(data)),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
-			return nil, fmt.Errorf("tar header %s: %w", e.Name(), err)
+			return fmt.Errorf("tar header %s: %w", rel, err)
 		}
 		if _, err := tw.Write(data); err != nil {
-			return nil, fmt.Errorf("tar write %s: %w", e.Name(), err)
+			return fmt.Errorf("tar write %s: %w", rel, err)
 		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
 	}
 	if err := tw.Close(); err != nil {
 		return nil, fmt.Errorf("tar close: %w", err)

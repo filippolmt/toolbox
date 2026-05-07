@@ -10,8 +10,9 @@ import (
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
-// TestCatalogShape asserts every Entry has non-empty Key + BuildArg and
-// leaves the optional Phase 09/10 fields zero-valued (D-08).
+// TestCatalogShape asserts every Entry has non-empty Key + BuildArg.
+// InitScript may be populated; when set it must end in ".sh". Description
+// and SmokeTest are reserved for future phases and must stay zero-valued.
 func TestCatalogShape(t *testing.T) {
 	if len(catalog.Entries) == 0 {
 		t.Fatal("catalog.Entries must not be empty")
@@ -20,9 +21,13 @@ func TestCatalogShape(t *testing.T) {
 		if e.Key == "" || e.BuildArg == "" {
 			t.Errorf("entry[%d]: Key and BuildArg must be non-empty (got %+v)", i, e)
 		}
-		if e.Description != "" || e.InitScript != "" || e.SmokeTest != "" {
-			t.Errorf("entry[%d] %q: optional fields must be zero in Phase 07 (D-08); got Description=%q InitScript=%q SmokeTest=%q",
-				i, e.Key, e.Description, e.InitScript, e.SmokeTest)
+		if e.Description != "" || e.SmokeTest != "" {
+			t.Errorf("entry[%d] %q: Description and SmokeTest must be zero; got Description=%q SmokeTest=%q",
+				i, e.Key, e.Description, e.SmokeTest)
+		}
+		if e.InitScript != "" && !strings.HasSuffix(e.InitScript, ".sh") {
+			t.Errorf("entry[%d] %q: InitScript must end in \".sh\" when populated; got %q",
+				i, e.Key, e.InitScript)
 		}
 	}
 }

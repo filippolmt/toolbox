@@ -1129,6 +1129,16 @@ RUN set -eux; \
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+
+# Per-tool init manifest. Placed last so an init.d/* edit invalidates only
+# this single layer instead of the heavyweight zsh/rtk/user-setup layers
+# above. Embedded into the Go binary via internal/build/embed.go so
+# `toolbox build` can rebuild without a repo checkout. The chmod is
+# belt-and-braces: tarEmbeddedContext already sets 0755 in the tar but
+# embed.FS strips exec bits to 0444 and BuildKit may normalise permissions.
+COPY init.d/ /usr/local/lib/toolbox/init.d/
+RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
+
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
