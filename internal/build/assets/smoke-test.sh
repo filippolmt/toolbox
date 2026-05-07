@@ -167,6 +167,7 @@ check_required "git"        git --version
 check_required "rg"         rg --version
 check_required "make"       make --version
 check_required "tini"       /usr/bin/tini --version
+check_required "vi"         vi --version
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version

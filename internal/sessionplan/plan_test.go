@@ -56,12 +56,11 @@ func TestPlanComposesImage(t *testing.T) {
 
 	t.Run("non-default tools resolve to local hash", func(t *testing.T) {
 		cfg := testConfig()
-		// Flip one tool off to force the local-build path.
+		// Flip one tool off to force the local-build path. Pick a
+		// non-shell tool so validation doesn't reject `Shell: "zsh"`
+		// when map iteration order picks the `zsh` key.
 		cfg.Tools = config.DefaultTools()
-		for k := range cfg.Tools {
-			cfg.Tools[k] = false
-			break
-		}
+		cfg.Tools["claude"] = false
 		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
@@ -392,7 +391,6 @@ func TestMissingPublishPortsTable(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			var inspect container.InspectResponse
 			switch {

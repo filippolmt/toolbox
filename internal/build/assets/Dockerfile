@@ -198,7 +198,8 @@ RUN set -eux; \
       make \
       python3 \
       python3-pip \
-      gnupg; \
+      gnupg \
+      vim-tiny; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
@@ -1127,7 +1128,9 @@ RUN set -eux; \
     chmod 0666 /etc/passwd /etc/group
 
 ENV HOME=/home/toolbox \
-    NPM_CONFIG_PREFIX=/home/toolbox/.npm-global
+    NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
+    EDITOR=vi \
+    KUBE_EDITOR=vi
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 
 # Per-tool init manifest. Placed last so an init.d/* edit invalidates only
