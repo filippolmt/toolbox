@@ -72,6 +72,36 @@ if command -v oci >/dev/null 2>&1; then
     fi
 fi
 
+# Per-tool init scripts (Init Sequence — see CONTEXT.md glossary).
+# Each init.d/<NN>-<tool>.sh runs in a fresh bash subshell (D-05). Stderr is
+# captured to a per-script log; on failure the iterator surfaces the tail-5
+# inline so the user sees actionable diagnostics without scrolling. The
+# iterator's `if !` neutralises the outer `set -e` (Pitfall 9), so a failed
+# init script never aborts boot — startup hooks and `exec "$@"` always run.
+#
+# Marker-log path: $HOME/.toolbox-state/init/<name>.log. The container path
+# is .toolbox-state (NOT .toolbox/state) because the `state` bind-mount
+# resolves Source ~/.toolbox/state -> Target ~/.toolbox-state inside the
+# container (Pitfall 1 / mountplan defaults).
+INIT_D="/usr/local/lib/toolbox/init.d"
+TOOLBOX_INIT_LOG_DIR="$HOME/.toolbox-state/init"
+if [ -d "$INIT_D" ]; then
+    mkdir -p "$TOOLBOX_INIT_LOG_DIR"
+    for f in "$INIT_D"/*.sh; do
+        [ -r "$f" ] || continue
+        _name=$(basename "$f")
+        _log="${TOOLBOX_INIT_LOG_DIR}/${_name%.sh}.log"
+        if ! bash "$f" 2>"$_log"; then
+            echo "  ${_name}: failed (log: $_log)"
+            [ -s "$_log" ] && tail -n 5 "$_log" | sed 's/^/      /'
+        else
+            rm -f "$_log"
+        fi
+    done
+    unset _name _log f
+fi
+unset INIT_D TOOLBOX_INIT_LOG_DIR
+
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.
 # Each *.sh file runs sequentially before the shell starts. Failures are
 # logged but never abort the entrypoint — one bad hook cannot block access.
