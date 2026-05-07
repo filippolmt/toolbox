@@ -37,7 +37,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -65,9 +64,8 @@ var execShellFn = execShell
 // formatPublishMismatch builds the warning string emitted when a reused
 // container does not have every port the user asked for. Returns "" when
 // every wanted port is already bound on the existing container, signalling
-// the caller to stay quiet. UI-formatting concern stays in lifecycle (D-13
-// split criterion); sessionplan.MissingPublishPorts produces the typed
-// missing-list and lifecycle composes the human-readable message.
+// the caller to stay quiet. sessionplan.MissingPublishPorts produces the
+// typed missing-list; lifecycle composes the human-readable message.
 func formatPublishMismatch(plan *sessionplan.SessionPlan, inspect container.InspectResponse, missing []string) string {
 	if len(missing) == 0 {
 		return ""
@@ -158,7 +156,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	running := hasInspectData && inspect.State != nil && inspect.State.Running
 
 	if hasInspectData && len(plan.PortBindings) > 0 {
-		if missing := sessionplan.MissingPublishPorts(plan, inspect); len(missing) > 0 {
+		if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
 			ui.Warning(formatPublishMismatch(plan, inspect, missing))
 		}
 	}
@@ -177,7 +175,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		containerID = inspect.ID
 
 	case inspectErr == nil || cerrdefs.IsNotFound(inspectErr):
-		if ensureErr := ensureImage(ctx, cli, plan.Cfg, plan.Image.Ref, plan.Image.IsLocal); ensureErr != nil {
+		if ensureErr := ensureImage(ctx, cli, plan.Image.Ref, plan.Image.IsLocal, plan.BuildArgs); ensureErr != nil {
 			return ensureErr
 		}
 
@@ -241,7 +239,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
-	return execShellFn(ctx, cli, plan.Cfg, containerID)
+	return execShellFn(ctx, cli, containerID, plan.Cmd)
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.
@@ -292,7 +290,7 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 //     image is still absent.
 //   - local hash tags: auto-build from the embedded context using the config's
 //     tools map to derive the INSTALL_* build args.
-var ensureImage = func(ctx context.Context, cli client.APIClient, cfg *config.Config, ref string, isLocal bool) error {
+var ensureImage = func(ctx context.Context, cli client.APIClient, ref string, isLocal bool, buildArgs map[string]*string) error {
 	if _, err := cli.ImageInspect(ctx, ref); err == nil {
 		return nil
 	}
@@ -304,7 +302,7 @@ var ensureImage = func(ctx context.Context, cli client.APIClient, cfg *config.Co
 	ui.Info("Image not found locally — building " + ref + " for current tools config...")
 	return build.BuildImage(ctx, cli, build.Options{
 		Tag:       ref,
-		BuildArgs: build.BuildArgsFromTools(cfg.Tools),
+		BuildArgs: buildArgs,
 	})
 }
 

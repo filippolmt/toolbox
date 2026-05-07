@@ -9,8 +9,8 @@ import (
 	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
-// TestResolveShellCmdZshEnabled (SHELL-02, D-22): the default path returns
-// the zsh binary when tools.zsh is enabled.
+// TestResolveShellCmdZshEnabled: the default path returns the zsh binary
+// when tools.zsh is enabled.
 func TestResolveShellCmdZshEnabled(t *testing.T) {
 	cfg := &config.Config{
 		Shell: "zsh",
@@ -25,8 +25,8 @@ func TestResolveShellCmdZshEnabled(t *testing.T) {
 	}
 }
 
-// TestResolveShellCmdBash (SHELL-02, D-22): bash selection returns /bin/bash
-// regardless of tools.zsh (bash is always available).
+// TestResolveShellCmdBash: bash selection returns /bin/bash regardless of
+// tools.zsh (bash is always available).
 func TestResolveShellCmdBash(t *testing.T) {
 	cfg := &config.Config{
 		Shell: "bash",
@@ -41,9 +41,9 @@ func TestResolveShellCmdBash(t *testing.T) {
 	}
 }
 
-// TestResolveShellCmdZshDisabledError (SHELL-03, D-22): the incoherent
+// TestResolveShellCmdZshDisabledError: the incoherent shell+tools
 // combination fails with a typed error whose message contains the two
-// substrings locked by SPEC Requirement 10 acceptance.
+// canonical substrings.
 func TestResolveShellCmdZshDisabledError(t *testing.T) {
 	cfg := &config.Config{
 		Shell: "zsh",
@@ -66,7 +66,7 @@ func TestResolveShellCmdZshDisabledError(t *testing.T) {
 	msg := err.Error()
 	for _, want := range []string{"shell: zsh", "tools.zsh: false"} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("error %q should contain %q (SPEC Requirement 10)", msg, want)
+			t.Errorf("error %q should contain %q", msg, want)
 		}
 	}
 }

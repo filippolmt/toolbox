@@ -120,8 +120,7 @@ func testConfig() *config.Config {
 	// Empty Tools map is treated as default-true, so ResolveImage returns the
 	// canonical GHCR image with isLocal=false. That matches the existing test
 	// assumptions (pull path, not auto-build).
-	// Shell: "zsh" matches the Load() default (D-16) so ResolveShellCmd
-	// succeeds and tests exercise the SHELL-02 default path.
+	// Shell: "zsh" matches the Load() default so ResolveShellCmd succeeds.
 	return &config.Config{
 		Shell: "zsh",
 		Tools: config.DefaultTools(),
@@ -162,7 +161,7 @@ func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish
 func stubExecShell() (called *bool, restore func()) {
 	c := false
 	orig := execShellFn
-	execShellFn = func(ctx context.Context, cli client.APIClient, cfg *config.Config, containerID string) error {
+	execShellFn = func(_ context.Context, _ client.APIClient, _ string, _ []string) error {
 		c = true
 		return nil
 	}
@@ -173,9 +172,9 @@ func stubExecShell() (called *bool, restore func()) {
 
 // TestShellContainerNaming exercises the container-naming behaviour through
 // the public Shell seam: each subtest invokes Shell with a workspace path and
-// asserts on the `name` argument captured from ContainerCreate. Replaces the
-// three former TestContainerNameFor* unit tests (D-01 / D-02): behaviour is
-// observed only through Shell, never by calling containerNameFor directly.
+// asserts on the `name` argument captured from ContainerCreate. Behaviour
+// is observed only through Shell, never by calling containerNameFor
+// directly.
 func TestShellContainerNaming(t *testing.T) {
 	// Sandbox HOME so any filesystem touch by mountplan.Plan lands in tmp,
 	// not the real ~/.toolbox/. Mirrors internal/mountplan/plan_test.go.
@@ -480,7 +479,7 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 	cfg.Tools["codex"] = false
 
 	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
 		if !isLocal {
 			t.Error("expected isLocal=true when Codex is disabled")
 		}
@@ -634,7 +633,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 
 	buildCalled := false
 	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
 		if !isLocal {
 			t.Error("expected isLocal=true when tools differ from defaults")
 		}
@@ -909,7 +908,7 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 // captureStderr swaps os.Stderr for a pipe during fn() and returns whatever
 // was written there. Used by TestShellPublishMismatchWarning to observe the
 // warning emitted via ui.Warning without intercepting the function itself
-// (D-02: behaviour observed only through the public Shell seam).
+// (behaviour observed only through the public Shell seam).
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	orig := os.Stderr
@@ -933,7 +932,7 @@ func captureStderr(t *testing.T, fn func()) string {
 // TestShellPublishPopulatesBindings verifies the happy path: --publish values
 // end up as both ExposedPorts on the container config and PortBindings on the
 // host config when a new container is created. Table-driven absorption of the
-// former TestParsePublishSpecs happy-path cases (D-01).
+// former TestParsePublishSpecs happy-path cases.
 func TestShellPublishPopulatesBindings(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -1035,8 +1034,8 @@ func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
 	}
 }
 
-// TestShellInspectNilContainerJSONBase pins the IN-03 / CONT-05 regression:
-// when ContainerInspect returns an InspectResponse whose embedded
+// TestShellInspectNilContainerJSONBase pins the regression: when
+// ContainerInspect returns an InspectResponse whose embedded
 // *ContainerJSONBase is nil (e.g. a future SDK shape change, a misbehaving
 // daemon, or a hand-rolled mock returning the zero value), Shell must not
 // panic on the promoted-field access. inspect.State is a promoted field
@@ -1105,11 +1104,9 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	}
 }
 
-// TestSessionPlanEarlyExitOnShellMismatch (SHELL-03, D-22): the shell
-// mismatch is now caught at sessionplan.Plan composition time — before
-// cmd/shell.go has even constructed a Docker client. This is the "no
-// container created" acceptance from SPEC Requirement 10, hoisted from
-// lifecycle.Shell to the seam composer (D-17, D-18).
+// TestSessionPlanEarlyExitOnShellMismatch: the shell mismatch is caught at
+// sessionplan.Plan composition time, before cmd/shell.go has constructed a
+// Docker client. No container is created on this path.
 func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -1133,7 +1130,7 @@ func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
 	}
 }
 
-// TestShellCreateUsesResolvedShellCmd (SHELL-02): verify the Cmd captured by
+// TestShellCreateUsesResolvedShellCmd: verify the Cmd captured by
 // ContainerCreate uses the resolved shell binary. Covers both the `shell:
 // bash` regression path and the `shell: zsh` default path at the integration
 // unit level.
@@ -1186,10 +1183,3 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 		})
 	}
 }
-
-// Note: TestShellPublishMismatchWarning was removed in Plan 09-02. The
-// table cases (no mismatch / missing port / empty existing / nil HostConfig)
-// now live in internal/sessionplan/plan_test.go::TestMissingPublishPortsTable
-// — pure-data, no Docker SDK. The warning-string formatting is exercised
-// via captureStderr in TestShellInspectNilContainerJSONBase (asserts the
-// "publish mismatch" substring is NOT emitted on the nil-base path).

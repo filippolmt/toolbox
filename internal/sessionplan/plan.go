@@ -1,21 +1,9 @@
-// Package sessionplan owns the full pipeline that turns a toolbox Config,
-// a workspace path, --publish specs, and the host CLI version into the
-// typed plan handed to internal/container.Shell: image reference, bind
-// set (delegating to mountplan), publish specs, env, working dir, and
-// container name.
-//
-// The pipeline is intentionally a single concept exposed at one external
-// seam — Plan(cfg, workspace, ports, cliVersion) — even though internally
-// it walks five distinct stages (port parse, image resolve, mount compose,
-// container-name derivation, env synthesis). Callers and tests both cross
-// the same seam.
-//
-// Before this concept was named, cmd/shell.go::runShell and
-// internal/container/lifecycle.Shell each ran the same sequencing inline,
-// with image / mounts / ports / name / env derivations scattered across
-// two call sites and three packages. The "Session Plan" name turns the
-// sequencing into one observable typed plan that tests construct without
-// Docker (SESS-05).
+// Package sessionplan owns the pipeline that turns a toolbox Config, a
+// workspace path, --publish specs, and the host CLI version into the typed
+// plan handed to internal/container.Shell: image reference, bind set,
+// publish specs, env, working dir, container name, container Cmd, security
+// opts, and build args. The single external seam is Plan; Merge is the
+// pure-data twin used by tests.
 package sessionplan
 
 import (
@@ -60,7 +48,7 @@ type SessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	SecurityOpt   []string
-	Cfg           *config.Config
+	BuildArgs     map[string]*string
 }
 
 // MergedSessionPlan is the pure-data shape returned by Merge. Binds are
@@ -76,7 +64,7 @@ type MergedSessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	SecurityOpt   []string
-	Cfg           *config.Config
+	BuildArgs     map[string]*string
 }
 
 // Plan walks the full session pipeline for cfg + workspace + ports and
@@ -85,37 +73,24 @@ type MergedSessionPlan struct {
 // be parsed, or when the home directory cannot be resolved. Per-mount
 // soft skips surface via SessionPlan.Warnings.
 func Plan(cfg *config.Config, workspace string, ports []string, cliVersion string) (*SessionPlan, error) {
-	// Workspace normalization once at the top (Pitfall 8): every
-	// downstream consumer (container name, bind sources, env vars) sees
-	// the same absolute, cleaned path. Lifecycle no longer normalizes
-	// after Plan 02.
-	if abs, absErr := filepath.Abs(workspace); absErr == nil {
-		workspace = filepath.Clean(abs)
-	}
+	workspace = normalizeWorkspace(workspace)
 
-	// Port stage (SESS-04): parse --publish specs into typed Docker
-	// ExposedPorts + PortBindings with 127.0.0.1 default HostIP.
 	exposed, bindings, err := parsePublishSpecs(ports)
 	if err != nil {
 		return nil, err
 	}
 
-	// Image stage (SESS-03): compose build.ResolveImage inside Plan
-	// instead of having the caller invoke it inline.
 	ref, isLocal := build.ResolveImage(cfg, cliVersion)
 
-	// Mount stage (SESS-01 mount delegation): mountplan.Plan owns the
-	// full mount pipeline — fs side effects (mkdir, symlinks) happen
-	// inside this call. Per-mount soft skips ride out on Warnings.
+	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
+	// soft skips ride out on Warnings.
 	mp, err := mountplan.Plan(cfg, workspace)
 	if err != nil {
 		return nil, err
 	}
 
-	// Shell stage: resolve the container Cmd up front so an incoherent
-	// (shell: zsh + tools.zsh: false) config exits before lifecycle
-	// touches Docker. Delegated to internal/shellcmd to avoid an import
-	// cycle between sessionplan and container.
+	// Resolve the container Cmd up front so an incoherent shell+tools
+	// combination fails before lifecycle touches Docker.
 	cmd, err := shellcmd.ResolveShellCmd(cfg)
 	if err != nil {
 		return nil, err
@@ -132,7 +107,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
-		Cfg:           cfg,
+		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 	}, nil
 }
 
@@ -141,9 +116,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 // config.Mount slice. Tests asserting the contract construct merged plans
 // without t.TempDir / HOME setup.
 func Merge(cfg *config.Config, workspace string, ports []string, cliVersion string) (*MergedSessionPlan, error) {
-	if abs, absErr := filepath.Abs(workspace); absErr == nil {
-		workspace = filepath.Clean(abs)
-	}
+	workspace = normalizeWorkspace(workspace)
 
 	exposed, bindings, err := parsePublishSpecs(ports)
 	if err != nil {
@@ -152,22 +125,18 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 
 	ref, isLocal := build.ResolveImage(cfg, cliVersion)
 
-	// Mount stage: mountplan.Merge is pure (no fs side effects). Tests
-	// construct merged plans without t.TempDir / HOME setup.
 	merged, err := mountplan.Merge(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// WorkingDir: pure-data Merge cannot consult the fs to decide
-	// whether the mirror path is safe (mountplan.WorkspaceMirrorPath
-	// inspects nothing today, but the asymmetry is documented so a
-	// future fs-aware predicate stays Plan-only). Default to
-	// mountplan.WorkspaceTarget in the pure-merge view.
+	// Pure WorkingDir: mountplan.WorkspaceMirrorPath is fs-free, so Merge
+	// can match Plan's mirror-or-target choice without touching disk.
 	workingDir := mountplan.WorkspaceTarget
+	if mirror, ok := mountplan.WorkspaceMirrorPath(workspace); ok {
+		workingDir = mirror
+	}
 
-	// Shell stage: same pure-data composition as Plan — shellcmd is
-	// fs-free.
 	cmd, err := shellcmd.ResolveShellCmd(cfg)
 	if err != nil {
 		return nil, err
@@ -183,7 +152,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
-		Cfg:           cfg,
+		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 	}, nil
 }
 
@@ -191,14 +160,14 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 // container was not created with. PortBindings are fixed at create time,
 // so "--publish" on a reused container is a silent no-op for any port
 // not in this list. nil-safe against InspectResponse.ContainerJSONBase
-// and HostConfig (CONT-05 / Pitfall 7).
-func MissingPublishPorts(plan *SessionPlan, inspect container.InspectResponse) []string {
+// and HostConfig.
+func MissingPublishPorts(wanted nat.PortMap, inspect container.InspectResponse) []string {
 	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
 		return nil
 	}
 	current := inspect.HostConfig.PortBindings
 	var missing []string
-	for port := range plan.PortBindings {
+	for port := range wanted {
 		if _, ok := current[port]; !ok {
 			missing = append(missing, string(port))
 		}
@@ -223,11 +192,7 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // 63 chars (Docker convention): basename is truncated first so the prefix
 // and hash suffix survive.
 func ContainerNameFor(workspace string) string {
-	abs, err := filepath.Abs(workspace)
-	if err != nil {
-		abs = workspace
-	}
-	abs = filepath.Clean(abs)
+	abs := normalizeWorkspace(workspace)
 
 	sum := sha256.Sum256([]byte(abs))
 	hash := hex.EncodeToString(sum[:])[:8]
@@ -249,6 +214,16 @@ func ContainerNameFor(workspace string) string {
 	}
 
 	return ContainerNamePrefix + base + "-" + hash
+}
+
+// normalizeWorkspace returns the workspace path as an absolute, cleaned
+// path. Falls back to the input on Abs failure (the empty string and other
+// pathological inputs propagate untouched and surface downstream).
+func normalizeWorkspace(workspace string) string {
+	if abs, err := filepath.Abs(workspace); err == nil {
+		return filepath.Clean(abs)
+	}
+	return workspace
 }
 
 // --- Port Parsing ---

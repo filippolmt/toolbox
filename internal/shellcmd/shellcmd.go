@@ -17,7 +17,7 @@ import (
 // ShellMismatchError is returned when the requested shell cannot be
 // launched because the corresponding tools entry is disabled. Callers
 // pattern-match on this type to print a remediation message and exit
-// non-zero (SHELL-03). The Error() message MUST include both the
+// non-zero. The Error() message MUST include both the
 // `shell: <name>` and `tools.<name>: false` substrings — a smoke
 // assertion greps for them.
 type ShellMismatchError struct {

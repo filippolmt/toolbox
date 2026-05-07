@@ -12,8 +12,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
-
-	"github.com/filippolmt/toolbox/internal/config"
 )
 
 // attachMock is a minimal Docker SDK mock for the three exec methods used
@@ -63,7 +61,7 @@ func TestExecShell_ContainerExecCreateError(t *testing.T) {
 		},
 	}
 
-	err := execShell(context.Background(), cli, &config.Config{Shell: "zsh"}, "cid-123")
+	err := execShell(context.Background(), cli, "cid-123", []string{"/bin/zsh"})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("execShell err = %v, want %v", err, wantErr)
 	}
@@ -83,7 +81,7 @@ func TestExecShell_ContainerExecAttachError(t *testing.T) {
 		},
 	}
 
-	err := execShell(context.Background(), cli, &config.Config{Shell: "bash"}, "cid")
+	err := execShell(context.Background(), cli, "cid", []string{"/bin/bash"})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("execShell err = %v, want %v", err, wantErr)
 	}
@@ -140,7 +138,7 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- execShell(context.Background(), cli, &config.Config{Shell: "bash"}, "cid")
+		done <- execShell(context.Background(), cli, "cid", []string{"/bin/bash"})
 	}()
 
 	select {

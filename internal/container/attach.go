@@ -13,20 +13,20 @@ import (
 	"github.com/docker/docker/client"
 	"golang.org/x/term"
 
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// execShell attaches an interactive shell session (zsh or bash per cfg.Shell)
-// to the container. Handles TTY raw mode, signal forwarding (SIGINT/SIGTERM),
-// terminal resize (SIGWINCH), and bidirectional I/O.
-func execShell(ctx context.Context, cli client.APIClient, cfg *config.Config, containerID string) error {
+// execShell attaches an interactive shell session to the container using the
+// caller-supplied cmd (already resolved upstream by sessionplan.Plan via
+// shellcmd.ResolveShellCmd). Handles TTY raw mode, signal forwarding
+// (SIGINT/SIGTERM), terminal resize (SIGWINCH), and bidirectional I/O.
+func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) error {
 	execResp, err := cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
-		Cmd:          []string{"/bin/" + cfg.Shell},
+		Cmd:          cmd,
 	})
 	if err != nil {
 		return fmt.Errorf("create exec for container %s: %w", containerID, err)

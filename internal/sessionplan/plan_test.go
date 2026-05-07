@@ -394,7 +394,6 @@ func TestMissingPublishPortsTable(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			plan := &sessionplan.SessionPlan{PortBindings: tc.wanted}
 			var inspect container.InspectResponse
 			switch {
 			case tc.nilBase:
@@ -411,7 +410,7 @@ func TestMissingPublishPortsTable(t *testing.T) {
 				}
 			}
 
-			got := sessionplan.MissingPublishPorts(plan, inspect)
+			got := sessionplan.MissingPublishPorts(tc.wanted, inspect)
 			sort.Strings(got)
 			want := append([]string(nil), tc.wantMissing...)
 			sort.Strings(want)
@@ -498,10 +497,10 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 	})
 }
 
-// TestPlanHoldsCfg: the same *config.Config pointer passed in lands on
-// plan.Cfg. Identity check via ==. Lifecycle reads plan.Cfg to invoke
-// ensureImage (auto-build) and execShellFn.
-func TestPlanHoldsCfg(t *testing.T) {
+// TestPlanComputesBuildArgs asserts cfg.Tools is materialised into
+// plan.BuildArgs once at Plan time so lifecycle.ensureImage stays a pure
+// consumer of the typed plan.
+func TestPlanComputesBuildArgs(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	workspace := filepath.Join(tmpHome, "ws")
@@ -510,12 +509,14 @@ func TestPlanHoldsCfg(t *testing.T) {
 	}
 
 	cfg := testConfig()
+	cfg.Tools["gcloud"] = false
 	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Cfg != cfg {
-		t.Errorf("plan.Cfg pointer mismatch: got %p, want %p", plan.Cfg, cfg)
+	v, ok := plan.BuildArgs["INSTALL_GCLOUD"]
+	if !ok || v == nil || *v != "false" {
+		t.Errorf("BuildArgs[INSTALL_GCLOUD] = %v, want pointer to \"false\"", v)
 	}
 }
 

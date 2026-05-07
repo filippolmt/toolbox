@@ -39,8 +39,6 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// SESS-02: build the typed plan once; lifecycle.Shell becomes a
-	// pure consumer. version.Version is a var string (NOT a function).
 	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
 	if err != nil {
 		return err
