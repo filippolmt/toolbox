@@ -1,6 +1,7 @@
 package sessionplan_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // testConfig returns a *config.Config whose Tools map matches the catalog
@@ -418,6 +420,135 @@ func TestMissingPublishPortsTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Cmd / SecurityOpt / Cfg ---
+
+// TestPlanComputesCmd asserts the shell command resolution rides through
+// Plan: bash returns /bin/bash, and shell:zsh + tools.zsh:false fails
+// with a wrapped *shellcmd.ShellMismatchError before any Docker work
+// could happen.
+func TestPlanComputesCmd(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Run("bash with bash enabled returns /bin/bash", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Shell = "bash"
+		cfg.Tools["bash"] = true
+		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if !slices.Equal(plan.Cmd, []string{"/bin/bash"}) {
+			t.Errorf("Cmd = %v, want [/bin/bash]", plan.Cmd)
+		}
+	})
+
+	t.Run("zsh disabled returns ShellMismatchError", func(t *testing.T) {
+		cfg := &config.Config{
+			Shell: "zsh",
+			Tools: map[string]bool{"zsh": false},
+		}
+		_, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		if err == nil {
+			t.Fatal("Plan should reject shell:zsh + tools.zsh:false")
+		}
+		var mismatch *shellcmd.ShellMismatchError
+		if !errors.As(err, &mismatch) {
+			t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+		}
+	})
+}
+
+// TestPlanComputesSecurityOpt: codex enabled (or absent) → seccomp opts;
+// codex explicitly disabled → nil.
+func TestPlanComputesSecurityOpt(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Run("codex enabled emits seccomp=unconfined", func(t *testing.T) {
+		plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if !slices.Equal(plan.SecurityOpt, []string{"seccomp=unconfined"}) {
+			t.Errorf("SecurityOpt = %v, want [seccomp=unconfined]", plan.SecurityOpt)
+		}
+	})
+
+	t.Run("codex disabled emits nil SecurityOpt", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Tools["codex"] = false
+		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if plan.SecurityOpt != nil {
+			t.Errorf("SecurityOpt = %v, want nil", plan.SecurityOpt)
+		}
+	})
+}
+
+// TestPlanHoldsCfg: the same *config.Config pointer passed in lands on
+// plan.Cfg. Identity check via ==. Lifecycle reads plan.Cfg to invoke
+// ensureImage (auto-build) and execShellFn.
+func TestPlanHoldsCfg(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if plan.Cfg != cfg {
+		t.Errorf("plan.Cfg pointer mismatch: got %p, want %p", plan.Cfg, cfg)
+	}
+}
+
+// TestMergeAlsoComputesCmd: same shell-resolution semantics surface at
+// the pure-data Merge tier (no t.TempDir / HOME setup needed).
+func TestMergeAlsoComputesCmd(t *testing.T) {
+	t.Run("bash returns /bin/bash", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Shell = "bash"
+		cfg.Tools["bash"] = true
+		merged, err := sessionplan.Merge(cfg, "/workspace", nil, "dev")
+		if err != nil {
+			t.Fatalf("Merge: %v", err)
+		}
+		if !slices.Equal(merged.Cmd, []string{"/bin/bash"}) {
+			t.Errorf("Merge.Cmd = %v, want [/bin/bash]", merged.Cmd)
+		}
+	})
+
+	t.Run("zsh disabled errors", func(t *testing.T) {
+		cfg := &config.Config{
+			Shell: "zsh",
+			Tools: map[string]bool{"zsh": false},
+		}
+		_, err := sessionplan.Merge(cfg, "/workspace", nil, "dev")
+		if err == nil {
+			t.Fatal("Merge should reject shell:zsh + tools.zsh:false")
+		}
+		var mismatch *shellcmd.ShellMismatchError
+		if !errors.As(err, &mismatch) {
+			t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+		}
+	})
 }
 
 // --- Helpers ---

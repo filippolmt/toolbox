@@ -1,7 +1,8 @@
 // Package container owns the toolbox-container lifecycle: ensuring the
 // image, creating/starting/stopping the per-workspace container, and
 // attaching an interactive shell. Public seams: Shell, Stop, StopAll,
-// ResolveShellCmd, NewClient, ShellMismatchError.
+// NewClient. ResolveShellCmd / NestedSandboxSecurityOpt /
+// ShellMismatchError live in internal/shellcmd (cycle-breaker).
 //
 // The orchestration Module lives in lifecycle.go (this file), sectioned
 // into Naming, Workspace Env, Port Bindings, Lifecycle, and Cleanup
@@ -36,6 +37,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/shellcmd"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
 )
@@ -211,53 +213,6 @@ func formatPublishMismatch(inspect container.InspectResponse, wanted nat.PortMap
 
 // --- Lifecycle ---
 
-// ShellMismatchError is returned when the requested shell cannot be launched
-// because the corresponding tools entry is disabled. Callers pattern-match
-// on this type to print a remediation message and exit non-zero (SHELL-03,
-// D-18). The Error() message MUST include both the `shell: <name>` and
-// `tools.<name>: false` substrings — a smoke assertion greps for them.
-type ShellMismatchError struct {
-	Shell string
-}
-
-func (e *ShellMismatchError) Error() string {
-	return fmt.Sprintf(
-		"shell %q requested but tools.%s is disabled.\n"+
-			"  shell: %s\n"+
-			"  tools.%s: false\n"+
-			"  • set `tools.%s: true` in ~/.toolbox.yaml, OR\n"+
-			"  • set `shell: bash` to use bash instead",
-		e.Shell, e.Shell, e.Shell, e.Shell, e.Shell)
-}
-
-// ResolveShellCmd returns the container command for the configured shell, or a
-// typed *ShellMismatchError when the combination is incoherent (SHELL-02 +
-// SHELL-03, D-17). Re-validates cfg.Shell defensively: Load() already rejects
-// unsupported values, but callers that bypass Load() (tests, future entry
-// points) must not be able to smuggle an arbitrary string into /bin/<x>.
-func ResolveShellCmd(cfg *config.Config) ([]string, error) {
-	if err := config.ValidateShell(cfg.Shell); err != nil {
-		return nil, err
-	}
-	if cfg.Shell == "zsh" {
-		if enabled, ok := cfg.Tools["zsh"]; ok && !enabled {
-			return nil, &ShellMismatchError{Shell: "zsh"}
-		}
-	}
-	return []string{"/bin/" + cfg.Shell}, nil
-}
-
-// nestedSandboxSecurityOpt returns Docker security options needed by tools
-// that create their own Linux sandbox inside toolbox. Codex's built-in
-// sandbox uses bubblewrap, which needs user namespaces; Docker's default
-// seccomp profile blocks the required clone/unshare calls.
-func nestedSandboxSecurityOpt(cfg *config.Config) []string {
-	if enabled, ok := cfg.Tools["codex"]; ok && !enabled {
-		return nil
-	}
-	return []string{"seccomp=unconfined"}
-}
-
 // NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -301,7 +256,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 	// incoherent config (shell: zsh + tools.zsh: false) exits early with a
 	// clear message and no container/image side-effects (D-17, D-18).
 	// Error printing is handled by cmd.Execute().
-	shellCmd, resolveErr := ResolveShellCmd(cfg)
+	shellCmd, resolveErr := shellcmd.ResolveShellCmd(cfg)
 	if resolveErr != nil {
 		return resolveErr
 	}
@@ -387,7 +342,7 @@ func Shell(ctx context.Context, cli client.APIClient, cfg *config.Config, worksp
 				Binds:        binds,
 				GroupAdd:     dockerSockGroups(binds),
 				PortBindings: bindings,
-				SecurityOpt:  nestedSandboxSecurityOpt(cfg),
+				SecurityOpt:  shellcmd.NestedSandboxSecurityOpt(cfg),
 			},
 			nil, // network config
 			nil, // platform

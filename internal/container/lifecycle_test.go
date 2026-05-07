@@ -21,6 +21,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // notFoundError implements the errdefs "not found" interface.
@@ -1109,6 +1110,101 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	// TestShellPublishMismatchWarning's pattern.
 	if strings.Contains(captured, "publish mismatch") {
 		t.Fatalf("expected no publish-mismatch warning on nil-base path, got stderr: %q", captured)
+	}
+}
+
+// TestShellEarlyExitOnShellMismatch (SHELL-03, D-22): Shell() must return the
+// mismatch error BEFORE any Docker API call. This is the "no container
+// created" acceptance from SPEC Requirement 10.
+func TestShellEarlyExitOnShellMismatch(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	cfg := &config.Config{
+		Shell: "zsh",
+		Tools: map[string]bool{"zsh": false},
+	}
+
+	inspectCalls := 0
+	createCalls := 0
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			inspectCalls++
+			return container.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			createCalls++
+			return container.CreateResponse{}, nil
+		},
+	}
+
+	err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil)
+	if err == nil {
+		t.Fatal("Shell() should have returned an error for shell:zsh + tools.zsh:false")
+	}
+	var mismatch *shellcmd.ShellMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+	}
+	if inspectCalls != 0 {
+		t.Errorf("ContainerInspect should NOT be called on shell mismatch, got %d calls", inspectCalls)
+	}
+	if createCalls != 0 {
+		t.Errorf("ContainerCreate should NOT be called on shell mismatch, got %d calls", createCalls)
+	}
+}
+
+// TestShellCreateUsesResolvedShellCmd (SHELL-02): verify the Cmd captured by
+// ContainerCreate uses the resolved shell binary. Covers both the `shell:
+// bash` regression path and the `shell: zsh` default path at the integration
+// unit level.
+func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
+	cases := []struct {
+		name    string
+		shell   string
+		wantCmd []string
+	}{
+		{"default zsh", "zsh", []string{"/bin/zsh"}},
+		{"explicit bash", "bash", []string{"/bin/bash"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called, restore := stubExecShell()
+			defer restore()
+
+			var capturedCmd []string
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+					return nil, errors.New("offline — use local image")
+				},
+				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCmd = cfg.Cmd
+					return container.CreateResponse{ID: "new"}, nil
+				},
+			}
+
+			cfg := &config.Config{
+				Shell: tc.shell,
+				Tools: config.DefaultTools(),
+			}
+
+			if err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			if !*called {
+				t.Fatal("execShellFn should have been called")
+			}
+			if len(capturedCmd) != len(tc.wantCmd) || capturedCmd[0] != tc.wantCmd[0] {
+				t.Errorf("Cmd = %v, want %v", capturedCmd, tc.wantCmd)
+			}
+		})
 	}
 }
 

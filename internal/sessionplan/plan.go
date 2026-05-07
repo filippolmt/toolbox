@@ -32,6 +32,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // --- Public Seams ---
@@ -57,6 +58,9 @@ type SessionPlan struct {
 	PortBindings  nat.PortMap
 	Env           []string
 	ContainerName string
+	Cmd           []string
+	SecurityOpt   []string
+	Cfg           *config.Config
 }
 
 // MergedSessionPlan is the pure-data shape returned by Merge. Binds are
@@ -70,6 +74,9 @@ type MergedSessionPlan struct {
 	PortBindings  nat.PortMap
 	Env           []string
 	ContainerName string
+	Cmd           []string
+	SecurityOpt   []string
+	Cfg           *config.Config
 }
 
 // Plan walks the full session pipeline for cfg + workspace + ports and
@@ -105,6 +112,15 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		return nil, err
 	}
 
+	// Shell stage: resolve the container Cmd up front so an incoherent
+	// (shell: zsh + tools.zsh: false) config exits before lifecycle
+	// touches Docker. Delegated to internal/shellcmd to avoid an import
+	// cycle between sessionplan and container.
+	cmd, err := shellcmd.ResolveShellCmd(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SessionPlan{
 		Image:         Image{Ref: ref, IsLocal: isLocal},
 		Binds:         mp.Binds,
@@ -114,6 +130,9 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		PortBindings:  bindings,
 		Env:           shellEnv(workspace, mp.WorkingDir),
 		ContainerName: ContainerNameFor(workspace),
+		Cmd:           cmd,
+		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
+		Cfg:           cfg,
 	}, nil
 }
 
@@ -147,6 +166,13 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 	// mountplan.WorkspaceTarget in the pure-merge view.
 	workingDir := mountplan.WorkspaceTarget
 
+	// Shell stage: same pure-data composition as Plan — shellcmd is
+	// fs-free.
+	cmd, err := shellcmd.ResolveShellCmd(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return &MergedSessionPlan{
 		Image:         Image{Ref: ref, IsLocal: isLocal},
 		Binds:         merged,
@@ -155,6 +181,9 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		PortBindings:  bindings,
 		Env:           shellEnv(workspace, workingDir),
 		ContainerName: ContainerNameFor(workspace),
+		Cmd:           cmd,
+		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
+		Cfg:           cfg,
 	}, nil
 }
 
