@@ -108,3 +108,39 @@ to assert image-tag resolution or container-name determinism. The
 that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
+
+### Init Sequence
+
+The boot-time per-tool init manifest: a catalog-declared list of small
+shell scripts each `entrypoint.sh` runs in a subshell after the credential
+check and before user startup hooks.
+
+Concretely: `catalog.Entry.InitScript (Go declaration) → //go:embed
+assets/init.d → tarEmbeddedContext walks the subtree → Dockerfile COPY
+init.d/ /usr/local/lib/toolbox/init.d/ + chmod -R 0755 → entrypoint.sh
+iterator (for f in $INIT_D/*.sh; do bash "$f" 2>"$_log"; done) with
+tail-5-on-failure envelope → per-script self-gate (command -v X || exit 0)`.
+Owned by `internal/build/assets/init.d/` (the scripts) and
+`internal/catalog.Entry.InitScript` (the manifest). Marker logs land at
+`$HOME/.toolbox-state/init/<name>.log` inside the container (bind-mount
+source `~/.toolbox/state/init/` on the host). The MCP-plugins script keeps
+a per-plugin `.toolbox-build-error.log` next to the per-plugin marker
+(`.toolbox-built`) — a deliberate exception to the iterator-level envelope
+so plugin upgrades naturally invalidate stale logs. Set-equality between
+`Entry.InitScript` values and `init.d/*.sh` files is enforced by
+`TestCatalogInitDBijection` Go-side and by the `init.d bijection +
+executability` block in `smoke-test.sh` shell-side (mode 0755 verified
+inside the built image).
+
+Why the term exists: before this concept was named, per-tool boot logic
+(rtk hook wiring, cf skill seed, graphify install, playwright-cli skills,
+MCP plugin auto-build) accumulated as inline blocks in `entrypoint.sh`
+with heterogeneous failure handling — only the MCP block had a marker
+log + tail-5 surface; the others swallowed errors silently. Reading
+`entrypoint.sh` to find "what runs when I open a shell" required
+scrolling 250+ lines and tracing per-block gates by hand. The "Init
+Sequence" name makes the catalog the single discoverable list of init
+scripts, the iterator the single failure-envelope owner, and the
+filename `<NN>-` prefix the explicit ordering signal — with the
+manifest-driven shape the boot sequence is observable from the Go side
+without parsing the runtime image.
