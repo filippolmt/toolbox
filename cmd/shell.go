@@ -39,16 +39,19 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
-	if err != nil {
-		return err
-	}
-
 	cli, err := container.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	defer cli.Close()
+
+	// Plan after the Docker client is constructed so a failed client init
+	// (env parse / socket misconfig) does not leave behind mountplan.Plan
+	// fs side effects under ~/.toolbox and the workspace.
+	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
+	if err != nil {
+		return err
+	}
 
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
 	// signal context only fires during pull/build or on external kill.

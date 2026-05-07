@@ -82,16 +82,17 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 
 	ref, isLocal := build.ResolveImage(cfg, cliVersion)
 
-	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
-	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(cfg, workspace)
+	// Resolve the container Cmd up front so an incoherent shell+tools
+	// combination fails before any fs side effects (mountplan.Plan creates
+	// dirs/symlinks under ~/.toolbox; we don't want them on a config error).
+	cmd, err := shellcmd.ResolveShellCmd(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Resolve the container Cmd up front so an incoherent shell+tools
-	// combination fails before lifecycle touches Docker.
-	cmd, err := shellcmd.ResolveShellCmd(cfg)
+	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
+	// soft skips ride out on Warnings.
+	mp, err := mountplan.Plan(cfg, workspace)
 	if err != nil {
 		return nil, err
 	}
