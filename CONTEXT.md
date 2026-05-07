@@ -76,3 +76,35 @@ forcing `viper.Reset()` ceremony in every test body. The "Config Plan"
 name turns one fragmented init flow into one deep module mirroring
 the Mount Plan + Tool Catalog deepening pattern, and the per-call
 `viper.New()` instance retires `viper.Reset()` from the test surface.
+
+### Session Plan
+
+The full pipeline that turns a resolved `*Config`, a workspace path,
+`--publish` specs, and the host CLI version into the typed plan handed
+to `internal/container.Shell`: image reference, bind set, publish specs,
+env, working dir, container name, container command, and security
+options.
+
+Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
+(or mountplan.Merge for pure inspection) → ContainerNameFor → shellEnv
+→ shellcmd.ResolveShellCmd → shellcmd.NestedSandboxSecurityOpt`. Owned
+by `internal/sessionplan`. The single seam runtime callers and tests
+cross is `sessionplan.Plan(cfg, workspace, ports, cliVersion)`; pure
+inspection (no filesystem side-effects) is exposed as
+`sessionplan.Merge(cfg, workspace, ports, cliVersion)`. Port-mismatch
+detection is a separate pure function `sessionplan.MissingPublishPorts(plan,
+inspect)`; `internal/container` formats and emits the warning so the
+UI-conventions concern stays at the Docker edge. SessionPlan does NOT
+encode host-process identity (UID/GID) or daemon-fs state (sock GID);
+those are read at the Docker edge by lifecycle.
+
+Why the term exists: before this concept was named, `cmd/shell.go::runShell`
+and `internal/container/lifecycle.Shell` each ran the same five-stage
+sequencing inline, with image / mounts / ports / name / env derivations
+scattered across two call sites and three packages. Tests of the
+sequence required Docker SDK mocks (`mockClient` + `captureStderr`) just
+to assert image-tag resolution or container-name determinism. The
+"Session Plan" name turns the sequencing into one observable typed plan
+that tests construct without Docker — the SESS-05 acceptance heart.
+Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
+composition is what the v1.3 milestone calls Architecture Deepening.

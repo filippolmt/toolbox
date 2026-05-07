@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 var shellPublish []string
@@ -43,12 +45,20 @@ func runShell(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
+	// Plan after the Docker client is constructed so a failed client init
+	// (env parse / socket misconfig) does not leave behind mountplan.Plan
+	// fs side effects under ~/.toolbox and the workspace.
+	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
+	if err != nil {
+		return err
+	}
+
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
 	// signal context only fires during pull/build or on external kill.
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return container.Shell(ctx, cli, cfg, workspace, shellPublish)
+	return container.Shell(ctx, cli, plan)
 }
 
 func resolveWorkspace() (string, error) {

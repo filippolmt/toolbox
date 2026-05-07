@@ -21,6 +21,8 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // notFoundError implements the errdefs "not found" interface.
@@ -118,8 +120,7 @@ func testConfig() *config.Config {
 	// Empty Tools map is treated as default-true, so ResolveImage returns the
 	// canonical GHCR image with isLocal=false. That matches the existing test
 	// assumptions (pull path, not auto-build).
-	// Shell: "zsh" matches the Load() default (D-16) so ResolveShellCmd
-	// succeeds and tests exercise the SHELL-02 default path.
+	// Shell: "zsh" matches the Load() default so ResolveShellCmd succeeds.
 	return &config.Config{
 		Shell: "zsh",
 		Tools: config.DefaultTools(),
@@ -132,11 +133,35 @@ func testWorkspace(t *testing.T) string {
 	return t.TempDir()
 }
 
+// testPlan composes a *sessionplan.SessionPlan from the standard
+// testConfig() so call sites can hand the new (ctx, cli, plan) Shell
+// signature a fully populated plan without re-stating the seam call in
+// every test body.
+func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.SessionPlan {
+	t.Helper()
+	plan, err := sessionplan.Plan(testConfig(), workspace, publish, "dev")
+	if err != nil {
+		t.Fatalf("testPlan: %v", err)
+	}
+	return plan
+}
+
+// testPlanWithCfg is the variant for tests that vary cfg.Tools (e.g.
+// codex disabled, custom tools triggering local-build).
+func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish []string) *sessionplan.SessionPlan {
+	t.Helper()
+	plan, err := sessionplan.Plan(cfg, workspace, publish, "dev")
+	if err != nil {
+		t.Fatalf("testPlanWithCfg: %v", err)
+	}
+	return plan
+}
+
 // stubExecShell replaces execShellFn with a no-op and returns a restore callback.
 func stubExecShell() (called *bool, restore func()) {
 	c := false
 	orig := execShellFn
-	execShellFn = func(ctx context.Context, cli client.APIClient, cfg *config.Config, containerID string) error {
+	execShellFn = func(_ context.Context, _ client.APIClient, _ string, _ []string) error {
 		c = true
 		return nil
 	}
@@ -147,9 +172,9 @@ func stubExecShell() (called *bool, restore func()) {
 
 // TestShellContainerNaming exercises the container-naming behaviour through
 // the public Shell seam: each subtest invokes Shell with a workspace path and
-// asserts on the `name` argument captured from ContainerCreate. Replaces the
-// three former TestContainerNameFor* unit tests (D-01 / D-02): behaviour is
-// observed only through Shell, never by calling containerNameFor directly.
+// asserts on the `name` argument captured from ContainerCreate. Behaviour
+// is observed only through Shell, never by calling containerNameFor
+// directly.
 func TestShellContainerNaming(t *testing.T) {
 	// Sandbox HOME so any filesystem touch by mountplan.Plan lands in tmp,
 	// not the real ~/.toolbox/. Mirrors internal/mountplan/plan_test.go.
@@ -239,7 +264,7 @@ func TestShellContainerNaming(t *testing.T) {
 				},
 			}
 
-			if err := Shell(context.Background(), mock, testConfig(), tc.workspace, nil); err != nil {
+			if err := Shell(context.Background(), mock, testPlan(t, tc.workspace, nil)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			tc.assertName(t, capturedName)
@@ -274,7 +299,7 @@ func TestShellContainerNaming(t *testing.T) {
 				return container.CreateResponse{ID: "x"}, nil
 			},
 		}
-		if err := Shell(context.Background(), mock, testConfig(), "/Users/alice/project/toolbox", nil); err != nil {
+		if err := Shell(context.Background(), mock, testPlan(t, "/Users/alice/project/toolbox", nil)); err != nil {
 			t.Fatalf("Shell() error on rerun: %v", err)
 		}
 		if second != firstAlice {
@@ -288,7 +313,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	want := containerNameFor(ws)
+	want := sessionplan.ContainerNameFor(ws)
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
@@ -304,7 +329,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), ws, nil)
+	err := Shell(context.Background(), mock, testPlan(t, ws, nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -336,7 +361,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
+	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -353,7 +378,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	wantName := containerNameFor(ws)
+	wantName := sessionplan.ContainerNameFor(ws)
 
 	createCalled := false
 	startCalled := false
@@ -382,7 +407,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), ws, nil)
+	err := Shell(context.Background(), mock, testPlan(t, ws, nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -438,7 +463,7 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if !slices.Contains(capturedSecurityOpt, "seccomp=unconfined") {
@@ -454,7 +479,7 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 	cfg.Tools["codex"] = false
 
 	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
 		if !isLocal {
 			t.Error("expected isLocal=true when Codex is disabled")
 		}
@@ -473,7 +498,7 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if len(capturedSecurityOpt) != 0 {
@@ -509,7 +534,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -552,7 +577,7 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -586,7 +611,7 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
+	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err == nil {
 		t.Fatal("Shell() should have returned error for missing image")
 	}
@@ -608,7 +633,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 
 	buildCalled := false
 	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ *config.Config, _ string, isLocal bool) error {
+	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
 		if !isLocal {
 			t.Error("expected isLocal=true when tools differ from defaults")
 		}
@@ -626,7 +651,7 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, cfg, testWorkspace(t), nil)
+	err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -658,7 +683,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil)
+	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err != nil {
 		t.Fatalf("Shell() should not error when pull fails but local image exists, got: %v", err)
 	}
@@ -790,7 +815,7 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), ws, nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -837,7 +862,7 @@ func TestShellSkipsStopWhenSiblingExecRunning(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if stopCalled {
@@ -872,7 +897,7 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), nil); err != nil {
+	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if !stopCalled {
@@ -883,7 +908,7 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 // captureStderr swaps os.Stderr for a pipe during fn() and returns whatever
 // was written there. Used by TestShellPublishMismatchWarning to observe the
 // warning emitted via ui.Warning without intercepting the function itself
-// (D-02: behaviour observed only through the public Shell seam).
+// (behaviour observed only through the public Shell seam).
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	orig := os.Stderr
@@ -907,7 +932,7 @@ func captureStderr(t *testing.T, fn func()) string {
 // TestShellPublishPopulatesBindings verifies the happy path: --publish values
 // end up as both ExposedPorts on the container config and PortBindings on the
 // host config when a new container is created. Table-driven absorption of the
-// former TestParsePublishSpecs happy-path cases (D-01).
+// former TestParsePublishSpecs happy-path cases.
 func TestShellPublishPopulatesBindings(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -945,7 +970,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 				},
 			}
 
-			if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
+			if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			if capturedCfg == nil || capturedHost == nil {
@@ -969,81 +994,48 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 	}
 }
 
-// TestShellPublishInvalidSpecFailsFast verifies bad publish specs are rejected
-// BEFORE any Docker call — a typo on the flag should not create / start /
-// inspect anything. Table-driven absorption of the former TestParsePublishSpecs
-// error cases plus the original "empty input → no error, no inspect" case
-// (D-01).
-func TestShellPublishInvalidSpecFailsFast(t *testing.T) {
-	cases := []struct {
-		name           string
-		specs          []string
-		wantErr        bool
-		wantErrSub     string
-		wantEmptyPorts bool // for the wantErr==false branch: assert no ExposedPorts/PortBindings populated
-	}{
-		{name: "empty specs yield zero exposed/bindings", specs: nil, wantErr: false, wantEmptyPorts: true},
-		{name: "garbage spec returns wrapped error", specs: []string{"totally-bogus"}, wantErr: true, wantErrSub: "--publish"},
-		{name: "not-a-port returns wrapped error", specs: []string{"not-a-port"}, wantErr: true, wantErrSub: "--publish"},
+// TestShellPublishEmptyYieldsNoBindings verifies the empty-publish path:
+// nil specs yield zero ExposedPorts and zero PortBindings on the
+// container config handed to Docker. The error cases (bogus / not-a-port)
+// are caught at sessionplan.Plan composition time — no Docker client is
+// ever constructed, so they live in
+// internal/sessionplan/plan_test.go::TestPlanRejectsBadPort.
+func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	var capturedCfg *container.Config
+	var capturedHost *container.HostConfig
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+			return image.InspectResponse{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+			capturedCfg = cfg
+			capturedHost = hostCfg
+			return container.CreateResponse{ID: "x"}, nil
+		},
 	}
 
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			_, restore := stubExecShell()
-			defer restore()
-
-			inspectCalls := 0
-			var capturedCfg *container.Config
-			var capturedHost *container.HostConfig
-			mock := &mockClient{
-				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					inspectCalls++
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
-				},
-				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-					return image.InspectResponse{}, nil
-				},
-				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
-					capturedCfg = cfg
-					capturedHost = hostCfg
-					return container.CreateResponse{ID: "x"}, nil
-				},
-			}
-
-			err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if !strings.Contains(err.Error(), tc.wantErrSub) {
-					t.Errorf("error %q should contain %q", err.Error(), tc.wantErrSub)
-				}
-				if inspectCalls != 0 {
-					t.Errorf("ContainerInspect must not be called on parse error, got %d calls", inspectCalls)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tc.wantEmptyPorts {
-				if capturedCfg == nil || capturedHost == nil {
-					t.Fatal("ContainerCreate was not invoked")
-				}
-				if len(capturedCfg.ExposedPorts) != 0 {
-					t.Errorf("ExposedPorts must be empty for nil specs, got %v", capturedCfg.ExposedPorts)
-				}
-				if len(capturedHost.PortBindings) != 0 {
-					t.Errorf("PortBindings must be empty for nil specs, got %v", capturedHost.PortBindings)
-				}
-			}
-		})
+	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedCfg == nil || capturedHost == nil {
+		t.Fatal("ContainerCreate was not invoked")
+	}
+	if len(capturedCfg.ExposedPorts) != 0 {
+		t.Errorf("ExposedPorts must be empty for nil specs, got %v", capturedCfg.ExposedPorts)
+	}
+	if len(capturedHost.PortBindings) != 0 {
+		t.Errorf("PortBindings must be empty for nil specs, got %v", capturedHost.PortBindings)
 	}
 }
 
-// TestShellInspectNilContainerJSONBase pins the IN-03 / CONT-05 regression:
-// when ContainerInspect returns an InspectResponse whose embedded
+// TestShellInspectNilContainerJSONBase pins the regression: when
+// ContainerInspect returns an InspectResponse whose embedded
 // *ContainerJSONBase is nil (e.g. a future SDK shape change, a misbehaving
 // daemon, or a hand-rolled mock returning the zero value), Shell must not
 // panic on the promoted-field access. inspect.State is a promoted field
@@ -1093,7 +1085,7 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	publish := []string{"127.0.0.1:8080:8080"}
 
 	captured := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, testConfig(), ws, publish); err != nil {
+		if err := Shell(context.Background(), mock, testPlan(t, ws, publish)); err != nil {
 			t.Fatalf("Shell returned error: %v", err)
 		}
 	})
@@ -1112,92 +1104,81 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	}
 }
 
-// TestShellPublishMismatchWarning exercises the wanted-vs-actual mismatch
-// warning emitted by warnMissingPublish when --publish is passed against an
-// already-running container whose PortBindings were fixed at create time.
-// Table-driven absorption of the former TestFormatPublishMismatch +
-// TestMissingPublishPorts cases (D-01); the warning is observed via stderr
-// capture, never by calling formatPublishMismatch directly (D-02).
-func TestShellPublishMismatchWarning(t *testing.T) {
+// TestSessionPlanEarlyExitOnShellMismatch: the shell mismatch is caught at
+// sessionplan.Plan composition time, before cmd/shell.go has constructed a
+// Docker client. No container is created on this path.
+func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	ws := t.TempDir()
+
+	cfg := &config.Config{
+		Shell: "zsh",
+		Tools: map[string]bool{"zsh": false},
+	}
+
+	plan, err := sessionplan.Plan(cfg, ws, nil, "dev")
+	if err == nil {
+		t.Fatal("sessionplan.Plan should have errored for shell:zsh + tools.zsh:false")
+	}
+	if plan != nil {
+		t.Errorf("plan should be nil on error, got %+v", plan)
+	}
+	var mismatch *shellcmd.ShellMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+	}
+}
+
+// TestShellCreateUsesResolvedShellCmd: verify the Cmd captured by
+// ContainerCreate uses the resolved shell binary. Covers both the `shell:
+// bash` regression path and the `shell: zsh` default path at the integration
+// unit level.
+func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 	cases := []struct {
-		name          string
-		specs         []string
-		nilHostConfig bool        // simulate a running container with nil HostConfig
-		existingBinds nat.PortMap // existing container's PortBindings (when !nilHostConfig)
-		wantWarnSubs  []string    // substrings expected in the captured warning
-		wantNoWarn    bool        // expect no "publish mismatch" warning
+		name    string
+		shell   string
+		wantCmd []string
 	}{
-		{
-			name:          "no mismatch when wanted ports already bound",
-			specs:         []string{"7171:7171", "8080:8080"},
-			existingBinds: nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
-			wantNoWarn:    true,
-		},
-		{
-			name:          "structured message lists wanted, actual, missing",
-			specs:         []string{"7171:7171", "8080:8080"},
-			existingBinds: nat.PortMap{"7171/tcp": nil},
-			wantWarnSubs: []string{
-				"wanted [7171/tcp, 8080/tcp]",
-				"container has [7171/tcp]",
-				"missing [8080/tcp]",
-				"toolbox stop",
-			},
-		},
-		{
-			name:          "empty PortBindings reports actual=none",
-			specs:         []string{"7171:7171", "8080:8080"},
-			existingBinds: nat.PortMap{},
-			wantWarnSubs:  []string{"container has [none]", "missing"},
-		},
-		{
-			name:          "nil HostConfig produces no warning",
-			specs:         []string{"7171:7171"},
-			nilHostConfig: true,
-			wantNoWarn:    true,
-		},
+		{"default zsh", "zsh", []string{"/bin/zsh"}},
+		{"explicit bash", "bash", []string{"/bin/bash"}},
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, restore := stubExecShell()
+			called, restore := stubExecShell()
 			defer restore()
 
+			var capturedCmd []string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					if tc.nilHostConfig {
-						return container.InspectResponse{
-							ContainerJSONBase: &container.ContainerJSONBase{
-								State: &container.State{Running: true},
-							},
-						}, nil
-					}
-					return container.InspectResponse{
-						ContainerJSONBase: &container.ContainerJSONBase{
-							HostConfig: &container.HostConfig{PortBindings: tc.existingBinds},
-							State:      &container.State{Running: true},
-						},
-					}, nil
+					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+					return image.InspectResponse{}, nil
+				},
+				imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+					return nil, errors.New("offline — use local image")
+				},
+				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					capturedCmd = cfg.Cmd
+					return container.CreateResponse{ID: "new"}, nil
 				},
 			}
 
-			out := captureStderr(t, func() {
-				if err := Shell(context.Background(), mock, testConfig(), testWorkspace(t), tc.specs); err != nil {
-					t.Fatalf("Shell() error: %v", err)
-				}
-			})
-
-			if tc.wantNoWarn {
-				if strings.Contains(out, "publish mismatch") {
-					t.Errorf("expected no publish mismatch warning, got: %s", out)
-				}
-				return
+			cfg := &config.Config{
+				Shell: tc.shell,
+				Tools: config.DefaultTools(),
 			}
-			for _, sub := range tc.wantWarnSubs {
-				if !strings.Contains(out, sub) {
-					t.Errorf("warning missing %q\n  full: %s", sub, out)
-				}
+
+			if err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
+				t.Fatalf("Shell() error: %v", err)
+			}
+			if !*called {
+				t.Fatal("execShellFn should have been called")
+			}
+			if len(capturedCmd) != len(tc.wantCmd) || capturedCmd[0] != tc.wantCmd[0] {
+				t.Errorf("Cmd = %v, want %v", capturedCmd, tc.wantCmd)
 			}
 		})
 	}
