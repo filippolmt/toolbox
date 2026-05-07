@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Architecture Deepening
-status: "Phase 10 shipped — PR #160 (awaiting CI + merge)"
-last_updated: "2026-05-07T21:37:18.095Z"
-last_activity: "2026-05-07 -- Phase 10 shipped — PR #160"
+status: "shipped — milestone archived"
+last_updated: "2026-05-07T22:30:00Z"
+last_activity: "2026-05-07 -- v1.3 milestone shipped and archived"
 progress:
   total_phases: 6
   completed_phases: 6
@@ -17,10 +17,11 @@ progress:
 
 ## Current Position
 
-Phase: 10 — COMPLETE
-Plan: 9 of 9
-Status: Phase 10 shipped — PR #160 (awaiting CI + merge)
-Last activity: 2026-05-07 -- Phase 10 shipped — PR #160
+Milestone: v1.3 — SHIPPED 2026-05-07
+Status: Milestone archived. PR #160 merged (2026-05-07T21:40:26Z, all checks green). Tag `v1.3` to be pushed.
+Last activity: 2026-05-07 -- v1.3 milestone shipped and archived
+
+Next: `/gsd-new-milestone` to start next cycle.
 
 ## Project Reference
 
