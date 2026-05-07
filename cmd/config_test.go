@@ -5,16 +5,22 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
-
 	"github.com/filippolmt/toolbox/internal/catalog"
-	"github.com/filippolmt/toolbox/internal/config"
 )
+
+// resetCmdState restores the package-level vars touched by initConfig so
+// tests don't bleed state into each other. Replaces the previous viper.Reset()
+// pattern (D-09 — no global viper churn).
+func resetCmdState(t *testing.T, origCfgFile string) {
+	t.Helper()
+	cfgFile = origCfgFile
+	cfg = nil
+}
 
 // TestInitConfigExplicitFileIsRead is the regression guard for the bug where
 // `--config <path>` only called viper.SetConfigFile and never ReadInConfig, so
 // the user's yaml was silently ignored and defaults applied. Writes a yaml
-// with a non-default value and asserts Load() surfaces it.
+// with a non-default value and asserts the resolved *Config surfaces it.
 func TestInitConfigExplicitFileIsRead(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom.yaml")
@@ -22,25 +28,18 @@ func TestInitConfigExplicitFileIsRead(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	// Save/restore package-level state touched by initConfig.
 	origCfgFile := cfgFile
 	cfgFile = path
-	t.Cleanup(func() {
-		cfgFile = origCfgFile
-		viper.Reset()
-	})
-	viper.Reset()
+	t.Cleanup(func() { resetCmdState(t, origCfgFile) })
 
 	initConfig()
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error: %v", err)
+	if cfg == nil {
+		t.Fatal("cfg should be populated after initConfig")
 	}
 	if cfg.Tools["gcloud"] {
-		t.Error("gcloud should be false after --config read — initConfig must call ReadInConfig")
+		t.Error("gcloud should be false after --config read")
 	}
-	// Every other tool must stay at its default value (true).
 	for _, k := range catalog.Keys() {
 		if k == "gcloud" {
 			continue
@@ -51,11 +50,8 @@ func TestInitConfigExplicitFileIsRead(t *testing.T) {
 	}
 }
 
-// TestInitConfigProjectFileFromCWD reproduces the bug where launching
-// `toolbox shell` from a workspace that contains a `.toolbox.yaml` did not
-// pick up the project file: viper's MergeInConfig path caches the first
-// configFile resolved in initConfig, so when ~/.toolbox.yaml is absent the
-// project file in CWD must still be discovered and merged.
+// TestInitConfigProjectFileFromCWD: launching `toolbox shell` from a workspace
+// with a `.toolbox.yaml` must pick up the project file via Plan's walk-up.
 func TestInitConfigProjectFileFromCWD(t *testing.T) {
 	dir := t.TempDir()
 	mountsRoot := filepath.Join(dir, "mounts")
@@ -72,31 +68,28 @@ func TestInitConfigProjectFileFromCWD(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 
-	// Point HOME at an empty dir so no ~/.toolbox.yaml exists to mask the
-	// project-level lookup. This mirrors the user-reported scenario.
 	emptyHome := t.TempDir()
 	t.Setenv("HOME", emptyHome)
 
 	origCfgFile := cfgFile
 	cfgFile = ""
 	t.Cleanup(func() {
-		cfgFile = origCfgFile
+		resetCmdState(t, origCfgFile)
 		_ = os.Chdir(origWD)
-		viper.Reset()
 	})
-	viper.Reset()
 
 	initConfig()
 
-	if got := viper.GetString("mounts_root"); got != mountsRoot {
-		t.Errorf("mounts_root from CWD .toolbox.yaml not loaded: got %q, want %q", got, mountsRoot)
+	if cfg == nil {
+		t.Fatal("cfg should be populated")
+	}
+	if cfg.MountsRoot != mountsRoot {
+		t.Errorf("mounts_root from CWD .toolbox.yaml not loaded: got %q, want %q", cfg.MountsRoot, mountsRoot)
 	}
 }
 
-// TestInitConfigProjectFileWalksUpFromSubdir guards the user-reported bug:
-// launching `toolbox shell` from a subdirectory of the workspace must still
-// pick up the workspace's `.toolbox.yaml`. Mirrors how git resolves
-// `.git` / `.gitignore` from any nested CWD.
+// TestInitConfigProjectFileWalksUpFromSubdir: launching from a subdirectory
+// of the workspace must still find the workspace's .toolbox.yaml.
 func TestInitConfigProjectFileWalksUpFromSubdir(t *testing.T) {
 	workspace := t.TempDir()
 	mountsRoot := filepath.Join(workspace, "mounts")
@@ -123,34 +116,32 @@ func TestInitConfigProjectFileWalksUpFromSubdir(t *testing.T) {
 	origCfgFile := cfgFile
 	cfgFile = ""
 	t.Cleanup(func() {
-		cfgFile = origCfgFile
+		resetCmdState(t, origCfgFile)
 		_ = os.Chdir(origWD)
-		viper.Reset()
 	})
-	viper.Reset()
 
 	initConfig()
 
-	if got := viper.GetString("mounts_root"); got != mountsRoot {
-		t.Errorf("walk-up did not find workspace .toolbox.yaml: got %q, want %q", got, mountsRoot)
+	if cfg == nil {
+		t.Fatal("cfg should be populated")
+	}
+	if cfg.MountsRoot != mountsRoot {
+		t.Errorf("walk-up did not find workspace .toolbox.yaml: got %q, want %q", cfg.MountsRoot, mountsRoot)
 	}
 }
 
-// TestInitConfigProjectFileStopsAtHome guards against the walk-up search
-// re-reading ~/.toolbox.yaml as if it were a project file. The global is
-// handled by the dedicated branch above; the walk must terminate at HOME so
-// it can't double-load (and so a directory shape like ~/work/proj doesn't
-// silently treat ~ as the project root).
+// TestInitConfigProjectFileStopsAtHome: the walk-up must terminate at HOME so
+// the global ~/.toolbox.yaml is not re-read as a project file. The global
+// branch DOES read the file, so the resolved cfg.MountsRoot equals the global
+// value — the regression guard is that running from inside HOME doesn't
+// double-load the file or treat it as a project root.
 func TestInitConfigProjectFileStopsAtHome(t *testing.T) {
 	home := t.TempDir()
-	// Put a file directly at HOME — this represents the global config and
-	// must NOT be picked up as a project config by the walk-up path.
 	homeMounts := filepath.Join(home, "global-mounts")
 	yaml := "mounts_root: " + homeMounts + "\n"
 	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte(yaml), 0o600); err != nil {
 		t.Fatalf("write home config: %v", err)
 	}
-	// CWD = a sibling directory inside HOME (no project config of its own).
 	sub := filepath.Join(home, "work")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatalf("mkdir sub: %v", err)
@@ -168,33 +159,27 @@ func TestInitConfigProjectFileStopsAtHome(t *testing.T) {
 	origCfgFile := cfgFile
 	cfgFile = ""
 	t.Cleanup(func() {
-		cfgFile = origCfgFile
+		resetCmdState(t, origCfgFile)
 		_ = os.Chdir(origWD)
-		viper.Reset()
 	})
-	viper.Reset()
 
 	initConfig()
 
-	// Global path *does* read this file (initConfig still loads ~/.toolbox.yaml
-	// via AddConfigPath(home)), so mounts_root will equal homeMounts. The
-	// regression guard is that the walk-up did not also try to merge the
-	// HOME file as a project config (which would be a no-op here, but proves
-	// pathological behavior in edge cases). We assert findProjectConfig
-	// directly returns "" for a CWD inside HOME with no nested config.
-	if got := findProjectConfig(sub); got != "" {
-		t.Errorf("findProjectConfig should stop at HOME, got %q", got)
+	if cfg == nil {
+		t.Fatal("cfg should be populated")
 	}
-	// Sanity: global was read.
-	if got := viper.GetString("mounts_root"); got != homeMounts {
-		t.Errorf("global config not loaded: got %q, want %q", got, homeMounts)
+	// Walk-up must NOT have picked up ~/.toolbox.yaml as a project file.
+	// The global branch read the same file once — so the resolved value
+	// equals homeMounts. The deeper invariant (walk-up stops at HOME) is
+	// pinned by internal/config/plan_test.go::TestWalkUpStopsAtHome (Plan 01).
+	if cfg.MountsRoot != homeMounts {
+		t.Errorf("global config not loaded: got %q, want %q", cfg.MountsRoot, homeMounts)
 	}
 }
 
-// TestInitConfigAppliesDefaults verifies setDefaults() now runs on every
-// initConfig path (both the --config and the default-search branches). Before
-// the fix, defaults were only set in the else branch, so a `--config` user
-// that omitted a tool key missed the viper-side default.
+// TestInitConfigAppliesDefaults: catalog tool defaults must apply on the
+// --config branch too (regression guard from before defaults were unified
+// across both branches).
 func TestInitConfigAppliesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.yaml")
@@ -204,16 +189,15 @@ func TestInitConfigAppliesDefaults(t *testing.T) {
 
 	origCfgFile := cfgFile
 	cfgFile = path
-	t.Cleanup(func() {
-		cfgFile = origCfgFile
-		viper.Reset()
-	})
-	viper.Reset()
+	t.Cleanup(func() { resetCmdState(t, origCfgFile) })
 
 	initConfig()
 
+	if cfg == nil {
+		t.Fatal("cfg should be populated")
+	}
 	for _, k := range catalog.Keys() {
-		if !viper.GetBool("tools." + k) {
+		if !cfg.Tools[k] {
 			t.Errorf("default tools.%s should be true after initConfig, got false", k)
 		}
 	}
