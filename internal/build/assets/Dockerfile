@@ -30,7 +30,7 @@
 # aarch64-unknown-linux-musl OR when Microsoft Azure CLI's apt repo gains
 # a trixie suite (currently bookworm-only — blocks bumping the base image
 # to GLIBC 2.41+, which would let arm64 use the upstream gnu binary).
-ARG RTK_VERSION=0.38.0
+ARG RTK_VERSION=0.39.0
 
 FROM rust:1-slim-bookworm AS rtk-builder
 ARG TARGETARCH
