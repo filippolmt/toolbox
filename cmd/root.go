@@ -15,9 +15,7 @@ import (
 var cfgFile string
 
 // cfg holds the fully-resolved configuration produced by config.Plan during
-// initConfig. Subcommands (build, shell, stop) currently still consume the
-// pipeline via config.Load() (deprecated wrapper landing in Plan 05) — Phase
-// 09 (Session Plan) sweeps those call sites onto this var directly.
+// initConfig. Subcommands (build, shell, stop) consume this var directly.
 var cfg *config.Config
 
 // usageError marks a flag- or argument-parsing failure so Execute can map it
