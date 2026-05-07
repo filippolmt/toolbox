@@ -105,16 +105,13 @@ func mergeBuildArgs(args map[string]*string) map[string]*string {
 // tarEmbeddedContext serialises the embedded assets into an in-memory tar the
 // Docker daemon can consume as a build context. Filenames inside the tar are
 // the path of each asset relative to AssetDir — top-level files keep their
-// basename (so the Dockerfile's `COPY bashrc.sh …` still resolves) and
-// nested entries (e.g. `init.d/10-rtk.sh`) keep their subdirectory prefix
-// so the Dockerfile can `COPY init.d/ /usr/local/lib/toolbox/init.d/`.
+// basename (so `COPY bashrc.sh …` resolves) and nested entries (e.g.
+// `init.d/10-rtk.sh`) keep their subdirectory prefix so `COPY init.d/ …`
+// resolves too.
 //
-// Walks the embed.FS recursively (Phase 10): the previous flat fs.ReadDir
-// loop skipped directories entirely, so the new assets/init.d/ subtree had
-// to be lifted to a fs.WalkDir traversal (research hazard #3). Files under
-// init.d/ get tar mode 0755 unconditionally — embed.FS strips executable
-// bits to 0444 (research hazard #2 / Pitfall 2), and the in-tar mode is the
-// belt half of the belt-and-braces guarantee with the Dockerfile chmod.
+// Files under init.d/ get tar mode 0755 unconditionally because embed.FS
+// strips executable bits to 0444 — the in-tar mode is the belt half of the
+// belt-and-braces guarantee with the Dockerfile chmod.
 func tarEmbeddedContext() (io.Reader, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
@@ -138,9 +135,6 @@ func tarEmbeddedContext() (io.Reader, error) {
 		mode := int64(0o644)
 		switch {
 		case strings.HasPrefix(rel, "init.d/"):
-			// research hazard #2: embed.FS strips exec bits to 0444; force
-			// 0755 for init.d/* so the iterator's `bash "$f"` and the
-			// in-image executability assertion both succeed.
 			mode = 0o755
 		case info.Mode()&0o111 != 0:
 			mode = 0o755

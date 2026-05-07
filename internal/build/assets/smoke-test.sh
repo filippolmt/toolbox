@@ -244,10 +244,9 @@ echo "OK: passwd entry injected for uid $(id -u)"
 
 echo ""
 echo "=== init.d bijection + executability ==="
-# Asserts D-12: every file in /usr/local/lib/toolbox/init.d/ is mode 0755 inside
-# the built image. The Go-side bijection (TestCatalogInitDBijection) covers the
-# catalog ↔ embed.FS direction; this shell-side check covers the Dockerfile
-# COPY ↔ in-image direction (executable bits restored despite embed.FS strip).
+# Shell-side counterpart of TestCatalogInitDBijection: confirms the
+# Dockerfile COPY → in-image direction restored exec bits despite embed.FS
+# stripping them.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 INIT_D=/usr/local/lib/toolbox/init.d
@@ -259,7 +258,7 @@ fail=0
 count=0
 for f in "$INIT_D"/*.sh; do
     if [ ! -x "$f" ]; then
-        echo "FAILED: $f is not executable (mode-0755 required per D-12)"
+        echo "FAILED: $f is not executable (mode 0755 required)"
         fail=1
     fi
     count=$((count+1))

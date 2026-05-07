@@ -935,14 +935,12 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
-# Phase 10 INIT-05 / D-11: ship the per-tool init manifest. The directory is
-# embedded into the Go binary via internal/build/embed.go so `toolbox build`
-# can rebuild without a repo checkout. The chmod is required even though
-# tarEmbeddedContext sets mode 0755 inside the tar (research hazard #2):
-# embed.FS strips executable bits to 0444 and Dockerfile COPY may normalise
-# permissions on certain BuildKit configurations. Belt-and-braces.
-# Co-located with the entrypoint COPY (Pitfall 7 — cache locality): edits to
-# init.d/ do not invalidate the zsh / rtk / user-setup layers downstream.
+# Per-tool init manifest. Embedded into the Go binary via internal/build/
+# embed.go so `toolbox build` can rebuild without a repo checkout. The chmod
+# is belt-and-braces: tarEmbeddedContext already sets 0755 in the tar but
+# embed.FS strips exec bits to 0444 and BuildKit may normalise permissions.
+# Co-located with the entrypoint COPY so init.d/ edits don't invalidate
+# downstream zsh/rtk/user-setup layers.
 COPY init.d/ /usr/local/lib/toolbox/init.d/
 RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
 

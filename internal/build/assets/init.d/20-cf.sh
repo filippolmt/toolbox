@@ -1,22 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install the `cf` Cloudflare CLI Claude Code skill on every shell start.
-# Idempotent — only writes when the file is absent (so a fresh
-# ~/.toolbox/.claude bind-mount always re-materialises the skill, but a user
-# edit on disk is preserved).
+# Seed the cf Claude skill on every shell start. Idempotent: only writes
+# when absent, so user edits survive but a fresh ~/.toolbox/.claude bind-mount
+# re-materialises the skill. Skill points Claude at `cf agent-context <product>`
+# on demand instead of pre-baking ~107 products of MD into the image.
 #
-# The skill itself is hand-written (not generated from `cf agent-context`)
-# because the universal guide + product-specific contexts are huge (~107
-# products, MBs of markdown). The skill instead instructs Claude to invoke
-# `cf agent-context <product>` on demand to fetch the focused guide for the
-# product the user actually mentioned. Single small skill file, fresh
-# product context per call, no version-tracking needed.
-#
-# Gated on `command -v cf` AND `command -v claude` AND directory presence.
-# The double-CLI gate matches the rtk pattern above: the bind-mount auto-
-# creates ~/.claude even when tools.claude=false, so a dir-only check would
-# write a skill into a directory Claude Code never reads.
+# Inner gate checks both `claude` AND ~/.claude exist because bind-mounts
+# auto-create the dir even when tools.claude=false.
 command -v cf >/dev/null 2>&1 || exit 0
 
 if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then

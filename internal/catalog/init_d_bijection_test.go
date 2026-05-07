@@ -1,14 +1,6 @@
-// Phase 10 Plan 01 — Wave 0 Go-side INIT-04 bijection test.
-//
-// Adapted from internal/catalog/dockerfile_bijection_test.go (the Phase 07
-// CAT-04 pattern) — instead of regex-on-Dockerfile this test ReadDirs the
-// embedded `assets/init.d/` subtree and asserts strict set-equality between
-// the *.sh basenames present and the non-empty `Entry.InitScript` values
-// declared in catalog.Entries.
-//
-// External-test-package form (`package catalog_test`) keeps internal/catalog
-// production-side acyclic with internal/build (which depends on
-// internal/catalog for WriteCanonical).
+// Bijection test: catalog.Entry.InitScript ↔ assets/init.d/*.sh.
+// External test package (catalog_test) keeps the production import graph
+// acyclic — internal/build depends on internal/catalog for WriteCanonical.
 
 package catalog_test
 
@@ -23,18 +15,10 @@ import (
 )
 
 // TestCatalogInitDBijection enforces strict set-equality between
-// catalog.Entries[*].InitScript (non-empty values) and the *.sh files shipped
-// under internal/build/assets/init.d/ via the build.Assets embed.FS.
-//
-// Direction A: every catalog InitScript value MUST exist as a file in init.d/.
-// Direction B: every *.sh file in init.d/ MUST have a matching catalog entry.
-//
-// Failure modes flagged:
-//   - Catalog declares InitScript without a backing file → orphan declaration.
-//   - File in init.d/ without a catalog declaration → unreachable script
-//     (the entrypoint iterator runs everything regardless of catalog ownership,
-//     but the bijection invariant exists so the catalog is the single
-//     discoverable list of "what runs at boot").
+// catalog.Entries[*].InitScript (non-empty values) and the *.sh files
+// shipped under internal/build/assets/init.d/. The entrypoint iterator
+// globs every file regardless of catalog membership; this invariant exists
+// so the catalog stays the single discoverable list of "what runs at boot".
 func TestCatalogInitDBijection(t *testing.T) {
 	entries, err := fs.ReadDir(build.Assets, build.AssetDir+"/init.d")
 	if err != nil {

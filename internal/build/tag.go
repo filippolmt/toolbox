@@ -83,14 +83,9 @@ func computeImageHash(cliVersion string, tools map[string]bool) (string, error) 
 // computeImageHashFromFS is the core hashing routine, parameterised on the
 // asset filesystem so tests can swap the embedded build context for a
 // fixture and verify that asset edits produce a different hash without
-// rebuilding the binary.
-//
-// Phase 10: walks the asset tree recursively (fs.WalkDir) so the new
-// assets/init.d/ subtree contributes to the hash. The walk emits asset
-// records keyed by the path relative to dir (e.g. "Dockerfile",
-// "init.d/10-rtk.sh"), so a fstest.MapFS with only flat files at the dir
-// root produces the same record stream as the prior ReadDir loop —
-// preserving the pinned digest in TestComputeImageHashPinnedDigest.
+// rebuilding the binary. Walks recursively so the assets/init.d/ subtree
+// contributes to the hash; flat fixtures still produce the same record
+// stream so the pinned-digest test stays stable.
 func computeImageHashFromFS(assets fs.FS, dir, cliVersion string, tools map[string]bool) (string, error) {
 	h := sha256.New()
 

@@ -72,17 +72,13 @@ if command -v oci >/dev/null 2>&1; then
     fi
 fi
 
-# Per-tool init scripts (Init Sequence — see CONTEXT.md glossary).
-# Each init.d/<NN>-<tool>.sh runs in a fresh bash subshell (D-05). Stderr is
-# captured to a per-script log; on failure the iterator surfaces the tail-5
-# inline so the user sees actionable diagnostics without scrolling. The
-# iterator's `if !` neutralises the outer `set -e` (Pitfall 9), so a failed
-# init script never aborts boot — startup hooks and `exec "$@"` always run.
+# Init Sequence (CONTEXT.md). Stderr → ~/.toolbox-state/init/<name>.log;
+# on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`
+# so a failed init never aborts boot.
 #
-# Marker-log path: $HOME/.toolbox-state/init/<name>.log. The container path
-# is .toolbox-state (NOT .toolbox/state) because the `state` bind-mount
-# resolves Source ~/.toolbox/state -> Target ~/.toolbox-state inside the
-# container (Pitfall 1 / mountplan defaults).
+# Log path is `.toolbox-state` (not `.toolbox/state`) because the `state`
+# bind-mount resolves Source `~/.toolbox/state` → Target `~/.toolbox-state`
+# inside the container.
 INIT_D="/usr/local/lib/toolbox/init.d"
 TOOLBOX_INIT_LOG_DIR="$HOME/.toolbox-state/init"
 if [ -d "$INIT_D" ]; then

@@ -11,9 +11,8 @@ import (
 )
 
 // TestCatalogShape asserts every Entry has non-empty Key + BuildArg.
-// In Phase 10, InitScript may be populated; when set it must end in ".sh".
-// Description and SmokeTest stay zero-valued (Phase 10 only populates
-// InitScript — D-08 relaxed per Pitfall 8).
+// InitScript may be populated; when set it must end in ".sh". Description
+// and SmokeTest are reserved for future phases and must stay zero-valued.
 func TestCatalogShape(t *testing.T) {
 	if len(catalog.Entries) == 0 {
 		t.Fatal("catalog.Entries must not be empty")
@@ -23,7 +22,7 @@ func TestCatalogShape(t *testing.T) {
 			t.Errorf("entry[%d]: Key and BuildArg must be non-empty (got %+v)", i, e)
 		}
 		if e.Description != "" || e.SmokeTest != "" {
-			t.Errorf("entry[%d] %q: Description and SmokeTest must be zero in Phase 10; got Description=%q SmokeTest=%q",
+			t.Errorf("entry[%d] %q: Description and SmokeTest must be zero; got Description=%q SmokeTest=%q",
 				i, e.Key, e.Description, e.SmokeTest)
 		}
 		if e.InitScript != "" && !strings.HasSuffix(e.InitScript, ".sh") {

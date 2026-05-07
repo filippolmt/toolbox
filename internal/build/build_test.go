@@ -38,15 +38,8 @@ func TestStreamBuildOutputError(t *testing.T) {
 }
 
 // TestTarEmbeddedContext verifies the tar produced from the embedded assets
-// contains the Dockerfile and companion scripts at the root, so the
-// Dockerfile's `COPY bashrc.sh …` resolves against the build context.
-//
-// Phase 10 (INIT-05): the previous "no nested paths" assertion was relaxed.
-// init.d/<NN>-<tool>.sh entries are intentionally nested under init.d/ so the
-// Dockerfile's `COPY init.d/ /usr/local/lib/toolbox/init.d/` ships the whole
-// subtree. Top-level files (Dockerfile, bashrc.sh, entrypoint.sh, zshrc.sh)
-// must still be at the root; init.d/* must live exclusively under init.d/;
-// nothing else may introduce a new nesting level.
+// contains the Dockerfile and companion scripts at the root (so `COPY
+// bashrc.sh …` resolves) and that init.d/ is the only allowed nesting level.
 func TestTarEmbeddedContext(t *testing.T) {
 	r, err := tarEmbeddedContext()
 	if err != nil {
@@ -76,9 +69,9 @@ func TestTarEmbeddedContext(t *testing.T) {
 	}
 }
 
-// TestEmbedAssetsContainsInitDDir asserts the //go:embed directive ships the
-// init.d/ subtree (Phase 10 INIT-05). Without the bare-directory pattern the
-// 5 placeholder scripts would never reach the build context tar.
+// TestEmbedAssetsContainsInitDDir asserts the //go:embed directive ships
+// the init.d/ subtree. Without the bare-directory pattern the per-tool
+// scripts would never reach the build-context tar.
 func TestEmbedAssetsContainsInitDDir(t *testing.T) {
 	entries, err := fs.ReadDir(Assets, AssetDir+"/init.d")
 	if err != nil {
@@ -91,9 +84,8 @@ func TestEmbedAssetsContainsInitDDir(t *testing.T) {
 
 // TestTarEmbeddedContextShipsInitDDir asserts the build-context tar ships
 // init.d/<name>.sh entries with header.Mode == 0755. embed.FS strips
-// executable bits to 0444 (research hazard #2 / Pitfall 2); tarEmbeddedContext
-// must compensate so the Dockerfile COPY arrives with executable scripts even
-// if the downstream chmod -R 0755 is removed in a future cleanup.
+// executable bits to 0444; tarEmbeddedContext compensates so the COPY
+// arrives executable even if the downstream chmod -R 0755 is removed.
 func TestTarEmbeddedContextShipsInitDDir(t *testing.T) {
 	r, err := tarEmbeddedContext()
 	if err != nil {

@@ -1,27 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Outer self-gate (D-04): npm is the script's primary owner. node and the
-# plugins-cache directory stay as inner gates per Pitfall 5 — node may exist
-# without npm in some images, and the cache dir is absent on first boot
-# before any Claude Code plugin is installed.
+# Build Claude Code MCP plugins that ship src/ only — some marketplace
+# plugins skip `npm install && npm run build` at install time, leaving the
+# MCP server failing on "cannot find module dist/index.js".
+#
+# Idempotent via the per-plugin `.toolbox-built` marker. The marker lives
+# inside the versioned plugin dir, so a plugin upgrade (new version path)
+# naturally invalidates it and triggers a rebuild.
+#
+# Inner gates (node, plugins-cache dir) stay separate from the outer npm
+# gate: node may exist without npm in some images, and the cache dir is
+# absent on first boot before any plugin is installed.
 command -v npm >/dev/null 2>&1 || exit 0
 
-# Built-in: build Claude Code MCP plugins shipped with src/ only.
-# Some marketplace plugins ship without node_modules/ or dist/, and the
-# installer does not run `npm install && npm run build`. The MCP server
-# then fails to start ("cannot find module dist/index.js"). This block is
-# idempotent via a marker file written after a successful build.
-#
-# Sentinel: skip entirely when the plugins cache does not exist — a user
-# who has never started Claude Code should not pay any cost here.
-#
-# Per-plugin decision (only plugins with a `mcp/package.json`):
-#   - no `scripts.build` in package.json → nothing to build, skip
-#   - marker `.toolbox-built` present    → already built, skip
-#   - otherwise → npm install + npm run build, then write marker
-# Marker lives inside the versioned plugin dir, so a plugin upgrade
-# (new version path) naturally invalidates it and triggers a rebuild.
 _plugins_cache="$HOME/.claude/plugins/cache"
 if [ -d "$_plugins_cache" ] && command -v node >/dev/null 2>&1; then
     shopt -s nullglob
@@ -48,11 +40,8 @@ if [ -d "$_plugins_cache" ] && command -v node >/dev/null 2>&1; then
             _header_printed=1
         fi
         echo "  $(basename "$(dirname "$(dirname "$_mcp_dir")")")"
-        # Capture stderr to a per-plugin log so a failed build leaves
-        # actionable diagnostics behind. The log lives next to the
-        # `.toolbox-built` marker (same bind-mounted plugin dir), so it
-        # survives container restarts and the user can inspect it from any
-        # later shell. Removed on success to keep the dir tidy.
+        # Build log lives next to the marker (same bind-mounted plugin dir)
+        # so it survives container restarts. Removed on success.
         _build_log="$_mcp_dir/.toolbox-build-error.log"
         rm -f "$_build_log"
         if (
