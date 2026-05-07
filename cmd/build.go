@@ -30,6 +30,7 @@ The resulting image tag mirrors what 'toolbox shell' would look for:
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
+	//nolint:staticcheck // SA1019: Phase 09 (Session Plan) migrates this off Load.
 	cfg, err := config.Load()
 	if err != nil {
 		return err
