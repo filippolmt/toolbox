@@ -1,78 +1,55 @@
 package config
 
 import (
-	"bytes"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
-
-	"github.com/spf13/viper"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
-// setToolsDefaults mirrors the per-leaf defaults from cmd/root.go.
-func setToolsDefaults() {
-	for _, k := range catalog.Keys() {
-		viper.SetDefault("tools."+k, true)
+// TestLoadSmoke proves the deprecated Load() wrapper still works end-to-end:
+// in a clean filesystem (empty HOME, CWD with no .toolbox.yaml), Load
+// returns a *Config with default Shell + every catalog tool default-true.
+//
+// Byte-merge scenarios used to live here (TestLoadWithoutConfig,
+// TestLoadUserOverridePreservesOtherTools, etc.). They moved to
+// internal/config/merge_test.go::TestMergeScenarios after Phase 08
+// because Load() now delegates to Plan, which uses a fresh viper.New()
+// per call and ignores the global viper singleton — so the old
+// `viper.ReadConfig(bytes.NewBufferString(...)) + Load()` priming
+// pattern stops reaching the merge logic.
+func TestLoadSmoke(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
 	}
-}
-
-func TestLoadWithoutConfig(t *testing.T) {
-	viper.Reset()
-	setToolsDefaults()
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() error: %v", err)
+		t.Fatalf("Load(): %v", err)
 	}
-
-	// Load no longer merges Mounts — the user list stays as parsed (empty
-	// when no yaml). The full pipeline lives behind mountplan.Plan; this
-	// test guards Load's tool defaults contract.
-	if len(cfg.Mounts) != 0 {
-		t.Errorf("Load() with no user config should leave cfg.Mounts empty, got %d", len(cfg.Mounts))
-	}
-
-	if !IsDefaultTools(cfg.Tools) {
-		t.Errorf("Load() with no user config should yield default tools, got %v", cfg.Tools)
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (default)", cfg.Shell)
 	}
 	for _, k := range catalog.Keys() {
 		if !cfg.Tools[k] {
-			t.Errorf("tool %q should default to true", k)
+			t.Errorf("tool %q should default to true after Load() in clean fs, got false", k)
 		}
 	}
-}
-
-// TestLoadUserOverridePreservesOtherTools reproduces the merge semantics:
-// a .toolbox.yaml that flips a single tool must leave every other default
-// untouched.
-func TestLoadUserOverridePreservesOtherTools(t *testing.T) {
-	viper.Reset()
-	setToolsDefaults()
-
-	viper.SetConfigType("yaml")
-	if err := viper.ReadConfig(bytes.NewBufferString("tools:\n  gcloud: false\n")); err != nil {
-		t.Fatalf("viper.ReadConfig: %v", err)
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
-
-	if cfg.Tools["gcloud"] {
-		t.Error("gcloud should be disabled after override")
-	}
-	for _, k := range catalog.Keys() {
-		if k == "gcloud" {
-			continue
-		}
-		if !cfg.Tools[k] {
-			t.Errorf("tool %q should remain true — one-key override must not reset others", k)
-		}
-	}
-	if IsDefaultTools(cfg.Tools) {
-		t.Error("IsDefaultTools should be false once any tool is opted out")
+	// Confirm a non-existent ~/.toolbox.yaml is non-fatal — the smoke test
+	// explicitly does NOT plant one. If the path existed it would surface
+	// as a non-default Shell or non-default Tools value above.
+	_, statErr := os.Stat(filepath.Join(home, ".toolbox.yaml"))
+	if !os.IsNotExist(statErr) {
+		t.Fatalf("test fixture broken: ~/.toolbox.yaml should not exist; stat err=%v", statErr)
 	}
 }
 
@@ -95,50 +72,9 @@ func TestIsDefaultTools(t *testing.T) {
 
 // TestToolBuildArgGo cross-checks that the Go toolchain key maps to the
 // correct Dockerfile ARG. This is the in-code half of GO-04 cascade; the
-// Dockerfile half is enforced end-to-end by the smoke test in Plan 03.
+// Dockerfile half is enforced end-to-end by the smoke test.
 func TestToolBuildArgGo(t *testing.T) {
 	if got := catalog.BuildArg("go"); got != "INSTALL_GO" {
 		t.Errorf("catalog.BuildArg(\"go\") = %q, want %q", got, "INSTALL_GO")
-	}
-}
-
-// TestLoadMountsRootBareTildeRejected: bare "~" would rewrite
-// ~/.toolbox/<x> to ~/<x> — dropping the isolation namespace and writing
-// toolbox state directly under the host home (the exact leak the default
-// mount set guards against). Refuse it loudly with a message that points
-// to the fix. ValidateMountsRoot is the validator; Load consumes it.
-func TestLoadMountsRootBareTildeRejected(t *testing.T) {
-	viper.Reset()
-	setToolsDefaults()
-
-	viper.SetConfigType("yaml")
-	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: \"~\"\n")); err != nil {
-		t.Fatalf("viper.ReadConfig: %v", err)
-	}
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("Load() should reject bare ~ as mounts_root")
-	}
-	if !strings.Contains(err.Error(), "mounts_root") || !strings.Contains(err.Error(), "isolation") {
-		t.Errorf("error should explain the isolation footgun, got: %v", err)
-	}
-}
-
-// TestLoadMountsRootRelativeRejected: relative mounts_root is a likely
-// mistake — refuse it loudly instead of silently resolving against CWD.
-func TestLoadMountsRootRelativeRejected(t *testing.T) {
-	viper.Reset()
-	setToolsDefaults()
-
-	viper.SetConfigType("yaml")
-	if err := viper.ReadConfig(bytes.NewBufferString("mounts_root: ./relative\n")); err != nil {
-		t.Fatalf("viper.ReadConfig: %v", err)
-	}
-
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() should reject relative mounts_root")
-	} else if !strings.Contains(err.Error(), "mounts_root") {
-		t.Errorf("error should mention mounts_root, got: %v", err)
 	}
 }
