@@ -4,6 +4,18 @@ Deep gotchas pulled out of `CLAUDE.md` to keep the AI-loaded context lean. Refer
 
 ## Image build
 
+### Host UID mapping
+
+The CLI runs the container with `--user $(id -u):$(id -g)`. Because the runtime UID rarely matches the baked `toolbox` user (UID 1000), `/home/toolbox` is made world-writable in the image. Don't revert to a fixed UID without understanding why — host file ownership would invert and writes inside `~/.toolbox/` would fail for anyone whose host UID isn't 1000.
+
+### Docker CLI checksum
+
+Layer 7 of `internal/build/assets/Dockerfile` installs the static Docker CLI binary without a SHA256 verification step because Docker doesn't publish `.sha256` files for those releases. Version pin + HTTPS is the only guard. Tracked as accepted risk T-01-08.
+
+### Tool version pinning + `ARG INSTALL_<TOOL>` pattern
+
+Every external binary in the Dockerfile is pinned by version + SHA256 (exceptions: Docker CLI — see above — and gcloud, which uses a Google APT repo). Renovate bumps them. Adding a new tool: download tarball, verify with `sha256sum`, install. Wire opt-out via `ARG INSTALL_<TOOL>=true` (Dockerfile) coupled to the matching `tools.<key>` entry in `.toolbox.yaml` and a row in `internal/catalog/catalog.go` `Entries` (the `BuildArg` field is the literal `INSTALL_<TOOL>`).
+
 ### rtk arm64 is built from source
 
 Dockerfile `rtk-builder` stage + Layer 13c. Upstream only ships `aarch64-unknown-linux-gnu` linked against GLIBC 2.39, but the base image (`node:24-bookworm-slim`) ships GLIBC 2.36 — the prebuilt binary aborts with `'GLIBC_2.39' not found`. There is no `aarch64-unknown-linux-musl` release.
@@ -59,6 +71,20 @@ Setting `mounts_root: /custom/path` rewrites every default mount whose Source st
 
 Adding (or removing) an entry in `internal/catalog/catalog.go` `Entries` invalidates the local image hash for every user with a non-default `tools:` config — the canonical hash encoding is computed over the catalog's `(Key, Default, BuildArg)` tuples, so a new entry shifts the digest even if the user never sets it. Practical effect: the next `toolbox shell` shows "Image not found locally — building toolbox:local-…" once and rebuilds. Document this in release notes when bumping the list. Users on canonical defaults are unaffected (they pull `:latest` from GHCR — `catalog.IsDefault` short-circuits before any hash compute).
 
+## Container lifecycle
+
+### Image selection
+
+`toolbox shell` pulls `ghcr.io/filippolmt/toolbox:latest` only when the merged `tools:` config matches the catalog defaults (`catalog.IsDefault` returns true). Any override auto-builds `toolbox:local-<hash>` from the embedded Dockerfile via `internal/build/tag.go::ResolveImage`. The tag hash is computed by `catalog.WriteCanonical` over `(Key, Default, BuildArg)` tuples. `toolbox build` is the explicit escape hatch (supports `--no-cache`).
+
+### Port bindings are fixed at container creation
+
+`toolbox shell -p <port>` only takes effect when the container is first created — `ContainerCreate` writes the port set, and Docker doesn't accept post-hoc port changes. Run `toolbox stop` before re-invoking `toolbox shell -p …` to add or change bindings. Accepted formats mirror `docker run -p`; host IP defaults to `127.0.0.1` when omitted. Mismatch detection lives in `sessionplan.MissingPublishPorts`.
+
+### Codex nested sandbox
+
+When `tools.codex` is enabled (default), `toolbox shell` creates the container with Docker `seccomp=unconfined` so Codex's built-in bubblewrap sandbox can create nested user namespaces. With `tools.codex: false` the container keeps Docker's default seccomp profile. The flag flip lives in `shellcmd.NestedSandboxSecurityOpt`.
+
 ## Shell start
 
 ### MCP plugin auto-build
@@ -68,6 +94,10 @@ Adding (or removing) an entry in `internal/catalog/catalog.go` `Entries` invalid
 ### `cf` Cloudflare CLI skill auto-install
 
 When `tools.cf` is enabled (default) and `~/.claude` exists, `internal/build/assets/init.d/20-cf.sh` writes a Claude Code skill to `~/.claude/skills/cf/SKILL.md` if absent. Skill is hand-written and points Claude to `cf agent-context <product>` for on-demand product context (instead of pre-baking the ~107-product corpus). Idempotent — only re-creates when the file is missing, so user edits persist.
+
+### Skill discovery paths diverge between Claude and Codex
+
+Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.
 
 ## Runtime privacy
 

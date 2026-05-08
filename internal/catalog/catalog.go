@@ -67,7 +67,7 @@ var Entries = []Entry{
 	{Key: "docker", Default: true, BuildArg: "INSTALL_DOCKER_CLI"},
 	{Key: "gcloud", Default: true, BuildArg: "INSTALL_GCLOUD"},
 	{Key: "gh", Default: true, BuildArg: "INSTALL_GH"},
-	{Key: "glab", Default: true, BuildArg: "INSTALL_GLAB"},
+	{Key: "glab", Default: true, BuildArg: "INSTALL_GLAB", InitScript: "60-glab.sh"},
 	{Key: "go", Default: true, BuildArg: "INSTALL_GO"},
 	{Key: "goimports", Default: true, BuildArg: "INSTALL_GOIMPORTS"},
 	{Key: "gopls", Default: true, BuildArg: "INSTALL_GOPLS"},
