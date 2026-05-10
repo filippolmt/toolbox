@@ -17,19 +17,23 @@ command -v rtk >/dev/null 2>&1 || exit 0
 # defense — they survive `rtk telemetry enable/disable` rewriting the TOML.
 # The TOML seed is belt-and-braces so `rtk telemetry status` reports a
 # consistent state and users who unset the env vars still get safe defaults.
-if [ ! -f "$HOME/.config/rtk/config.toml" ]; then
-    mkdir -p "$HOME/.config/rtk"
-    cat > "$HOME/.config/rtk/config.toml" <<'EOF'
-# Regenerated only when absent. Persists via the `rtk` bind-mount.
-# RTK_TEE=0 and RTK_TELEMETRY_DISABLED=1 in the image env are the primary
-# defense; these settings are belt-and-braces.
-
+#
+# Idempotent: sentinel comment marks the block. File absent → create. File
+# present without sentinel → append. Sentinel present → no-op.
+_rtk_config="$HOME/.config/rtk/config.toml"
+_rtk_sentinel='# toolbox:rtk:telemetry-off'
+_rtk_block='# toolbox:rtk:telemetry-off
 [tee]
 enabled = false
 
 [telemetry]
-enabled = false
-EOF
+enabled = false'
+
+mkdir -p "$HOME/.config/rtk"
+if [ ! -f "$_rtk_config" ]; then
+    printf '%s\n' "$_rtk_block" > "$_rtk_config"
+elif ! grep -qF "$_rtk_sentinel" "$_rtk_config"; then
+    printf '\n%s\n' "$_rtk_block" >> "$_rtk_config"
 fi
 
 if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then

@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1.7
 # ============================================================================
 # Toolbox — containerized development environment
 # Build:  docker build -f internal/build/assets/Dockerfile internal/build/assets
 # Test:   make test
+#
+# Requires BuildKit (Docker 23+ default). Uses --mount=type=cache for apt,
+# cargo registry, and npm cache to keep rebuilds fast across layers.
 #
 # Every optional tool below is guarded by an INSTALL_<TOOL>=true build arg.
 # The toolbox CLI translates the user's `tools:` config into these build args.
@@ -40,13 +44,18 @@ ARG INSTALL_RTK=true
 # apt installs them up front for the amd64 tarball path. arm64 also needs
 # build-essential + pkg-config for the cargo build (rusqlite's bundled SQLite
 # pulls in `cc`).
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=rtk-apt-lists \
+    --mount=type=cache,target=/usr/local/cargo/registry,id=rtk-cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,id=rtk-cargo-git \
+    set -eux; \
     mkdir -p /out/bin; \
     if [ "${INSTALL_RTK}" != "true" ]; then \
       echo "rtk-builder: skip (INSTALL_RTK=${INSTALL_RTK})"; \
       : > /out/bin/rtk; \
       exit 0; \
     fi; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends curl ca-certificates; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
@@ -64,9 +73,7 @@ RUN set -eux; \
       cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
     else \
       echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
-    fi; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    fi
 
 FROM node:24-bookworm-slim
 
@@ -182,11 +189,20 @@ ARG INSTALL_PYRIGHT=true
 # itself sees two distinct stage-scoped ARGs.
 ARG INSTALL_RTK=true
 
+# consoledonottrack.com cross-tool convention. Honored by bun, playwright, and
+# many newer CLIs. Tool-specific kills live next to each install RUN below.
+ENV DO_NOT_TRACK=1
+
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
-# These are transitive deps of almost every other tool (TLS, git clone, Python
-# for uv/gcloud, bash completions). Kept unconditional so opt-outs don't have
-# to carry cascade rules.
-RUN set -eux; \
+# Transitive deps of almost every tool. Unconditional so opt-outs don't need
+# cascade rules.
+#
+# `rm -f docker-clean` once: removes Debian hook that wipes /var/cache/apt
+# after install, so BuildKit cache mounts below retain .debs across rebuilds.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    set -eux; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
       curl \
@@ -198,10 +214,9 @@ RUN set -eux; \
       make \
       python3 \
       python3-pip \
+      python-is-python3 \
       gnupg \
-      vim-tiny; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+      vim-tiny
 
 # -- Layer 2: kubectl (TOOL-05, IMG-02) ---------------------------------------
 RUN set -eux; \
@@ -283,6 +298,9 @@ RUN set -eux; \
     fi
 
 # -- Layer 4: tofu (TOOL-05, IMG-02) ------------------------------------------
+# CHECKPOINT_DISABLE=1: opt out of HashiCorp Checkpoint version-check pings.
+# OpenTofu kept the Checkpoint client when forking from Terraform; same env.
+ENV CHECKPOINT_DISABLE=1
 RUN set -eux; \
     if [ "${INSTALL_TOFU}" != "true" ]; then \
       echo "Skipping tofu (tools.tofu=false)"; \
@@ -599,30 +617,44 @@ RUN set -eux; \
 #       lives at $HOME/.claude.json — outside the mount — so OAuth session
 #       state is lost on every container recreate and the user has to
 #       /login each shell.
-ENV DISABLE_AUTOUPDATER=1 \
+# NPM_CONFIG_FUND/AUDIT: suppress fund banner + network audit on every
+# subsequent `npm install -g` (Claude/Pyright/Codex/cf/Playwright/playwright-cli).
+ENV NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false \
+    DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_TELEMETRY=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
     DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
       echo "Skipping Claude Code (tools.claude=false)"; \
     else \
       npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
       claude --version; \
+      find /usr/local/lib/node_modules/@anthropic-ai \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 13a: Pyright language server (TOOL-01) ----------------------------
 # Python LSP used by the pyright-lsp Claude Code plugin. Installed as a global
 # npm package so `pyright-langserver` lands in /usr/local/bin without needing
 # pipx/venv wiring. Gated by INSTALL_PYRIGHT (tools.pyright).
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_PYRIGHT}" != "true" ]; then \
       echo "Skipping pyright (tools.pyright=false)"; \
     else \
       npm install -g pyright@${PYRIGHT_VERSION}; \
       pyright --version; \
+      find /usr/local/lib/node_modules/pyright \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 13b: OpenAI Codex CLI (TOOL-01) -----------------------------------
@@ -633,16 +665,21 @@ RUN set -eux; \
 #
 # Zsh completion is generated at build time by `codex completion zsh` in
 # Layer 20d, same pattern as kubectl / helm / gh.
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_CODEX_CLI}" != "true" ]; then \
       echo "Skipping Codex CLI (tools.codex=false)"; \
     else \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends bubblewrap; \
-      apt-get clean; \
-      rm -rf /var/lib/apt/lists/*; \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
+      find /usr/local/lib/node_modules/@openai \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 13c: Cloudflare CLI `cf` (TOOL-02) --------------------------------
@@ -658,12 +695,17 @@ RUN set -eux; \
 # Both are bound from ~/.toolbox/cf/{auth,config} via DefaultMounts() (rtk
 # split pattern). Without the .cf bind specifically, `cf auth login` would
 # wipe on every `toolbox stop`.
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_CF}" != "true" ]; then \
       echo "Skipping cf (tools.cf=false)"; \
     else \
       npm install -g "cf@${CF_CLI_VERSION}"; \
       cf --version; \
+      find /usr/local/lib/node_modules/cf \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 14: gcloud (TOOL-02, IMG-02) ---------------------------------------
@@ -671,6 +713,9 @@ RUN set -eux; \
 # (the docs list checksums only for the unversioned "latest" URL, which shift on
 # every release). Accepted risk following the DOCKER_CLI_VERSION precedent
 # (T-01-08): mitigated by HTTPS + version pinning.
+#
+# CLOUDSDK_CORE_DISABLE_USAGE_REPORTING: opt out of gcloud usage telemetry.
+ENV CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true
 RUN set -eux; \
     if [ "${INSTALL_GCLOUD}" != "true" ]; then \
       echo "Skipping gcloud (tools.gcloud=false)"; \
@@ -692,6 +737,7 @@ RUN set -eux; \
       ln -s /opt/google-cloud-sdk/bin/gke-gcloud-auth-plugin /usr/local/bin/gke-gcloud-auth-plugin; \
       gcloud --version; \
       gke-gcloud-auth-plugin --version; \
+      find /opt/google-cloud-sdk -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 14a: Go toolchain + gopls + goimports (GO-01, GO-02, GO-03) --------
@@ -767,6 +813,9 @@ RUN set -eux; \
         echo "Skipping goimports (tools.goimports=false)"; \
       fi; \
       rm -rf /tmp/go-install; \
+      rm -rf /usr/local/go/test /usr/local/go/api /usr/local/go/doc /usr/local/go/misc; \
+      find /usr/local/go/src -name '*_test.go' -delete; \
+      find /usr/local/go/src -type d -name testdata -prune -exec rm -rf {} +; \
       /usr/local/go/bin/go version; \
     fi
 
@@ -779,7 +828,13 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Installed from Microsoft's Debian apt repository (the upstream-recommended
 # path — no standalone binary release is published). Version pinned against
 # the repo; trust anchor is the Microsoft GPG key on the repo metadata.
-RUN set -eux; \
+#
+# AZURE_CORE_COLLECT_TELEMETRY=false: also stops the telemetry subprocess
+# that races with `find __pycache__` cleanup on slow/qemu arm64 runners.
+ENV AZURE_CORE_COLLECT_TELEMETRY=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    set -eux; \
     if [ "${INSTALL_AZURE}" != "true" ]; then \
       echo "Skipping azure-cli (tools.azure=false)"; \
     else \
@@ -790,9 +845,13 @@ RUN set -eux; \
         > /etc/apt/sources.list.d/azure-cli.list; \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
-      apt-get clean; \
-      rm -rf /var/lib/apt/lists/*; \
       az --version; \
+      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
+      # Strip stdlib parts useless in headless container (IDE, turtle, GUI,
+      # pydoc). pip/setuptools kept so `az extension add` still works.
+      for d in idlelib turtledemo tkinter pydoc_data; do \
+        rm -rf /opt/az/lib/python*/$d; \
+      done; \
     fi
 
 # -- Layer 16: OCI CLI (TOOL-02, IMG-02) --------------------------------------
@@ -809,6 +868,7 @@ RUN set -eux; \
         --timeout 300 --retries 5 \
         "oci-cli==${OCI_VERSION}"; \
       oci --version; \
+      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 16a: graphify (knowledge-graph builder, Claude Code skill) ---------
@@ -830,6 +890,7 @@ RUN set -eux; \
       # validates the entry point; pip show prints the installed version.
       graphify --help >/dev/null; \
       pip show graphifyy | grep ^Version:; \
+      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 17: Playwright CLI + Chromium deps (TOOL-01) -----------------------
@@ -845,7 +906,10 @@ RUN set -eux; \
 # They are fetched on demand with `playwright install` into the
 # ~/.toolbox/playwright-cache bind-mount (internal/config/config.go), which
 # persists them across container restarts.
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_PLAYWRIGHT}" != "true" ]; then \
       echo "Skipping playwright (tools.playwright=false)"; \
     else \
@@ -853,8 +917,10 @@ RUN set -eux; \
       playwright --version; \
       apt-get update -qqy; \
       playwright install-deps chromium; \
-      apt-get clean; \
-      rm -rf /var/lib/apt/lists/*; \
+      find /usr/local/lib/node_modules/playwright \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 18: Playwright CLI with SKILLS (TOOL-01) ---------------------------
@@ -864,12 +930,17 @@ RUN set -eux; \
 # browser automation; install them at runtime with `playwright-cli install
 # --skills`. Kept as a separate opt-out because not everyone using Playwright
 # wants the agent flow, and vice-versa.
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
     if [ "${INSTALL_PLAYWRIGHT_CLI}" != "true" ]; then \
       echo "Skipping @playwright/cli (tools.playwright_cli=false)"; \
     else \
       npm install -g "@playwright/cli@${PLAYWRIGHT_CLI_VERSION}"; \
       playwright-cli --version; \
+      find /usr/local/lib/node_modules/@playwright \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
     fi
 
 # -- Layer 19: Docker Compose plugin (TOOL-06, IMG-02) ------------------------
@@ -899,14 +970,6 @@ RUN set -eux; \
       /usr/local/libexec/docker/cli-plugins/docker-compose version; \
     fi
 
-# -- Layer 20: COPY scripts ---------------------------------------------------
-COPY bashrc.sh /etc/toolbox-bashrc.sh
-RUN set -eux; \
-    echo '' >> /etc/bash.bashrc; \
-    echo '# toolbox shell UX (alias + completions + starship)' >> /etc/bash.bashrc; \
-    echo '[ -f /etc/toolbox-bashrc.sh ] && source /etc/toolbox-bashrc.sh' \
-      >> /etc/bash.bashrc
-
 # -- Layer 20a: tini (PID 1 init / signal handler) ----------------------------
 # `sleep infinity` is the CMD and becomes the PID-1 child via `exec "$@"` in
 # entrypoint.sh — chosen specifically because interactive shells (zsh/bash)
@@ -933,44 +996,29 @@ RUN set -eux; \
     rm /tmp/tini.sha256sum; \
     /usr/bin/tini --version
 
-COPY entrypoint.sh /usr/local/bin/entrypoint
-RUN chmod +x /usr/local/bin/entrypoint
-
 # -- Layer 20b: zsh + Oh-My-Zsh + 4 custom plugins (ZSH-01/02/03/04/07) -------
-# One RUN layer covers: apt-install zsh+fzf, clone OMZ at pinned SHA, clone the
-# 3 custom plugins + fzf-tab at pinned SHAs, install zshrc.sh system-wide.
+# Split: heavy install RUN + separate COPY zshrc.sh + cheap mv. zshrc.sh edits
+# don't invalidate the OMZ git clones.
 #
-# The COPY is UNCONDITIONAL and stages to /etc/toolbox-zshrc.sh (mirrors the
-# Layer 20 /etc/toolbox-bashrc.sh pattern). It CANNOT go directly to
-# /etc/zsh/zshrc because /etc/zsh/ does not exist in node:24-bookworm-slim
-# until `apt-get install zsh` creates it — so the gated RUN either (a) rm's
-# the staged file on opt-out, or (b) `mkdir -p /etc/zsh && mv` into place on
-# opt-in after the apt install has run.
+# `.git` retained (per R-05, SPEC ZSH-02 acceptance: `git rev-parse HEAD`
+# equals OMZ_COMMIT). Delta ~24 MB, within 50 MB budget.
 #
-# `.git` is retained (per R-05): SPEC ZSH-02 acceptance asserts
-# `git -C /home/toolbox/.oh-my-zsh rev-parse HEAD` equals OMZ_COMMIT.
-# Delta ~24 MB, within the 50 MB budget documented in SPEC constraints.
-#
-# IMPORTANT — home directory: we write into `/home/node/.oh-my-zsh` (the base
-# image's current home for the `node` user) NOT `/home/toolbox/`. Layer 21
-# runs `usermod -d /home/toolbox -m toolbox` which relocates the home dir and
-# its contents. `usermod -m` refuses to move if `/home/toolbox` already
-# exists, so any directory we create under the target path here would break
-# the user-setup step. End state after Layer 21: `/home/toolbox/.oh-my-zsh`.
+# Home dir trick: writes go to /home/node/.oh-my-zsh because Layer 21 runs
+# `usermod -d /home/toolbox -m toolbox`, which relocates the dir but refuses
+# if /home/toolbox already exists. End state: /home/toolbox/.oh-my-zsh.
 #
 # Pattern: `git init + remote add + fetch --depth=1 <sha> + checkout FETCH_HEAD`.
 # `git clone --depth=1 --branch <sha>` FAILS — --branch accepts named refs only.
 # GitHub enables `uploadpack.allowReachableSHA1InWant=true`, so full-SHA fetches
 # work. Abbreviated SHAs do NOT work — always use the full 40-char form.
-COPY zshrc.sh /etc/toolbox-zshrc.sh
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    set -eux; \
     if [ "${INSTALL_ZSH}" != "true" ]; then \
       echo "Skipping zsh + Oh-My-Zsh (tools.zsh=false)"; \
-      rm -f /etc/toolbox-zshrc.sh; \
     else \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends zsh fzf; \
-      apt-get clean; rm -rf /var/lib/apt/lists/*; \
       mkdir -p /home/node/.oh-my-zsh/custom/plugins; \
       git -c init.defaultBranch=master init /home/node/.oh-my-zsh; \
       git -C /home/node/.oh-my-zsh remote add origin https://github.com/ohmyzsh/ohmyzsh.git; \
@@ -991,10 +1039,17 @@ RUN set -eux; \
         git -C "$dir" checkout FETCH_HEAD; \
       done; \
       mkdir -p /etc/zsh; \
-      mv /etc/toolbox-zshrc.sh /etc/zsh/zshrc; \
       echo '# managed by toolbox — see /etc/zsh/zshrc' > /home/node/.zshrc; \
       zsh --version; \
       fzf --version; \
+    fi
+
+COPY zshrc.sh /etc/toolbox-zshrc.sh
+RUN set -eux; \
+    if [ "${INSTALL_ZSH}" != "true" ]; then \
+      rm -f /etc/toolbox-zshrc.sh; \
+    else \
+      mv /etc/toolbox-zshrc.sh /etc/zsh/zshrc; \
     fi
 
 # -- Layer 20c: zoxide binary (ZSH-07) ----------------------------------------
@@ -1125,7 +1180,9 @@ RUN set -eux; \
       /home/toolbox/.config \
       /home/toolbox/.local/share; \
     chmod -R a+rwX /home/toolbox; \
-    chmod 0666 /etc/passwd /etc/group
+    chmod 0666 /etc/passwd /etc/group; \
+    # V8 compile cache leaked from `npm install -g`; regenerated at runtime.
+    rm -rf /tmp/node-compile-cache /tmp/v8-compile-cache-*
 
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
@@ -1133,12 +1190,19 @@ ENV HOME=/home/toolbox \
     KUBE_EDITOR=vi
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 
-# Per-tool init manifest. Placed last so an init.d/* edit invalidates only
-# this single layer instead of the heavyweight zsh/rtk/user-setup layers
-# above. Embedded into the Go binary via internal/build/embed.go so
-# `toolbox build` can rebuild without a repo checkout. The chmod is
-# belt-and-braces: tarEmbeddedContext already sets 0755 in the tar but
-# embed.FS strips exec bits to 0444 and BuildKit may normalise permissions.
+COPY bashrc.sh /etc/toolbox-bashrc.sh
+RUN set -eux; \
+    echo '' >> /etc/bash.bashrc; \
+    echo '# toolbox shell UX (alias + completions + starship)' >> /etc/bash.bashrc; \
+    echo '[ -f /etc/toolbox-bashrc.sh ] && source /etc/toolbox-bashrc.sh' \
+      >> /etc/bash.bashrc
+
+COPY entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint
+
+# Per-tool init manifest. Last so init.d/* edits invalidate only this layer.
+# Embedded via internal/build/embed.go for `toolbox build` w/o repo checkout.
+# chmod belt-and-braces: embed.FS strips exec bits to 0444.
 COPY init.d/ /usr/local/lib/toolbox/init.d/
 RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
 
