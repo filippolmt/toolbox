@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.23
 # ============================================================================
 # Toolbox — containerized development environment
 # Build:  docker build -f internal/build/assets/Dockerfile internal/build/assets
