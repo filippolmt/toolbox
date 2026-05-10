@@ -189,6 +189,10 @@ ARG INSTALL_PYRIGHT=true
 # itself sees two distinct stage-scoped ARGs.
 ARG INSTALL_RTK=true
 
+# consoledonottrack.com cross-tool convention. Honored by bun, playwright, and
+# many newer CLIs. Tool-specific kills live next to each install RUN below.
+ENV DO_NOT_TRACK=1
+
 # -- Layer 1: apt-get (always-on base) ----------------------------------------
 # Transitive deps of almost every tool. Unconditional so opt-outs don't need
 # cascade rules.
@@ -294,6 +298,9 @@ RUN set -eux; \
     fi
 
 # -- Layer 4: tofu (TOOL-05, IMG-02) ------------------------------------------
+# CHECKPOINT_DISABLE=1: opt out of HashiCorp Checkpoint version-check pings.
+# OpenTofu kept the Checkpoint client when forking from Terraform; same env.
+ENV CHECKPOINT_DISABLE=1
 RUN set -eux; \
     if [ "${INSTALL_TOFU}" != "true" ]; then \
       echo "Skipping tofu (tools.tofu=false)"; \
@@ -610,7 +617,11 @@ RUN set -eux; \
 #       lives at $HOME/.claude.json — outside the mount — so OAuth session
 #       state is lost on every container recreate and the user has to
 #       /login each shell.
-ENV DISABLE_AUTOUPDATER=1 \
+# NPM_CONFIG_FUND/AUDIT: suppress fund banner + network audit on every
+# subsequent `npm install -g` (Claude/Pyright/Codex/cf/Playwright/playwright-cli).
+ENV NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false \
+    DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_TELEMETRY=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
@@ -702,6 +713,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # (the docs list checksums only for the unversioned "latest" URL, which shift on
 # every release). Accepted risk following the DOCKER_CLI_VERSION precedent
 # (T-01-08): mitigated by HTTPS + version pinning.
+#
+# CLOUDSDK_CORE_DISABLE_USAGE_REPORTING: opt out of gcloud usage telemetry.
+ENV CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true
 RUN set -eux; \
     if [ "${INSTALL_GCLOUD}" != "true" ]; then \
       echo "Skipping gcloud (tools.gcloud=false)"; \
@@ -723,7 +737,7 @@ RUN set -eux; \
       ln -s /opt/google-cloud-sdk/bin/gke-gcloud-auth-plugin /usr/local/bin/gke-gcloud-auth-plugin; \
       gcloud --version; \
       gke-gcloud-auth-plugin --version; \
-      find /opt/google-cloud-sdk -type d -name __pycache__ -prune -exec rm -rf {} +; \
+      find /opt/google-cloud-sdk -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 14a: Go toolchain + gopls + goimports (GO-01, GO-02, GO-03) --------
@@ -814,6 +828,10 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Installed from Microsoft's Debian apt repository (the upstream-recommended
 # path — no standalone binary release is published). Version pinned against
 # the repo; trust anchor is the Microsoft GPG key on the repo metadata.
+#
+# AZURE_CORE_COLLECT_TELEMETRY=false: also stops the telemetry subprocess
+# that races with `find __pycache__` cleanup on slow/qemu arm64 runners.
+ENV AZURE_CORE_COLLECT_TELEMETRY=false
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     set -eux; \
@@ -828,7 +846,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
       az --version; \
-      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} +; \
+      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
       # Strip stdlib parts useless in headless container (IDE, turtle, GUI,
       # pydoc). pip/setuptools kept so `az extension add` still works.
       for d in idlelib turtledemo tkinter pydoc_data; do \
@@ -850,7 +868,7 @@ RUN set -eux; \
         --timeout 300 --retries 5 \
         "oci-cli==${OCI_VERSION}"; \
       oci --version; \
-      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} +; \
+      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 16a: graphify (knowledge-graph builder, Claude Code skill) ---------
@@ -872,7 +890,7 @@ RUN set -eux; \
       # validates the entry point; pip show prints the installed version.
       graphify --help >/dev/null; \
       pip show graphifyy | grep ^Version:; \
-      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} +; \
+      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
 
 # -- Layer 17: Playwright CLI + Chromium deps (TOOL-01) -----------------------

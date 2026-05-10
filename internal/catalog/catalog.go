@@ -62,7 +62,7 @@ var Entries = []Entry{
 	{Key: "bun", Default: true, BuildArg: "INSTALL_BUN"},
 	{Key: "cf", Default: true, BuildArg: "INSTALL_CF", InitScript: "20-cf.sh"},
 	{Key: "claude", Default: true, BuildArg: "INSTALL_CLAUDE_CODE", InitScript: "50-mcp-plugins.sh"},
-	{Key: "codex", Default: true, BuildArg: "INSTALL_CODEX_CLI"},
+	{Key: "codex", Default: true, BuildArg: "INSTALL_CODEX_CLI", InitScript: "25-codex.sh"},
 	{Key: "compose", Default: true, BuildArg: "INSTALL_COMPOSE"},
 	{Key: "docker", Default: true, BuildArg: "INSTALL_DOCKER_CLI"},
 	{Key: "gcloud", Default: true, BuildArg: "INSTALL_GCLOUD"},
