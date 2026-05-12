@@ -702,6 +702,13 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     else \
       npm install -g "cf@${CF_CLI_VERSION}"; \
       cf --version; \
+      # Upstream cf hardcodes OAuth callback bind to 127.0.0.1 with no env \
+      # override, so loopback inside container is invisible to `docker -p` \
+      # forward → browser hits ERR_EMPTY_RESPONSE. grep guard fails build if \
+      # upstream restyles the literal (Renovate bumps `cf@*` regularly). \
+      sed -i -E 's/(bindHost:\s*)["'\'']127\.0\.0\.1["'\'']/\1"0.0.0.0"/' \
+        /usr/local/lib/node_modules/cf/cf-dist/index.js; \
+      grep -qE 'bindHost:\s*"0\.0\.0\.0"' /usr/local/lib/node_modules/cf/cf-dist/index.js; \
       find /usr/local/lib/node_modules/cf \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
         -o -type d \( -name docs -o -name examples -o -name example \) \) \

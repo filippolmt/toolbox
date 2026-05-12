@@ -4,6 +4,9 @@
 # Go binary
 toolbox
 
+# Per-developer toolbox config override
+.toolbox.yaml
+
 # GoReleaser
 dist/
 
