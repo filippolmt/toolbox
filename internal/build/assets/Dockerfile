@@ -100,6 +100,7 @@ ARG UV_VERSION=0.11.13
 ARG CLAUDE_CODE_VERSION=2.1.139
 ARG CODEX_CLI_VERSION=0.130.0
 ARG CF_CLI_VERSION=0.0.5
+ARG WRANGLER_VERSION=4.90.1
 ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
@@ -168,6 +169,7 @@ ARG INSTALL_UV=true
 ARG INSTALL_CLAUDE_CODE=true
 ARG INSTALL_CODEX_CLI=true
 ARG INSTALL_CF=true
+ARG INSTALL_WRANGLER=true
 ARG INSTALL_GCLOUD=true
 ARG INSTALL_AZURE=true
 ARG INSTALL_OCI=true
@@ -710,6 +712,39 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         /usr/local/lib/node_modules/cf/cf-dist/index.js; \
       grep -qE 'bindHost:\s*"0\.0\.0\.0"' /usr/local/lib/node_modules/cf/cf-dist/index.js; \
       find /usr/local/lib/node_modules/cf \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+        -o -type d \( -name docs -o -name examples -o -name example \) \) \
+        -prune -exec rm -rf {} +; \
+    fi
+
+# -- Layer 13d: Cloudflare Wrangler CLI (TOOL-02) ----------------------------
+# Wrangler is Cloudflare's primary Workers CLI (distinct from `cf`, the
+# vNext preview installed in Layer 13c). Same install pattern as Claude
+# Code / Codex / cf: global npm package with built-in tarball integrity,
+# no per-arch SHA pin, single version source for Renovate.
+#
+# Upstream OS support requires glibc 2.35+; node:24-bookworm-slim ships
+# glibc 2.36, so the GLIBC variant is the only viable choice (no -musl
+# build is published).
+#
+# Persistent state: wrangler uses xdg-app-paths(".wrangler") → on Linux
+# this resolves to ~/.config/.wrangler/, where OAuth credentials
+# (config/default.toml) and login state live. Bound from
+# ~/.toolbox/wrangler via DefaultMounts(); without it `wrangler login`
+# wipes on every `toolbox stop`.
+#
+# WRANGLER_SEND_METRICS=false opts out of usage telemetry. DO_NOT_TRACK
+# (set globally in Layer 1) is also honoured but the explicit flag is
+# documented and stable across versions.
+ENV WRANGLER_SEND_METRICS=false
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+    if [ "${INSTALL_WRANGLER}" != "true" ]; then \
+      echo "Skipping Wrangler (tools.wrangler=false)"; \
+    else \
+      npm install -g "wrangler@${WRANGLER_VERSION}"; \
+      wrangler --version; \
+      find /usr/local/lib/node_modules/wrangler \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
         -o -type d \( -name docs -o -name examples -o -name example \) \) \
         -prune -exec rm -rf {} +; \

@@ -85,6 +85,7 @@ var Entries = []Entry{
 	{Key: "starship", Default: true, BuildArg: "INSTALL_STARSHIP"},
 	{Key: "tofu", Default: true, BuildArg: "INSTALL_TOFU"},
 	{Key: "uv", Default: true, BuildArg: "INSTALL_UV"},
+	{Key: "wrangler", Default: true, BuildArg: "INSTALL_WRANGLER"},
 	{Key: "yq", Default: true, BuildArg: "INSTALL_YQ"},
 	{Key: "zsh", Default: true, BuildArg: "INSTALL_ZSH"},
 }

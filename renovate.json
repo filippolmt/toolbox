@@ -144,6 +144,13 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+WRANGLER_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "wrangler"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+PYRIGHT_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "pyright"

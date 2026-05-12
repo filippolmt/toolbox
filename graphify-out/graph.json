@@ -1262,7 +1262,7 @@
       "label": "TestDefaultsHaveNames()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L71",
+      "source_location": "L72",
       "community": 4,
       "norm_label": "testdefaultshavenames()",
       "id": "mountplan_defaults_test_testdefaultshavenames"
@@ -1271,7 +1271,7 @@
       "label": "assertMount()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L86",
+      "source_location": "L87",
       "community": 4,
       "norm_label": "assertmount()",
       "id": "mountplan_defaults_test_assertmount"
@@ -1280,7 +1280,7 @@
       "label": "assertSymlink()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L103",
+      "source_location": "L104",
       "community": 4,
       "norm_label": "assertsymlink()",
       "id": "mountplan_defaults_test_assertsymlink"
@@ -1289,7 +1289,7 @@
       "label": "findMount()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L117",
+      "source_location": "L118",
       "community": 4,
       "norm_label": "findmount()",
       "id": "mountplan_defaults_test_findmount"
@@ -1955,7 +1955,7 @@
       "label": "Keys()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L96",
+      "source_location": "L97",
       "community": 0,
       "norm_label": "keys()",
       "id": "catalog_catalog_keys"
@@ -1964,7 +1964,7 @@
       "label": "BuildArg()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L107",
+      "source_location": "L108",
       "community": 0,
       "norm_label": "buildarg()",
       "id": "catalog_catalog_buildarg"
@@ -1973,7 +1973,7 @@
       "label": "Defaults()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L119",
+      "source_location": "L120",
       "community": 0,
       "norm_label": "defaults()",
       "id": "catalog_catalog_defaults"
@@ -1982,7 +1982,7 @@
       "label": "IsDefault()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L133",
+      "source_location": "L134",
       "community": 0,
       "norm_label": "isdefault()",
       "id": "catalog_catalog_isdefault"
@@ -1991,7 +1991,7 @@
       "label": "WriteCanonicalEntries()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L161",
+      "source_location": "L162",
       "community": 0,
       "norm_label": "writecanonicalentries()",
       "id": "catalog_catalog_writecanonicalentries"
@@ -2000,7 +2000,7 @@
       "label": "WriteCanonical()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L178",
+      "source_location": "L179",
       "community": 0,
       "norm_label": "writecanonical()",
       "id": "catalog_catalog_writecanonical"
@@ -3170,7 +3170,7 @@
       "label": "Install",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L40",
+      "source_location": "L41",
       "community": 7,
       "norm_label": "install",
       "id": "toolbox_readme_install"
@@ -3179,7 +3179,7 @@
       "label": "macOS (Homebrew)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L42",
+      "source_location": "L43",
       "community": 7,
       "norm_label": "macos (homebrew)",
       "id": "toolbox_readme_macos_homebrew"
@@ -3188,7 +3188,7 @@
       "label": "code:bash (brew install filippolmt/tap/toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L44",
+      "source_location": "L45",
       "community": 7,
       "norm_label": "code:bash (brew install filippolmt/tap/toolbox)",
       "id": "toolbox_readme_codeblock_1"
@@ -3197,7 +3197,7 @@
       "label": "From source",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L50",
+      "source_location": "L51",
       "community": 7,
       "norm_label": "from source",
       "id": "toolbox_readme_from_source"
@@ -3206,7 +3206,7 @@
       "label": "code:bash (go install github.com/filippolmt/toolbox@latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L54",
+      "source_location": "L55",
       "community": 7,
       "norm_label": "code:bash (go install github.com/filippolmt/toolbox@latest)",
       "id": "toolbox_readme_codeblock_2"
@@ -3215,7 +3215,7 @@
       "label": "Verify installation",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L58",
+      "source_location": "L59",
       "community": 7,
       "norm_label": "verify installation",
       "id": "toolbox_readme_verify_installation"
@@ -3224,7 +3224,7 @@
       "label": "code:bash (toolbox version)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L60",
+      "source_location": "L61",
       "community": 7,
       "norm_label": "code:bash (toolbox version)",
       "id": "toolbox_readme_codeblock_3"
@@ -3233,7 +3233,7 @@
       "label": "Prerequisites",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L64",
+      "source_location": "L65",
       "community": 7,
       "norm_label": "prerequisites",
       "id": "toolbox_readme_prerequisites"
@@ -3242,7 +3242,7 @@
       "label": "Quick start",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L68",
+      "source_location": "L69",
       "community": 7,
       "norm_label": "quick start",
       "id": "toolbox_readme_quick_start"
@@ -3251,7 +3251,7 @@
       "label": "code:bash (# Pull the toolbox image from GHCR)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L70",
+      "source_location": "L71",
       "community": 7,
       "norm_label": "code:bash (# pull the toolbox image from ghcr)",
       "id": "toolbox_readme_codeblock_4"
@@ -3260,7 +3260,7 @@
       "label": "Configuration",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L80",
+      "source_location": "L81",
       "community": 7,
       "norm_label": "configuration",
       "id": "toolbox_readme_configuration"
@@ -3269,7 +3269,7 @@
       "label": "Opting out of tools",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L84",
+      "source_location": "L85",
       "community": 7,
       "norm_label": "opting out of tools",
       "id": "toolbox_readme_opting_out_of_tools"
@@ -3278,7 +3278,7 @@
       "label": "code:yaml (tools:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L88",
+      "source_location": "L89",
       "community": 7,
       "norm_label": "code:yaml (tools:)",
       "id": "toolbox_readme_codeblock_5"
@@ -3287,7 +3287,7 @@
       "label": "Overriding mounts",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L100",
+      "source_location": "L101",
       "community": 7,
       "norm_label": "overriding mounts",
       "id": "toolbox_readme_overriding_mounts"
@@ -3296,7 +3296,7 @@
       "label": "code:yaml (mounts:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L117",
+      "source_location": "L118",
       "community": 7,
       "norm_label": "code:yaml (mounts:)",
       "id": "toolbox_readme_codeblock_6"
@@ -3305,7 +3305,7 @@
       "label": "Retargeting every default at once",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L136",
+      "source_location": "L137",
       "community": 7,
       "norm_label": "retargeting every default at once",
       "id": "toolbox_readme_retargeting_every_default_at_once"
@@ -3314,7 +3314,7 @@
       "label": "code:yaml (# Move ~/.toolbox/.claude \u2192 /Volumes/work/toolbox/.claude,)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L140",
+      "source_location": "L141",
       "community": 7,
       "norm_label": "code:yaml (# move ~/.toolbox/.claude \u2192 /volumes/work/toolbox/.claude,)",
       "id": "toolbox_readme_codeblock_7"
@@ -3323,7 +3323,7 @@
       "label": "code:bash (# Stop any running toolbox, then carry your state over.)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L165",
+      "source_location": "L166",
       "community": 7,
       "norm_label": "code:bash (# stop any running toolbox, then carry your state over.)",
       "id": "toolbox_readme_codeblock_8"
@@ -3332,7 +3332,7 @@
       "label": "code:yaml (mounts:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L182",
+      "source_location": "L183",
       "community": 7,
       "norm_label": "code:yaml (mounts:)",
       "id": "toolbox_readme_codeblock_9"
@@ -3341,7 +3341,7 @@
       "label": "Startup hooks",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L190",
+      "source_location": "L191",
       "community": 7,
       "norm_label": "startup hooks",
       "id": "toolbox_readme_startup_hooks"
@@ -3350,7 +3350,7 @@
       "label": "Publishing ports",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L196",
+      "source_location": "L197",
       "community": 7,
       "norm_label": "publishing ports",
       "id": "toolbox_readme_publishing_ports"
@@ -3359,7 +3359,7 @@
       "label": "code:bash (# Forward host port 7171 to the same port in the container.)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L200",
+      "source_location": "L201",
       "community": 7,
       "norm_label": "code:bash (# forward host port 7171 to the same port in the container.)",
       "id": "toolbox_readme_codeblock_10"
@@ -3368,7 +3368,7 @@
       "label": "Loading order",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L212",
+      "source_location": "L213",
       "community": 7,
       "norm_label": "loading order",
       "id": "toolbox_readme_loading_order"
@@ -3377,7 +3377,7 @@
       "label": "CLI commands",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L222",
+      "source_location": "L223",
       "community": 7,
       "norm_label": "cli commands",
       "id": "toolbox_readme_cli_commands"
@@ -3386,7 +3386,7 @@
       "label": "Updating",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L232",
+      "source_location": "L233",
       "community": 7,
       "norm_label": "updating",
       "id": "toolbox_readme_updating"
@@ -3395,7 +3395,7 @@
       "label": "code:bash (brew upgrade toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L234",
+      "source_location": "L235",
       "community": 7,
       "norm_label": "code:bash (brew upgrade toolbox)",
       "id": "toolbox_readme_codeblock_11"
@@ -3404,7 +3404,7 @@
       "label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L240",
+      "source_location": "L241",
       "community": 7,
       "norm_label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
       "id": "toolbox_readme_codeblock_12"
@@ -3413,7 +3413,7 @@
       "label": "License",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L244",
+      "source_location": "L245",
       "community": 7,
       "norm_label": "license",
       "id": "toolbox_readme_license"
@@ -3516,69 +3516,6 @@
       "community": 20,
       "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
       "id": "toolbox_agents_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "claude_md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "toolbox_claude_claude_md"
-    },
-    {
-      "label": "Project",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "community": 21,
-      "norm_label": "project",
-      "id": "toolbox_claude_project"
-    },
-    {
-      "label": "Dev commands",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "community": 21,
-      "norm_label": "dev commands",
-      "id": "toolbox_claude_dev_commands"
-    },
-    {
-      "label": "Architecture",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L25",
-      "community": 21,
-      "norm_label": "architecture",
-      "id": "toolbox_claude_architecture"
-    },
-    {
-      "label": "Code & language",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L31",
-      "community": 21,
-      "norm_label": "code & language",
-      "id": "toolbox_claude_code_language"
-    },
-    {
-      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L37",
-      "community": 21,
-      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "label": "runtime-notes.md",
@@ -3912,6 +3849,69 @@
       "community": 17,
       "norm_label": "[`gsd.sh`](./gsd.sh) \u2014 get-shit-done",
       "id": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "community": 21,
+      "norm_label": "claude.md",
+      "id": "claude_md"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "community": 21,
+      "norm_label": "claude.md",
+      "id": "toolbox_claude_claude_md"
+    },
+    {
+      "label": "Project",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L5",
+      "community": 21,
+      "norm_label": "project",
+      "id": "toolbox_claude_project"
+    },
+    {
+      "label": "Dev commands",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L9",
+      "community": 21,
+      "norm_label": "dev commands",
+      "id": "toolbox_claude_dev_commands"
+    },
+    {
+      "label": "Architecture",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L25",
+      "community": 21,
+      "norm_label": "architecture",
+      "id": "toolbox_claude_architecture"
+    },
+    {
+      "label": "Code & language",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L31",
+      "community": 21,
+      "norm_label": "code & language",
+      "id": "toolbox_claude_code_language"
+    },
+    {
+      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L37",
+      "community": 21,
+      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
+      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "label": "main",
@@ -12536,66 +12536,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_md",
-      "target": "toolbox_claude_claude_md"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_project"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_dev_commands"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_architecture"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L31",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_code_language"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "docs/runtime-notes.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -12942,6 +12882,66 @@
       "confidence_score": 1.0,
       "source": "startup_d_readme_examples",
       "target": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_md",
+      "target": "toolbox_claude_claude_md"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_project"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_dev_commands"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L25",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_architecture"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_code_language"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "relation": "calls",
@@ -14344,5 +14344,5 @@
       "source_location": null
     }
   ],
-  "built_at_commit": "44a129f2c87bcb15a7e5b4e332a561c996bf54c7"
+  "built_at_commit": "3602cf831a135045d61bf30afb08980038e7a5ab"
 }

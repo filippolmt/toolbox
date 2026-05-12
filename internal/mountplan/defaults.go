@@ -59,6 +59,12 @@ func defaults() []config.Mount {
 		// (`cf context set …`), the shell-completion install marker, and other
 		// UI prefs. Lighter than the auth file but still useful to persist.
 		{Name: "cf-config", Source: "~/.toolbox/cf/config", Target: "/home/toolbox/.config/cf", ReadOnly: false, CreateIfMissing: true},
+		// Cloudflare Wrangler CLI auth + config — populated by `wrangler login`
+		// inside the container. Wrangler uses xdg-app-paths(".wrangler") which
+		// on Linux resolves to ~/.config/.wrangler/; OAuth credentials land at
+		// ~/.config/.wrangler/config/default.toml. Without this bind every
+		// `wrangler login` wipes on `toolbox stop`.
+		{Name: "wrangler", Source: "~/.toolbox/wrangler", Target: "/home/toolbox/.config/.wrangler", ReadOnly: false, CreateIfMissing: true},
 		// rtk follows XDG, which means it splits state across ~/.config/rtk
 		// (config) and ~/.local/share/rtk (data). Both bind sources are
 		// nested under a single ~/.toolbox/rtk/ root on the host so all rtk

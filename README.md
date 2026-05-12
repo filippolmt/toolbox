@@ -32,6 +32,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Oracle OCI CLI | 3.80.x |
 | graphify (Claude Code knowledge-graph skill, PyPI `graphifyy`) | 0.7.x |
 | Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
+| Cloudflare Wrangler CLI (`wrangler`) | 4.90.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | jq, yq, starship, bat, git | latest stable |
 
