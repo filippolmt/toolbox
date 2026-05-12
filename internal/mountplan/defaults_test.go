@@ -10,8 +10,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 24 {
-		t.Fatalf("expected 24 default mounts, got %d", len(mounts))
+	if len(mounts) != 25 {
+		t.Fatalf("expected 25 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -45,6 +45,7 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/docker", false, true)
 	assertMount(t, mounts, "~/.toolbox/cf/auth", false, true)
 	assertMount(t, mounts, "~/.toolbox/cf/config", false, true)
+	assertMount(t, mounts, "~/.toolbox/wrangler", false, true)
 	assertMount(t, mounts, "~/.toolbox/rtk/config", false, true)
 	assertMount(t, mounts, "~/.toolbox/rtk/data", false, true)
 	assertMount(t, mounts, "~/.toolbox/kube", false, true)
