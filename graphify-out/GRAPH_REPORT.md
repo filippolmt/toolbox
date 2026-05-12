@@ -1,7 +1,7 @@
-# Graph Report - toolbox  (2026-05-10)
+# Graph Report - toolbox  (2026-05-12)
 
 ## Corpus Check
-- 60 files · ~38,820 words
+- 60 files · ~38,822 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,38 +10,38 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `96bec50f`
+- Built from commit: `44a129f2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Tool Catalog & Build Args|Tool Catalog & Build Args]]
-- [[_COMMUNITY_CLI Commands (buildshell)|CLI Commands (build/shell)]]
-- [[_COMMUNITY_Shell Exec & Test Stubs|Shell Exec & Test Stubs]]
-- [[_COMMUNITY_Mount Defaults & Merge Tests|Mount Defaults & Merge Tests]]
-- [[_COMMUNITY_Config Plan Domain|Config Plan Domain]]
-- [[_COMMUNITY_Container Runtime Architecture|Container Runtime Architecture]]
-- [[_COMMUNITY_Config Plan Tests|Config Plan Tests]]
-- [[_COMMUNITY_Cobra Command Registry|Cobra Command Registry]]
-- [[_COMMUNITY_Config Example Rendering|Config Example Rendering]]
-- [[_COMMUNITY_Args Validation Tests|Args Validation Tests]]
-- [[_COMMUNITY_Tool Defaults & Shell Cmd|Tool Defaults & Shell Cmd]]
-- [[_COMMUNITY_Catalog Bijection Tests|Catalog Bijection Tests]]
-- [[_COMMUNITY_Mount Resolve|Mount Resolve]]
-- [[_COMMUNITY_Docker Client Mock|Docker Client Mock]]
-- [[_COMMUNITY_Exec Shell & Attach|Exec Shell & Attach]]
-- [[_COMMUNITY_Mount Plan E2E|Mount Plan E2E]]
-- [[_COMMUNITY_Docker Sock Groups|Docker Sock Groups]]
-- [[_COMMUNITY_Mount Parent Dirs|Mount Parent Dirs]]
-- [[_COMMUNITY_Main Entry & Usage|Main Entry & Usage]]
-- [[_COMMUNITY_Shell Completion|Shell Completion]]
-- [[_COMMUNITY_Version Cmd Init|Version Cmd Init]]
-- [[_COMMUNITY_Completion Test|Completion Test]]
-- [[_COMMUNITY_Version Test|Version Test]]
-- [[_COMMUNITY_Mount Defaults|Mount Defaults]]
-- [[_COMMUNITY_Init.d Bijection|Init.d Bijection]]
-- [[_COMMUNITY_Lifecycle File|Lifecycle File]]
-- [[_COMMUNITY_Version Const|Version Const]]
+- [[_COMMUNITY_Community 0|Community 0]]
+- [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
+- [[_COMMUNITY_Community 3|Community 3]]
+- [[_COMMUNITY_Community 4|Community 4]]
+- [[_COMMUNITY_Community 5|Community 5]]
+- [[_COMMUNITY_Community 6|Community 6]]
+- [[_COMMUNITY_Community 7|Community 7]]
+- [[_COMMUNITY_Community 8|Community 8]]
+- [[_COMMUNITY_Community 9|Community 9]]
+- [[_COMMUNITY_Community 10|Community 10]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
+- [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 18|Community 18]]
+- [[_COMMUNITY_Community 19|Community 19]]
+- [[_COMMUNITY_Community 20|Community 20]]
+- [[_COMMUNITY_Community 21|Community 21]]
+- [[_COMMUNITY_Community 22|Community 22]]
+- [[_COMMUNITY_Community 23|Community 23]]
+- [[_COMMUNITY_Community 24|Community 24]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 33|Community 33]]
 - [[_COMMUNITY_Community 38|Community 38]]
 
 ## God Nodes (most connected - your core abstractions)
@@ -81,99 +81,99 @@
 
 ## Communities (40 total, 4 thin omitted)
 
-### Community 0 - "Tool Catalog & Build Args"
+### Community 0 - "Community 0"
 Cohesion: 0.06
 Nodes (33): BuildArg(), IsDefault(), Keys(), TestBuildArgLookup(), TestCanonicalEncodingDeterministic(), TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(), TestIsDefaultMatchesLegacy(), TestKeysReturnsAllEntries() (+25 more)
 
-### Community 1 - "CLI Commands (build/shell)"
+### Community 1 - "Community 1"
 Cohesion: 0.1
 Nodes (29): TestPlanGlobalUnreadableIsBestEffort(), TestPlanWalksUpFromSubdir(), TestWalkUpHomeUnsetContinuesToRoot(), TestWalkUpIgnoresDirectoryNamedToolboxYaml(), TestWalkUpReturnsClosestMatch(), TestWalkUpStopsAtFilesystemRoot(), TestWalkUpStopsAtHome(), walkUp() (+21 more)
 
-### Community 2 - "Shell Exec & Test Stubs"
+### Community 2 - "Community 2"
 Cohesion: 0.09
 Nodes (28): runBuild(), resolveWorkspace(), runShell(), validateWorkspacePath(), TestSignalCtxReturnsCancellableContext(), TestValidateWorkspacePathAcceptsCommonPaths(), TestValidateWorkspacePathRejectsColon(), signalCtx() (+20 more)
 
-### Community 3 - "Mount Defaults & Merge Tests"
+### Community 3 - "Community 3"
 Cohesion: 0.19
 Nodes (29): Shell(), captureStderr(), stubExecShell(), testConfig(), testPlan(), testPlanWithCfg(), TestShellAutoBuildsCustomImage(), TestShellContainerNaming() (+21 more)
 
-### Community 4 - "Config Plan Domain"
+### Community 4 - "Community 4"
 Cohesion: 0.11
 Nodes (28): assertMount(), assertSymlink(), findMount(), TestDefaults(), applyMountsRoot(), mergeMounts(), TestApplyMountsRootDoesNotMutateBase(), TestMergeAnonymousAppend() (+20 more)
 
-### Community 5 - "Container Runtime Architecture"
+### Community 5 - "Community 5"
 Cohesion: 0.08
 Nodes (32): Config, HomeMountParents, Load, Mount, SupportedShells, ValidateMountsRoot, ValidateShell, defaults (+24 more)
 
-### Community 6 - "Config Plan Tests"
+### Community 6 - "Community 6"
 Cohesion: 0.08
 Nodes (26): Docker Sock GroupAdd Strategy, Pull Cache TTL, Session Pipeline, Container State Machine running/stopped/notfound, TTY Raw Mode and Signal Forwarding, dockerSockGroups, ensureImage, execShell (+18 more)
 
-### Community 7 - "Cobra Command Registry"
+### Community 7 - "Community 7"
 Cohesion: 0.06
 Nodes (30): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest), code:bash (toolbox version), code:bash (# Pull the toolbox image from GHCR) (+22 more)
 
-### Community 8 - "Config Example Rendering"
+### Community 8 - "Community 8"
 Cohesion: 0.07
 Nodes (26): Auth isolation under `~/.toolbox/`, Catalog entry → image hash, `cf` Cloudflare CLI skill auto-install, Claude Code env-var matrix, Codex nested sandbox, Container lifecycle, Docker CLI checksum, Host UID mapping (+18 more)
 
-### Community 9 - "Args Validation Tests"
+### Community 9 - "Community 9"
 Cohesion: 0.1
 Nodes (27): buildCmd, buildNoCache, runBuild, completionCmd, configCmd, configExampleCmd, configShowCmd, renderExampleYAML (+19 more)
 
-### Community 10 - "Tool Defaults & Shell Cmd"
+### Community 10 - "Community 10"
 Cohesion: 0.12
 Nodes (14): TestCatalogDockerfileBijection(), renderExampleYAML(), TestRenderExampleYAMLContainsAllToolsAndMounts(), TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig(), runInit() (+6 more)
 
-### Community 11 - "Catalog Bijection Tests"
+### Community 11 - "Community 11"
 Cohesion: 0.14
 Nodes (12): TestUsageArgsWraps(), resetCmdState(), TestInitConfigAppliesDefaults(), TestInitConfigExplicitFileIsRead(), TestInitConfigProjectFileFromCWD(), TestInitConfigProjectFileStopsAtHome(), TestInitConfigProjectFileWalksUpFromSubdir(), Execute() (+4 more)
 
-### Community 12 - "Mount Resolve"
+### Community 12 - "Community 12"
 Cohesion: 0.17
 Nodes (17): TestIsDefaultTools(), DefaultTools(), IsDefaultTools(), ContainerNameFor(), Merge(), normalizeWorkspace(), parsePublishSpecs(), Plan() (+9 more)
 
-### Community 13 - "Docker Client Mock"
+### Community 13 - "Community 13"
 Cohesion: 0.1
 Nodes (14): BuildArg, Defaults, Entries, IsDefault, Keys, WriteCanonical, WriteCanonicalEntries, D-09/D-10 Optional Field Hash Neutrality (+6 more)
 
-### Community 14 - "Exec Shell & Attach"
+### Community 14 - "Community 14"
 Cohesion: 0.23
 Nodes (13): ensureSource(), expandHome(), resolveAll(), TestExpandHome(), TestResolveAllCreatesMissingWhenRequested(), TestResolveAllKeepsNonEmptyDirEvenWithSymlinkFrom(), TestResolveAllReadOnlyMode(), TestResolveAllRelativeSourceCreatesUnderCWD() (+5 more)
 
-### Community 16 - "Docker Sock Groups"
+### Community 16 - "Community 16"
 Cohesion: 0.24
 Nodes (5): execShell(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_NonTTYStdin(), attachMock
 
-### Community 17 - "Mount Parent Dirs"
+### Community 17 - "Community 17"
 Cohesion: 0.2
 Nodes (9): code:block1 (~/.toolbox/startup.d/), code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o), code:bash (#!/usr/bin/env bash), Disabling a hook, Examples, [`gsd.sh`](./gsd.sh) — Get-Shit-Done, How the hook runs, Startup hooks (+1 more)
 
-### Community 18 - "Main Entry & Usage"
+### Community 18 - "Community 18"
 Cohesion: 0.25
 Nodes (7): Config Plan, Context, Glossary, Init Sequence, Mount Plan, Session Plan, Tool Catalog
 
-### Community 19 - "Shell Completion"
+### Community 19 - "Community 19"
 Cohesion: 0.48
 Nodes (6): dockerSockGroups(), TestDockerSockGroupsAppendsHostGIDOnLinux(), TestDockerSockGroupsFallbackWhenStatFails(), TestDockerSockGroupsIncludesRootForDesktopCase(), TestDockerSockGroupsMatchesOnTargetNotSource(), TestDockerSockGroupsReturnsNilWhenSockNotMounted()
 
-### Community 20 - "Version Cmd Init"
+### Community 20 - "Community 20"
 Cohesion: 0.29
 Nodes (6): Architecture, CLAUDE.md, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
-### Community 21 - "Completion Test"
+### Community 21 - "Community 21"
 Cohesion: 0.29
 Nodes (5): Architecture, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
-### Community 22 - "Version Test"
+### Community 22 - "Community 22"
 Cohesion: 0.47
 Nodes (4): ParentDirs(), TestParentDirsDeduplicatesAndSorts(), TestParentDirsExcludesHomeRoot(), TestParentDirsSkipsTargetsOutsideHome()
 
-### Community 23 - "Mount Defaults"
+### Community 23 - "Community 23"
 Cohesion: 0.5
 Nodes (3): Commits & PRs, Contributing, Release flow
 
-### Community 24 - "Init.d Bijection"
+### Community 24 - "Community 24"
 Cohesion: 0.5
 Nodes (4): main, Execute, usageArgs, usageError
 
@@ -185,11 +185,11 @@ Nodes (4): main, Execute, usageArgs, usageError
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Shell()` connect `Mount Defaults & Merge Tests` to `Shell Completion`, `Shell Exec & Test Stubs`, `Tool Defaults & Shell Cmd`?**
+- **Why does `Shell()` connect `Community 3` to `Community 19`, `Community 2`, `Community 10`?**
   _High betweenness centrality (0.118) - this node is a cross-community bridge._
-- **Why does `mkdirAll()` connect `CLI Commands (build/shell)` to `Shell Exec & Test Stubs`, `Catalog Bijection Tests`, `Exec Shell & Attach`?**
+- **Why does `mkdirAll()` connect `Community 1` to `Community 2`, `Community 11`, `Community 14`?**
   _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `Merge()` connect `Tool Catalog & Build Args` to `Config Plan Domain`?**
+- **Why does `Merge()` connect `Community 0` to `Community 4`?**
   _High betweenness centrality (0.098) - this node is a cross-community bridge._
 - **Are the 23 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Success()`) actually correct?**
   _`Shell()` has 23 INFERRED edges - model-reasoned connections that need verification._
@@ -197,5 +197,5 @@ _Questions this graph is uniquely positioned to answer:_
   _`mkdirAll()` has 11 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Result`, `Mount Plan`, `Tool Catalog` to the rest of the system?**
   _102 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Tool Catalog & Build Args` be split into smaller, more focused modules?**
+- **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.06 - nodes in this community are weakly interconnected._
