@@ -34,7 +34,7 @@
 # aarch64-unknown-linux-musl OR when Microsoft Azure CLI's apt repo gains
 # a trixie suite (currently bookworm-only — blocks bumping the base image
 # to GLIBC 2.41+, which would let arm64 use the upstream gnu binary).
-ARG RTK_VERSION=0.39.0
+ARG RTK_VERSION=0.40.0
 
 FROM rust:1-slim-bookworm AS rtk-builder
 ARG TARGETARCH
@@ -105,7 +105,7 @@ ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
 # resulting binary, so it doesn't need to redeclare the ARG here).
-ARG GCLOUD_VERSION=567.0.0
+ARG GCLOUD_VERSION=568.0.0
 ARG AZURE_CLI_VERSION=2.86.0
 ARG OCI_VERSION=3.82.0
 ARG GRAPHIFY_VERSION=0.7.16
