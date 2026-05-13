@@ -629,6 +629,20 @@ ENV NPM_CONFIG_FUND=false \
     DISABLE_FEEDBACK_COMMAND=1 \
     DISABLE_ERROR_REPORTING=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude
+
+# -- xdg-open no-op shim -----------------------------------------------------
+# Several bundled CLIs (cf, wrangler, and any future OAuth-using tool) use
+# the npm `open` package to launch the consent page; on Linux that shells
+# out to `xdg-open` and the login flow aborts if it is missing. The
+# container has no GUI/browser, so the real binary would be useless even if
+# installed. A no-op stub is sufficient: the OAuth URL is always printed to
+# stdout immediately before the call, so the user copies it into the host
+# browser while the CLI's local callback listener keeps running.
+# Unconditional — outside any tools.<key> gate so cf-only / wrangler-only
+# configs both work, and any future OAuth-using CLI inherits the shim.
+RUN printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/xdg-open && \
+    chmod +x /usr/local/bin/xdg-open
+
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
     if [ "${INSTALL_CLAUDE_CODE}" != "true" ]; then \
@@ -744,6 +758,13 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     else \
       npm install -g "wrangler@${WRANGLER_VERSION}"; \
       wrangler --version; \
+      # Upstream wrangler hardcodes OAuth callback listen on "localhost":8976 \
+      # with no env override, so loopback inside container is invisible to \
+      # `docker -p 8976:8976` → browser hits ERR_EMPTY_RESPONSE. grep guard \
+      # fails build if upstream restyles the literal (Renovate bumps regular). \
+      sed -i -E 's/(\.listen\(8976,[[:space:]]*)"localhost"/\1"0.0.0.0"/' \
+        /usr/local/lib/node_modules/wrangler/wrangler-dist/cli.js; \
+      grep -qE '\.listen\(8976,[[:space:]]*"0\.0\.0\.0"' /usr/local/lib/node_modules/wrangler/wrangler-dist/cli.js; \
       find /usr/local/lib/node_modules/wrangler \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
         -o -type d \( -name docs -o -name examples -o -name example \) \) \
