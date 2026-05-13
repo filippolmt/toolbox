@@ -105,7 +105,7 @@ ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
 # resulting binary, so it doesn't need to redeclare the ARG here).
-ARG GCLOUD_VERSION=567.0.0
+ARG GCLOUD_VERSION=568.0.0
 ARG AZURE_CLI_VERSION=2.86.0
 ARG OCI_VERSION=3.82.0
 ARG GRAPHIFY_VERSION=0.7.16
