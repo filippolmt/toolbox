@@ -3518,6 +3518,69 @@
       "id": "toolbox_agents_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "community": 21,
+      "norm_label": "claude.md",
+      "id": "claude_md"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "community": 21,
+      "norm_label": "claude.md",
+      "id": "toolbox_claude_claude_md"
+    },
+    {
+      "label": "Project",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L5",
+      "community": 21,
+      "norm_label": "project",
+      "id": "toolbox_claude_project"
+    },
+    {
+      "label": "Dev commands",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L9",
+      "community": 21,
+      "norm_label": "dev commands",
+      "id": "toolbox_claude_dev_commands"
+    },
+    {
+      "label": "Architecture",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L25",
+      "community": 21,
+      "norm_label": "architecture",
+      "id": "toolbox_claude_architecture"
+    },
+    {
+      "label": "Code & language",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L31",
+      "community": 21,
+      "norm_label": "code & language",
+      "id": "toolbox_claude_code_language"
+    },
+    {
+      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L37",
+      "community": 21,
+      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
+      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
+    },
+    {
       "label": "runtime-notes.md",
       "file_type": "document",
       "source_file": "docs/runtime-notes.md",
@@ -3849,69 +3912,6 @@
       "community": 17,
       "norm_label": "[`gsd.sh`](./gsd.sh) \u2014 get-shit-done",
       "id": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "claude_md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "toolbox_claude_claude_md"
-    },
-    {
-      "label": "Project",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "community": 21,
-      "norm_label": "project",
-      "id": "toolbox_claude_project"
-    },
-    {
-      "label": "Dev commands",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "community": 21,
-      "norm_label": "dev commands",
-      "id": "toolbox_claude_dev_commands"
-    },
-    {
-      "label": "Architecture",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L25",
-      "community": 21,
-      "norm_label": "architecture",
-      "id": "toolbox_claude_architecture"
-    },
-    {
-      "label": "Code & language",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L31",
-      "community": 21,
-      "norm_label": "code & language",
-      "id": "toolbox_claude_code_language"
-    },
-    {
-      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L37",
-      "community": 21,
-      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "label": "main",
@@ -12536,6 +12536,66 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_md",
+      "target": "toolbox_claude_claude_md"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_project"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_dev_commands"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L25",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_architecture"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_code_language"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_claude_claude_md",
+      "target": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/runtime-notes.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -12882,66 +12942,6 @@
       "confidence_score": 1.0,
       "source": "startup_d_readme_examples",
       "target": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_md",
-      "target": "toolbox_claude_claude_md"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_project"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_dev_commands"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_architecture"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L31",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_code_language"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "CLAUDE.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_claude_claude_md",
-      "target": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "relation": "calls",
@@ -14344,5 +14344,5 @@
       "source_location": null
     }
   ],
-  "built_at_commit": "3602cf831a135045d61bf30afb08980038e7a5ab"
+  "built_at_commit": "2fe115865dae943b539288b4aa07d5272768ead7"
 }
