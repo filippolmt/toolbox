@@ -1117,6 +1117,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       echo "Skipping zsh + Oh-My-Zsh (tools.zsh=false)"; \
     else \
       apt-get update -qqy; \
+      # node:24-bookworm-slim ships /etc/dpkg/dpkg.cfg.d/docker-clean (or
+      # similar) with `path-exclude /usr/share/doc/*`, which silently strips
+      # fzf's key-bindings.{bash,zsh,fish} + completion.{bash,zsh} integration
+      # scripts at install time. Without re-including them, our bashrc/zshrc
+      # `source /usr/share/doc/fzf/examples/*` lines no-op — fzf works as a
+      # binary but Ctrl-R / Ctrl-T / Alt-C bindings stay dormant. The override
+      # filename is lexically LAST in dpkg.cfg.d so it post-dates the slim
+      # path-exclude rule. Applies only to fzf — every other tool's docs stay
+      # stripped per upstream design. \
+      echo 'path-include /usr/share/doc/fzf/examples/*' \
+        > /etc/dpkg/dpkg.cfg.d/zz-keep-fzf-shellintegration; \
       apt-get install -qqy --no-install-recommends zsh fzf; \
       mkdir -p /home/node/.oh-my-zsh/custom/plugins; \
       git -c init.defaultBranch=master init /home/node/.oh-my-zsh; \
