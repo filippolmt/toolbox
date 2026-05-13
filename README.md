@@ -25,6 +25,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | GitHub CLI (gh) | 2.91.x |
 | GitLab CLI (glab) | 1.93.x |
 | Google Workspace CLI (`gws`) | 0.22.x |
+| atuin (SQLite-backed shell history; Ctrl-R fuzzy search) | 18.16.x |
 | Docker CLI | 29.4.x |
 | Docker Compose | 5.1.x |
 | Google Cloud SDK (gcloud) | 565.x |

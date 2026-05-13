@@ -37,6 +37,12 @@ func defaults() []config.Mount {
 		// The image sets GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file so the encryption key lands
 		// in this bind-mount instead of an OS keyring (unavailable inside the container).
 		{Name: "gws", Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws", ReadOnly: false, CreateIfMissing: true},
+		// atuin (SQLite-backed shell history). Default DB at ~/.local/share/atuin/history.db
+		// (XDG data dir) is the bind target. The Dockerfile sets ATUIN_CONFIG_DIR=<target>/config
+		// so the config.toml + key (sync-encryption secret) land under the same bind-mount —
+		// upstream defaults split them across ~/.config/atuin + ~/.local/share/atuin, but
+		// consolidating keeps a single ~/.toolbox/atuin/ root on the host.
+		{Name: "atuin", Source: "~/.toolbox/atuin", Target: "/home/toolbox/.local/share/atuin", ReadOnly: false, CreateIfMissing: true},
 		// Azure CLI auth + config — populated by `az login` inside the container.
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.

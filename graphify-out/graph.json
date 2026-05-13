@@ -129,3337 +129,3733 @@
       "file_type": "code",
       "source_file": "main.go",
       "source_location": "L1",
+      "id": "main_go",
       "community": 11,
-      "norm_label": "main.go",
-      "id": "main_go"
+      "norm_label": "main.go"
     },
     {
       "label": "main()",
       "file_type": "code",
       "source_file": "main.go",
       "source_location": "L5",
+      "id": "toolbox_main_main",
       "community": 11,
-      "norm_label": "main()",
-      "id": "toolbox_main_main"
+      "norm_label": "main()"
     },
     {
       "label": "completion.go",
       "file_type": "code",
       "source_file": "cmd/completion.go",
       "source_location": "L1",
+      "id": "cmd_completion_go",
       "community": 25,
-      "norm_label": "completion.go",
-      "id": "cmd_completion_go"
+      "norm_label": "completion.go"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/completion.go",
       "source_location": "L39",
+      "id": "cmd_completion_init",
       "community": 25,
-      "norm_label": "init()",
-      "id": "cmd_completion_init"
+      "norm_label": "init()"
     },
     {
       "label": "config.go",
       "file_type": "code",
       "source_file": "cmd/config.go",
       "source_location": "L1",
+      "id": "cmd_config_go",
       "community": 10,
-      "norm_label": "config.go",
-      "id": "cmd_config_go"
+      "norm_label": "config.go"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/config.go",
       "source_location": "L46",
+      "id": "cmd_config_init",
       "community": 10,
-      "norm_label": "init()",
-      "id": "cmd_config_init"
+      "norm_label": "init()"
     },
     {
       "label": "writeResolvedConfig()",
       "file_type": "code",
       "source_file": "cmd/config.go",
       "source_location": "L55",
+      "id": "cmd_config_writeresolvedconfig",
       "community": 10,
-      "norm_label": "writeresolvedconfig()",
-      "id": "cmd_config_writeresolvedconfig"
+      "norm_label": "writeresolvedconfig()"
     },
     {
       "label": "version.go",
       "file_type": "code",
       "source_file": "cmd/version.go",
       "source_location": "L1",
+      "id": "cmd_version_go",
       "community": 26,
-      "norm_label": "version.go",
-      "id": "cmd_version_go"
+      "norm_label": "version.go"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/version.go",
       "source_location": "L10",
+      "id": "cmd_version_init",
       "community": 26,
-      "norm_label": "init()",
-      "id": "cmd_version_init"
+      "norm_label": "init()"
     },
     {
       "label": "build.go",
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L1",
+      "id": "cmd_build_go",
       "community": 2,
-      "norm_label": "build.go",
-      "id": "cmd_build_go"
+      "norm_label": "build.go"
     },
     {
       "label": "runBuild()",
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L31",
+      "id": "cmd_build_runbuild",
       "community": 2,
-      "norm_label": "runbuild()",
-      "id": "cmd_build_runbuild"
+      "norm_label": "runbuild()"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L53",
+      "id": "cmd_build_init",
       "community": 2,
-      "norm_label": "init()",
-      "id": "cmd_build_init"
+      "norm_label": "init()"
     },
     {
       "label": "init_test.go",
       "file_type": "code",
       "source_file": "cmd/init_test.go",
       "source_location": "L1",
+      "id": "cmd_init_test_go",
       "community": 10,
-      "norm_label": "init_test.go",
-      "id": "cmd_init_test_go"
+      "norm_label": "init_test.go"
     },
     {
       "label": "chdirTemp()",
       "file_type": "code",
       "source_file": "cmd/init_test.go",
       "source_location": "L12",
+      "id": "cmd_init_test_chdirtemp",
       "community": 10,
-      "norm_label": "chdirtemp()",
-      "id": "cmd_init_test_chdirtemp"
+      "norm_label": "chdirtemp()"
     },
     {
       "label": "TestInitWritesAnnotatedYAML()",
       "file_type": "code",
       "source_file": "cmd/init_test.go",
       "source_location": "L26",
+      "id": "cmd_init_test_testinitwritesannotatedyaml",
       "community": 10,
-      "norm_label": "testinitwritesannotatedyaml()",
-      "id": "cmd_init_test_testinitwritesannotatedyaml"
+      "norm_label": "testinitwritesannotatedyaml()"
     },
     {
       "label": "TestInitRefusesOverwriteWithoutForce()",
       "file_type": "code",
       "source_file": "cmd/init_test.go",
       "source_location": "L50",
+      "id": "cmd_init_test_testinitrefusesoverwritewithoutforce",
       "community": 10,
-      "norm_label": "testinitrefusesoverwritewithoutforce()",
-      "id": "cmd_init_test_testinitrefusesoverwritewithoutforce"
+      "norm_label": "testinitrefusesoverwritewithoutforce()"
     },
     {
       "label": "TestInitForceOverwrites()",
       "file_type": "code",
       "source_file": "cmd/init_test.go",
       "source_location": "L76",
+      "id": "cmd_init_test_testinitforceoverwrites",
       "community": 10,
-      "norm_label": "testinitforceoverwrites()",
-      "id": "cmd_init_test_testinitforceoverwrites"
+      "norm_label": "testinitforceoverwrites()"
     },
     {
       "label": "completion_test.go",
       "file_type": "code",
       "source_file": "cmd/completion_test.go",
       "source_location": "L1",
+      "id": "cmd_completion_test_go",
       "community": 27,
-      "norm_label": "completion_test.go",
-      "id": "cmd_completion_test_go"
+      "norm_label": "completion_test.go"
     },
     {
       "label": "TestCompletionWritesToCmdOut()",
       "file_type": "code",
       "source_file": "cmd/completion_test.go",
       "source_location": "L12",
+      "id": "cmd_completion_test_testcompletionwritestocmdout",
       "community": 27,
-      "norm_label": "testcompletionwritestocmdout()",
-      "id": "cmd_completion_test_testcompletionwritestocmdout"
+      "norm_label": "testcompletionwritestocmdout()"
     },
     {
       "label": "signalctx.go",
       "file_type": "code",
       "source_file": "cmd/signalctx.go",
       "source_location": "L1",
+      "id": "cmd_signalctx_go",
       "community": 2,
-      "norm_label": "signalctx.go",
-      "id": "cmd_signalctx_go"
+      "norm_label": "signalctx.go"
     },
     {
       "label": "signalCtx()",
       "file_type": "code",
       "source_file": "cmd/signalctx.go",
       "source_location": "L13",
+      "id": "cmd_signalctx_signalctx",
       "community": 2,
-      "norm_label": "signalctx()",
-      "id": "cmd_signalctx_signalctx"
+      "norm_label": "signalctx()"
     },
     {
       "label": "config_subcmd_test.go",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L1",
+      "id": "cmd_config_subcmd_test_go",
       "community": 10,
-      "norm_label": "config_subcmd_test.go",
-      "id": "cmd_config_subcmd_test_go"
+      "norm_label": "config_subcmd_test.go"
     },
     {
       "label": "TestRenderExampleYAMLContainsAllToolsAndMounts()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L13",
+      "id": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts",
       "community": 10,
-      "norm_label": "testrenderexampleyamlcontainsalltoolsandmounts()",
-      "id": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts"
+      "norm_label": "testrenderexampleyamlcontainsalltoolsandmounts()"
     },
     {
       "label": "TestWriteResolvedConfigDeterministic()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L36",
+      "id": "cmd_config_subcmd_test_testwriteresolvedconfigdeterministic",
       "community": 10,
-      "norm_label": "testwriteresolvedconfigdeterministic()",
-      "id": "cmd_config_subcmd_test_testwriteresolvedconfigdeterministic"
+      "norm_label": "testwriteresolvedconfigdeterministic()"
     },
     {
       "label": "TestWriteResolvedConfigEmptyMounts()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L77",
+      "id": "cmd_config_subcmd_test_testwriteresolvedconfigemptymounts",
       "community": 10,
-      "norm_label": "testwriteresolvedconfigemptymounts()",
-      "id": "cmd_config_subcmd_test_testwriteresolvedconfigemptymounts"
+      "norm_label": "testwriteresolvedconfigemptymounts()"
     },
     {
       "label": "TestWriteResolvedConfigNilConfigErrors()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L92",
+      "id": "cmd_config_subcmd_test_testwriteresolvedconfignilconfigerrors",
       "community": 10,
-      "norm_label": "testwriteresolvedconfignilconfigerrors()",
-      "id": "cmd_config_subcmd_test_testwriteresolvedconfignilconfigerrors"
+      "norm_label": "testwriteresolvedconfignilconfigerrors()"
     },
     {
       "label": "shell.go",
       "file_type": "code",
       "source_file": "cmd/shell.go",
       "source_location": "L1",
+      "id": "cmd_shell_go",
       "community": 2,
-      "norm_label": "shell.go",
-      "id": "cmd_shell_go"
+      "norm_label": "shell.go"
     },
     {
       "label": "runShell()",
       "file_type": "code",
       "source_file": "cmd/shell.go",
       "source_location": "L36",
+      "id": "cmd_shell_runshell",
       "community": 2,
-      "norm_label": "runshell()",
-      "id": "cmd_shell_runshell"
+      "norm_label": "runshell()"
     },
     {
       "label": "resolveWorkspace()",
       "file_type": "code",
       "source_file": "cmd/shell.go",
       "source_location": "L64",
+      "id": "cmd_shell_resolveworkspace",
       "community": 2,
-      "norm_label": "resolveworkspace()",
-      "id": "cmd_shell_resolveworkspace"
+      "norm_label": "resolveworkspace()"
     },
     {
       "label": "validateWorkspacePath()",
       "file_type": "code",
       "source_file": "cmd/shell.go",
       "source_location": "L85",
+      "id": "cmd_shell_validateworkspacepath",
       "community": 2,
-      "norm_label": "validateworkspacepath()",
-      "id": "cmd_shell_validateworkspacepath"
+      "norm_label": "validateworkspacepath()"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/shell.go",
       "source_location": "L92",
+      "id": "cmd_shell_init",
       "community": 2,
-      "norm_label": "init()",
-      "id": "cmd_shell_init"
+      "norm_label": "init()"
     },
     {
       "label": "stop.go",
       "file_type": "code",
       "source_file": "cmd/stop.go",
       "source_location": "L1",
+      "id": "cmd_stop_go",
       "community": 2,
-      "norm_label": "stop.go",
-      "id": "cmd_stop_go"
+      "norm_label": "stop.go"
     },
     {
       "label": "runStop()",
       "file_type": "code",
       "source_file": "cmd/stop.go",
       "source_location": "L20",
+      "id": "cmd_stop_runstop",
       "community": 2,
-      "norm_label": "runstop()",
-      "id": "cmd_stop_runstop"
+      "norm_label": "runstop()"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/stop.go",
       "source_location": "L41",
+      "id": "cmd_stop_init",
       "community": 2,
-      "norm_label": "init()",
-      "id": "cmd_stop_init"
+      "norm_label": "init()"
     },
     {
       "label": "config_example.go",
       "file_type": "code",
       "source_file": "cmd/config_example.go",
       "source_location": "L1",
+      "id": "cmd_config_example_go",
       "community": 10,
-      "norm_label": "config_example.go",
-      "id": "cmd_config_example_go"
+      "norm_label": "config_example.go"
     },
     {
       "label": "renderExampleYAML()",
       "file_type": "code",
       "source_file": "cmd/config_example.go",
       "source_location": "L16",
+      "id": "cmd_config_example_renderexampleyaml",
       "community": 10,
-      "norm_label": "renderexampleyaml()",
-      "id": "cmd_config_example_renderexampleyaml"
+      "norm_label": "renderexampleyaml()"
     },
     {
       "label": "shell_workspace_test.go",
       "file_type": "code",
       "source_file": "cmd/shell_workspace_test.go",
       "source_location": "L1",
+      "id": "cmd_shell_workspace_test_go",
       "community": 2,
-      "norm_label": "shell_workspace_test.go",
-      "id": "cmd_shell_workspace_test_go"
+      "norm_label": "shell_workspace_test.go"
     },
     {
       "label": "TestValidateWorkspacePathRejectsColon()",
       "file_type": "code",
       "source_file": "cmd/shell_workspace_test.go",
       "source_location": "L7",
+      "id": "cmd_shell_workspace_test_testvalidateworkspacepathrejectscolon",
       "community": 2,
-      "norm_label": "testvalidateworkspacepathrejectscolon()",
-      "id": "cmd_shell_workspace_test_testvalidateworkspacepathrejectscolon"
+      "norm_label": "testvalidateworkspacepathrejectscolon()"
     },
     {
       "label": "TestValidateWorkspacePathAcceptsCommonPaths()",
       "file_type": "code",
       "source_file": "cmd/shell_workspace_test.go",
       "source_location": "L17",
+      "id": "cmd_shell_workspace_test_testvalidateworkspacepathacceptscommonpaths",
       "community": 2,
-      "norm_label": "testvalidateworkspacepathacceptscommonpaths()",
-      "id": "cmd_shell_workspace_test_testvalidateworkspacepathacceptscommonpaths"
+      "norm_label": "testvalidateworkspacepathacceptscommonpaths()"
     },
     {
       "label": "TestSignalCtxReturnsCancellableContext()",
       "file_type": "code",
       "source_file": "cmd/shell_workspace_test.go",
       "source_location": "L35",
+      "id": "cmd_shell_workspace_test_testsignalctxreturnscancellablecontext",
       "community": 2,
-      "norm_label": "testsignalctxreturnscancellablecontext()",
-      "id": "cmd_shell_workspace_test_testsignalctxreturnscancellablecontext"
+      "norm_label": "testsignalctxreturnscancellablecontext()"
     },
     {
       "label": "args_test.go",
       "file_type": "code",
       "source_file": "cmd/args_test.go",
       "source_location": "L1",
+      "id": "cmd_args_test_go",
       "community": 11,
-      "norm_label": "args_test.go",
-      "id": "cmd_args_test_go"
+      "norm_label": "args_test.go"
     },
     {
       "label": "TestSubcommandsRejectPositionalArgs()",
       "file_type": "code",
       "source_file": "cmd/args_test.go",
       "source_location": "L16",
+      "id": "cmd_args_test_testsubcommandsrejectpositionalargs",
       "community": 11,
-      "norm_label": "testsubcommandsrejectpositionalargs()",
-      "id": "cmd_args_test_testsubcommandsrejectpositionalargs"
+      "norm_label": "testsubcommandsrejectpositionalargs()"
     },
     {
       "label": "TestCompletionRejectsUnknownShell()",
       "file_type": "code",
       "source_file": "cmd/args_test.go",
       "source_location": "L49",
+      "id": "cmd_args_test_testcompletionrejectsunknownshell",
       "community": 11,
-      "norm_label": "testcompletionrejectsunknownshell()",
-      "id": "cmd_args_test_testcompletionrejectsunknownshell"
+      "norm_label": "testcompletionrejectsunknownshell()"
     },
     {
       "label": "TestUsageArgsWraps()",
       "file_type": "code",
       "source_file": "cmd/args_test.go",
       "source_location": "L72",
+      "id": "cmd_args_test_testusageargswraps",
       "community": 11,
-      "norm_label": "testusageargswraps()",
-      "id": "cmd_args_test_testusageargswraps"
+      "norm_label": "testusageargswraps()"
     },
     {
       "label": "TestFlagErrorFuncWrapsInUsageError()",
       "file_type": "code",
       "source_file": "cmd/args_test.go",
       "source_location": "L94",
+      "id": "cmd_args_test_testflagerrorfuncwrapsinusageerror",
       "community": 11,
-      "norm_label": "testflagerrorfuncwrapsinusageerror()",
-      "id": "cmd_args_test_testflagerrorfuncwrapsinusageerror"
+      "norm_label": "testflagerrorfuncwrapsinusageerror()"
     },
     {
       "label": "version_test.go",
       "file_type": "code",
       "source_file": "cmd/version_test.go",
       "source_location": "L1",
+      "id": "cmd_version_test_go",
       "community": 28,
-      "norm_label": "version_test.go",
-      "id": "cmd_version_test_go"
+      "norm_label": "version_test.go"
     },
     {
       "label": "TestVersionCommandWritesToCmdOut()",
       "file_type": "code",
       "source_file": "cmd/version_test.go",
       "source_location": "L14",
+      "id": "cmd_version_test_testversioncommandwritestocmdout",
       "community": 28,
-      "norm_label": "testversioncommandwritestocmdout()",
-      "id": "cmd_version_test_testversioncommandwritestocmdout"
+      "norm_label": "testversioncommandwritestocmdout()"
     },
     {
       "label": "config_test.go",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L1",
+      "id": "cmd_config_test_go",
       "community": 11,
-      "norm_label": "config_test.go",
-      "id": "cmd_config_test_go"
+      "norm_label": "config_test.go"
     },
     {
       "label": "resetCmdState()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L14",
+      "id": "cmd_config_test_resetcmdstate",
       "community": 11,
-      "norm_label": "resetcmdstate()",
-      "id": "cmd_config_test_resetcmdstate"
+      "norm_label": "resetcmdstate()"
     },
     {
       "label": "TestInitConfigExplicitFileIsRead()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L24",
+      "id": "cmd_config_test_testinitconfigexplicitfileisread",
       "community": 11,
-      "norm_label": "testinitconfigexplicitfileisread()",
-      "id": "cmd_config_test_testinitconfigexplicitfileisread"
+      "norm_label": "testinitconfigexplicitfileisread()"
     },
     {
       "label": "TestInitConfigProjectFileFromCWD()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L55",
+      "id": "cmd_config_test_testinitconfigprojectfilefromcwd",
       "community": 11,
-      "norm_label": "testinitconfigprojectfilefromcwd()",
-      "id": "cmd_config_test_testinitconfigprojectfilefromcwd"
+      "norm_label": "testinitconfigprojectfilefromcwd()"
     },
     {
       "label": "TestInitConfigProjectFileWalksUpFromSubdir()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L93",
+      "id": "cmd_config_test_testinitconfigprojectfilewalksupfromsubdir",
       "community": 11,
-      "norm_label": "testinitconfigprojectfilewalksupfromsubdir()",
-      "id": "cmd_config_test_testinitconfigprojectfilewalksupfromsubdir"
+      "norm_label": "testinitconfigprojectfilewalksupfromsubdir()"
     },
     {
       "label": "TestInitConfigProjectFileStopsAtHome()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L138",
+      "id": "cmd_config_test_testinitconfigprojectfilestopsathome",
       "community": 11,
-      "norm_label": "testinitconfigprojectfilestopsathome()",
-      "id": "cmd_config_test_testinitconfigprojectfilestopsathome"
+      "norm_label": "testinitconfigprojectfilestopsathome()"
     },
     {
       "label": "TestInitConfigAppliesDefaults()",
       "file_type": "code",
       "source_file": "cmd/config_test.go",
       "source_location": "L183",
+      "id": "cmd_config_test_testinitconfigappliesdefaults",
       "community": 11,
-      "norm_label": "testinitconfigappliesdefaults()",
-      "id": "cmd_config_test_testinitconfigappliesdefaults"
+      "norm_label": "testinitconfigappliesdefaults()"
     },
     {
       "label": "init.go",
       "file_type": "code",
       "source_file": "cmd/init.go",
       "source_location": "L1",
+      "id": "cmd_init_go",
       "community": 10,
-      "norm_label": "init.go",
-      "id": "cmd_init_go"
+      "norm_label": "init.go"
     },
     {
       "label": "runInit()",
       "file_type": "code",
       "source_file": "cmd/init.go",
       "source_location": "L24",
+      "id": "cmd_init_runinit",
       "community": 10,
-      "norm_label": "runinit()",
-      "id": "cmd_init_runinit"
+      "norm_label": "runinit()"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/init.go",
       "source_location": "L46",
+      "id": "cmd_init_init",
       "community": 10,
-      "norm_label": "init()",
-      "id": "cmd_init_init"
+      "norm_label": "init()"
     },
     {
       "label": "root.go",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L1",
+      "id": "cmd_root_go",
       "community": 11,
-      "norm_label": "root.go",
-      "id": "cmd_root_go"
+      "norm_label": "root.go"
     },
     {
       "label": "usageError",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L23",
+      "id": "cmd_usageerror",
       "community": 11,
-      "norm_label": "usageerror",
-      "id": "cmd_usageerror"
+      "norm_label": "usageerror"
     },
     {
       "label": ".Error()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L25",
+      "id": "cmd_usageerror_error",
       "community": 11,
-      "norm_label": ".error()",
-      "id": "cmd_usageerror_error"
+      "norm_label": ".error()"
     },
     {
       "label": ".Unwrap()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L26",
+      "id": "cmd_usageerror_unwrap",
       "community": 11,
-      "norm_label": ".unwrap()",
-      "id": "cmd_usageerror_unwrap"
+      "norm_label": ".unwrap()"
     },
     {
       "label": "usageArgs()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L33",
+      "id": "cmd_root_usageargs",
       "community": 11,
-      "norm_label": "usageargs()",
-      "id": "cmd_root_usageargs"
+      "norm_label": "usageargs()"
     },
     {
       "label": "Execute()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L54",
+      "id": "cmd_root_execute",
       "community": 11,
-      "norm_label": "execute()",
-      "id": "cmd_root_execute"
+      "norm_label": "execute()"
     },
     {
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L64",
+      "id": "cmd_root_init",
       "community": 11,
-      "norm_label": "init()",
-      "id": "cmd_root_init"
+      "norm_label": "init()"
     },
     {
       "label": "initConfig()",
       "file_type": "code",
       "source_file": "cmd/root.go",
       "source_location": "L76",
+      "id": "cmd_root_initconfig",
       "community": 11,
-      "norm_label": "initconfig()",
-      "id": "cmd_root_initconfig"
+      "norm_label": "initconfig()"
     },
     {
       "label": "output_test.go",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L1",
+      "id": "internal_ui_output_test_go",
       "community": 2,
-      "norm_label": "output_test.go",
-      "id": "internal_ui_output_test_go"
+      "norm_label": "output_test.go"
     },
     {
       "label": "captureStderr()",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L14",
+      "id": "ui_output_test_capturestderr",
       "community": 2,
-      "norm_label": "capturestderr()",
-      "id": "ui_output_test_capturestderr"
+      "norm_label": "capturestderr()"
     },
     {
       "label": "TestSuccessWritesToStderr()",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L37",
+      "id": "ui_output_test_testsuccesswritestostderr",
       "community": 2,
-      "norm_label": "testsuccesswritestostderr()",
-      "id": "ui_output_test_testsuccesswritestostderr"
+      "norm_label": "testsuccesswritestostderr()"
     },
     {
       "label": "TestWarningWritesToStderr()",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L44",
+      "id": "ui_output_test_testwarningwritestostderr",
       "community": 2,
-      "norm_label": "testwarningwritestostderr()",
-      "id": "ui_output_test_testwarningwritestostderr"
+      "norm_label": "testwarningwritestostderr()"
     },
     {
       "label": "TestInfoWritesToStderr()",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L51",
+      "id": "ui_output_test_testinfowritestostderr",
       "community": 2,
-      "norm_label": "testinfowritestostderr()",
-      "id": "ui_output_test_testinfowritestostderr"
+      "norm_label": "testinfowritestostderr()"
     },
     {
       "label": "TestOutputDoesNotWriteToStdout()",
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L61",
+      "id": "ui_output_test_testoutputdoesnotwritetostdout",
       "community": 2,
-      "norm_label": "testoutputdoesnotwritetostdout()",
-      "id": "ui_output_test_testoutputdoesnotwritetostdout"
+      "norm_label": "testoutputdoesnotwritetostdout()"
     },
     {
       "label": "output.go",
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L1",
+      "id": "internal_ui_output_go",
       "community": 2,
-      "norm_label": "output.go",
-      "id": "internal_ui_output_go"
+      "norm_label": "output.go"
     },
     {
       "label": "Success()",
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L22",
+      "id": "ui_output_success",
       "community": 2,
-      "norm_label": "success()",
-      "id": "ui_output_success"
+      "norm_label": "success()"
     },
     {
       "label": "Warning()",
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L27",
+      "id": "ui_output_warning",
       "community": 2,
-      "norm_label": "warning()",
-      "id": "ui_output_warning"
+      "norm_label": "warning()"
     },
     {
       "label": "Info()",
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L32",
+      "id": "ui_output_info",
       "community": 2,
-      "norm_label": "info()",
-      "id": "ui_output_info"
+      "norm_label": "info()"
     },
     {
       "label": "shellcmd_test.go",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L1",
+      "id": "internal_shellcmd_shellcmd_test_go",
       "community": 12,
-      "norm_label": "shellcmd_test.go",
-      "id": "internal_shellcmd_shellcmd_test_go"
+      "norm_label": "shellcmd_test.go"
     },
     {
       "label": "TestResolveShellCmdZshEnabled()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L14",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
       "community": 12,
-      "norm_label": "testresolveshellcmdzshenabled()",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled"
+      "norm_label": "testresolveshellcmdzshenabled()"
     },
     {
       "label": "TestResolveShellCmdBash()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L30",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdbash",
       "community": 12,
-      "norm_label": "testresolveshellcmdbash()",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdbash"
+      "norm_label": "testresolveshellcmdbash()"
     },
     {
       "label": "TestResolveShellCmdZshDisabledError()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L47",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror",
       "community": 12,
-      "norm_label": "testresolveshellcmdzshdisablederror()",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror"
+      "norm_label": "testresolveshellcmdzshdisablederror()"
     },
     {
       "label": "TestNestedSandboxSecurityOptDefault()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L75",
+      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
       "community": 12,
-      "norm_label": "testnestedsandboxsecurityoptdefault()",
-      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault"
+      "norm_label": "testnestedsandboxsecurityoptdefault()"
     },
     {
       "label": "TestNestedSandboxSecurityOptCodexDisabled()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd_test.go",
       "source_location": "L84",
+      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled",
       "community": 12,
-      "norm_label": "testnestedsandboxsecurityoptcodexdisabled()",
-      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled"
+      "norm_label": "testnestedsandboxsecurityoptcodexdisabled()"
     },
     {
       "label": "shellcmd.go",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd.go",
       "source_location": "L1",
+      "id": "internal_shellcmd_shellcmd_go",
       "community": 12,
-      "norm_label": "shellcmd.go",
-      "id": "internal_shellcmd_shellcmd_go"
+      "norm_label": "shellcmd.go"
     },
     {
       "label": "ShellMismatchError",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd.go",
       "source_location": "L23",
+      "id": "shellcmd_shellmismatcherror",
       "community": 12,
-      "norm_label": "shellmismatcherror",
-      "id": "shellcmd_shellmismatcherror"
+      "norm_label": "shellmismatcherror"
     },
     {
       "label": ".Error()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd.go",
       "source_location": "L27",
+      "id": "shellcmd_shellmismatcherror_error",
       "community": 12,
-      "norm_label": ".error()",
-      "id": "shellcmd_shellmismatcherror_error"
+      "norm_label": ".error()"
     },
     {
       "label": "ResolveShellCmd()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd.go",
       "source_location": "L42",
+      "id": "shellcmd_shellcmd_resolveshellcmd",
       "community": 12,
-      "norm_label": "resolveshellcmd()",
-      "id": "shellcmd_shellcmd_resolveshellcmd"
+      "norm_label": "resolveshellcmd()"
     },
     {
       "label": "NestedSandboxSecurityOpt()",
       "file_type": "code",
       "source_file": "internal/shellcmd/shellcmd.go",
       "source_location": "L58",
+      "id": "shellcmd_shellcmd_nestedsandboxsecurityopt",
       "community": 12,
-      "norm_label": "nestedsandboxsecurityopt()",
-      "id": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+      "norm_label": "nestedsandboxsecurityopt()"
     },
     {
       "label": "resolve.go",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve.go",
       "source_location": "L1",
+      "id": "internal_mountplan_resolve_go",
       "community": 14,
-      "norm_label": "resolve.go",
-      "id": "internal_mountplan_resolve_go"
+      "norm_label": "resolve.go"
     },
     {
       "label": "resolveAll()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve.go",
       "source_location": "L20",
+      "id": "mountplan_resolve_resolveall",
       "community": 14,
-      "norm_label": "resolveall()",
-      "id": "mountplan_resolve_resolveall"
+      "norm_label": "resolveall()"
     },
     {
       "label": "ensureSource()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve.go",
       "source_location": "L84",
+      "id": "mountplan_resolve_ensuresource",
       "community": 14,
-      "norm_label": "ensuresource()",
-      "id": "mountplan_resolve_ensuresource"
+      "norm_label": "ensuresource()"
     },
     {
       "label": "expandHome()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve.go",
       "source_location": "L111",
+      "id": "mountplan_resolve_expandhome",
       "community": 14,
-      "norm_label": "expandhome()",
-      "id": "mountplan_resolve_expandhome"
+      "norm_label": "expandhome()"
     },
     {
       "label": "merge.go",
       "file_type": "code",
       "source_file": "internal/mountplan/merge.go",
       "source_location": "L1",
+      "id": "internal_mountplan_merge_go",
       "community": 4,
-      "norm_label": "merge.go",
-      "id": "internal_mountplan_merge_go"
+      "norm_label": "merge.go"
     },
     {
       "label": "applyMountsRoot()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge.go",
       "source_location": "L21",
+      "id": "mountplan_merge_applymountsroot",
       "community": 4,
-      "norm_label": "applymountsroot()",
-      "id": "mountplan_merge_applymountsroot"
+      "norm_label": "applymountsroot()"
     },
     {
       "label": "mergeMounts()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge.go",
       "source_location": "L53",
+      "id": "mountplan_merge_mergemounts",
       "community": 4,
-      "norm_label": "mergemounts()",
-      "id": "mountplan_merge_mergemounts"
+      "norm_label": "mergemounts()"
     },
     {
       "label": "plan.go",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L1",
+      "id": "internal_mountplan_plan_go",
       "community": 0,
-      "norm_label": "plan.go",
-      "id": "internal_mountplan_plan_go"
+      "norm_label": "plan.go"
     },
     {
       "label": "Bind",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L27",
+      "id": "mountplan_bind",
       "community": 0,
-      "norm_label": "bind",
-      "id": "mountplan_bind"
+      "norm_label": "bind"
     },
     {
       "label": ".String()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L35",
+      "id": "mountplan_bind_string",
       "community": 10,
-      "norm_label": ".string()",
-      "id": "mountplan_bind_string"
+      "norm_label": ".string()"
     },
     {
       "label": "Result",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L40",
+      "id": "mountplan_result",
       "community": 0,
-      "norm_label": "result",
-      "id": "mountplan_result"
+      "norm_label": "result"
     },
     {
       "label": "Plan()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L55",
+      "id": "mountplan_plan_plan",
       "community": 0,
-      "norm_label": "plan()",
-      "id": "mountplan_plan_plan"
+      "norm_label": "plan()"
     },
     {
       "label": "Merge()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L84",
+      "id": "mountplan_plan_merge",
       "community": 0,
-      "norm_label": "merge()",
-      "id": "mountplan_plan_merge"
+      "norm_label": "merge()"
     },
     {
       "label": "Defaults()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L95",
+      "id": "mountplan_plan_defaults",
       "community": 0,
-      "norm_label": "defaults()",
-      "id": "mountplan_plan_defaults"
+      "norm_label": "defaults()"
     },
     {
       "label": "merge_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_merge_test_go",
       "community": 4,
-      "norm_label": "merge_test.go",
-      "id": "internal_mountplan_merge_test_go"
+      "norm_label": "merge_test.go"
     },
     {
       "label": "TestMergeRetargetsSource()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L13",
+      "id": "mountplan_merge_test_testmergeretargetssource",
       "community": 4,
-      "norm_label": "testmergeretargetssource()",
-      "id": "mountplan_merge_test_testmergeretargetssource"
+      "norm_label": "testmergeretargetssource()"
     },
     {
       "label": "TestMergeUnknownNameErrors()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L56",
+      "id": "mountplan_merge_test_testmergeunknownnameerrors",
       "community": 4,
-      "norm_label": "testmergeunknownnameerrors()",
-      "id": "mountplan_merge_test_testmergeunknownnameerrors"
+      "norm_label": "testmergeunknownnameerrors()"
     },
     {
       "label": "TestMergeReplaceByName()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L71",
+      "id": "mountplan_merge_test_testmergereplacebyname",
       "community": 4,
-      "norm_label": "testmergereplacebyname()",
-      "id": "mountplan_merge_test_testmergereplacebyname"
+      "norm_label": "testmergereplacebyname()"
     },
     {
       "label": "TestMergeAppendNewName()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L104",
+      "id": "mountplan_merge_test_testmergeappendnewname",
       "community": 4,
-      "norm_label": "testmergeappendnewname()",
-      "id": "mountplan_merge_test_testmergeappendnewname"
+      "norm_label": "testmergeappendnewname()"
     },
     {
       "label": "TestMergeDisableDefault()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L130",
+      "id": "mountplan_merge_test_testmergedisabledefault",
       "community": 4,
-      "norm_label": "testmergedisabledefault()",
-      "id": "mountplan_merge_test_testmergedisabledefault"
+      "norm_label": "testmergedisabledefault()"
     },
     {
       "label": "TestMergeMountsRootRetargetsAllDefaults()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L151",
+      "id": "mountplan_merge_test_testmergemountsrootretargetsalldefaults",
       "community": 4,
-      "norm_label": "testmergemountsrootretargetsalldefaults()",
-      "id": "mountplan_merge_test_testmergemountsrootretargetsalldefaults"
+      "norm_label": "testmergemountsrootretargetsalldefaults()"
     },
     {
       "label": "TestMergeMountsRootHomeRelative()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L190",
+      "id": "mountplan_merge_test_testmergemountsroothomerelative",
       "community": 4,
-      "norm_label": "testmergemountsroothomerelative()",
-      "id": "mountplan_merge_test_testmergemountsroothomerelative"
+      "norm_label": "testmergemountsroothomerelative()"
     },
     {
       "label": "TestMergeMountsRootCombinedWithPatch()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L209",
+      "id": "mountplan_merge_test_testmergemountsrootcombinedwithpatch",
       "community": 4,
-      "norm_label": "testmergemountsrootcombinedwithpatch()",
-      "id": "mountplan_merge_test_testmergemountsrootcombinedwithpatch"
+      "norm_label": "testmergemountsrootcombinedwithpatch()"
     },
     {
       "label": "TestMergeMountsRootWithAnonymousAppend()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L237",
+      "id": "mountplan_merge_test_testmergemountsrootwithanonymousappend",
       "community": 4,
-      "norm_label": "testmergemountsrootwithanonymousappend()",
-      "id": "mountplan_merge_test_testmergemountsrootwithanonymousappend"
+      "norm_label": "testmergemountsrootwithanonymousappend()"
     },
     {
       "label": "TestMergeMountsRootEmptyIsNoop()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L263",
+      "id": "mountplan_merge_test_testmergemountsrootemptyisnoop",
       "community": 4,
-      "norm_label": "testmergemountsrootemptyisnoop()",
-      "id": "mountplan_merge_test_testmergemountsrootemptyisnoop"
+      "norm_label": "testmergemountsrootemptyisnoop()"
     },
     {
       "label": "TestMergeMountsRootTrailingSlash()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L281",
+      "id": "mountplan_merge_test_testmergemountsroottrailingslash",
       "community": 4,
-      "norm_label": "testmergemountsroottrailingslash()",
-      "id": "mountplan_merge_test_testmergemountsroottrailingslash"
+      "norm_label": "testmergemountsroottrailingslash()"
     },
     {
       "label": "TestApplyMountsRootDoesNotMutateBase()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L298",
+      "id": "mountplan_merge_test_testapplymountsrootdoesnotmutatebase",
       "community": 4,
-      "norm_label": "testapplymountsrootdoesnotmutatebase()",
-      "id": "mountplan_merge_test_testapplymountsrootdoesnotmutatebase"
+      "norm_label": "testapplymountsrootdoesnotmutatebase()"
     },
     {
       "label": "TestMergePatchFlipsReadOnly()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L315",
+      "id": "mountplan_merge_test_testmergepatchflipsreadonly",
       "community": 4,
-      "norm_label": "testmergepatchflipsreadonly()",
-      "id": "mountplan_merge_test_testmergepatchflipsreadonly"
+      "norm_label": "testmergepatchflipsreadonly()"
     },
     {
       "label": "TestMergePatchSetsSymlinkFrom()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L338",
+      "id": "mountplan_merge_test_testmergepatchsetssymlinkfrom",
       "community": 4,
-      "norm_label": "testmergepatchsetssymlinkfrom()",
-      "id": "mountplan_merge_test_testmergepatchsetssymlinkfrom"
+      "norm_label": "testmergepatchsetssymlinkfrom()"
     },
     {
       "label": "TestMergeAnonymousAppend()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L353",
+      "id": "mountplan_merge_test_testmergeanonymousappend",
       "community": 4,
-      "norm_label": "testmergeanonymousappend()",
-      "id": "mountplan_merge_test_testmergeanonymousappend"
+      "norm_label": "testmergeanonymousappend()"
     },
     {
       "label": "TestMergeAnonymousEmptySourceErrors()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L368",
+      "id": "mountplan_merge_test_testmergeanonymousemptysourceerrors",
       "community": 4,
-      "norm_label": "testmergeanonymousemptysourceerrors()",
-      "id": "mountplan_merge_test_testmergeanonymousemptysourceerrors"
+      "norm_label": "testmergeanonymousemptysourceerrors()"
     },
     {
       "label": "TestMergeReplaceEmptySourceErrors()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L380",
+      "id": "mountplan_merge_test_testmergereplaceemptysourceerrors",
       "community": 4,
-      "norm_label": "testmergereplaceemptysourceerrors()",
-      "id": "mountplan_merge_test_testmergereplaceemptysourceerrors"
+      "norm_label": "testmergereplaceemptysourceerrors()"
     },
     {
       "label": "TestMergeReplaceUnknownNameAppends()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L391",
+      "id": "mountplan_merge_test_testmergereplaceunknownnameappends",
       "community": 4,
-      "norm_label": "testmergereplaceunknownnameappends()",
-      "id": "mountplan_merge_test_testmergereplaceunknownnameappends"
+      "norm_label": "testmergereplaceunknownnameappends()"
     },
     {
       "label": "TestMergeMultipleUnknownPatchesSorted()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L407",
+      "id": "mountplan_merge_test_testmergemultipleunknownpatchessorted",
       "community": 4,
-      "norm_label": "testmergemultipleunknownpatchessorted()",
-      "id": "mountplan_merge_test_testmergemultipleunknownpatchessorted"
+      "norm_label": "testmergemultipleunknownpatchessorted()"
     },
     {
       "label": "TestMergeDisableAndPatchSameName()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L427",
+      "id": "mountplan_merge_test_testmergedisableandpatchsamename",
       "community": 4,
-      "norm_label": "testmergedisableandpatchsamename()",
-      "id": "mountplan_merge_test_testmergedisableandpatchsamename"
+      "norm_label": "testmergedisableandpatchsamename()"
     },
     {
       "label": "TestMergeUnknownPatchPlusLaterAppend()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L459",
+      "id": "mountplan_merge_test_testmergeunknownpatchpluslaterappend",
       "community": 4,
-      "norm_label": "testmergeunknownpatchpluslaterappend()",
-      "id": "mountplan_merge_test_testmergeunknownpatchpluslaterappend"
+      "norm_label": "testmergeunknownpatchpluslaterappend()"
     },
     {
       "label": "TestMergeNoOpPatch()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L477",
+      "id": "mountplan_merge_test_testmergenooppatch",
       "community": 4,
-      "norm_label": "testmergenooppatch()",
-      "id": "mountplan_merge_test_testmergenooppatch"
+      "norm_label": "testmergenooppatch()"
     },
     {
       "label": "TestMergeDoesNotMutateBase()",
       "file_type": "code",
       "source_file": "internal/mountplan/merge_test.go",
       "source_location": "L499",
+      "id": "mountplan_merge_test_testmergedoesnotmutatebase",
       "community": 4,
-      "norm_label": "testmergedoesnotmutatebase()",
-      "id": "mountplan_merge_test_testmergedoesnotmutatebase"
+      "norm_label": "testmergedoesnotmutatebase()"
     },
     {
       "label": "defaults_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_defaults_test_go",
       "community": 4,
-      "norm_label": "defaults_test.go",
-      "id": "internal_mountplan_defaults_test_go"
+      "norm_label": "defaults_test.go"
     },
     {
       "label": "TestDefaults()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
       "source_location": "L10",
+      "id": "mountplan_defaults_test_testdefaults",
       "community": 4,
-      "norm_label": "testdefaults()",
-      "id": "mountplan_defaults_test_testdefaults"
+      "norm_label": "testdefaults()"
     },
     {
       "label": "TestDefaultsHaveNames()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L72",
+      "source_location": "L73",
+      "id": "mountplan_defaults_test_testdefaultshavenames",
       "community": 4,
-      "norm_label": "testdefaultshavenames()",
-      "id": "mountplan_defaults_test_testdefaultshavenames"
+      "norm_label": "testdefaultshavenames()"
     },
     {
       "label": "assertMount()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L87",
+      "source_location": "L88",
+      "id": "mountplan_defaults_test_assertmount",
       "community": 4,
-      "norm_label": "assertmount()",
-      "id": "mountplan_defaults_test_assertmount"
+      "norm_label": "assertmount()"
     },
     {
       "label": "assertSymlink()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L104",
+      "source_location": "L105",
+      "id": "mountplan_defaults_test_assertsymlink",
       "community": 4,
-      "norm_label": "assertsymlink()",
-      "id": "mountplan_defaults_test_assertsymlink"
+      "norm_label": "assertsymlink()"
     },
     {
       "label": "findMount()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults_test.go",
-      "source_location": "L118",
+      "source_location": "L119",
+      "id": "mountplan_defaults_test_findmount",
       "community": 4,
-      "norm_label": "findmount()",
-      "id": "mountplan_defaults_test_findmount"
+      "norm_label": "findmount()"
     },
     {
       "label": "parent_dirs.go",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs.go",
       "source_location": "L1",
+      "id": "internal_mountplan_parent_dirs_go",
       "community": 22,
-      "norm_label": "parent_dirs.go",
-      "id": "internal_mountplan_parent_dirs_go"
+      "norm_label": "parent_dirs.go"
     },
     {
       "label": "ParentDirs()",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs.go",
       "source_location": "L19",
+      "id": "mountplan_parent_dirs_parentdirs",
       "community": 22,
-      "norm_label": "parentdirs()",
-      "id": "mountplan_parent_dirs_parentdirs"
+      "norm_label": "parentdirs()"
     },
     {
       "label": "workspace_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/workspace_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_workspace_test_go",
       "community": 1,
-      "norm_label": "workspace_test.go",
-      "id": "internal_mountplan_workspace_test_go"
+      "norm_label": "workspace_test.go"
     },
     {
       "label": "TestWorkspaceMirrorPath()",
       "file_type": "code",
       "source_file": "internal/mountplan/workspace_test.go",
       "source_location": "L5",
+      "id": "mountplan_workspace_test_testworkspacemirrorpath",
       "community": 1,
-      "norm_label": "testworkspacemirrorpath()",
-      "id": "mountplan_workspace_test_testworkspacemirrorpath"
+      "norm_label": "testworkspacemirrorpath()"
     },
     {
       "label": "defaults.go",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults.go",
       "source_location": "L1",
+      "id": "internal_mountplan_defaults_go",
       "community": 29,
-      "norm_label": "defaults.go",
-      "id": "internal_mountplan_defaults_go"
+      "norm_label": "defaults.go"
     },
     {
       "label": "defaults()",
       "file_type": "code",
       "source_file": "internal/mountplan/defaults.go",
       "source_location": "L16",
+      "id": "mountplan_defaults_defaults",
       "community": 29,
-      "norm_label": "defaults()",
-      "id": "mountplan_defaults_defaults"
+      "norm_label": "defaults()"
     },
     {
       "label": "resolve_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_resolve_test_go",
       "community": 14,
-      "norm_label": "resolve_test.go",
-      "id": "internal_mountplan_resolve_test_go"
+      "norm_label": "resolve_test.go"
     },
     {
       "label": "TestExpandHome()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L12",
+      "id": "mountplan_resolve_test_testexpandhome",
       "community": 14,
-      "norm_label": "testexpandhome()",
-      "id": "mountplan_resolve_test_testexpandhome"
+      "norm_label": "testexpandhome()"
     },
     {
       "label": "TestResolveAllSkipsMissing()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L35",
+      "id": "mountplan_resolve_test_testresolveallskipsmissing",
       "community": 14,
-      "norm_label": "testresolveallskipsmissing()",
-      "id": "mountplan_resolve_test_testresolveallskipsmissing"
+      "norm_label": "testresolveallskipsmissing()"
     },
     {
       "label": "TestResolveAllCreatesMissingWhenRequested()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L52",
+      "id": "mountplan_resolve_test_testresolveallcreatesmissingwhenrequested",
       "community": 14,
-      "norm_label": "testresolveallcreatesmissingwhenrequested()",
-      "id": "mountplan_resolve_test_testresolveallcreatesmissingwhenrequested"
+      "norm_label": "testresolveallcreatesmissingwhenrequested()"
     },
     {
       "label": "TestResolveAllSymlinkFromCreatesLink()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L74",
+      "id": "mountplan_resolve_test_testresolveallsymlinkfromcreateslink",
       "community": 14,
-      "norm_label": "testresolveallsymlinkfromcreateslink()",
-      "id": "mountplan_resolve_test_testresolveallsymlinkfromcreateslink"
+      "norm_label": "testresolveallsymlinkfromcreateslink()"
     },
     {
       "label": "TestResolveAllSymlinkFromSkipsWhenTargetMissing()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L113",
+      "id": "mountplan_resolve_test_testresolveallsymlinkfromskipswhentargetmissing",
       "community": 14,
-      "norm_label": "testresolveallsymlinkfromskipswhentargetmissing()",
-      "id": "mountplan_resolve_test_testresolveallsymlinkfromskipswhentargetmissing"
+      "norm_label": "testresolveallsymlinkfromskipswhentargetmissing()"
     },
     {
       "label": "TestResolveAllReplacesEmptyDirWithSymlink()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L135",
+      "id": "mountplan_resolve_test_testresolveallreplacesemptydirwithsymlink",
       "community": 14,
-      "norm_label": "testresolveallreplacesemptydirwithsymlink()",
-      "id": "mountplan_resolve_test_testresolveallreplacesemptydirwithsymlink"
+      "norm_label": "testresolveallreplacesemptydirwithsymlink()"
     },
     {
       "label": "TestResolveAllKeepsNonEmptyDirEvenWithSymlinkFrom()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L164",
+      "id": "mountplan_resolve_test_testresolveallkeepsnonemptydirevenwithsymlinkfrom",
       "community": 14,
-      "norm_label": "testresolveallkeepsnonemptydirevenwithsymlinkfrom()",
-      "id": "mountplan_resolve_test_testresolveallkeepsnonemptydirevenwithsymlinkfrom"
+      "norm_label": "testresolveallkeepsnonemptydirevenwithsymlinkfrom()"
     },
     {
       "label": "TestResolveAllRelativeSourceUsesCWD()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L199",
+      "id": "mountplan_resolve_test_testresolveallrelativesourceusescwd",
       "community": 14,
-      "norm_label": "testresolveallrelativesourceusescwd()",
-      "id": "mountplan_resolve_test_testresolveallrelativesourceusescwd"
+      "norm_label": "testresolveallrelativesourceusescwd()"
     },
     {
       "label": "TestResolveAllRelativeSourceCreatesUnderCWD()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L239",
+      "id": "mountplan_resolve_test_testresolveallrelativesourcecreatesundercwd",
       "community": 14,
-      "norm_label": "testresolveallrelativesourcecreatesundercwd()",
-      "id": "mountplan_resolve_test_testresolveallrelativesourcecreatesundercwd"
+      "norm_label": "testresolveallrelativesourcecreatesundercwd()"
     },
     {
       "label": "TestResolveAllReadOnlyMode()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L264",
+      "id": "mountplan_resolve_test_testresolveallreadonlymode",
       "community": 14,
-      "norm_label": "testresolveallreadonlymode()",
-      "id": "mountplan_resolve_test_testresolveallreadonlymode"
+      "norm_label": "testresolveallreadonlymode()"
     },
     {
       "label": "TestBindString()",
       "file_type": "code",
       "source_file": "internal/mountplan/resolve_test.go",
       "source_location": "L302",
+      "id": "mountplan_resolve_test_testbindstring",
       "community": 14,
-      "norm_label": "testbindstring()",
-      "id": "mountplan_resolve_test_testbindstring"
+      "norm_label": "testbindstring()"
     },
     {
       "label": "plan_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/plan_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_plan_test_go",
       "community": 1,
-      "norm_label": "plan_test.go",
-      "id": "internal_mountplan_plan_test_go"
+      "norm_label": "plan_test.go"
     },
     {
       "label": "TestPlanEndToEnd()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan_test.go",
       "source_location": "L16",
+      "id": "mountplan_plan_test_testplanendtoend",
       "community": 1,
-      "norm_label": "testplanendtoend()",
-      "id": "mountplan_plan_test_testplanendtoend"
+      "norm_label": "testplanendtoend()"
     },
     {
       "label": "TestPlanRejectsBadMountsRoot()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan_test.go",
       "source_location": "L146",
+      "id": "mountplan_plan_test_testplanrejectsbadmountsroot",
       "community": 1,
-      "norm_label": "testplanrejectsbadmountsroot()",
-      "id": "mountplan_plan_test_testplanrejectsbadmountsroot"
+      "norm_label": "testplanrejectsbadmountsroot()"
     },
     {
       "label": "TestPlanRejectsUnknownPatchName()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan_test.go",
       "source_location": "L155",
+      "id": "mountplan_plan_test_testplanrejectsunknownpatchname",
       "community": 1,
-      "norm_label": "testplanrejectsunknownpatchname()",
-      "id": "mountplan_plan_test_testplanrejectsunknownpatchname"
+      "norm_label": "testplanrejectsunknownpatchname()"
     },
     {
       "label": "TestPlanIncludesWorkspaceBindEvenWithReservedPath()",
       "file_type": "code",
       "source_file": "internal/mountplan/plan_test.go",
       "source_location": "L167",
+      "id": "mountplan_plan_test_testplanincludesworkspacebindevenwithreservedpath",
       "community": 1,
-      "norm_label": "testplanincludesworkspacebindevenwithreservedpath()",
-      "id": "mountplan_plan_test_testplanincludesworkspacebindevenwithreservedpath"
+      "norm_label": "testplanincludesworkspacebindevenwithreservedpath()"
     },
     {
       "label": "parent_dirs_test.go",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs_test.go",
       "source_location": "L1",
+      "id": "internal_mountplan_parent_dirs_test_go",
       "community": 22,
-      "norm_label": "parent_dirs_test.go",
-      "id": "internal_mountplan_parent_dirs_test_go"
+      "norm_label": "parent_dirs_test.go"
     },
     {
       "label": "TestParentDirsExcludesHomeRoot()",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs_test.go",
       "source_location": "L13",
+      "id": "mountplan_parent_dirs_test_testparentdirsexcludeshomeroot",
       "community": 22,
-      "norm_label": "testparentdirsexcludeshomeroot()",
-      "id": "mountplan_parent_dirs_test_testparentdirsexcludeshomeroot"
+      "norm_label": "testparentdirsexcludeshomeroot()"
     },
     {
       "label": "TestParentDirsSkipsTargetsOutsideHome()",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs_test.go",
       "source_location": "L27",
+      "id": "mountplan_parent_dirs_test_testparentdirsskipstargetsoutsidehome",
       "community": 22,
-      "norm_label": "testparentdirsskipstargetsoutsidehome()",
-      "id": "mountplan_parent_dirs_test_testparentdirsskipstargetsoutsidehome"
+      "norm_label": "testparentdirsskipstargetsoutsidehome()"
     },
     {
       "label": "TestParentDirsDeduplicatesAndSorts()",
       "file_type": "code",
       "source_file": "internal/mountplan/parent_dirs_test.go",
       "source_location": "L45",
+      "id": "mountplan_parent_dirs_test_testparentdirsdeduplicatesandsorts",
       "community": 22,
-      "norm_label": "testparentdirsdeduplicatesandsorts()",
-      "id": "mountplan_parent_dirs_test_testparentdirsdeduplicatesandsorts"
+      "norm_label": "testparentdirsdeduplicatesandsorts()"
     },
     {
       "label": "workspace.go",
       "file_type": "code",
       "source_file": "internal/mountplan/workspace.go",
       "source_location": "L1",
+      "id": "internal_mountplan_workspace_go",
       "community": 1,
-      "norm_label": "workspace.go",
-      "id": "internal_mountplan_workspace_go"
+      "norm_label": "workspace.go"
     },
     {
       "label": "WorkspaceMirrorPath()",
       "file_type": "code",
       "source_file": "internal/mountplan/workspace.go",
       "source_location": "L40",
+      "id": "mountplan_workspace_workspacemirrorpath",
       "community": 1,
-      "norm_label": "workspacemirrorpath()",
-      "id": "mountplan_workspace_workspacemirrorpath"
+      "norm_label": "workspacemirrorpath()"
     },
     {
       "label": "config.go",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L1",
+      "id": "internal_config_config_go",
       "community": 0,
-      "norm_label": "config.go",
-      "id": "internal_config_config_go"
+      "norm_label": "config.go"
     },
     {
       "label": "Config",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L17",
+      "id": "config_config",
       "community": 5,
-      "norm_label": "config",
-      "id": "config_config"
+      "norm_label": "config"
     },
     {
       "label": "Mount",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L42",
+      "id": "config_mount",
       "community": 5,
-      "norm_label": "mount",
-      "id": "config_mount"
+      "norm_label": "mount"
     },
     {
       "label": "ValidateShell()",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L77",
+      "id": "config_config_validateshell",
       "community": 0,
-      "norm_label": "validateshell()",
-      "id": "config_config_validateshell"
+      "norm_label": "validateshell()"
     },
     {
       "label": "ValidateMountsRoot()",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L95",
+      "id": "config_config_validatemountsroot",
       "community": 0,
-      "norm_label": "validatemountsroot()",
-      "id": "config_config_validatemountsroot"
+      "norm_label": "validatemountsroot()"
     },
     {
       "label": "Load()",
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L122",
+      "id": "config_config_load",
       "community": 0,
-      "norm_label": "load()",
-      "id": "config_config_load"
+      "norm_label": "load()"
     },
     {
       "label": "plan.go",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L1",
+      "id": "internal_config_plan_go",
       "community": 0,
-      "norm_label": "plan.go",
-      "id": "internal_config_plan_go"
+      "norm_label": "plan.go"
     },
     {
       "label": "Plan()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L32",
+      "id": "config_plan_plan",
       "community": 0,
-      "norm_label": "plan()",
-      "id": "config_plan_plan"
+      "norm_label": "plan()"
     },
     {
       "label": "Merge()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L87",
+      "id": "config_plan_merge",
       "community": 0,
-      "norm_label": "merge()",
-      "id": "config_plan_merge"
+      "norm_label": "merge()"
     },
     {
       "label": "walkUp()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L146",
+      "id": "config_plan_walkup",
       "community": 1,
-      "norm_label": "walkup()",
-      "id": "config_plan_walkup"
+      "norm_label": "walkup()"
     },
     {
       "label": "seedToolDefaults()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L180",
+      "id": "config_plan_seedtooldefaults",
       "community": 0,
-      "norm_label": "seedtooldefaults()",
-      "id": "config_plan_seedtooldefaults"
+      "norm_label": "seedtooldefaults()"
     },
     {
       "label": "applyValidationTail()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L202",
+      "id": "config_plan_applyvalidationtail",
       "community": 0,
-      "norm_label": "applyvalidationtail()",
-      "id": "config_plan_applyvalidationtail"
+      "norm_label": "applyvalidationtail()"
     },
     {
       "label": "fillToolDefaultsBackstop()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L223",
+      "id": "config_plan_filltooldefaultsbackstop",
       "community": 0,
-      "norm_label": "filltooldefaultsbackstop()",
-      "id": "config_plan_filltooldefaultsbackstop"
+      "norm_label": "filltooldefaultsbackstop()"
     },
     {
       "label": "dryParseYAML()",
       "file_type": "code",
       "source_file": "internal/config/plan.go",
       "source_location": "L236",
+      "id": "config_plan_dryparseyaml",
       "community": 0,
-      "norm_label": "dryparseyaml()",
-      "id": "config_plan_dryparseyaml"
+      "norm_label": "dryparseyaml()"
     },
     {
       "label": "merge_test.go",
       "file_type": "code",
       "source_file": "internal/config/merge_test.go",
       "source_location": "L1",
+      "id": "internal_config_merge_test_go",
       "community": 0,
-      "norm_label": "merge_test.go",
-      "id": "internal_config_merge_test_go"
+      "norm_label": "merge_test.go"
     },
     {
       "label": "TestMergeScenarios()",
       "file_type": "code",
       "source_file": "internal/config/merge_test.go",
       "source_location": "L18",
+      "id": "config_merge_test_testmergescenarios",
       "community": 0,
-      "norm_label": "testmergescenarios()",
-      "id": "config_merge_test_testmergescenarios"
+      "norm_label": "testmergescenarios()"
     },
     {
       "label": "tools.go",
       "file_type": "code",
       "source_file": "internal/config/tools.go",
       "source_location": "L1",
+      "id": "internal_config_tools_go",
       "community": 12,
-      "norm_label": "tools.go",
-      "id": "internal_config_tools_go"
+      "norm_label": "tools.go"
     },
     {
       "label": "DefaultTools()",
       "file_type": "code",
       "source_file": "internal/config/tools.go",
       "source_location": "L9",
+      "id": "config_tools_defaulttools",
       "community": 12,
-      "norm_label": "defaulttools()",
-      "id": "config_tools_defaulttools"
+      "norm_label": "defaulttools()"
     },
     {
       "label": "IsDefaultTools()",
       "file_type": "code",
       "source_file": "internal/config/tools.go",
       "source_location": "L13",
+      "id": "config_tools_isdefaulttools",
       "community": 12,
-      "norm_label": "isdefaulttools()",
-      "id": "config_tools_isdefaulttools"
+      "norm_label": "isdefaulttools()"
     },
     {
       "label": "plan_test.go",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L1",
+      "id": "internal_config_plan_test_go",
       "community": 1,
-      "norm_label": "plan_test.go",
-      "id": "internal_config_plan_test_go"
+      "norm_label": "plan_test.go"
     },
     {
       "label": "TestWalkUpStopsAtHome()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L22",
+      "id": "config_plan_test_testwalkupstopsathome",
       "community": 1,
-      "norm_label": "testwalkupstopsathome()",
-      "id": "config_plan_test_testwalkupstopsathome"
+      "norm_label": "testwalkupstopsathome()"
     },
     {
       "label": "TestWalkUpReturnsClosestMatch()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L42",
+      "id": "config_plan_test_testwalkupreturnsclosestmatch",
       "community": 1,
-      "norm_label": "testwalkupreturnsclosestmatch()",
-      "id": "config_plan_test_testwalkupreturnsclosestmatch"
+      "norm_label": "testwalkupreturnsclosestmatch()"
     },
     {
       "label": "TestWalkUpStopsAtFilesystemRoot()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L71",
+      "id": "config_plan_test_testwalkupstopsatfilesystemroot",
       "community": 1,
-      "norm_label": "testwalkupstopsatfilesystemroot()",
-      "id": "config_plan_test_testwalkupstopsatfilesystemroot"
+      "norm_label": "testwalkupstopsatfilesystemroot()"
     },
     {
       "label": "TestWalkUpHomeUnsetContinuesToRoot()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L86",
+      "id": "config_plan_test_testwalkuphomeunsetcontinuestoroot",
       "community": 1,
-      "norm_label": "testwalkuphomeunsetcontinuestoroot()",
-      "id": "config_plan_test_testwalkuphomeunsetcontinuestoroot"
+      "norm_label": "testwalkuphomeunsetcontinuestoroot()"
     },
     {
       "label": "TestWalkUpIgnoresDirectoryNamedToolboxYaml()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L108",
+      "id": "config_plan_test_testwalkupignoresdirectorynamedtoolboxyaml",
       "community": 1,
-      "norm_label": "testwalkupignoresdirectorynamedtoolboxyaml()",
-      "id": "config_plan_test_testwalkupignoresdirectorynamedtoolboxyaml"
+      "norm_label": "testwalkupignoresdirectorynamedtoolboxyaml()"
     },
     {
       "label": "TestPlanCanonicalPipeline()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L124",
+      "id": "config_plan_test_testplancanonicalpipeline",
       "community": 0,
-      "norm_label": "testplancanonicalpipeline()",
-      "id": "config_plan_test_testplancanonicalpipeline"
+      "norm_label": "testplancanonicalpipeline()"
     },
     {
       "label": "TestPlanWalksUpFromSubdir()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L149",
+      "id": "config_plan_test_testplanwalksupfromsubdir",
       "community": 1,
-      "norm_label": "testplanwalksupfromsubdir()",
-      "id": "config_plan_test_testplanwalksupfromsubdir"
+      "norm_label": "testplanwalksupfromsubdir()"
     },
     {
       "label": "TestPlanExplicitOverrideShortCircuits()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L175",
+      "id": "config_plan_test_testplanexplicitoverrideshortcircuits",
       "community": 1,
-      "norm_label": "testplanexplicitoverrideshortcircuits()",
-      "id": "config_plan_test_testplanexplicitoverrideshortcircuits"
+      "norm_label": "testplanexplicitoverrideshortcircuits()"
     },
     {
       "label": "TestPlanRejectsInvalidShell()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L211",
+      "id": "config_plan_test_testplanrejectsinvalidshell",
       "community": 1,
-      "norm_label": "testplanrejectsinvalidshell()",
-      "id": "config_plan_test_testplanrejectsinvalidshell"
+      "norm_label": "testplanrejectsinvalidshell()"
     },
     {
       "label": "TestPlanGlobalMalformedIsBestEffort()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L233",
+      "id": "config_plan_test_testplanglobalmalformedisbesteffort",
       "community": 0,
-      "norm_label": "testplanglobalmalformedisbesteffort()",
-      "id": "config_plan_test_testplanglobalmalformedisbesteffort"
+      "norm_label": "testplanglobalmalformedisbesteffort()"
     },
     {
       "label": "TestPlanGlobalUnreadableIsBestEffort()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L259",
+      "id": "config_plan_test_testplanglobalunreadableisbesteffort",
       "community": 1,
-      "norm_label": "testplanglobalunreadableisbesteffort()",
-      "id": "config_plan_test_testplanglobalunreadableisbesteffort"
+      "norm_label": "testplanglobalunreadableisbesteffort()"
     },
     {
       "label": "TestPlanRejectsRelativeMountsRoot()",
       "file_type": "code",
       "source_file": "internal/config/plan_test.go",
       "source_location": "L278",
+      "id": "config_plan_test_testplanrejectsrelativemountsroot",
       "community": 1,
-      "norm_label": "testplanrejectsrelativemountsroot()",
-      "id": "config_plan_test_testplanrejectsrelativemountsroot"
+      "norm_label": "testplanrejectsrelativemountsroot()"
     },
     {
       "label": "config_test.go",
       "file_type": "code",
       "source_file": "internal/config/config_test.go",
       "source_location": "L1",
+      "id": "internal_config_config_test_go",
       "community": 0,
-      "norm_label": "config_test.go",
-      "id": "internal_config_config_test_go"
+      "norm_label": "config_test.go"
     },
     {
       "label": "TestLoadSmoke()",
       "file_type": "code",
       "source_file": "internal/config/config_test.go",
       "source_location": "L22",
+      "id": "config_config_test_testloadsmoke",
       "community": 0,
-      "norm_label": "testloadsmoke()",
-      "id": "config_config_test_testloadsmoke"
+      "norm_label": "testloadsmoke()"
     },
     {
       "label": "TestIsDefaultTools()",
       "file_type": "code",
       "source_file": "internal/config/config_test.go",
       "source_location": "L56",
+      "id": "config_config_test_testisdefaulttools",
       "community": 12,
-      "norm_label": "testisdefaulttools()",
-      "id": "config_config_test_testisdefaulttools"
+      "norm_label": "testisdefaulttools()"
     },
     {
       "label": "TestToolBuildArgGo()",
       "file_type": "code",
       "source_file": "internal/config/config_test.go",
       "source_location": "L76",
+      "id": "config_config_test_testtoolbuildarggo",
       "community": 0,
-      "norm_label": "testtoolbuildarggo()",
-      "id": "config_config_test_testtoolbuildarggo"
+      "norm_label": "testtoolbuildarggo()"
     },
     {
       "label": "config_shell_test.go",
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L1",
+      "id": "internal_config_config_shell_test_go",
       "community": 0,
-      "norm_label": "config_shell_test.go",
-      "id": "internal_config_config_shell_test_go"
+      "norm_label": "config_shell_test.go"
     },
     {
       "label": "TestValidateShellAcceptsSupported()",
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L11",
+      "id": "config_config_shell_test_testvalidateshellacceptssupported",
       "community": 0,
-      "norm_label": "testvalidateshellacceptssupported()",
-      "id": "config_config_shell_test_testvalidateshellacceptssupported"
+      "norm_label": "testvalidateshellacceptssupported()"
     },
     {
       "label": "TestValidateShellRejectsUnknown()",
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L20",
+      "id": "config_config_shell_test_testvalidateshellrejectsunknown",
       "community": 0,
-      "norm_label": "testvalidateshellrejectsunknown()",
-      "id": "config_config_shell_test_testvalidateshellrejectsunknown"
+      "norm_label": "testvalidateshellrejectsunknown()"
     },
     {
       "label": "TestKnownToolsIncludesZsh()",
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L35",
+      "id": "config_config_shell_test_testknowntoolsincludeszsh",
       "community": 0,
-      "norm_label": "testknowntoolsincludeszsh()",
-      "id": "config_config_shell_test_testknowntoolsincludeszsh"
+      "norm_label": "testknowntoolsincludeszsh()"
     },
     {
       "label": "dockerfile_bijection_test.go",
       "file_type": "code",
       "source_file": "internal/catalog/dockerfile_bijection_test.go",
       "source_location": "L1",
+      "id": "internal_catalog_dockerfile_bijection_test_go",
       "community": 10,
-      "norm_label": "dockerfile_bijection_test.go",
-      "id": "internal_catalog_dockerfile_bijection_test_go"
+      "norm_label": "dockerfile_bijection_test.go"
     },
     {
       "label": "TestCatalogDockerfileBijection()",
       "file_type": "code",
       "source_file": "internal/catalog/dockerfile_bijection_test.go",
       "source_location": "L43",
+      "id": "catalog_dockerfile_bijection_test_testcatalogdockerfilebijection",
       "community": 10,
-      "norm_label": "testcatalogdockerfilebijection()",
-      "id": "catalog_dockerfile_bijection_test_testcatalogdockerfilebijection"
+      "norm_label": "testcatalogdockerfilebijection()"
     },
     {
       "label": "catalog.go",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
       "source_location": "L1",
+      "id": "internal_catalog_catalog_go",
       "community": 0,
-      "norm_label": "catalog.go",
-      "id": "internal_catalog_catalog_go"
+      "norm_label": "catalog.go"
     },
     {
       "label": "Entry",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
       "source_location": "L39",
+      "id": "catalog_entry",
       "community": 0,
-      "norm_label": "entry",
-      "id": "catalog_entry"
+      "norm_label": "entry"
     },
     {
       "label": "Keys()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L97",
+      "source_location": "L98",
+      "id": "catalog_catalog_keys",
       "community": 0,
-      "norm_label": "keys()",
-      "id": "catalog_catalog_keys"
+      "norm_label": "keys()"
     },
     {
       "label": "BuildArg()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L108",
+      "source_location": "L109",
+      "id": "catalog_catalog_buildarg",
       "community": 0,
-      "norm_label": "buildarg()",
-      "id": "catalog_catalog_buildarg"
+      "norm_label": "buildarg()"
     },
     {
       "label": "Defaults()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L120",
+      "source_location": "L121",
+      "id": "catalog_catalog_defaults",
       "community": 0,
-      "norm_label": "defaults()",
-      "id": "catalog_catalog_defaults"
+      "norm_label": "defaults()"
     },
     {
       "label": "IsDefault()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L134",
+      "source_location": "L135",
+      "id": "catalog_catalog_isdefault",
       "community": 0,
-      "norm_label": "isdefault()",
-      "id": "catalog_catalog_isdefault"
+      "norm_label": "isdefault()"
     },
     {
       "label": "WriteCanonicalEntries()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L162",
+      "source_location": "L163",
+      "id": "catalog_catalog_writecanonicalentries",
       "community": 0,
-      "norm_label": "writecanonicalentries()",
-      "id": "catalog_catalog_writecanonicalentries"
+      "norm_label": "writecanonicalentries()"
     },
     {
       "label": "WriteCanonical()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog.go",
-      "source_location": "L179",
+      "source_location": "L180",
+      "id": "catalog_catalog_writecanonical",
       "community": 0,
-      "norm_label": "writecanonical()",
-      "id": "catalog_catalog_writecanonical"
+      "norm_label": "writecanonical()"
     },
     {
       "label": "catalog_test.go",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L1",
+      "id": "internal_catalog_catalog_test_go",
       "community": 0,
-      "norm_label": "catalog_test.go",
-      "id": "internal_catalog_catalog_test_go"
+      "norm_label": "catalog_test.go"
     },
     {
       "label": "TestCatalogShape()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L16",
+      "id": "catalog_catalog_test_testcatalogshape",
       "community": 0,
-      "norm_label": "testcatalogshape()",
-      "id": "catalog_catalog_test_testcatalogshape"
+      "norm_label": "testcatalogshape()"
     },
     {
       "label": "TestCatalogAlphabeticalByKey()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L37",
+      "id": "catalog_catalog_test_testcatalogalphabeticalbykey",
       "community": 0,
-      "norm_label": "testcatalogalphabeticalbykey()",
-      "id": "catalog_catalog_test_testcatalogalphabeticalbykey"
+      "norm_label": "testcatalogalphabeticalbykey()"
     },
     {
       "label": "TestKeysReturnsAllEntries()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L51",
+      "id": "catalog_catalog_test_testkeysreturnsallentries",
       "community": 0,
-      "norm_label": "testkeysreturnsallentries()",
-      "id": "catalog_catalog_test_testkeysreturnsallentries"
+      "norm_label": "testkeysreturnsallentries()"
     },
     {
       "label": "TestBuildArgLookup()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L65",
+      "id": "catalog_catalog_test_testbuildarglookup",
       "community": 0,
-      "norm_label": "testbuildarglookup()",
-      "id": "catalog_catalog_test_testbuildarglookup"
+      "norm_label": "testbuildarglookup()"
     },
     {
       "label": "TestDefaultsAllEnabled()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L76",
+      "id": "catalog_catalog_test_testdefaultsallenabled",
       "community": 0,
-      "norm_label": "testdefaultsallenabled()",
-      "id": "catalog_catalog_test_testdefaultsallenabled"
+      "norm_label": "testdefaultsallenabled()"
     },
     {
       "label": "TestIsDefaultMatchesLegacy()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L90",
+      "id": "catalog_catalog_test_testisdefaultmatcheslegacy",
       "community": 0,
-      "norm_label": "testisdefaultmatcheslegacy()",
-      "id": "catalog_catalog_test_testisdefaultmatcheslegacy"
+      "norm_label": "testisdefaultmatcheslegacy()"
     },
     {
       "label": "TestCanonicalEncodingDeterministic()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L105",
+      "id": "catalog_catalog_test_testcanonicalencodingdeterministic",
       "community": 0,
-      "norm_label": "testcanonicalencodingdeterministic()",
-      "id": "catalog_catalog_test_testcanonicalencodingdeterministic"
+      "norm_label": "testcanonicalencodingdeterministic()"
     },
     {
       "label": "TestCanonicalEncodingIsNeutralToOptionalFieldPopulation()",
       "file_type": "code",
       "source_file": "internal/catalog/catalog_test.go",
       "source_location": "L142",
+      "id": "catalog_catalog_test_testcanonicalencodingisneutraltooptionalfieldpopulation",
       "community": 0,
-      "norm_label": "testcanonicalencodingisneutraltooptionalfieldpopulation()",
-      "id": "catalog_catalog_test_testcanonicalencodingisneutraltooptionalfieldpopulation"
+      "norm_label": "testcanonicalencodingisneutraltooptionalfieldpopulation()"
     },
     {
       "label": "init_d_bijection_test.go",
       "file_type": "code",
       "source_file": "internal/catalog/init_d_bijection_test.go",
       "source_location": "L1",
+      "id": "internal_catalog_init_d_bijection_test_go",
       "community": 30,
-      "norm_label": "init_d_bijection_test.go",
-      "id": "internal_catalog_init_d_bijection_test_go"
+      "norm_label": "init_d_bijection_test.go"
     },
     {
       "label": "TestCatalogInitDBijection()",
       "file_type": "code",
       "source_file": "internal/catalog/init_d_bijection_test.go",
       "source_location": "L22",
+      "id": "catalog_init_d_bijection_test_testcataloginitdbijection",
       "community": 30,
-      "norm_label": "testcataloginitdbijection()",
-      "id": "catalog_init_d_bijection_test_testcataloginitdbijection"
+      "norm_label": "testcataloginitdbijection()"
     },
     {
       "label": "plan.go",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L1",
+      "id": "internal_sessionplan_plan_go",
       "community": 12,
-      "norm_label": "plan.go",
-      "id": "internal_sessionplan_plan_go"
+      "norm_label": "plan.go"
     },
     {
       "label": "Image",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L31",
+      "id": "sessionplan_image",
       "community": 6,
-      "norm_label": "image",
-      "id": "sessionplan_image"
+      "norm_label": "image"
     },
     {
       "label": "SessionPlan",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L40",
+      "id": "sessionplan_sessionplan",
       "community": 6,
-      "norm_label": "sessionplan",
-      "id": "sessionplan_sessionplan"
+      "norm_label": "sessionplan"
     },
     {
       "label": "MergedSessionPlan",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L57",
+      "id": "sessionplan_mergedsessionplan",
       "community": 6,
-      "norm_label": "mergedsessionplan",
-      "id": "sessionplan_mergedsessionplan"
+      "norm_label": "mergedsessionplan"
     },
     {
       "label": "Plan()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L75",
+      "id": "sessionplan_plan_plan",
       "community": 12,
-      "norm_label": "plan()",
-      "id": "sessionplan_plan_plan"
+      "norm_label": "plan()"
     },
     {
       "label": "Merge()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L119",
+      "id": "sessionplan_plan_merge",
       "community": 12,
-      "norm_label": "merge()",
-      "id": "sessionplan_plan_merge"
+      "norm_label": "merge()"
     },
     {
       "label": "MissingPublishPorts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L165",
+      "id": "sessionplan_plan_missingpublishports",
       "community": 10,
-      "norm_label": "missingpublishports()",
-      "id": "sessionplan_plan_missingpublishports"
+      "norm_label": "missingpublishports()"
     },
     {
       "label": "ContainerNameFor()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L195",
+      "id": "sessionplan_plan_containernamefor",
       "community": 12,
-      "norm_label": "containernamefor()",
-      "id": "sessionplan_plan_containernamefor"
+      "norm_label": "containernamefor()"
     },
     {
       "label": "normalizeWorkspace()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L223",
+      "id": "sessionplan_plan_normalizeworkspace",
       "community": 12,
-      "norm_label": "normalizeworkspace()",
-      "id": "sessionplan_plan_normalizeworkspace"
+      "norm_label": "normalizeworkspace()"
     },
     {
       "label": "parsePublishSpecs()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L236",
+      "id": "sessionplan_plan_parsepublishspecs",
       "community": 12,
-      "norm_label": "parsepublishspecs()",
-      "id": "sessionplan_plan_parsepublishspecs"
+      "norm_label": "parsepublishspecs()"
     },
     {
       "label": "shellEnv()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L273",
+      "id": "sessionplan_plan_shellenv",
       "community": 12,
-      "norm_label": "shellenv()",
-      "id": "sessionplan_plan_shellenv"
+      "norm_label": "shellenv()"
     },
     {
       "label": "plan_test.go",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L1",
+      "id": "internal_sessionplan_plan_test_go",
       "community": 1,
-      "norm_label": "plan_test.go",
-      "id": "internal_sessionplan_plan_test_go"
+      "norm_label": "plan_test.go"
     },
     {
       "label": "testConfig()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L25",
+      "id": "sessionplan_plan_test_testconfig",
       "community": 1,
-      "norm_label": "testconfig()",
-      "id": "sessionplan_plan_test_testconfig"
+      "norm_label": "testconfig()"
     },
     {
       "label": "TestPlanComposesImage()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L36",
+      "id": "sessionplan_plan_test_testplancomposesimage",
       "community": 1,
-      "norm_label": "testplancomposesimage()",
-      "id": "sessionplan_plan_test_testplancomposesimage"
+      "norm_label": "testplancomposesimage()"
     },
     {
       "label": "TestPlanComposesMounts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L79",
+      "id": "sessionplan_plan_test_testplancomposesmounts",
       "community": 1,
-      "norm_label": "testplancomposesmounts()",
-      "id": "sessionplan_plan_test_testplancomposesmounts"
+      "norm_label": "testplancomposesmounts()"
     },
     {
       "label": "TestPlanComposesPorts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L120",
+      "id": "sessionplan_plan_test_testplancomposesports",
       "community": 1,
-      "norm_label": "testplancomposesports()",
-      "id": "sessionplan_plan_test_testplancomposesports"
+      "norm_label": "testplancomposesports()"
     },
     {
       "label": "TestPlanComputesContainerName()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L154",
+      "id": "sessionplan_plan_test_testplancomputescontainername",
       "community": 1,
-      "norm_label": "testplancomputescontainername()",
-      "id": "sessionplan_plan_test_testplancomputescontainername"
+      "norm_label": "testplancomputescontainername()"
     },
     {
       "label": "TestPlanContainerNameDeterministic()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L179",
+      "id": "sessionplan_plan_test_testplancontainernamedeterministic",
       "community": 1,
-      "norm_label": "testplancontainernamedeterministic()",
-      "id": "sessionplan_plan_test_testplancontainernamedeterministic"
+      "norm_label": "testplancontainernamedeterministic()"
     },
     {
       "label": "TestPlanComputesEnv()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L211",
+      "id": "sessionplan_plan_test_testplancomputesenv",
       "community": 1,
-      "norm_label": "testplancomputesenv()",
-      "id": "sessionplan_plan_test_testplancomputesenv"
+      "norm_label": "testplancomputesenv()"
     },
     {
       "label": "TestPlanRejectsBadPort()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L234",
+      "id": "sessionplan_plan_test_testplanrejectsbadport",
       "community": 1,
-      "norm_label": "testplanrejectsbadport()",
-      "id": "sessionplan_plan_test_testplanrejectsbadport"
+      "norm_label": "testplanrejectsbadport()"
     },
     {
       "label": "TestPlanRejectsBadMountsRoot()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L253",
+      "id": "sessionplan_plan_test_testplanrejectsbadmountsroot",
       "community": 1,
-      "norm_label": "testplanrejectsbadmountsroot()",
-      "id": "sessionplan_plan_test_testplanrejectsbadmountsroot"
+      "norm_label": "testplanrejectsbadmountsroot()"
     },
     {
       "label": "TestPlanWorkspaceNormalizationOnce()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L265",
+      "id": "sessionplan_plan_test_testplanworkspacenormalizationonce",
       "community": 1,
-      "norm_label": "testplanworkspacenormalizationonce()",
-      "id": "sessionplan_plan_test_testplanworkspacenormalizationonce"
+      "norm_label": "testplanworkspacenormalizationonce()"
     },
     {
       "label": "TestMergeIsPure()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L291",
+      "id": "sessionplan_plan_test_testmergeispure",
       "community": 1,
-      "norm_label": "testmergeispure()",
-      "id": "sessionplan_plan_test_testmergeispure"
+      "norm_label": "testmergeispure()"
     },
     {
       "label": "TestMergeRejectsBadMountsRoot()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L329",
+      "id": "sessionplan_plan_test_testmergerejectsbadmountsroot",
       "community": 1,
-      "norm_label": "testmergerejectsbadmountsroot()",
-      "id": "sessionplan_plan_test_testmergerejectsbadmountsroot"
+      "norm_label": "testmergerejectsbadmountsroot()"
     },
     {
       "label": "TestMergeRejectsBadPort()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L340",
+      "id": "sessionplan_plan_test_testmergerejectsbadport",
       "community": 1,
-      "norm_label": "testmergerejectsbadport()",
-      "id": "sessionplan_plan_test_testmergerejectsbadport"
+      "norm_label": "testmergerejectsbadport()"
     },
     {
       "label": "TestMissingPublishPortsTable()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L352",
+      "id": "sessionplan_plan_test_testmissingpublishportstable",
       "community": 10,
-      "norm_label": "testmissingpublishportstable()",
-      "id": "sessionplan_plan_test_testmissingpublishportstable"
+      "norm_label": "testmissingpublishportstable()"
     },
     {
       "label": "TestPlanComputesCmd()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L428",
+      "id": "sessionplan_plan_test_testplancomputescmd",
       "community": 1,
-      "norm_label": "testplancomputescmd()",
-      "id": "sessionplan_plan_test_testplancomputescmd"
+      "norm_label": "testplancomputescmd()"
     },
     {
       "label": "TestPlanComputesSecurityOpt()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L467",
+      "id": "sessionplan_plan_test_testplancomputessecurityopt",
       "community": 1,
-      "norm_label": "testplancomputessecurityopt()",
-      "id": "sessionplan_plan_test_testplancomputessecurityopt"
+      "norm_label": "testplancomputessecurityopt()"
     },
     {
       "label": "TestPlanComputesBuildArgs()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L501",
+      "id": "sessionplan_plan_test_testplancomputesbuildargs",
       "community": 1,
-      "norm_label": "testplancomputesbuildargs()",
-      "id": "sessionplan_plan_test_testplancomputesbuildargs"
+      "norm_label": "testplancomputesbuildargs()"
     },
     {
       "label": "TestMergeAlsoComputesCmd()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L523",
+      "id": "sessionplan_plan_test_testmergealsocomputescmd",
       "community": 1,
-      "norm_label": "testmergealsocomputescmd()",
-      "id": "sessionplan_plan_test_testmergealsocomputescmd"
+      "norm_label": "testmergealsocomputescmd()"
     },
     {
       "label": "mkdirAll()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L556",
+      "id": "sessionplan_plan_test_mkdirall",
       "community": 1,
-      "norm_label": "mkdirall()",
-      "id": "sessionplan_plan_test_mkdirall"
+      "norm_label": "mkdirall()"
     },
     {
       "label": "attach.go",
       "file_type": "code",
       "source_file": "internal/container/attach.go",
       "source_location": "L1",
+      "id": "internal_container_attach_go",
       "community": 16,
-      "norm_label": "attach.go",
-      "id": "internal_container_attach_go"
+      "norm_label": "attach.go"
     },
     {
       "label": "execShell()",
       "file_type": "code",
       "source_file": "internal/container/attach.go",
       "source_location": "L23",
+      "id": "container_attach_execshell",
       "community": 16,
-      "norm_label": "execshell()",
-      "id": "container_attach_execshell"
+      "norm_label": "execshell()"
     },
     {
       "label": "lifecycle.go",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L1",
+      "id": "internal_container_lifecycle_go",
       "community": 2,
-      "norm_label": "lifecycle.go",
-      "id": "internal_container_lifecycle_go"
+      "norm_label": "lifecycle.go"
     },
     {
       "label": "formatPublishMismatch()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L69",
+      "id": "container_lifecycle_formatpublishmismatch",
       "community": 2,
-      "norm_label": "formatpublishmismatch()",
-      "id": "container_lifecycle_formatpublishmismatch"
+      "norm_label": "formatpublishmismatch()"
     },
     {
       "label": "NewClient()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L102",
+      "id": "container_lifecycle_newclient",
       "community": 2,
-      "norm_label": "newclient()",
-      "id": "container_lifecycle_newclient"
+      "norm_label": "newclient()"
     },
     {
       "label": "Shell()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L125",
+      "id": "container_lifecycle_shell",
       "community": 3,
-      "norm_label": "shell()",
-      "id": "container_lifecycle_shell"
+      "norm_label": "shell()"
     },
     {
       "label": "Stop()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L246",
+      "id": "container_lifecycle_stop",
       "community": 2,
-      "norm_label": "stop()",
-      "id": "container_lifecycle_stop"
+      "norm_label": "stop()"
     },
     {
       "label": "StopAll()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L254",
+      "id": "container_lifecycle_stopall",
       "community": 2,
-      "norm_label": "stopall()",
-      "id": "container_lifecycle_stopall"
+      "norm_label": "stopall()"
     },
     {
       "label": "hostUserSpec()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L312",
+      "id": "container_lifecycle_hostuserspec",
       "community": 2,
-      "norm_label": "hostuserspec()",
-      "id": "container_lifecycle_hostuserspec"
+      "norm_label": "hostuserspec()"
     },
     {
       "label": "dockerSockGroups()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L329",
+      "id": "container_lifecycle_dockersockgroups",
       "community": 19,
-      "norm_label": "dockersockgroups()",
-      "id": "container_lifecycle_dockersockgroups"
+      "norm_label": "dockersockgroups()"
     },
     {
       "label": "pullImage()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L373",
+      "id": "container_lifecycle_pullimage",
       "community": 2,
-      "norm_label": "pullimage()",
-      "id": "container_lifecycle_pullimage"
+      "norm_label": "pullimage()"
     },
     {
       "label": "pullCachePath()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L406",
+      "id": "container_lifecycle_pullcachepath",
       "community": 2,
-      "norm_label": "pullcachepath()",
-      "id": "container_lifecycle_pullcachepath"
+      "norm_label": "pullcachepath()"
     },
     {
       "label": "pullCached()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L419",
+      "id": "container_lifecycle_pullcached",
       "community": 2,
-      "norm_label": "pullcached()",
-      "id": "container_lifecycle_pullcached"
+      "norm_label": "pullcached()"
     },
     {
       "label": "recordPull()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L435",
+      "id": "container_lifecycle_recordpull",
       "community": 2,
-      "norm_label": "recordpull()",
-      "id": "container_lifecycle_recordpull"
+      "norm_label": "recordpull()"
     },
     {
       "label": "stopOne()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L446",
+      "id": "container_lifecycle_stopone",
       "community": 2,
-      "norm_label": "stopone()",
-      "id": "container_lifecycle_stopone"
+      "norm_label": "stopone()"
     },
     {
       "label": "hasActiveExecs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L474",
+      "id": "container_lifecycle_hasactiveexecs",
       "community": 2,
-      "norm_label": "hasactiveexecs()",
-      "id": "container_lifecycle_hasactiveexecs"
+      "norm_label": "hasactiveexecs()"
     },
     {
       "label": "sock_test.go",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L1",
+      "id": "internal_container_sock_test_go",
       "community": 19,
-      "norm_label": "sock_test.go",
-      "id": "internal_container_sock_test_go"
+      "norm_label": "sock_test.go"
     },
     {
       "label": "TestDockerSockGroupsReturnsNilWhenSockNotMounted()",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L11",
+      "id": "container_sock_test_testdockersockgroupsreturnsnilwhensocknotmounted",
       "community": 19,
-      "norm_label": "testdockersockgroupsreturnsnilwhensocknotmounted()",
-      "id": "container_sock_test_testdockersockgroupsreturnsnilwhensocknotmounted"
+      "norm_label": "testdockersockgroupsreturnsnilwhensocknotmounted()"
     },
     {
       "label": "TestDockerSockGroupsIncludesRootForDesktopCase()",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L24",
+      "id": "container_sock_test_testdockersockgroupsincludesrootfordesktopcase",
       "community": 19,
-      "norm_label": "testdockersockgroupsincludesrootfordesktopcase()",
-      "id": "container_sock_test_testdockersockgroupsincludesrootfordesktopcase"
+      "norm_label": "testdockersockgroupsincludesrootfordesktopcase()"
     },
     {
       "label": "TestDockerSockGroupsAppendsHostGIDOnLinux()",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L42",
+      "id": "container_sock_test_testdockersockgroupsappendshostgidonlinux",
       "community": 19,
-      "norm_label": "testdockersockgroupsappendshostgidonlinux()",
-      "id": "container_sock_test_testdockersockgroupsappendshostgidonlinux"
+      "norm_label": "testdockersockgroupsappendshostgidonlinux()"
     },
     {
       "label": "TestDockerSockGroupsFallbackWhenStatFails()",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L56",
+      "id": "container_sock_test_testdockersockgroupsfallbackwhenstatfails",
       "community": 19,
-      "norm_label": "testdockersockgroupsfallbackwhenstatfails()",
-      "id": "container_sock_test_testdockersockgroupsfallbackwhenstatfails"
+      "norm_label": "testdockersockgroupsfallbackwhenstatfails()"
     },
     {
       "label": "TestDockerSockGroupsMatchesOnTargetNotSource()",
       "file_type": "code",
       "source_file": "internal/container/sock_test.go",
       "source_location": "L71",
+      "id": "container_sock_test_testdockersockgroupsmatchesontargetnotsource",
       "community": 19,
-      "norm_label": "testdockersockgroupsmatchesontargetnotsource()",
-      "id": "container_sock_test_testdockersockgroupsmatchesontargetnotsource"
+      "norm_label": "testdockersockgroupsmatchesontargetnotsource()"
     },
     {
       "label": "lifecycle_test.go",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L1",
+      "id": "internal_container_lifecycle_test_go",
       "community": 3,
-      "norm_label": "lifecycle_test.go",
-      "id": "internal_container_lifecycle_test_go"
+      "norm_label": "lifecycle_test.go"
     },
     {
       "label": "notFoundError",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L29",
+      "id": "container_notfounderror",
       "community": 3,
-      "norm_label": "notfounderror",
-      "id": "container_notfounderror"
+      "norm_label": "notfounderror"
     },
     {
       "label": ".Error()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L31",
+      "id": "container_notfounderror_error",
       "community": 3,
-      "norm_label": ".error()",
-      "id": "container_notfounderror_error"
+      "norm_label": ".error()"
     },
     {
       "label": ".NotFound()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L32",
+      "id": "container_notfounderror_notfound",
       "community": 3,
-      "norm_label": ".notfound()",
-      "id": "container_notfounderror_notfound"
+      "norm_label": ".notfound()"
     },
     {
       "label": ".Unwrap()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L33",
+      "id": "container_notfounderror_unwrap",
       "community": 3,
-      "norm_label": ".unwrap()",
-      "id": "container_notfounderror_unwrap"
+      "norm_label": ".unwrap()"
     },
     {
       "label": "mockClient",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L37",
+      "id": "container_mockclient",
       "community": 15,
-      "norm_label": "mockclient",
-      "id": "container_mockclient"
+      "norm_label": "mockclient"
     },
     {
       "label": ".ContainerInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L51",
+      "id": "container_mockclient_containerinspect",
       "community": 15,
-      "norm_label": ".containerinspect()",
-      "id": "container_mockclient_containerinspect"
+      "norm_label": ".containerinspect()"
     },
     {
       "label": ".ContainerCreate()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L58",
+      "id": "container_mockclient_containercreate",
       "community": 15,
-      "norm_label": ".containercreate()",
-      "id": "container_mockclient_containercreate"
+      "norm_label": ".containercreate()"
     },
     {
       "label": ".ContainerStart()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L65",
+      "id": "container_mockclient_containerstart",
       "community": 15,
-      "norm_label": ".containerstart()",
-      "id": "container_mockclient_containerstart"
+      "norm_label": ".containerstart()"
     },
     {
       "label": ".ContainerStop()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L72",
+      "id": "container_mockclient_containerstop",
       "community": 15,
-      "norm_label": ".containerstop()",
-      "id": "container_mockclient_containerstop"
+      "norm_label": ".containerstop()"
     },
     {
       "label": ".ContainerRemove()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L79",
+      "id": "container_mockclient_containerremove",
       "community": 15,
-      "norm_label": ".containerremove()",
-      "id": "container_mockclient_containerremove"
+      "norm_label": ".containerremove()"
     },
     {
       "label": ".ImageInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L86",
+      "id": "container_mockclient_imageinspect",
       "community": 15,
-      "norm_label": ".imageinspect()",
-      "id": "container_mockclient_imageinspect"
+      "norm_label": ".imageinspect()"
     },
     {
       "label": ".ImagePull()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L93",
+      "id": "container_mockclient_imagepull",
       "community": 15,
-      "norm_label": ".imagepull()",
-      "id": "container_mockclient_imagepull"
+      "norm_label": ".imagepull()"
     },
     {
       "label": ".ContainerList()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L101",
+      "id": "container_mockclient_containerlist",
       "community": 15,
-      "norm_label": ".containerlist()",
-      "id": "container_mockclient_containerlist"
+      "norm_label": ".containerlist()"
     },
     {
       "label": ".ContainerExecInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L108",
+      "id": "container_mockclient_containerexecinspect",
       "community": 15,
-      "norm_label": ".containerexecinspect()",
-      "id": "container_mockclient_containerexecinspect"
+      "norm_label": ".containerexecinspect()"
     },
     {
       "label": ".Close()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L115",
+      "id": "container_mockclient_close",
       "community": 15,
-      "norm_label": ".close()",
-      "id": "container_mockclient_close"
+      "norm_label": ".close()"
     },
     {
       "label": "testConfig()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L119",
+      "id": "container_lifecycle_test_testconfig",
       "community": 3,
-      "norm_label": "testconfig()",
-      "id": "container_lifecycle_test_testconfig"
+      "norm_label": "testconfig()"
     },
     {
       "label": "testWorkspace()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L131",
+      "id": "container_lifecycle_test_testworkspace",
       "community": 3,
-      "norm_label": "testworkspace()",
-      "id": "container_lifecycle_test_testworkspace"
+      "norm_label": "testworkspace()"
     },
     {
       "label": "testPlan()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L140",
+      "id": "container_lifecycle_test_testplan",
       "community": 3,
-      "norm_label": "testplan()",
-      "id": "container_lifecycle_test_testplan"
+      "norm_label": "testplan()"
     },
     {
       "label": "testPlanWithCfg()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L151",
+      "id": "container_lifecycle_test_testplanwithcfg",
       "community": 3,
-      "norm_label": "testplanwithcfg()",
-      "id": "container_lifecycle_test_testplanwithcfg"
+      "norm_label": "testplanwithcfg()"
     },
     {
       "label": "stubExecShell()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L161",
+      "id": "container_lifecycle_test_stubexecshell",
       "community": 3,
-      "norm_label": "stubexecshell()",
-      "id": "container_lifecycle_test_stubexecshell"
+      "norm_label": "stubexecshell()"
     },
     {
       "label": "TestShellContainerNaming()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L178",
+      "id": "container_lifecycle_test_testshellcontainernaming",
       "community": 3,
-      "norm_label": "testshellcontainernaming()",
-      "id": "container_lifecycle_test_testshellcontainernaming"
+      "norm_label": "testshellcontainernaming()"
     },
     {
       "label": "TestShellExecInRunningContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L311",
+      "id": "container_lifecycle_test_testshellexecinrunningcontainer",
       "community": 3,
-      "norm_label": "testshellexecinrunningcontainer()",
-      "id": "container_lifecycle_test_testshellexecinrunningcontainer"
+      "norm_label": "testshellexecinrunningcontainer()"
     },
     {
       "label": "TestShellStartsStoppedContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L341",
+      "id": "container_lifecycle_test_testshellstartsstoppedcontainer",
       "community": 3,
-      "norm_label": "testshellstartsstoppedcontainer()",
-      "id": "container_lifecycle_test_testshellstartsstoppedcontainer"
+      "norm_label": "testshellstartsstoppedcontainer()"
     },
     {
       "label": "TestShellCreatesNewContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L376",
+      "id": "container_lifecycle_test_testshellcreatesnewcontainer",
       "community": 3,
-      "norm_label": "testshellcreatesnewcontainer()",
-      "id": "container_lifecycle_test_testshellcreatesnewcontainer"
+      "norm_label": "testshellcreatesnewcontainer()"
     },
     {
       "label": "TestShellSetsCodexSecurityOptByDefault()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L448",
+      "id": "container_lifecycle_test_testshellsetscodexsecurityoptbydefault",
       "community": 3,
-      "norm_label": "testshellsetscodexsecurityoptbydefault()",
-      "id": "container_lifecycle_test_testshellsetscodexsecurityoptbydefault"
+      "norm_label": "testshellsetscodexsecurityoptbydefault()"
     },
     {
       "label": "TestShellSkipsCodexSecurityOptWhenCodexDisabled()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L474",
+      "id": "container_lifecycle_test_testshellskipscodexsecurityoptwhencodexdisabled",
       "community": 3,
-      "norm_label": "testshellskipscodexsecurityoptwhencodexdisabled()",
-      "id": "container_lifecycle_test_testshellskipscodexsecurityoptwhencodexdisabled"
+      "norm_label": "testshellskipscodexsecurityoptwhencodexdisabled()"
     },
     {
       "label": "TestShellMirrorsWorkspaceAtHostPath()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L514",
+      "id": "container_lifecycle_test_testshellmirrorsworkspaceathostpath",
       "community": 3,
-      "norm_label": "testshellmirrorsworkspaceathostpath()",
-      "id": "container_lifecycle_test_testshellmirrorsworkspaceathostpath"
+      "norm_label": "testshellmirrorsworkspaceathostpath()"
     },
     {
       "label": "TestShellSkipsMirrorForReservedPath()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L557",
+      "id": "container_lifecycle_test_testshellskipsmirrorforreservedpath",
       "community": 3,
-      "norm_label": "testshellskipsmirrorforreservedpath()",
-      "id": "container_lifecycle_test_testshellskipsmirrorforreservedpath"
+      "norm_label": "testshellskipsmirrorforreservedpath()"
     },
     {
       "label": "TestShellErrorOnMissingImage()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L597",
+      "id": "container_lifecycle_test_testshellerroronmissingimage",
       "community": 3,
-      "norm_label": "testshellerroronmissingimage()",
-      "id": "container_lifecycle_test_testshellerroronmissingimage"
+      "norm_label": "testshellerroronmissingimage()"
     },
     {
       "label": "TestShellAutoBuildsCustomImage()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L627",
+      "id": "container_lifecycle_test_testshellautobuildscustomimage",
       "community": 3,
-      "norm_label": "testshellautobuildscustomimage()",
-      "id": "container_lifecycle_test_testshellautobuildscustomimage"
+      "norm_label": "testshellautobuildscustomimage()"
     },
     {
       "label": "TestShellSurvivesPullFailureWhenImageLocal()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L666",
+      "id": "container_lifecycle_test_testshellsurvivespullfailurewhenimagelocal",
       "community": 3,
-      "norm_label": "testshellsurvivespullfailurewhenimagelocal()",
-      "id": "container_lifecycle_test_testshellsurvivespullfailurewhenimagelocal"
+      "norm_label": "testshellsurvivespullfailurewhenimagelocal()"
     },
     {
       "label": "TestStopAndRemove()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L695",
+      "id": "container_lifecycle_test_teststopandremove",
       "community": 3,
-      "norm_label": "teststopandremove()",
-      "id": "container_lifecycle_test_teststopandremove"
+      "norm_label": "teststopandremove()"
     },
     {
       "label": "TestStopContainerNotFound()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L727",
+      "id": "container_lifecycle_test_teststopcontainernotfound",
       "community": 3,
-      "norm_label": "teststopcontainernotfound()",
-      "id": "container_lifecycle_test_teststopcontainernotfound"
+      "norm_label": "teststopcontainernotfound()"
     },
     {
       "label": "TestStopAll()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L740",
+      "id": "container_lifecycle_test_teststopall",
       "community": 3,
-      "norm_label": "teststopall()",
-      "id": "container_lifecycle_test_teststopall"
+      "norm_label": "teststopall()"
     },
     {
       "label": "TestNotFoundErrorSatisfiesErrdefs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L787",
+      "id": "container_lifecycle_test_testnotfounderrorsatisfieserrdefs",
       "community": 3,
-      "norm_label": "testnotfounderrorsatisfieserrdefs()",
-      "id": "container_lifecycle_test_testnotfounderrorsatisfieserrdefs"
+      "norm_label": "testnotfounderrorsatisfieserrdefs()"
     },
     {
       "label": "TestShellSetsHostWorkspaceEnv()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L798",
+      "id": "container_lifecycle_test_testshellsetshostworkspaceenv",
       "community": 3,
-      "norm_label": "testshellsetshostworkspaceenv()",
-      "id": "container_lifecycle_test_testshellsetshostworkspaceenv"
+      "norm_label": "testshellsetshostworkspaceenv()"
     },
     {
       "label": "TestShellSkipsStopWhenSiblingExecRunning()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L841",
+      "id": "container_lifecycle_test_testshellskipsstopwhensiblingexecrunning",
       "community": 3,
-      "norm_label": "testshellskipsstopwhensiblingexecrunning()",
-      "id": "container_lifecycle_test_testshellskipsstopwhensiblingexecrunning"
+      "norm_label": "testshellskipsstopwhensiblingexecrunning()"
     },
     {
       "label": "TestShellStopsWhenNoSiblingExecs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L876",
+      "id": "container_lifecycle_test_testshellstopswhennosiblingexecs",
       "community": 3,
-      "norm_label": "testshellstopswhennosiblingexecs()",
-      "id": "container_lifecycle_test_testshellstopswhennosiblingexecs"
+      "norm_label": "testshellstopswhennosiblingexecs()"
     },
     {
       "label": "captureStderr()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L912",
+      "id": "container_lifecycle_test_capturestderr",
       "community": 3,
-      "norm_label": "capturestderr()",
-      "id": "container_lifecycle_test_capturestderr"
+      "norm_label": "capturestderr()"
     },
     {
       "label": "TestShellPublishPopulatesBindings()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L936",
+      "id": "container_lifecycle_test_testshellpublishpopulatesbindings",
       "community": 3,
-      "norm_label": "testshellpublishpopulatesbindings()",
-      "id": "container_lifecycle_test_testshellpublishpopulatesbindings"
+      "norm_label": "testshellpublishpopulatesbindings()"
     },
     {
       "label": "TestShellPublishEmptyYieldsNoBindings()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L1003",
+      "id": "container_lifecycle_test_testshellpublishemptyyieldsnobindings",
       "community": 3,
-      "norm_label": "testshellpublishemptyyieldsnobindings()",
-      "id": "container_lifecycle_test_testshellpublishemptyyieldsnobindings"
+      "norm_label": "testshellpublishemptyyieldsnobindings()"
     },
     {
       "label": "TestShellInspectNilContainerJSONBase()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L1052",
+      "id": "container_lifecycle_test_testshellinspectnilcontainerjsonbase",
       "community": 3,
-      "norm_label": "testshellinspectnilcontainerjsonbase()",
-      "id": "container_lifecycle_test_testshellinspectnilcontainerjsonbase"
+      "norm_label": "testshellinspectnilcontainerjsonbase()"
     },
     {
       "label": "TestSessionPlanEarlyExitOnShellMismatch()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L1110",
+      "id": "container_lifecycle_test_testsessionplanearlyexitonshellmismatch",
       "community": 3,
-      "norm_label": "testsessionplanearlyexitonshellmismatch()",
-      "id": "container_lifecycle_test_testsessionplanearlyexitonshellmismatch"
+      "norm_label": "testsessionplanearlyexitonshellmismatch()"
     },
     {
       "label": "TestShellCreateUsesResolvedShellCmd()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
       "source_location": "L1137",
+      "id": "container_lifecycle_test_testshellcreateusesresolvedshellcmd",
       "community": 3,
-      "norm_label": "testshellcreateusesresolvedshellcmd()",
-      "id": "container_lifecycle_test_testshellcreateusesresolvedshellcmd"
+      "norm_label": "testshellcreateusesresolvedshellcmd()"
     },
     {
       "label": "attach_test.go",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L1",
+      "id": "internal_container_attach_test_go",
       "community": 16,
-      "norm_label": "attach_test.go",
-      "id": "internal_container_attach_test_go"
+      "norm_label": "attach_test.go"
     },
     {
       "label": "attachMock",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L20",
+      "id": "container_attachmock",
       "community": 16,
-      "norm_label": "attachmock",
-      "id": "container_attachmock"
+      "norm_label": "attachmock"
     },
     {
       "label": ".ContainerExecCreate()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L28",
+      "id": "container_attachmock_containerexeccreate",
       "community": 16,
-      "norm_label": ".containerexeccreate()",
-      "id": "container_attachmock_containerexeccreate"
+      "norm_label": ".containerexeccreate()"
     },
     {
       "label": ".ContainerExecAttach()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L32",
+      "id": "container_attachmock_containerexecattach",
       "community": 16,
-      "norm_label": ".containerexecattach()",
-      "id": "container_attachmock_containerexecattach"
+      "norm_label": ".containerexecattach()"
     },
     {
       "label": ".ContainerExecResize()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L36",
+      "id": "container_attachmock_containerexecresize",
       "community": 16,
-      "norm_label": ".containerexecresize()",
-      "id": "container_attachmock_containerexecresize"
+      "norm_label": ".containerexecresize()"
     },
     {
       "label": "TestExecShell_ContainerExecCreateError()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L43",
+      "id": "container_attach_test_testexecshell_containerexeccreateerror",
       "community": 16,
-      "norm_label": "testexecshell_containerexeccreateerror()",
-      "id": "container_attach_test_testexecshell_containerexeccreateerror"
+      "norm_label": "testexecshell_containerexeccreateerror()"
     },
     {
       "label": "TestExecShell_ContainerExecAttachError()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L70",
+      "id": "container_attach_test_testexecshell_containerexecattacherror",
       "community": 16,
-      "norm_label": "testexecshell_containerexecattacherror()",
-      "id": "container_attach_test_testexecshell_containerexecattacherror"
+      "norm_label": "testexecshell_containerexecattacherror()"
     },
     {
       "label": "TestExecShell_NonTTYStdin()",
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L93",
+      "id": "container_attach_test_testexecshell_nonttystdin",
       "community": 16,
-      "norm_label": "testexecshell_nonttystdin()",
-      "id": "container_attach_test_testexecshell_nonttystdin"
+      "norm_label": "testexecshell_nonttystdin()"
     },
     {
       "label": "version.go",
       "file_type": "code",
       "source_file": "internal/version/version.go",
       "source_location": "L1",
+      "id": "internal_version_version_go",
       "community": 32,
-      "norm_label": "version.go",
-      "id": "internal_version_version_go"
+      "norm_label": "version.go"
     },
     {
       "label": "CONTEXT.md",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L1",
+      "id": "context_md",
       "community": 18,
-      "norm_label": "context.md",
-      "id": "context_md"
+      "norm_label": "context.md"
     },
     {
       "label": "Context",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L1",
+      "id": "toolbox_context_context",
       "community": 18,
-      "norm_label": "context",
-      "id": "toolbox_context_context"
+      "norm_label": "context"
     },
     {
       "label": "Glossary",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L8",
+      "id": "toolbox_context_glossary",
       "community": 18,
-      "norm_label": "glossary",
-      "id": "toolbox_context_glossary"
+      "norm_label": "glossary"
     },
     {
       "label": "Mount Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L10",
+      "id": "toolbox_context_mount_plan",
       "community": 18,
-      "norm_label": "mount plan",
-      "id": "toolbox_context_mount_plan"
+      "norm_label": "mount plan"
     },
     {
       "label": "Tool Catalog",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L28",
+      "id": "toolbox_context_tool_catalog",
       "community": 18,
-      "norm_label": "tool catalog",
-      "id": "toolbox_context_tool_catalog"
+      "norm_label": "tool catalog"
     },
     {
       "label": "Config Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L53",
+      "id": "toolbox_context_config_plan",
       "community": 18,
-      "norm_label": "config plan",
-      "id": "toolbox_context_config_plan"
+      "norm_label": "config plan"
     },
     {
       "label": "Session Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L80",
+      "id": "toolbox_context_session_plan",
       "community": 18,
-      "norm_label": "session plan",
-      "id": "toolbox_context_session_plan"
+      "norm_label": "session plan"
     },
     {
       "label": "Init Sequence",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L112",
+      "id": "toolbox_context_init_sequence",
       "community": 18,
-      "norm_label": "init sequence",
-      "id": "toolbox_context_init_sequence"
+      "norm_label": "init sequence"
     },
     {
       "label": "README.md",
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L1",
+      "id": "readme_md",
       "community": 7,
-      "norm_label": "readme.md",
-      "id": "readme_md"
+      "norm_label": "readme.md"
     },
     {
       "label": "Toolbox",
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L1",
+      "id": "toolbox_readme_toolbox",
       "community": 7,
-      "norm_label": "toolbox",
-      "id": "toolbox_readme_toolbox"
+      "norm_label": "toolbox"
     },
     {
       "label": "What's inside",
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L5",
+      "id": "toolbox_readme_what_s_inside",
       "community": 7,
-      "norm_label": "what's inside",
-      "id": "toolbox_readme_what_s_inside"
+      "norm_label": "what's inside"
     },
     {
       "label": "Install",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L41",
+      "source_location": "L42",
+      "id": "toolbox_readme_install",
       "community": 7,
-      "norm_label": "install",
-      "id": "toolbox_readme_install"
+      "norm_label": "install"
     },
     {
       "label": "macOS (Homebrew)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L43",
+      "source_location": "L44",
+      "id": "toolbox_readme_macos_homebrew",
       "community": 7,
-      "norm_label": "macos (homebrew)",
-      "id": "toolbox_readme_macos_homebrew"
+      "norm_label": "macos (homebrew)"
     },
     {
       "label": "code:bash (brew install filippolmt/tap/toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L45",
+      "source_location": "L46",
+      "id": "toolbox_readme_codeblock_1",
       "community": 7,
-      "norm_label": "code:bash (brew install filippolmt/tap/toolbox)",
-      "id": "toolbox_readme_codeblock_1"
+      "norm_label": "code:bash (brew install filippolmt/tap/toolbox)"
     },
     {
       "label": "From source",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L51",
+      "source_location": "L52",
+      "id": "toolbox_readme_from_source",
       "community": 7,
-      "norm_label": "from source",
-      "id": "toolbox_readme_from_source"
+      "norm_label": "from source"
     },
     {
       "label": "code:bash (go install github.com/filippolmt/toolbox@latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L55",
+      "source_location": "L56",
+      "id": "toolbox_readme_codeblock_2",
       "community": 7,
-      "norm_label": "code:bash (go install github.com/filippolmt/toolbox@latest)",
-      "id": "toolbox_readme_codeblock_2"
+      "norm_label": "code:bash (go install github.com/filippolmt/toolbox@latest)"
     },
     {
       "label": "Verify installation",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L59",
+      "source_location": "L60",
+      "id": "toolbox_readme_verify_installation",
       "community": 7,
-      "norm_label": "verify installation",
-      "id": "toolbox_readme_verify_installation"
+      "norm_label": "verify installation"
     },
     {
       "label": "code:bash (toolbox version)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L61",
+      "source_location": "L62",
+      "id": "toolbox_readme_codeblock_3",
       "community": 7,
-      "norm_label": "code:bash (toolbox version)",
-      "id": "toolbox_readme_codeblock_3"
+      "norm_label": "code:bash (toolbox version)"
     },
     {
       "label": "Prerequisites",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L65",
+      "source_location": "L66",
+      "id": "toolbox_readme_prerequisites",
       "community": 7,
-      "norm_label": "prerequisites",
-      "id": "toolbox_readme_prerequisites"
+      "norm_label": "prerequisites"
     },
     {
       "label": "Quick start",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L69",
+      "source_location": "L70",
+      "id": "toolbox_readme_quick_start",
       "community": 7,
-      "norm_label": "quick start",
-      "id": "toolbox_readme_quick_start"
+      "norm_label": "quick start"
     },
     {
       "label": "code:bash (# Pull the toolbox image from GHCR)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L71",
+      "source_location": "L72",
+      "id": "toolbox_readme_codeblock_4",
       "community": 7,
-      "norm_label": "code:bash (# pull the toolbox image from ghcr)",
-      "id": "toolbox_readme_codeblock_4"
+      "norm_label": "code:bash (# pull the toolbox image from ghcr)"
     },
     {
       "label": "Configuration",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L81",
+      "source_location": "L82",
+      "id": "toolbox_readme_configuration",
       "community": 7,
-      "norm_label": "configuration",
-      "id": "toolbox_readme_configuration"
+      "norm_label": "configuration"
     },
     {
       "label": "Opting out of tools",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L85",
+      "source_location": "L86",
+      "id": "toolbox_readme_opting_out_of_tools",
       "community": 7,
-      "norm_label": "opting out of tools",
-      "id": "toolbox_readme_opting_out_of_tools"
+      "norm_label": "opting out of tools"
     },
     {
       "label": "code:yaml (tools:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L89",
+      "source_location": "L90",
+      "id": "toolbox_readme_codeblock_5",
       "community": 7,
-      "norm_label": "code:yaml (tools:)",
-      "id": "toolbox_readme_codeblock_5"
+      "norm_label": "code:yaml (tools:)"
     },
     {
       "label": "Overriding mounts",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L101",
+      "source_location": "L102",
+      "id": "toolbox_readme_overriding_mounts",
       "community": 7,
-      "norm_label": "overriding mounts",
-      "id": "toolbox_readme_overriding_mounts"
+      "norm_label": "overriding mounts"
     },
     {
       "label": "code:yaml (mounts:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L118",
+      "source_location": "L119",
+      "id": "toolbox_readme_codeblock_6",
       "community": 7,
-      "norm_label": "code:yaml (mounts:)",
-      "id": "toolbox_readme_codeblock_6"
+      "norm_label": "code:yaml (mounts:)"
     },
     {
       "label": "Retargeting every default at once",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L137",
+      "source_location": "L138",
+      "id": "toolbox_readme_retargeting_every_default_at_once",
       "community": 7,
-      "norm_label": "retargeting every default at once",
-      "id": "toolbox_readme_retargeting_every_default_at_once"
+      "norm_label": "retargeting every default at once"
     },
     {
       "label": "code:yaml (# Move ~/.toolbox/.claude \u2192 /Volumes/work/toolbox/.claude,)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L141",
+      "source_location": "L142",
+      "id": "toolbox_readme_codeblock_7",
       "community": 7,
-      "norm_label": "code:yaml (# move ~/.toolbox/.claude \u2192 /volumes/work/toolbox/.claude,)",
-      "id": "toolbox_readme_codeblock_7"
+      "norm_label": "code:yaml (# move ~/.toolbox/.claude \u2192 /volumes/work/toolbox/.claude,)"
     },
     {
       "label": "code:bash (# Stop any running toolbox, then carry your state over.)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L166",
+      "source_location": "L167",
+      "id": "toolbox_readme_codeblock_8",
       "community": 7,
-      "norm_label": "code:bash (# stop any running toolbox, then carry your state over.)",
-      "id": "toolbox_readme_codeblock_8"
+      "norm_label": "code:bash (# stop any running toolbox, then carry your state over.)"
     },
     {
       "label": "code:yaml (mounts:)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L183",
+      "source_location": "L184",
+      "id": "toolbox_readme_codeblock_9",
       "community": 7,
-      "norm_label": "code:yaml (mounts:)",
-      "id": "toolbox_readme_codeblock_9"
+      "norm_label": "code:yaml (mounts:)"
     },
     {
       "label": "Startup hooks",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L191",
+      "source_location": "L192",
+      "id": "toolbox_readme_startup_hooks",
       "community": 7,
-      "norm_label": "startup hooks",
-      "id": "toolbox_readme_startup_hooks"
+      "norm_label": "startup hooks"
     },
     {
       "label": "Publishing ports",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L197",
+      "source_location": "L198",
+      "id": "toolbox_readme_publishing_ports",
       "community": 7,
-      "norm_label": "publishing ports",
-      "id": "toolbox_readme_publishing_ports"
+      "norm_label": "publishing ports"
     },
     {
       "label": "code:bash (# Forward host port 7171 to the same port in the container.)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L201",
+      "source_location": "L202",
+      "id": "toolbox_readme_codeblock_10",
       "community": 7,
-      "norm_label": "code:bash (# forward host port 7171 to the same port in the container.)",
-      "id": "toolbox_readme_codeblock_10"
+      "norm_label": "code:bash (# forward host port 7171 to the same port in the container.)"
     },
     {
       "label": "Loading order",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L213",
+      "source_location": "L214",
+      "id": "toolbox_readme_loading_order",
       "community": 7,
-      "norm_label": "loading order",
-      "id": "toolbox_readme_loading_order"
+      "norm_label": "loading order"
     },
     {
       "label": "CLI commands",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L223",
+      "source_location": "L224",
+      "id": "toolbox_readme_cli_commands",
       "community": 7,
-      "norm_label": "cli commands",
-      "id": "toolbox_readme_cli_commands"
+      "norm_label": "cli commands"
     },
     {
       "label": "Updating",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L233",
+      "source_location": "L234",
+      "id": "toolbox_readme_updating",
       "community": 7,
-      "norm_label": "updating",
-      "id": "toolbox_readme_updating"
+      "norm_label": "updating"
     },
     {
       "label": "code:bash (brew upgrade toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L235",
+      "source_location": "L236",
+      "id": "toolbox_readme_codeblock_11",
       "community": 7,
-      "norm_label": "code:bash (brew upgrade toolbox)",
-      "id": "toolbox_readme_codeblock_11"
+      "norm_label": "code:bash (brew upgrade toolbox)"
     },
     {
       "label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L241",
+      "source_location": "L242",
+      "id": "toolbox_readme_codeblock_12",
       "community": 7,
-      "norm_label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
-      "id": "toolbox_readme_codeblock_12"
+      "norm_label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)"
     },
     {
       "label": "License",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L245",
+      "source_location": "L246",
+      "id": "toolbox_readme_license",
       "community": 7,
-      "norm_label": "license",
-      "id": "toolbox_readme_license"
+      "norm_label": "license"
     },
     {
       "label": "CONTRIBUTING.md",
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L1",
+      "id": "contributing_md",
       "community": 23,
-      "norm_label": "contributing.md",
-      "id": "contributing_md"
+      "norm_label": "contributing.md"
     },
     {
       "label": "Contributing",
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L1",
+      "id": "toolbox_contributing_contributing",
       "community": 23,
-      "norm_label": "contributing",
-      "id": "toolbox_contributing_contributing"
+      "norm_label": "contributing"
     },
     {
       "label": "Commits & PRs",
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L3",
+      "id": "toolbox_contributing_commits_prs",
       "community": 23,
-      "norm_label": "commits & prs",
-      "id": "toolbox_contributing_commits_prs"
+      "norm_label": "commits & prs"
     },
     {
       "label": "Release flow",
       "file_type": "document",
       "source_file": "CONTRIBUTING.md",
       "source_location": "L10",
+      "id": "toolbox_contributing_release_flow",
       "community": 23,
-      "norm_label": "release flow",
-      "id": "toolbox_contributing_release_flow"
+      "norm_label": "release flow"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "id": "claude_md",
+      "community": 20,
+      "norm_label": "claude.md"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "id": "toolbox_claude_claude_md",
+      "community": 20,
+      "norm_label": "claude.md"
+    },
+    {
+      "label": "Project",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L5",
+      "id": "toolbox_claude_project",
+      "community": 20,
+      "norm_label": "project"
+    },
+    {
+      "label": "Dev commands",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L9",
+      "id": "toolbox_claude_dev_commands",
+      "community": 20,
+      "norm_label": "dev commands"
+    },
+    {
+      "label": "Architecture",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L25",
+      "id": "toolbox_claude_architecture",
+      "community": 20,
+      "norm_label": "architecture"
+    },
+    {
+      "label": "Code & language",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L31",
+      "id": "toolbox_claude_code_language",
+      "community": 20,
+      "norm_label": "code & language"
+    },
+    {
+      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L37",
+      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md",
+      "community": 20,
+      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)"
+    },
+    {
+      "label": "runtime-notes.md",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L1",
+      "id": "docs_runtime_notes_md",
+      "community": 8,
+      "norm_label": "runtime-notes.md"
+    },
+    {
+      "label": "Runtime notes",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L1",
+      "id": "docs_runtime_notes_runtime_notes",
+      "community": 8,
+      "norm_label": "runtime notes"
+    },
+    {
+      "label": "Image build",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L5",
+      "id": "docs_runtime_notes_image_build",
+      "community": 8,
+      "norm_label": "image build"
+    },
+    {
+      "label": "Host UID mapping",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L7",
+      "id": "docs_runtime_notes_host_uid_mapping",
+      "community": 8,
+      "norm_label": "host uid mapping"
+    },
+    {
+      "label": "Docker CLI checksum",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L11",
+      "id": "docs_runtime_notes_docker_cli_checksum",
+      "community": 8,
+      "norm_label": "docker cli checksum"
+    },
+    {
+      "label": "Tool version pinning + `ARG INSTALL_<TOOL>` pattern",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L15",
+      "id": "docs_runtime_notes_tool_version_pinning_arg_install_tool_pattern",
+      "community": 8,
+      "norm_label": "tool version pinning + `arg install_<tool>` pattern"
+    },
+    {
+      "label": "rtk arm64 is built from source",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L19",
+      "id": "docs_runtime_notes_rtk_arm64_is_built_from_source",
+      "community": 8,
+      "norm_label": "rtk arm64 is built from source"
+    },
+    {
+      "label": "Rust base image tag scheme",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L27",
+      "id": "docs_runtime_notes_rust_base_image_tag_scheme",
+      "community": 8,
+      "norm_label": "rust base image tag scheme"
+    },
+    {
+      "label": "Slim Rust images ship no `curl` / `ca-certificates`",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L31",
+      "id": "docs_runtime_notes_slim_rust_images_ship_no_curl_ca_certificates",
+      "community": 8,
+      "norm_label": "slim rust images ship no `curl` / `ca-certificates`"
+    },
+    {
+      "label": "Mounts & auth isolation",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L35",
+      "id": "docs_runtime_notes_mounts_auth_isolation",
+      "community": 8,
+      "norm_label": "mounts & auth isolation"
+    },
+    {
+      "label": "Auth isolation under `~/.toolbox/`",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L37",
+      "id": "docs_runtime_notes_auth_isolation_under_toolbox",
+      "community": 8,
+      "norm_label": "auth isolation under `~/.toolbox/`"
+    },
+    {
+      "label": "`mounts:` merge semantics",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L48",
+      "id": "docs_runtime_notes_mounts_merge_semantics",
+      "community": 8,
+      "norm_label": "`mounts:` merge semantics"
+    },
+    {
+      "label": "`mounts_root` retarget",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L60",
+      "id": "docs_runtime_notes_mounts_root_retarget",
+      "community": 8,
+      "norm_label": "`mounts_root` retarget"
+    },
+    {
+      "label": "Image versions",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L64",
+      "id": "docs_runtime_notes_image_versions",
+      "community": 8,
+      "norm_label": "image versions"
+    },
+    {
+      "label": "Two Docker version streams",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L66",
+      "id": "docs_runtime_notes_two_docker_version_streams",
+      "community": 8,
+      "norm_label": "two docker version streams"
+    },
+    {
+      "label": "Catalog entry \u2192 image hash",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L70",
+      "id": "docs_runtime_notes_catalog_entry_image_hash",
+      "community": 8,
+      "norm_label": "catalog entry \u2192 image hash"
+    },
+    {
+      "label": "Container lifecycle",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L74",
+      "id": "docs_runtime_notes_container_lifecycle",
+      "community": 8,
+      "norm_label": "container lifecycle"
+    },
+    {
+      "label": "Image selection",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L76",
+      "id": "docs_runtime_notes_image_selection",
+      "community": 8,
+      "norm_label": "image selection"
+    },
+    {
+      "label": "Port bindings are fixed at container creation",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L80",
+      "id": "docs_runtime_notes_port_bindings_are_fixed_at_container_creation",
+      "community": 8,
+      "norm_label": "port bindings are fixed at container creation"
+    },
+    {
+      "label": "Codex nested sandbox",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L84",
+      "id": "docs_runtime_notes_codex_nested_sandbox",
+      "community": 8,
+      "norm_label": "codex nested sandbox"
+    },
+    {
+      "label": "Shell start",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L88",
+      "id": "docs_runtime_notes_shell_start",
+      "community": 8,
+      "norm_label": "shell start"
+    },
+    {
+      "label": "MCP plugin auto-build",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L90",
+      "id": "docs_runtime_notes_mcp_plugin_auto_build",
+      "community": 8,
+      "norm_label": "mcp plugin auto-build"
+    },
+    {
+      "label": "`cf` Cloudflare CLI skill auto-install",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L94",
+      "id": "docs_runtime_notes_cf_cloudflare_cli_skill_auto_install",
+      "community": 8,
+      "norm_label": "`cf` cloudflare cli skill auto-install"
+    },
+    {
+      "label": "Skill discovery paths diverge between Claude and Codex",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L98",
+      "id": "docs_runtime_notes_skill_discovery_paths_diverge_between_claude_and_codex",
+      "community": 8,
+      "norm_label": "skill discovery paths diverge between claude and codex"
+    },
+    {
+      "label": "Runtime privacy",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L102",
+      "id": "docs_runtime_notes_runtime_privacy",
+      "community": 8,
+      "norm_label": "runtime privacy"
+    },
+    {
+      "label": "rtk hook auto-wiring + telemetry/tee lockdown",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L104",
+      "id": "docs_runtime_notes_rtk_hook_auto_wiring_telemetry_tee_lockdown",
+      "community": 8,
+      "norm_label": "rtk hook auto-wiring + telemetry/tee lockdown"
+    },
+    {
+      "label": "Claude Code env-var matrix",
+      "file_type": "document",
+      "source_file": "docs/runtime-notes.md",
+      "source_location": "L115",
+      "id": "docs_runtime_notes_claude_code_env_var_matrix",
+      "community": 8,
+      "norm_label": "claude code env-var matrix"
+    },
+    {
+      "label": "README.md",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L1",
+      "id": "examples_startup_d_readme_md",
+      "community": 17,
+      "norm_label": "readme.md"
+    },
+    {
+      "label": "Startup hooks",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L1",
+      "id": "startup_d_readme_startup_hooks",
+      "community": 17,
+      "norm_label": "startup hooks"
+    },
+    {
+      "label": "How the hook runs",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L5",
+      "id": "startup_d_readme_how_the_hook_runs",
+      "community": 17,
+      "norm_label": "how the hook runs"
+    },
+    {
+      "label": "code:block1 (~/.toolbox/startup.d/)",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L9",
+      "id": "startup_d_readme_codeblock_1",
+      "community": 17,
+      "norm_label": "code:block1 (~/.toolbox/startup.d/)"
+    },
+    {
+      "label": "Disabling a hook",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L20",
+      "id": "startup_d_readme_disabling_a_hook",
+      "community": 17,
+      "norm_label": "disabling a hook"
+    },
+    {
+      "label": "code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o)",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L24",
+      "id": "startup_d_readme_codeblock_2",
+      "community": 17,
+      "norm_label": "code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o)"
+    },
+    {
+      "label": "Writing your own hook",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L28",
+      "id": "startup_d_readme_writing_your_own_hook",
+      "community": 17,
+      "norm_label": "writing your own hook"
+    },
+    {
+      "label": "code:bash (#!/usr/bin/env bash)",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L32",
+      "id": "startup_d_readme_codeblock_3",
+      "community": 17,
+      "norm_label": "code:bash (#!/usr/bin/env bash)"
+    },
+    {
+      "label": "Examples",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L44",
+      "id": "startup_d_readme_examples",
+      "community": 17,
+      "norm_label": "examples"
+    },
+    {
+      "label": "[`gsd.sh`](./gsd.sh) \u2014 Get-Shit-Done",
+      "file_type": "document",
+      "source_file": "examples/startup.d/README.md",
+      "source_location": "L46",
+      "id": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done",
+      "community": 17,
+      "norm_label": "[`gsd.sh`](./gsd.sh) \u2014 get-shit-done"
     },
     {
       "label": "AGENTS.md",
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L1",
-      "community": 20,
+      "community": 21,
       "norm_label": "agents.md",
       "id": "agents_md"
     },
@@ -3468,7 +3864,7 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L1",
-      "community": 20,
+      "community": 21,
       "norm_label": "claude.md",
       "id": "toolbox_agents_claude_md"
     },
@@ -3477,7 +3873,7 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L5",
-      "community": 20,
+      "community": 21,
       "norm_label": "project",
       "id": "toolbox_agents_project"
     },
@@ -3486,7 +3882,7 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L9",
-      "community": 20,
+      "community": 21,
       "norm_label": "dev commands",
       "id": "toolbox_agents_dev_commands"
     },
@@ -3495,7 +3891,7 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L25",
-      "community": 20,
+      "community": 21,
       "norm_label": "architecture",
       "id": "toolbox_agents_architecture"
     },
@@ -3504,7 +3900,7 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L31",
-      "community": 20,
+      "community": 21,
       "norm_label": "code & language",
       "id": "toolbox_agents_code_language"
     },
@@ -3513,405 +3909,9 @@
       "file_type": "document",
       "source_file": "AGENTS.md",
       "source_location": "L37",
-      "community": 20,
+      "community": 21,
       "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
       "id": "toolbox_agents_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "claude_md"
-    },
-    {
-      "label": "CLAUDE.md",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L1",
-      "community": 21,
-      "norm_label": "claude.md",
-      "id": "toolbox_claude_claude_md"
-    },
-    {
-      "label": "Project",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "community": 21,
-      "norm_label": "project",
-      "id": "toolbox_claude_project"
-    },
-    {
-      "label": "Dev commands",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L9",
-      "community": 21,
-      "norm_label": "dev commands",
-      "id": "toolbox_claude_dev_commands"
-    },
-    {
-      "label": "Architecture",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L25",
-      "community": 21,
-      "norm_label": "architecture",
-      "id": "toolbox_claude_architecture"
-    },
-    {
-      "label": "Code & language",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L31",
-      "community": 21,
-      "norm_label": "code & language",
-      "id": "toolbox_claude_code_language"
-    },
-    {
-      "label": "Gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "file_type": "document",
-      "source_file": "CLAUDE.md",
-      "source_location": "L37",
-      "community": 21,
-      "norm_label": "gotchas \u2014 backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)",
-      "id": "toolbox_claude_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
-    },
-    {
-      "label": "runtime-notes.md",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L1",
-      "community": 8,
-      "norm_label": "runtime-notes.md",
-      "id": "docs_runtime_notes_md"
-    },
-    {
-      "label": "Runtime notes",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L1",
-      "community": 8,
-      "norm_label": "runtime notes",
-      "id": "docs_runtime_notes_runtime_notes"
-    },
-    {
-      "label": "Image build",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L5",
-      "community": 8,
-      "norm_label": "image build",
-      "id": "docs_runtime_notes_image_build"
-    },
-    {
-      "label": "Host UID mapping",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L7",
-      "community": 8,
-      "norm_label": "host uid mapping",
-      "id": "docs_runtime_notes_host_uid_mapping"
-    },
-    {
-      "label": "Docker CLI checksum",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L11",
-      "community": 8,
-      "norm_label": "docker cli checksum",
-      "id": "docs_runtime_notes_docker_cli_checksum"
-    },
-    {
-      "label": "Tool version pinning + `ARG INSTALL_<TOOL>` pattern",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L15",
-      "community": 8,
-      "norm_label": "tool version pinning + `arg install_<tool>` pattern",
-      "id": "docs_runtime_notes_tool_version_pinning_arg_install_tool_pattern"
-    },
-    {
-      "label": "rtk arm64 is built from source",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L19",
-      "community": 8,
-      "norm_label": "rtk arm64 is built from source",
-      "id": "docs_runtime_notes_rtk_arm64_is_built_from_source"
-    },
-    {
-      "label": "Rust base image tag scheme",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L27",
-      "community": 8,
-      "norm_label": "rust base image tag scheme",
-      "id": "docs_runtime_notes_rust_base_image_tag_scheme"
-    },
-    {
-      "label": "Slim Rust images ship no `curl` / `ca-certificates`",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L31",
-      "community": 8,
-      "norm_label": "slim rust images ship no `curl` / `ca-certificates`",
-      "id": "docs_runtime_notes_slim_rust_images_ship_no_curl_ca_certificates"
-    },
-    {
-      "label": "Mounts & auth isolation",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L35",
-      "community": 8,
-      "norm_label": "mounts & auth isolation",
-      "id": "docs_runtime_notes_mounts_auth_isolation"
-    },
-    {
-      "label": "Auth isolation under `~/.toolbox/`",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L37",
-      "community": 8,
-      "norm_label": "auth isolation under `~/.toolbox/`",
-      "id": "docs_runtime_notes_auth_isolation_under_toolbox"
-    },
-    {
-      "label": "`mounts:` merge semantics",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L48",
-      "community": 8,
-      "norm_label": "`mounts:` merge semantics",
-      "id": "docs_runtime_notes_mounts_merge_semantics"
-    },
-    {
-      "label": "`mounts_root` retarget",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L60",
-      "community": 8,
-      "norm_label": "`mounts_root` retarget",
-      "id": "docs_runtime_notes_mounts_root_retarget"
-    },
-    {
-      "label": "Image versions",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L64",
-      "community": 8,
-      "norm_label": "image versions",
-      "id": "docs_runtime_notes_image_versions"
-    },
-    {
-      "label": "Two Docker version streams",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L66",
-      "community": 8,
-      "norm_label": "two docker version streams",
-      "id": "docs_runtime_notes_two_docker_version_streams"
-    },
-    {
-      "label": "Catalog entry \u2192 image hash",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L70",
-      "community": 8,
-      "norm_label": "catalog entry \u2192 image hash",
-      "id": "docs_runtime_notes_catalog_entry_image_hash"
-    },
-    {
-      "label": "Container lifecycle",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L74",
-      "community": 8,
-      "norm_label": "container lifecycle",
-      "id": "docs_runtime_notes_container_lifecycle"
-    },
-    {
-      "label": "Image selection",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L76",
-      "community": 8,
-      "norm_label": "image selection",
-      "id": "docs_runtime_notes_image_selection"
-    },
-    {
-      "label": "Port bindings are fixed at container creation",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L80",
-      "community": 8,
-      "norm_label": "port bindings are fixed at container creation",
-      "id": "docs_runtime_notes_port_bindings_are_fixed_at_container_creation"
-    },
-    {
-      "label": "Codex nested sandbox",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L84",
-      "community": 8,
-      "norm_label": "codex nested sandbox",
-      "id": "docs_runtime_notes_codex_nested_sandbox"
-    },
-    {
-      "label": "Shell start",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L88",
-      "community": 8,
-      "norm_label": "shell start",
-      "id": "docs_runtime_notes_shell_start"
-    },
-    {
-      "label": "MCP plugin auto-build",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L90",
-      "community": 8,
-      "norm_label": "mcp plugin auto-build",
-      "id": "docs_runtime_notes_mcp_plugin_auto_build"
-    },
-    {
-      "label": "`cf` Cloudflare CLI skill auto-install",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L94",
-      "community": 8,
-      "norm_label": "`cf` cloudflare cli skill auto-install",
-      "id": "docs_runtime_notes_cf_cloudflare_cli_skill_auto_install"
-    },
-    {
-      "label": "Skill discovery paths diverge between Claude and Codex",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L98",
-      "community": 8,
-      "norm_label": "skill discovery paths diverge between claude and codex",
-      "id": "docs_runtime_notes_skill_discovery_paths_diverge_between_claude_and_codex"
-    },
-    {
-      "label": "Runtime privacy",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L102",
-      "community": 8,
-      "norm_label": "runtime privacy",
-      "id": "docs_runtime_notes_runtime_privacy"
-    },
-    {
-      "label": "rtk hook auto-wiring + telemetry/tee lockdown",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L104",
-      "community": 8,
-      "norm_label": "rtk hook auto-wiring + telemetry/tee lockdown",
-      "id": "docs_runtime_notes_rtk_hook_auto_wiring_telemetry_tee_lockdown"
-    },
-    {
-      "label": "Claude Code env-var matrix",
-      "file_type": "document",
-      "source_file": "docs/runtime-notes.md",
-      "source_location": "L115",
-      "community": 8,
-      "norm_label": "claude code env-var matrix",
-      "id": "docs_runtime_notes_claude_code_env_var_matrix"
-    },
-    {
-      "label": "README.md",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L1",
-      "community": 17,
-      "norm_label": "readme.md",
-      "id": "examples_startup_d_readme_md"
-    },
-    {
-      "label": "Startup hooks",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L1",
-      "community": 17,
-      "norm_label": "startup hooks",
-      "id": "startup_d_readme_startup_hooks"
-    },
-    {
-      "label": "How the hook runs",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L5",
-      "community": 17,
-      "norm_label": "how the hook runs",
-      "id": "startup_d_readme_how_the_hook_runs"
-    },
-    {
-      "label": "code:block1 (~/.toolbox/startup.d/)",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L9",
-      "community": 17,
-      "norm_label": "code:block1 (~/.toolbox/startup.d/)",
-      "id": "startup_d_readme_codeblock_1"
-    },
-    {
-      "label": "Disabling a hook",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L20",
-      "community": 17,
-      "norm_label": "disabling a hook",
-      "id": "startup_d_readme_disabling_a_hook"
-    },
-    {
-      "label": "code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o)",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L24",
-      "community": 17,
-      "norm_label": "code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o)",
-      "id": "startup_d_readme_codeblock_2"
-    },
-    {
-      "label": "Writing your own hook",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L28",
-      "community": 17,
-      "norm_label": "writing your own hook",
-      "id": "startup_d_readme_writing_your_own_hook"
-    },
-    {
-      "label": "code:bash (#!/usr/bin/env bash)",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L32",
-      "community": 17,
-      "norm_label": "code:bash (#!/usr/bin/env bash)",
-      "id": "startup_d_readme_codeblock_3"
-    },
-    {
-      "label": "Examples",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L44",
-      "community": 17,
-      "norm_label": "examples",
-      "id": "startup_d_readme_examples"
-    },
-    {
-      "label": "[`gsd.sh`](./gsd.sh) \u2014 Get-Shit-Done",
-      "file_type": "document",
-      "source_file": "examples/startup.d/README.md",
-      "source_location": "L46",
-      "community": 17,
-      "norm_label": "[`gsd.sh`](./gsd.sh) \u2014 get-shit-done",
-      "id": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
     },
     {
       "label": "main",
@@ -12476,66 +12476,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "agents_md",
-      "target": "toolbox_agents_claude_md"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_agents_claude_md",
-      "target": "toolbox_agents_project"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L9",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_agents_claude_md",
-      "target": "toolbox_agents_dev_commands"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_agents_claude_md",
-      "target": "toolbox_agents_architecture"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L31",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_agents_claude_md",
-      "target": "toolbox_agents_code_language"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "AGENTS.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "toolbox_agents_claude_md",
-      "target": "toolbox_agents_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -12942,6 +12882,66 @@
       "confidence_score": 1.0,
       "source": "startup_d_readme_examples",
       "target": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "agents_md",
+      "target": "toolbox_agents_claude_md"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_agents_claude_md",
+      "target": "toolbox_agents_project"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_agents_claude_md",
+      "target": "toolbox_agents_dev_commands"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L25",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_agents_claude_md",
+      "target": "toolbox_agents_architecture"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_agents_claude_md",
+      "target": "toolbox_agents_code_language"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "toolbox_agents_claude_md",
+      "target": "toolbox_agents_gotchas_backstory_in_docs_runtime_notes_md_docs_runtime_notes_md"
     },
     {
       "relation": "calls",
@@ -14344,5 +14344,5 @@
       "source_location": null
     }
   ],
-  "built_at_commit": "2fe115865dae943b539288b4aa07d5272768ead7"
+  "built_at_commit": "e08e1725f7b59ddcfeececb828e4d93198e29a65"
 }

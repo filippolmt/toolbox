@@ -203,7 +203,7 @@ func TestComputeImageHashPinnedDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("computeImageHashFromFS: %v", err)
 	}
-	const want = "5b51273f96ea"
+	const want = "9306336c4192"
 	if got != want {
 		t.Errorf("pinned digest changed: got %q, want %q\n"+
 			"If this is intentional (catalog encoding changed), update `want` "+

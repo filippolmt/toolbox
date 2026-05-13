@@ -1,0 +1,107 @@
+# Toolbox starship config (D-05). The win over upstream defaults comes from
+# an explicit `format` that lists ONLY the modules we use: any module not
+# listed below is skipped entirely (no file stat, no env lookup) — far faster
+# than `disabled = true`, which still requires starship to consult each
+# module in `$all`.
+#
+# Modules in the left-prompt format (in order): directory, git_branch,
+# git_status, git_state, docker_context, kubernetes, terraform, gcloud,
+# cmd_duration. `$line_break` + `$character` close the left prompt on a new
+# line. `right_format` holds the clock.
+#
+# Excluded by omission: every language runtime (no nodejs/python/rust/bun
+# probe per prompt), aws/azure/openstack, sudo, jobs, battery, status,
+# container, netns, os, shell, username, hostname, package, line counters,
+# memory_usage, mise/direnv/custom, conda/pixi/spack/meson, hg/fossil/pijul.
+#
+# Path inside the image: /etc/toolbox/starship.toml (selected by
+# STARSHIP_CONFIG env baked into the Dockerfile). Per-user override still
+# possible via `STARSHIP_CONFIG=$HOME/.toolbox-state/starship.toml` in a
+# ~/.toolbox-startup.d/ hook — no edits to this file needed.
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$git_state\
+$docker_context\
+$kubernetes\
+$terraform\
+$gcloud\
+$cmd_duration\
+$line_break\
+$character"""
+
+right_format = "$time"
+
+# -- Left prompt segments ----------------------------------------------------
+
+[character]
+success_symbol = "[➜](bold green) "
+error_symbol   = "[✗](bold red) "
+
+[directory]
+truncation_length = 4
+truncate_to_repo  = true
+truncation_symbol = "…/"
+style             = "bold cyan"
+
+[git_branch]
+symbol = " "
+style  = "bold purple"
+
+[git_status]
+style      = "bold red"
+conflicted = "✖"
+ahead      = "⇡${count}"
+behind     = "⇣${count}"
+diverged   = "⇕⇡${ahead_count}⇣${behind_count}"
+modified   = "!${count}"
+staged     = "+${count}"
+untracked  = "?${count}"
+
+[cmd_duration]
+min_time = 500
+format   = "took [$duration]($style) "
+style    = "yellow"
+
+# Upstream default: disabled. We enable because kubectl is bundled and a
+# misclick on the wrong context is a recurring footgun. Detection reads
+# ~/.kube/config (single file stat, no live API). With no `detect_*` keys
+# the module is active in every directory once a context is set — exactly
+# what we want.
+[kubernetes]
+disabled = false
+format   = '[$symbol$context( \($namespace\))]($style) '
+style    = "blue bold"
+
+[terraform]
+format = "[$symbol$workspace]($style) "
+style  = "bold purple"
+
+# gcloud module is file-based — reads ~/.config/gcloud/active_config and the
+# matching configurations/config_<name> file. No `gcloud` invocation per
+# prompt. Default format includes `$account@$domain ($region)`; we trim to
+# just `$project` because the project is the field we routinely act on, and
+# account/region only matter when switching configs (which itself updates
+# active_config and shows up next prompt).
+[gcloud]
+format = 'on [$symbol$project]($style) '
+style  = "bold blue"
+
+# docker_context inherits all upstream defaults — module appears only inside
+# dirs whose `detect_files` glob matches (Dockerfile / compose.yml /
+# docker-compose.yml etc.), and only when the current Docker context is
+# non-default OR a DOCKER_CONTEXT / DOCKER_HOST / DOCKER_MACHINE_NAME env
+# var is set. No `[docker_context]` override block needed — `$docker_context`
+# in the format string above is enough to opt the module in.
+
+# -- Right prompt segments ---------------------------------------------------
+
+# `time` is disabled by default upstream. Enable here and place in
+# `right_format` so the clock doesn't push the left prompt around.
+[time]
+disabled    = false
+format      = '[\[$time\]]($style) '
+style       = "dim white"
+time_format = "%H:%M:%S"

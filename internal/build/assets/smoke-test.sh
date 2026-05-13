@@ -185,6 +185,7 @@ check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
 check_optional  "gws"       gws      gws --version
+check_optional  "atuin"     atuin    atuin --version
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
@@ -265,8 +266,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -lt 7 ]; then
-    echo "FAILED: only $count init.d/*.sh found, expected >= 7 (catalog declares 7 InitScripts)"
+if [ "$count" -lt 8 ]; then
+    echo "FAILED: only $count init.d/*.sh found, expected >= 8 (catalog declares 8 InitScripts)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

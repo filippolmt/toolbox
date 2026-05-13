@@ -57,6 +57,7 @@ type Entry struct {
 // (WriteCanonical / WriteCanonicalEntries) MUST NOT include those fields,
 // so populating them in a future phase is hash-neutral.
 var Entries = []Entry{
+	{Key: "atuin", Default: true, BuildArg: "INSTALL_ATUIN", InitScript: "65-atuin.sh"},
 	{Key: "azure", Default: true, BuildArg: "INSTALL_AZURE"},
 	{Key: "bat", Default: true, BuildArg: "INSTALL_BAT"},
 	{Key: "bun", Default: true, BuildArg: "INSTALL_BUN"},
