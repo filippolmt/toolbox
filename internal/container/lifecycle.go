@@ -29,8 +29,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
-	"github.com/filippolmt/toolbox/internal/imagepull"
+	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
@@ -122,12 +121,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning("mount skipped: " + w)
 	}
 
-	if !plan.Image.IsLocal {
-		// Canonical registry image: refresh on every shell, best-effort,
-		// with a TTL cache that skips the manifest round-trip on hot reuse.
-		// Cache + observability owned by imagepull.
-		imagepull.RefreshIfStale(ctx, cli, plan.Image.Ref)
-	}
+	// Phase 1 of imageplan: best-effort registry sync. No-op for local
+	// hash-tagged images. The hard guarantee runs in imageplan.Ensure
+	// inside the create branch (createAndStart).
+	imageplan.Refresh(ctx, cli, plan.Image)
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
 	op, opErr := runplan.Compute(inspect, inspectErr)
@@ -196,7 +193,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 // createAndStart owns the not-found path: ensure the image is present,
 // create the container from the SessionPlan, start it, return its ID.
 func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, error) {
-	if ensureErr := ensureImage(ctx, cli, plan.Image.Ref, plan.Image.IsLocal, plan.BuildArgs); ensureErr != nil {
+	if ensureErr := imageplan.Ensure(ctx, cli, plan.Image, plan.BuildArgs); ensureErr != nil {
 		return "", ensureErr
 	}
 
@@ -280,27 +277,6 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 }
 
 // --- Cleanup helpers ---
-
-// ensureImage guarantees the image referenced by ref exists locally.
-//   - registry tags: a failed pull already logged a warning; error now if the
-//     image is still absent.
-//   - local hash tags: auto-build from the embedded context using the config's
-//     tools map to derive the INSTALL_* build args.
-var ensureImage = func(ctx context.Context, cli client.APIClient, ref string, isLocal bool, buildArgs map[string]*string) error {
-	if _, err := cli.ImageInspect(ctx, ref); err == nil {
-		return nil
-	}
-
-	if !isLocal {
-		return fmt.Errorf("image %q not available locally and pull failed — check registry access", ref)
-	}
-
-	ui.Info("Image not found locally — building " + ref + " for current tools config...")
-	return build.BuildImage(ctx, cli, build.Options{
-		Tag:       ref,
-		BuildArgs: buildArgs,
-	})
-}
 
 // hostUserSpec returns the "<uid>:<gid>" of the user invoking toolbox, so the
 // container runs with the host user's identity. This keeps bind-mounted files

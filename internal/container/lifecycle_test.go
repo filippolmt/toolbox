@@ -20,6 +20,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -477,14 +478,14 @@ func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Tools["codex"] = false
 
-	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
-		if !isLocal {
-			t.Error("expected isLocal=true when Codex is disabled")
+	origEnsure := imageplan.Ensure
+	imageplan.Ensure = func(_ context.Context, _ client.APIClient, img sessionplan.Image, _ map[string]*string) error {
+		if !img.IsLocal {
+			t.Error("expected IsLocal=true when Codex is disabled")
 		}
 		return nil
 	}
-	defer func() { ensureImage = origEnsure }()
+	defer func() { imageplan.Ensure = origEnsure }()
 
 	var capturedSecurityOpt []string
 	mock := &mockClient{
@@ -631,15 +632,15 @@ func TestShellAutoBuildsCustomImage(t *testing.T) {
 	cfg.Tools["gcloud"] = false // triggers local hash tag
 
 	buildCalled := false
-	origEnsure := ensureImage
-	ensureImage = func(_ context.Context, _ client.APIClient, _ string, isLocal bool, _ map[string]*string) error {
-		if !isLocal {
-			t.Error("expected isLocal=true when tools differ from defaults")
+	origEnsure := imageplan.Ensure
+	imageplan.Ensure = func(_ context.Context, _ client.APIClient, img sessionplan.Image, _ map[string]*string) error {
+		if !img.IsLocal {
+			t.Error("expected IsLocal=true when tools differ from defaults")
 		}
 		buildCalled = true
 		return nil
 	}
-	defer func() { ensureImage = origEnsure }()
+	defer func() { imageplan.Ensure = origEnsure }()
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {

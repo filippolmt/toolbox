@@ -109,6 +109,35 @@ that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
 
+### Image Plan
+
+The two-phase decision tree that guarantees the image referenced by a
+`SessionPlan.Image` is ready before `ContainerCreate`.
+
+Concretely: `imageplan.Refresh(ctx, cli, image)` runs at the top of
+`container.Shell` and best-effort syncs registry images against their
+remote (delegated to `imagepull.RefreshIfStale`, TTL-cached, errors
+swallowed); no-op for local hash-tagged images. `imageplan.Ensure(ctx,
+cli, image, buildArgs)` runs inside the `ActionCreate` branch and is a
+hard guarantee: present locally → done; registry tag missing → fatal
+(pull already had its chance); local hash tag missing → auto-build via
+`build.BuildImage` using the SessionPlan's `BuildArgs`. Owned by
+`internal/imageplan`. `Ensure` is exposed as a package-level `var` so
+lifecycle tests can swap it without redeclaring the closure at every
+call site; the inner `buildImageFn` seam lets imageplan's own tests
+assert the build call without touching the embedded Dockerfile context.
+
+Why the term exists: before this concept was named, the policy was
+split — `imagepull.RefreshIfStale` ran inline at the top of
+`container.Shell` and a package-level `ensureImage` closure inside
+`internal/container/lifecycle.go` covered the create-branch guarantee.
+Reading either site alone missed half the contract ("when do we
+rebuild?" lived only in the closure; "when do we refresh?" lived only
+in the inline call). Tests of code that exercised the not-found branch
+redeclared the same auto-build stub closure in every body. The "Image
+Plan" name turns the two-phase policy into one named owner and the
+auto-build seam into a single var inside `imageplan`.
+
 ### Run Plan
 
 The runtime decision step inside `container.Shell`: given a
