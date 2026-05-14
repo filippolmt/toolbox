@@ -173,7 +173,7 @@
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/config.go",
-      "source_location": "L46",
+      "source_location": "L47",
       "id": "cmd_config_init",
       "community": 10,
       "norm_label": "init()"
@@ -182,7 +182,7 @@
       "label": "writeResolvedConfig()",
       "file_type": "code",
       "source_file": "cmd/config.go",
-      "source_location": "L55",
+      "source_location": "L56",
       "id": "cmd_config_writeresolvedconfig",
       "community": 10,
       "norm_label": "writeresolvedconfig()"
@@ -323,19 +323,10 @@
       "norm_label": "config_subcmd_test.go"
     },
     {
-      "label": "TestRenderExampleYAMLContainsAllToolsAndMounts()",
-      "file_type": "code",
-      "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L13",
-      "id": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts",
-      "community": 10,
-      "norm_label": "testrenderexampleyamlcontainsalltoolsandmounts()"
-    },
-    {
       "label": "TestWriteResolvedConfigDeterministic()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L36",
+      "source_location": "L11",
       "id": "cmd_config_subcmd_test_testwriteresolvedconfigdeterministic",
       "community": 10,
       "norm_label": "testwriteresolvedconfigdeterministic()"
@@ -344,7 +335,7 @@
       "label": "TestWriteResolvedConfigEmptyMounts()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L77",
+      "source_location": "L52",
       "id": "cmd_config_subcmd_test_testwriteresolvedconfigemptymounts",
       "community": 10,
       "norm_label": "testwriteresolvedconfigemptymounts()"
@@ -353,7 +344,7 @@
       "label": "TestWriteResolvedConfigNilConfigErrors()",
       "file_type": "code",
       "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L92",
+      "source_location": "L67",
       "id": "cmd_config_subcmd_test_testwriteresolvedconfignilconfigerrors",
       "community": 10,
       "norm_label": "testwriteresolvedconfignilconfigerrors()"
@@ -411,24 +402,6 @@
       "id": "cmd_stop_init",
       "community": 0,
       "norm_label": "init()"
-    },
-    {
-      "label": "config_example.go",
-      "file_type": "code",
-      "source_file": "cmd/config_example.go",
-      "source_location": "L1",
-      "id": "cmd_config_example_go",
-      "community": 10,
-      "norm_label": "config_example.go"
-    },
-    {
-      "label": "renderExampleYAML()",
-      "file_type": "code",
-      "source_file": "cmd/config_example.go",
-      "source_location": "L16",
-      "id": "cmd_config_example_renderexampleyaml",
-      "community": 10,
-      "norm_label": "renderexampleyaml()"
     },
     {
       "label": "args_test.go",
@@ -587,7 +560,7 @@
       "label": "runInit()",
       "file_type": "code",
       "source_file": "cmd/init.go",
-      "source_location": "L24",
+      "source_location": "L26",
       "id": "cmd_init_runinit",
       "community": 10,
       "norm_label": "runinit()"
@@ -596,7 +569,7 @@
       "label": "init()",
       "file_type": "code",
       "source_file": "cmd/init.go",
-      "source_location": "L46",
+      "source_location": "L48",
       "id": "cmd_init_init",
       "community": 10,
       "norm_label": "init()"
@@ -679,7 +652,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L1",
       "id": "internal_ui_output_test_go",
-      "community": 0,
+      "community": 41,
       "norm_label": "output_test.go"
     },
     {
@@ -688,7 +661,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L14",
       "id": "ui_output_test_capturestderr",
-      "community": 0,
+      "community": 41,
       "norm_label": "capturestderr()"
     },
     {
@@ -697,7 +670,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L37",
       "id": "ui_output_test_testsuccesswritestostderr",
-      "community": 0,
+      "community": 41,
       "norm_label": "testsuccesswritestostderr()"
     },
     {
@@ -706,7 +679,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L44",
       "id": "ui_output_test_testwarningwritestostderr",
-      "community": 0,
+      "community": 41,
       "norm_label": "testwarningwritestostderr()"
     },
     {
@@ -715,7 +688,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L51",
       "id": "ui_output_test_testinfowritestostderr",
-      "community": 0,
+      "community": 41,
       "norm_label": "testinfowritestostderr()"
     },
     {
@@ -724,7 +697,7 @@
       "source_file": "internal/ui/output_test.go",
       "source_location": "L61",
       "id": "ui_output_test_testoutputdoesnotwritetostdout",
-      "community": 0,
+      "community": 41,
       "norm_label": "testoutputdoesnotwritetostdout()"
     },
     {
@@ -733,7 +706,7 @@
       "source_file": "internal/ui/output.go",
       "source_location": "L1",
       "id": "internal_ui_output_go",
-      "community": 0,
+      "community": 41,
       "norm_label": "output.go"
     },
     {
@@ -742,7 +715,7 @@
       "source_file": "internal/ui/output.go",
       "source_location": "L22",
       "id": "ui_output_success",
-      "community": 0,
+      "community": 41,
       "norm_label": "success()"
     },
     {
@@ -751,7 +724,7 @@
       "source_file": "internal/ui/output.go",
       "source_location": "L27",
       "id": "ui_output_warning",
-      "community": 0,
+      "community": 41,
       "norm_label": "warning()"
     },
     {
@@ -760,107 +733,8 @@
       "source_file": "internal/ui/output.go",
       "source_location": "L32",
       "id": "ui_output_info",
-      "community": 0,
+      "community": 41,
       "norm_label": "info()"
-    },
-    {
-      "label": "shellcmd_test.go",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L1",
-      "id": "internal_shellcmd_shellcmd_test_go",
-      "community": 12,
-      "norm_label": "shellcmd_test.go"
-    },
-    {
-      "label": "TestResolveShellCmdZshEnabled()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L14",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
-      "community": 12,
-      "norm_label": "testresolveshellcmdzshenabled()"
-    },
-    {
-      "label": "TestResolveShellCmdBash()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L30",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdbash",
-      "community": 12,
-      "norm_label": "testresolveshellcmdbash()"
-    },
-    {
-      "label": "TestResolveShellCmdZshDisabledError()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L47",
-      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror",
-      "community": 12,
-      "norm_label": "testresolveshellcmdzshdisablederror()"
-    },
-    {
-      "label": "TestNestedSandboxSecurityOptDefault()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L75",
-      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
-      "community": 12,
-      "norm_label": "testnestedsandboxsecurityoptdefault()"
-    },
-    {
-      "label": "TestNestedSandboxSecurityOptCodexDisabled()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L84",
-      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled",
-      "community": 12,
-      "norm_label": "testnestedsandboxsecurityoptcodexdisabled()"
-    },
-    {
-      "label": "shellcmd.go",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L1",
-      "id": "internal_shellcmd_shellcmd_go",
-      "community": 12,
-      "norm_label": "shellcmd.go"
-    },
-    {
-      "label": "ShellMismatchError",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L23",
-      "id": "shellcmd_shellmismatcherror",
-      "community": 12,
-      "norm_label": "shellmismatcherror"
-    },
-    {
-      "label": ".Error()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L27",
-      "id": "shellcmd_shellmismatcherror_error",
-      "community": 12,
-      "norm_label": ".error()"
-    },
-    {
-      "label": "ResolveShellCmd()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L42",
-      "id": "shellcmd_shellcmd_resolveshellcmd",
-      "community": 12,
-      "norm_label": "resolveshellcmd()"
-    },
-    {
-      "label": "NestedSandboxSecurityOpt()",
-      "file_type": "code",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L58",
-      "id": "shellcmd_shellcmd_nestedsandboxsecurityopt",
-      "community": 12,
-      "norm_label": "nestedsandboxsecurityopt()"
     },
     {
       "label": "resolve.go",
@@ -2123,6 +1997,60 @@
       "norm_label": "validate()"
     },
     {
+      "label": "shell_test.go",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L1",
+      "id": "internal_sessionplan_shell_test_go",
+      "community": 12,
+      "norm_label": "shell_test.go"
+    },
+    {
+      "label": "TestResolveShellCmdZshEnabled()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L14",
+      "id": "sessionplan_shell_test_testresolveshellcmdzshenabled",
+      "community": 12,
+      "norm_label": "testresolveshellcmdzshenabled()"
+    },
+    {
+      "label": "TestResolveShellCmdBash()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L26",
+      "id": "sessionplan_shell_test_testresolveshellcmdbash",
+      "community": 12,
+      "norm_label": "testresolveshellcmdbash()"
+    },
+    {
+      "label": "TestResolveShellCmdZshDisabledError()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L41",
+      "id": "sessionplan_shell_test_testresolveshellcmdzshdisablederror",
+      "community": 12,
+      "norm_label": "testresolveshellcmdzshdisablederror()"
+    },
+    {
+      "label": "TestNestedSandboxSecurityOptDefault()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L69",
+      "id": "sessionplan_shell_test_testnestedsandboxsecurityoptdefault",
+      "community": 12,
+      "norm_label": "testnestedsandboxsecurityoptdefault()"
+    },
+    {
+      "label": "TestNestedSandboxSecurityOptCodexDisabled()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L77",
+      "id": "sessionplan_shell_test_testnestedsandboxsecurityoptcodexdisabled",
+      "community": 12,
+      "norm_label": "testnestedsandboxsecurityoptcodexdisabled()"
+    },
+    {
       "label": "plan.go",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
@@ -2135,7 +2063,7 @@
       "label": "Image",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L31",
+      "source_location": "L30",
       "id": "sessionplan_image",
       "community": 5,
       "norm_label": "image"
@@ -2144,7 +2072,7 @@
       "label": "SessionPlan",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L40",
+      "source_location": "L39",
       "id": "sessionplan_sessionplan",
       "community": 5,
       "norm_label": "sessionplan"
@@ -2153,7 +2081,7 @@
       "label": "MergedSessionPlan",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L57",
+      "source_location": "L56",
       "id": "sessionplan_mergedsessionplan",
       "community": 5,
       "norm_label": "mergedsessionplan"
@@ -2162,7 +2090,7 @@
       "label": "Plan()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L75",
+      "source_location": "L74",
       "id": "sessionplan_plan_plan",
       "community": 12,
       "norm_label": "plan()"
@@ -2171,7 +2099,7 @@
       "label": "Merge()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L119",
+      "source_location": "L118",
       "id": "sessionplan_plan_merge",
       "community": 12,
       "norm_label": "merge()"
@@ -2180,7 +2108,7 @@
       "label": "MissingPublishPorts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L165",
+      "source_location": "L164",
       "id": "sessionplan_plan_missingpublishports",
       "community": 10,
       "norm_label": "missingpublishports()"
@@ -2189,7 +2117,7 @@
       "label": "ContainerNameFor()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L195",
+      "source_location": "L194",
       "id": "sessionplan_plan_containernamefor",
       "community": 12,
       "norm_label": "containernamefor()"
@@ -2198,7 +2126,7 @@
       "label": "normalizeWorkspace()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L223",
+      "source_location": "L222",
       "id": "sessionplan_plan_normalizeworkspace",
       "community": 12,
       "norm_label": "normalizeworkspace()"
@@ -2207,7 +2135,7 @@
       "label": "parsePublishSpecs()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L236",
+      "source_location": "L235",
       "id": "sessionplan_plan_parsepublishspecs",
       "community": 12,
       "norm_label": "parsepublishspecs()"
@@ -2216,10 +2144,55 @@
       "label": "shellEnv()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L273",
+      "source_location": "L272",
       "id": "sessionplan_plan_shellenv",
       "community": 12,
       "norm_label": "shellenv()"
+    },
+    {
+      "label": "shell.go",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L1",
+      "id": "internal_sessionplan_shell_go",
+      "community": 12,
+      "norm_label": "shell.go"
+    },
+    {
+      "label": "ShellMismatchError",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L15",
+      "id": "sessionplan_shellmismatcherror",
+      "community": 12,
+      "norm_label": "shellmismatcherror"
+    },
+    {
+      "label": ".Error()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L19",
+      "id": "sessionplan_shellmismatcherror_error",
+      "community": 12,
+      "norm_label": ".error()"
+    },
+    {
+      "label": "ResolveShellCmd()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L34",
+      "id": "sessionplan_shell_resolveshellcmd",
+      "community": 12,
+      "norm_label": "resolveshellcmd()"
+    },
+    {
+      "label": "NestedSandboxSecurityOpt()",
+      "file_type": "code",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L50",
+      "id": "sessionplan_shell_nestedsandboxsecurityopt",
+      "community": 12,
+      "norm_label": "nestedsandboxsecurityopt()"
     },
     {
       "label": "plan_test.go",
@@ -2234,7 +2207,7 @@
       "label": "testConfig()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L25",
+      "source_location": "L24",
       "id": "sessionplan_plan_test_testconfig",
       "community": 6,
       "norm_label": "testconfig()"
@@ -2243,7 +2216,7 @@
       "label": "TestPlanComposesImage()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L36",
+      "source_location": "L35",
       "id": "sessionplan_plan_test_testplancomposesimage",
       "community": 6,
       "norm_label": "testplancomposesimage()"
@@ -2252,7 +2225,7 @@
       "label": "TestPlanComposesMounts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L79",
+      "source_location": "L78",
       "id": "sessionplan_plan_test_testplancomposesmounts",
       "community": 6,
       "norm_label": "testplancomposesmounts()"
@@ -2261,7 +2234,7 @@
       "label": "TestPlanComposesPorts()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L120",
+      "source_location": "L119",
       "id": "sessionplan_plan_test_testplancomposesports",
       "community": 6,
       "norm_label": "testplancomposesports()"
@@ -2270,7 +2243,7 @@
       "label": "TestPlanComputesContainerName()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L154",
+      "source_location": "L153",
       "id": "sessionplan_plan_test_testplancomputescontainername",
       "community": 6,
       "norm_label": "testplancomputescontainername()"
@@ -2279,7 +2252,7 @@
       "label": "TestPlanContainerNameDeterministic()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L179",
+      "source_location": "L178",
       "id": "sessionplan_plan_test_testplancontainernamedeterministic",
       "community": 6,
       "norm_label": "testplancontainernamedeterministic()"
@@ -2288,7 +2261,7 @@
       "label": "TestPlanComputesEnv()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L211",
+      "source_location": "L210",
       "id": "sessionplan_plan_test_testplancomputesenv",
       "community": 6,
       "norm_label": "testplancomputesenv()"
@@ -2297,7 +2270,7 @@
       "label": "TestPlanRejectsBadPort()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L234",
+      "source_location": "L233",
       "id": "sessionplan_plan_test_testplanrejectsbadport",
       "community": 6,
       "norm_label": "testplanrejectsbadport()"
@@ -2306,7 +2279,7 @@
       "label": "TestPlanRejectsBadMountsRoot()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L253",
+      "source_location": "L252",
       "id": "sessionplan_plan_test_testplanrejectsbadmountsroot",
       "community": 6,
       "norm_label": "testplanrejectsbadmountsroot()"
@@ -2315,7 +2288,7 @@
       "label": "TestPlanWorkspaceNormalizationOnce()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L265",
+      "source_location": "L264",
       "id": "sessionplan_plan_test_testplanworkspacenormalizationonce",
       "community": 6,
       "norm_label": "testplanworkspacenormalizationonce()"
@@ -2324,7 +2297,7 @@
       "label": "TestMergeIsPure()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L291",
+      "source_location": "L290",
       "id": "sessionplan_plan_test_testmergeispure",
       "community": 6,
       "norm_label": "testmergeispure()"
@@ -2333,7 +2306,7 @@
       "label": "TestMergeRejectsBadMountsRoot()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L329",
+      "source_location": "L328",
       "id": "sessionplan_plan_test_testmergerejectsbadmountsroot",
       "community": 6,
       "norm_label": "testmergerejectsbadmountsroot()"
@@ -2342,7 +2315,7 @@
       "label": "TestMergeRejectsBadPort()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L340",
+      "source_location": "L339",
       "id": "sessionplan_plan_test_testmergerejectsbadport",
       "community": 6,
       "norm_label": "testmergerejectsbadport()"
@@ -2351,7 +2324,7 @@
       "label": "TestMissingPublishPortsTable()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L352",
+      "source_location": "L351",
       "id": "sessionplan_plan_test_testmissingpublishportstable",
       "community": 10,
       "norm_label": "testmissingpublishportstable()"
@@ -2360,7 +2333,7 @@
       "label": "TestPlanComputesCmd()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L428",
+      "source_location": "L427",
       "id": "sessionplan_plan_test_testplancomputescmd",
       "community": 6,
       "norm_label": "testplancomputescmd()"
@@ -2369,7 +2342,7 @@
       "label": "TestPlanComputesSecurityOpt()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L467",
+      "source_location": "L466",
       "id": "sessionplan_plan_test_testplancomputessecurityopt",
       "community": 6,
       "norm_label": "testplancomputessecurityopt()"
@@ -2378,7 +2351,7 @@
       "label": "TestPlanComputesBuildArgs()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L501",
+      "source_location": "L500",
       "id": "sessionplan_plan_test_testplancomputesbuildargs",
       "community": 6,
       "norm_label": "testplancomputesbuildargs()"
@@ -2387,7 +2360,7 @@
       "label": "TestMergeAlsoComputesCmd()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L523",
+      "source_location": "L522",
       "id": "sessionplan_plan_test_testmergealsocomputescmd",
       "community": 6,
       "norm_label": "testmergealsocomputescmd()"
@@ -2396,10 +2369,46 @@
       "label": "mkdirAll()",
       "file_type": "code",
       "source_file": "internal/sessionplan/plan_test.go",
-      "source_location": "L556",
+      "source_location": "L555",
       "id": "sessionplan_plan_test_mkdirall",
       "community": 6,
       "norm_label": "mkdirall()"
+    },
+    {
+      "label": "render.go",
+      "file_type": "code",
+      "source_file": "internal/configexample/render.go",
+      "source_location": "L1",
+      "id": "internal_configexample_render_go",
+      "community": 10,
+      "norm_label": "render.go"
+    },
+    {
+      "label": "Render()",
+      "file_type": "code",
+      "source_file": "internal/configexample/render.go",
+      "source_location": "L18",
+      "id": "configexample_render_render",
+      "community": 10,
+      "norm_label": "render()"
+    },
+    {
+      "label": "render_test.go",
+      "file_type": "code",
+      "source_file": "internal/configexample/render_test.go",
+      "source_location": "L1",
+      "id": "internal_configexample_render_test_go",
+      "community": 10,
+      "norm_label": "render_test.go"
+    },
+    {
+      "label": "TestRenderContainsAllToolsAndMounts()",
+      "file_type": "code",
+      "source_file": "internal/configexample/render_test.go",
+      "source_location": "L12",
+      "id": "configexample_render_test_testrendercontainsalltoolsandmounts",
+      "community": 10,
+      "norm_label": "testrendercontainsalltoolsandmounts()"
     },
     {
       "label": "attach.go",
@@ -2432,7 +2441,7 @@
       "label": "formatPublishMismatch()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L64",
+      "source_location": "L61",
       "id": "container_lifecycle_formatpublishmismatch",
       "community": 10,
       "norm_label": "formatpublishmismatch()"
@@ -2441,7 +2450,7 @@
       "label": "NewClient()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L97",
+      "source_location": "L94",
       "id": "container_lifecycle_newclient",
       "community": 0,
       "norm_label": "newclient()"
@@ -2450,7 +2459,7 @@
       "label": "Shell()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L120",
+      "source_location": "L117",
       "id": "container_lifecycle_shell",
       "community": 2,
       "norm_label": "shell()"
@@ -2459,7 +2468,7 @@
       "label": "Stop()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L234",
+      "source_location": "L231",
       "id": "container_lifecycle_stop",
       "community": 0,
       "norm_label": "stop()"
@@ -2468,7 +2477,7 @@
       "label": "StopAll()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L242",
+      "source_location": "L239",
       "id": "container_lifecycle_stopall",
       "community": 0,
       "norm_label": "stopall()"
@@ -2477,7 +2486,7 @@
       "label": "hostUserSpec()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L300",
+      "source_location": "L297",
       "id": "container_lifecycle_hostuserspec",
       "community": 0,
       "norm_label": "hostuserspec()"
@@ -2486,7 +2495,7 @@
       "label": "dockerSockGroups()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L317",
+      "source_location": "L314",
       "id": "container_lifecycle_dockersockgroups",
       "community": 20,
       "norm_label": "dockersockgroups()"
@@ -2495,7 +2504,7 @@
       "label": "stopOne()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L354",
+      "source_location": "L351",
       "id": "container_lifecycle_stopone",
       "community": 0,
       "norm_label": "stopone()"
@@ -2504,7 +2513,7 @@
       "label": "hasActiveExecs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
-      "source_location": "L382",
+      "source_location": "L379",
       "id": "container_lifecycle_hasactiveexecs",
       "community": 0,
       "norm_label": "hasactiveexecs()"
@@ -2576,7 +2585,7 @@
       "label": "notFoundError",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L29",
+      "source_location": "L28",
       "id": "container_notfounderror",
       "community": 2,
       "norm_label": "notfounderror"
@@ -2585,7 +2594,7 @@
       "label": ".Error()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L31",
+      "source_location": "L30",
       "id": "container_notfounderror_error",
       "community": 2,
       "norm_label": ".error()"
@@ -2594,7 +2603,7 @@
       "label": ".NotFound()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L32",
+      "source_location": "L31",
       "id": "container_notfounderror_notfound",
       "community": 2,
       "norm_label": ".notfound()"
@@ -2603,7 +2612,7 @@
       "label": ".Unwrap()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L33",
+      "source_location": "L32",
       "id": "container_notfounderror_unwrap",
       "community": 2,
       "norm_label": ".unwrap()"
@@ -2612,7 +2621,7 @@
       "label": "mockClient",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L37",
+      "source_location": "L36",
       "id": "container_mockclient",
       "community": 16,
       "norm_label": "mockclient"
@@ -2621,7 +2630,7 @@
       "label": ".ContainerInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L51",
+      "source_location": "L50",
       "id": "container_mockclient_containerinspect",
       "community": 16,
       "norm_label": ".containerinspect()"
@@ -2630,7 +2639,7 @@
       "label": ".ContainerCreate()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L58",
+      "source_location": "L57",
       "id": "container_mockclient_containercreate",
       "community": 16,
       "norm_label": ".containercreate()"
@@ -2639,7 +2648,7 @@
       "label": ".ContainerStart()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L65",
+      "source_location": "L64",
       "id": "container_mockclient_containerstart",
       "community": 16,
       "norm_label": ".containerstart()"
@@ -2648,7 +2657,7 @@
       "label": ".ContainerStop()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L72",
+      "source_location": "L71",
       "id": "container_mockclient_containerstop",
       "community": 16,
       "norm_label": ".containerstop()"
@@ -2657,7 +2666,7 @@
       "label": ".ContainerRemove()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L79",
+      "source_location": "L78",
       "id": "container_mockclient_containerremove",
       "community": 16,
       "norm_label": ".containerremove()"
@@ -2666,7 +2675,7 @@
       "label": ".ImageInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L86",
+      "source_location": "L85",
       "id": "container_mockclient_imageinspect",
       "community": 16,
       "norm_label": ".imageinspect()"
@@ -2675,7 +2684,7 @@
       "label": ".ImagePull()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L93",
+      "source_location": "L92",
       "id": "container_mockclient_imagepull",
       "community": 16,
       "norm_label": ".imagepull()"
@@ -2684,7 +2693,7 @@
       "label": ".ContainerList()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L101",
+      "source_location": "L100",
       "id": "container_mockclient_containerlist",
       "community": 16,
       "norm_label": ".containerlist()"
@@ -2693,7 +2702,7 @@
       "label": ".ContainerExecInspect()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L108",
+      "source_location": "L107",
       "id": "container_mockclient_containerexecinspect",
       "community": 16,
       "norm_label": ".containerexecinspect()"
@@ -2702,7 +2711,7 @@
       "label": ".Close()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L115",
+      "source_location": "L114",
       "id": "container_mockclient_close",
       "community": 16,
       "norm_label": ".close()"
@@ -2711,7 +2720,7 @@
       "label": "testConfig()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L119",
+      "source_location": "L118",
       "id": "container_lifecycle_test_testconfig",
       "community": 2,
       "norm_label": "testconfig()"
@@ -2720,7 +2729,7 @@
       "label": "testWorkspace()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L131",
+      "source_location": "L130",
       "id": "container_lifecycle_test_testworkspace",
       "community": 2,
       "norm_label": "testworkspace()"
@@ -2729,7 +2738,7 @@
       "label": "testPlan()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L140",
+      "source_location": "L139",
       "id": "container_lifecycle_test_testplan",
       "community": 2,
       "norm_label": "testplan()"
@@ -2738,7 +2747,7 @@
       "label": "testPlanWithCfg()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L151",
+      "source_location": "L150",
       "id": "container_lifecycle_test_testplanwithcfg",
       "community": 2,
       "norm_label": "testplanwithcfg()"
@@ -2747,7 +2756,7 @@
       "label": "stubExecShell()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L161",
+      "source_location": "L160",
       "id": "container_lifecycle_test_stubexecshell",
       "community": 2,
       "norm_label": "stubexecshell()"
@@ -2756,7 +2765,7 @@
       "label": "TestShellContainerNaming()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L178",
+      "source_location": "L177",
       "id": "container_lifecycle_test_testshellcontainernaming",
       "community": 2,
       "norm_label": "testshellcontainernaming()"
@@ -2765,7 +2774,7 @@
       "label": "TestShellExecInRunningContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L311",
+      "source_location": "L310",
       "id": "container_lifecycle_test_testshellexecinrunningcontainer",
       "community": 2,
       "norm_label": "testshellexecinrunningcontainer()"
@@ -2774,7 +2783,7 @@
       "label": "TestShellStartsStoppedContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L341",
+      "source_location": "L340",
       "id": "container_lifecycle_test_testshellstartsstoppedcontainer",
       "community": 2,
       "norm_label": "testshellstartsstoppedcontainer()"
@@ -2783,7 +2792,7 @@
       "label": "TestShellCreatesNewContainer()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L376",
+      "source_location": "L375",
       "id": "container_lifecycle_test_testshellcreatesnewcontainer",
       "community": 2,
       "norm_label": "testshellcreatesnewcontainer()"
@@ -2792,7 +2801,7 @@
       "label": "TestShellSetsCodexSecurityOptByDefault()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L448",
+      "source_location": "L447",
       "id": "container_lifecycle_test_testshellsetscodexsecurityoptbydefault",
       "community": 2,
       "norm_label": "testshellsetscodexsecurityoptbydefault()"
@@ -2801,7 +2810,7 @@
       "label": "TestShellSkipsCodexSecurityOptWhenCodexDisabled()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L474",
+      "source_location": "L473",
       "id": "container_lifecycle_test_testshellskipscodexsecurityoptwhencodexdisabled",
       "community": 2,
       "norm_label": "testshellskipscodexsecurityoptwhencodexdisabled()"
@@ -2810,7 +2819,7 @@
       "label": "TestShellMirrorsWorkspaceAtHostPath()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L514",
+      "source_location": "L513",
       "id": "container_lifecycle_test_testshellmirrorsworkspaceathostpath",
       "community": 2,
       "norm_label": "testshellmirrorsworkspaceathostpath()"
@@ -2819,7 +2828,7 @@
       "label": "TestShellSkipsMirrorForReservedPath()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L557",
+      "source_location": "L556",
       "id": "container_lifecycle_test_testshellskipsmirrorforreservedpath",
       "community": 2,
       "norm_label": "testshellskipsmirrorforreservedpath()"
@@ -2828,7 +2837,7 @@
       "label": "TestShellErrorOnMissingImage()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L597",
+      "source_location": "L596",
       "id": "container_lifecycle_test_testshellerroronmissingimage",
       "community": 2,
       "norm_label": "testshellerroronmissingimage()"
@@ -2837,7 +2846,7 @@
       "label": "TestShellAutoBuildsCustomImage()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L627",
+      "source_location": "L626",
       "id": "container_lifecycle_test_testshellautobuildscustomimage",
       "community": 2,
       "norm_label": "testshellautobuildscustomimage()"
@@ -2846,7 +2855,7 @@
       "label": "TestShellSurvivesPullFailureWhenImageLocal()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L666",
+      "source_location": "L665",
       "id": "container_lifecycle_test_testshellsurvivespullfailurewhenimagelocal",
       "community": 2,
       "norm_label": "testshellsurvivespullfailurewhenimagelocal()"
@@ -2855,7 +2864,7 @@
       "label": "TestStopAndRemove()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L695",
+      "source_location": "L694",
       "id": "container_lifecycle_test_teststopandremove",
       "community": 2,
       "norm_label": "teststopandremove()"
@@ -2864,7 +2873,7 @@
       "label": "TestStopContainerNotFound()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L727",
+      "source_location": "L726",
       "id": "container_lifecycle_test_teststopcontainernotfound",
       "community": 2,
       "norm_label": "teststopcontainernotfound()"
@@ -2873,7 +2882,7 @@
       "label": "TestStopAll()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L740",
+      "source_location": "L739",
       "id": "container_lifecycle_test_teststopall",
       "community": 2,
       "norm_label": "teststopall()"
@@ -2882,7 +2891,7 @@
       "label": "TestNotFoundErrorSatisfiesErrdefs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L787",
+      "source_location": "L786",
       "id": "container_lifecycle_test_testnotfounderrorsatisfieserrdefs",
       "community": 2,
       "norm_label": "testnotfounderrorsatisfieserrdefs()"
@@ -2891,7 +2900,7 @@
       "label": "TestShellSetsHostWorkspaceEnv()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L798",
+      "source_location": "L797",
       "id": "container_lifecycle_test_testshellsetshostworkspaceenv",
       "community": 2,
       "norm_label": "testshellsetshostworkspaceenv()"
@@ -2900,7 +2909,7 @@
       "label": "TestShellSkipsStopWhenSiblingExecRunning()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L841",
+      "source_location": "L840",
       "id": "container_lifecycle_test_testshellskipsstopwhensiblingexecrunning",
       "community": 2,
       "norm_label": "testshellskipsstopwhensiblingexecrunning()"
@@ -2909,7 +2918,7 @@
       "label": "TestShellStopsWhenNoSiblingExecs()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L876",
+      "source_location": "L875",
       "id": "container_lifecycle_test_testshellstopswhennosiblingexecs",
       "community": 2,
       "norm_label": "testshellstopswhennosiblingexecs()"
@@ -2918,7 +2927,7 @@
       "label": "captureStderr()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L912",
+      "source_location": "L911",
       "id": "container_lifecycle_test_capturestderr",
       "community": 2,
       "norm_label": "capturestderr()"
@@ -2927,7 +2936,7 @@
       "label": "TestShellPublishPopulatesBindings()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L936",
+      "source_location": "L935",
       "id": "container_lifecycle_test_testshellpublishpopulatesbindings",
       "community": 2,
       "norm_label": "testshellpublishpopulatesbindings()"
@@ -2936,7 +2945,7 @@
       "label": "TestShellPublishEmptyYieldsNoBindings()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L1003",
+      "source_location": "L1002",
       "id": "container_lifecycle_test_testshellpublishemptyyieldsnobindings",
       "community": 2,
       "norm_label": "testshellpublishemptyyieldsnobindings()"
@@ -2945,7 +2954,7 @@
       "label": "TestShellInspectNilContainerJSONBase()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L1052",
+      "source_location": "L1051",
       "id": "container_lifecycle_test_testshellinspectnilcontainerjsonbase",
       "community": 2,
       "norm_label": "testshellinspectnilcontainerjsonbase()"
@@ -2954,7 +2963,7 @@
       "label": "TestSessionPlanEarlyExitOnShellMismatch()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L1110",
+      "source_location": "L1109",
       "id": "container_lifecycle_test_testsessionplanearlyexitonshellmismatch",
       "community": 2,
       "norm_label": "testsessionplanearlyexitonshellmismatch()"
@@ -2963,7 +2972,7 @@
       "label": "TestShellCreateUsesResolvedShellCmd()",
       "file_type": "code",
       "source_file": "internal/container/lifecycle_test.go",
-      "source_location": "L1137",
+      "source_location": "L1136",
       "id": "container_lifecycle_test_testshellcreateusesresolvedshellcmd",
       "community": 2,
       "norm_label": "testshellcreateusesresolvedshellcmd()"
@@ -3050,57 +3059,156 @@
       "norm_label": "version.go"
     },
     {
+      "label": "imagepull_test.go",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L1",
+      "id": "internal_imagepull_imagepull_test_go",
+      "community": 41,
+      "norm_label": "imagepull_test.go"
+    },
+    {
+      "label": "TestMarkerPath()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L18",
+      "id": "imagepull_imagepull_test_testmarkerpath",
+      "community": 41,
+      "norm_label": "testmarkerpath()"
+    },
+    {
+      "label": "TestCachedMissingMarker()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L43",
+      "id": "imagepull_imagepull_test_testcachedmissingmarker",
+      "community": 41,
+      "norm_label": "testcachedmissingmarker()"
+    },
+    {
+      "label": "TestCachedFreshMarker()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L50",
+      "id": "imagepull_imagepull_test_testcachedfreshmarker",
+      "community": 41,
+      "norm_label": "testcachedfreshmarker()"
+    },
+    {
+      "label": "TestCachedStaleMarker()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L62",
+      "id": "imagepull_imagepull_test_testcachedstalemarker",
+      "community": 41,
+      "norm_label": "testcachedstalemarker()"
+    },
+    {
+      "label": "TestRecordCreatesMissingDirs()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L78",
+      "id": "imagepull_imagepull_test_testrecordcreatesmissingdirs",
+      "community": 41,
+      "norm_label": "testrecordcreatesmissingdirs()"
+    },
+    {
+      "label": "TestIsAuthError()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L94",
+      "id": "imagepull_imagepull_test_testisautherror",
+      "community": 41,
+      "norm_label": "testisautherror()"
+    },
+    {
+      "label": "TestRegistryOf()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L120",
+      "id": "imagepull_imagepull_test_testregistryof",
+      "community": 41,
+      "norm_label": "testregistryof()"
+    },
+    {
       "label": "imagepull.go",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L1",
       "id": "internal_imagepull_imagepull_go",
-      "community": 0,
+      "community": 41,
       "norm_label": "imagepull.go"
     },
     {
       "label": "RefreshIfStale()",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
-      "source_location": "L42",
+      "source_location": "L44",
       "id": "imagepull_imagepull_refreshifstale",
-      "community": 0,
+      "community": 41,
       "norm_label": "refreshifstale()"
     },
     {
       "label": "pull()",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
-      "source_location": "L57",
+      "source_location": "L65",
       "id": "imagepull_imagepull_pull",
-      "community": 0,
+      "community": 41,
       "norm_label": "pull()"
+    },
+    {
+      "label": "warnPullError()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L91",
+      "id": "imagepull_imagepull_warnpullerror",
+      "community": 41,
+      "norm_label": "warnpullerror()"
+    },
+    {
+      "label": "isAuthError()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L107",
+      "id": "imagepull_imagepull_isautherror",
+      "community": 41,
+      "norm_label": "isautherror()"
+    },
+    {
+      "label": "registryOf()",
+      "file_type": "code",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L127",
+      "id": "imagepull_imagepull_registryof",
+      "community": 41,
+      "norm_label": "registryof()"
     },
     {
       "label": "markerPath()",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
-      "source_location": "L82",
+      "source_location": "L143",
       "id": "imagepull_imagepull_markerpath",
-      "community": 0,
+      "community": 41,
       "norm_label": "markerpath()"
     },
     {
       "label": "cached()",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
-      "source_location": "L95",
+      "source_location": "L156",
       "id": "imagepull_imagepull_cached",
-      "community": 0,
+      "community": 41,
       "norm_label": "cached()"
     },
     {
       "label": "record()",
       "file_type": "code",
       "source_file": "internal/imagepull/imagepull.go",
-      "source_location": "L111",
+      "source_location": "L176",
       "id": "imagepull_imagepull_record",
-      "community": 0,
+      "community": 41,
       "norm_label": "record()"
     },
     {
@@ -3401,10 +3509,28 @@
       "norm_label": "code:bash (# forward host port 7171 to the same port in the container.)"
     },
     {
-      "label": "Loading order",
+      "label": "Wrangler OAuth login",
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L214",
+      "id": "toolbox_readme_wrangler_oauth_login",
+      "community": 7,
+      "norm_label": "wrangler oauth login"
+    },
+    {
+      "label": "code:bash (toolbox shell -p 8976:8976)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L218",
+      "id": "toolbox_readme_codeblock_11",
+      "community": 7,
+      "norm_label": "code:bash (toolbox shell -p 8976:8976)"
+    },
+    {
+      "label": "Loading order",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L226",
       "id": "toolbox_readme_loading_order",
       "community": 7,
       "norm_label": "loading order"
@@ -3413,7 +3539,7 @@
       "label": "CLI commands",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L224",
+      "source_location": "L236",
       "id": "toolbox_readme_cli_commands",
       "community": 7,
       "norm_label": "cli commands"
@@ -3422,7 +3548,7 @@
       "label": "Updating",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L234",
+      "source_location": "L246",
       "id": "toolbox_readme_updating",
       "community": 7,
       "norm_label": "updating"
@@ -3431,8 +3557,8 @@
       "label": "code:bash (brew upgrade toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L236",
-      "id": "toolbox_readme_codeblock_11",
+      "source_location": "L248",
+      "id": "toolbox_readme_codeblock_12",
       "community": 7,
       "norm_label": "code:bash (brew upgrade toolbox)"
     },
@@ -3440,8 +3566,8 @@
       "label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L242",
-      "id": "toolbox_readme_codeblock_12",
+      "source_location": "L254",
+      "id": "toolbox_readme_codeblock_13",
       "community": 7,
       "norm_label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)"
     },
@@ -3449,7 +3575,7 @@
       "label": "License",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L246",
+      "source_location": "L258",
       "id": "toolbox_readme_license",
       "community": 7,
       "norm_label": "license"
@@ -3887,6 +4013,132 @@
       "norm_label": "[`gsd.sh`](./gsd.sh) \u2014 get-shit-done"
     },
     {
+      "label": "TestRenderExampleYAMLContainsAllToolsAndMounts()",
+      "file_type": "code",
+      "source_file": "cmd/config_subcmd_test.go",
+      "source_location": "L13",
+      "community": 10,
+      "norm_label": "testrenderexampleyamlcontainsalltoolsandmounts()",
+      "id": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts"
+    },
+    {
+      "label": "config_example.go",
+      "file_type": "code",
+      "source_file": "cmd/config_example.go",
+      "source_location": "L1",
+      "community": 10,
+      "norm_label": "config_example.go",
+      "id": "cmd_config_example_go"
+    },
+    {
+      "label": "renderExampleYAML()",
+      "file_type": "code",
+      "source_file": "cmd/config_example.go",
+      "source_location": "L16",
+      "community": 10,
+      "norm_label": "renderexampleyaml()",
+      "id": "cmd_config_example_renderexampleyaml"
+    },
+    {
+      "label": "shellcmd_test.go",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L1",
+      "community": 12,
+      "norm_label": "shellcmd_test.go",
+      "id": "internal_shellcmd_shellcmd_test_go"
+    },
+    {
+      "label": "TestResolveShellCmdZshEnabled()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L14",
+      "community": 12,
+      "norm_label": "testresolveshellcmdzshenabled()",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled"
+    },
+    {
+      "label": "TestResolveShellCmdBash()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L30",
+      "community": 12,
+      "norm_label": "testresolveshellcmdbash()",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdbash"
+    },
+    {
+      "label": "TestResolveShellCmdZshDisabledError()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L47",
+      "community": 12,
+      "norm_label": "testresolveshellcmdzshdisablederror()",
+      "id": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror"
+    },
+    {
+      "label": "TestNestedSandboxSecurityOptDefault()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L75",
+      "community": 12,
+      "norm_label": "testnestedsandboxsecurityoptdefault()",
+      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault"
+    },
+    {
+      "label": "TestNestedSandboxSecurityOptCodexDisabled()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L84",
+      "community": 12,
+      "norm_label": "testnestedsandboxsecurityoptcodexdisabled()",
+      "id": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled"
+    },
+    {
+      "label": "shellcmd.go",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L1",
+      "community": 12,
+      "norm_label": "shellcmd.go",
+      "id": "internal_shellcmd_shellcmd_go"
+    },
+    {
+      "label": "ShellMismatchError",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L23",
+      "community": 12,
+      "norm_label": "shellmismatcherror",
+      "id": "shellcmd_shellmismatcherror"
+    },
+    {
+      "label": ".Error()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L27",
+      "community": 12,
+      "norm_label": ".error()",
+      "id": "shellcmd_shellmismatcherror_error"
+    },
+    {
+      "label": "ResolveShellCmd()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L42",
+      "community": 12,
+      "norm_label": "resolveshellcmd()",
+      "id": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "label": "NestedSandboxSecurityOpt()",
+      "file_type": "code",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L58",
+      "community": 12,
+      "norm_label": "nestedsandboxsecurityopt()",
+      "id": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+    },
+    {
       "label": "resolveWorkspace()",
       "file_type": "code",
       "source_file": "cmd/shell.go",
@@ -3945,7 +4197,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L373",
-      "community": 0,
+      "community": 41,
       "norm_label": "pullimage()",
       "id": "container_lifecycle_pullimage"
     },
@@ -5968,16 +6220,6 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L13",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "cmd_config_subcmd_test_go",
-      "target": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "cmd/config_subcmd_test.go",
       "source_location": "L36",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -6005,15 +6247,14 @@
       "target": "cmd_config_subcmd_test_testwriteresolvedconfignilconfigerrors"
     },
     {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "cmd/config_subcmd_test.go",
-      "source_location": "L14",
+      "source_location": "L13",
       "weight": 1.0,
-      "source": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts",
-      "target": "cmd_config_example_renderexampleyaml"
+      "confidence_score": 1.0,
+      "source": "cmd_config_subcmd_test_go",
+      "target": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts"
     },
     {
       "relation": "contains",
@@ -6188,27 +6429,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "cmd/config_example.go",
-      "source_location": "L16",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "cmd_config_example_go",
-      "target": "cmd_config_example_renderexampleyaml"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "cmd/init.go",
-      "source_location": "L39",
-      "weight": 1.0,
-      "source": "cmd_init_runinit",
-      "target": "cmd_config_example_renderexampleyaml"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "cmd/args_test.go",
       "source_location": "L16",
       "weight": 1.0,
@@ -6273,9 +6493,9 @@
       "source_file": "cmd/signalctx_test.go",
       "source_location": "L8",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "cmd_signalctx_test_go",
-      "target": "cmd_signalctx_test_testsignalctxreturnscancellablecontext",
-      "confidence_score": 1.0
+      "target": "cmd_signalctx_test_testsignalctxreturnscancellablecontext"
     },
     {
       "relation": "calls",
@@ -6521,6 +6741,28 @@
       "confidence_score": 1.0,
       "source": "cmd_init_go",
       "target": "cmd_init_init"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "cmd/init.go",
+      "source_location": "L41",
+      "weight": 1.0,
+      "source": "cmd_init_runinit",
+      "target": "configexample_render_render"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "cmd/init.go",
+      "source_location": "L39",
+      "weight": 1.0,
+      "source": "cmd_init_runinit",
+      "target": "cmd_config_example_renderexampleyaml"
     },
     {
       "relation": "contains",
@@ -6898,6 +7140,28 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L93",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_warnpullerror",
+      "target": "ui_output_warning"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L179",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_record",
+      "target": "ui_output_warning"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L61",
       "weight": 1.0,
       "source": "imagepull_imagepull_pull",
@@ -6946,249 +7210,6 @@
       "weight": 1.0,
       "source": "container_lifecycle_pullimage",
       "target": "ui_output_info"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L14",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_test_go",
-      "target": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L30",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_test_go",
-      "target": "shellcmd_shellcmd_test_testresolveshellcmdbash"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L47",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_test_go",
-      "target": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L75",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_test_go",
-      "target": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L84",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_test_go",
-      "target": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L17",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
-      "target": "config_tools_defaulttools"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L19",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L33",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testresolveshellcmdbash",
-      "target": "config_tools_defaulttools"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L35",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testresolveshellcmdbash",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L52",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L76",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
-      "target": "config_tools_defaulttools"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L77",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
-      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd_test.go",
-      "source_location": "L89",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled",
-      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L23",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_go",
-      "target": "shellcmd_shellmismatcherror"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L42",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_go",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L58",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_shellcmd_shellcmd_go",
-      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L27",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "shellcmd_shellmismatcherror",
-      "target": "shellcmd_shellmismatcherror_error"
-    },
-    {
-      "relation": "returns_error_of_type",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": null,
-      "weight": 1.0,
-      "source": "shellcmd_resolveshellcmd",
-      "target": "shellcmd_shellmismatcherror"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/shellcmd/shellcmd.go",
-      "source_location": "L43",
-      "weight": 1.0,
-      "source": "shellcmd_shellcmd_resolveshellcmd",
-      "target": "config_config_validateshell"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L88",
-      "weight": 1.0,
-      "source": "sessionplan_plan_plan",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L141",
-      "weight": 1.0,
-      "source": "sessionplan_plan_merge",
-      "target": "shellcmd_shellcmd_resolveshellcmd"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L110",
-      "weight": 1.0,
-      "source": "sessionplan_plan_plan",
-      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/sessionplan/plan.go",
-      "source_location": "L155",
-      "weight": 1.0,
-      "source": "sessionplan_plan_merge",
-      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
     },
     {
       "relation": "contains",
@@ -8628,6 +8649,28 @@
       "context": "call",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L35",
+      "weight": 1.0,
+      "source": "sessionplan_shell_resolveshellcmd",
+      "target": "config_config_validateshell"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L43",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_resolveshellcmd",
+      "target": "config_config_validateshell"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
       "source_file": "internal/config/plan.go",
       "source_location": "L203",
       "weight": 1.0,
@@ -8963,6 +9006,39 @@
       "source_location": "L1171",
       "weight": 1.0,
       "source": "container_lifecycle_test_testshellcreateusesresolvedshellcmd",
+      "target": "config_tools_defaulttools"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L17",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
+      "target": "config_tools_defaulttools"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testresolveshellcmdbash",
+      "target": "config_tools_defaulttools"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
       "target": "config_tools_defaulttools"
     },
     {
@@ -9551,9 +9627,9 @@
       "source_file": "internal/workspace/workspace_test.go",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_workspace_workspace_test_go",
-      "target": "workspace_workspace_test_testvalidaterejectscolon",
-      "confidence_score": 1.0
+      "target": "workspace_workspace_test_testvalidaterejectscolon"
     },
     {
       "relation": "contains",
@@ -9561,9 +9637,9 @@
       "source_file": "internal/workspace/workspace_test.go",
       "source_location": "L12",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_workspace_workspace_test_go",
-      "target": "workspace_workspace_test_testvalidateacceptscommonpaths",
-      "confidence_score": 1.0
+      "target": "workspace_workspace_test_testvalidateacceptscommonpaths"
     },
     {
       "relation": "calls",
@@ -9593,9 +9669,9 @@
       "source_file": "internal/workspace/workspace.go",
       "source_location": "L19",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_workspace_workspace_go",
-      "target": "workspace_workspace_resolve",
-      "confidence_score": 1.0
+      "target": "workspace_workspace_resolve"
     },
     {
       "relation": "contains",
@@ -9603,9 +9679,9 @@
       "source_file": "internal/workspace/workspace.go",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_workspace_workspace_go",
-      "target": "workspace_workspace_validate",
-      "confidence_score": 1.0
+      "target": "workspace_workspace_validate"
     },
     {
       "relation": "calls",
@@ -9614,9 +9690,114 @@
       "source_file": "internal/workspace/workspace.go",
       "source_location": "L29",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "workspace_workspace_resolve",
-      "target": "workspace_workspace_validate",
+      "target": "workspace_workspace_validate"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_test_go",
+      "target": "sessionplan_shell_test_testresolveshellcmdzshenabled",
       "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_test_go",
+      "target": "sessionplan_shell_test_testresolveshellcmdbash",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L41",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_test_go",
+      "target": "sessionplan_shell_test_testresolveshellcmdzshdisablederror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L69",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_test_go",
+      "target": "sessionplan_shell_test_testnestedsandboxsecurityoptdefault",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L77",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_test_go",
+      "target": "sessionplan_shell_test_testnestedsandboxsecurityoptcodexdisabled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "sessionplan_shell_test_testresolveshellcmdzshenabled",
+      "target": "sessionplan_shell_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L29",
+      "weight": 1.0,
+      "source": "sessionplan_shell_test_testresolveshellcmdbash",
+      "target": "sessionplan_shell_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "sessionplan_shell_test_testresolveshellcmdzshdisablederror",
+      "target": "sessionplan_shell_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L70",
+      "weight": 1.0,
+      "source": "sessionplan_shell_test_testnestedsandboxsecurityoptdefault",
+      "target": "sessionplan_shell_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/shell_test.go",
+      "source_location": "L82",
+      "weight": 1.0,
+      "source": "sessionplan_shell_test_testnestedsandboxsecurityoptcodexdisabled",
+      "target": "sessionplan_shell_nestedsandboxsecurityopt"
     },
     {
       "relation": "contains",
@@ -9825,6 +10006,50 @@
     {
       "relation": "calls",
       "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L87",
+      "weight": 1.0,
+      "source": "sessionplan_plan_plan",
+      "target": "sessionplan_shell_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L109",
+      "weight": 1.0,
+      "source": "sessionplan_plan_plan",
+      "target": "sessionplan_shell_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L88",
+      "weight": 1.0,
+      "source": "sessionplan_plan_plan",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L110",
+      "weight": 1.0,
+      "source": "sessionplan_plan_plan",
+      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L120",
@@ -9865,6 +10090,50 @@
       "confidence_score": 1.0,
       "source": "sessionplan_plan_merge",
       "target": "sessionplan_plan_containernamefor"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L140",
+      "weight": 1.0,
+      "source": "sessionplan_plan_merge",
+      "target": "sessionplan_shell_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L154",
+      "weight": 1.0,
+      "source": "sessionplan_plan_merge",
+      "target": "sessionplan_shell_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L141",
+      "weight": 1.0,
+      "source": "sessionplan_plan_merge",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/sessionplan/plan.go",
+      "source_location": "L155",
+      "weight": 1.0,
+      "source": "sessionplan_plan_merge",
+      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
     },
     {
       "relation": "calls",
@@ -9953,6 +10222,46 @@
       "weight": 1.0,
       "source": "container_lifecycle_test_testshellcreatesnewcontainer",
       "target": "sessionplan_plan_containernamefor"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_go",
+      "target": "sessionplan_shellmismatcherror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L34",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_go",
+      "target": "sessionplan_shell_resolveshellcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L50",
+      "weight": 1.0,
+      "source": "internal_sessionplan_shell_go",
+      "target": "sessionplan_shell_nestedsandboxsecurityopt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/sessionplan/shell.go",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "sessionplan_shellmismatcherror",
+      "target": "sessionplan_shellmismatcherror_error",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -10462,6 +10771,37 @@
       "weight": 1.0,
       "source": "container_lifecycle_recordpull",
       "target": "sessionplan_plan_test_mkdirall"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/configexample/render.go",
+      "source_location": "L18",
+      "weight": 1.0,
+      "source": "internal_configexample_render_go",
+      "target": "configexample_render_render",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/configexample/render_test.go",
+      "source_location": "L13",
+      "weight": 1.0,
+      "source": "configexample_render_test_testrendercontainsalltoolsandmounts",
+      "target": "configexample_render_render"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/configexample/render_test.go",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "internal_configexample_render_test_go",
+      "target": "configexample_render_test_testrendercontainsalltoolsandmounts",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -12299,12 +12639,192 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L18",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testmarkerpath",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L43",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testcachedmissingmarker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L50",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testcachedfreshmarker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L62",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testcachedstalemarker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L78",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testrecordcreatesmissingdirs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L94",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testisautherror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L120",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_test_go",
+      "target": "imagepull_imagepull_test_testregistryof",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testmarkerpath",
+      "target": "imagepull_imagepull_markerpath"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedmissingmarker",
+      "target": "imagepull_imagepull_cached"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedfreshmarker",
+      "target": "imagepull_imagepull_record"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L54",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedfreshmarker",
+      "target": "imagepull_imagepull_cached"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedstalemarker",
+      "target": "imagepull_imagepull_record"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L67",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedstalemarker",
+      "target": "imagepull_imagepull_markerpath"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L73",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testcachedstalemarker",
+      "target": "imagepull_imagepull_cached"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L82",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testrecordcreatesmissingdirs",
+      "target": "imagepull_imagepull_record"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L113",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testisautherror",
+      "target": "imagepull_imagepull_isautherror"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/imagepull/imagepull_test.go",
+      "source_location": "L130",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_test_testregistryof",
+      "target": "imagepull_imagepull_registryof"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L42",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_imagepull_imagepull_go",
-      "target": "imagepull_imagepull_refreshifstale",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_refreshifstale"
     },
     {
       "relation": "contains",
@@ -12312,8 +12832,38 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L57",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_imagepull_imagepull_go",
-      "target": "imagepull_imagepull_pull",
+      "target": "imagepull_imagepull_pull"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L91",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_go",
+      "target": "imagepull_imagepull_warnpullerror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_go",
+      "target": "imagepull_imagepull_isautherror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L127",
+      "weight": 1.0,
+      "source": "internal_imagepull_imagepull_go",
+      "target": "imagepull_imagepull_registryof",
       "confidence_score": 1.0
     },
     {
@@ -12322,9 +12872,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L82",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_imagepull_imagepull_go",
-      "target": "imagepull_imagepull_markerpath",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_markerpath"
     },
     {
       "relation": "contains",
@@ -12332,9 +12882,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L95",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_imagepull_imagepull_go",
-      "target": "imagepull_imagepull_cached",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_cached"
     },
     {
       "relation": "contains",
@@ -12342,9 +12892,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L111",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_imagepull_imagepull_go",
-      "target": "imagepull_imagepull_record",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_record"
     },
     {
       "relation": "calls",
@@ -12353,9 +12903,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L43",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "imagepull_imagepull_refreshifstale",
-      "target": "imagepull_imagepull_cached",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_cached"
     },
     {
       "relation": "calls",
@@ -12364,9 +12914,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L46",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "imagepull_imagepull_refreshifstale",
-      "target": "imagepull_imagepull_pull",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_pull"
     },
     {
       "relation": "calls",
@@ -12375,8 +12925,41 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L47",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "imagepull_imagepull_refreshifstale",
-      "target": "imagepull_imagepull_record",
+      "target": "imagepull_imagepull_record"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L69",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_pull",
+      "target": "imagepull_imagepull_warnpullerror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L92",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_warnpullerror",
+      "target": "imagepull_imagepull_isautherror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/imagepull/imagepull.go",
+      "source_location": "L94",
+      "weight": 1.0,
+      "source": "imagepull_imagepull_warnpullerror",
+      "target": "imagepull_imagepull_registryof",
       "confidence_score": 1.0
     },
     {
@@ -12386,9 +12969,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L96",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "imagepull_imagepull_cached",
-      "target": "imagepull_imagepull_markerpath",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_markerpath"
     },
     {
       "relation": "calls",
@@ -12397,9 +12980,9 @@
       "source_file": "internal/imagepull/imagepull.go",
       "source_location": "L112",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "imagepull_imagepull_record",
-      "target": "imagepull_imagepull_markerpath",
-      "confidence_score": 1.0
+      "target": "imagepull_imagepull_markerpath"
     },
     {
       "relation": "contains",
@@ -12755,6 +13338,26 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
+      "source_location": "L214",
+      "weight": 1.0,
+      "source": "toolbox_readme_publishing_ports",
+      "target": "toolbox_readme_wrangler_oauth_login",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L218",
+      "weight": 1.0,
+      "source": "toolbox_readme_wrangler_oauth_login",
+      "target": "toolbox_readme_codeblock_11",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
       "source_location": "L234",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -12770,6 +13373,16 @@
       "confidence_score": 1.0,
       "source": "toolbox_readme_updating",
       "target": "toolbox_readme_codeblock_12"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "toolbox_readme_updating",
+      "target": "toolbox_readme_codeblock_13",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -13210,6 +13823,182 @@
       "confidence_score": 1.0,
       "source": "startup_d_readme_examples",
       "target": "startup_d_readme_gsd_sh_gsd_sh_get_shit_done"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "cmd/config_subcmd_test.go",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "cmd_config_subcmd_test_testrenderexampleyamlcontainsalltoolsandmounts",
+      "target": "cmd_config_example_renderexampleyaml"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "cmd/config_example.go",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "cmd_config_example_go",
+      "target": "cmd_config_example_renderexampleyaml"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_test_go",
+      "target": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L30",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_test_go",
+      "target": "shellcmd_shellcmd_test_testresolveshellcmdbash"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L47",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_test_go",
+      "target": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L75",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_test_go",
+      "target": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L84",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_test_go",
+      "target": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshenabled",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L35",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testresolveshellcmdbash",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L52",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testresolveshellcmdzshdisablederror",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L77",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptdefault",
+      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/shellcmd/shellcmd_test.go",
+      "source_location": "L89",
+      "weight": 1.0,
+      "source": "shellcmd_shellcmd_test_testnestedsandboxsecurityoptcodexdisabled",
+      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L23",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_go",
+      "target": "shellcmd_shellmismatcherror"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L42",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_go",
+      "target": "shellcmd_shellcmd_resolveshellcmd"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L58",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "internal_shellcmd_shellcmd_go",
+      "target": "shellcmd_shellcmd_nestedsandboxsecurityopt"
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": "L27",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "shellcmd_shellmismatcherror",
+      "target": "shellcmd_shellmismatcherror_error"
+    },
+    {
+      "relation": "returns_error_of_type",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "internal/shellcmd/shellcmd.go",
+      "source_location": null,
+      "weight": 1.0,
+      "source": "shellcmd_resolveshellcmd",
+      "target": "shellcmd_shellmismatcherror"
     },
     {
       "relation": "calls",
@@ -14757,5 +15546,5 @@
       "source_location": null
     }
   ],
-  "built_at_commit": "dd5f4825c3c9706627393213aeb5d60e488e33d6"
+  "built_at_commit": "de7795a943f3839194e1ce8532ba4a309b7c9ac2"
 }

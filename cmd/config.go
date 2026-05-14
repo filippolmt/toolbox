@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configexample"
 )
 
 var configCmd = &cobra.Command{
@@ -39,7 +40,7 @@ field. Pipe to a file (toolbox config example > .toolbox.yaml) or use
 toolbox init to write it to the current directory.`,
 	Args: usageArgs(cobra.NoArgs),
 	Run: func(cmd *cobra.Command, args []string) {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), renderExampleYAML())
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), configexample.Render())
 	},
 }
 

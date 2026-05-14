@@ -83,7 +83,7 @@ Adding (or removing) an entry in `internal/catalog/catalog.go` `Entries` invalid
 
 ### Codex nested sandbox
 
-When `tools.codex` is enabled (default), `toolbox shell` creates the container with Docker `seccomp=unconfined` so Codex's built-in bubblewrap sandbox can create nested user namespaces. With `tools.codex: false` the container keeps Docker's default seccomp profile. The flag flip lives in `shellcmd.NestedSandboxSecurityOpt`.
+When `tools.codex` is enabled (default), `toolbox shell` creates the container with Docker `seccomp=unconfined` so Codex's built-in bubblewrap sandbox can create nested user namespaces. With `tools.codex: false` the container keeps Docker's default seccomp profile. The flag flip lives in `sessionplan.NestedSandboxSecurityOpt`.
 
 ## Shell start
 

@@ -87,7 +87,7 @@ options.
 
 Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
 (or mountplan.Merge for pure inspection) → ContainerNameFor → shellEnv
-→ shellcmd.ResolveShellCmd → shellcmd.NestedSandboxSecurityOpt`. Owned
+→ ResolveShellCmd → NestedSandboxSecurityOpt`. Owned
 by `internal/sessionplan`. The single seam runtime callers and tests
 cross is `sessionplan.Plan(cfg, workspace, ports, cliVersion)`; pure
 inspection (no filesystem side-effects) is exposed as

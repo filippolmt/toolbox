@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+
+	"github.com/filippolmt/toolbox/internal/configexample"
 )
 
 var initForce bool
@@ -36,7 +38,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := os.WriteFile(path, []byte(renderExampleYAML()), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(configexample.Render()), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", path)

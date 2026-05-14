@@ -1,16 +1,16 @@
 # Graph Report - toolbox  (2026-05-14)
 
 ## Corpus Check
-- 63 files · ~39,225 words
+- 65 files · ~40,184 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 556 nodes · 867 edges · 41 communities (37 shown, 4 thin omitted)
-- Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 232 edges (avg confidence: 0.8)
+- 584 nodes · 918 edges · 42 communities (38 shown, 4 thin omitted)
+- Extraction: 72% EXTRACTED · 28% INFERRED · 0% AMBIGUOUS · INFERRED: 256 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `dd5f4825`
+- Built from commit: `de7795a9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -44,6 +44,7 @@
 - [[_COMMUNITY_Community 32|Community 32]]
 - [[_COMMUNITY_Community 34|Community 34]]
 - [[_COMMUNITY_Community 39|Community 39]]
+- [[_COMMUNITY_Community 41|Community 41]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Shell()` - 33 edges
@@ -60,13 +61,13 @@
 ## Surprising Connections (you probably didn't know these)
 - `examples/startup.d/README.md` --references--> `init.d Bijection`  [INFERRED]
   examples/startup.d/README.md → internal/catalog/init_d_bijection_test.go
+- `runBuild()` --calls--> `Info()`  [INFERRED]
+  cmd/build.go → internal/ui/output.go
 - `runShell()` --calls--> `Shell()`  [INFERRED]
   cmd/shell.go → internal/container/lifecycle.go
 - `TestInitConfigExplicitFileIsRead()` --calls--> `Keys()`  [INFERRED]
   cmd/config_test.go → internal/catalog/catalog.go
 - `TestInitConfigProjectFileWalksUpFromSubdir()` --calls--> `mkdirAll()`  [INFERRED]
-  cmd/config_test.go → internal/sessionplan/plan_test.go
-- `TestInitConfigProjectFileStopsAtHome()` --calls--> `mkdirAll()`  [INFERRED]
   cmd/config_test.go → internal/sessionplan/plan_test.go
 
 ## Hyperedges (group relationships)
@@ -80,11 +81,11 @@
 - **** — sessionplan_plan, container_shell, container_execshell [EXTRACTED 1.00]
 - **** — catalog_entries, concept_image_hash_invalidation, catalog_writecanonicalentries [EXTRACTED 1.00]
 
-## Communities (41 total, 4 thin omitted)
+## Communities (42 total, 4 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.07
-Nodes (37): runBuild(), resolveWorkspace(), runShell(), validateWorkspacePath(), TestSignalCtxReturnsCancellableContext(), TestValidateWorkspacePathAcceptsCommonPaths(), TestValidateWorkspacePathRejectsColon(), signalCtx() (+29 more)
+Cohesion: 0.09
+Nodes (23): runBuild(), resolveWorkspace(), runShell(), validateWorkspacePath(), TestSignalCtxReturnsCancellableContext(), TestValidateWorkspacePathAcceptsCommonPaths(), TestValidateWorkspacePathRejectsColon(), signalCtx() (+15 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.07
@@ -112,7 +113,7 @@ Nodes (26): TestPlanGlobalUnreadableIsBestEffort(), TestPlanWalksUpFromSubdir(),
 
 ### Community 7 - "Community 7"
 Cohesion: 0.06
-Nodes (30): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest), code:bash (toolbox version), code:bash (# Pull the toolbox image from GHCR) (+22 more)
+Nodes (32): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (toolbox shell -p 8976:8976), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest), code:bash (toolbox version) (+24 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.07
@@ -123,16 +124,16 @@ Cohesion: 0.1
 Nodes (27): buildCmd, buildNoCache, runBuild, completionCmd, configCmd, configExampleCmd, configShowCmd, renderExampleYAML (+19 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.12
-Nodes (15): TestCatalogDockerfileBijection(), renderExampleYAML(), TestRenderExampleYAMLContainsAllToolsAndMounts(), TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig(), runInit() (+7 more)
+Cohesion: 0.1
+Nodes (17): TestCatalogDockerfileBijection(), renderExampleYAML(), TestRenderExampleYAMLContainsAllToolsAndMounts(), TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig(), runInit() (+9 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.14
 Nodes (12): TestUsageArgsWraps(), resetCmdState(), TestInitConfigAppliesDefaults(), TestInitConfigExplicitFileIsRead(), TestInitConfigProjectFileFromCWD(), TestInitConfigProjectFileStopsAtHome(), TestInitConfigProjectFileWalksUpFromSubdir(), Execute() (+4 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.17
-Nodes (17): TestIsDefaultTools(), DefaultTools(), IsDefaultTools(), ContainerNameFor(), Merge(), normalizeWorkspace(), parsePublishSpecs(), Plan() (+9 more)
+Cohesion: 0.11
+Nodes (25): TestIsDefaultTools(), DefaultTools(), IsDefaultTools(), ContainerNameFor(), Merge(), normalizeWorkspace(), parsePublishSpecs(), Plan() (+17 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.1
@@ -182,6 +183,10 @@ Nodes (3): Commits & PRs, Contributing, Release flow
 Cohesion: 0.5
 Nodes (4): main, Execute, usageArgs, usageError
 
+### Community 41 - "Community 41"
+Cohesion: 0.16
+Nodes (24): pullImage(), cached(), isAuthError(), markerPath(), pull(), record(), RefreshIfStale(), registryOf() (+16 more)
+
 ## Knowledge Gaps
 - **102 isolated node(s):** `Result`, `Mount Plan`, `Tool Catalog`, `Config Plan`, `Session Plan` (+97 more)
   These have ≤1 connection - possible missing edges or undocumented components.
@@ -190,12 +195,12 @@ Nodes (4): main, Execute, usageArgs, usageError
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Shell()` connect `Community 2` to `Community 0`, `Community 10`, `Community 20`?**
-  _High betweenness centrality (0.131) - this node is a cross-community bridge._
-- **Why does `mkdirAll()` connect `Community 6` to `Community 0`, `Community 11`, `Community 14`, `Community 15`?**
-  _High betweenness centrality (0.113) - this node is a cross-community bridge._
+- **Why does `Shell()` connect `Community 2` to `Community 0`, `Community 41`, `Community 10`, `Community 20`?**
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
+- **Why does `mkdirAll()` connect `Community 6` to `Community 0`, `Community 41`, `Community 11`, `Community 14`, `Community 15`?**
+  _High betweenness centrality (0.122) - this node is a cross-community bridge._
 - **Why does `Merge()` connect `Community 15` to `Community 1`, `Community 3`?**
-  _High betweenness centrality (0.097) - this node is a cross-community bridge._
+  _High betweenness centrality (0.093) - this node is a cross-community bridge._
 - **Are the 24 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
   _`Shell()` has 24 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 12 inferred relationships involving `mkdirAll()` (e.g. with `TestInitConfigProjectFileWalksUpFromSubdir()` and `TestInitConfigProjectFileStopsAtHome()`) actually correct?**
@@ -203,4 +208,4 @@ _Questions this graph is uniquely positioned to answer:_
 - **What connects `Result`, `Mount Plan`, `Tool Catalog` to the rest of the system?**
   _102 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.07 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09 - nodes in this community are weakly interconnected._
