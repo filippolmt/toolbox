@@ -109,6 +109,35 @@ that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
 
+### Run Plan
+
+The runtime decision step inside `container.Shell`: given a
+`ContainerInspect` result, decide whether to connect to a running
+container, start a stopped one, or create a fresh one. Pure function, no
+Docker side-effects — the typed `Op` is dispatched at the Docker edge by
+`lifecycle.go::dispatchOp`.
+
+Concretely: `runplan.Compute(inspect, inspectErr) → Op{Action, ExistingID}`
+with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
+`internal/runplan`. A nil `inspect.ContainerJSONBase` and an errdefs
+`NotFound` both route to `ActionCreate` so callers never dereference a
+half-populated record; any other inspect error is returned verbatim and
+the caller aborts. Composes with Session Plan: SessionPlan resolves
+design-time inputs before any Docker call; RunPlan resolves the runtime
+branch after `ContainerInspect`.
+
+Why the term exists: before this concept was named, the state machine
+lived inline in `internal/container/lifecycle.go::Shell` as a 4-case
+switch over the `(hasInspectData, running, inspectErr)` tuple, mixed
+with side-effects (`ui.Info`, `ContainerStart`, `ContainerCreate`).
+Testing the decision required a Docker client mock and an integration
+harness through `Shell`; the nil-base guard pinned by
+`TestShellInspectNilContainerJSONBase` was a tripwire for the same
+absence of a typed decision Layer. The "Run Plan" name turns the
+state machine into one observable typed Op that tests construct without
+Docker, mirroring the Mount Plan / Session Plan / Config Plan deepening
+pattern.
+
 ### Init Sequence
 
 The boot-time per-tool init manifest: a catalog-declared list of small

@@ -4,7 +4,9 @@
 // NewClient. The Shell signature is (ctx, cli, *sessionplan.SessionPlan)
 // — every input that used to be parsed inline (publish specs, image
 // resolution, mount plan, container name, env, security opts) now rides
-// in the typed plan composed by internal/sessionplan.Plan.
+// in the typed plan composed by internal/sessionplan.Plan, and the
+// runtime branch over the ContainerInspect result is the typed Op
+// returned by internal/runplan.Compute and dispatched by dispatchOp.
 //
 // The orchestration Module lives in lifecycle.go (this file), sectioned
 // into Lifecycle and Cleanup helpers. The TTY/signal Adapter lives in
@@ -29,6 +31,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/imagepull"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -102,10 +105,10 @@ func NewClient() (client.APIClient, error) {
 // ~/.toolbox/ (creds, bash history, caches), so nothing is lost by trashing
 // the container itself.
 //
-// State machine:
-//   - running   -> exec directly (recover from a concurrent shell / crash)
-//   - stopped   -> start + exec (same)
-//   - not found -> ensure image, create + start + exec (common path)
+// State machine — dispatched by runplan.Compute on the ContainerInspect result:
+//   - ActionConnect -> exec into the running container
+//   - ActionStart   -> start the stopped container, then exec
+//   - ActionCreate  -> ensure image, create + start + exec
 //
 // Image ensure strategy (see build.ResolveImage):
 //   - defaults config  -> pull the canonical GHCR image (best-effort)
@@ -127,82 +130,20 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
+	op, opErr := runplan.Compute(inspect, inspectErr)
+	if opErr != nil {
+		return fmt.Errorf("failed to inspect container: %w", opErr)
+	}
 
-	// inspect.State, inspect.ID, and friends are promoted fields through the
-	// embedded *ContainerJSONBase pointer, so a nil ContainerJSONBase panics
-	// before any `!= nil` check on the inner field ever runs. Guard the
-	// embedded pointer first. Daemon protocol and the happy-path SDK contract
-	// make ContainerJSONBase non-nil on success, but mocks, future SDK shape
-	// changes, and unexpected daemon edge cases can violate that. A nil base
-	// means we have no usable container record (no ID to start, no State to
-	// inspect) — treat it as the not-found path so Shell creates a fresh
-	// container instead of dereferencing a nil pointer.
-	hasInspectData := inspectErr == nil && inspect.ContainerJSONBase != nil
-	running := hasInspectData && inspect.State != nil && inspect.State.Running
-
-	if hasInspectData && len(plan.PortBindings) > 0 {
+	if op.Action != runplan.ActionCreate && len(plan.PortBindings) > 0 {
 		if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
 			ui.Warning(formatPublishMismatch(plan, inspect, missing))
 		}
 	}
 
-	var containerID string
-	switch {
-	case hasInspectData && running:
-		ui.Info("Connecting to running container " + plan.ContainerName + "...")
-		containerID = inspect.ID
-
-	case hasInspectData && !running:
-		ui.Info("Starting stopped container " + plan.ContainerName + "...")
-		if startErr := cli.ContainerStart(ctx, inspect.ID, container.StartOptions{}); startErr != nil {
-			return fmt.Errorf("failed to start container: %w", startErr)
-		}
-		containerID = inspect.ID
-
-	case inspectErr == nil || cerrdefs.IsNotFound(inspectErr):
-		if ensureErr := ensureImage(ctx, cli, plan.Image.Ref, plan.Image.IsLocal, plan.BuildArgs); ensureErr != nil {
-			return ensureErr
-		}
-
-		binds := make([]string, len(plan.Binds))
-		for i, b := range plan.Binds {
-			binds[i] = b.String()
-		}
-
-		ui.Info("Creating container " + plan.ContainerName + "...")
-		resp, createErr := cli.ContainerCreate(ctx,
-			&container.Config{
-				Image:        plan.Image.Ref,
-				Tty:          true,
-				OpenStdin:    true,
-				Cmd:          plan.Cmd,
-				WorkingDir:   plan.WorkingDir,
-				User:         hostUserSpec(),
-				ExposedPorts: plan.ExposedPorts,
-				Env:          plan.Env,
-			},
-			&container.HostConfig{
-				Binds:        binds,
-				GroupAdd:     dockerSockGroups(binds),
-				PortBindings: plan.PortBindings,
-				SecurityOpt:  plan.SecurityOpt,
-			},
-			nil, // network config
-			nil, // platform
-			plan.ContainerName,
-		)
-		if createErr != nil {
-			return fmt.Errorf("failed to create container: %w", createErr)
-		}
-
-		if startErr := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); startErr != nil {
-			return fmt.Errorf("failed to start container: %w", startErr)
-		}
-		ui.Success("Container started")
-		containerID = resp.ID
-
-	default:
-		return fmt.Errorf("failed to inspect container: %w", inspectErr)
+	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
+	if dispatchErr != nil {
+		return dispatchErr
 	}
 
 	// Auto-remove on exit, unless another shell is still attached to the
@@ -225,6 +166,76 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}()
 
 	return execShellFn(ctx, cli, containerID, plan.Cmd)
+}
+
+// dispatchOp executes the runplan.Op against the Docker daemon and returns
+// the resulting container ID. Each Action maps to a distinct Docker-edge
+// sequence; the pure decision lives in runplan.Compute and is observed via
+// the typed Op rather than being re-derived from inspect data here.
+func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) (string, error) {
+	switch op.Action {
+	case runplan.ActionConnect:
+		ui.Info("Connecting to running container " + plan.ContainerName + "...")
+		return op.ExistingID, nil
+
+	case runplan.ActionStart:
+		ui.Info("Starting stopped container " + plan.ContainerName + "...")
+		if startErr := cli.ContainerStart(ctx, op.ExistingID, container.StartOptions{}); startErr != nil {
+			return "", fmt.Errorf("failed to start container: %w", startErr)
+		}
+		return op.ExistingID, nil
+
+	case runplan.ActionCreate:
+		return createAndStart(ctx, cli, plan)
+
+	default:
+		return "", fmt.Errorf("unknown runplan action: %s", op.Action)
+	}
+}
+
+// createAndStart owns the not-found path: ensure the image is present,
+// create the container from the SessionPlan, start it, return its ID.
+func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, error) {
+	if ensureErr := ensureImage(ctx, cli, plan.Image.Ref, plan.Image.IsLocal, plan.BuildArgs); ensureErr != nil {
+		return "", ensureErr
+	}
+
+	binds := make([]string, len(plan.Binds))
+	for i, b := range plan.Binds {
+		binds[i] = b.String()
+	}
+
+	ui.Info("Creating container " + plan.ContainerName + "...")
+	resp, createErr := cli.ContainerCreate(ctx,
+		&container.Config{
+			Image:        plan.Image.Ref,
+			Tty:          true,
+			OpenStdin:    true,
+			Cmd:          plan.Cmd,
+			WorkingDir:   plan.WorkingDir,
+			User:         hostUserSpec(),
+			ExposedPorts: plan.ExposedPorts,
+			Env:          plan.Env,
+		},
+		&container.HostConfig{
+			Binds:        binds,
+			GroupAdd:     dockerSockGroups(binds),
+			PortBindings: plan.PortBindings,
+			SecurityOpt:  plan.SecurityOpt,
+		},
+		nil, // network config
+		nil, // platform
+		plan.ContainerName,
+	)
+	if createErr != nil {
+		return "", fmt.Errorf("failed to create container: %w", createErr)
+	}
+
+	if startErr := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); startErr != nil {
+		return "", fmt.Errorf("failed to start container: %w", startErr)
+	}
+	ui.Success("Container started")
+	return resp.ID, nil
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.
