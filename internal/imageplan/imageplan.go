@@ -10,16 +10,6 @@
 //     fatally (the upstream pull already had its chance); local hash tags
 //     auto-build from the embedded Dockerfile context using the tools
 //     map's BuildArgs.
-//
-// Before this concept was named, the decision was split: the inline
-// `imagepull.RefreshIfStale` call at the top of `container.Shell` and a
-// package-level `ensureImage` var stub in `internal/container/lifecycle.go`.
-// Reading either site alone missed half the policy ("when do we rebuild?"),
-// and the build.BuildImage call sat behind a per-package test stub that
-// rebuilt the same indirection in every dependent test. Lifting both
-// phases here gives the policy a single owner and turns the auto-build
-// seam into a single package-level var inside imageplan that lifecycle
-// tests can swap without redeclaring the closure each time.
 package imageplan
 
 import (
@@ -47,9 +37,8 @@ func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image)
 
 // Ensure guarantees the image referenced by `image.Ref` exists in the
 // local Docker store. Exposed as a package-level variable so tests can
-// substitute it without redeclaring the auto-build closure at every call
-// site (the legacy `ensureImage` stub pattern that previously lived in
-// internal/container).
+// substitute the auto-build branch without spinning up a real build
+// context.
 var Ensure = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, buildArgs map[string]*string) error {
 	if _, err := cli.ImageInspect(ctx, image.Ref); err == nil {
 		return nil

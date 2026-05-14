@@ -2,13 +2,6 @@
 // given the result of ContainerInspect, decide whether to connect to a
 // running container, start a stopped one, or create a fresh one.
 //
-// The decision was previously inline in internal/container/lifecycle.go
-// as a 4-case switch over the (hasInspectData, running, inspectErr)
-// tuple, mixed with side-effects (ui.Info, ContainerStart, etc.). Lifting
-// it into a typed Op and a pure Compute function makes the state machine
-// observable from tests without a Docker mock and concentrates the
-// "what should happen next?" knowledge in one file.
-//
 // Mirrors the Plan-family pattern: ConfigPlan / MountPlan / SessionPlan
 // compose at design-time before any Docker call; RunPlan composes at
 // runtime from the ContainerInspect snapshot. Lifecycle dispatches on

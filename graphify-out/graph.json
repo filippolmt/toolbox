@@ -125,112 +125,247 @@
   },
   "nodes": [
     {
+      "label": "dockeridentity.go",
+      "file_type": "code",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L1",
+      "id": "dockeridentity_dockeridentity_go",
+      "community": 44,
+      "norm_label": "dockeridentity.go"
+    },
+    {
+      "label": "Identity",
+      "file_type": "code",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L24",
+      "id": "dockeridentity_identity",
+      "community": 44,
+      "norm_label": "identity"
+    },
+    {
+      "label": "Resolve()",
+      "file_type": "code",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L42",
+      "id": "dockeridentity_dockeridentity_resolve",
+      "community": 44,
+      "norm_label": "resolve()"
+    },
+    {
+      "label": "dockerSockGroups()",
+      "file_type": "code",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L61",
+      "id": "dockeridentity_dockeridentity_dockersockgroups",
+      "community": 44,
+      "norm_label": "dockersockgroups()"
+    },
+    {
+      "label": "imageplan.go",
+      "file_type": "code",
+      "source_file": "imageplan/imageplan.go",
+      "source_location": "L1",
+      "id": "imageplan_imageplan_go",
+      "community": 45,
+      "norm_label": "imageplan.go"
+    },
+    {
+      "label": "Refresh()",
+      "file_type": "code",
+      "source_file": "imageplan/imageplan.go",
+      "source_location": "L31",
+      "id": "imageplan_imageplan_refresh",
+      "community": 45,
+      "norm_label": "refresh()"
+    },
+    {
+      "label": "runplan.go",
+      "file_type": "code",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L1",
+      "id": "runplan_runplan_go",
+      "community": 43,
+      "norm_label": "runplan.go"
+    },
+    {
+      "label": "Action",
+      "file_type": "code",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L17",
+      "id": "runplan_action",
+      "community": 43,
+      "norm_label": "action"
+    },
+    {
+      "label": ".String()",
+      "file_type": "code",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L31",
+      "id": "runplan_action_string",
+      "community": 43,
+      "norm_label": ".string()"
+    },
+    {
+      "label": "Op",
+      "file_type": "code",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L47",
+      "id": "runplan_op",
+      "community": 43,
+      "norm_label": "op"
+    },
+    {
+      "label": "Compute()",
+      "file_type": "code",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L61",
+      "id": "runplan_runplan_compute",
+      "community": 43,
+      "norm_label": "compute()"
+    },
+    {
+      "label": "teardown.go",
+      "file_type": "code",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L1",
+      "id": "teardown_teardown_go",
+      "community": 15,
+      "norm_label": "teardown.go"
+    },
+    {
+      "label": "StopOne()",
+      "file_type": "code",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L53",
+      "id": "teardown_teardown_stopone",
+      "community": 15,
+      "norm_label": "stopone()"
+    },
+    {
+      "label": "HasActiveExecs()",
+      "file_type": "code",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L81",
+      "id": "teardown_teardown_hasactiveexecs",
+      "community": 15,
+      "norm_label": "hasactiveexecs()"
+    },
+    {
+      "label": "OnShellExit()",
+      "file_type": "code",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L107",
+      "id": "teardown_teardown_onshellexit",
+      "community": 15,
+      "norm_label": "onshellexit()"
+    },
+    {
       "label": "CONTEXT.md",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L1",
-      "id": "context_md",
       "community": 19,
-      "norm_label": "context.md"
+      "norm_label": "context.md",
+      "id": "context_md"
     },
     {
       "label": "Context",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L1",
-      "id": "toolbox_context_context",
       "community": 19,
-      "norm_label": "context"
+      "norm_label": "context",
+      "id": "toolbox_context_context"
     },
     {
       "label": "Glossary",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L8",
-      "id": "toolbox_context_glossary",
       "community": 19,
-      "norm_label": "glossary"
+      "norm_label": "glossary",
+      "id": "toolbox_context_glossary"
     },
     {
       "label": "Mount Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L10",
-      "id": "toolbox_context_mount_plan",
       "community": 19,
-      "norm_label": "mount plan"
+      "norm_label": "mount plan",
+      "id": "toolbox_context_mount_plan"
     },
     {
       "label": "Tool Catalog",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L28",
-      "id": "toolbox_context_tool_catalog",
       "community": 19,
-      "norm_label": "tool catalog"
+      "norm_label": "tool catalog",
+      "id": "toolbox_context_tool_catalog"
     },
     {
       "label": "Config Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L53",
-      "id": "toolbox_context_config_plan",
       "community": 19,
-      "norm_label": "config plan"
+      "norm_label": "config plan",
+      "id": "toolbox_context_config_plan"
     },
     {
       "label": "Session Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L80",
-      "id": "toolbox_context_session_plan",
       "community": 19,
-      "norm_label": "session plan"
+      "norm_label": "session plan",
+      "id": "toolbox_context_session_plan"
     },
     {
       "label": "Run Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L112",
-      "id": "toolbox_context_run_plan",
       "community": 19,
-      "norm_label": "run plan"
+      "norm_label": "run plan",
+      "id": "toolbox_context_run_plan"
     },
     {
       "label": "Image Plan",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L141",
-      "id": "toolbox_context_image_plan",
       "community": 19,
-      "norm_label": "image plan"
+      "norm_label": "image plan",
+      "id": "toolbox_context_image_plan"
     },
     {
       "label": "Docker Identity",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L170",
-      "id": "toolbox_context_docker_identity",
       "community": 19,
-      "norm_label": "docker identity"
+      "norm_label": "docker identity",
+      "id": "toolbox_context_docker_identity"
     },
     {
       "label": "Teardown",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L199",
-      "id": "toolbox_context_teardown",
       "community": 19,
-      "norm_label": "teardown"
+      "norm_label": "teardown",
+      "id": "toolbox_context_teardown"
     },
     {
       "label": "Init Sequence",
       "file_type": "document",
       "source_file": "CONTEXT.md",
       "source_location": "L225",
-      "id": "toolbox_context_init_sequence",
       "community": 19,
-      "norm_label": "init sequence"
+      "norm_label": "init sequence",
+      "id": "toolbox_context_init_sequence"
     },
     {
       "label": "lifecycle.go",
@@ -246,7 +381,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L47",
-      "community": 0,
+      "community": 10,
       "norm_label": "formatpublishmismatch()",
       "id": "container_lifecycle_formatpublishmismatch"
     },
@@ -303,42 +438,6 @@
       "community": 0,
       "norm_label": "stopall()",
       "id": "container_lifecycle_stopall"
-    },
-    {
-      "label": "teardown.go",
-      "file_type": "code",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L1",
-      "community": 15,
-      "norm_label": "teardown.go",
-      "id": "internal_teardown_teardown_go"
-    },
-    {
-      "label": "StopOne()",
-      "file_type": "code",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L63",
-      "community": 15,
-      "norm_label": "stopone()",
-      "id": "teardown_teardown_stopone"
-    },
-    {
-      "label": "HasActiveExecs()",
-      "file_type": "code",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L91",
-      "community": 15,
-      "norm_label": "hasactiveexecs()",
-      "id": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "label": "OnShellExit()",
-      "file_type": "code",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L117",
-      "community": 15,
-      "norm_label": "onshellexit()",
-      "id": "teardown_teardown_onshellexit"
     },
     {
       "label": "teardown_test.go",
@@ -1191,7 +1290,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L1",
-      "community": 1,
+      "community": 3,
       "norm_label": "plan.go",
       "id": "internal_mountplan_plan_go"
     },
@@ -1200,7 +1299,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L27",
-      "community": 1,
+      "community": 10,
       "norm_label": "bind",
       "id": "mountplan_bind"
     },
@@ -1218,7 +1317,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L40",
-      "community": 1,
+      "community": 3,
       "norm_label": "result",
       "id": "mountplan_result"
     },
@@ -1227,7 +1326,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L55",
-      "community": 1,
+      "community": 3,
       "norm_label": "plan()",
       "id": "mountplan_plan_plan"
     },
@@ -1236,7 +1335,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L84",
-      "community": 1,
+      "community": 3,
       "norm_label": "merge()",
       "id": "mountplan_plan_merge"
     },
@@ -1245,7 +1344,7 @@
       "file_type": "code",
       "source_file": "internal/mountplan/plan.go",
       "source_location": "L95",
-      "community": 1,
+      "community": 3,
       "norm_label": "defaults()",
       "id": "mountplan_plan_defaults"
     },
@@ -1812,7 +1911,7 @@
       "file_type": "code",
       "source_file": "internal/config/config.go",
       "source_location": "L77",
-      "community": 12,
+      "community": 1,
       "norm_label": "validateshell()",
       "id": "config_config_validateshell"
     },
@@ -2109,7 +2208,7 @@
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L1",
-      "community": 12,
+      "community": 1,
       "norm_label": "config_shell_test.go",
       "id": "internal_config_config_shell_test_go"
     },
@@ -2118,7 +2217,7 @@
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L11",
-      "community": 12,
+      "community": 1,
       "norm_label": "testvalidateshellacceptssupported()",
       "id": "config_config_shell_test_testvalidateshellacceptssupported"
     },
@@ -2127,7 +2226,7 @@
       "file_type": "code",
       "source_file": "internal/config/config_shell_test.go",
       "source_location": "L20",
-      "community": 12,
+      "community": 1,
       "norm_label": "testvalidateshellrejectsunknown()",
       "id": "config_config_shell_test_testvalidateshellrejectsunknown"
     },
@@ -5837,6 +5936,270 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L24",
+      "weight": 1.0,
+      "source": "dockeridentity_dockeridentity_go",
+      "target": "dockeridentity_identity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L42",
+      "weight": 1.0,
+      "source": "dockeridentity_dockeridentity_go",
+      "target": "dockeridentity_dockeridentity_resolve",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "dockeridentity_dockeridentity_go",
+      "target": "dockeridentity_dockeridentity_dockersockgroups",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "dockeridentity/dockeridentity.go",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "dockeridentity_dockeridentity_resolve",
+      "target": "dockeridentity_dockeridentity_dockersockgroups",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "imageplan/imageplan.go",
+      "source_location": "L31",
+      "weight": 1.0,
+      "source": "imageplan_imageplan_go",
+      "target": "imageplan_imageplan_refresh",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L17",
+      "weight": 1.0,
+      "source": "runplan_runplan_go",
+      "target": "runplan_action",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "runplan_runplan_go",
+      "target": "runplan_op",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "runplan_runplan_go",
+      "target": "runplan_runplan_compute",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "runplan/runplan.go",
+      "source_location": "L31",
+      "weight": 1.0,
+      "source": "runplan_action",
+      "target": "runplan_action_string",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "teardown_teardown_go",
+      "target": "teardown_teardown_stopone",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L81",
+      "weight": 1.0,
+      "source": "teardown_teardown_go",
+      "target": "teardown_teardown_hasactiveexecs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "teardown/teardown.go",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "teardown_teardown_go",
+      "target": "teardown_teardown_onshellexit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/teardown/teardown.go",
+      "source_location": "L125",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "teardown_teardown_onshellexit",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/container/lifecycle.go",
+      "source_location": "L215",
+      "weight": 1.0,
+      "source": "container_lifecycle_stop",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/container/lifecycle.go",
+      "source_location": "L239",
+      "weight": 1.0,
+      "source": "container_lifecycle_stopall",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_teststoponestopsandremoves",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L93",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_teststoponeswallowsnotfound",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L106",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_teststoponepassesgracetimeout",
+      "target": "teardown_teardown_stopone"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/teardown/teardown.go",
+      "source_location": "L121",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "teardown_teardown_onshellexit",
+      "target": "teardown_teardown_hasactiveexecs"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L128",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_testhasactiveexecstrueonrunningsibling",
+      "target": "teardown_teardown_hasactiveexecs"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L139",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_testhasactiveexecsfalseoninspecterror",
+      "target": "teardown_teardown_hasactiveexecs"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L150",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_testhasactiveexecsfalseonnilcontainerjsonbase",
+      "target": "teardown_teardown_hasactiveexecs"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/container/lifecycle.go",
+      "source_location": "L134",
+      "weight": 1.0,
+      "source": "container_lifecycle_shell",
+      "target": "teardown_teardown_onshellexit"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L174",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_testonshellexitskipsstopwhensiblingexecrunning",
+      "target": "teardown_teardown_onshellexit"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/teardown/teardown_test.go",
+      "source_location": "L201",
+      "weight": 1.0,
+      "source": "teardown_teardown_test_testonshellexitstopswhennosiblingexec",
+      "target": "teardown_teardown_onshellexit"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "CONTEXT.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -6079,17 +6442,6 @@
       "confidence_score": 1.0,
       "source": "container_lifecycle_shell",
       "target": "container_lifecycle_dispatchop"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/container/lifecycle.go",
-      "source_location": "L134",
-      "weight": 1.0,
-      "source": "container_lifecycle_shell",
-      "target": "teardown_teardown_onshellexit"
     },
     {
       "relation": "calls",
@@ -6371,17 +6723,6 @@
       "context": "call",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
-      "source_file": "internal/container/lifecycle.go",
-      "source_location": "L215",
-      "weight": 1.0,
-      "source": "container_lifecycle_stop",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
       "source_file": "cmd/shell.go",
       "source_location": "L59",
       "weight": 1.0,
@@ -6470,17 +6811,6 @@
       "context": "call",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
-      "source_file": "internal/container/lifecycle.go",
-      "source_location": "L239",
-      "weight": 1.0,
-      "source": "container_lifecycle_stopall",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
       "source_file": "cmd/stop.go",
       "source_location": "L31",
       "weight": 1.0,
@@ -6508,146 +6838,6 @@
       "weight": 1.0,
       "source": "container_lifecycle_test_teststopall",
       "target": "container_lifecycle_stopall"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L63",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_teardown_teardown_go",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L91",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_teardown_teardown_go",
-      "target": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L117",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "internal_teardown_teardown_go",
-      "target": "teardown_teardown_onshellexit"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L125",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "teardown_teardown_onshellexit",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L76",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_teststoponestopsandremoves",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L93",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_teststoponeswallowsnotfound",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L106",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_teststoponepassesgracetimeout",
-      "target": "teardown_teardown_stopone"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "internal/teardown/teardown.go",
-      "source_location": "L121",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "teardown_teardown_onshellexit",
-      "target": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L128",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_testhasactiveexecstrueonrunningsibling",
-      "target": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L139",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_testhasactiveexecsfalseoninspecterror",
-      "target": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L150",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_testhasactiveexecsfalseonnilcontainerjsonbase",
-      "target": "teardown_teardown_hasactiveexecs"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L174",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_testonshellexitskipsstopwhensiblingexecrunning",
-      "target": "teardown_teardown_onshellexit"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "source_file": "internal/teardown/teardown_test.go",
-      "source_location": "L201",
-      "weight": 1.0,
-      "source": "teardown_teardown_test_testonshellexitstopswhennosiblingexec",
-      "target": "teardown_teardown_onshellexit"
     },
     {
       "relation": "contains",
@@ -15407,5 +15597,5 @@
       "source_location": null
     }
   ],
-  "built_at_commit": "0a352126b534c17fd57b0eb61906efa5f24de9dc"
+  "built_at_commit": "516a69d0ea828852efe0fa3e8586e24c0e3eefac"
 }

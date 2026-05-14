@@ -1,6 +1,6 @@
 // Package teardown owns the container stop/remove + shell-exit cleanup
-// policy that previously lived inline at the bottom of
-// internal/container/lifecycle.go::Shell.
+// policy invoked by container.Shell on exit and by the `toolbox stop`
+// commands.
 //
 // Three seams, one policy:
 //
@@ -17,16 +17,6 @@
 //     cancelled by Ctrl+C), skips the stop when a sibling exec is
 //     running, otherwise calls StopOne. Returns the cleanup error so
 //     the caller can fold it into its own error chain.
-//
-// Before this concept was named, the policy was a 4-deep nested defer
-// block inside Shell, with the timing constants (cleanupTimeout=30s,
-// stopShellGrace=2) as package-level vars in lifecycle.go and the
-// active-exec probe + stop+remove logic as loose helpers. Adding any
-// pre/post-cleanup behaviour (log dump, notification, longer grace for a
-// busy daemon) required editing inline inside the defer block.
-// Lifting the policy here flattens the defer to one call, moves the
-// timing knobs to typed defaults, and gives `toolbox stop` and the
-// shell-exit path a single owner.
 package teardown
 
 import (

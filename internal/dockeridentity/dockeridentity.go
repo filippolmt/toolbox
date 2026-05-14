@@ -9,15 +9,6 @@
 // composable in tests without OS state. dockeridentity is that edge —
 // `Resolve(binds)` is the single seam container.Shell calls before
 // ContainerCreate, returning a typed Identity{UserSpec, GroupAdd}.
-//
-// Before this concept was named, three loose functions lived mid-file
-// in internal/container/lifecycle.go: hostUserSpec, dockerSockGroups,
-// and a statSockGID package-level var stub. Reading container.Shell to
-// trace "what user does the container run as?" meant chasing three
-// helpers + a var-stub seam in the same file as the lifecycle state
-// machine. Giving the concept its own package + Identity type retires
-// the in-package stub-var and concentrates the policy in one named
-// owner.
 package dockeridentity
 
 import (
