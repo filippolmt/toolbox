@@ -125,6 +125,9 @@ func TestUpsertShellInUserConfigPreservesExistingFields(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	text := string(raw)
+	if !strings.Contains(text, "# user comment") {
+		t.Fatalf("existing comment was not preserved: %s", text)
+	}
 	if !strings.Contains(text, "tools:") || !strings.Contains(text, "gh: false") {
 		t.Fatalf("existing config keys were not preserved: %s", text)
 	}

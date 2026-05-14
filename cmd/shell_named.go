@@ -225,6 +225,7 @@ func upsertShellInUserConfig(name, path string) error {
 }
 
 func ensureDocumentMap(root *yaml.Node) *yaml.Node {
+	// Zero Kind appears when unmarshalling an empty/missing file into yaml.Node.
 	if root.Kind == 0 {
 		root.Kind = yaml.DocumentNode
 	}
