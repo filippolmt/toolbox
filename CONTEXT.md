@@ -109,60 +109,34 @@ that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
 
-### Teardown
+### Run Plan
 
-The container stop/remove + shell-exit cleanup policy that previously
-lived inline at the bottom of `internal/container/lifecycle.go::Shell`.
+The runtime decision step inside `container.Shell`: given a
+`ContainerInspect` result, decide whether to connect to a running
+container, start a stopped one, or create a fresh one. Pure function, no
+Docker side-effects — the typed `Op` is dispatched at the Docker edge by
+`lifecycle.go::dispatchOp`.
 
-Concretely: `teardown.StopOne(ctx, cli, name, grace)` is the single
-container-stop seam used by `toolbox stop`, `toolbox stop --all`, and
-the shell-exit defer; NotFound on either ContainerStop or
-ContainerRemove is tolerated. `teardown.HasActiveExecs(ctx, cli, name)`
-probes for a sibling shell still attached to the same container —
-inspect errors are treated as "no active execs" so a daemon hiccup
-never strands a container. `teardown.OnShellExit(cli, name)` composes
-the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
-must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
-`internal/teardown`. Timing constants `DefaultTimeout` (30s) and
-`DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+Concretely: `runplan.Compute(inspect, inspectErr) → Op{Action, ExistingID}`
+with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
+`internal/runplan`. A nil `inspect.ContainerJSONBase` and an errdefs
+`NotFound` both route to `ActionCreate` so callers never dereference a
+half-populated record; any other inspect error is returned verbatim and
+the caller aborts. Composes with Session Plan: SessionPlan resolves
+design-time inputs before any Docker call; RunPlan resolves the runtime
+branch after `ContainerInspect`.
 
-Why the term exists: before this concept was named, the policy was a
-4-deep nested defer block inside `Shell`, with the timing constants as
-package-level vars in `lifecycle.go` and the active-exec + stop+remove
-helpers loose at the bottom of the same file. Adding any
-pre/post-cleanup step (log dump, longer grace for a busy daemon)
-required editing inside the defer block. The "Teardown" name flattens
-the defer to one call and gives `toolbox stop` and the shell-exit path
-one named owner.
-
-### Docker Identity
-
-The host-process → container-identity translation at the Docker edge:
-the `"<uid>:<gid>"` user spec passed to `ContainerCreate` and the
-supplementary group IDs needed for the runtime user to talk to a
-bind-mounted `/var/run/docker.sock`.
-
-Concretely: `dockeridentity.Resolve(binds) → Identity{UserSpec, GroupAdd}`.
-Owned by `internal/dockeridentity`. The single seam `container.Shell`
-calls before `ContainerCreate`. `Identity.UserSpec` is built from
-`os.Getuid` / `os.Getgid`; `Identity.GroupAdd` is nil unless
-`/var/run/docker.sock` is in the bind set, in which case it joins gid 0
-(Docker Desktop reprojects the socket as root:root) plus the host
-socket GID (Linux: usually the `docker` group). The package-level
-`statSockGID` var is the test seam for simulating both deployment
-modes. Session Plan deliberately does NOT encode this concept (host
-process + daemon-fs state are read fresh at the Docker edge so the
-plan stays a pure design-time artifact composable in tests without OS
-state) — Docker Identity is that edge.
-
-Why the term exists: before this concept was named, three loose
-functions (`hostUserSpec`, `dockerSockGroups`, `statSockGID`) lived
-mid-file in `internal/container/lifecycle.go`, sharing a file with the
-lifecycle state machine. Reading `Shell` to trace "what user does the
-container run as?" meant chasing three helpers plus a var-stub seam.
-Giving the concept its own package + typed `Identity` retires the
-in-package stub-var and concentrates the policy in one named owner,
-preserving the SessionPlan-stays-pure boundary from CONTEXT.md.
+Why the term exists: before this concept was named, the state machine
+lived inline in `internal/container/lifecycle.go::Shell` as a 4-case
+switch over the `(hasInspectData, running, inspectErr)` tuple, mixed
+with side-effects (`ui.Info`, `ContainerStart`, `ContainerCreate`).
+Testing the decision required a Docker client mock and an integration
+harness through `Shell`; the nil-base guard pinned by
+`TestShellInspectNilContainerJSONBase` was a tripwire for the same
+absence of a typed decision Layer. The "Run Plan" name turns the
+state machine into one observable typed Op that tests construct without
+Docker, mirroring the Mount Plan / Session Plan / Config Plan deepening
+pattern.
 
 ### Image Plan
 
@@ -193,34 +167,60 @@ redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 auto-build seam into a single var inside `imageplan`.
 
-### Run Plan
+### Docker Identity
 
-The runtime decision step inside `container.Shell`: given a
-`ContainerInspect` result, decide whether to connect to a running
-container, start a stopped one, or create a fresh one. Pure function, no
-Docker side-effects — the typed `Op` is dispatched at the Docker edge by
-`lifecycle.go::dispatchOp`.
+The host-process → container-identity translation at the Docker edge:
+the `"<uid>:<gid>"` user spec passed to `ContainerCreate` and the
+supplementary group IDs needed for the runtime user to talk to a
+bind-mounted `/var/run/docker.sock`.
 
-Concretely: `runplan.Compute(inspect, inspectErr) → Op{Action, ExistingID}`
-with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
-`internal/runplan`. A nil `inspect.ContainerJSONBase` and an errdefs
-`NotFound` both route to `ActionCreate` so callers never dereference a
-half-populated record; any other inspect error is returned verbatim and
-the caller aborts. Composes with Session Plan: SessionPlan resolves
-design-time inputs before any Docker call; RunPlan resolves the runtime
-branch after `ContainerInspect`.
+Concretely: `dockeridentity.Resolve(binds) → Identity{UserSpec, GroupAdd}`.
+Owned by `internal/dockeridentity`. The single seam `container.Shell`
+calls before `ContainerCreate`. `Identity.UserSpec` is built from
+`os.Getuid` / `os.Getgid`; `Identity.GroupAdd` is nil unless
+`/var/run/docker.sock` is in the bind set, in which case it joins gid 0
+(Docker Desktop reprojects the socket as root:root) plus the host
+socket GID (Linux: usually the `docker` group). The package-level
+`statSockGID` var is the test seam for simulating both deployment
+modes. Session Plan deliberately does NOT encode this concept (host
+process + daemon-fs state are read fresh at the Docker edge so the
+plan stays a pure design-time artifact composable in tests without OS
+state) — Docker Identity is that edge.
 
-Why the term exists: before this concept was named, the state machine
-lived inline in `internal/container/lifecycle.go::Shell` as a 4-case
-switch over the `(hasInspectData, running, inspectErr)` tuple, mixed
-with side-effects (`ui.Info`, `ContainerStart`, `ContainerCreate`).
-Testing the decision required a Docker client mock and an integration
-harness through `Shell`; the nil-base guard pinned by
-`TestShellInspectNilContainerJSONBase` was a tripwire for the same
-absence of a typed decision Layer. The "Run Plan" name turns the
-state machine into one observable typed Op that tests construct without
-Docker, mirroring the Mount Plan / Session Plan / Config Plan deepening
-pattern.
+Why the term exists: before this concept was named, three loose
+functions (`hostUserSpec`, `dockerSockGroups`, `statSockGID`) lived
+mid-file in `internal/container/lifecycle.go`, sharing a file with the
+lifecycle state machine. Reading `Shell` to trace "what user does the
+container run as?" meant chasing three helpers plus a var-stub seam.
+Giving the concept its own package + typed `Identity` retires the
+in-package stub-var and concentrates the policy in one named owner,
+preserving the SessionPlan-stays-pure boundary from CONTEXT.md.
+
+### Teardown
+
+The container stop/remove + shell-exit cleanup policy that previously
+lived inline at the bottom of `internal/container/lifecycle.go::Shell`.
+
+Concretely: `teardown.StopOne(ctx, cli, name, grace)` is the single
+container-stop seam used by `toolbox stop`, `toolbox stop --all`, and
+the shell-exit defer; NotFound on either ContainerStop or
+ContainerRemove is tolerated. `teardown.HasActiveExecs(ctx, cli, name)`
+probes for a sibling shell still attached to the same container —
+inspect errors are treated as "no active execs" so a daemon hiccup
+never strands a container. `teardown.OnShellExit(cli, name)` composes
+the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
+must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
+`internal/teardown`. Timing constants `DefaultTimeout` (30s) and
+`DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+
+Why the term exists: before this concept was named, the policy was a
+4-deep nested defer block inside `Shell`, with the timing constants as
+package-level vars in `lifecycle.go` and the active-exec + stop+remove
+helpers loose at the bottom of the same file. Adding any
+pre/post-cleanup step (log dump, longer grace for a busy daemon)
+required editing inside the defer block. The "Teardown" name flattens
+the defer to one call and gives `toolbox stop` and the shell-exit path
+one named owner.
 
 ### Init Sequence
 
