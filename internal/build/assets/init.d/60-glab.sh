@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# `glab skills install` is EXPERIMENTAL upstream — non-fatal on failure.
-# Two passes: Claude Code reads only ~/.claude/skills; Codex reads only
-# ~/.agents/skills (cross-agent USER scope per agentskills.io).
+# Two responsibilities, gated together on `command -v glab`:
+#   1. Credential probe — same configured/not-configured surface the other
+#      cred scripts emit, so all five providers report uniformly through
+#      the Init Sequence.
+#   2. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.
+#      Two passes: Claude Code reads only ~/.claude/skills; Codex reads
+#      only ~/.agents/skills (cross-agent USER scope per agentskills.io).
 command -v glab >/dev/null 2>&1 || exit 0
+
+if glab auth status >/dev/null 2>&1; then
+    echo "  glab: configured"
+else
+    echo "  glab: not configured"
+fi
 
 _install() {
     local label="$1"; shift

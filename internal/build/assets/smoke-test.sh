@@ -270,8 +270,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -lt 8 ]; then
-    echo "FAILED: only $count init.d/*.sh found, expected >= 8 (catalog declares 8 InitScripts)"
+if [ "$count" -lt 12 ]; then
+    echo "FAILED: only $count init.d/*.sh found, expected >= 12 (catalog declares 12 InitScripts)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

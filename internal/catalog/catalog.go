@@ -58,7 +58,7 @@ type Entry struct {
 // so populating them in a future phase is hash-neutral.
 var Entries = []Entry{
 	{Key: "atuin", Default: true, BuildArg: "INSTALL_ATUIN", InitScript: "65-atuin.sh"},
-	{Key: "azure", Default: true, BuildArg: "INSTALL_AZURE"},
+	{Key: "azure", Default: true, BuildArg: "INSTALL_AZURE", InitScript: "06-azure-creds.sh"},
 	{Key: "bat", Default: true, BuildArg: "INSTALL_BAT"},
 	{Key: "bun", Default: true, BuildArg: "INSTALL_BUN"},
 	{Key: "cf", Default: true, BuildArg: "INSTALL_CF", InitScript: "20-cf.sh"},
@@ -66,8 +66,8 @@ var Entries = []Entry{
 	{Key: "codex", Default: true, BuildArg: "INSTALL_CODEX_CLI", InitScript: "25-codex.sh"},
 	{Key: "compose", Default: true, BuildArg: "INSTALL_COMPOSE"},
 	{Key: "docker", Default: true, BuildArg: "INSTALL_DOCKER_CLI"},
-	{Key: "gcloud", Default: true, BuildArg: "INSTALL_GCLOUD"},
-	{Key: "gh", Default: true, BuildArg: "INSTALL_GH"},
+	{Key: "gcloud", Default: true, BuildArg: "INSTALL_GCLOUD", InitScript: "04-gcloud-creds.sh"},
+	{Key: "gh", Default: true, BuildArg: "INSTALL_GH", InitScript: "02-gh-creds.sh"},
 	{Key: "glab", Default: true, BuildArg: "INSTALL_GLAB", InitScript: "60-glab.sh"},
 	{Key: "go", Default: true, BuildArg: "INSTALL_GO"},
 	{Key: "goimports", Default: true, BuildArg: "INSTALL_GOIMPORTS"},
@@ -77,7 +77,7 @@ var Entries = []Entry{
 	{Key: "helm", Default: true, BuildArg: "INSTALL_HELM"},
 	{Key: "jq", Default: true, BuildArg: "INSTALL_JQ"},
 	{Key: "kubectl", Default: true, BuildArg: "INSTALL_KUBECTL"},
-	{Key: "oci", Default: true, BuildArg: "INSTALL_OCI"},
+	{Key: "oci", Default: true, BuildArg: "INSTALL_OCI", InitScript: "08-oci-creds.sh"},
 	{Key: "playwright", Default: true, BuildArg: "INSTALL_PLAYWRIGHT"},
 	{Key: "playwright_cli", Default: true, BuildArg: "INSTALL_PLAYWRIGHT_CLI", InitScript: "40-playwright-cli.sh"},
 	{Key: "pnpm", Default: true, BuildArg: "INSTALL_PNPM"},

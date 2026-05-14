@@ -134,13 +134,18 @@ inside the built image).
 
 Why the term exists: before this concept was named, per-tool boot logic
 (rtk hook wiring, cf skill seed, graphify install, playwright-cli skills,
-MCP plugin auto-build) accumulated as inline blocks in `entrypoint.sh`
-with heterogeneous failure handling — only the MCP block had a marker
-log + tail-5 surface; the others swallowed errors silently. Reading
-`entrypoint.sh` to find "what runs when I open a shell" required
-scrolling 250+ lines and tracing per-block gates by hand. The "Init
-Sequence" name makes the catalog the single discoverable list of init
-scripts, the iterator the single failure-envelope owner, and the
-filename `<NN>-` prefix the explicit ordering signal — with the
-manifest-driven shape the boot sequence is observable from the Go side
-without parsing the runtime image.
+MCP plugin auto-build, and the per-provider credential probes for
+gh / glab / gcloud / az / oci) accumulated as inline blocks in
+`entrypoint.sh` with heterogeneous failure handling — only the MCP block
+had a marker log + tail-5 surface; the others swallowed errors silently,
+and the credential probes lived behind a hardcoded "Toolbox credential
+check:" header that duplicated the parallel-and-replay pattern the Init
+Sequence iterator already owned. Reading `entrypoint.sh` to find "what
+runs when I open a shell" required scrolling 250+ lines and tracing
+per-block gates by hand. The "Init Sequence" name makes the catalog the
+single discoverable list of init scripts (credential probes included —
+each provider's probe is the InitScript on its catalog Entry), the
+iterator the single failure-envelope owner, and the filename `<NN>-`
+prefix the explicit ordering signal — with the manifest-driven shape the
+boot sequence is observable from the Go side without parsing the runtime
+image.
