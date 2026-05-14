@@ -19,62 +19,65 @@ unset _uid _gid
 
 echo "Toolbox credential check:"
 
-# gh (GitHub CLI) — gated on binary presence so tools.gh=false skips the
-# block instead of mislabelling "not installed" as "not configured".
-if command -v gh >/dev/null 2>&1; then
-    if gh auth status >/dev/null 2>&1; then
-        echo "  gh: configured"
+# Each provider's auth check is an independent network/file-I/O probe — run
+# them in parallel and reassemble output in a deterministic order via the
+# numbered temp-file prefix. Cuts cold-entrypoint latency from
+# sum(t_i) ≈ 1–3s down to max(t_i) ≈ 300–800ms when az + oci are configured.
+# Debian-slim's coreutils `mktemp -d` cannot fail under reasonable conditions
+# (no disk-full edge cases at boot in a fresh container); let the script
+# crash loudly if it ever does rather than silently skipping every probe.
+_cred_check() {
+    local name="$1" bin="$2" probe="$3"
+    command -v "$bin" >/dev/null 2>&1 || return 0
+    if eval "$probe" >/dev/null 2>&1; then
+        echo "  ${name}: configured"
     else
-        echo "  gh: not configured"
+        echo "  ${name}: not configured"
     fi
-fi
+}
 
-# glab (GitLab CLI) — same binary-presence gating as gh above.
-if command -v glab >/dev/null 2>&1; then
-    if glab auth status >/dev/null 2>&1; then
-        echo "  glab: configured"
-    else
-        echo "  glab: not configured"
-    fi
-fi
+_cred_tmp=$(mktemp -d)
+_cred_check gh     gh     "gh auth status"                                                                > "$_cred_tmp/10-gh"     &
+_cred_check glab   glab   "glab auth status"                                                              > "$_cred_tmp/20-glab"   &
+_cred_check gcloud gcloud "gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q ." > "$_cred_tmp/30-gcloud" &
+_cred_check az     az     "az account show"                                                               > "$_cred_tmp/40-az"     &
 
-if command -v gcloud >/dev/null 2>&1; then
-    if gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
-        echo "  gcloud: configured"
-    else
-        echo "  gcloud: not configured"
+# oci needs a fast-path config-file check before the live API call:
+# `oci iam region list` is a real network round-trip (~200-500ms when
+# configured, multi-second timeout otherwise). </dev/null is load-bearing —
+# without it, oci's "Do you want to create a new config file? [Y/n]" prompt
+# blocks the entrypoint on the container TTY and never reaches the startup
+# hooks. Doesn't fit the _cred_check shape (extra config-file gate), kept
+# explicit.
+{
+    if command -v oci >/dev/null 2>&1; then
+        if [ ! -f "$HOME/.oci/config" ]; then
+            echo "  oci: not configured"
+        elif oci iam region list --output table </dev/null >/dev/null 2>&1; then
+            echo "  oci: configured"
+        else
+            echo "  oci: not configured"
+        fi
     fi
-fi
+} > "$_cred_tmp/50-oci" &
 
-if command -v az >/dev/null 2>&1; then
-    if az account show >/dev/null 2>&1; then
-        echo "  az: configured"
-    else
-        echo "  az: not configured"
-    fi
-fi
-
-if command -v oci >/dev/null 2>&1; then
-    # Fast path: skip the live API call when no config file exists. `oci iam
-    # region list` is a real network round-trip (~200-500ms when configured,
-    # multi-second timeout otherwise); checking the config file first keeps
-    # entrypoint snappy for users who haven't run `oci setup config`.
-    #
-    # </dev/null: oci prompts "Do you want to create a new config file? [Y/n]"
-    # when ~/.oci/config is missing. Without a closed stdin it would block the
-    # entrypoint on the container's TTY and never reach the startup hooks.
-    if [ ! -f "$HOME/.oci/config" ]; then
-        echo "  oci: not configured"
-    elif oci iam region list --output table </dev/null >/dev/null 2>&1; then
-        echo "  oci: configured"
-    else
-        echo "  oci: not configured"
-    fi
-fi
+wait
+for _f in "$_cred_tmp"/*; do
+    [ -s "$_f" ] && cat "$_f"
+done
+rm -rf "$_cred_tmp"
+unset _cred_tmp _f
+unset -f _cred_check
 
 # Init Sequence (CONTEXT.md). Stderr → ~/.toolbox-state/init/<name>.log;
 # on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`
 # so a failed init never aborts boot.
+#
+# Scripts touch disjoint config trees (~/.config/rtk, ~/.claude/skills/<name>,
+# ~/.codex, ~/.claude/plugins/cache) and gate on their own binaries — safe to
+# run in parallel. Stdout per script is buffered to a temp file and replayed
+# in lexical filename order after `wait`, preserving the visible "Building
+# Claude Code MCP plugins:" output from 50-mcp-plugins.
 #
 # Log path is `.toolbox-state` (not `.toolbox/state`) because the `state`
 # bind-mount resolves Source `~/.toolbox/state` → Target `~/.toolbox-state`
@@ -83,18 +86,27 @@ INIT_D="/usr/local/lib/toolbox/init.d"
 TOOLBOX_INIT_LOG_DIR="$HOME/.toolbox-state/init"
 if [ -d "$INIT_D" ]; then
     mkdir -p "$TOOLBOX_INIT_LOG_DIR"
+    _init_tmp=$(mktemp -d)
     for f in "$INIT_D"/*.sh; do
         [ -r "$f" ] || continue
         _name=$(basename "$f")
         _log="${TOOLBOX_INIT_LOG_DIR}/${_name%.sh}.log"
-        if ! bash "$f" 2>"$_log"; then
-            echo "  ${_name}: failed (log: $_log)"
-            [ -s "$_log" ] && tail -n 5 "$_log" | sed 's/^/      /'
-        else
-            rm -f "$_log"
-        fi
+        _out="${_init_tmp}/${_name}"
+        (
+            if ! bash "$f" >"$_out" 2>"$_log"; then
+                echo "  ${_name}: failed (log: $_log)" >> "$_out"
+                [ -s "$_log" ] && tail -n 5 "$_log" | sed 's/^/      /' >> "$_out"
+            else
+                rm -f "$_log"
+            fi
+        ) &
     done
-    unset _name _log f
+    wait
+    for f in "$_init_tmp"/*; do
+        [ -s "$f" ] && cat "$f"
+    done
+    rm -rf "$_init_tmp"
+    unset _name _log f _init_tmp _out
 fi
 unset INIT_D TOOLBOX_INIT_LOG_DIR
 

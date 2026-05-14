@@ -36,10 +36,19 @@ elif ! grep -qF "$_rtk_sentinel" "$_rtk_config"; then
     printf '\n%s\n' "$_rtk_block" >> "$_rtk_config"
 fi
 
+# Both `rtk init -g --auto-patch` (here) and `atuin hook install claude-code`
+# (init.d/65-atuin.sh) rewrite ~/.claude/settings.json. Since entrypoint runs
+# init.d scripts in parallel, concurrent writes would clobber each other.
+# Serialise via flock on a shared lock file under the state mount. The lock
+# is held for the full rtk init invocation; atuin acquires the same lock
+# from its script. flock comes from util-linux (base Debian, always present).
+_claude_lock="$HOME/.toolbox-state/.claude-settings.lock"
+mkdir -p "$(dirname "$_claude_lock")"
 if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    if ! rtk init -g --auto-patch </dev/null >/dev/null 2>&1; then
-        echo "  rtk: init -g failed (non-fatal)"
-    fi
+    (
+        flock 200
+        rtk init -g --auto-patch </dev/null >/dev/null 2>&1
+    ) 200>"$_claude_lock" || echo "  rtk: init -g failed (non-fatal)"
 fi
 if command -v codex >/dev/null 2>&1 && [ -d "$HOME/.codex" ]; then
     if ! rtk init -g --codex </dev/null >/dev/null 2>&1; then

@@ -1,7 +1,7 @@
 # Graph Report - toolbox  (2026-05-13)
 
 ## Corpus Check
-- 60 files · ~38,894 words
+- 60 files · ~38,983 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2fe11586`
+- Built from commit: `e08e1725`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -159,11 +159,11 @@ Nodes (6): dockerSockGroups(), TestDockerSockGroupsAppendsHostGIDOnLinux(), Test
 
 ### Community 20 - "Community 20"
 Cohesion: 0.29
-Nodes (6): Architecture, CLAUDE.md, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
+Nodes (5): Architecture, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
 ### Community 21 - "Community 21"
 Cohesion: 0.29
-Nodes (5): Architecture, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
+Nodes (6): Architecture, CLAUDE.md, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
 ### Community 22 - "Community 22"
 Cohesion: 0.47
@@ -185,13 +185,13 @@ Nodes (4): main, Execute, usageArgs, usageError
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Shell()` connect `Community 3` to `Community 19`, `Community 2`, `Community 10`?**
+- **Why does `Shell()` connect `Community 3` to `Community 10`, `Community 2`, `Community 19`?**
   _High betweenness centrality (0.118) - this node is a cross-community bridge._
 - **Why does `mkdirAll()` connect `Community 1` to `Community 2`, `Community 11`, `Community 14`?**
   _High betweenness centrality (0.108) - this node is a cross-community bridge._
 - **Why does `Merge()` connect `Community 0` to `Community 4`?**
   _High betweenness centrality (0.098) - this node is a cross-community bridge._
-- **Are the 23 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Success()`) actually correct?**
+- **Are the 23 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
   _`Shell()` has 23 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 11 inferred relationships involving `mkdirAll()` (e.g. with `TestInitConfigProjectFileWalksUpFromSubdir()` and `TestInitConfigProjectFileStopsAtHome()`) actually correct?**
   _`mkdirAll()` has 11 INFERRED edges - model-reasoned connections that need verification._

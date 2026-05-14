@@ -86,6 +86,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG GH_VERSION=2.92.0
 ARG GLAB_VERSION=1.97.0
 ARG GWS_VERSION=0.22.5
+ARG ATUIN_VERSION=18.16.1
 ARG KUBECTL_VERSION=v1.36.1
 ARG KUBECTX_VERSION=0.11.0
 ARG HELM_VERSION=v4.2.0
@@ -151,6 +152,7 @@ ARG INSTALL_TOFU=true
 ARG INSTALL_GH=true
 ARG INSTALL_GLAB=true
 ARG INSTALL_GWS=true
+ARG INSTALL_ATUIN=true
 ARG INSTALL_GO=true
 # gopls / goimports are independently opt-out-able even when INSTALL_GO=true.
 # Each is gated inside Layer 14a so users who want the Go runtime without the
@@ -383,6 +385,40 @@ RUN set -eux; \
       chmod +x /usr/local/bin/gws; \
       rm "/tmp/${GWS_TARBALL}" /tmp/gws.sha256; \
       gws --version; \
+    fi
+
+# -- Layer 6b: atuin (SQLite-backed shell history) ----------------------------
+# Replaces the default Ctrl-R history search with a SQLite-backed fuzzy
+# searcher (atuinsh/atuin). MUSL build for the same reason as gws (Layer 6a)
+# and zoxide (Layer 20c): bookworm ships GLIBC 2.36, the upstream `-gnu`
+# tarball targets a newer GLIBC. The musl build is statically linked.
+# Per-asset `<file>.sha256` is published in standard sha256sum format.
+#
+# ATUIN_CONFIG_DIR consolidates config + DB under a single bind-mount
+# (~/.toolbox/atuin/) instead of needing two binds for the upstream split
+# (~/.config/atuin + ~/.local/share/atuin). The DB path itself still defaults
+# to the XDG data dir, which IS the bind target — see internal/mountplan/defaults.go.
+ENV ATUIN_CONFIG_DIR=/home/toolbox/.local/share/atuin/config
+RUN set -eux; \
+    if [ "${INSTALL_ATUIN}" != "true" ]; then \
+      echo "Skipping atuin (tools.atuin=false)"; \
+    else \
+      case "${TARGETARCH}" in \
+        amd64) ATUIN_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) ATUIN_ARCH=aarch64-unknown-linux-musl;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      ATUIN_TARBALL="atuin-${ATUIN_ARCH}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${ATUIN_TARBALL}" \
+        "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/${ATUIN_TARBALL}"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/atuin.sha256 \
+        "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/${ATUIN_TARBALL}.sha256"; \
+      cd /tmp && sha256sum -c atuin.sha256; \
+      tar -xzf "/tmp/${ATUIN_TARBALL}" -C /usr/local/bin --strip-components=1 \
+        "atuin-${ATUIN_ARCH}/atuin"; \
+      chmod +x /usr/local/bin/atuin; \
+      rm "/tmp/${ATUIN_TARBALL}" /tmp/atuin.sha256; \
+      atuin --version; \
     fi
 
 # -- Layer 7: Docker CLI standalone (TOOL-06, IMG-02) -------------------------
@@ -1081,6 +1117,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       echo "Skipping zsh + Oh-My-Zsh (tools.zsh=false)"; \
     else \
       apt-get update -qqy; \
+      # node:24-bookworm-slim ships /etc/dpkg/dpkg.cfg.d/docker-clean (or
+      # similar) with `path-exclude /usr/share/doc/*`, which silently strips
+      # fzf's key-bindings.{bash,zsh,fish} + completion.{bash,zsh} integration
+      # scripts at install time. Without re-including them, our bashrc/zshrc
+      # `source /usr/share/doc/fzf/examples/*` lines no-op — fzf works as a
+      # binary but Ctrl-R / Ctrl-T / Alt-C bindings stay dormant. The override
+      # filename is lexically LAST in dpkg.cfg.d so it post-dates the slim
+      # path-exclude rule. Applies only to fzf — every other tool's docs stay
+      # stripped per upstream design. \
+      echo 'path-include /usr/share/doc/fzf/examples/*' \
+        > /etc/dpkg/dpkg.cfg.d/zz-keep-fzf-shellintegration; \
       apt-get install -qqy --no-install-recommends zsh fzf; \
       mkdir -p /home/node/.oh-my-zsh/custom/plugins; \
       git -c init.defaultBranch=master init /home/node/.oh-my-zsh; \
@@ -1250,8 +1297,14 @@ RUN set -eux; \
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
     EDITOR=vi \
-    KUBE_EDITOR=vi
+    KUBE_EDITOR=vi \
+    STARSHIP_CONFIG=/etc/toolbox/starship.toml
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+
+# Curated starship config (D-05). Disables ~17 modules irrelevant to the
+# toolbox image (no SDKs installed) and the two slow live probes (aws/azure).
+# Per-user override: set STARSHIP_CONFIG in a ~/.toolbox-startup.d/ hook.
+COPY starship.toml /etc/toolbox/starship.toml
 
 COPY bashrc.sh /etc/toolbox-bashrc.sh
 RUN set -eux; \

@@ -116,11 +116,15 @@ check_zsh() {
         [ "$result" = "/home/toolbox/.toolbox-state/zsh_history" ]
     }
 
-    # i. `plugins` array has exactly 17 entries after zshrc is sourced
-    # (19 in the original plan; fzf + direnv removed — see zshrc.sh rationale).
+    # i. `plugins` array has exactly 18 entries after zshrc is sourced
+    # (19 in the original plan; fzf + direnv removed — see zshrc.sh rationale.
+    # Then `aliases` dropped — we override every OMZ alias below the OMZ source
+    # line so the helper plugin paid load cost for nothing. `extract` and
+    # `dirhistory` added for `x <file>` extraction + Alt-←/→ dir history,
+    # net delta +1).
     _zsh_plugin_count_check() {
         count=$(zsh -i -c "echo \$plugins | wc -w" 2>/dev/null)
-        [ "$count" -eq 17 ]
+        [ "$count" -eq 18 ]
     }
 
     # j. R-01 / Pitfall 3 — our tf=tofu override wins over OMZ terraform plugin
@@ -154,7 +158,7 @@ check_zsh() {
     _zsh_assert "/etc/zsh/zshrc ZSH_DISABLE_COMPFIX" _zsh_zshrc_compfix_check
     _zsh_assert "interactive shell clean"      _zsh_interactive_clean_check
     _zsh_assert "HISTFILE"                     _zsh_histfile_check
-    _zsh_assert "17 plugins loaded"            _zsh_plugin_count_check
+    _zsh_assert "18 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
     _zsh_assert "vendor-completions >= 13"     _zsh_vendor_completions_check
@@ -185,6 +189,7 @@ check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
 check_optional  "gws"       gws      gws --version
+check_optional  "atuin"     atuin    atuin --version
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
@@ -265,8 +270,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -lt 7 ]; then
-    echo "FAILED: only $count init.d/*.sh found, expected >= 7 (catalog declares 7 InitScripts)"
+if [ "$count" -lt 8 ]; then
+    echo "FAILED: only $count init.d/*.sh found, expected >= 8 (catalog declares 8 InitScripts)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then
