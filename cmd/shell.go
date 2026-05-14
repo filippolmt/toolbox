@@ -8,13 +8,14 @@ import (
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
-	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 var shellPublish []string
+var shellCreate bool
+var shellPath string
 
 var shellCmd = &cobra.Command{
-	Use:   "shell",
+	Use:   "shell [name]",
 	Short: "Start an interactive shell session in the toolbox container",
 	Long: `Start the toolbox container and attach an interactive bash session.
 The current working directory is mounted at /workspace and the container
@@ -27,12 +28,12 @@ same formats as "docker run -p" (e.g. "7171", "7171:7171",
 "127.0.0.1:7171:7171"). When the host IP is omitted it defaults to
 127.0.0.1 — useful for OAuth callbacks from tools like gh/glab that listen
 on localhost inside the container.`,
-	Args: usageArgs(cobra.NoArgs),
+	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runShell,
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
-	ws, err := workspace.Resolve()
+	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
 	if err != nil {
 		return err
 	}
@@ -50,6 +51,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if shellName != "" {
+		plan.ContainerName = sessionplan.NamedContainerName(shellName)
+	}
 
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
 	// signal context only fires during pull/build or on external kill.
@@ -64,5 +68,7 @@ func init() {
 		"publish a container port to the host (repeatable). Format: '[host_ip:]host_port:container_port' or 'port'. "+
 			"Examples: 7171, 7171:7171, 127.0.0.1:7171:7171, 0.0.0.0:8000:8000. "+
 			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
+	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
+	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: /tmp/<name>)")
 	rootCmd.AddCommand(shellCmd)
 }

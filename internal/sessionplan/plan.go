@@ -216,6 +216,21 @@ func ContainerNameFor(workspace string) string {
 	return ContainerNamePrefix + base + "-" + hash
 }
 
+// NamedContainerName returns the container name used by `toolbox shell <name>`
+// and `toolbox stop <name>`.
+//
+// Format: toolbox-<name>, with the same sanitization rules used for the
+// workspace basename portion of ContainerNameFor.
+func NamedContainerName(name string) string {
+	base := strings.ToLower(strings.TrimSpace(name))
+	base = sanitizeRe.ReplaceAllString(base, "-")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "shell"
+	}
+	return ContainerNamePrefix + base
+}
+
 // normalizeWorkspace returns the workspace path as an absolute, cleaned
 // path. Falls back to the input on Abs failure (the empty string and other
 // pathological inputs propagate untouched and surface downstream).

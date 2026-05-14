@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/workspace"
 	"github.com/spf13/cobra"
@@ -9,12 +11,12 @@ import (
 var stopAll bool
 
 var stopCmd = &cobra.Command{
-	Use:   "stop",
+	Use:   "stop [name]",
 	Short: "Stop and remove toolbox containers",
 	Long: `Stop and remove the toolbox container bound to the current directory.
 With --all, stop and remove every toolbox container on the host.
 All persistent data lives on the host-mounted volumes, so nothing is lost.`,
-	Args: usageArgs(cobra.NoArgs),
+	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runStop,
 }
 
@@ -29,7 +31,13 @@ func runStop(cmd *cobra.Command, args []string) error {
 	defer stopSig()
 
 	if stopAll {
+		if len(args) > 0 {
+			return &usageError{err: fmt.Errorf("--all cannot be used with a shell name")}
+		}
 		return container.StopAll(ctx, cli)
+	}
+	if len(args) > 0 {
+		return container.StopByName(ctx, cli, args[0])
 	}
 
 	ws, err := workspace.Resolve()

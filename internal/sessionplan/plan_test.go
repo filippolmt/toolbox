@@ -282,6 +282,15 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	}
 }
 
+func TestNamedContainerName(t *testing.T) {
+	if got := sessionplan.NamedContainerName("infra"); got != "toolbox-infra" {
+		t.Fatalf("NamedContainerName(infra) = %q, want toolbox-infra", got)
+	}
+	if got := sessionplan.NamedContainerName("AI Scratch"); got != "toolbox-ai-scratch" {
+		t.Fatalf("NamedContainerName(AI Scratch) = %q, want toolbox-ai-scratch", got)
+	}
+}
+
 // --- Merge tier (pure data, NO fs side effects) ---
 
 // TestMergeIsPure asserts Merge does not require HOME setup or t.TempDir

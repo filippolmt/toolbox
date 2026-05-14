@@ -15,9 +15,10 @@ import (
 // user needs a custom registry image, the escape hatch is to point at a
 // locally-built one via `toolbox build` + manual `docker tag`.
 type Config struct {
-	Mounts []Mount         `mapstructure:"mounts"`
-	Tools  map[string]bool `mapstructure:"tools"`
-	Shell  string          `mapstructure:"shell"`
+	Mounts []Mount               `mapstructure:"mounts"`
+	Tools  map[string]bool       `mapstructure:"tools"`
+	Shells map[string]NamedShell `mapstructure:"shells"`
+	Shell  string                `mapstructure:"shell"`
 	// MountsRoot retargets every default mount whose Source lives under
 	// ~/.toolbox/ to the given prefix. Useful when the user wants every
 	// toolbox-managed credential / state dir to live somewhere other than
@@ -26,6 +27,11 @@ type Config struct {
 	// root rewrite by mountplan.Merge, so a single override remains
 	// possible.
 	MountsRoot string `mapstructure:"mounts_root"`
+}
+
+// NamedShell is a shell workspace entry configured under shells:<name>.
+type NamedShell struct {
+	Path string `mapstructure:"path"`
 }
 
 // Mount represents a host -> container volume bind.

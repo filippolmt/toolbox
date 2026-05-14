@@ -215,6 +215,11 @@ func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
 	return teardown.StopOne(ctx, cli, sessionplan.ContainerNameFor(workspace), teardown.DefaultStopGrace)
 }
 
+// StopByName stops and removes the toolbox container for a named shell.
+func StopByName(ctx context.Context, cli client.APIClient, name string) error {
+	return teardown.StopOne(ctx, cli, sessionplan.NamedContainerName(name), teardown.DefaultStopGrace)
+}
+
 // StopAll stops and removes every toolbox-managed container on the host.
 // Matches the "toolbox-" prefix as well as the legacy singleton name "toolbox".
 // Failures on a single container don't short-circuit the rest — partial

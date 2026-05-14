@@ -17,27 +17,36 @@ func TestSubcommandsRejectPositionalArgs(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  *cobra.Command
+		args []string
 	}{
-		{"shell", shellCmd},
-		{"build", buildCmd},
-		{"stop", stopCmd},
-		{"version", versionCmd},
+		{"shell", shellCmd, []string{"unexpected", "extra"}},
+		{"build", buildCmd, nil},
+		{"stop", stopCmd, []string{"unexpected", "extra"}},
+		{"version", versionCmd, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.cmd.Args == nil {
 				t.Fatalf("%s: Args validator must be set", tc.name)
 			}
-			err := tc.cmd.Args(tc.cmd, []string{"unexpected"})
+			args := tc.args
+			if args == nil {
+				args = []string{"unexpected"}
+			}
+			err := tc.cmd.Args(tc.cmd, args)
 			if err == nil {
-				t.Fatalf("%s: Args should reject extra positional arg", tc.name)
+				t.Fatalf("%s: Args should reject invalid positional args %v", tc.name, args)
 			}
 			var uerr *usageError
 			if !errors.As(err, &uerr) {
 				t.Errorf("%s: Args error should be wrapped in *usageError, got %T: %v", tc.name, err, err)
 			}
-			if err := tc.cmd.Args(tc.cmd, nil); err != nil {
-				t.Errorf("%s: Args should accept no args, got %v", tc.name, err)
+			okArgs := []string{}
+			if tc.name == "shell" || tc.name == "stop" {
+				okArgs = []string{"name"}
+			}
+			if err := tc.cmd.Args(tc.cmd, okArgs); err != nil {
+				t.Errorf("%s: Args should accept %v, got %v", tc.name, okArgs, err)
 			}
 		})
 	}

@@ -34,6 +34,14 @@ func Render() string {
 	b.WriteString("# shell: zsh\n")
 	b.WriteString("\n")
 
+	b.WriteString("# shells — reusable named workspaces for `toolbox shell <name>`.\n")
+	b.WriteString("# Each path must be absolute. toolbox bind-mounts path -> path and starts\n")
+	b.WriteString("# the shell in that directory.\n")
+	b.WriteString("# shells:\n")
+	b.WriteString("#   infra:\n")
+	b.WriteString("#     path: /tmp/infra\n")
+	b.WriteString("\n")
+
 	b.WriteString("# Retarget every default mount whose source lives under ~/.toolbox/ to the\n")
 	b.WriteString("# given prefix. Must be absolute (/path) or strictly home-relative (~/sub).\n")
 	b.WriteString("# Bare \"~\" is rejected — it would defeat credential isolation.\n")
