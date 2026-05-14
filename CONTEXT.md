@@ -109,6 +109,32 @@ that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
 
+### Teardown
+
+The container stop/remove + shell-exit cleanup policy that previously
+lived inline at the bottom of `internal/container/lifecycle.go::Shell`.
+
+Concretely: `teardown.StopOne(ctx, cli, name, grace)` is the single
+container-stop seam used by `toolbox stop`, `toolbox stop --all`, and
+the shell-exit defer; NotFound on either ContainerStop or
+ContainerRemove is tolerated. `teardown.HasActiveExecs(ctx, cli, name)`
+probes for a sibling shell still attached to the same container —
+inspect errors are treated as "no active execs" so a daemon hiccup
+never strands a container. `teardown.OnShellExit(cli, name)` composes
+the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
+must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
+`internal/teardown`. Timing constants `DefaultTimeout` (30s) and
+`DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+
+Why the term exists: before this concept was named, the policy was a
+4-deep nested defer block inside `Shell`, with the timing constants as
+package-level vars in `lifecycle.go` and the active-exec + stop+remove
+helpers loose at the bottom of the same file. Adding any
+pre/post-cleanup step (log dump, longer grace for a busy daemon)
+required editing inside the defer block. The "Teardown" name flattens
+the defer to one call and gives `toolbox stop` and the shell-exit path
+one named owner.
+
 ### Docker Identity
 
 The host-process → container-identity translation at the Docker edge:

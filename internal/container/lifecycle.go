@@ -8,10 +8,12 @@
 // runtime branch over the ContainerInspect result is the typed Op
 // returned by internal/runplan.Compute and dispatched by dispatchOp.
 //
-// The orchestration Module lives in lifecycle.go (this file), sectioned
-// into Lifecycle and Cleanup helpers. The TTY/signal Adapter lives in
-// attach.go and is kept as a separate file because its concern (raw
-// mode, signal forwarding) is independent from Docker SDK orchestration.
+// The orchestration Module lives in lifecycle.go (this file). The
+// stop/remove + shell-exit policy is owned by internal/teardown; image
+// readiness by internal/imageplan; host-process identity by
+// internal/dockeridentity. The TTY/signal Adapter lives in attach.go
+// and is kept as a separate file because its concern (raw mode, signal
+// forwarding) is independent from Docker SDK orchestration.
 package container
 
 import (
@@ -20,9 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
@@ -31,24 +31,9 @@ import (
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/teardown"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
-
-// cleanupTimeout bounds the best-effort container stop+remove that runs on
-// exit with a fresh context. Sized to absorb a slow Docker daemon while
-// keeping the user-visible exit prompt-to-prompt latency low: stopOne sets
-// a 2s SIGTERM grace (see stopShellGrace), remove is sub-second, so 30s is
-// pure margin for the daemon socket itself.
-const cleanupTimeout = 30 * time.Second
-
-// stopShellGrace is the SIGTERM grace period passed to ContainerStop on
-// shell-exit teardown. Kept short because the current image's PID 1 child
-// is `sleep infinity` (it terminates instantly on SIGTERM) and persistent
-// state lives on bind mounts — nothing to flush. On older images that
-// still ship `CMD ["zsh"]`, interactive zsh ignores SIGTERM and Docker
-// falls back to SIGKILL after this grace; the user-visible delta is
-// "2s tail" instead of the prior 10s, which is the worst case we accept.
-const stopShellGrace = 2
 
 // execShellFn attaches an interactive shell to a container.
 // Exposed as a package-level var so tests can substitute it.
@@ -143,21 +128,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 
 	// Auto-remove on exit, unless another shell is still attached to the
-	// same container (same workspace opened in multiple terminals). In that
-	// case leaving the container running keeps the sibling sessions alive.
-	// Use a fresh context (with a bounded timeout) so cleanup still runs if
-	// the shell exited because ctx was cancelled (Ctrl+C), but a frozen
-	// Docker daemon can't hang the CLI. The shell's own exit error wins
-	// over any cleanup error — a failed stop is noisy, not fatal.
+	// same container. Policy + fresh-context handling owned by teardown.
+	// The shell's own exit error wins over any cleanup error.
 	defer func() {
-		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), cleanupTimeout)
-		defer cancelCleanup()
-		if hasActiveExecs(cleanupCtx, cli, plan.ContainerName) {
-			ui.Info("Container " + plan.ContainerName + " still has active sessions — leaving it running")
-			return
-		}
-		if stopErr := stopOne(cleanupCtx, cli, plan.ContainerName); stopErr != nil && err == nil {
-			err = stopErr
+		if cleanupErr := teardown.OnShellExit(cli, plan.ContainerName); cleanupErr != nil && err == nil {
+			err = cleanupErr
 		}
 	}()
 
@@ -237,7 +212,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 
 // Stop stops and removes the toolbox container associated with the workspace.
 func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
-	return stopOne(ctx, cli, sessionplan.ContainerNameFor(workspace))
+	return teardown.StopOne(ctx, cli, sessionplan.ContainerNameFor(workspace), teardown.DefaultStopGrace)
 }
 
 // StopAll stops and removes every toolbox-managed container on the host.
@@ -261,7 +236,7 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 		if name != "toolbox" && !strings.HasPrefix(name, sessionplan.ContainerNamePrefix) {
 			continue
 		}
-		if err := stopOne(ctx, cli, name); err != nil {
+		if err := teardown.StopOne(ctx, cli, name, teardown.DefaultStopGrace); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -274,54 +249,4 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 		return errors.Join(errs...)
 	}
 	return nil
-}
-
-// --- Cleanup helpers ---
-
-func stopOne(ctx context.Context, cli client.APIClient, name string) error {
-	timeout := stopShellGrace
-	stopErr := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
-
-	if cerrdefs.IsNotFound(stopErr) {
-		ui.Warning("Container " + name + " not found")
-		return nil
-	}
-	if stopErr != nil {
-		return fmt.Errorf("failed to stop container %s: %w", name, stopErr)
-	}
-
-	rmErr := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
-	if rmErr != nil && !cerrdefs.IsNotFound(rmErr) {
-		return fmt.Errorf("failed to remove container %s: %w", name, rmErr)
-	}
-
-	ui.Success("Container " + name + " stopped and removed")
-	return nil
-}
-
-// hasActiveExecs reports whether the named container has any still-running
-// exec session. Called on shell exit: the invoking exec has already drained
-// (io.Copy returned) and is Running:false by the time this runs, so it does
-// not self-report. A true result means a sibling terminal is still attached,
-// and stopping the container would kill it — the caller skips teardown.
-// Inspect errors are treated as "no active execs" so a transient daemon
-// hiccup does not strand a container that nobody will ever clean up.
-func hasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool {
-	inspect, err := cli.ContainerInspect(ctx, name)
-	if err != nil {
-		return false
-	}
-	if inspect.ContainerJSONBase == nil {
-		return false
-	}
-	for _, execID := range inspect.ExecIDs {
-		exec, err := cli.ContainerExecInspect(ctx, execID)
-		if err != nil {
-			continue
-		}
-		if exec.Running {
-			return true
-		}
-	}
-	return false
 }
