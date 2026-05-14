@@ -216,6 +216,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       ripgrep \
       bash-completion \
       make \
+      ncurses-bin \
       python3 \
       python3-pip \
       python-is-python3 \
@@ -1259,6 +1260,21 @@ RUN set -eux; \
       chmod +x /usr/local/bin/rtk; \
       rtk --version; \
     fi
+
+# -- Layer 20f: xterm-ghostty terminfo ----------------------------------------
+# Debian bookworm ships ncurses 6.4, whose terminfo db predates the
+# xterm-ghostty entry (added upstream in 6.5). Without it, Ghostty's
+# TERM=xterm-ghostty falls back to a broken definition — multi-line prompt
+# redraw leaves ghost chars on screen that mouse-copy captures but the
+# keyboard buffer never sees, breaking pasted commands.
+# Bundled .src includes xterm-ghostty plus every transitive `use=` fragment,
+# so `tic` resolves entirely from input — no runtime fetch needed.
+# Positioned last (before user setup) so .src bumps cascade only to Layer 21
+# (~30s rebuild), not to the heavy tool layers above (gcloud/playwright/go).
+# `tic` ships in ncurses-bin (Layer 1 apt list).
+RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
+    set -eux; \
+    tic -x -o /usr/share/terminfo /tmp/xterm-ghostty.src
 
 # -- Layer 21: User setup (IMG-03) --------------------------------------------
 # The container is launched with --user <host-uid>:<host-gid> (see
