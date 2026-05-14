@@ -13,6 +13,10 @@ set -euo pipefail
 # </dev/null is load-bearing — without it, oci's "Do you want to create a
 # new config file? [Y/n]" prompt blocks the entrypoint on the container TTY
 # and never reaches the startup hooks.
+# Three-way outcome (decision D-08-creds-tristate): the original two-way
+# probe lumped "config file missing" and "config present + live API
+# rejection" into the same "not configured" string — hiding expired keys
+# and tenancy/region misconfiguration behind a fresh-install message.
 command -v oci >/dev/null 2>&1 || exit 0
 
 if [ ! -f "$HOME/.oci/config" ]; then
@@ -20,5 +24,5 @@ if [ ! -f "$HOME/.oci/config" ]; then
 elif oci iam region list --output table </dev/null >/dev/null 2>&1; then
     echo "  oci: configured"
 else
-    echo "  oci: not configured"
+    echo "  oci: auth check failed (verify ~/.oci/config + key fingerprint)"
 fi

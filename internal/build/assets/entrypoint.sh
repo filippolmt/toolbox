@@ -32,6 +32,14 @@ unset _uid _gid
 # inside the container.
 INIT_D="/usr/local/lib/toolbox/init.d"
 TOOLBOX_INIT_LOG_DIR="$HOME/.toolbox-state/init"
+# Cred-probe scripts (init.d/0[2-8]-*-creds.sh + 60-glab.sh) emit two-space-
+# indented child lines under this banner — restoring it preserves D-08 (see
+# .planning/phases/10-init-sequence/10-CONTEXT.md) which kept the
+# "Toolbox credential check:" group header from the original entrypoint.
+# Header is unconditional because the cred probes always run (they self-gate
+# on `command -v` per CLI); printing only when something configured would
+# require a pre-scan and add a forking cost for cosmetic gain.
+echo "Toolbox credential check:"
 if [ -d "$INIT_D" ]; then
     mkdir -p "$TOOLBOX_INIT_LOG_DIR"
     _init_tmp=$(mktemp -d)

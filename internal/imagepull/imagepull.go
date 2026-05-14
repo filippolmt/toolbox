@@ -15,8 +15,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/image"
@@ -54,11 +56,17 @@ func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) {
 // a silent hang while layers download. Returns true on a clean pull so
 // the caller can record it in the cache; returns false on any failure
 // path so a poisoned cache never silently masks broken connectivity.
+//
+// Auth failures get a dedicated warning with the remediation path because
+// "using local image if present" silently hides the expired-token case —
+// the user keeps running a stale image and only finds out when the next
+// release fails to land. The actionable hint (`docker login ghcr.io`)
+// turns an opaque warning into a single-command fix.
 func pull(ctx context.Context, cli client.APIClient, ref string) bool {
 	ui.Info("Checking for image updates: " + ref + "...")
 	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
 	if err != nil {
-		ui.Warning("image pull failed, using local image if present: " + err.Error())
+		warnPullError(ref, "image pull failed", err)
 		return false
 	}
 	defer rc.Close()
@@ -67,11 +75,64 @@ func pull(ctx context.Context, cli client.APIClient, ref string) bool {
 	fd := os.Stderr.Fd()
 	isTerm := term.IsTerminal(int(fd))
 	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, fd, isTerm, nil); err != nil {
-		ui.Warning("image pull stream error, using local image if present: " + err.Error())
+		warnPullError(ref, "image pull stream error", err)
 		return false
 	}
 	ui.Success("Image up to date: " + ref)
 	return true
+}
+
+// warnPullError dispatches between auth-specific guidance and generic
+// "using local image" wording. Detection inspects both the
+// jsonmessage.JSONError code (when the stream carried a structured error)
+// and the error string (when ImagePull surfaced a plain network/auth
+// error before the stream started) — auth signals show up at both layers
+// depending on how the registry rejects the request.
+func warnPullError(ref, prefix string, err error) {
+	if isAuthError(err) {
+		ui.Warning(prefix + " (auth): " + err.Error())
+		ui.Warning("registry rejected request — run `docker login " + registryOf(ref) + "` to refresh credentials. Using local image if present.")
+		return
+	}
+	ui.Warning(prefix + ", using local image if present: " + err.Error())
+}
+
+// isAuthError reports whether err denotes an authentication/authorization
+// failure surfaced from the registry. Two signal sources: a structured
+// jsonmessage.JSONError with HTTP 401/403, and the freeform error string
+// for cases that bypass the stream (e.g. transport-layer rejection from
+// ImagePull itself). String matching is intentionally broad — registries
+// use varied phrasing ("unauthorized", "denied", "authentication
+// required") and a false positive only changes the wording, not behavior.
+func isAuthError(err error) bool {
+	if jerr, ok := errors.AsType[*jsonmessage.JSONError](err); ok {
+		if jerr.Code == 401 || jerr.Code == 403 {
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{"unauthorized", "authentication required", "denied", "forbidden", "401", "403"} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// registryOf extracts the registry host from an image ref for the
+// `docker login` hint. Refs without an explicit registry default to
+// docker.io (Docker Hub's documented anonymous host). Best-effort: a
+// malformed ref falls through to docker.io rather than printing an
+// empty hostname in the user-facing remediation line.
+func registryOf(ref string) string {
+	head, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return "docker.io"
+	}
+	if strings.ContainsAny(head, ".:") || head == "localhost" {
+		return head
+	}
+	return "docker.io"
 }
 
 // markerPath returns the cache marker path for a given image ref. The
@@ -104,17 +165,25 @@ func cached(ref string) bool {
 	return time.Since(info.ModTime()) < TTL
 }
 
-// record stamps a fresh marker after a successful pull. Best-effort: any
-// error (no home dir, mkdir/write failure) leaves the cache empty, so
-// the next invocation just pulls again. Marker contents are intentionally
-// empty — modtime is the timestamp.
+// record stamps a fresh marker after a successful pull. Persist failures
+// (no home dir, mkdir/write rejection from ENOSPC / EROFS / permissions)
+// don't break the user — the next invocation just pulls again — but a
+// permanently un-writable cache silently turns every shell into a full
+// registry round-trip, which adds latency and consumes GHCR rate budget.
+// One warning per failure surfaces the root cause without spamming: once
+// the underlying issue is fixed the warning stops on its own.
+// Marker contents are intentionally empty — modtime is the timestamp.
 func record(ref string) {
 	path, err := markerPath(ref)
 	if err != nil {
+		ui.Warning("pull cache: cannot resolve marker path: " + err.Error())
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		ui.Warning("pull cache: cannot create marker dir: " + err.Error())
 		return
 	}
-	_ = os.WriteFile(path, nil, 0o644)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		ui.Warning("pull cache: cannot write marker: " + err.Error())
+	}
 }
