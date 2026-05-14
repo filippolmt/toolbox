@@ -2,15 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
+	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 var shellPublish []string
@@ -34,7 +32,7 @@ on localhost inside the container.`,
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
-	workspace, err := resolveWorkspace()
+	ws, err := workspace.Resolve()
 	if err != nil {
 		return err
 	}
@@ -48,7 +46,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, workspace, shellPublish, version.Version)
+	plan, err := sessionplan.Plan(cfg, ws, shellPublish, version.Version)
 	if err != nil {
 		return err
 	}
@@ -59,34 +57,6 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	return container.Shell(ctx, cli, plan)
-}
-
-func resolveWorkspace() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current directory: %w", err)
-	}
-	abs, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve absolute path: %w", err)
-	}
-	clean := filepath.Clean(abs)
-	if err := validateWorkspacePath(clean); err != nil {
-		return "", err
-	}
-	return clean, nil
-}
-
-// validateWorkspacePath rejects paths incompatible with Docker's legacy
-// Binds format (host:container:options). A ':' in the host path would be
-// silently re-parsed as a field separator — e.g. /Users/foo:bar/project
-// becomes bind source "/Users/foo", target "bar/project". Fail loudly so
-// the user either renames the directory or opens toolbox from a safe path.
-func validateWorkspacePath(p string) error {
-	if strings.ContainsRune(p, ':') {
-		return fmt.Errorf("workspace path %q contains ':' — Docker bind-mount format uses ':' as a separator; rename the directory or cd into a different path", p)
-	}
-	return nil
 }
 
 func init() {

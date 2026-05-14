@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -31,11 +32,11 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return container.StopAll(ctx, cli)
 	}
 
-	workspace, err := resolveWorkspace()
+	ws, err := workspace.Resolve()
 	if err != nil {
 		return err
 	}
-	return container.Stop(ctx, cli, workspace)
+	return container.Stop(ctx, cli, ws)
 }
 
 func init() {

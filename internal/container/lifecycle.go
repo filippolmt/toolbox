@@ -17,12 +17,9 @@ package container
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -31,12 +28,10 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
-	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/imagepull"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -128,17 +123,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 
 	if !plan.Image.IsLocal {
-		// Canonical registry image: refresh on every shell, best-effort —
-		// but skip the manifest round-trip when we already pulled the same
-		// ref within pullCacheTTL. The cache lives on disk under
-		// ~/.toolbox/state/pull-cache/ so it survives across CLI runs; only
-		// successful pulls record, so a network blip doesn't poison the
-		// next invocation into staleness. See pullCached/recordPull.
-		if !pullCached(plan.Image.Ref) {
-			if pullImage(ctx, cli, plan.Image.Ref) {
-				recordPull(plan.Image.Ref)
-			}
-		}
+		// Canonical registry image: refresh on every shell, best-effort,
+		// with a TTL cache that skips the manifest round-trip on hot reuse.
+		// Cache + observability owned by imagepull.
+		imagepull.RefreshIfStale(ctx, cli, plan.Image.Ref)
 	}
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
@@ -361,86 +349,6 @@ var statSockGID = func(path string) (uint32, bool) {
 		return 0, false
 	}
 	return sys.Gid, true
-}
-
-// pullImage attempts to pull the image from its remote registry. Errors are
-// logged as warnings and swallowed: the caller proceeds with the local image.
-// The pull stream is rendered with per-layer progress bars on a TTY, or as
-// plain status lines otherwise — the caller gets real-time feedback instead
-// of a silent hang while layers download. Returns true on a clean pull so
-// the caller can record it in the pull cache; returns false on any failure
-// path so a poisoned cache never silently masks broken connectivity.
-func pullImage(ctx context.Context, cli client.APIClient, ref string) bool {
-	ui.Info("Checking for image updates: " + ref + "...")
-	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
-	if err != nil {
-		ui.Warning("image pull failed, using local image if present: " + err.Error())
-		return false
-	}
-	defer rc.Close()
-
-	// Pull progress is diagnostic; keep stdout clean for program output.
-	fd := os.Stderr.Fd()
-	isTerm := term.IsTerminal(int(fd))
-	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stderr, fd, isTerm, nil); err != nil {
-		ui.Warning("image pull stream error, using local image if present: " + err.Error())
-		return false
-	}
-	ui.Success("Image up to date: " + ref)
-	return true
-}
-
-// pullCacheTTL bounds how long we trust a previous successful manifest check
-// before re-asking the registry. One hour is short enough that a freshly
-// pushed image lands on developer machines within the same work block, and
-// long enough that rapid `toolbox shell` cycles (open → exit → open) don't
-// each pay a round-trip to GHCR. Override is intentional fs-only: delete
-// ~/.toolbox/state/pull-cache/* to force a fresh pull on next invocation.
-const pullCacheTTL = 1 * time.Hour
-
-// pullCachePath returns the cache marker path for a given image ref. The
-// ref is hashed because tags can contain characters that are awkward in
-// filenames (digests, registry paths with ":" / "/"). os.UserHomeDir errors
-// are surfaced so the caller treats them as "no cache" rather than writing
-// to an unexpected location.
-func pullCachePath(ref string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256([]byte(ref))
-	return filepath.Join(home, ".toolbox", "state", "pull-cache", hex.EncodeToString(sum[:])), nil
-}
-
-// pullCached reports whether a successful pull of ref happened within the
-// last pullCacheTTL. Any error (no home dir, missing marker, stat failure)
-// returns false so the caller falls through to a real pull — never silently
-// skip on uncertainty.
-func pullCached(ref string) bool {
-	path, err := pullCachePath(ref)
-	if err != nil {
-		return false
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return time.Since(info.ModTime()) < pullCacheTTL
-}
-
-// recordPull stamps a fresh marker after a successful pull. Best-effort:
-// any error (no home dir, mkdir/write failure) leaves the cache empty, so
-// the next invocation just pulls again. Marker contents are intentionally
-// empty — modtime is the timestamp.
-func recordPull(ref string) {
-	path, err := pullCachePath(ref)
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	_ = os.WriteFile(path, nil, 0o644)
 }
 
 func stopOne(ctx context.Context, cli client.APIClient, name string) error {
