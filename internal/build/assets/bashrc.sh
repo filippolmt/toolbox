@@ -135,8 +135,19 @@ fi
 # (bash-preexec chains DEBUG trap instead of clobbering it; see starship
 # block above). `--disable-up-arrow` preserves bash's native Up-Arrow
 # single-shell history navigation; atuin only owns Ctrl-R.
+#
+# Belt-and-braces: pre-create ATUIN_CONFIG_DIR. init.d/65-atuin.sh owns
+# the canonical mkdir, but if that script aborts (env-var unset on a
+# pre-atuin image still carrying the binary, log lost to background
+# parallel boot, etc.) atuin's settings loader inside `atuin init bash`
+# would fail with ENOENT on config.toml and dump a multi-line anyhow
+# stack to the user's shell. Mkdir here is idempotent + free.
+# stderr redirect MUST go inside the subshell — `2>/dev/null` after
+# eval only silences the eval'd code, not `atuin init` itself, so
+# settings-load errors would otherwise leak through despite the trailer.
 if command -v atuin >/dev/null 2>&1; then
-    eval "$(atuin init bash --disable-up-arrow)" 2>/dev/null || true
+    [ -n "${ATUIN_CONFIG_DIR:-}" ] && mkdir -p "$ATUIN_CONFIG_DIR" 2>/dev/null || true
+    eval "$(atuin init bash --disable-up-arrow 2>/dev/null)" 2>/dev/null || true
 fi
 
 return 0

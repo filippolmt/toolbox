@@ -131,8 +131,19 @@ fi
 # only takes over Ctrl-R. The DB + config live under the ~/.toolbox/atuin
 # bind-mount (DefaultMounts → ~/.local/share/atuin), so history survives
 # `toolbox stop` across every shell across every project.
+#
+# Belt-and-braces: pre-create ATUIN_CONFIG_DIR. init.d/65-atuin.sh owns
+# the canonical mkdir, but if that script aborts (env-var unset on a
+# pre-atuin image still carrying the binary, log lost to background
+# parallel boot, etc.) atuin's settings loader inside `atuin init zsh`
+# would fail with ENOENT on config.toml and dump a multi-line anyhow
+# stack to the user's shell. Mkdir here is idempotent + free.
+# stderr redirect MUST go inside the subshell — `2>/dev/null` after
+# eval only silences the eval'd code, not `atuin init` itself, so
+# settings-load errors would otherwise leak through despite the trailer.
 if command -v atuin >/dev/null 2>&1; then
-    eval "$(atuin init zsh --disable-up-arrow)" 2>/dev/null || true
+    [ -n "${ATUIN_CONFIG_DIR:-}" ] && mkdir -p "$ATUIN_CONFIG_DIR" 2>/dev/null || true
+    eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" 2>/dev/null || true
 fi
 
 # -- Starship prompt (LAST — overrides PROMPT/PS1) ---------------------------

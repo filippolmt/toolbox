@@ -1,16 +1,16 @@
-# Graph Report - toolbox  (2026-05-13)
+# Graph Report - toolbox  (2026-05-14)
 
 ## Corpus Check
-- 60 files · ~38,983 words
+- 63 files · ~39,225 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 542 nodes · 840 edges · 40 communities (36 shown, 4 thin omitted)
-- Extraction: 74% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 221 edges (avg confidence: 0.8)
+- 556 nodes · 867 edges · 41 communities (37 shown, 4 thin omitted)
+- Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 232 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e08e1725`
+- Built from commit: `dd5f4825`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -40,13 +40,14 @@
 - [[_COMMUNITY_Community 22|Community 22]]
 - [[_COMMUNITY_Community 23|Community 23]]
 - [[_COMMUNITY_Community 24|Community 24]]
-- [[_COMMUNITY_Community 31|Community 31]]
-- [[_COMMUNITY_Community 33|Community 33]]
-- [[_COMMUNITY_Community 38|Community 38]]
+- [[_COMMUNITY_Community 25|Community 25]]
+- [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 34|Community 34]]
+- [[_COMMUNITY_Community 39|Community 39]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Shell()` - 32 edges
-2. `mkdirAll()` - 23 edges
+1. `Shell()` - 33 edges
+2. `mkdirAll()` - 24 edges
 3. `stubExecShell()` - 19 edges
 4. `testConfig()` - 18 edges
 5. `testWorkspace()` - 18 edges
@@ -79,35 +80,35 @@
 - **** — sessionplan_plan, container_shell, container_execshell [EXTRACTED 1.00]
 - **** — catalog_entries, concept_image_hash_invalidation, catalog_writecanonicalentries [EXTRACTED 1.00]
 
-## Communities (40 total, 4 thin omitted)
+## Communities (41 total, 4 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.06
-Nodes (33): BuildArg(), IsDefault(), Keys(), TestBuildArgLookup(), TestCanonicalEncodingDeterministic(), TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(), TestIsDefaultMatchesLegacy(), TestKeysReturnsAllEntries() (+25 more)
+Cohesion: 0.07
+Nodes (37): runBuild(), resolveWorkspace(), runShell(), validateWorkspacePath(), TestSignalCtxReturnsCancellableContext(), TestValidateWorkspacePathAcceptsCommonPaths(), TestValidateWorkspacePathRejectsColon(), signalCtx() (+29 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.1
-Nodes (29): TestPlanGlobalUnreadableIsBestEffort(), TestPlanWalksUpFromSubdir(), TestWalkUpHomeUnsetContinuesToRoot(), TestWalkUpIgnoresDirectoryNamedToolboxYaml(), TestWalkUpReturnsClosestMatch(), TestWalkUpStopsAtFilesystemRoot(), TestWalkUpStopsAtHome(), walkUp() (+21 more)
+Cohesion: 0.07
+Nodes (28): BuildArg(), IsDefault(), Keys(), TestBuildArgLookup(), TestCanonicalEncodingDeterministic(), TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(), TestIsDefaultMatchesLegacy(), TestKeysReturnsAllEntries() (+20 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.09
-Nodes (28): runBuild(), resolveWorkspace(), runShell(), validateWorkspacePath(), TestSignalCtxReturnsCancellableContext(), TestValidateWorkspacePathAcceptsCommonPaths(), TestValidateWorkspacePathRejectsColon(), signalCtx() (+20 more)
-
-### Community 3 - "Community 3"
 Cohesion: 0.19
 Nodes (29): Shell(), captureStderr(), stubExecShell(), testConfig(), testPlan(), testPlanWithCfg(), TestShellAutoBuildsCustomImage(), TestShellContainerNaming() (+21 more)
 
-### Community 4 - "Community 4"
+### Community 3 - "Community 3"
 Cohesion: 0.11
 Nodes (28): assertMount(), assertSymlink(), findMount(), TestDefaults(), applyMountsRoot(), mergeMounts(), TestApplyMountsRootDoesNotMutateBase(), TestMergeAnonymousAppend() (+20 more)
 
-### Community 5 - "Community 5"
+### Community 4 - "Community 4"
 Cohesion: 0.08
 Nodes (32): Config, HomeMountParents, Load, Mount, SupportedShells, ValidateMountsRoot, ValidateShell, defaults (+24 more)
 
-### Community 6 - "Community 6"
+### Community 5 - "Community 5"
 Cohesion: 0.08
 Nodes (26): Docker Sock GroupAdd Strategy, Pull Cache TTL, Session Pipeline, Container State Machine running/stopped/notfound, TTY Raw Mode and Signal Forwarding, dockerSockGroups, ensureImage, execShell (+18 more)
+
+### Community 6 - "Community 6"
+Cohesion: 0.14
+Nodes (26): TestPlanGlobalUnreadableIsBestEffort(), TestPlanWalksUpFromSubdir(), TestWalkUpHomeUnsetContinuesToRoot(), TestWalkUpIgnoresDirectoryNamedToolboxYaml(), TestWalkUpReturnsClosestMatch(), TestWalkUpStopsAtFilesystemRoot(), TestWalkUpStopsAtHome(), walkUp() (+18 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.06
@@ -123,7 +124,7 @@ Nodes (27): buildCmd, buildNoCache, runBuild, completionCmd, configCmd, configEx
 
 ### Community 10 - "Community 10"
 Cohesion: 0.12
-Nodes (14): TestCatalogDockerfileBijection(), renderExampleYAML(), TestRenderExampleYAMLContainsAllToolsAndMounts(), TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig(), runInit() (+6 more)
+Nodes (15): TestCatalogDockerfileBijection(), renderExampleYAML(), TestRenderExampleYAMLContainsAllToolsAndMounts(), TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig(), runInit() (+7 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.14
@@ -141,39 +142,43 @@ Nodes (14): BuildArg, Defaults, Entries, IsDefault, Keys, WriteCanonical, WriteC
 Cohesion: 0.23
 Nodes (13): ensureSource(), expandHome(), resolveAll(), TestExpandHome(), TestResolveAllCreatesMissingWhenRequested(), TestResolveAllKeepsNonEmptyDirEvenWithSymlinkFrom(), TestResolveAllReadOnlyMode(), TestResolveAllRelativeSourceCreatesUnderCWD() (+5 more)
 
-### Community 16 - "Community 16"
+### Community 15 - "Community 15"
+Cohesion: 0.15
+Nodes (8): Bind, Defaults(), Merge(), Plan(), TestPlanEndToEnd(), Result, TestWorkspaceMirrorPath(), WorkspaceMirrorPath()
+
+### Community 17 - "Community 17"
 Cohesion: 0.24
 Nodes (5): execShell(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_NonTTYStdin(), attachMock
 
-### Community 17 - "Community 17"
+### Community 18 - "Community 18"
 Cohesion: 0.2
 Nodes (9): code:block1 (~/.toolbox/startup.d/), code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o), code:bash (#!/usr/bin/env bash), Disabling a hook, Examples, [`gsd.sh`](./gsd.sh) — Get-Shit-Done, How the hook runs, Startup hooks (+1 more)
 
-### Community 18 - "Community 18"
+### Community 19 - "Community 19"
 Cohesion: 0.25
 Nodes (7): Config Plan, Context, Glossary, Init Sequence, Mount Plan, Session Plan, Tool Catalog
 
-### Community 19 - "Community 19"
+### Community 20 - "Community 20"
 Cohesion: 0.48
 Nodes (6): dockerSockGroups(), TestDockerSockGroupsAppendsHostGIDOnLinux(), TestDockerSockGroupsFallbackWhenStatFails(), TestDockerSockGroupsIncludesRootForDesktopCase(), TestDockerSockGroupsMatchesOnTargetNotSource(), TestDockerSockGroupsReturnsNilWhenSockNotMounted()
 
-### Community 20 - "Community 20"
+### Community 21 - "Community 21"
 Cohesion: 0.29
 Nodes (5): Architecture, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
-### Community 21 - "Community 21"
+### Community 22 - "Community 22"
 Cohesion: 0.29
 Nodes (6): Architecture, CLAUDE.md, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md), Project
 
-### Community 22 - "Community 22"
+### Community 23 - "Community 23"
 Cohesion: 0.47
 Nodes (4): ParentDirs(), TestParentDirsDeduplicatesAndSorts(), TestParentDirsExcludesHomeRoot(), TestParentDirsSkipsTargetsOutsideHome()
 
-### Community 23 - "Community 23"
+### Community 24 - "Community 24"
 Cohesion: 0.5
 Nodes (3): Commits & PRs, Contributing, Release flow
 
-### Community 24 - "Community 24"
+### Community 25 - "Community 25"
 Cohesion: 0.5
 Nodes (4): main, Execute, usageArgs, usageError
 
@@ -185,17 +190,17 @@ Nodes (4): main, Execute, usageArgs, usageError
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Shell()` connect `Community 3` to `Community 10`, `Community 2`, `Community 19`?**
-  _High betweenness centrality (0.118) - this node is a cross-community bridge._
-- **Why does `mkdirAll()` connect `Community 1` to `Community 2`, `Community 11`, `Community 14`?**
-  _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `Merge()` connect `Community 0` to `Community 4`?**
-  _High betweenness centrality (0.098) - this node is a cross-community bridge._
-- **Are the 23 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
-  _`Shell()` has 23 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 11 inferred relationships involving `mkdirAll()` (e.g. with `TestInitConfigProjectFileWalksUpFromSubdir()` and `TestInitConfigProjectFileStopsAtHome()`) actually correct?**
-  _`mkdirAll()` has 11 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Shell()` connect `Community 2` to `Community 0`, `Community 10`, `Community 20`?**
+  _High betweenness centrality (0.131) - this node is a cross-community bridge._
+- **Why does `mkdirAll()` connect `Community 6` to `Community 0`, `Community 11`, `Community 14`, `Community 15`?**
+  _High betweenness centrality (0.113) - this node is a cross-community bridge._
+- **Why does `Merge()` connect `Community 15` to `Community 1`, `Community 3`?**
+  _High betweenness centrality (0.097) - this node is a cross-community bridge._
+- **Are the 24 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
+  _`Shell()` has 24 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 12 inferred relationships involving `mkdirAll()` (e.g. with `TestInitConfigProjectFileWalksUpFromSubdir()` and `TestInitConfigProjectFileStopsAtHome()`) actually correct?**
+  _`mkdirAll()` has 12 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Result`, `Mount Plan`, `Tool Catalog` to the rest of the system?**
   _102 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07 - nodes in this community are weakly interconnected._
