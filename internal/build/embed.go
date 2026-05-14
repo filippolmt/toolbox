@@ -7,7 +7,7 @@ import "embed"
 // and the auto-build path in `toolbox shell`; the host does not need a repo
 // checkout (e.g. Homebrew installs).
 //
-//go:embed assets/Dockerfile assets/bashrc.sh assets/entrypoint.sh assets/zshrc.sh assets/starship.toml assets/init.d
+//go:embed assets/Dockerfile assets/bashrc.sh assets/entrypoint.sh assets/zshrc.sh assets/starship.toml assets/xterm-ghostty.src assets/init.d
 var Assets embed.FS
 
 // AssetDir is the top-level directory inside Assets. Callers strip this prefix
