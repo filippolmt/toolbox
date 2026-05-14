@@ -211,6 +211,18 @@ Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<
 
 Port bindings are fixed when the container is created. If a container already exists for the current workspace, run `toolbox stop` before `toolbox shell -p …` so the new container picks up the flag.
 
+#### Wrangler OAuth login
+
+`wrangler login` defaults its temporary callback server to `--callback-host=localhost`, which inside the container resolves to the loopback interface and is invisible to the `docker -p` forward — so the host browser hits `ERR_EMPTY_RESPONSE` on the OAuth redirect and no token is written. Pass an explicit bind host so the listener accepts the forwarded connection:
+
+```bash
+toolbox shell -p 8976:8976
+# inside the container:
+wrangler login --callback-host=0.0.0.0
+```
+
+The OAuth redirect URL stays `http://localhost:8976/oauth/callback` (hard-coded upstream) so the browser still reaches the published port on `127.0.0.1`. Credentials land at `~/.config/.wrangler/config/default.toml`, bind-mounted from `~/.toolbox/wrangler/` on the host, and survive `toolbox stop`. `cf auth login` does not need this flag — its upstream listener already binds `0.0.0.0` by default.
+
 ### Loading order
 
 Configuration is loaded from (highest priority first):
