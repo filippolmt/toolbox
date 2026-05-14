@@ -109,6 +109,35 @@ that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
 composition is what the v1.3 milestone calls Architecture Deepening.
 
+### Docker Identity
+
+The host-process → container-identity translation at the Docker edge:
+the `"<uid>:<gid>"` user spec passed to `ContainerCreate` and the
+supplementary group IDs needed for the runtime user to talk to a
+bind-mounted `/var/run/docker.sock`.
+
+Concretely: `dockeridentity.Resolve(binds) → Identity{UserSpec, GroupAdd}`.
+Owned by `internal/dockeridentity`. The single seam `container.Shell`
+calls before `ContainerCreate`. `Identity.UserSpec` is built from
+`os.Getuid` / `os.Getgid`; `Identity.GroupAdd` is nil unless
+`/var/run/docker.sock` is in the bind set, in which case it joins gid 0
+(Docker Desktop reprojects the socket as root:root) plus the host
+socket GID (Linux: usually the `docker` group). The package-level
+`statSockGID` var is the test seam for simulating both deployment
+modes. Session Plan deliberately does NOT encode this concept (host
+process + daemon-fs state are read fresh at the Docker edge so the
+plan stays a pure design-time artifact composable in tests without OS
+state) — Docker Identity is that edge.
+
+Why the term exists: before this concept was named, three loose
+functions (`hostUserSpec`, `dockerSockGroups`, `statSockGID`) lived
+mid-file in `internal/container/lifecycle.go`, sharing a file with the
+lifecycle state machine. Reading `Shell` to trace "what user does the
+container run as?" meant chasing three helpers plus a var-stub seam.
+Giving the concept its own package + typed `Identity` retires the
+in-package stub-var and concentrates the policy in one named owner,
+preserving the SessionPlan-stays-pure boundary from CONTEXT.md.
+
 ### Image Plan
 
 The two-phase decision tree that guarantees the image referenced by a

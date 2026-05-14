@@ -18,10 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -29,6 +27,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 
+	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -201,6 +200,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	for i, b := range plan.Binds {
 		binds[i] = b.String()
 	}
+	identity := dockeridentity.Resolve(binds)
 
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx,
@@ -210,13 +210,13 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			OpenStdin:    true,
 			Cmd:          plan.Cmd,
 			WorkingDir:   plan.WorkingDir,
-			User:         hostUserSpec(),
+			User:         identity.UserSpec,
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
 		},
 		&container.HostConfig{
 			Binds:        binds,
-			GroupAdd:     dockerSockGroups(binds),
+			GroupAdd:     identity.GroupAdd,
 			PortBindings: plan.PortBindings,
 			SecurityOpt:  plan.SecurityOpt,
 		},
@@ -277,63 +277,6 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 }
 
 // --- Cleanup helpers ---
-
-// hostUserSpec returns the "<uid>:<gid>" of the user invoking toolbox, so the
-// container runs with the host user's identity. This keeps bind-mounted files
-// (Claude credentials, ssh keys) readable/writable without uid mismatch.
-func hostUserSpec() string {
-	return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
-}
-
-// dockerSockGroups returns supplementary group IDs to grant the runtime user
-// access to /var/run/docker.sock when it is bind-mounted. Without this, a
-// container running as the host UID cannot talk to the Docker API because the
-// socket is group-owned (typically mode 660).
-//
-// Two GIDs are added to cover both deployment modes:
-//   - "0" (root): Docker Desktop on macOS/Windows reprojects the socket as
-//     root:root inside the container regardless of host ownership.
-//   - host sock GID: on Linux the socket keeps the host group (usually
-//     "docker"), so the container must join that GID.
-//
-// Returns nil when docker.sock is not in binds — don't grant extra groups
-// users didn't ask for.
-func dockerSockGroups(binds []string) []string {
-	const sockPath = "/var/run/docker.sock"
-
-	mounted := false
-	for _, b := range binds {
-		// Bind format: "<source>:<target>[:<opts>]". Match on target.
-		parts := strings.SplitN(b, ":", 3)
-		if len(parts) >= 2 && parts[1] == sockPath {
-			mounted = true
-			break
-		}
-	}
-	if !mounted {
-		return nil
-	}
-
-	groups := []string{"0"}
-	if gid, ok := statSockGID(sockPath); ok && gid != 0 {
-		groups = append(groups, fmt.Sprintf("%d", gid))
-	}
-	return groups
-}
-
-// statSockGID returns the GID owning the given path on the host, following
-// symlinks. Returns (0, false) on any error — the caller falls back to gid 0.
-var statSockGID = func(path string) (uint32, bool) {
-	info, err := os.Stat(path) // Stat follows symlinks; docker.sock is often a symlink on macOS.
-	if err != nil {
-		return 0, false
-	}
-	sys, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, false
-	}
-	return sys.Gid, true
-}
 
 func stopOne(ctx context.Context, cli client.APIClient, name string) error {
 	timeout := stopShellGrace
