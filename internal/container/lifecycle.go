@@ -6,9 +6,6 @@
 // resolution, mount plan, container name, env, security opts) now rides
 // in the typed plan composed by internal/sessionplan.Plan.
 //
-// ResolveShellCmd / NestedSandboxSecurityOpt / ShellMismatchError live
-// in internal/shellcmd (cycle-breaker so sessionplan can compose them).
-//
 // The orchestration Module lives in lifecycle.go (this file), sectioned
 // into Lifecycle and Cleanup helpers. The TTY/signal Adapter lives in
 // attach.go and is kept as a separate file because its concern (raw

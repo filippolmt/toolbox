@@ -1,12 +1,4 @@
-// Package shellcmd holds the shell-command + security-opt resolution
-// helpers shared by internal/sessionplan and internal/container.
-//
-// Why this package exists: internal/sessionplan composes the resolved
-// shell command and security options into a SessionPlan; internal/container
-// imports internal/sessionplan to consume that plan. If the shell helpers
-// lived in internal/container, sessionplan would need to import container
-// to compose them — creating a cycle. shellcmd is the cycle-breaker.
-package shellcmd
+package sessionplan
 
 import (
 	"fmt"

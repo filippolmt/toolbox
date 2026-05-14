@@ -20,7 +20,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // --- Public Seams ---
@@ -85,7 +84,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates
 	// dirs/symlinks under ~/.toolbox; we don't want them on a config error).
-	cmd, err := shellcmd.ResolveShellCmd(cfg)
+	cmd, err := ResolveShellCmd(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +106,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		Env:           shellEnv(workspace, mp.WorkingDir),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
-		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
+		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
 		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 	}, nil
 }
@@ -138,7 +137,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		workingDir = mirror
 	}
 
-	cmd, err := shellcmd.ResolveShellCmd(cfg)
+	cmd, err := ResolveShellCmd(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +151,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		Env:           shellEnv(workspace, workingDir),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
-		SecurityOpt:   shellcmd.NestedSandboxSecurityOpt(cfg),
+		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
 		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 	}, nil
 }

@@ -1,4 +1,6 @@
-package cmd
+// Package configexample renders the annotated .toolbox.yaml template
+// printed by `toolbox config example` and written by `toolbox init`.
+package configexample
 
 import (
 	"fmt"
@@ -8,12 +10,12 @@ import (
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
-// renderExampleYAML returns an annotated `.toolbox.yaml` template covering
-// every supported field. The output is generated from the live catalog and
-// the canonical mount defaults so a new tool added to internal/catalog or a
-// new mount added to internal/mountplan/defaults.go shows up here without a
-// second edit.
-func renderExampleYAML() string {
+// Render returns an annotated `.toolbox.yaml` template covering every
+// supported field. The output is generated from the live catalog and
+// the canonical mount defaults so a new tool added to internal/catalog
+// or a new mount added to internal/mountplan/defaults.go shows up here
+// without a second edit.
+func Render() string {
 	var b strings.Builder
 
 	b.WriteString("# .toolbox.yaml — toolbox configuration.\n")

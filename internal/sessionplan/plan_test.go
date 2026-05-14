@@ -15,7 +15,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
-	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // testConfig returns a *config.Config whose Tools map matches the catalog
@@ -423,7 +422,7 @@ func TestMissingPublishPortsTable(t *testing.T) {
 
 // TestPlanComputesCmd asserts the shell command resolution rides through
 // Plan: bash returns /bin/bash, and shell:zsh + tools.zsh:false fails
-// with a wrapped *shellcmd.ShellMismatchError before any Docker work
+// with a wrapped *sessionplan.ShellMismatchError before any Docker work
 // could happen.
 func TestPlanComputesCmd(t *testing.T) {
 	tmpHome := t.TempDir()
@@ -455,9 +454,9 @@ func TestPlanComputesCmd(t *testing.T) {
 		if err == nil {
 			t.Fatal("Plan should reject shell:zsh + tools.zsh:false")
 		}
-		var mismatch *shellcmd.ShellMismatchError
+		var mismatch *sessionplan.ShellMismatchError
 		if !errors.As(err, &mismatch) {
-			t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+			t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
 		}
 	})
 }
@@ -543,9 +542,9 @@ func TestMergeAlsoComputesCmd(t *testing.T) {
 		if err == nil {
 			t.Fatal("Merge should reject shell:zsh + tools.zsh:false")
 		}
-		var mismatch *shellcmd.ShellMismatchError
+		var mismatch *sessionplan.ShellMismatchError
 		if !errors.As(err, &mismatch) {
-			t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+			t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
 		}
 	})
 }

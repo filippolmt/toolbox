@@ -22,7 +22,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
-	"github.com/filippolmt/toolbox/internal/shellcmd"
 )
 
 // notFoundError implements the errdefs "not found" interface.
@@ -1124,9 +1123,9 @@ func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
 	if plan != nil {
 		t.Errorf("plan should be nil on error, got %+v", plan)
 	}
-	var mismatch *shellcmd.ShellMismatchError
+	var mismatch *sessionplan.ShellMismatchError
 	if !errors.As(err, &mismatch) {
-		t.Fatalf("expected *shellcmd.ShellMismatchError, got %T: %v", err, err)
+		t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
 	}
 }
 

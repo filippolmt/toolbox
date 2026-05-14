@@ -18,7 +18,7 @@ import (
 
 // execShell attaches an interactive shell session to the container using the
 // caller-supplied cmd (already resolved upstream by sessionplan.Plan via
-// shellcmd.ResolveShellCmd). Handles TTY raw mode, signal forwarding
+// sessionplan.ResolveShellCmd). Handles TTY raw mode, signal forwarding
 // (SIGINT/SIGTERM), terminal resize (SIGWINCH), and bidirectional I/O.
 func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) error {
 	execResp, err := cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
