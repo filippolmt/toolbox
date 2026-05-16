@@ -13,15 +13,21 @@ import (
 // validator would silently accept typos like `toolbox shell foo` instead of
 // surfacing a usage error. Also verifies the failure is wrapped in
 // *usageError so Execute() maps it to exit code 2.
+//
+// shell and stop take an optional [name] positional, so for them the
+// rejection cases mix a plausible-looking first arg with an extra trailing
+// arg — this catches a future regression where MaximumNArgs is bumped to 2
+// (or the validator is dropped entirely), which a `{"unexpected", "extra"}`
+// pair could not distinguish from "any two unknown strings are refused".
 func TestSubcommandsRejectPositionalArgs(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  *cobra.Command
 		args []string
 	}{
-		{"shell", shellCmd, []string{"unexpected", "extra"}},
+		{"shell", shellCmd, []string{"infra", "extra"}},
 		{"build", buildCmd, nil},
-		{"stop", stopCmd, []string{"unexpected", "extra"}},
+		{"stop", stopCmd, []string{"infra", "extra"}},
 		{"version", versionCmd, nil},
 	}
 	for _, tc := range cases {

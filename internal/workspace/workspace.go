@@ -43,3 +43,14 @@ func Validate(p string) error {
 	}
 	return nil
 }
+
+// ValidateAbsolute composes the absolute-path requirement with Validate.
+// Callers feeding a user-supplied host path to Docker's Binds format must
+// know it is rooted before they hand it off; this helper keeps the two
+// checks paired so a future caller cannot regress by forgetting one.
+func ValidateAbsolute(p string) error {
+	if !filepath.IsAbs(p) {
+		return fmt.Errorf("path %q is not absolute", p)
+	}
+	return Validate(p)
+}

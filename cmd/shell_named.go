@@ -8,16 +8,30 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
+	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 var shellStdinIsTerminal = term.IsTerminal
 
+// shellHashLikeRe matches names that look like the trailing hash of the
+// workspace container format (`toolbox-<base>-<8hex>`). Refused so a named
+// shell cannot impersonate a workspace-derived container.
+var shellHashLikeRe = regexp.MustCompile(
+	fmt.Sprintf(`^[a-f0-9]{%d}$`, sessionplan.WorkspaceHashLen),
+)
+
+// resolveShellWorkspace returns the workspace path and (for named shells)
+// the sanitized shell name. The sanitized form is threaded back to the
+// caller so sessionplan.NamedContainerNameFromSanitized can skip a redundant
+// re-sanitize when building the container name.
 func resolveShellWorkspace(args []string, create bool, createPath string) (string, string, error) {
 	if len(args) == 0 {
 		ws, err := workspace.Resolve()
@@ -25,43 +39,76 @@ func resolveShellWorkspace(args []string, create bool, createPath string) (strin
 	}
 
 	name := args[0]
-	path, ok := shellPathFor(name)
-	if !ok {
-		return bootstrapMissingNamedShell(name, create, createPath)
+	sanitized, err := validateShellName(name)
+	if err != nil {
+		return "", "", err
+	}
+
+	path, configured, err := shellPathFor(name)
+	if err != nil {
+		return "", "", err
+	}
+	if !configured {
+		return bootstrapMissingNamedShell(name, sanitized, create, createPath)
 	}
 	if path == "" {
-		return "", "", fmt.Errorf("error: shell %q has empty path", name)
+		return "", "", fmt.Errorf("shell %q has empty path", name)
 	}
 
-	return ensureNamedShellPath(name, path, create)
+	return ensureNamedShellPath(sanitized, path, create)
 }
 
-func shellPathFor(name string) (string, bool) {
-	if cfg == nil || cfg.Shells == nil {
-		return "", false
+// validateShellName returns the sanitized form on success and rejects
+// inputs that would either yield an invalid container suffix or collide
+// with the workspace-hash naming format (`toolbox-<base>-<8hex>`).
+func validateShellName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", errors.New("shell name must not be empty")
+	}
+	sanitized := sessionplan.SanitizeShellName(trimmed)
+	if sanitized == "" {
+		return "", fmt.Errorf("shell name %q has no allowed characters (use [a-z0-9-])", name)
+	}
+	if shellHashLikeRe.MatchString(sanitized) {
+		return "", fmt.Errorf("shell name %q is ambiguous with the workspace-hash container suffix; pick a different name", name)
+	}
+	if len(sanitized) > sessionplan.MaxNamedShellNameLen {
+		return "", fmt.Errorf("shell name %q is too long (max %d sanitized chars)", name, sessionplan.MaxNamedShellNameLen)
+	}
+	return sanitized, nil
+}
+
+func shellPathFor(name string) (string, bool, error) {
+	if cfg == nil {
+		return "", false, errors.New("internal: configuration not loaded")
+	}
+	if cfg.Shells == nil {
+		return "", false, nil
 	}
 	s, ok := cfg.Shells[name]
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
-	return strings.TrimSpace(s.Path), true
+	return strings.TrimSpace(s.Path), true, nil
 }
 
-func bootstrapMissingNamedShell(name string, create bool, createPath string) (string, string, error) {
-	path := defaultShellPath(name)
+func bootstrapMissingNamedShell(name, sanitized string, create bool, createPath string) (string, string, error) {
+	home, _ := os.UserHomeDir()
+	path := defaultShellPath(home, name)
 	if createPath != "" {
 		path = createPath
 	}
 
 	if create {
-		if err := upsertShellInUserConfig(name, path); err != nil {
+		if err := upsertShellInUserConfig(home, name, path); err != nil {
 			return "", "", err
 		}
-		return ensureNamedShellPath(name, path, true)
+		return ensureNamedShellPath(sanitized, path, true)
 	}
 
 	if !shellStdinIsTerminal(int(os.Stdin.Fd())) {
-		return "", "", errors.New(missingShellHint(name))
+		return "", "", errors.New(missingShellHint(home, name))
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -80,43 +127,62 @@ func bootstrapMissingNamedShell(name string, create bool, createPath string) (st
 	}
 
 	if addConfig {
-		if err := upsertShellInUserConfig(name, chosenPath); err != nil {
+		if err := upsertShellInUserConfig(home, name, chosenPath); err != nil {
 			return "", "", err
 		}
 	}
-	return ensureNamedShellPath(name, chosenPath, createDir)
+	return ensureNamedShellPath(sanitized, chosenPath, createDir)
 }
 
-func ensureNamedShellPath(name, path string, createDir bool) (string, string, error) {
-	if !filepath.IsAbs(path) {
-		return "", "", fmt.Errorf("error: path %s is not absolute", path)
-	}
-	if err := workspace.Validate(path); err != nil {
+func ensureNamedShellPath(sanitized, path string, createDir bool) (string, string, error) {
+	if err := workspace.ValidateAbsolute(path); err != nil {
 		return "", "", err
 	}
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			if createDir {
-				if mkErr := os.MkdirAll(path, 0o755); mkErr != nil {
-					return "", "", fmt.Errorf("create %s: %w", path, mkErr)
-				}
-			} else {
-				return "", "", errors.New(missingPathHint(name, path))
-			}
-		} else {
+
+	info, err := os.Lstat(path)
+	switch {
+	case err == nil:
+	case os.IsNotExist(err):
+		if !createDir {
+			return "", "", errors.New(missingPathHint(sanitized, path))
+		}
+		if mkErr := os.MkdirAll(path, 0o755); mkErr != nil {
+			return "", "", fmt.Errorf("create %s: %w", path, mkErr)
+		}
+		info, err = os.Lstat(path)
+		if err != nil {
 			return "", "", fmt.Errorf("stat %s: %w", path, err)
 		}
+	default:
+		return "", "", fmt.Errorf("stat %s: %w", path, err)
 	}
-	return path, name, nil
+
+	// A symlink at the final element is refused: a TOCTOU swap between
+	// this check and the Docker bind-mount stage would redirect the
+	// container's mount source to an attacker-controlled target.
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", "", fmt.Errorf("shell %q path %s is a symlink; point shells.%s.path at the resolved target directly", sanitized, path, sanitized)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("shell %q path %s is not a directory", sanitized, path)
+	}
+	return path, sanitized, nil
 }
 
-func defaultShellPath(name string) string {
-	return filepath.Join("/tmp", name)
+// defaultShellPath returns the auto-bootstrap path for a missing named
+// shell. Prefers $HOME/toolbox-shells/<name> for persistence across reboots
+// and to avoid the world-writable / tmpfs semantics of /tmp; falls back to
+// /tmp/<name> only when home cannot be resolved.
+func defaultShellPath(home, name string) string {
+	if home == "" {
+		return filepath.Join("/tmp", name)
+	}
+	return filepath.Join(home, "toolbox-shells", name)
 }
 
-func missingShellHint(name string) string {
-	path := defaultShellPath(name)
-	return fmt.Sprintf(`error: shell %q not configured
+func missingShellHint(home, name string) string {
+	path := defaultShellPath(home, name)
+	return fmt.Sprintf(`shell %q not configured
 
 Add to ~/.toolbox.yaml:
 
@@ -124,25 +190,26 @@ Add to ~/.toolbox.yaml:
     %s:
       path: %s
 
-Then create the directory:
-
-  mkdir -p %s
-
-Or run with auto-bootstrap:
-
-  toolbox shell %s --create`, name, name, path, path, name)
+%s`, name, name, path, createHint(name, path))
 }
 
 func missingPathHint(name, path string) string {
-	return fmt.Sprintf(`error: path %s does not exist
+	return fmt.Sprintf(`path %s does not exist
 
-Create it:
+%s`, path, createHint(name, path))
+}
+
+// createHint composes the shared `mkdir -p` + `--create` tail used by both
+// the missing-shell and missing-path error messages. Keeps the two
+// templates in lockstep so a flag rename only edits one literal.
+func createHint(name, path string) string {
+	return fmt.Sprintf(`Create the directory:
 
   mkdir -p %s
 
 Or re-run with auto-create:
 
-  toolbox shell %s --create`, path, path, name)
+  toolbox shell %s --create`, path, name)
 }
 
 func promptPath(r *bufio.Reader, w io.Writer, name, defaultPath string) (string, error) {
@@ -183,10 +250,17 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 	}
 }
 
-func upsertShellInUserConfig(name, path string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home directory: %w", err)
+// upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml,
+// preserving existing keys/comments via yaml.Node mutation. home is
+// resolved once by the caller and threaded in so the --create path does
+// not pay for repeated os.UserHomeDir() lookups.
+func upsertShellInUserConfig(home, name, path string) error {
+	if home == "" {
+		h, err := configio.GlobalConfigDir()
+		if err != nil {
+			return err
+		}
+		home = h
 	}
 	cfgPath := filepath.Join(home, ".toolbox.yaml")
 
@@ -205,10 +279,10 @@ func upsertShellInUserConfig(name, path string) error {
 		return fmt.Errorf("read %s: %w", cfgPath, readErr)
 	}
 
-	doc := ensureDocumentMap(&root)
-	shells := ensureChildMap(doc, "shells")
-	entry := ensureChildMap(shells, name)
-	setMapValue(entry, "path", path)
+	doc := configio.EnsureDocumentMap(&root)
+	shells := configio.EnsureChildMap(doc, "shells")
+	entry := configio.EnsureChildMap(shells, name)
+	configio.SetMapValue(entry, "path", path)
 
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
@@ -218,65 +292,5 @@ func upsertShellInUserConfig(name, path string) error {
 	}
 	_ = enc.Close()
 
-	if err := os.WriteFile(cfgPath, out.Bytes(), 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", cfgPath, err)
-	}
-	return nil
-}
-
-func ensureDocumentMap(root *yaml.Node) *yaml.Node {
-	// Zero Kind appears when unmarshalling an empty/missing file into yaml.Node.
-	if root.Kind == 0 {
-		root.Kind = yaml.DocumentNode
-	}
-	if root.Kind == yaml.DocumentNode {
-		if len(root.Content) == 0 || root.Content[0] == nil {
-			root.Content = []*yaml.Node{{Kind: yaml.MappingNode}}
-		}
-		if root.Content[0].Kind != yaml.MappingNode {
-			root.Content[0] = &yaml.Node{Kind: yaml.MappingNode}
-		}
-		return root.Content[0]
-	}
-	if root.Kind != yaml.MappingNode {
-		root.Kind = yaml.MappingNode
-		root.Content = nil
-	}
-	return root
-}
-
-func ensureChildMap(parent *yaml.Node, key string) *yaml.Node {
-	if parent.Kind != yaml.MappingNode {
-		parent.Kind = yaml.MappingNode
-		parent.Content = nil
-	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			v := parent.Content[i+1]
-			if v.Kind != yaml.MappingNode {
-				v.Kind = yaml.MappingNode
-				v.Content = nil
-			}
-			return v
-		}
-	}
-	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-	v := &yaml.Node{Kind: yaml.MappingNode}
-	parent.Content = append(parent.Content, k, v)
-	return v
-}
-
-func setMapValue(parent *yaml.Node, key, value string) {
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			parent.Content[i+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
-			return
-		}
-	}
-	parent.Content = append(parent.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value},
-	)
+	return configio.AtomicWriteFile(cfgPath, out.Bytes(), 0o600)
 }

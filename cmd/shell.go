@@ -52,7 +52,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if shellName != "" {
-		plan.ContainerName = sessionplan.NamedContainerName(shellName)
+		plan.ContainerName = sessionplan.NamedContainerNameFromSanitized(shellName)
 	}
 
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
@@ -69,6 +69,6 @@ func init() {
 			"Examples: 7171, 7171:7171, 127.0.0.1:7171:7171, 0.0.0.0:8000:8000. "+
 			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
-	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: /tmp/<name>)")
+	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)
 }

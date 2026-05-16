@@ -44,7 +44,7 @@ func TestResolveShellWorkspaceMissingNameNonInteractiveShowsHint(t *testing.T) {
 		t.Fatal("expected error for missing shell without --create")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, `error: shell "qa" not configured`) {
+	if !strings.Contains(msg, `shell "qa" not configured`) {
 		t.Fatalf("missing-shell error does not include heading: %q", msg)
 	}
 	if !strings.Contains(msg, "toolbox shell qa --create") {
@@ -107,6 +107,72 @@ func TestResolveShellWorkspaceCreateWritesConfigAndCreatesDirectory(t *testing.T
 	}
 }
 
+// TestResolveShellWorkspaceRejectsHashShapedName guards against named
+// shells whose sanitized form (`[a-f0-9]{8}`) would be indistinguishable
+// from the trailing hash component of a workspace container name
+// (`toolbox-<base>-<8hex>`). Accepting one would let a named container
+// silently shadow a workspace-derived container on `toolbox stop`.
+func TestResolveShellWorkspaceRejectsHashShapedName(t *testing.T) {
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	_, _, err := resolveShellWorkspace([]string{"1a2b3c4d"}, false, "")
+	if err == nil {
+		t.Fatal("expected error for hash-shaped shell name")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("error %q should mention the ambiguity", err)
+	}
+}
+
+// TestResolveShellWorkspaceRejectsEmptyName rejects the degenerate
+// `toolbox shell ""` invocation that would otherwise sanitize to the empty
+// string and force NamedContainerName into its "shell" fallback.
+func TestResolveShellWorkspaceRejectsEmptyName(t *testing.T) {
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	_, _, err := resolveShellWorkspace([]string{"   "}, false, "")
+	if err == nil {
+		t.Fatal("expected error for blank shell name")
+	}
+}
+
+// TestShellPathForErrorsOnNilCfg surfaces a programming error (cobra's
+// OnInitialize did not run before the command body executed) instead of
+// silently treating every name as "not configured" and triggering the
+// bootstrap flow — that mask was the historical failure mode.
+func TestShellPathForErrorsOnNilCfg(t *testing.T) {
+	cfg = nil
+	_, _, err := shellPathFor("infra")
+	if err == nil {
+		t.Fatal("expected error when cfg is nil")
+	}
+}
+
+// TestEnsureNamedShellPathRejectsSymlink: a symlink at the final path
+// element is refused because a TOCTOU swap between this check and the
+// Docker bind-mount stage would redirect the container mount source.
+func TestEnsureNamedShellPathRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("setup target: %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported on this platform: %v", err)
+	}
+
+	_, _, err := ensureNamedShellPath("infra", link, false)
+	if err == nil {
+		t.Fatal("expected symlink rejection")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("error %q should mention symlink", err)
+	}
+}
+
 func TestUpsertShellInUserConfigPreservesExistingFields(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -116,7 +182,7 @@ func TestUpsertShellInUserConfigPreservesExistingFields(t *testing.T) {
 		t.Fatalf("seed config: %v", err)
 	}
 
-	if err := upsertShellInUserConfig("infra", "/tmp/infra"); err != nil {
+	if err := upsertShellInUserConfig(home, "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("upsertShellInUserConfig: %v", err)
 	}
 
