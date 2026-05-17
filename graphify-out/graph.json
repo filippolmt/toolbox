@@ -320,112 +320,157 @@
   },
   "nodes": [
     {
+      "label": "registry_test.go",
+      "file_type": "code",
+      "source_file": "registry_test.go",
+      "source_location": "L1",
+      "id": "registry_test_go",
+      "community": 92,
+      "norm_label": "registry_test.go"
+    },
+    {
+      "label": "TestSkillEnvKey()",
+      "file_type": "code",
+      "source_file": "registry_test.go",
+      "source_location": "L15",
+      "id": "sdd_registry_test_testskillenvkey",
+      "community": 92,
+      "norm_label": "testskillenvkey()"
+    },
+    {
+      "label": "TestLookupReturnsRegisteredSkills()",
+      "file_type": "code",
+      "source_file": "registry_test.go",
+      "source_location": "L32",
+      "id": "sdd_registry_test_testlookupreturnsregisteredskills",
+      "community": 92,
+      "norm_label": "testlookupreturnsregisteredskills()"
+    },
+    {
+      "label": "TestKeysMatchesSkills()",
+      "file_type": "code",
+      "source_file": "registry_test.go",
+      "source_location": "L46",
+      "id": "sdd_registry_test_testkeysmatchesskills",
+      "community": 92,
+      "norm_label": "testkeysmatchesskills()"
+    },
+    {
+      "label": "TestRenovateRegexMatchesEverySDDPin()",
+      "file_type": "code",
+      "source_file": "registry_test.go",
+      "source_location": "L69",
+      "id": "sdd_registry_test_testrenovateregexmatcheseverysddpin",
+      "community": 92,
+      "norm_label": "testrenovateregexmatcheseverysddpin()"
+    },
+    {
       "label": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "file_type": "document",
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L1",
-      "id": "query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_md",
       "community": 16,
-      "norm_label": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md"
+      "norm_label": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
+      "id": "query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_md"
     },
     {
       "label": "Q: Why does Shell() bridge Container Lifecycle to CLI Subcommands, SDD Env Contract, Image Plan, Run Plan, Container Attach?",
       "file_type": "document",
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L9",
-      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach",
       "community": 16,
-      "norm_label": "q: why does shell() bridge container lifecycle to cli subcommands, sdd env contract, image plan, run plan, container attach?"
+      "norm_label": "q: why does shell() bridge container lifecycle to cli subcommands, sdd env contract, image plan, run plan, container attach?",
+      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach"
     },
     {
       "label": "Answer",
       "file_type": "document",
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L11",
-      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_answer",
       "community": 16,
-      "norm_label": "answer"
+      "norm_label": "answer",
+      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_answer"
     },
     {
       "label": "Source Nodes",
       "file_type": "document",
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L27",
-      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_source_nodes",
       "community": 16,
-      "norm_label": "source nodes"
+      "norm_label": "source nodes",
+      "id": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_source_nodes"
     },
     {
       "label": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "file_type": "document",
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L1",
-      "id": "query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_md",
       "community": 84,
-      "norm_label": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md"
+      "norm_label": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
+      "id": "query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_md"
     },
     {
       "label": "Q: Why does Lookup() bridge SDD Env Contract (c1) to toolbox init Scaffold (c12)?",
       "file_type": "document",
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L9",
-      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12",
       "community": 84,
-      "norm_label": "q: why does lookup() bridge sdd env contract (c1) to toolbox init scaffold (c12)?"
+      "norm_label": "q: why does lookup() bridge sdd env contract (c1) to toolbox init scaffold (c12)?",
+      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12"
     },
     {
       "label": "Answer",
       "file_type": "document",
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L11",
-      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_answer",
       "community": 84,
-      "norm_label": "answer"
+      "norm_label": "answer",
+      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_answer"
     },
     {
       "label": "Source Nodes",
       "file_type": "document",
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L27",
-      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_source_nodes",
       "community": 84,
-      "norm_label": "source nodes"
+      "norm_label": "source nodes",
+      "id": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_source_nodes"
     },
     {
       "label": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "file_type": "document",
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L1",
-      "id": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_md",
       "community": 85,
-      "norm_label": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md"
+      "norm_label": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
+      "id": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_md"
     },
     {
       "label": "Q: Are 199 weakly-connected nodes a documentation gap or AST noise?",
       "file_type": "document",
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L9",
-      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise",
       "community": 85,
-      "norm_label": "q: are 199 weakly-connected nodes a documentation gap or ast noise?"
+      "norm_label": "q: are 199 weakly-connected nodes a documentation gap or ast noise?",
+      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise"
     },
     {
       "label": "Answer",
       "file_type": "document",
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L11",
-      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_answer",
       "community": 85,
-      "norm_label": "answer"
+      "norm_label": "answer",
+      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_answer"
     },
     {
       "label": "Source Nodes",
       "file_type": "document",
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L33",
-      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_source_nodes",
       "community": 85,
-      "norm_label": "source nodes"
+      "norm_label": "source nodes",
+      "id": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_source_nodes"
     },
     {
       "label": "skills-lock.json",
@@ -648,7 +693,7 @@
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L1",
-      "community": 0,
+      "community": 89,
       "norm_label": "build.go",
       "id": "cmd_build_go"
     },
@@ -657,7 +702,7 @@
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L31",
-      "community": 0,
+      "community": 89,
       "norm_label": "runbuild()",
       "id": "cmd_build_runbuild"
     },
@@ -666,7 +711,7 @@
       "file_type": "code",
       "source_file": "cmd/build.go",
       "source_location": "L53",
-      "community": 0,
+      "community": 89,
       "norm_label": "init()",
       "id": "cmd_build_init"
     },
@@ -1503,7 +1548,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 87,
       "norm_label": "output_test.go",
       "id": "internal_ui_output_test_go"
     },
@@ -1512,7 +1557,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L14",
-      "community": 10,
+      "community": 87,
       "norm_label": "capturestderr()",
       "id": "ui_output_test_capturestderr"
     },
@@ -1521,7 +1566,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L37",
-      "community": 10,
+      "community": 87,
       "norm_label": "testsuccesswritestostderr()",
       "id": "ui_output_test_testsuccesswritestostderr"
     },
@@ -1530,7 +1575,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L44",
-      "community": 10,
+      "community": 87,
       "norm_label": "testwarningwritestostderr()",
       "id": "ui_output_test_testwarningwritestostderr"
     },
@@ -1539,7 +1584,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L51",
-      "community": 10,
+      "community": 87,
       "norm_label": "testinfowritestostderr()",
       "id": "ui_output_test_testinfowritestostderr"
     },
@@ -1548,7 +1593,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output_test.go",
       "source_location": "L61",
-      "community": 10,
+      "community": 87,
       "norm_label": "testoutputdoesnotwritetostdout()",
       "id": "ui_output_test_testoutputdoesnotwritetostdout"
     },
@@ -1557,7 +1602,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 87,
       "norm_label": "output.go",
       "id": "internal_ui_output_go"
     },
@@ -1566,7 +1611,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L22",
-      "community": 10,
+      "community": 87,
       "norm_label": "success()",
       "id": "ui_output_success"
     },
@@ -1575,7 +1620,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L27",
-      "community": 10,
+      "community": 87,
       "norm_label": "warning()",
       "id": "ui_output_warning"
     },
@@ -1584,7 +1629,7 @@
       "file_type": "code",
       "source_file": "internal/ui/output.go",
       "source_location": "L32",
-      "community": 10,
+      "community": 87,
       "norm_label": "info()",
       "id": "ui_output_info"
     },
@@ -3069,7 +3114,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown.go",
       "source_location": "L1",
-      "community": 0,
+      "community": 88,
       "norm_label": "teardown.go",
       "id": "internal_teardown_teardown_go"
     },
@@ -3078,7 +3123,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown.go",
       "source_location": "L53",
-      "community": 0,
+      "community": 88,
       "norm_label": "stopone()",
       "id": "teardown_teardown_stopone"
     },
@@ -3087,7 +3132,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown.go",
       "source_location": "L81",
-      "community": 0,
+      "community": 88,
       "norm_label": "hasactiveexecs()",
       "id": "teardown_teardown_hasactiveexecs"
     },
@@ -3096,7 +3141,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown.go",
       "source_location": "L107",
-      "community": 0,
+      "community": 88,
       "norm_label": "onshellexit()",
       "id": "teardown_teardown_onshellexit"
     },
@@ -3105,7 +3150,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L1",
-      "community": 0,
+      "community": 88,
       "norm_label": "teardown_test.go",
       "id": "internal_teardown_teardown_test_go"
     },
@@ -3114,7 +3159,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L16",
-      "community": 0,
+      "community": 93,
       "norm_label": "notfounderr",
       "id": "teardown_notfounderr"
     },
@@ -3123,7 +3168,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L18",
-      "community": 0,
+      "community": 93,
       "norm_label": ".error()",
       "id": "teardown_notfounderr_error"
     },
@@ -3132,7 +3177,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L19",
-      "community": 0,
+      "community": 93,
       "norm_label": ".notfound()",
       "id": "teardown_notfounderr_notfound"
     },
@@ -3141,7 +3186,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L20",
-      "community": 0,
+      "community": 93,
       "norm_label": ".unwrap()",
       "id": "teardown_notfounderr_unwrap"
     },
@@ -3150,7 +3195,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L23",
-      "community": 0,
+      "community": 90,
       "norm_label": "mockclient",
       "id": "teardown_mockclient"
     },
@@ -3159,7 +3204,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L31",
-      "community": 0,
+      "community": 90,
       "norm_label": ".containerstop()",
       "id": "teardown_mockclient_containerstop"
     },
@@ -3168,7 +3213,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L38",
-      "community": 0,
+      "community": 90,
       "norm_label": ".containerremove()",
       "id": "teardown_mockclient_containerremove"
     },
@@ -3177,7 +3222,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L45",
-      "community": 0,
+      "community": 90,
       "norm_label": ".containerinspect()",
       "id": "teardown_mockclient_containerinspect"
     },
@@ -3186,7 +3231,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L52",
-      "community": 0,
+      "community": 90,
       "norm_label": ".containerexecinspect()",
       "id": "teardown_mockclient_containerexecinspect"
     },
@@ -3195,7 +3240,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L59",
-      "community": 0,
+      "community": 90,
       "norm_label": ".close()",
       "id": "teardown_mockclient_close"
     },
@@ -3204,7 +3249,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L61",
-      "community": 0,
+      "community": 88,
       "norm_label": "teststoponestopsandremoves()",
       "id": "teardown_teardown_test_teststoponestopsandremoves"
     },
@@ -3213,7 +3258,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L87",
-      "community": 0,
+      "community": 88,
       "norm_label": "teststoponeswallowsnotfound()",
       "id": "teardown_teardown_test_teststoponeswallowsnotfound"
     },
@@ -3222,7 +3267,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L98",
-      "community": 0,
+      "community": 88,
       "norm_label": "teststoponepassesgracetimeout()",
       "id": "teardown_teardown_test_teststoponepassesgracetimeout"
     },
@@ -3231,7 +3276,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L114",
-      "community": 0,
+      "community": 88,
       "norm_label": "testhasactiveexecstrueonrunningsibling()",
       "id": "teardown_teardown_test_testhasactiveexecstrueonrunningsibling"
     },
@@ -3240,7 +3285,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L133",
-      "community": 0,
+      "community": 88,
       "norm_label": "testhasactiveexecsfalseoninspecterror()",
       "id": "teardown_teardown_test_testhasactiveexecsfalseoninspecterror"
     },
@@ -3249,7 +3294,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L144",
-      "community": 0,
+      "community": 88,
       "norm_label": "testhasactiveexecsfalseonnilcontainerjsonbase()",
       "id": "teardown_teardown_test_testhasactiveexecsfalseonnilcontainerjsonbase"
     },
@@ -3258,7 +3303,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L155",
-      "community": 0,
+      "community": 88,
       "norm_label": "testonshellexitskipsstopwhensiblingexecrunning()",
       "id": "teardown_teardown_test_testonshellexitskipsstopwhensiblingexecrunning"
     },
@@ -3267,7 +3312,7 @@
       "file_type": "code",
       "source_file": "internal/teardown/teardown_test.go",
       "source_location": "L182",
-      "community": 0,
+      "community": 88,
       "norm_label": "testonshellexitstopswhennosiblingexec()",
       "id": "teardown_teardown_test_testonshellexitstopswhennosiblingexec"
     },
@@ -3870,7 +3915,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 86,
       "norm_label": "attach.go",
       "id": "internal_container_attach_go"
     },
@@ -3879,7 +3924,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach.go",
       "source_location": "L23",
-      "community": 10,
+      "community": 86,
       "norm_label": "execshell()",
       "id": "container_attach_execshell"
     },
@@ -3888,7 +3933,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L1",
-      "community": 0,
+      "community": 87,
       "norm_label": "lifecycle.go",
       "id": "internal_container_lifecycle_go"
     },
@@ -3897,7 +3942,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L47",
-      "community": 0,
+      "community": 87,
       "norm_label": "formatpublishmismatch()",
       "id": "container_lifecycle_formatpublishmismatch"
     },
@@ -3924,7 +3969,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L146",
-      "community": 10,
+      "community": 87,
       "norm_label": "dispatchop()",
       "id": "container_lifecycle_dispatchop"
     },
@@ -3933,7 +3978,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L169",
-      "community": 10,
+      "community": 87,
       "norm_label": "createandstart()",
       "id": "container_lifecycle_createandstart"
     },
@@ -3960,7 +4005,7 @@
       "file_type": "code",
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L227",
-      "community": 0,
+      "community": 87,
       "norm_label": "stopall()",
       "id": "container_lifecycle_stopall"
     },
@@ -4374,7 +4419,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 86,
       "norm_label": "attach_test.go",
       "id": "internal_container_attach_test_go"
     },
@@ -4383,7 +4428,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L20",
-      "community": 10,
+      "community": 86,
       "norm_label": "attachmock",
       "id": "container_attachmock"
     },
@@ -4392,7 +4437,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L28",
-      "community": 10,
+      "community": 86,
       "norm_label": ".containerexeccreate()",
       "id": "container_attachmock_containerexeccreate"
     },
@@ -4401,7 +4446,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L32",
-      "community": 10,
+      "community": 86,
       "norm_label": ".containerexecattach()",
       "id": "container_attachmock_containerexecattach"
     },
@@ -4410,7 +4455,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L36",
-      "community": 10,
+      "community": 86,
       "norm_label": ".containerexecresize()",
       "id": "container_attachmock_containerexecresize"
     },
@@ -4419,7 +4464,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L43",
-      "community": 10,
+      "community": 86,
       "norm_label": "testexecshell_containerexeccreateerror()",
       "id": "container_attach_test_testexecshell_containerexeccreateerror"
     },
@@ -4428,7 +4473,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L70",
-      "community": 10,
+      "community": 86,
       "norm_label": "testexecshell_containerexecattacherror()",
       "id": "container_attach_test_testexecshell_containerexecattacherror"
     },
@@ -4437,7 +4482,7 @@
       "file_type": "code",
       "source_file": "internal/container/attach_test.go",
       "source_location": "L93",
-      "community": 10,
+      "community": 86,
       "norm_label": "testexecshell_nonttystdin()",
       "id": "container_attach_test_testexecshell_nonttystdin"
     },
@@ -5067,7 +5112,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/config.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 91,
       "norm_label": "config.go",
       "id": "claude_skills_golang_cli_assets_examples_config_go"
     },
@@ -5076,7 +5121,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/config.go",
       "source_location": "L15",
-      "community": 10,
+      "community": 91,
       "norm_label": "initconfigcomplete()",
       "id": "examples_config_initconfigcomplete"
     },
@@ -5085,7 +5130,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/config.go",
       "source_location": "L44",
-      "community": 10,
+      "community": 91,
       "norm_label": "config",
       "id": "examples_config"
     },
@@ -5094,7 +5139,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/config.go",
       "source_location": "L54",
-      "community": 10,
+      "community": 91,
       "norm_label": "loadconfig()",
       "id": "examples_config_loadconfig"
     },
@@ -5103,7 +5148,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/config.go",
       "source_location": "L65",
-      "community": 10,
+      "community": 91,
       "norm_label": "watchconfig()",
       "id": "examples_config_watchconfig"
     },
@@ -5220,7 +5265,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L1",
-      "community": 10,
+      "community": 86,
       "norm_label": "output.go",
       "id": "claude_skills_golang_cli_assets_examples_output_go"
     },
@@ -5229,7 +5274,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L17",
-      "community": 10,
+      "community": 86,
       "norm_label": "outputexample()",
       "id": "examples_output_outputexample"
     },
@@ -5238,7 +5283,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L27",
-      "community": 10,
+      "community": 86,
       "norm_label": "isterminal()",
       "id": "examples_output_isterminal"
     },
@@ -5247,7 +5292,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L38",
-      "community": 10,
+      "community": 86,
       "norm_label": "user",
       "id": "examples_user"
     },
@@ -5256,7 +5301,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L43",
-      "community": 10,
+      "community": 86,
       "norm_label": "printusers()",
       "id": "examples_output_printusers"
     },
@@ -5265,7 +5310,7 @@
       "file_type": "code",
       "source_file": ".claude/skills/golang-cli/assets/examples/output.go",
       "source_location": "L68",
-      "community": 10,
+      "community": 86,
       "norm_label": "colorexamples()",
       "id": "examples_output_colorexamples"
     },
@@ -6239,7 +6284,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 10,
+      "community": 86,
       "norm_label": "stdout vs stderr separation",
       "id": "golang_cli_stdout_stderr_separation"
     },
@@ -6317,7 +6362,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 10,
+      "community": 86,
       "norm_label": "--output flag for machine-readable formats",
       "id": "golang_cli_machine_readable_output"
     },
@@ -8124,7 +8169,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 0,
       "norm_label": "cmd/shell_named.go \u2014 named shell resolution + bootstrap",
       "id": "cmd_shell_named"
     },
@@ -8228,7 +8273,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 0,
       "norm_label": "internal/sessionplan \u2014 session plan + container naming + workspace constants",
       "id": "internal_sessionplan_pkg"
     },
@@ -8241,7 +8286,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 89,
       "norm_label": "internal/container \u2014 docker sdk client + shell driver",
       "id": "internal_container_pkg"
     },
@@ -8254,7 +8299,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 89,
       "norm_label": "internal/build \u2014 image build + resolveimage + buildargs",
       "id": "internal_build_pkg"
     },
@@ -8280,7 +8325,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 89,
       "norm_label": "internal/ui \u2014 info/warn user-facing output",
       "id": "internal_ui_pkg"
     },
@@ -8553,7 +8598,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 10,
+      "community": 87,
       "norm_label": "ensure",
       "id": "imageplan_imageplan_ensure"
     },
@@ -9190,7 +9235,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 88,
       "norm_label": "rationale: sibling exec gate \u2014 leave container running if another shell is attached, otherwise stop+remove",
       "id": "teardown_teardown_sibling_exec_rationale"
     },
@@ -9290,12 +9335,52 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "registry_test.go",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "registry_test_go",
+      "target": "sdd_registry_test_testskillenvkey",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "registry_test.go",
+      "source_location": "L32",
+      "weight": 1.0,
+      "source": "registry_test_go",
+      "target": "sdd_registry_test_testlookupreturnsregisteredskills",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "registry_test.go",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "registry_test_go",
+      "target": "sdd_registry_test_testkeysmatchesskills",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "registry_test.go",
+      "source_location": "L69",
+      "weight": 1.0,
+      "source": "registry_test_go",
+      "target": "sdd_registry_test_testrenovateregexmatcheseverysddpin",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_md",
-      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach"
     },
     {
       "relation": "contains",
@@ -9303,9 +9388,9 @@
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach",
-      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_answer",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_answer"
     },
     {
       "relation": "contains",
@@ -9313,9 +9398,9 @@
       "source_file": "query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md",
       "source_location": "L27",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_q_why_does_shell_bridge_container_lifecycle_to_cli_subcommands_sdd_env_contract_image_plan_run_plan_container_attach",
-      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_source_nodes",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075631_why_does_shell_bridge_container_lifecycle_to_cli_source_nodes"
     },
     {
       "relation": "contains",
@@ -9323,9 +9408,9 @@
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_md",
-      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12"
     },
     {
       "relation": "contains",
@@ -9333,9 +9418,9 @@
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12",
-      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_answer",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_answer"
     },
     {
       "relation": "contains",
@@ -9343,9 +9428,9 @@
       "source_file": "query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md",
       "source_location": "L27",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_q_why_does_lookup_bridge_sdd_env_contract_c1_to_toolbox_init_scaffold_c12",
-      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_source_nodes",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075751_why_does_lookup_bridge_sdd_env_contract_c1_to_source_nodes"
     },
     {
       "relation": "contains",
@@ -9353,9 +9438,9 @@
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_md",
-      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise"
     },
     {
       "relation": "contains",
@@ -9363,9 +9448,9 @@
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise",
-      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_answer",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_answer"
     },
     {
       "relation": "contains",
@@ -9373,9 +9458,9 @@
       "source_file": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap.md",
       "source_location": "L33",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise",
-      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_source_nodes",
-      "confidence_score": 1.0
+      "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_source_nodes"
     },
     {
       "relation": "contains",
@@ -22949,5 +23034,5 @@
       "source_file": "internal/runplan/runplan.go"
     }
   ],
-  "built_at_commit": "af5e5117427acee3acb0c89c205c701bf9534617"
+  "built_at_commit": "bbef7bcf7af3186e71fab079083d72f4a8ea1f41"
 }
