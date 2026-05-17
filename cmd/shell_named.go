@@ -32,10 +32,24 @@ var shellHashLikeRe = regexp.MustCompile(
 // the sanitized shell name. The sanitized form is threaded back to the
 // caller so sessionplan.NamedContainerNameFromSanitized can skip a redundant
 // re-sanitize when building the container name.
+//
+// The positional argument is interpreted as:
+//   - absent           -> workspace.Resolve() (current working directory)
+//   - absolute path    -> direct workspace (no config touched, container
+//     name derives from the path hash, same as the no-arg flow)
+//   - anything else    -> named-shell lookup in cfg.Shells, with bootstrap
+//     when missing
+//
+// The absolute-path form is the quick-session escape hatch
+// (`toolbox shell /tmp`) — zero config, zero state.
 func resolveShellWorkspace(args []string, create bool, createPath string) (string, string, error) {
 	if len(args) == 0 {
 		ws, err := workspace.Resolve()
 		return ws, "", err
+	}
+
+	if filepath.IsAbs(args[0]) {
+		return resolveDirectWorkspace(args[0])
 	}
 
 	name := args[0]
@@ -56,6 +70,28 @@ func resolveShellWorkspace(args []string, create bool, createPath string) (strin
 	}
 
 	return ensureNamedShellPath(sanitized, path, create)
+}
+
+// resolveDirectWorkspace validates an absolute path supplied as the shell
+// positional and returns it as the workspace. No config is touched, no
+// name is returned — downstream sessionplan.Plan will derive the container
+// name from the path hash, matching the no-arg `toolbox shell` flow.
+// os.Stat (not Lstat) is used on purpose: the user explicitly typed the
+// path, so symlinks resolve transparently the same way os.Getwd does for
+// the no-arg case.
+func resolveDirectWorkspace(path string) (string, string, error) {
+	if err := workspace.ValidateAbsolute(path); err != nil {
+		return "", "", err
+	}
+	clean := filepath.Clean(path)
+	info, err := os.Stat(clean)
+	if err != nil {
+		return "", "", fmt.Errorf("stat %s: %w", clean, err)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("path %s is not a directory", clean)
+	}
+	return clean, "", nil
 }
 
 // validateShellName returns the sanitized form on success and rejects

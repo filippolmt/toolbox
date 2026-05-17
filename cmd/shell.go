@@ -15,13 +15,20 @@ var shellCreate bool
 var shellPath string
 
 var shellCmd = &cobra.Command{
-	Use:   "shell [name]",
+	Use:   "shell [name|path]",
 	Short: "Start an interactive shell session in the toolbox container",
 	Long: `Start the toolbox container and attach an interactive bash session.
-The current working directory is mounted at /workspace and the container
-name is derived from that path, so each directory gets its own dedicated
-container. If the container is already running, a new session is attached
-to the existing one.
+
+Without arguments the current working directory is mounted at /workspace
+and the container name is derived from that path, so each directory gets
+its own dedicated container. If the container is already running, a new
+session is attached to the existing one.
+
+The positional argument is either:
+  - a configured shell name from ~/.toolbox.yaml's shells: map, or
+  - an absolute path for a one-shot session (e.g. "toolbox shell /tmp") —
+    no config is read or written, the container name still derives from
+    the path hash so re-running on the same path reattaches.
 
 Use --publish/-p to forward a host port into the container. Accepts the
 same formats as "docker run -p" (e.g. "7171", "7171:7171",

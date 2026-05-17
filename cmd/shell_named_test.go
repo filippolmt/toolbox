@@ -173,6 +173,82 @@ func TestEnsureNamedShellPathRejectsSymlink(t *testing.T) {
 	}
 }
 
+// TestResolveShellWorkspaceDirectAbsolutePath exercises the quick-session
+// escape hatch: `toolbox shell /abs/path` short-circuits both the named-
+// shell lookup and the bootstrap flow, returns the path verbatim, and
+// leaves the empty shell-name behind so the container name falls back to
+// the workspace-hash format (same as the no-arg flow).
+func TestResolveShellWorkspaceDirectAbsolutePath(t *testing.T) {
+	dir := t.TempDir()
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	ws, name, err := resolveShellWorkspace([]string{dir}, false, "")
+	if err != nil {
+		t.Fatalf("resolveShellWorkspace: %v", err)
+	}
+	if ws != filepath.Clean(dir) {
+		t.Fatalf("workspace = %q, want %q", ws, filepath.Clean(dir))
+	}
+	if name != "" {
+		t.Fatalf("expected empty name for direct-path flow, got %q", name)
+	}
+}
+
+// TestResolveShellWorkspaceDirectAbsolutePathSkipsConfig confirms the
+// direct-path flow never writes ~/.toolbox.yaml even when --create is
+// passed — the flag is for the named-shell bootstrap path, which the
+// absolute-path branch deliberately bypasses.
+func TestResolveShellWorkspaceDirectAbsolutePathSkipsConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	if _, _, err := resolveShellWorkspace([]string{dir}, true, ""); err != nil {
+		t.Fatalf("resolveShellWorkspace: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".toolbox.yaml")); err == nil {
+		t.Fatal("direct-path flow should not write ~/.toolbox.yaml")
+	}
+}
+
+// TestResolveShellWorkspaceDirectAbsolutePathMissing rejects an absolute
+// path that does not exist on disk — there is no auto-create in the
+// quick-session flow (that's the named-shell `--create` flag's job).
+func TestResolveShellWorkspaceDirectAbsolutePathMissing(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope")
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	_, _, err := resolveShellWorkspace([]string{missing}, false, "")
+	if err == nil {
+		t.Fatal("expected error for missing absolute path")
+	}
+}
+
+// TestResolveShellWorkspaceDirectAbsolutePathRejectsFile guards against
+// pointing at a regular file — the workspace must be a directory because
+// it will be bind-mounted at /workspace inside the container.
+func TestResolveShellWorkspaceDirectAbsolutePathRejectsFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+
+	_, _, err := resolveShellWorkspace([]string{file}, false, "")
+	if err == nil {
+		t.Fatal("expected error for non-directory positional path")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error %q should mention non-directory", err)
+	}
+}
+
 func TestUpsertShellInUserConfigPreservesExistingFields(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

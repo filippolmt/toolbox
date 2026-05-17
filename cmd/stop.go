@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/workspace"
@@ -11,9 +12,11 @@ import (
 var stopAll bool
 
 var stopCmd = &cobra.Command{
-	Use:   "stop [name]",
+	Use:   "stop [name|path]",
 	Short: "Stop and remove toolbox containers",
-	Long: `Stop and remove the toolbox container bound to the current directory.
+	Long: `Stop and remove the toolbox container bound to the current directory,
+to a configured named shell (toolbox stop infra), or to an absolute path
+that was used as a one-shot session (toolbox stop /tmp).
 With --all, stop and remove every toolbox container on the host.
 All persistent data lives on the host-mounted volumes, so nothing is lost.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
@@ -37,6 +40,12 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return container.StopAll(ctx, cli)
 	}
 	if len(args) > 0 {
+		// Absolute paths mirror the `toolbox shell <abs-path>` quick form
+		// and stop the workspace-hash container associated with that path.
+		// Any other positional value is treated as a named-shell key.
+		if filepath.IsAbs(args[0]) {
+			return container.Stop(ctx, cli, args[0])
+		}
 		return container.StopByName(ctx, cli, args[0])
 	}
 
