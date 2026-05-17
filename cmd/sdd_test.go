@@ -11,9 +11,9 @@ import (
 )
 
 // withFixtureSkill swaps the package-level sdd.Skills slice for the
-// duration of a test, appending a synthetic skill so the static-fence
-// `init` path stays covered after the gsd row switched to
-// manifest-managed.
+// duration of a test, appending a synthetic skill so a static-fence
+// scenario can be exercised without depending on which production skills
+// currently sit in the registry.
 func withFixtureSkill(t *testing.T, s sdd.Skill) {
 	t.Helper()
 	orig := sdd.Skills
@@ -22,10 +22,10 @@ func withFixtureSkill(t *testing.T, s sdd.Skill) {
 	t.Cleanup(func() { sdd.Skills = orig })
 }
 
-// TestSDDInitGSDIsManifestManaged covers gsd's manifest-driven path:
-// `.toolbox.yaml` gets the opt-in flag, `.gitignore` is NOT touched by
-// the host-side `init`, and a re-run is a byte-identical no-op.
-func TestSDDInitGSDIsManifestManaged(t *testing.T) {
+// TestSDDInitGSDWritesGitignoreFence covers gsd's static-fence path:
+// `.toolbox.yaml` gets the opt-in flag, `.gitignore` receives the fenced
+// glob block, and a re-run is a byte-identical no-op.
+func TestSDDInitGSDWritesGitignoreFence(t *testing.T) {
 	dir := chdirTemp(t)
 
 	cmd := sddInitCmd
@@ -45,11 +45,23 @@ func TestSDDInitGSDIsManifestManaged(t *testing.T) {
 		t.Errorf(".toolbox.yaml missing sdd.gsd:\n%s", got)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
-		t.Errorf(".gitignore should not be created for manifest-managed gsd (err=%v)", err)
+	giBody, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(out.String(), "managed by entrypoint") {
-		t.Errorf("init output should mention entrypoint ownership for manifest-managed gsd:\n%s", out.String())
+	for _, want := range []string{
+		gitignoreFenceStart("gsd"),
+		gitignoreFenceEnd("gsd"),
+		".claude/agents/gsd-*",
+		".claude/get-shit-done/",
+		".claude/skills/gsd-*/",
+		".codex/agents/gsd-*",
+		".codex/get-shit-done/",
+		".codex/skills/gsd-*/",
+	} {
+		if !strings.Contains(string(giBody), want) {
+			t.Errorf(".gitignore missing %q:\n%s", want, giBody)
+		}
 	}
 
 	out.Reset()
@@ -57,18 +69,19 @@ func TestSDDInitGSDIsManifestManaged(t *testing.T) {
 		t.Fatalf("runSDDInit gsd (second): %v", err)
 	}
 	yamlBody2, _ := os.ReadFile(filepath.Join(dir, ".toolbox.yaml"))
+	giBody2, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if !bytes.Equal(yamlBody, yamlBody2) {
 		t.Errorf(".toolbox.yaml drifted on re-run\nfirst:\n%s\nsecond:\n%s", yamlBody, yamlBody2)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
-		t.Errorf(".gitignore must remain absent after re-run (err=%v)", err)
+	if !bytes.Equal(giBody, giBody2) {
+		t.Errorf(".gitignore drifted on re-run\nfirst:\n%s\nsecond:\n%s", giBody, giBody2)
 	}
 }
 
-// TestSDDInitStaticSkillCreatesYAMLAndGitignore covers the legacy
-// static-fence path with a synthetic fixture skill so the behaviour stays
-// regressed even though no production skill currently uses it.
-func TestSDDInitStaticSkillCreatesYAMLAndGitignore(t *testing.T) {
+// TestSDDInitFixtureSkillCreatesYAMLAndGitignore exercises the same
+// static-fence path with a synthetic skill so the contract is covered
+// even if every production row changes.
+func TestSDDInitFixtureSkillCreatesYAMLAndGitignore(t *testing.T) {
 	withFixtureSkill(t, sdd.Skill{
 		Key:        "fixture",
 		NpmPackage: "fixture-pkg",
@@ -232,8 +245,7 @@ func TestSDDInitFlipsFalseToTrue(t *testing.T) {
 
 // TestSDDInitPreservesExistingGitignoreEntries asserts that unrelated
 // .gitignore lines stay intact when the per-skill fenced block is
-// appended. Uses a static-fence fixture skill so the assertion is
-// independent of which production skills currently sit in the registry.
+// appended.
 func TestSDDInitPreservesExistingGitignoreEntries(t *testing.T) {
 	withFixtureSkill(t, sdd.Skill{
 		Key:        "fixture",
@@ -274,32 +286,6 @@ func TestSDDInitPreservesExistingGitignoreEntries(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf(".gitignore missing %q:\n%s", want, got)
 		}
-	}
-}
-
-// TestSDDInitGSDLeavesExistingGitignoreAlone covers the manifest-managed
-// flavour of the same invariant: a pre-existing .gitignore must not be
-// rewritten at all when a manifest-managed skill is enabled — the fence
-// is the entrypoint's job.
-func TestSDDInitGSDLeavesExistingGitignoreAlone(t *testing.T) {
-	dir := chdirTemp(t)
-
-	giPath := filepath.Join(dir, ".gitignore")
-	original := "dist/\nnode_modules/\n"
-	if err := os.WriteFile(giPath, []byte(original), 0o600); err != nil {
-		t.Fatalf("seed gitignore: %v", err)
-	}
-
-	cmd := sddInitCmd
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
-		t.Fatalf("runSDDInit gsd: %v", err)
-	}
-
-	body, _ := os.ReadFile(giPath)
-	if string(body) != original {
-		t.Errorf("manifest-managed gsd must not touch .gitignore\nwant:\n%s\ngot:\n%s", original, body)
 	}
 }
 

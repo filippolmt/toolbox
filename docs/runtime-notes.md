@@ -99,23 +99,26 @@ When `tools.cf` is enabled (default) and `~/.claude` exists, `internal/build/ass
 
 Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.
 
-### Manifest-managed SDD `.gitignore`
+### SDD `.gitignore` fence
 
-The SDD registry (`internal/sdd/registry.go`) supports two strategies for keeping per-skill output out of `git status`:
+`toolbox sdd init <name>` writes a fenced block into the workspace `.gitignore`:
 
-1. **Static** (`Skill.GitignoreEntries`) — host-side. `toolbox sdd init <name>` writes a fenced block `# >>> sdd-managed/<name> (toolbox)` … `# <<< sdd-managed/<name> (toolbox)` into the workspace's `.gitignore` listing the exact entries declared by the registry. Suited to skills with small, stable output.
+```
+# >>> sdd-managed/<name> (toolbox)
+<glob 1>
+<glob 2>
+…
+# <<< sdd-managed/<name> (toolbox)
+```
 
-2. **Manifest-driven** (`Skill.ManifestPaths` + `Skill.ExtraGitignoreEntries`) — container-side. `toolbox sdd init` writes only the `.toolbox.yaml` opt-in flag and *does not touch* `.gitignore`. On the next `toolbox shell` the entrypoint installs the upstream package, reads each declared manifest (JSON with a top-level `files` map whose keys are paths relative to the manifest's directory), and rewrites the fenced block with one entry per `files` key plus `ExtraGitignoreEntries`. Used by `gsd` because the upstream installer materialises ~800 files across `.claude/` and `.codex/` shared dirs alongside user-authored content — directory-level globs would clobber the user's own agents/commands/skills.
+The block content comes verbatim from `Skill.GitignoreEntries` in `internal/sdd/registry.go`. Patterns (not enumerated paths) are the contract: `.claude/get-shit-done/`, `.claude/skills/gsd-*/`, `.codex/agents/gsd-*` — coverage stays stable across upstream version bumps because new files shipped by a future version still land under one of the documented install roots.
 
-The two strategies are mutually exclusive per skill (enforced by `TestSkillFieldsMutex`). The contract:
+Contract:
 
-- The host CLI never edits `.gitignore` for manifest-managed skills; the host reports `managed by entrypoint after first 'toolbox shell'`.
-- The entrypoint regenerates the fence when **either** the bootstrap actually ran (sentinel version changed) **or** the fence is missing/malformed (recovery path for users who nuke the block manually).
-- Regen is idempotent — same manifest input produces byte-identical output.
-- The helper lives at `internal/build/assets/sdd-helpers.sh` and is COPYd to `/usr/local/lib/toolbox/sdd-helpers.sh`; entrypoint sources it inside the SDD block. The smoke-test sources the same file standalone and unit-tests `_sdd_regen_gitignore_fence` (fence content, idempotency, recovery).
-- `TOOLBOX_SDD_WORKSPACE` overrides `/workspace` as the target dir — set only by tests.
-
-Disabling a manifest-managed skill (removing the `.toolbox.yaml` flag) leaves the orphaned fence block in `.gitignore`. There is no `toolbox sdd uninstall` today — clean it up manually.
+- `toolbox sdd init <name>` is host-side and idempotent. Re-running on an unchanged registry leaves the block byte-identical.
+- An existing `.gitignore` keeps its non-fence lines intact (the upsert splices the block by fence markers).
+- Skills whose upstream installer emits user-authored content (bmad, openspec) leave `GitignoreEntries` nil; the fence is skipped entirely. The host reports `skipped (skill produces user-authored content)`.
+- Disabling a skill (removing the `.toolbox.yaml` flag) leaves the orphaned fence block in `.gitignore`. There is no `toolbox sdd uninstall` today — clean it up manually.
 
 ## Runtime privacy
 

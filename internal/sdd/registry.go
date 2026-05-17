@@ -9,31 +9,11 @@
 //  1. Append a Skill row below (alphabetical by Key).
 //  2. Add a Renovate customManager entry in renovate.json keyed on the
 //     same npm package name.
-//  3. Choose ONE of the gitignore strategies and populate the matching
-//     fields. The two strategies are mutually exclusive per skill — set
-//     GitignoreEntries OR ManifestPaths, never both.
-//
-// Gitignore strategies:
-//
-//   - Static (GitignoreEntries): set when the upstream installer writes a
-//     stable, enumerable list of paths on every bootstrap. cmd/sdd.go
-//     `upsertGitignoreFence` writes the fenced block on `toolbox sdd
-//     init <name>` at the host level. Used by skills with small,
-//     predictable output.
-//
-//   - Manifest-driven (ManifestPaths + ExtraGitignoreEntries): set when
-//     the installer materialises a manifest JSON file listing every
-//     generated path. The entrypoint regen function consumes the
-//     manifest at install/upgrade time and rewrites the fenced block
-//     inside the container. ExtraGitignoreEntries covers sibling files
-//     the installer writes but does not list in its own manifest
-//     (typically state/profile files prefixed with the skill key).
-//     Used by skills whose output is large or evolves across versions
-//     (e.g. gsd), where static enumeration would drift.
-//
-// Skills that produce user-authored content meant to be committed leave
-// all three fields nil; the host-side `sdd init` then skips .gitignore
-// entirely.
+//  3. If the upstream installer writes generated files into the repo, set
+//     GitignoreEntries to a small list of glob patterns that cover every
+//     install path. cmd/sdd.go `upsertGitignoreFence` writes a fenced
+//     block on `toolbox sdd init <name>`. Skills that produce
+//     user-authored content (e.g. bmad, openspec) leave the field nil.
 package sdd
 
 import "strings"
@@ -46,17 +26,13 @@ const (
 	EnvWorkspaceHash = "TOOLBOX_SDD_WORKSPACE_HASH"
 	EnvSkillPrefix   = "TOOLBOX_SDD_"
 
-	EnvFieldPkg       = "_PKG"
-	EnvFieldVersion   = "_VERSION"
-	EnvFieldBin       = "_BIN"
-	EnvFieldSteps     = "_STEPS"
-	EnvFieldMarker    = "_MARKER"
-	EnvFieldManifests = "_MANIFESTS"
-	EnvFieldExtras    = "_EXTRAS"
+	EnvFieldPkg     = "_PKG"
+	EnvFieldVersion = "_VERSION"
+	EnvFieldBin     = "_BIN"
+	EnvFieldSteps   = "_STEPS"
+	EnvFieldMarker  = "_MARKER"
 
-	StepSeparator     = ";"
-	ManifestSeparator = ","
-	ExtraSeparator    = "\n"
+	StepSeparator = ";"
 )
 
 // SkillEnvKey returns the env var name for a given skill field, e.g.
@@ -75,39 +51,21 @@ func SkillEnvKey(key, field string) string {
 // or produces scaffolding the user wants to author manually; subsequent
 // shells trigger a non-interactive upgrade.
 //
-// Gitignore strategies are mutually exclusive:
-//
-//   - GitignoreEntries (static): exact lines written into the fenced
-//     `.gitignore` block by cmd/sdd.go on host. Used when the installer's
-//     output is small and stable.
-//
-//   - ManifestPaths (manifest-driven): workspace-relative paths of JSON
-//     manifest files the installer materialises after each bootstrap.
-//     The entrypoint reads them post-install, derives one gitignore
-//     entry per `files` key, and rewrites the fenced block from inside
-//     the container. ExtraGitignoreEntries lists sibling files the
-//     installer writes but does not include in its own manifest
-//     (typically `.gsd-profile`, `gsd-install-state.json`, etc.).
-//
-// At most one of GitignoreEntries / ManifestPaths must be non-nil per
-// skill (enforced by TestSkillFieldsMutex).
+// GitignoreEntries is a small list of glob patterns covering every path
+// the upstream installer materialises in the repo. The host-side
+// `toolbox sdd init` writes a fenced `.gitignore` block from this list.
+// Patterns are preferred over enumerated paths because they survive
+// version bumps without drift: a new file shipped by a future installer
+// version stays covered as long as it lands under one of the documented
+// install roots.
 type Skill struct {
-	Key                   string
-	NpmPackage            string
-	Version               string
-	BinName               string
-	InstallSteps          [][]string
-	GitignoreEntries      []string
-	ManifestPaths         []string
-	ExtraGitignoreEntries []string
-	RequiresMarker        string
-}
-
-// IsManifestManaged reports whether the skill delegates its `.gitignore`
-// fence content to the entrypoint manifest reader, rather than to the
-// host-side static fence writer in cmd/sdd.go.
-func (s Skill) IsManifestManaged() bool {
-	return len(s.ManifestPaths) > 0
+	Key              string
+	NpmPackage       string
+	Version          string
+	BinName          string
+	InstallSteps     [][]string
+	GitignoreEntries []string
+	RequiresMarker   string
 }
 
 var Skills = []Skill{
@@ -128,6 +86,14 @@ var Skills = []Skill{
 		// promise stacking runtime flags. Each call writes to a runtime-
 		// scoped path (.claude/skills/gsd-* vs .codex/skills/gsd-*), so
 		// the two steps never collide.
+		//
+		// Gitignore strategy: glob patterns over the four install roots
+		// per runtime (agents/, commands/gsd/, get-shit-done/, skills/)
+		// plus codex-side runtime artefacts that live outside those
+		// roots (agent .toml siblings generated by codex, hooks/gsd-*,
+		// top-level codex config/hooks files patched on each install).
+		// Spec output dirs (.codex/specs/, docs/superpowers/specs/) are
+		// gsd:spec-phase / gsd:sketch outputs.
 		Key:        "gsd",
 		NpmPackage: "get-shit-done-cc",
 		Version:    "1.42.3",
@@ -136,31 +102,36 @@ var Skills = []Skill{
 			{"--claude", "--local"},
 			{"--codex", "--local"},
 		},
-		ManifestPaths: []string{
-			".claude/gsd-file-manifest.json",
-			".codex/gsd-file-manifest.json",
-		},
-		ExtraGitignoreEntries: []string{
-			".claude/.gsd-profile",
-			".claude/gsd-install-state.json",
-			".claude/gsd-file-manifest.json",
-			".claude/gsd-migration-journal/",
+		GitignoreEntries: []string{
+			// Claude runtime install roots + gsd-*-prefixed state files
+			// at the .claude/ root (gsd-file-manifest.json,
+			// gsd-install-state.json, gsd-migration-journal/, …) +
+			// gsd-installed hooks under .claude/hooks/.
+			".claude/agents/gsd-*",
+			".claude/commands/gsd/",
+			".claude/get-shit-done/",
+			".claude/gsd-*",
+			".claude/hooks/gsd-*",
 			".claude/skills/gsd-*/",
-			".codex/.gsd-profile",
-			".codex/gsd-install-state.json",
-			".codex/gsd-file-manifest.json",
-			".codex/skills/gsd-*/",
-			// codex CLI rewrites agents/<key>.toml siblings of the
-			// upstream .md prompts after each gsd install — these are
-			// regenerated locally, not shipped in the manifest.
-			".codex/agents/*.toml",
-			// codex hooks + top-level config patched by gsd-install on
-			// every bootstrap; outside the manifest root so the
-			// generated fence would otherwise miss them.
+			// Dot-prefixed profile sibling (not matched by gsd-*).
+			".claude/.gsd-profile",
+			// Codex runtime install roots + gsd-*-prefixed state files
+			// at the .codex/ root + gsd-installed hooks under
+			// .codex/hooks/.
+			".codex/agents/gsd-*",
+			".codex/commands/gsd/",
+			".codex/get-shit-done/",
+			".codex/gsd-*",
 			".codex/hooks/gsd-*",
+			".codex/skills/gsd-*/",
+			// Dot-prefixed profile sibling (not matched by gsd-*).
+			".codex/.gsd-profile",
+			// Codex top-level config + hooks index patched on every gsd
+			// install (codex owns the filenames, but the content is
+			// gsd-driven and regenerated on each bootstrap).
 			".codex/config.toml",
 			".codex/hooks.json",
-			// runtime spec output (gsd:spec-phase, gsd:sketch, etc.).
+			// Runtime spec output (gsd:spec-phase, gsd:sketch, …).
 			".codex/specs/",
 			"docs/superpowers/specs/",
 		},

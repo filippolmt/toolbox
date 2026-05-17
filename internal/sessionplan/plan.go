@@ -379,12 +379,6 @@ func sddEnv(workspace string, sddFlags map[string]bool) []string {
 			sdd.SkillEnvKey(k, sdd.EnvFieldSteps)+"="+strings.Join(steps, sdd.StepSeparator),
 			sdd.SkillEnvKey(k, sdd.EnvFieldMarker)+"="+s.RequiresMarker,
 		)
-		if s.IsManifestManaged() {
-			out = append(out,
-				sdd.SkillEnvKey(k, sdd.EnvFieldManifests)+"="+strings.Join(s.ManifestPaths, sdd.ManifestSeparator),
-				sdd.SkillEnvKey(k, sdd.EnvFieldExtras)+"="+strings.Join(s.ExtraGitignoreEntries, sdd.ExtraSeparator),
-			)
-		}
 	}
 	return out
 }
