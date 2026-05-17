@@ -305,6 +305,67 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	}
 }
 
+// TestPlanSDDEnvOpenSpecStepsTrackTools locks in the cfg.Tools-driven
+// step rewrite for openspec: the --tools= argument lists exactly the
+// catalog keys the workspace has enabled (claude, codex), so a tools.codex
+// opt-out never installs the codex adapter files. Drop both tools and the
+// skill is silently omitted from the env contract.
+func TestPlanSDDEnvOpenSpecStepsTrackTools(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cases := []struct {
+		name      string
+		claude    bool
+		codex     bool
+		wantSteps string // empty == skill must be absent from env entirely
+	}{
+		{"both", true, true, "init --tools=claude,codex --force;update"},
+		{"claude only", true, false, "init --tools=claude --force;update"},
+		{"codex only", false, true, "init --tools=codex --force;update"},
+		{"neither", false, false, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Tools["claude"] = tc.claude
+			cfg.Tools["codex"] = tc.codex
+			cfg.SDD = map[string]bool{"openspec": true}
+
+			plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+
+			envByKey := indexEnv(plan.Env)
+			got, present := envByKey["TOOLBOX_SDD_OPENSPEC_STEPS"]
+			if tc.wantSteps == "" {
+				if present {
+					t.Errorf("openspec must be omitted from env when both claude and codex are disabled, got STEPS=%q", got)
+				}
+				if e := envByKey["TOOLBOX_SDD_ENABLED"]; strings.Contains(e, "openspec") {
+					t.Errorf("TOOLBOX_SDD_ENABLED still names openspec: %q", e)
+				}
+				return
+			}
+			if !present {
+				t.Fatalf("TOOLBOX_SDD_OPENSPEC_STEPS missing in %v", plan.Env)
+			}
+			if got != tc.wantSteps {
+				t.Errorf("TOOLBOX_SDD_OPENSPEC_STEPS = %q, want %q", got, tc.wantSteps)
+			}
+			if marker := envByKey["TOOLBOX_SDD_OPENSPEC_MARKER"]; marker != "" {
+				t.Errorf("TOOLBOX_SDD_OPENSPEC_MARKER = %q, want empty (marker dropped, bootstrap is unconditional)", marker)
+			}
+		})
+	}
+}
+
 // indexEnv turns a docker-style "KEY=value" env slice into a lookup map.
 func indexEnv(env []string) map[string]string {
 	out := make(map[string]string, len(env))

@@ -105,7 +105,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, mp.WorkingDir, cfg.SDD),
+		Env:           shellEnv(workspace, mp.WorkingDir, cfg.SDD, cfg.Tools),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -150,7 +150,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, workingDir, cfg.SDD),
+		Env:           shellEnv(workspace, workingDir, cfg.SDD, cfg.Tools),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -327,12 +327,12 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
+func shellEnv(workspace, workingDir string, sddFlags, tools map[string]bool) []string {
 	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 	}
-	env = append(env, sddEnv(workspace, sddFlags)...)
+	env = append(env, sddEnv(workspace, sddFlags, tools)...)
 	return env
 }
 
@@ -341,10 +341,13 @@ func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
 // so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
 // — the bash bootstrap runs before any user-facing diagnostic surface.
 //
+// tools is forwarded to Skill.StepsFor when set; see internal/sdd.Skill
+// for the per-skill contract.
+//
 // Field-per-env-var encoding (vs a single pipe-packed value) keeps the
 // host/container boundary typed: bash decodes by reading one variable per
 // field with no fragile splitting.
-func sddEnv(workspace string, sddFlags map[string]bool) []string {
+func sddEnv(workspace string, sddFlags, tools map[string]bool) []string {
 	if len(sddFlags) == 0 {
 		return nil
 	}
@@ -359,18 +362,23 @@ func sddEnv(workspace string, sddFlags map[string]bool) []string {
 	}
 	sort.Strings(keys)
 
-	out := make([]string, 0, 2+len(keys)*5)
-	out = append(out,
-		sdd.EnvEnabled+"="+strings.Join(keys, ","),
-		sdd.EnvWorkspaceHash+"="+hashWorkspace(workspace),
-	)
+	emitted := make([]string, 0, len(keys))
+	body := make([]string, 0, len(keys)*5)
 	for _, k := range keys {
 		s := enabled[k]
-		steps := make([]string, len(s.InstallSteps))
-		for i, args := range s.InstallSteps {
+		stepArgs := s.InstallSteps
+		if s.StepsFor != nil {
+			stepArgs = s.StepsFor(tools)
+			if len(stepArgs) == 0 {
+				continue
+			}
+		}
+		steps := make([]string, len(stepArgs))
+		for i, args := range stepArgs {
 			steps[i] = strings.Join(args, " ")
 		}
-		out = append(out,
+		emitted = append(emitted, k)
+		body = append(body,
 			sdd.SkillEnvKey(k, sdd.EnvFieldPkg)+"="+s.NpmPackage,
 			sdd.SkillEnvKey(k, sdd.EnvFieldVersion)+"="+s.Version,
 			sdd.SkillEnvKey(k, sdd.EnvFieldBin)+"="+s.BinName,
@@ -378,6 +386,16 @@ func sddEnv(workspace string, sddFlags map[string]bool) []string {
 			sdd.SkillEnvKey(k, sdd.EnvFieldMarker)+"="+s.RequiresMarker,
 		)
 	}
+	if len(emitted) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, 2+len(body))
+	out = append(out,
+		sdd.EnvEnabled+"="+strings.Join(emitted, ","),
+		sdd.EnvWorkspaceHash+"="+hashWorkspace(workspace),
+	)
+	out = append(out, body...)
 	return out
 }
 

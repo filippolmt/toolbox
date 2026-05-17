@@ -142,7 +142,7 @@ func TestSDDInitFixtureSkillCreatesYAMLAndGitignore(t *testing.T) {
 }
 
 // TestSDDInitSkillWithoutGitignoreEntries covers integrations whose
-// upstream installer emits user-authored content (bmad, openspec):
+// upstream installer emits purely user-authored content (bmad):
 // .toolbox.yaml gets the opt-in flag, .gitignore stays untouched.
 func TestSDDInitSkillWithoutGitignoreEntries(t *testing.T) {
 	dir := chdirTemp(t)
@@ -161,6 +161,45 @@ func TestSDDInitSkillWithoutGitignoreEntries(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
 		t.Errorf(".gitignore should not be created for skills with no GitignoreEntries (err=%v)", err)
+	}
+}
+
+// TestSDDInitOpenSpecWritesGitignoreFence locks in the openspec footprint:
+// `openspec init --tools=claude,codex` regenerates adapter files under
+// .claude/skills/openspec-*, .claude/commands/opsx/, .codex/skills/openspec-*
+// on every shell, so those paths must land in the fenced gitignore block.
+// Source-of-truth content under openspec/ (specs, changes, config.yaml)
+// stays committed and never appears in the fence.
+func TestSDDInitOpenSpecWritesGitignoreFence(t *testing.T) {
+	dir := chdirTemp(t)
+
+	cmd := sddInitCmd
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSDDInit(cmd, []string{"openspec"}); err != nil {
+		t.Fatalf("runSDDInit openspec: %v", err)
+	}
+
+	giBody, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	for _, want := range []string{
+		gitignoreFenceStart("openspec"),
+		gitignoreFenceEnd("openspec"),
+		".claude/skills/openspec-*/",
+		".claude/commands/opsx/",
+		".codex/skills/openspec-*/",
+		"openspec/config.yaml",
+	} {
+		if !strings.Contains(string(giBody), want) {
+			t.Errorf(".gitignore missing %q:\n%s", want, giBody)
+		}
+	}
+	for _, forbidden := range []string{"openspec/specs", "openspec/changes"} {
+		if strings.Contains(string(giBody), forbidden) {
+			t.Errorf(".gitignore must not list user-authored %q:\n%s", forbidden, giBody)
+		}
 	}
 }
 
