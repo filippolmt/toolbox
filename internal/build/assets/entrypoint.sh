@@ -66,6 +66,88 @@ if [ -d "$INIT_D" ]; then
 fi
 unset INIT_D TOOLBOX_INIT_LOG_DIR
 
+# Repo-local SDD (Spec-Driven Development) bootstrap. Opt-in per skill via
+# `sdd.<key>: true` in the workspace's .toolbox.yaml. sessionplan emits one
+# env var per field (TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}) plus
+# TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH. Failures log inline and
+# never abort the entrypoint.
+if [ -n "${TOOLBOX_SDD_ENABLED:-}" ] && [ -n "${TOOLBOX_SDD_WORKSPACE_HASH:-}" ]; then
+    _sdd_state_dir="$HOME/.toolbox-state"
+    _sdd_printed_banner=0
+    _sdd_banner() {
+        if [ "$_sdd_printed_banner" = "0" ]; then
+            echo ""
+            echo "Toolbox sdd bootstrap:"
+            _sdd_printed_banner=1
+        fi
+    }
+    IFS=',' read -ra _sdd_keys <<< "$TOOLBOX_SDD_ENABLED"
+    for _sdd_key in "${_sdd_keys[@]}"; do
+        [ -z "$_sdd_key" ] && continue
+        _sdd_upper="$(printf '%s' "$_sdd_key" | tr '[:lower:]' '[:upper:]')"
+        _sdd_pkg_var="TOOLBOX_SDD_${_sdd_upper}_PKG"
+        _sdd_ver_var="TOOLBOX_SDD_${_sdd_upper}_VERSION"
+        _sdd_bin_var="TOOLBOX_SDD_${_sdd_upper}_BIN"
+        _sdd_steps_var="TOOLBOX_SDD_${_sdd_upper}_STEPS"
+        _sdd_marker_var="TOOLBOX_SDD_${_sdd_upper}_MARKER"
+        _sdd_pkg="${!_sdd_pkg_var:-}"
+        _sdd_ver="${!_sdd_ver_var:-}"
+        _sdd_bin="${!_sdd_bin_var:-}"
+        _sdd_steps_raw="${!_sdd_steps_var:-}"
+        _sdd_marker="${!_sdd_marker_var:-}"
+        if [ -z "$_sdd_pkg" ] || [ -z "$_sdd_ver" ] || [ -z "$_sdd_bin" ] || [ -z "$_sdd_steps_raw" ]; then
+            continue
+        fi
+        if [ -n "$_sdd_marker" ] && [ ! -e "./${_sdd_marker}" ]; then
+            _sdd_banner
+            echo "  ${_sdd_key}: skipped — no '${_sdd_marker}' in workspace."
+            echo "    Run '${_sdd_bin}' init manually once, commit, then re-shell."
+            continue
+        fi
+        _sdd_sentinel="$_sdd_state_dir/sdd.${_sdd_key}.${TOOLBOX_SDD_WORKSPACE_HASH}.version"
+        _sdd_cur=""
+        read -r _sdd_cur < "$_sdd_sentinel" 2>/dev/null || true
+        if [ "$_sdd_cur" = "$_sdd_ver" ]; then
+            continue
+        fi
+        _sdd_banner
+        echo "  ${_sdd_key}: installing ${_sdd_pkg}@${_sdd_ver} (repo-local)..."
+        mkdir -p "$_sdd_state_dir"
+        _sdd_log="$_sdd_state_dir/sdd.${_sdd_key}.log"
+        : > "$_sdd_log"
+        _sdd_failed=0
+        if ! npm install -g --silent "${_sdd_pkg}@${_sdd_ver}" >>"$_sdd_log" 2>&1; then
+            _sdd_failed=1
+        fi
+        if [ "$_sdd_failed" = "0" ]; then
+            # InstallSteps spec: steps separated by ';', args inside a
+            # step split on whitespace — splitting IS the contract.
+            IFS=';' read -ra _sdd_steps <<< "$_sdd_steps_raw"
+            for _sdd_step in "${_sdd_steps[@]}"; do
+                # shellcheck disable=SC2086
+                if ! "$_sdd_bin" $_sdd_step >>"$_sdd_log" 2>&1; then
+                    _sdd_failed=1
+                    break
+                fi
+            done
+            unset _sdd_steps _sdd_step
+        fi
+        if [ "$_sdd_failed" = "0" ]; then
+            printf '%s' "$_sdd_ver" > "$_sdd_sentinel"
+            echo "    installed v${_sdd_ver}"
+        else
+            echo "    install failed (log: $_sdd_log)"
+            tail -n 5 "$_sdd_log" 2>/dev/null | sed 's/^/      /'
+        fi
+        unset _sdd_log _sdd_failed
+    done
+    unset -f _sdd_banner
+    unset _sdd_state_dir _sdd_keys _sdd_key _sdd_upper \
+        _sdd_pkg_var _sdd_ver_var _sdd_bin_var _sdd_steps_var _sdd_marker_var \
+        _sdd_pkg _sdd_ver _sdd_bin _sdd_steps_raw _sdd_marker \
+        _sdd_sentinel _sdd_cur _sdd_printed_banner
+fi
+
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.
 # Each *.sh file runs sequentially before the shell starts. Failures are
 # logged but never abort the entrypoint — one bad hook cannot block access.

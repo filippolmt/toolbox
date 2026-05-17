@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -20,6 +21,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // --- Public Seams ---
@@ -103,7 +105,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, mp.WorkingDir),
+		Env:           shellEnv(workspace, mp.WorkingDir, cfg.SDD),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -148,7 +150,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, workingDir),
+		Env:           shellEnv(workspace, workingDir, cfg.SDD),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -327,9 +329,80 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string) []string {
-	return []string{
+func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
+	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 	}
+	env = append(env, sddEnv(workspace, sddFlags)...)
+	return env
+}
+
+// sddEnv translates the cfg.SDD opt-in map into the env contract consumed
+// by internal/build/assets/entrypoint.sh. Unknown keys are silently dropped
+// so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
+// — the bash bootstrap runs before any user-facing diagnostic surface.
+//
+// Field-per-env-var encoding (vs a single pipe-packed value) keeps the
+// host/container boundary typed: bash decodes by reading one variable per
+// field with no fragile splitting.
+func sddEnv(workspace string, sddFlags map[string]bool) []string {
+	if len(sddFlags) == 0 {
+		return nil
+	}
+	enabled := resolveEnabledSkills(sddFlags)
+	if len(enabled) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(enabled))
+	for k := range enabled {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make([]string, 0, 2+len(keys)*5)
+	out = append(out,
+		sdd.EnvEnabled+"="+strings.Join(keys, ","),
+		sdd.EnvWorkspaceHash+"="+workspaceHash(workspace),
+	)
+	for _, k := range keys {
+		s := enabled[k]
+		steps := make([]string, len(s.InstallSteps))
+		for i, args := range s.InstallSteps {
+			steps[i] = strings.Join(args, " ")
+		}
+		out = append(out,
+			sdd.SkillEnvKey(k, sdd.EnvFieldPkg)+"="+s.NpmPackage,
+			sdd.SkillEnvKey(k, sdd.EnvFieldVersion)+"="+s.Version,
+			sdd.SkillEnvKey(k, sdd.EnvFieldBin)+"="+s.BinName,
+			sdd.SkillEnvKey(k, sdd.EnvFieldSteps)+"="+strings.Join(steps, sdd.StepSeparator),
+			sdd.SkillEnvKey(k, sdd.EnvFieldMarker)+"="+s.RequiresMarker,
+		)
+	}
+	return out
+}
+
+// resolveEnabledSkills returns the map of known skill keys to their
+// registry entries, after filtering sddFlags through the registry to
+// drop unknown keys and false values.
+func resolveEnabledSkills(sddFlags map[string]bool) map[string]sdd.Skill {
+	out := make(map[string]sdd.Skill, len(sddFlags))
+	for k, on := range sddFlags {
+		if !on {
+			continue
+		}
+		if s, ok := sdd.Lookup(k); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// workspaceHash matches the sentinel suffix the entrypoint used to compute
+// inline via sha256sum+cut. Precomputing it here saves two forks per
+// enabled skill on every `toolbox shell`.
+func workspaceHash(workspace string) string {
+	sum := sha256.Sum256([]byte(workspace))
+	return hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 }

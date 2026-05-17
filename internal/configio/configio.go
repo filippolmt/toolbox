@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -127,12 +128,24 @@ func EnsureChildMap(parent *yaml.Node, key string) *yaml.Node {
 // value in place (preserving sibling key order and comments) or appending
 // a fresh key/value pair to the end.
 func SetMapValue(parent *yaml.Node, key, value string) {
-	scalar := func() *yaml.Node {
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+	setScalar(parent, key, "!!str", value)
+}
+
+// SetMapBool is the bool sibling of SetMapValue. Tagged !!bool so yaml.v3
+// emits `true`/`false` unquoted (without the tag, scalar "true" round-trips
+// as the string "true", which viper accepts on read but reads as a stringly-
+// typed bool).
+func SetMapBool(parent *yaml.Node, key string, value bool) {
+	setScalar(parent, key, "!!bool", strconv.FormatBool(value))
+}
+
+func setScalar(parent *yaml.Node, key, tag, value string) {
+	make := func() *yaml.Node {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
 	}
-	findOrAppendPair(parent, key, scalar, func(existing *yaml.Node) {
+	findOrAppendPair(parent, key, make, func(existing *yaml.Node) {
 		existing.Kind = yaml.ScalarNode
-		existing.Tag = "!!str"
+		existing.Tag = tag
 		existing.Value = value
 		existing.Content = nil
 	})
