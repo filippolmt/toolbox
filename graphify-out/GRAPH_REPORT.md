@@ -1,13 +1,18 @@
-# Graph Report - .  (2026-05-17)
+# Graph Report - toolbox  (2026-05-17)
 
 ## Corpus Check
-- 146 files · ~102,526 words
+- 138 files · ~101,409 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 850 nodes · 1279 edges · 84 communities (43 shown, 41 thin omitted)
+- 862 nodes · 1288 edges · 86 communities (45 shown, 41 thin omitted)
 - Extraction: 76% EXTRACTED · 24% INFERRED · 0% AMBIGUOUS · INFERRED: 308 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `af5e5117`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_CLI Subcommands & Init|CLI Subcommands & Init]]
@@ -80,6 +85,8 @@
 - [[_COMMUNITY_Cluster 81|Cluster 81]]
 - [[_COMMUNITY_Cluster 82|Cluster 82]]
 - [[_COMMUNITY_Cluster 83|Cluster 83]]
+- [[_COMMUNITY_Community 84|Community 84]]
+- [[_COMMUNITY_Community 85|Community 85]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Shell()` - 29 edges
@@ -98,12 +105,12 @@
   .claude/skills/golang-cli/assets/examples/config.go → CLAUDE.md
 - `Module` --semantically_similar_to--> `Mount Plan`  [INFERRED] [semantically similar]
   .agents/skills/improve-codebase-architecture/LANGUAGE.md → CONTEXT.md
-- `colorExamples()` --calls--> `Success()`  [INFERRED]
-  .claude/skills/golang-cli/assets/examples/output.go → internal/ui/output.go
 - `cmd/ directory contains only minimal main.go` --semantically_similar_to--> `main()`  [INFERRED] [semantically similar]
   .claude/skills/golang-project-layout/references/directory-layouts.md → .claude/skills/golang-cli/assets/examples/main.go
 - `/add-cli skill` --references--> `internal/build/assets/Dockerfile`  [EXTRACTED]
   .claude/skills/add-cli/SKILL.md → renovate.json
+- `runBuild()` --calls--> `Info()`  [INFERRED]
+  cmd/build.go → internal/ui/output.go
 
 ## Hyperedges (group relationships)
 - **Four-seam deepening composition (v1.3 Architecture Deepening)** — concept_mount_plan, concept_tool_catalog, concept_config_plan, concept_session_plan [EXTRACTED 1.00]
@@ -128,15 +135,15 @@
 - **SDD env envelope (enabled list + workspace hash + prefix)** — sdd_registry_const_envenabled, sdd_registry_const_envworkspacehash, sdd_registry_const_envskillprefix [EXTRACTED 1.00]
 - **Container lifecycle decision triad (session plan / run plan / teardown)** — sessionplan_plan_plan_fn, runplan_runplan_compute, teardown_teardown_onshellexit [INFERRED 0.85]
 
-## Communities (84 total, 41 thin omitted)
+## Communities (86 total, 41 thin omitted)
 
 ### Community 0 - "CLI Subcommands & Init"
-Cohesion: 0.05
-Nodes (41): runBuild(), runShell(), signalCtx(), TestSignalCtxReturnsCancellableContext(), runStop(), cmd/stop.go stopCmd, createAndStart(), dispatchOp() (+33 more)
+Cohesion: 0.06
+Nodes (32): runBuild(), runShell(), signalCtx(), TestSignalCtxReturnsCancellableContext(), runStop(), cmd/stop.go stopCmd, formatPublishMismatch(), NewClient() (+24 more)
 
 ### Community 1 - "SDD Env Contract"
 Cohesion: 0.05
-Nodes (56): concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, const EnvEnabled = TOOLBOX_SDD_ENABLED, const EnvSkillPrefix = TOOLBOX_SDD_, const EnvWorkspaceHash = TOOLBOX_SDD_WORKSPACE_HASH, const StepSeparator = ;, rationale: Skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild), Keys(), Lookup() (+48 more)
+Nodes (52): concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, const EnvEnabled = TOOLBOX_SDD_ENABLED, const EnvSkillPrefix = TOOLBOX_SDD_, const EnvWorkspaceHash = TOOLBOX_SDD_WORKSPACE_HASH, const StepSeparator = ;, rationale: Skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild), Keys(), Lookup() (+44 more)
 
 ### Community 2 - "Repo Conventions & Skills"
 Cohesion: 0.05
@@ -171,8 +178,8 @@ Cohesion: 0.08
 Nodes (20): TestUsageArgsWraps(), cmd/build.go — toolbox build subcommand, cmd/completion.go — toolbox completion subcommand, cmd/config.go — toolbox config show/example, TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig() (+12 more)
 
 ### Community 10 - "Image Plan"
-Cohesion: 0.11
-Nodes (19): Refresh(), TestRefreshNoOpForLocalImage(), mockClient, image readiness two-phase strategy (Refresh+Ensure), cached(), isAuthError(), markerPath(), pull() (+11 more)
+Cohesion: 0.05
+Nodes (44): execShell(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_NonTTYStdin(), attachMock, createAndStart(), dispatchOp(), Config (+36 more)
 
 ### Community 11 - "Phase 07 Catalog Decisions"
 Cohesion: 0.07
@@ -195,8 +202,8 @@ Cohesion: 0.13
 Nodes (14): concept: Plan-family pipeline (Config -> Mount -> Session -> Run), Action, notFoundErr, Op, Action enum (Connect/Start/Create), Compute(), rationale: nil ContainerJSONBase routes to ActionCreate to avoid panicking on half-populated inspect record, Op struct (Action, ExistingID) (+6 more)
 
 ### Community 16 - "Container Attach"
-Cohesion: 0.12
-Nodes (12): execShell(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_NonTTYStdin(), attachMock, colorExamples(), isTerminal(), outputExample() (+4 more)
+Cohesion: 0.5
+Nodes (3): Answer, Q: Why does Shell() bridge Container Lifecycle to CLI Subcommands, SDD Env Contract, Image Plan, Run Plan, Container Attach?, Source Nodes
 
 ### Community 17 - "Mount Resolution"
 Cohesion: 0.23
@@ -246,25 +253,33 @@ Nodes (3): Six section banners (Seam/Walk-Up/Defaults/File Load/Validation/Helpe
 Cohesion: 0.67
 Nodes (3): goreleaser/goreleaser-action@v7, HOMEBREW_TAP_TOKEN secret for homebrew tap, Release workflow (GoReleaser on v* tag)
 
+### Community 84 - "Community 84"
+Cohesion: 0.5
+Nodes (3): Answer, Q: Why does Lookup() bridge SDD Env Contract (c1) to toolbox init Scaffold (c12)?, Source Nodes
+
+### Community 85 - "Community 85"
+Cohesion: 0.5
+Nodes (3): Answer, Q: Are 199 weakly-connected nodes a documentation gap or AST noise?, Source Nodes
+
 ## Knowledge Gaps
-- **175 isolated node(s):** `version`, `source`, `sourceType`, `skillPath`, `computedHash` (+170 more)
+- **181 isolated node(s):** `Answer`, `Source Nodes`, `Answer`, `Source Nodes`, `Answer` (+176 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **41 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Shell()` connect `Container Lifecycle` to `CLI Subcommands & Init`, `SDD Env Contract`, `Image Plan`, `Run Plan Pipeline`, `Container Attach`?**
-  _High betweenness centrality (0.158) - this node is a cross-community bridge._
+- **Why does `Shell()` connect `Container Lifecycle` to `CLI Subcommands & Init`, `SDD Env Contract`, `Image Plan`, `Run Plan Pipeline`?**
+  _High betweenness centrality (0.154) - this node is a cross-community bridge._
 - **Why does `Lookup()` connect `SDD Env Contract` to `toolbox init Scaffold`?**
-  _High betweenness centrality (0.113) - this node is a cross-community bridge._
+  _High betweenness centrality (0.110) - this node is a cross-community bridge._
 - **Are the 24 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
   _`Shell()` has 24 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 13 inferred relationships involving `mkdirAll()` (e.g. with `ensureNamedShellPath()` and `TestEnsureNamedShellPathRejectsSymlink()`) actually correct?**
   _`mkdirAll()` has 13 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `version`, `source`, `sourceType` to the rest of the system?**
-  _199 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Answer`, `Source Nodes`, `Answer` to the rest of the system?**
+  _205 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `CLI Subcommands & Init` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
 - **Should `SDD Env Contract` be split into smaller, more focused modules?**
   _Cohesion score 0.05 - nodes in this community are weakly interconnected._
