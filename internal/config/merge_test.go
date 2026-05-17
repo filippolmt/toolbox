@@ -21,6 +21,7 @@ func TestMergeScenarios(t *testing.T) {
 		ToolGcloud bool
 		ToolGo     bool
 		MountsRoot string
+		InfraPath  string
 		ErrSubstr  string
 	}
 	tests := []struct {
@@ -98,6 +99,11 @@ func TestMergeScenarios(t *testing.T) {
 			project: "mounts_root: ~/toolbox-state\n",
 			want:    want{Shell: "zsh", ToolGcloud: true, ToolGo: true, MountsRoot: "~/toolbox-state"},
 		},
+		{
+			name:    "shells_map_loaded",
+			project: "shells:\n  infra:\n    path: /tmp/infra\n",
+			want:    want{Shell: "zsh", ToolGcloud: true, ToolGo: true, InfraPath: "/tmp/infra"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -127,6 +133,11 @@ func TestMergeScenarios(t *testing.T) {
 			}
 			if tc.want.MountsRoot != "" && cfg.MountsRoot != tc.want.MountsRoot {
 				t.Errorf("MountsRoot = %q, want %q", cfg.MountsRoot, tc.want.MountsRoot)
+			}
+			if tc.want.InfraPath != "" {
+				if cfg.Shells["infra"].Path != tc.want.InfraPath {
+					t.Errorf("Shells[infra].Path = %q, want %q", cfg.Shells["infra"].Path, tc.want.InfraPath)
+				}
 			}
 			// CFG-06 single_tool_disable_preserves_others: flipping one tool false
 			// must leave every other catalog tool at default-true.

@@ -219,7 +219,9 @@ func applyValidationTail(cfg *Config) error {
 // fillToolDefaultsBackstop fills cfg.Tools entries that the YAML did
 // not override. Mirrors Load() lines 144-151 verbatim — Unmarshal does
 // not pull viper's SetDefault entries into a map[string]bool when the
-// YAML omits them.
+// YAML omits them. Also nil-guards cfg.Shells so cmd/* lookups never
+// observe an uninitialised map (no defaults to seed — the map is
+// purely user-driven and may legitimately stay empty).
 func fillToolDefaultsBackstop(cfg *Config) {
 	if cfg.Tools == nil {
 		cfg.Tools = map[string]bool{}
@@ -228,6 +230,9 @@ func fillToolDefaultsBackstop(cfg *Config) {
 		if _, ok := cfg.Tools[k]; !ok {
 			cfg.Tools[k] = true
 		}
+	}
+	if cfg.Shells == nil {
+		cfg.Shells = map[string]NamedShell{}
 	}
 }
 

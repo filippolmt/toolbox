@@ -13,31 +13,46 @@ import (
 // validator would silently accept typos like `toolbox shell foo` instead of
 // surfacing a usage error. Also verifies the failure is wrapped in
 // *usageError so Execute() maps it to exit code 2.
+//
+// shell and stop take an optional [name] positional, so for them the
+// rejection cases mix a plausible-looking first arg with an extra trailing
+// arg — this catches a future regression where MaximumNArgs is bumped to 2
+// (or the validator is dropped entirely), which a `{"unexpected", "extra"}`
+// pair could not distinguish from "any two unknown strings are refused".
 func TestSubcommandsRejectPositionalArgs(t *testing.T) {
 	cases := []struct {
 		name string
 		cmd  *cobra.Command
+		args []string
 	}{
-		{"shell", shellCmd},
-		{"build", buildCmd},
-		{"stop", stopCmd},
-		{"version", versionCmd},
+		{"shell", shellCmd, []string{"infra", "extra"}},
+		{"build", buildCmd, nil},
+		{"stop", stopCmd, []string{"infra", "extra"}},
+		{"version", versionCmd, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.cmd.Args == nil {
 				t.Fatalf("%s: Args validator must be set", tc.name)
 			}
-			err := tc.cmd.Args(tc.cmd, []string{"unexpected"})
+			args := tc.args
+			if args == nil {
+				args = []string{"unexpected"}
+			}
+			err := tc.cmd.Args(tc.cmd, args)
 			if err == nil {
-				t.Fatalf("%s: Args should reject extra positional arg", tc.name)
+				t.Fatalf("%s: Args should reject invalid positional args %v", tc.name, args)
 			}
 			var uerr *usageError
 			if !errors.As(err, &uerr) {
 				t.Errorf("%s: Args error should be wrapped in *usageError, got %T: %v", tc.name, err, err)
 			}
-			if err := tc.cmd.Args(tc.cmd, nil); err != nil {
-				t.Errorf("%s: Args should accept no args, got %v", tc.name, err)
+			okArgs := []string{}
+			if tc.name == "shell" || tc.name == "stop" {
+				okArgs = []string{"name"}
+			}
+			if err := tc.cmd.Args(tc.cmd, okArgs); err != nil {
+				t.Errorf("%s: Args should accept %v, got %v", tc.name, okArgs, err)
 			}
 		})
 	}

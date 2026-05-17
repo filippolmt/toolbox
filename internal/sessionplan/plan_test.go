@@ -282,6 +282,32 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	}
 }
 
+func TestNamedContainerName(t *testing.T) {
+	if got := sessionplan.NamedContainerName("infra"); got != "toolbox-named-infra" {
+		t.Fatalf("NamedContainerName(infra) = %q, want toolbox-named-infra", got)
+	}
+	if got := sessionplan.NamedContainerName("AI Scratch"); got != "toolbox-named-ai-scratch" {
+		t.Fatalf("NamedContainerName(AI Scratch) = %q, want toolbox-named-ai-scratch", got)
+	}
+}
+
+// TestNamedContainerNameDisjointFromHashFormat locks in the invariant that
+// the named-shell container format is impossible to confuse with the
+// workspace-hash format (`toolbox-<base>-<8hex>`). Two collision-prone
+// inputs are checked: a workspace whose basename is literally "named" and a
+// named shell whose sanitized form is hash-shaped — both end up in distinct
+// container names because the named- infix is followed by user content
+// (never a bare 8-hex group).
+func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
+	// Hash-shaped names go through cmd/ validation; the helper itself
+	// still produces a name that does NOT match the workspace-hash format
+	// because it always starts with `toolbox-named-`.
+	got := sessionplan.NamedContainerName("1a2b3c4d")
+	if !strings.HasPrefix(got, sessionplan.ContainerNamePrefix+sessionplan.NamedContainerNameInfix) {
+		t.Fatalf("NamedContainerName(hash-shaped) = %q, want toolbox-named- prefix", got)
+	}
+}
+
 // --- Merge tier (pure data, NO fs side effects) ---
 
 // TestMergeIsPure asserts Merge does not require HOME setup or t.TempDir

@@ -180,6 +180,17 @@ func MissingPublishPorts(wanted nat.PortMap, inspect container.InspectResponse) 
 // host's full container list without taking a SessionPlan input.
 const ContainerNamePrefix = "toolbox-"
 
+// MaxContainerNameLen is the documented Docker convention cap for
+// container names. Exposed so cmd/ validators can budget the user-supplied
+// portion (workspace basename or named-shell name) without rederiving it.
+const MaxContainerNameLen = 63
+
+// WorkspaceHashLen is the length of the trailing hash suffix in the
+// workspace container format (`toolbox-<base>-<8hex>`). cmd/ uses this
+// value to reject named-shell names whose sanitized form would be
+// indistinguishable from the hash suffix.
+const WorkspaceHashLen = 8
+
 var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // ContainerNameFor builds the container name for a given workspace path.
@@ -195,7 +206,7 @@ func ContainerNameFor(workspace string) string {
 	abs := normalizeWorkspace(workspace)
 
 	sum := sha256.Sum256([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:8]
+	hash := hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 
 	base := strings.ToLower(filepath.Base(abs))
 	base = sanitizeRe.ReplaceAllString(base, "-")
@@ -204,8 +215,8 @@ func ContainerNameFor(workspace string) string {
 		base = "root"
 	}
 
-	// 63 (Docker convention) - len("toolbox-") - len("-") - 8 (hash) = 46.
-	const maxBasename = 46
+	// MaxContainerNameLen - len("toolbox-") - len("-") - WorkspaceHashLen.
+	maxBasename := MaxContainerNameLen - len(ContainerNamePrefix) - 1 - WorkspaceHashLen
 	if len(base) > maxBasename {
 		base = strings.TrimRight(base[:maxBasename], "-")
 		if base == "" {
@@ -214,6 +225,53 @@ func ContainerNameFor(workspace string) string {
 	}
 
 	return ContainerNamePrefix + base + "-" + hash
+}
+
+// MaxNamedShellNameLen is the cap for the sanitized form of a named shell
+// name, derived from MaxContainerNameLen minus the named-shell prefix +
+// infix. cmd/ validators consume this so a prefix rename keeps the cap in
+// lockstep.
+const MaxNamedShellNameLen = MaxContainerNameLen - len(ContainerNamePrefix) - len(NamedContainerNameInfix)
+
+// NamedContainerNameInfix separates the ContainerNamePrefix from the
+// user-supplied shell name. The dedicated infix guarantees the named-shell
+// container format is disjoint from the workspace-hash format produced by
+// ContainerNameFor (`toolbox-<base>-<8hex>`): a workspace whose basename is
+// literally "named" still gets a trailing -<8hex> suffix, while named-shell
+// containers never carry one (callers reject hash-shaped names upstream).
+const NamedContainerNameInfix = "named-"
+
+// SanitizeShellName lowercases and slug-collapses the user-supplied shell
+// name using the same character class as the workspace basename portion of
+// ContainerNameFor. Exposed so cmd/* can validate the sanitized form (e.g.
+// reject names that would collide with the workspace-hash suffix) without
+// re-implementing the regex.
+func SanitizeShellName(name string) string {
+	base := strings.ToLower(strings.TrimSpace(name))
+	base = sanitizeRe.ReplaceAllString(base, "-")
+	return strings.Trim(base, "-")
+}
+
+// NamedContainerName returns the container name used by `toolbox shell <name>`
+// and `toolbox stop <name>`.
+//
+// Format: toolbox-named-<sanitized>. The named- infix keeps this disjoint
+// from the workspace-hash format (toolbox-<base>-<8hex>); cmd/ validation
+// additionally refuses sanitized names that match the 8-hex hash pattern so
+// a named shell cannot impersonate a workspace container.
+func NamedContainerName(name string) string {
+	return NamedContainerNameFromSanitized(SanitizeShellName(name))
+}
+
+// NamedContainerNameFromSanitized is the post-sanitization sibling of
+// NamedContainerName. cmd/ already runs SanitizeShellName during input
+// validation, so threading the sanitized form back through this entry
+// avoids a redundant regex+lower+trim pass on every `toolbox shell <name>`.
+func NamedContainerNameFromSanitized(sanitized string) string {
+	if sanitized == "" {
+		sanitized = "shell"
+	}
+	return ContainerNamePrefix + NamedContainerNameInfix + sanitized
 }
 
 // normalizeWorkspace returns the workspace path as an absolute, cleaned
