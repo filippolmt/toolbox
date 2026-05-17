@@ -1332,6 +1332,12 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
 
+# Sourced by entrypoint.sh inside the SDD bootstrap block. Kept separate
+# so the smoke-test can `source` it standalone and unit-test the helpers
+# without re-running the full entrypoint.
+COPY sdd-helpers.sh /usr/local/lib/toolbox/sdd-helpers.sh
+RUN chmod 0644 /usr/local/lib/toolbox/sdd-helpers.sh
+
 # Per-tool init manifest. Last so init.d/* edits invalidate only this layer.
 # Embedded via internal/build/embed.go for `toolbox build` w/o repo checkout.
 # chmod belt-and-braces: embed.FS strips exec bits to 0444.

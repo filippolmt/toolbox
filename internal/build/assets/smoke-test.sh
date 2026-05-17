@@ -251,6 +251,111 @@ echo "OK: passwd entry injected for uid $(id -u)"
 '
 
 echo ""
+echo "=== SDD manifest-driven .gitignore regen ==="
+# Unit-tests the helper function shipped in sdd-helpers.sh by sourcing it
+# standalone, feeding it a synthetic manifest + extras, and asserting the
+# rewritten fence block contains the expected entries (sorted/deduped). The
+# helper honours TOOLBOX_SDD_WORKSPACE so tests can target a tmpdir instead
+# of /workspace.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+test -f /usr/local/lib/toolbox/sdd-helpers.sh || { echo "FAILED: sdd-helpers.sh missing"; exit 1; }
+# shellcheck disable=SC1091
+source /usr/local/lib/toolbox/sdd-helpers.sh
+type _sdd_regen_gitignore_fence >/dev/null 2>&1 || { echo "FAILED: _sdd_regen_gitignore_fence not defined after source"; exit 1; }
+
+ws=$(mktemp -d)
+export TOOLBOX_SDD_WORKSPACE="$ws"
+mkdir -p "$ws/.claude" "$ws/.codex"
+
+# Fixture manifests in two runtimes, mirroring the gsd shape.
+cat > "$ws/.claude/gsd-file-manifest.json" <<JSON
+{
+  "version": "0.0.0",
+  "files": {
+    "agents/foo.md": "deadbeef",
+    "commands/bar.md": "deadbeef",
+    "get-shit-done/bin.cjs": "deadbeef"
+  }
+}
+JSON
+cat > "$ws/.codex/gsd-file-manifest.json" <<JSON
+{
+  "version": "0.0.0",
+  "files": {
+    "agents/baz.md": "deadbeef",
+    "skills/gsd-foo/SKILL.md": "deadbeef"
+  }
+}
+JSON
+
+# Pre-existing .gitignore lines must survive the splice.
+printf "dist/\nnode_modules/\n" > "$ws/.gitignore"
+
+extras=".claude/.gsd-profile
+.claude/gsd-install-state.json
+.codex/.gsd-profile"
+
+_sdd_regen_gitignore_fence "gsd" ".claude/gsd-file-manifest.json,.codex/gsd-file-manifest.json" "$extras" \
+    || { echo "FAILED: _sdd_regen_gitignore_fence returned non-zero"; exit 1; }
+
+body=$(cat "$ws/.gitignore")
+fail=0
+for want in \
+    "dist/" "node_modules/" \
+    "# >>> sdd-managed/gsd (toolbox)" \
+    "# <<< sdd-managed/gsd (toolbox)" \
+    ".claude/agents/foo.md" \
+    ".claude/commands/bar.md" \
+    ".claude/get-shit-done/bin.cjs" \
+    ".codex/agents/baz.md" \
+    ".codex/skills/gsd-foo/SKILL.md" \
+    ".claude/.gsd-profile" \
+    ".claude/gsd-install-state.json" \
+    ".codex/.gsd-profile"; do
+    if ! printf "%s\n" "$body" | grep -qF "$want"; then
+        echo "FAILED: fence missing entry: $want"
+        fail=1
+    fi
+done
+
+# Idempotency: a second call with the same inputs must not change the file.
+sha_before=$(sha256sum "$ws/.gitignore" | awk "{print \$1}")
+_sdd_regen_gitignore_fence "gsd" ".claude/gsd-file-manifest.json,.codex/gsd-file-manifest.json" "$extras" \
+    || { echo "FAILED: second regen call returned non-zero"; exit 1; }
+sha_after=$(sha256sum "$ws/.gitignore" | awk "{print \$1}")
+if [ "$sha_before" != "$sha_after" ]; then
+    echo "FAILED: second regen call produced different output (not idempotent)"
+    fail=1
+fi
+
+# Recovery: nuking the fence and re-running must restore it without
+# losing the original pre-existing lines.
+awk "/# >>> sdd-managed\\/gsd/{skip=1;next} /# <<< sdd-managed\\/gsd/{skip=0;next} !skip" "$ws/.gitignore" > "$ws/.gitignore.tmp"
+mv "$ws/.gitignore.tmp" "$ws/.gitignore"
+_sdd_regen_gitignore_fence "gsd" ".claude/gsd-file-manifest.json,.codex/gsd-file-manifest.json" "$extras" \
+    || { echo "FAILED: recovery regen returned non-zero"; exit 1; }
+body=$(cat "$ws/.gitignore")
+for want in \
+    "dist/" "node_modules/" \
+    "# >>> sdd-managed/gsd (toolbox)" \
+    ".claude/agents/foo.md"; do
+    if ! printf "%s\n" "$body" | grep -qF "$want"; then
+        echo "FAILED: recovery did not restore $want"
+        fail=1
+    fi
+done
+
+rm -rf "$ws"
+
+if [ "$fail" -eq 0 ]; then
+    echo "OK: _sdd_regen_gitignore_fence (fence content, idempotency, recovery)"
+else
+    exit 1
+fi
+'
+
+echo ""
 echo "=== init.d bijection + executability ==="
 # Shell-side counterpart of TestCatalogInitDBijection: confirms the
 # Dockerfile COPY → in-image direction restored exec bits despite embed.FS

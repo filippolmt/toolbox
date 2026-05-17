@@ -6,17 +6,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
-// TestSDDInitCreatesYAMLAndGitignore covers the happy path for a skill
-// that owns gitignore entries (gsd): no pre-existing files, both are
-// created with the expected fenced/key content, and a second run is a
-// byte-identical no-op.
-func TestSDDInitCreatesYAMLAndGitignore(t *testing.T) {
+// withFixtureSkill swaps the package-level sdd.Skills slice for the
+// duration of a test, appending a synthetic skill so the static-fence
+// `init` path stays covered after the gsd row switched to
+// manifest-managed.
+func withFixtureSkill(t *testing.T, s sdd.Skill) {
+	t.Helper()
+	orig := sdd.Skills
+	sdd.Skills = append([]sdd.Skill{}, orig...)
+	sdd.Skills = append(sdd.Skills, s)
+	t.Cleanup(func() { sdd.Skills = orig })
+}
+
+// TestSDDInitGSDIsManifestManaged covers gsd's manifest-driven path:
+// `.toolbox.yaml` gets the opt-in flag, `.gitignore` is NOT touched by
+// the host-side `init`, and a re-run is a byte-identical no-op.
+func TestSDDInitGSDIsManifestManaged(t *testing.T) {
 	dir := chdirTemp(t)
 
 	cmd := sddInitCmd
-	cmd.SetOut(&bytes.Buffer{})
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
 	cmd.SetErr(&bytes.Buffer{})
 	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
 		t.Fatalf("runSDDInit gsd: %v", err)
@@ -31,22 +45,78 @@ func TestSDDInitCreatesYAMLAndGitignore(t *testing.T) {
 		t.Errorf(".toolbox.yaml missing sdd.gsd:\n%s", got)
 	}
 
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf(".gitignore should not be created for manifest-managed gsd (err=%v)", err)
+	}
+	if !strings.Contains(out.String(), "managed by entrypoint") {
+		t.Errorf("init output should mention entrypoint ownership for manifest-managed gsd:\n%s", out.String())
+	}
+
+	out.Reset()
+	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
+		t.Fatalf("runSDDInit gsd (second): %v", err)
+	}
+	yamlBody2, _ := os.ReadFile(filepath.Join(dir, ".toolbox.yaml"))
+	if !bytes.Equal(yamlBody, yamlBody2) {
+		t.Errorf(".toolbox.yaml drifted on re-run\nfirst:\n%s\nsecond:\n%s", yamlBody, yamlBody2)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf(".gitignore must remain absent after re-run (err=%v)", err)
+	}
+}
+
+// TestSDDInitStaticSkillCreatesYAMLAndGitignore covers the legacy
+// static-fence path with a synthetic fixture skill so the behaviour stays
+// regressed even though no production skill currently uses it.
+func TestSDDInitStaticSkillCreatesYAMLAndGitignore(t *testing.T) {
+	withFixtureSkill(t, sdd.Skill{
+		Key:        "fixture",
+		NpmPackage: "fixture-pkg",
+		Version:    "0.0.1",
+		BinName:    "fixture",
+		InstallSteps: [][]string{
+			{"init"},
+		},
+		GitignoreEntries: []string{
+			".fixture/output/",
+			".fixture/cache.json",
+		},
+	})
+
+	dir := chdirTemp(t)
+
+	cmd := sddInitCmd
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSDDInit(cmd, []string{"fixture"}); err != nil {
+		t.Fatalf("runSDDInit fixture: %v", err)
+	}
+
+	yamlBody, err := os.ReadFile(filepath.Join(dir, ".toolbox.yaml"))
+	if err != nil {
+		t.Fatalf("read .toolbox.yaml: %v", err)
+	}
+	if !strings.Contains(string(yamlBody), "fixture: true") {
+		t.Errorf(".toolbox.yaml missing fixture: true:\n%s", yamlBody)
+	}
+
 	giBody, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
 	for _, want := range []string{
-		gitignoreFenceStart("gsd"),
-		gitignoreFenceEnd("gsd"),
-		".claude/skills/gsd-*/",
+		gitignoreFenceStart("fixture"),
+		gitignoreFenceEnd("fixture"),
+		".fixture/output/",
+		".fixture/cache.json",
 	} {
 		if !strings.Contains(string(giBody), want) {
 			t.Errorf(".gitignore missing %q:\n%s", want, giBody)
 		}
 	}
 
-	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
-		t.Fatalf("runSDDInit gsd (second): %v", err)
+	if err := runSDDInit(cmd, []string{"fixture"}); err != nil {
+		t.Fatalf("runSDDInit fixture (second): %v", err)
 	}
 	yamlBody2, _ := os.ReadFile(filepath.Join(dir, ".toolbox.yaml"))
 	giBody2, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -162,8 +232,56 @@ func TestSDDInitFlipsFalseToTrue(t *testing.T) {
 
 // TestSDDInitPreservesExistingGitignoreEntries asserts that unrelated
 // .gitignore lines stay intact when the per-skill fenced block is
-// appended.
+// appended. Uses a static-fence fixture skill so the assertion is
+// independent of which production skills currently sit in the registry.
 func TestSDDInitPreservesExistingGitignoreEntries(t *testing.T) {
+	withFixtureSkill(t, sdd.Skill{
+		Key:        "fixture",
+		NpmPackage: "fixture-pkg",
+		Version:    "0.0.1",
+		BinName:    "fixture",
+		InstallSteps: [][]string{
+			{"init"},
+		},
+		GitignoreEntries: []string{
+			".fixture/output/",
+		},
+	})
+
+	dir := chdirTemp(t)
+
+	giPath := filepath.Join(dir, ".gitignore")
+	original := "dist/\nnode_modules/\n"
+	if err := os.WriteFile(giPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed gitignore: %v", err)
+	}
+
+	cmd := sddInitCmd
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSDDInit(cmd, []string{"fixture"}); err != nil {
+		t.Fatalf("runSDDInit fixture: %v", err)
+	}
+
+	body, _ := os.ReadFile(giPath)
+	got := string(body)
+	for _, want := range []string{
+		"dist/", "node_modules/",
+		gitignoreFenceStart("fixture"),
+		".fixture/output/",
+		gitignoreFenceEnd("fixture"),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf(".gitignore missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestSDDInitGSDLeavesExistingGitignoreAlone covers the manifest-managed
+// flavour of the same invariant: a pre-existing .gitignore must not be
+// rewritten at all when a manifest-managed skill is enabled — the fence
+// is the entrypoint's job.
+func TestSDDInitGSDLeavesExistingGitignoreAlone(t *testing.T) {
 	dir := chdirTemp(t)
 
 	giPath := filepath.Join(dir, ".gitignore")
@@ -180,16 +298,8 @@ func TestSDDInitPreservesExistingGitignoreEntries(t *testing.T) {
 	}
 
 	body, _ := os.ReadFile(giPath)
-	got := string(body)
-	for _, want := range []string{
-		"dist/", "node_modules/",
-		gitignoreFenceStart("gsd"),
-		".claude/skills/gsd-*/",
-		gitignoreFenceEnd("gsd"),
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf(".gitignore missing %q:\n%s", want, got)
-		}
+	if string(body) != original {
+		t.Errorf("manifest-managed gsd must not touch .gitignore\nwant:\n%s\ngot:\n%s", original, body)
 	}
 }
 

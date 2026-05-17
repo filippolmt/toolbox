@@ -1,6 +1,12 @@
-IMAGE   := toolbox
-TAG     := local
-FULL    := $(IMAGE):$(TAG)
+IMAGE          := toolbox
+TAG            := local
+FULL           := $(IMAGE):$(TAG)
+# Canonical registry reference the CLI pulls when the tools config is the
+# default (see internal/build/tag.go::DefaultRegistryImage). `build-latest`
+# retags a locally-built image with this reference so `./toolbox shell`
+# picks it up without changing the resolver — useful for testing entrypoint
+# / asset changes before the release reaches GHCR.
+REGISTRY_IMAGE := ghcr.io/filippolmt/toolbox:latest
 
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
@@ -20,10 +26,16 @@ GO_RUN          := docker run --rm \
 	-e CGO_ENABLED=0 \
 	$(GO_IMAGE)
 
-.PHONY: build test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
+.PHONY: build build-latest test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
 
-build: ## Build the toolbox image
+build: ## Build the toolbox image (tag: toolbox:local)
 	docker build -f internal/build/assets/Dockerfile -t $(FULL) internal/build/assets
+
+build-latest: ## Build the toolbox image and tag it as $(REGISTRY_IMAGE) so `./toolbox shell` picks it up locally
+	docker build -f internal/build/assets/Dockerfile -t $(REGISTRY_IMAGE) -t $(FULL) internal/build/assets
+	@echo ""
+	@echo "Image tagged as $(REGISTRY_IMAGE)."
+	@echo "Run './toolbox stop' before the next './toolbox shell' so env + mounts pick up the new image (they are fixed at ContainerCreate)."
 
 test: build ## Build the image and run the smoke test
 	internal/build/assets/smoke-test.sh $(FULL)

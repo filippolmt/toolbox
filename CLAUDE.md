@@ -48,6 +48,7 @@ Per-pipeline design lives in each package's CONTEXT.md (Config Plan / Mount Plan
 - **rtk hook auto-wiring + privacy lockdown**: `RTK_TELEMETRY_DISABLED=1`, `RTK_TEE=0` load-bearing. → [rtk-hooks](docs/runtime-notes.md#rtk-hook-auto-wiring--telemetrytee-lockdown)
 - **Codex nested sandbox**: `tools.codex: true` (default) sets Docker `seccomp=unconfined`. → [codex-sandbox](docs/runtime-notes.md#codex-nested-sandbox)
 - **Skill discovery paths diverge**: Claude reads `~/.claude/skills/`, Codex reads `~/.agents/skills/` — wrappers shipping a SKILL.md need dual-install (see `init.d/60-glab.sh`). → [skill-paths](docs/runtime-notes.md#skill-discovery-paths-diverge-between-claude-and-codex)
+- **Manifest-managed SDD `.gitignore`**: skills with `Skill.ManifestPaths` (currently only gsd) defer fence ownership to the entrypoint — host-side `toolbox sdd init` leaves `.gitignore` untouched and the container regenerates the fenced block from upstream `gsd-file-manifest.json` post-bootstrap. Mutex with `GitignoreEntries` (static-fence path). Edits to the regen helper live in `internal/build/assets/sdd-helpers.sh`. → [manifest-managed-sdd](docs/runtime-notes.md#manifest-managed-sdd-gitignore)
 - **Config load order** (highest first): `--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults. Source of truth: `config.Plan` in `internal/config/plan.go`. `tools.<key>: false` opts out + drives image hash.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).

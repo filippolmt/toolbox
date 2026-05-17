@@ -47,13 +47,16 @@ var sddInitCmd = &cobra.Command{
 	Short: "Enable an SDD integration in the current repo",
 	Long: `Mark the current repository as opted into an SDD integration.
 
-Edits two files in cwd:
+Edits up to two files in cwd:
   - .toolbox.yaml: sets 'sdd.<name>: true', preserving comments and key
     order. Creates the file if missing.
   - .gitignore: appends a fenced block listing the upstream-regenerated
-    paths declared in internal/sdd.Skill.GitignoreEntries. Skills that
-    produce user-authored content (no GitignoreEntries) leave .gitignore
-    untouched.
+    paths declared in internal/sdd.Skill.GitignoreEntries. Only touched
+    for skills using the static-fence strategy. Skills declaring
+    ManifestPaths defer fence ownership to the entrypoint (which reads
+    the installed manifest and rewrites the block from inside the
+    container). Skills that produce user-authored content leave
+    .gitignore untouched.
 
 The actual install runs on the next 'toolbox shell' via entrypoint.sh,
 which sees the TOOLBOX_SDD_* env contract emitted by sessionplan.`,
@@ -89,10 +92,11 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	wantsGitignore := len(skill.GitignoreEntries) > 0
+	wantsStaticGitignore := len(skill.GitignoreEntries) > 0
+	isManifestManaged := skill.IsManifestManaged()
 	var gitignoreChanged bool
 	gitignorePath := filepath.Join(cwd, ".gitignore")
-	if wantsGitignore {
+	if wantsStaticGitignore {
 		gitignoreChanged, err = upsertGitignoreFence(gitignorePath, skill)
 		if err != nil {
 			return err
@@ -109,9 +113,12 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 	}
 	_, _ = fmt.Fprintf(out, "toolbox sdd init %s (pin v%s)\n", skill.Key, skill.Version)
 	report(yamlPath, yamlChanged)
-	if wantsGitignore {
+	switch {
+	case wantsStaticGitignore:
 		report(gitignorePath, gitignoreChanged)
-	} else {
+	case isManifestManaged:
+		_, _ = fmt.Fprintf(out, "  %s: managed by entrypoint after first 'toolbox shell' (manifest-driven)\n", gitignorePath)
+	default:
 		_, _ = fmt.Fprintf(out, "  %s: skipped (skill produces user-authored content)\n", gitignorePath)
 	}
 	_, _ = fmt.Fprintln(out, "Run 'toolbox shell' to bootstrap the integration inside the container.")
