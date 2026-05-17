@@ -13,8 +13,8 @@ Run the three checks in ascending order of cost. Stop on the first failure — d
 
 1. **`make go-lint`** — golangci-lint v2 in a container. Cheapest signal (static analysis, no test run). Catches errcheck / staticcheck / unused before they get masked by a test failure.
 2. **`make go-test`** — `go test ./... -count=1` in a container. Runs the unit suite.
-3. **Smoke test (conditional).** Only if the image already exists locally. Check with `docker image inspect toolbox:local >/dev/null 2>&1`:
-   - If present → `internal/build/assets/smoke-test.sh toolbox:local`. This validates every bundled CLI in the runtime image.
+3. **Smoke test (conditional).** Only if the image already exists locally. Check with `docker image inspect ghcr.io/filippolmt/toolbox:latest >/dev/null 2>&1`:
+   - If present → `internal/build/assets/smoke-test.sh` (default arg targets the same registry tag). This validates every bundled CLI in the runtime image.
    - If absent → skip. Do **not** trigger `make build` implicitly: it's a multi-minute rebuild and the user hasn't asked for it.
 
 ## Reporting

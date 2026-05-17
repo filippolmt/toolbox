@@ -1,12 +1,12 @@
-IMAGE          := toolbox
-TAG            := local
-FULL           := $(IMAGE):$(TAG)
-# Canonical registry reference the CLI pulls when the tools config is the
-# default (see internal/build/tag.go::DefaultRegistryImage). `build-latest`
-# retags a locally-built image with this reference so `./toolbox shell`
-# picks it up without changing the resolver — useful for testing entrypoint
-# / asset changes before the release reaches GHCR.
-REGISTRY_IMAGE := ghcr.io/filippolmt/toolbox:latest
+# `make build` tags the runtime image directly with the canonical registry
+# reference (see internal/build/tag.go::DefaultRegistryImage) so a freshly
+# built image is the one `./toolbox shell` resolves locally without any
+# retag step. CI / GHCR push the same tag — locally-built and registry-built
+# share the namespace by design. Run `docker pull` to restore the upstream
+# image after a local rebuild.
+IMAGE := ghcr.io/filippolmt/toolbox
+TAG   := latest
+FULL  := $(IMAGE):$(TAG)
 
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
@@ -18,24 +18,17 @@ GO_MOD_VOL      := toolbox-gomod
 # usually /workspace) is not resolvable by that daemon. Fall back to the
 # absolute host path exposed via TOOLBOX_HOST_WORKSPACE when it is set.
 HOST_SRC        := $(if $(TOOLBOX_HOST_WORKSPACE),$(TOOLBOX_HOST_WORKSPACE),$(CURDIR))
-GO_RUN          := docker run --rm \
-	-v "$(HOST_SRC)":/src \
-	-v $(GO_MOD_VOL):/go \
-	-w /src \
-	-e GOFLAGS="-mod=mod -buildvcs=false" \
-	-e CGO_ENABLED=0 \
-	$(GO_IMAGE)
 
-.PHONY: build build-latest test shell clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
+# Shared docker-run fragments. Every Go-side target reuses GO_MOUNT and
+# GO_BUILD_ENV; CGO is off by default (race detector opt-in adds it back).
+GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
+GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false"
+GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-build: ## Build the toolbox image (tag: toolbox:local)
+.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
+
+build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker build -f internal/build/assets/Dockerfile -t $(FULL) internal/build/assets
-
-build-latest: ## Build the toolbox image and tag it as $(REGISTRY_IMAGE) so `./toolbox shell` picks it up locally
-	docker build -f internal/build/assets/Dockerfile -t $(REGISTRY_IMAGE) -t $(FULL) internal/build/assets
-	@echo ""
-	@echo "Image tagged as $(REGISTRY_IMAGE)."
-	@echo "Run './toolbox stop' before the next './toolbox shell' so env + mounts pick up the new image (they are fixed at ContainerCreate)."
 
 test: build ## Build the image and run the smoke test
 	internal/build/assets/smoke-test.sh $(FULL)
@@ -69,30 +62,13 @@ go-test: ## Run Go tests inside a golang container
 	$(GO_RUN) go test ./... -count=1
 
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
-	docker run --rm \
-		-v "$(HOST_SRC)":/src \
-		-v $(GO_MOD_VOL):/go \
-		-w /src \
-		-e GOFLAGS="-mod=mod -buildvcs=false" \
-		$(GO_IMAGE) \
-		go test -v -race ./...
+	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./...
 
 go-lint: ## Run golangci-lint inside a container
-	docker run --rm \
-		-v "$(HOST_SRC)":/src \
-		-v $(GO_MOD_VOL):/go \
-		-w /src \
-		$(GOLANGCI_IMAGE) \
-		golangci-lint run ./...
+	docker run --rm $(GO_MOUNT) $(GOLANGCI_IMAGE) golangci-lint run ./...
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
-	docker run --rm -it \
-		-v "$(HOST_SRC)":/src \
-		-v $(GO_MOD_VOL):/go \
-		-w /src \
-		-e GOFLAGS="-mod=mod -buildvcs=false" \
-		-e CGO_ENABLED=0 \
-		$(GO_IMAGE) bash
+	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash
 
 go-clean-cache: ## Remove the shared Go module/build cache volume
 	docker volume rm $(GO_MOD_VOL) 2>/dev/null || true

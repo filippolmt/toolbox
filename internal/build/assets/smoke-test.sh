@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-IMAGE="${1:-toolbox:local}"
+IMAGE="${1:-ghcr.io/filippolmt/toolbox:latest}"
 
 echo "=== Toolbox Smoke Test ==="
 echo "Image: ${IMAGE}"

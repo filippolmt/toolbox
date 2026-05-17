@@ -13,12 +13,17 @@ Guidance for Claude Code on this repo.
 | Command | What it does |
 |---------|--------------|
 | `make go-test` | `go test ./... -count=1` |
+| `make go-test-verbose` | `go test -v -race ./...` (opt-in; CGO on) |
 | `make go-lint` | `golangci-lint run ./...` (CI-matched) |
 | `make go-run` | Build CLI + open `toolbox shell` |
 | `make go-run-clean` | Like `go-run` + stop existing container (env/mounts are fixed at ContainerCreate) |
-| `make build` / `make test` | Build runtime image / build + smoke-test |
+| `make build` / `make test` | Build runtime image (tag: `ghcr.io/filippolmt/toolbox:latest`) / build + smoke-test |
 
 Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.
+
+`make build` overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream one.
+
+Repo-local SDD: `./toolbox sdd list` shows pinned skill packs; `./toolbox sdd init <name>` wires the current repo (`.toolbox.yaml` opt-in + `.gitignore` fence from `Skill.GitignoreEntries`).
 
 **Pre-push validation: use the `/verify` skill.** Mirrors `.github/workflows/ci.yml`. Never invoke `go test` / `golangci-lint` directly — host has no Go.
 
