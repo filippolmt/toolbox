@@ -13,12 +13,17 @@ Guidance for Claude Code on this repo.
 | Command | What it does |
 |---------|--------------|
 | `make go-test` | `go test ./... -count=1` |
+| `make go-test-verbose` | `go test -v -race ./...` (opt-in; CGO on) |
 | `make go-lint` | `golangci-lint run ./...` (CI-matched) |
 | `make go-run` | Build CLI + open `toolbox shell` |
 | `make go-run-clean` | Like `go-run` + stop existing container (env/mounts are fixed at ContainerCreate) |
-| `make build` / `make test` | Build runtime image / build + smoke-test |
+| `make build` / `make test` | Build runtime image (tag: `ghcr.io/filippolmt/toolbox:latest`) / build + smoke-test |
 
 Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.
+
+`make build` overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream one.
+
+Repo-local SDD: `./toolbox sdd list` shows pinned skill packs; `./toolbox sdd init <name>` wires the current repo (`.toolbox.yaml` opt-in + `.gitignore` fence from `Skill.GitignoreEntries`).
 
 **Pre-push validation: use the `/verify` skill.** Mirrors `.github/workflows/ci.yml`. Never invoke `go test` / `golangci-lint` directly — host has no Go.
 
@@ -48,6 +53,7 @@ Per-pipeline design lives in each package's CONTEXT.md (Config Plan / Mount Plan
 - **rtk hook auto-wiring + privacy lockdown**: `RTK_TELEMETRY_DISABLED=1`, `RTK_TEE=0` load-bearing. → [rtk-hooks](docs/runtime-notes.md#rtk-hook-auto-wiring--telemetrytee-lockdown)
 - **Codex nested sandbox**: `tools.codex: true` (default) sets Docker `seccomp=unconfined`. → [codex-sandbox](docs/runtime-notes.md#codex-nested-sandbox)
 - **Skill discovery paths diverge**: Claude reads `~/.claude/skills/`, Codex reads `~/.agents/skills/` — wrappers shipping a SKILL.md need dual-install (see `init.d/60-glab.sh`). → [skill-paths](docs/runtime-notes.md#skill-discovery-paths-diverge-between-claude-and-codex)
+- **SDD `.gitignore` fence**: `toolbox sdd init <key>` writes a single fenced block under `# >>> sdd-managed/<key> (toolbox)` using the glob patterns declared in `Skill.GitignoreEntries`. Patterns (not enumerated paths) keep the block compact and drift-free across upstream version bumps. Skills emitting purely user-authored content (bmad) leave the field nil and the fence is skipped. openspec is mixed: `openspec/{specs,changes}` user-authored (committed); `.claude/skills/openspec-*`, `.claude/commands/opsx/`, `.codex/skills/openspec-*` adapter files plus the default `openspec/config.yaml` scaffold are regenerated on every shell and live in the fence (drop the `openspec/config.yaml` line per-repo once you customise `context:`/`rules:`). → [sdd-gitignore](docs/runtime-notes.md#sdd-gitignore-fence)
 - **Config load order** (highest first): `--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults. Source of truth: `config.Plan` in `internal/config/plan.go`. `tools.<key>: false` opts out + drives image hash.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).

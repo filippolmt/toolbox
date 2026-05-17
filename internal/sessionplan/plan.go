@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -20,6 +21,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // --- Public Seams ---
@@ -103,7 +105,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, mp.WorkingDir),
+		Env:           shellEnv(workspace, mp.WorkingDir, cfg.SDD, cfg.Tools),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -148,7 +150,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, workingDir),
+		Env:           shellEnv(workspace, workingDir, cfg.SDD, cfg.Tools),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -204,9 +206,7 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // and hash suffix survive.
 func ContainerNameFor(workspace string) string {
 	abs := normalizeWorkspace(workspace)
-
-	sum := sha256.Sum256([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:WorkspaceHashLen]
+	hash := hashWorkspace(abs)
 
 	base := strings.ToLower(filepath.Base(abs))
 	base = sanitizeRe.ReplaceAllString(base, "-")
@@ -327,9 +327,100 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string) []string {
-	return []string{
+func shellEnv(workspace, workingDir string, sddFlags, tools map[string]bool) []string {
+	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 	}
+	env = append(env, sddEnv(workspace, sddFlags, tools)...)
+	return env
+}
+
+// sddEnv translates the cfg.SDD opt-in map into the env contract consumed
+// by internal/build/assets/entrypoint.sh. Unknown keys are silently dropped
+// so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
+// — the bash bootstrap runs before any user-facing diagnostic surface.
+//
+// tools is forwarded to Skill.StepsFor when set; see internal/sdd.Skill
+// for the per-skill contract.
+//
+// Field-per-env-var encoding (vs a single pipe-packed value) keeps the
+// host/container boundary typed: bash decodes by reading one variable per
+// field with no fragile splitting.
+func sddEnv(workspace string, sddFlags, tools map[string]bool) []string {
+	if len(sddFlags) == 0 {
+		return nil
+	}
+	enabled := resolveEnabledSkills(sddFlags)
+	if len(enabled) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(enabled))
+	for k := range enabled {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	emitted := make([]string, 0, len(keys))
+	body := make([]string, 0, len(keys)*5)
+	for _, k := range keys {
+		s := enabled[k]
+		stepArgs := s.InstallSteps
+		if s.StepsFor != nil {
+			stepArgs = s.StepsFor(tools)
+			if len(stepArgs) == 0 {
+				continue
+			}
+		}
+		steps := make([]string, len(stepArgs))
+		for i, args := range stepArgs {
+			steps[i] = strings.Join(args, " ")
+		}
+		emitted = append(emitted, k)
+		body = append(body,
+			sdd.SkillEnvKey(k, sdd.EnvFieldPkg)+"="+s.NpmPackage,
+			sdd.SkillEnvKey(k, sdd.EnvFieldVersion)+"="+s.Version,
+			sdd.SkillEnvKey(k, sdd.EnvFieldBin)+"="+s.BinName,
+			sdd.SkillEnvKey(k, sdd.EnvFieldSteps)+"="+strings.Join(steps, sdd.StepSeparator),
+			sdd.SkillEnvKey(k, sdd.EnvFieldMarker)+"="+s.RequiresMarker,
+		)
+	}
+	if len(emitted) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, 2+len(body))
+	out = append(out,
+		sdd.EnvEnabled+"="+strings.Join(emitted, ","),
+		sdd.EnvWorkspaceHash+"="+hashWorkspace(workspace),
+	)
+	out = append(out, body...)
+	return out
+}
+
+// resolveEnabledSkills returns the map of known skill keys to their
+// registry entries, after filtering sddFlags through the registry to
+// drop unknown keys and false values.
+func resolveEnabledSkills(sddFlags map[string]bool) map[string]sdd.Skill {
+	out := make(map[string]sdd.Skill, len(sddFlags))
+	for k, on := range sddFlags {
+		if !on {
+			continue
+		}
+		if s, ok := sdd.Lookup(k); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// hashWorkspace is the single source of the WorkspaceHashLen-byte hash
+// derived from a workspace path. Shared by ContainerNameFor (container
+// name suffix) and sddEnv (sentinel filename suffix the entrypoint reads
+// to decide whether a skill is up to date). Computing it twice would
+// drift if the slicing rule changed.
+func hashWorkspace(workspace string) string {
+	sum := sha256.Sum256([]byte(workspace))
+	return hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 }

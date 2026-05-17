@@ -229,6 +229,180 @@ func TestPlanComputesEnv(t *testing.T) {
 	}
 }
 
+// TestPlanSDDEnvAppendedWhenEnabled asserts the field-per-env-var contract:
+// each enabled skill emits a TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}
+// quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH. Image
+// ref stays on the default GHCR tag — cfg.SDD is hash-neutral by design.
+func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.SDD = map[string]bool{"gsd": true}
+
+	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	envByKey := indexEnv(plan.Env)
+	for _, want := range []struct{ key, prefix string }{
+		{"TOOLBOX_SDD_ENABLED", "gsd"},
+		{"TOOLBOX_SDD_WORKSPACE_HASH", ""},
+		{"TOOLBOX_SDD_GSD_PKG", "get-shit-done-cc"},
+		{"TOOLBOX_SDD_GSD_VERSION", ""},
+		{"TOOLBOX_SDD_GSD_BIN", "get-shit-done-cc"},
+		{"TOOLBOX_SDD_GSD_STEPS", "--claude --local;--codex --local"},
+		{"TOOLBOX_SDD_GSD_MARKER", ""},
+	} {
+		got, ok := envByKey[want.key]
+		if !ok {
+			t.Errorf("missing env %s in %v", want.key, plan.Env)
+			continue
+		}
+		if want.prefix != "" && got != want.prefix {
+			t.Errorf("env %s = %q, want %q", want.key, got, want.prefix)
+		}
+	}
+	if got := envByKey["TOOLBOX_SDD_GSD_VERSION"]; got == "" {
+		t.Error("TOOLBOX_SDD_GSD_VERSION must be populated from the registry")
+	}
+	if got := envByKey["TOOLBOX_SDD_WORKSPACE_HASH"]; len(got) != sessionplan.WorkspaceHashLen {
+		t.Errorf("TOOLBOX_SDD_WORKSPACE_HASH = %q, want %d hex chars", got, sessionplan.WorkspaceHashLen)
+	}
+
+	if plan.Image.IsLocal {
+		t.Error("cfg.SDD entries must not invalidate the local image hash (Image.IsLocal should stay false)")
+	}
+}
+
+// TestPlanSDDEnvCarriesBMADMarker locks in the bmad-specific gate: the
+// MARKER env entry must carry "_bmad" so the entrypoint skips the install
+// when the marker is missing.
+func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.SDD = map[string]bool{"bmad": true}
+
+	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	envByKey := indexEnv(plan.Env)
+	if got := envByKey["TOOLBOX_SDD_BMAD_MARKER"]; got != "_bmad" {
+		t.Errorf("TOOLBOX_SDD_BMAD_MARKER = %q, want %q", got, "_bmad")
+	}
+}
+
+// TestPlanSDDEnvOpenSpecStepsTrackTools locks in the cfg.Tools-driven
+// step rewrite for openspec: the --tools= argument lists exactly the
+// catalog keys the workspace has enabled (claude, codex), so a tools.codex
+// opt-out never installs the codex adapter files. Drop both tools and the
+// skill is silently omitted from the env contract.
+func TestPlanSDDEnvOpenSpecStepsTrackTools(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cases := []struct {
+		name      string
+		claude    bool
+		codex     bool
+		wantSteps string // empty == skill must be absent from env entirely
+	}{
+		{"both", true, true, "init --tools=claude,codex --force;update"},
+		{"claude only", true, false, "init --tools=claude --force;update"},
+		{"codex only", false, true, "init --tools=codex --force;update"},
+		{"neither", false, false, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Tools["claude"] = tc.claude
+			cfg.Tools["codex"] = tc.codex
+			cfg.SDD = map[string]bool{"openspec": true}
+
+			plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+
+			envByKey := indexEnv(plan.Env)
+			got, present := envByKey["TOOLBOX_SDD_OPENSPEC_STEPS"]
+			if tc.wantSteps == "" {
+				if present {
+					t.Errorf("openspec must be omitted from env when both claude and codex are disabled, got STEPS=%q", got)
+				}
+				if e := envByKey["TOOLBOX_SDD_ENABLED"]; strings.Contains(e, "openspec") {
+					t.Errorf("TOOLBOX_SDD_ENABLED still names openspec: %q", e)
+				}
+				return
+			}
+			if !present {
+				t.Fatalf("TOOLBOX_SDD_OPENSPEC_STEPS missing in %v", plan.Env)
+			}
+			if got != tc.wantSteps {
+				t.Errorf("TOOLBOX_SDD_OPENSPEC_STEPS = %q, want %q", got, tc.wantSteps)
+			}
+			if marker := envByKey["TOOLBOX_SDD_OPENSPEC_MARKER"]; marker != "" {
+				t.Errorf("TOOLBOX_SDD_OPENSPEC_MARKER = %q, want empty (marker dropped, bootstrap is unconditional)", marker)
+			}
+		})
+	}
+}
+
+// indexEnv turns a docker-style "KEY=value" env slice into a lookup map.
+func indexEnv(env []string) map[string]string {
+	out := make(map[string]string, len(env))
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// TestPlanSDDEnvDropsUnknownKeys covers the silent-drop contract for
+// user typos in .toolbox.yaml — e.g. `sdd.gds: true` must never abort
+// `toolbox shell` and must NOT leak a malformed env spec.
+func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.SDD = map[string]bool{"gds": true, "gsd": false}
+
+	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	for _, e := range plan.Env {
+		if strings.HasPrefix(e, "TOOLBOX_SDD_") {
+			t.Errorf("expected no TOOLBOX_SDD_* env when only unknown/false flags present, got %q", e)
+		}
+	}
+}
+
 // TestPlanRejectsBadPort asserts port-parse errors propagate.
 func TestPlanRejectsBadPort(t *testing.T) {
 	tmpHome := t.TempDir()

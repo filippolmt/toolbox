@@ -23,3 +23,11 @@ graphify-out/cache/
 graphify-out/manifest.json
 graphify-out/cost.json
 graphify-out/.graphify_*
+docs/superpowers/specs/
+
+# >>> sdd-managed/openspec (toolbox)
+.claude/skills/openspec-*/
+.claude/commands/opsx/
+.codex/skills/openspec-*/
+openspec/config.yaml
+# <<< sdd-managed/openspec (toolbox)

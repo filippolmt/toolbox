@@ -27,6 +27,17 @@ type Config struct {
 	// root rewrite by mountplan.Merge, so a single override remains
 	// possible.
 	MountsRoot string `mapstructure:"mounts_root"`
+	// SDD opts the workspace into one or more Spec-Driven-Development skill
+	// packs (gsd, bmad, openspec, ...) installed repo-locally on every
+	// `toolbox shell`. Each `sdd.<key>: true` flag toggles the matching
+	// internal/sdd.Skill entry: sessionplan emits TOOLBOX_SDD_ENABLED plus
+	// a per-skill spec env var; entrypoint.sh loops them and runs the
+	// pinned installer in /workspace.
+	//
+	// Lives OUTSIDE the Tools map on purpose: catalog.WriteCanonical feeds
+	// the local-image hash, so a top-level field is guaranteed hash-neutral
+	// — flipping an SDD flag never forces a rebuild.
+	SDD map[string]bool `mapstructure:"sdd"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
