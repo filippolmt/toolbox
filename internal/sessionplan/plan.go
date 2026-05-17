@@ -206,9 +206,7 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // and hash suffix survive.
 func ContainerNameFor(workspace string) string {
 	abs := normalizeWorkspace(workspace)
-
-	sum := sha256.Sum256([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:WorkspaceHashLen]
+	hash := hashWorkspace(abs)
 
 	base := strings.ToLower(filepath.Base(abs))
 	base = sanitizeRe.ReplaceAllString(base, "-")
@@ -364,7 +362,7 @@ func sddEnv(workspace string, sddFlags map[string]bool) []string {
 	out := make([]string, 0, 2+len(keys)*5)
 	out = append(out,
 		sdd.EnvEnabled+"="+strings.Join(keys, ","),
-		sdd.EnvWorkspaceHash+"="+workspaceHash(workspace),
+		sdd.EnvWorkspaceHash+"="+hashWorkspace(workspace),
 	)
 	for _, k := range keys {
 		s := enabled[k]
@@ -399,10 +397,12 @@ func resolveEnabledSkills(sddFlags map[string]bool) map[string]sdd.Skill {
 	return out
 }
 
-// workspaceHash matches the sentinel suffix the entrypoint used to compute
-// inline via sha256sum+cut. Precomputing it here saves two forks per
-// enabled skill on every `toolbox shell`.
-func workspaceHash(workspace string) string {
+// hashWorkspace is the single source of the WorkspaceHashLen-byte hash
+// derived from a workspace path. Shared by ContainerNameFor (container
+// name suffix) and sddEnv (sentinel filename suffix the entrypoint reads
+// to decide whether a skill is up to date). Computing it twice would
+// drift if the slicing rule changed.
+func hashWorkspace(workspace string) string {
 	sum := sha256.Sum256([]byte(workspace))
 	return hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 }

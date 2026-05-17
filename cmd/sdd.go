@@ -88,16 +88,6 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	wantsGitignore := len(skill.GitignoreEntries) > 0
-	var gitignoreChanged bool
-	gitignorePath := filepath.Join(cwd, ".gitignore")
-	if wantsGitignore {
-		gitignoreChanged, err = upsertGitignoreFence(gitignorePath, skill)
-		if err != nil {
-			return err
-		}
-	}
-
 	out := cmd.OutOrStdout()
 	report := func(path string, changed bool) {
 		state := "unchanged"
@@ -108,10 +98,16 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 	}
 	_, _ = fmt.Fprintf(out, "toolbox sdd init %s (pin v%s)\n", skill.Key, skill.Version)
 	report(yamlPath, yamlChanged)
-	if wantsGitignore {
-		report(gitignorePath, gitignoreChanged)
-	} else {
+
+	gitignorePath := filepath.Join(cwd, ".gitignore")
+	if len(skill.GitignoreEntries) == 0 {
 		_, _ = fmt.Fprintf(out, "  %s: skipped (skill produces user-authored content)\n", gitignorePath)
+	} else {
+		gitignoreChanged, err := upsertGitignoreFence(gitignorePath, skill)
+		if err != nil {
+			return err
+		}
+		report(gitignorePath, gitignoreChanged)
 	}
 	_, _ = fmt.Fprintln(out, "Run 'toolbox shell' to bootstrap the integration inside the container.")
 	return nil

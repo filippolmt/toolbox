@@ -93,10 +93,12 @@ func TestRenovateRegexMatchesEverySDDPin(t *testing.T) {
 	}
 
 	covered := map[string]bool{}
+	managersForRegistry := 0
 	for _, cm := range doc.CustomManagers {
 		if !slices.Contains(cm.ManagerFilePatterns, "/^internal/sdd/registry\\.go$/") {
 			continue
 		}
+		managersForRegistry++
 		for _, ms := range cm.MatchStrings {
 			re, err := regexp.Compile(ms)
 			if err != nil {
@@ -124,6 +126,10 @@ func TestRenovateRegexMatchesEverySDDPin(t *testing.T) {
 			}
 			covered[cm.DepNameTemplate] = true
 		}
+	}
+
+	if managersForRegistry == 0 {
+		t.Fatalf("no Renovate customManager targets internal/sdd/registry.go — the managerFilePatterns syntax likely drifted (expected exact pattern %q)", "/^internal/sdd/registry\\.go$/")
 	}
 
 	for pkg := range pinByPkg {

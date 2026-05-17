@@ -85,7 +85,7 @@ if [ -n "${TOOLBOX_SDD_ENABLED:-}" ] && [ -n "${TOOLBOX_SDD_WORKSPACE_HASH:-}" ]
     IFS=',' read -ra _sdd_keys <<< "$TOOLBOX_SDD_ENABLED"
     for _sdd_key in "${_sdd_keys[@]}"; do
         [ -z "$_sdd_key" ] && continue
-        _sdd_upper="$(printf '%s' "$_sdd_key" | tr '[:lower:]' '[:upper:]')"
+        _sdd_upper="${_sdd_key^^}" # builtin: no fork per skill per shell
         _sdd_pkg_var="TOOLBOX_SDD_${_sdd_upper}_PKG"
         _sdd_ver_var="TOOLBOX_SDD_${_sdd_upper}_VERSION"
         _sdd_bin_var="TOOLBOX_SDD_${_sdd_upper}_BIN"
