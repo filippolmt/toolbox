@@ -1,6 +1,12 @@
 package sdd
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"regexp"
+	"slices"
+	"testing"
+)
 
 // TestSkillEnvKey locks in the encode contract: SkillEnvKey concatenates
 // the prefix + UPPERCASE(key) + field with no separator drift between the
@@ -45,6 +51,84 @@ func TestKeysMatchesSkills(t *testing.T) {
 	for i, s := range Skills {
 		if keys[i] != s.Key {
 			t.Errorf("Keys()[%d] = %q, want %q", i, keys[i], s.Key)
+		}
+	}
+}
+
+// TestRenovateRegexMatchesEverySDDPin guards an invisible cross-file
+// invariant: the Renovate customManagers in renovate.json bump each SDD
+// pin via the regex `NpmPackage:\s*"<pkg>"[^}]*?Version:\s*"<v>"`. The
+// `[^}]*?` excludes `}` to stop the match from crossing into the next
+// Skill struct, which means `Version` MUST follow `NpmPackage` inside
+// each row with no `}` in between (i.e. no InstallSteps before Version).
+// A field reorder that violates the layout silently disables Renovate
+// for that pin — the npm dependency stops getting bumped. This test
+// re-runs every Renovate regex against the live source file so the
+// breakage surfaces in CI instead of months later when a security
+// patch fails to land.
+func TestRenovateRegexMatchesEverySDDPin(t *testing.T) {
+	src, err := os.ReadFile("registry.go")
+	if err != nil {
+		t.Fatalf("read registry.go: %v", err)
+	}
+
+	rnv, err := os.ReadFile("../../renovate.json")
+	if err != nil {
+		t.Fatalf("read renovate.json: %v", err)
+	}
+	var doc struct {
+		CustomManagers []struct {
+			ManagerFilePatterns []string `json:"managerFilePatterns"`
+			MatchStrings        []string `json:"matchStrings"`
+			DepNameTemplate     string   `json:"depNameTemplate"`
+		} `json:"customManagers"`
+	}
+	if err := json.Unmarshal(rnv, &doc); err != nil {
+		t.Fatalf("parse renovate.json: %v", err)
+	}
+
+	pinByPkg := map[string]string{}
+	for _, s := range Skills {
+		pinByPkg[s.NpmPackage] = s.Version
+	}
+
+	covered := map[string]bool{}
+	for _, cm := range doc.CustomManagers {
+		if !slices.Contains(cm.ManagerFilePatterns, "/^internal/sdd/registry\\.go$/") {
+			continue
+		}
+		for _, ms := range cm.MatchStrings {
+			re, err := regexp.Compile(ms)
+			if err != nil {
+				t.Errorf("renovate matchString %q does not compile: %v", ms, err)
+				continue
+			}
+			m := re.FindStringSubmatch(string(src))
+			if m == nil {
+				t.Errorf("renovate matchString %q matches nothing in registry.go (depName=%q) — field reorder or syntax drift broke the bump", ms, cm.DepNameTemplate)
+				continue
+			}
+			i := re.SubexpIndex("currentValue")
+			if i < 0 {
+				t.Errorf("renovate matchString %q lacks a (?P<currentValue>...) group", ms)
+				continue
+			}
+			got := m[i]
+			want, ok := pinByPkg[cm.DepNameTemplate]
+			if !ok {
+				t.Errorf("renovate manager points at depName %q which is not in registry.Skills", cm.DepNameTemplate)
+				continue
+			}
+			if got != want {
+				t.Errorf("renovate captured version %q for %q, registry pins %q — regex captures wrong field", got, cm.DepNameTemplate, want)
+			}
+			covered[cm.DepNameTemplate] = true
+		}
+	}
+
+	for pkg := range pinByPkg {
+		if !covered[pkg] {
+			t.Errorf("registry package %q has no Renovate customManager — pin will never auto-bump", pkg)
 		}
 	}
 }
