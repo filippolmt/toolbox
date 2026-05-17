@@ -31,7 +31,7 @@ Repo-local SDD: `./toolbox sdd list` shows pinned skill packs; `./toolbox sdd in
 
 Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `sessionplan` → `container` (Docker SDK). Runtime image baked from `internal/build/assets/` (Dockerfile + entrypoint + smoke-test + init.d/), embedded so `toolbox build` runs anywhere. Tool catalog (`internal/catalog`) drives image hash + Dockerfile build args + init.d bijection.
 
-Per-pipeline design lives in each package's CONTEXT.md (Config Plan / Mount Plan / Session Plan / Tool Catalog / Init Sequence). Read those before refactoring seams.
+Pipeline seams (config plan, mount plan, session plan, tool catalog, init sequence) — read package code + `docs/runtime-notes.md` before refactoring.
 
 ## Code & language
 
