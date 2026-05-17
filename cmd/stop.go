@@ -12,7 +12,7 @@ import (
 var stopAll bool
 
 var stopCmd = &cobra.Command{
-	Use:   "stop [name|path]",
+	Use:   "stop [name|dir]",
 	Short: "Stop and remove toolbox containers",
 	Long: `Stop and remove the toolbox container bound to the current directory,
 to a configured named shell (toolbox stop infra), or to an absolute path
@@ -43,8 +43,14 @@ func runStop(cmd *cobra.Command, args []string) error {
 		// Absolute paths mirror the `toolbox shell <abs-path>` quick form
 		// and stop the workspace-hash container associated with that path.
 		// Any other positional value is treated as a named-shell key.
+		// workspace.ResolveExplicit reuses the shell side's validation so
+		// `toolbox stop /bad:path` fails identically to `toolbox shell`.
 		if filepath.IsAbs(args[0]) {
-			return container.Stop(ctx, cli, args[0])
+			ws, err := workspace.ResolveExplicit(args[0])
+			if err != nil {
+				return err
+			}
+			return container.Stop(ctx, cli, ws)
 		}
 		return container.StopByName(ctx, cli, args[0])
 	}

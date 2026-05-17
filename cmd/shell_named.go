@@ -76,20 +76,14 @@ func resolveShellWorkspace(args []string, create bool, createPath string) (strin
 // positional and returns it as the workspace. No config is touched, no
 // name is returned — downstream sessionplan.Plan will derive the container
 // name from the path hash, matching the no-arg `toolbox shell` flow.
-// os.Stat (not Lstat) is used on purpose: the user explicitly typed the
-// path, so symlinks resolve transparently the same way os.Getwd does for
-// the no-arg case.
+// workspace.ResolveExplicit (not Lstat-based) is intentional: the user
+// explicitly typed the path, so a one-off symlink follow is the right
+// trade — the named-shell flow uses Lstat because that path is config-
+// supplied and persists across invocations, widening the TOCTOU window.
 func resolveDirectWorkspace(path string) (string, string, error) {
-	if err := workspace.ValidateAbsolute(path); err != nil {
-		return "", "", err
-	}
-	clean := filepath.Clean(path)
-	info, err := os.Stat(clean)
+	clean, err := workspace.ResolveExplicit(path)
 	if err != nil {
-		return "", "", fmt.Errorf("stat %s: %w", clean, err)
-	}
-	if !info.IsDir() {
-		return "", "", fmt.Errorf("path %s is not a directory", clean)
+		return "", "", err
 	}
 	return clean, "", nil
 }

@@ -15,7 +15,7 @@ var shellCreate bool
 var shellPath string
 
 var shellCmd = &cobra.Command{
-	Use:   "shell [name|path]",
+	Use:   "shell [name|dir]",
 	Short: "Start an interactive shell session in the toolbox container",
 	Long: `Start the toolbox container and attach an interactive bash session.
 

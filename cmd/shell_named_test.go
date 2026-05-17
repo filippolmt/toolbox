@@ -10,6 +10,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// setEmptyCfg installs an empty *config.Config as the package-level cfg
+// for the test's duration and restores nil on cleanup. Tests that only
+// need cfg.Shells to be reachable use this instead of repeating the
+// global mutation + Cleanup pair inline.
+func setEmptyCfg(t *testing.T) {
+	t.Helper()
+	cfg = &config.Config{}
+	t.Cleanup(func() { cfg = nil })
+}
+
 func TestResolveShellWorkspaceUsesConfiguredNamedShell(t *testing.T) {
 	dir := t.TempDir()
 	cfg = &config.Config{
@@ -32,8 +42,7 @@ func TestResolveShellWorkspaceUsesConfiguredNamedShell(t *testing.T) {
 }
 
 func TestResolveShellWorkspaceMissingNameNonInteractiveShowsHint(t *testing.T) {
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	orig := shellStdinIsTerminal
 	shellStdinIsTerminal = func(int) bool { return false }
@@ -75,8 +84,7 @@ func TestResolveShellWorkspaceCreateWritesConfigAndCreatesDirectory(t *testing.T
 	t.Setenv("HOME", home)
 	target := filepath.Join(t.TempDir(), "qa")
 
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	ws, name, err := resolveShellWorkspace([]string{"qa"}, true, target)
 	if err != nil {
@@ -113,8 +121,7 @@ func TestResolveShellWorkspaceCreateWritesConfigAndCreatesDirectory(t *testing.T
 // (`toolbox-<base>-<8hex>`). Accepting one would let a named container
 // silently shadow a workspace-derived container on `toolbox stop`.
 func TestResolveShellWorkspaceRejectsHashShapedName(t *testing.T) {
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	_, _, err := resolveShellWorkspace([]string{"1a2b3c4d"}, false, "")
 	if err == nil {
@@ -129,8 +136,7 @@ func TestResolveShellWorkspaceRejectsHashShapedName(t *testing.T) {
 // `toolbox shell ""` invocation that would otherwise sanitize to the empty
 // string and force NamedContainerName into its "shell" fallback.
 func TestResolveShellWorkspaceRejectsEmptyName(t *testing.T) {
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	_, _, err := resolveShellWorkspace([]string{"   "}, false, "")
 	if err == nil {
@@ -180,8 +186,7 @@ func TestEnsureNamedShellPathRejectsSymlink(t *testing.T) {
 // the workspace-hash format (same as the no-arg flow).
 func TestResolveShellWorkspaceDirectAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	ws, name, err := resolveShellWorkspace([]string{dir}, false, "")
 	if err != nil {
@@ -203,8 +208,7 @@ func TestResolveShellWorkspaceDirectAbsolutePathSkipsConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := t.TempDir()
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	if _, _, err := resolveShellWorkspace([]string{dir}, true, ""); err != nil {
 		t.Fatalf("resolveShellWorkspace: %v", err)
@@ -219,8 +223,7 @@ func TestResolveShellWorkspaceDirectAbsolutePathSkipsConfig(t *testing.T) {
 // quick-session flow (that's the named-shell `--create` flag's job).
 func TestResolveShellWorkspaceDirectAbsolutePathMissing(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	_, _, err := resolveShellWorkspace([]string{missing}, false, "")
 	if err == nil {
@@ -237,8 +240,7 @@ func TestResolveShellWorkspaceDirectAbsolutePathRejectsFile(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
-	cfg = &config.Config{}
-	t.Cleanup(func() { cfg = nil })
+	setEmptyCfg(t)
 
 	_, _, err := resolveShellWorkspace([]string{file}, false, "")
 	if err == nil {

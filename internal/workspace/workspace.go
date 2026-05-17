@@ -54,3 +54,24 @@ func ValidateAbsolute(p string) error {
 	}
 	return Validate(p)
 }
+
+// ResolveExplicit is the user-supplied sibling of Resolve: it takes an
+// explicit path instead of os.Getwd and returns it as a cleaned absolute
+// workspace after validating Docker-bind compatibility AND that the path
+// exists as a directory. Used by `toolbox shell <abs-path>` (and the
+// symmetric `toolbox stop <abs-path>`) so the cmd/ layer does not
+// re-implement workspace invariants inline.
+func ResolveExplicit(p string) (string, error) {
+	if err := ValidateAbsolute(p); err != nil {
+		return "", err
+	}
+	clean := filepath.Clean(p)
+	info, err := os.Stat(clean)
+	if err != nil {
+		return "", fmt.Errorf("stat %s: %w", clean, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("path %s is not a directory", clean)
+	}
+	return clean, nil
+}
