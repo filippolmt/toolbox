@@ -77,6 +77,7 @@ fi
 _toolbox_load_completion gh   'gh completion -s bash'
 _toolbox_load_completion glab 'glab completion -s bash'
 _toolbox_load_completion yq   'yq shell-completion bash'
+_toolbox_load_completion cf   'cf completions bash'
 
 # gcloud ships completion as a static file rather than a subcommand, so guard
 # on the file (absent when INSTALL_GCLOUD=false).

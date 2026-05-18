@@ -1212,6 +1212,8 @@ RUN set -eux; \
       if [ "${INSTALL_PNPM}" = "true" ];       then pnpm completion zsh     > /usr/share/zsh/vendor-completions/_pnpm;     fi; \
       if [ "${INSTALL_STARSHIP}" = "true" ];   then starship completions zsh > /usr/share/zsh/vendor-completions/_starship; fi; \
       if [ "${INSTALL_CODEX_CLI}" = "true" ];  then codex completion zsh    > /usr/share/zsh/vendor-completions/_codex;    fi; \
+      # cf uses `completions` (plural) — outlier vs adjacent tools; do not "fix" to singular.
+      if [ "${INSTALL_CF}" = "true" ];         then cf completions zsh      > /usr/share/zsh/vendor-completions/_cf;       fi; \
       ls /usr/share/zsh/vendor-completions; \
     fi
 
