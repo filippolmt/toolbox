@@ -27,11 +27,9 @@ permissions:
   contents: read
   packages: write
 
-# Same tag can be pushed more than once in close succession — observed on
-# v0.36.0, where two pushes within 21s spawned two parallel runs that both
-# raced the GHCR push for identical image digests. Cancel the in-flight
-# run when a fresher push for the same tag arrives so only one publish
-# pipeline touches the registry per tag.
+# Same tag can be pushed more than once in close succession; parallel
+# runs race the GHCR push for identical image digests. Cancel the older
+# run so exactly one publish pipeline reaches the registry per tag.
 concurrency:
   group: docker-publish-tag-${{ github.ref }}
   cancel-in-progress: true

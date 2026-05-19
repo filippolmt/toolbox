@@ -21,12 +21,10 @@ on:
   # event (including tag pushes), so a single workflow can't both (a)
   # path-filter main pushes AND (b) fire on every `v*` tag.
 
-# This workflow only fires on `push: branches: [main]` (paths-filtered) and
-# `workflow_dispatch`; tag-driven publishes live in docker-publish-tag.yml,
-# so no tag/main cross-fire is possible here. Group on the ref so two rapid
-# main pushes (or a dispatch landing on top of an in-flight push) collapse
-# to one run targeting `:latest` and `:sha-<short>` — the older publish is
-# cancelled before it can race the newer one on GHCR.
+# Group by ref so rapid main pushes (or workflow_dispatch landing on top
+# of an in-flight push) collapse to one publisher per `:latest` /
+# `:sha-<short>`. The previous group keyed on `github.run_id`, which is
+# unique per run and made the stanza a no-op.
 concurrency:
   group: docker-publish-${{ github.ref }}
   cancel-in-progress: true
