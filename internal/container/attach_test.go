@@ -150,3 +150,75 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 		t.Fatal("execShell did not return within 2s on EOF")
 	}
 }
+
+func TestShellExecEnv(t *testing.T) {
+	cases := []struct {
+		name    string
+		setVars map[string]string
+		want    []string
+	}{
+		{
+			name:    "both vars forwarded",
+			setVars: map[string]string{"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty"},
+			want:    []string{"TERM=xterm-ghostty", "TERM_PROGRAM=ghostty"},
+		},
+		{
+			name:    "only TERM set",
+			setVars: map[string]string{"TERM": "xterm-256color"},
+			want:    []string{"TERM=xterm-256color"},
+		},
+		{
+			name:    "neither set",
+			setVars: map[string]string{},
+			want:    nil,
+		},
+		{
+			name:    "empty TERM value forwarded as empty string",
+			setVars: map[string]string{"TERM": ""},
+			want:    []string{"TERM="},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TERM", "")
+			t.Setenv("TERM_PROGRAM", "")
+			if err := os.Unsetenv("TERM"); err != nil {
+				t.Fatalf("unset TERM: %v", err)
+			}
+			if err := os.Unsetenv("TERM_PROGRAM"); err != nil {
+				t.Fatalf("unset TERM_PROGRAM: %v", err)
+			}
+			for k, v := range tc.setVars {
+				t.Setenv(k, v)
+			}
+			if got := shellExecEnv(); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("shellExecEnv() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExecShell_ForwardsTermEnv(t *testing.T) {
+	t.Setenv("TERM", "xterm-ghostty")
+	t.Setenv("TERM_PROGRAM", "ghostty")
+
+	var gotEnv []string
+	wantErr := errors.New("stop after capture")
+	cli := &attachMock{
+		createFn: func(_ context.Context, _ string, opts container.ExecOptions) (container.ExecCreateResponse, error) {
+			gotEnv = opts.Env
+			return container.ExecCreateResponse{}, wantErr
+		},
+		attachFn: func(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error) {
+			t.Fatal("attach should not be called")
+			return types.HijackedResponse{}, nil
+		},
+	}
+	if err := execShell(context.Background(), cli, "cid", []string{"/bin/zsh"}); !errors.Is(err, wantErr) {
+		t.Fatalf("execShell err = %v, want %v", err, wantErr)
+	}
+	want := []string{"TERM=xterm-ghostty", "TERM_PROGRAM=ghostty"}
+	if !reflect.DeepEqual(gotEnv, want) {
+		t.Errorf("ExecOptions.Env = %v, want %v", gotEnv, want)
+	}
+}

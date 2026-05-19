@@ -4,6 +4,19 @@
 # Do not use `set -e`: sourced scripts must not crash the shell if a tool is
 # missing or a completion fails.
 
+# -- TERM upgrade: Ghostty host sending bare "xterm" -------------------------
+# Ghostty defaults TERM to "xterm-ghostty"; some users override to plain
+# "xterm" in their Ghostty config for SSH compatibility. Plain xterm terminfo
+# lacks capabilities ZLE relies on when redrawing across a multi-line Starship
+# prompt — backspace leaves residual glyphs because ZLE emits fallback erase
+# sequences Ghostty doesn't interpret as the real terminfo would.
+# Gate on TERM_PROGRAM so this only fires inside Ghostty (other terminals
+# sending TERM=xterm legitimately stay untouched). The xterm-ghostty entry
+# is shipped by Layer 18 of the Dockerfile (/usr/share/terminfo/x/).
+if [ "${TERM:-}" = "xterm" ] && [ "${TERM_PROGRAM:-}" = "ghostty" ]; then
+    export TERM=xterm-ghostty
+fi
+
 # -- Security: allow world-writable dirs (host UID mapping forces a+rwX) ----
 # MUST come BEFORE `source $ZSH/oh-my-zsh.sh` so OMZ calls `compinit -u` and
 # silences the "Insecure completion-dependent directories" warning. Layer 21

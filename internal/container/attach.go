@@ -16,6 +16,27 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
+// shellExecEnv returns the host env vars forwarded into the exec session.
+//
+// Docker exec does NOT inherit the client's environment: ContainerExecCreate
+// only sees what we put in ExecOptions.Env, on top of the container's
+// Config.Env (set once at ContainerCreate). Without an explicit pass-through
+// the shell sees the Docker default TERM=xterm regardless of what the host
+// terminal actually is, which on Ghostty + multi-line Starship breaks the
+// backspace redraw (plain xterm terminfo lacks the capabilities ZLE/readline
+// need). The shell rcs then upgrade TERM to xterm-ghostty when TERM_PROGRAM
+// confirms Ghostty is the host — that gate only works if both vars arrive
+// here, so forward both.
+func shellExecEnv() []string {
+	var env []string
+	for _, k := range []string{"TERM", "TERM_PROGRAM"} {
+		if v, ok := os.LookupEnv(k); ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
+}
+
 // execShell attaches an interactive shell session to the container using the
 // caller-supplied cmd (already resolved upstream by sessionplan.Plan via
 // sessionplan.ResolveShellCmd). Handles TTY raw mode, signal forwarding
@@ -27,6 +48,7 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 		AttachStderr: true,
 		Tty:          true,
 		Cmd:          cmd,
+		Env:          shellExecEnv(),
 	})
 	if err != nil {
 		return fmt.Errorf("create exec for container %s: %w", containerID, err)
