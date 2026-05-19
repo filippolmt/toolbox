@@ -3,6 +3,15 @@
 # Do not use `set -e`: sourced scripts must not crash the shell if a tool
 # is missing or a completion fails.
 
+# -- TERM upgrade: Ghostty host sending bare "xterm" -----------------
+# Mirror of the zshrc block — see zshrc.sh for the full rationale.
+# Short version: plain xterm terminfo misses redraw capabilities ZLE/readline
+# need under a multi-line Starship prompt; bumping to xterm-ghostty (shipped
+# in /usr/share/terminfo/x/) eliminates the residual-glyph artefact.
+if [ "${TERM:-}" = "xterm" ] && [ "${TERM_PROGRAM:-}" = "ghostty" ]; then
+    export TERM=xterm-ghostty
+fi
+
 # -- Persistent shell history ----------------------------------------
 # HISTFILE points at the ~/.toolbox/state mount, so every toolbox shell
 # across every project writes to and reads from the same file.
