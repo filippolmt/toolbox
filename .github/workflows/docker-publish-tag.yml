@@ -27,12 +27,12 @@ permissions:
   contents: read
   packages: write
 
-# Tag pushes are unique by definition; per-tag group with cancellation
-# disabled so a stuck job can be replaced manually but never preempted by
-# a sibling.
+# Same tag can be pushed more than once in close succession; parallel
+# runs race the GHCR push for identical image digests. Cancel the older
+# run so exactly one publish pipeline reaches the registry per tag.
 concurrency:
   group: docker-publish-tag-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
