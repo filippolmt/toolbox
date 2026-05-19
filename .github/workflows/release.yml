@@ -8,12 +8,15 @@ on:
 permissions:
   contents: write
 
-# Tag pushes are unique by definition, so cancellation must not interrupt an
-# in-flight release. Per-tag group with cancel-in-progress disabled keeps the
-# knob present without preempting siblings.
+# Same tag can be pushed more than once in close succession (e.g. a manual
+# push followed by a tooling re-push within seconds — observed on v0.36.0,
+# which spawned two parallel Release runs that raced GoReleaser's asset
+# upload and 422'd on `already_exists`). Cancel the in-flight run when a
+# fresher push for the same tag arrives: the later push wins, and only one
+# GoReleaser invocation talks to the GitHub Releases API per tag.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   goreleaser:
