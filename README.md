@@ -195,6 +195,20 @@ Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be exe
 
 See [`examples/startup.d/`](examples/startup.d/) for a ready-to-copy example that installs and self-updates [Get-Shit-Done](https://github.com/gsd-build/get-shit-done).
 
+#### Per-repo startup hooks
+
+When bootstrap logic should live with the project (e.g. installing a one-off lint tool, seeding a fixture DB) instead of in your global `~/.toolbox/startup.d/`, patch the default `startup.d` mount in the repo's `.toolbox.yaml`:
+
+```yaml
+mounts:
+  - name: startup.d
+    source: ./startup.d
+```
+
+Then drop hook scripts into `./startup.d/*.sh` at the repo root. The patch retargets the `startup.d` mount by name, so the default `create_if_missing: true` and read-only flags are kept; only the host source changes. Because the source is CWD-relative, it resolves to the repo root when you run `toolbox shell` there, and the hooks only fire for that project. Run `toolbox stop` once after editing `.toolbox.yaml` so the new mount source takes effect (port/mount bindings are fixed at container creation).
+
+Trade-off vs. the global directory: per-repo hooks let a repo's `.toolbox.yaml` (and any contributor with push access) run code inside your container with your mounted credentials — treat them like any other repo-shipped automation. Commit the `startup.d/` directory if the hooks should be shared, or add it to `.gitignore` for per-user setup.
+
 ### Publishing ports
 
 By default the container has no host port bindings — it talks to the outside world through bind-mounted sockets, not TCP. When a tool inside the container needs to receive a connection from the host (typical case: an OAuth callback from `glab`, `gh`, or `gcloud` that listens on `http://localhost:<port>`), pass `--publish`/`-p` to `toolbox shell`:
