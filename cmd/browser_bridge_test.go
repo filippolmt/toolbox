@@ -7,12 +7,12 @@ import (
 )
 
 func TestBrowserBridge_RejectsExtraArgs(t *testing.T) {
-	rootCmd.SetArgs([]string{"browser-bridge", "install", "extra"})
 	t.Cleanup(func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
 	})
+	rootCmd.SetArgs([]string{"browser-bridge", "install", "extra"})
 	var buf bytes.Buffer
 	rootCmd.SetErr(&buf)
 	rootCmd.SetOut(&buf)

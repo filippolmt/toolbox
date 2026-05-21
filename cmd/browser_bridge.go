@@ -69,8 +69,11 @@ var browserBridgeStatusCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, _ []string) error {
 		a, err := browserbridge.NewAgent()
 		if err != nil {
-			fmt.Printf("unsupported host: %v\n", err)
-			return nil
+			if errors.Is(err, browserbridge.ErrUnsupported) {
+				fmt.Println("unsupported host")
+				return nil
+			}
+			return err
 		}
 		rep, err := browserbridge.Status(a)
 		if err != nil {
