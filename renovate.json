@@ -1,21 +1,25 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":rebaseStalePrs"
   ],
-  "platformAutomerge": true,
+  "timezone": "Europe/Rome",
+  "platformAutomerge": false,
+  "automergeSchedule": ["* 8 * * *"],
   "postUpdateOptions": ["gomodTidy"],
+  "vulnerabilityAlerts": {
+    "groupName": null,
+    "schedule": [],
+    "automerge": false
+  },
   "packageRules": [
     {
-      "description": "Automerge all non-major updates once required PR checks pass.",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "description": "Group every update — including major — into a single PR, automerge once daily at 08:00 Europe/Rome.",
+      "groupName": "all dependencies",
+      "groupSlug": "all",
       "automerge": true,
       "automergeType": "pr"
-    },
-    {
-      "description": "Major bumps always need a human — breaking changes likely.",
-      "matchUpdateTypes": ["major"],
-      "automerge": false
     }
   ],
   "customManagers": [
