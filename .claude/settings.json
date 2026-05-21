@@ -20,6 +20,7 @@
     "commit-commands@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
-    "andrej-karpathy-skills@karpathy-skills": true
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "superpowers@claude-plugins-official": true
   }
 }
