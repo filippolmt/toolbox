@@ -194,6 +194,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			GroupAdd:     identity.GroupAdd,
 			PortBindings: plan.PortBindings,
 			SecurityOpt:  plan.SecurityOpt,
+			ExtraHosts:   plan.ExtraHosts,
 		},
 		nil, // network config
 		nil, // platform

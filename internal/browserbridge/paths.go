@@ -1,31 +1,7 @@
 // Package browserbridge implements the host-side daemon and container-side
 // wrapper that let CLIs inside a toolbox shell open URLs in the host's real
-// browser (Safari/Chrome on macOS, the user's default browser on Linux).
-//
-// Architecture:
-//
-//	┌─ container ──────────┐               ┌─ host (Mac/Linux) ───────────┐
-//	│ CLI calls xdg-open   │  HTTP/JSON    │ toolbox browser-bridge daemon │
-//	│ wrapper POSTs URL  ──┼─────────────▶ │ 127.0.0.1:<port>             │
-//	│ over host.docker.    │  bearer token │ verifies token + allowlist   │
-//	│ internal             │               │ execs /usr/bin/open or       │
-//	└──────────────────────┘               │ xdg-open on host             │
-//	                                       └──────────────────────────────┘
-//
-// The daemon is installed as a per-user persistent service (LaunchAgent on
-// macOS, systemd --user unit on Linux). State lives under ~/.toolbox/browser/:
-//
-//	~/.toolbox/browser/token   — 32-byte hex bearer token (0600)
-//	~/.toolbox/browser/port    — effective TCP port the daemon bound to
-//	~/.toolbox/browser/log     — audit + diagnostic log
-//	~/.toolbox/browser/pid     — daemon PID for status checks
-//
-// The whole directory is bind-mounted read-only into the container at
-// /home/toolbox/.toolbox/browser/, so the wrapper script picks up token+port
-// without any extra env wiring.
-//
-// Security boundary: 127.0.0.1 bind, bearer token, URL scheme allowlist
-// (http/https only), URL length cap, rate limit. See allowlist.go + daemon.go.
+// browser. Security boundary: 127.0.0.1 bind, bearer token, URL scheme
+// allowlist (http/https only), URL length cap, rate limit.
 package browserbridge
 
 import (

@@ -1,6 +1,9 @@
 package mountplan
 
-import "github.com/filippolmt/toolbox/internal/config"
+import (
+	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/config"
+)
 
 // defaults returns the canonical default mount set (D-07).
 // ~/.secrets is intentionally NOT included (D-08).
@@ -128,7 +131,7 @@ func defaults() []config.Mount {
 		// because the wrapper only reads. CreateIfMissing keeps the mount
 		// resolvable even before the user runs `toolbox browser-bridge install`
 		// (the wrapper falls back to printing the URL on stderr in that case).
-		{Name: "browser-bridge", Source: "~/.toolbox/browser", Target: "/home/toolbox/.toolbox/browser", ReadOnly: true, CreateIfMissing: true},
+		{Name: "browser-bridge", Source: "~/" + browserbridge.HostDir, Target: browserbridge.ContainerDir, ReadOnly: true, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
 		{Name: "docker-sock", Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}

@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -77,20 +76,17 @@ func runShell(cmd *cobra.Command, args []string) error {
 	return container.Shell(ctx, cli, plan)
 }
 
-// printBrowserBridgeTipIfNeeded prints a one-line install hint on darwin/linux
-// when the host-side browser bridge is not yet installed. Best-effort: every
-// failure path is silent so a transient launchctl/systemctl glitch never
-// blocks `toolbox shell`.
+// printBrowserBridgeTipIfNeeded prints a one-line install hint when the
+// host-side browser bridge is not yet installed. Build tags select an Agent
+// that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
+// Uses IsInstalled (stat-only) instead of Status to keep the shell-start hot
+// path off launchctl/systemctl exec costs.
 func printBrowserBridgeTipIfNeeded() {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		return
-	}
 	a, err := browserbridge.NewAgent()
 	if err != nil {
 		return
 	}
-	st, err := a.Status()
-	if err != nil || st.Installed {
+	if a.IsInstalled() {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox browser-bridge install' to forward in-container URLs to your host browser")

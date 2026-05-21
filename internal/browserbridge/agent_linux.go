@@ -80,11 +80,13 @@ func (a *linuxAgent) Uninstall() error {
 	return nil
 }
 
+func (a *linuxAgent) IsInstalled() bool {
+	_, err := os.Stat(a.unitPath)
+	return err == nil
+}
+
 func (a *linuxAgent) Status() (AgentStatus, error) {
-	st := AgentStatus{}
-	if _, err := os.Stat(a.unitPath); err == nil {
-		st.Installed = true
-	}
+	st := AgentStatus{Installed: a.IsInstalled()}
 	out, _ := exec.Command("systemctl", "--user", "is-active", unitName).Output()
 	active := strings.TrimSpace(string(out))
 	if active == "active" {

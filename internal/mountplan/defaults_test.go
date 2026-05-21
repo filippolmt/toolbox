@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/browserbridge"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
@@ -131,8 +132,11 @@ func TestDefaults_IncludesBrowserBridge(t *testing.T) {
 			if !m.ReadOnly {
 				t.Error("browser-bridge mount must be ReadOnly")
 			}
-			if m.Target != "/home/toolbox/.toolbox/browser" {
-				t.Errorf("Target = %q", m.Target)
+			if m.Target != browserbridge.ContainerDir {
+				t.Errorf("Target = %q, want %q", m.Target, browserbridge.ContainerDir)
+			}
+			if m.Source != "~/"+browserbridge.HostDir {
+				t.Errorf("Source = %q, want %q", m.Source, "~/"+browserbridge.HostDir)
 			}
 			if !m.CreateIfMissing {
 				t.Error("CreateIfMissing must be true so the mount is resolvable pre-install")

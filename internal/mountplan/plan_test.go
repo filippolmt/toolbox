@@ -185,3 +185,30 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 			result.WorkingDir, WorkspaceTarget)
 	}
 }
+
+func TestMerge_BrowserBridgeFalseDropsMount(t *testing.T) {
+	off := false
+	got, err := Merge(&config.Config{BrowserBridge: &off})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	for _, m := range got {
+		if m.Name == "browser-bridge" {
+			t.Errorf("browser-bridge mount must be dropped when BrowserBridge=false")
+		}
+	}
+}
+
+func TestMerge_BrowserBridgeTrueKeepsMount(t *testing.T) {
+	on := true
+	got, err := Merge(&config.Config{BrowserBridge: &on})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	for _, m := range got {
+		if m.Name == "browser-bridge" {
+			return
+		}
+	}
+	t.Error("browser-bridge mount missing when BrowserBridge=true")
+}

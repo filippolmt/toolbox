@@ -19,6 +19,7 @@ func (f *fakeAgent) Uninstall() error       { f.uninstallCalled = true; return f
 func (f *fakeAgent) Status() (AgentStatus, error) {
 	return f.status, nil
 }
+func (f *fakeAgent) IsInstalled() bool { return f.status.Installed }
 
 func TestInstall_WritesTokenAndCallsAgent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())

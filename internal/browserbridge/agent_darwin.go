@@ -103,11 +103,13 @@ func (a *darwinAgent) Uninstall() error {
 	return nil
 }
 
+func (a *darwinAgent) IsInstalled() bool {
+	_, err := os.Stat(a.plistPath)
+	return err == nil
+}
+
 func (a *darwinAgent) Status() (AgentStatus, error) {
-	st := AgentStatus{}
-	if _, err := os.Stat(a.plistPath); err == nil {
-		st.Installed = true
-	}
+	st := AgentStatus{Installed: a.IsInstalled()}
 	uid := strconv.Itoa(os.Getuid())
 	out, _ := exec.Command("launchctl", "print", "gui/"+uid+"/"+launchLabel).CombinedOutput()
 	text := string(out)

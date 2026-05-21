@@ -16,9 +16,12 @@ type AgentStatus struct {
 
 // Agent abstracts the per-user service supervisor for the host (LaunchAgent on
 // darwin, systemd --user on linux). Install writes the unit/plist and starts
-// the daemon; Uninstall stops it and removes the file; Status reports.
+// the daemon; Uninstall stops it and removes the file; Status reports full
+// state (may exec launchctl/systemctl); IsInstalled is the cheap stat-only
+// check used by shell-start hot paths.
 type Agent interface {
 	Install(execPath string) error
 	Uninstall() error
 	Status() (AgentStatus, error)
+	IsInstalled() bool
 }
