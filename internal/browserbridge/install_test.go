@@ -62,9 +62,15 @@ func TestUninstall_RemovesStateAndCallsAgent(t *testing.T) {
 func TestStatus_BridgeAndAgent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	fa := &fakeAgent{status: AgentStatus{Installed: true, Running: true, Detail: "ok"}}
+	if err := Install(fa, "/x"); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	rep, err := Status(fa)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !rep.TokenPresent {
+		t.Error("TokenPresent should be true after Install")
 	}
 	if !rep.AgentInstalled || !rep.AgentRunning {
 		t.Errorf("rep = %+v", rep)

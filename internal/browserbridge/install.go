@@ -42,6 +42,7 @@ func Uninstall(a Agent) error {
 	if err := a.Uninstall(); err != nil {
 		return err
 	}
+	_ = ClearPort(s)
 	return os.RemoveAll(s.Dir)
 }
 
