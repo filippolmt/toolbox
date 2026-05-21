@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -88,9 +87,6 @@ func printBrowserBridgeTipIfNeeded() {
 	}
 	a, err := browserbridge.NewAgent()
 	if err != nil {
-		if errors.Is(err, browserbridge.ErrUnsupported) {
-			return
-		}
 		return
 	}
 	st, err := a.Status()
