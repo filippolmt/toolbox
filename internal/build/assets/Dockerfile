@@ -229,12 +229,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       vim-tiny \
       wget
 
-# socat (in the list above) backs the runtime loopback bridge
-# (`toolbox shell -B`): one process per published container port, eth0:<port>
-# → 127.0.0.1:<port>. Always-on (no opt-out) — it's a ~350KB package and the
-# bridge feature is system-level, not per-tool. See
-# docs/runtime-notes.md#loopback-bridge.
-
 # -- Layer 2: kubectl (TOOL-05, IMG-02) ---------------------------------------
 RUN set -eux; \
     if [ "${INSTALL_KUBECTL}" != "true" ]; then \
