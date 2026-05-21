@@ -210,6 +210,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
       curl \
+      wget \
       ca-certificates \
       git \
       openssh-client \
@@ -221,7 +222,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       python3-pip \
       python-is-python3 \
       gnupg \
-      vim-tiny
+      vim-tiny \
+      less \
+      tree \
+      unzip \
+      procps
 
 # -- Layer 2: kubectl (TOOL-05, IMG-02) ---------------------------------------
 RUN set -eux; \
