@@ -41,7 +41,7 @@ func TestPlanComposesImage(t *testing.T) {
 	}
 
 	t.Run("default tools resolve to registry tag", func(t *testing.T) {
-		plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+		plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -60,7 +60,7 @@ func TestPlanComposesImage(t *testing.T) {
 		// when map iteration order picks the `zsh` key.
 		cfg.Tools = config.DefaultTools()
 		cfg.Tools["claude"] = false
-		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestPlanComposesPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestPlanComputesContainerName(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -183,11 +183,11 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+	a, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan a: %v", err)
 	}
-	b, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+	b, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan b: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"gsd": true}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"bmad": true}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestPlanSDDEnvOpenSpecStepsTrackTools(t *testing.T) {
 			cfg.Tools["codex"] = tc.codex
 			cfg.SDD = map[string]bool{"openspec": true}
 
-			plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+			plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 			if err != nil {
 				t.Fatalf("Plan: %v", err)
 			}
@@ -391,7 +391,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"gds": true, "gsd": false}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, "dev")
+	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false, "dev")
 	if err == nil {
 		t.Fatal("Plan should reject malformed --publish spec")
 	}
@@ -426,7 +426,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~" // bare ~ is rejected by config.ValidateMountsRoot
-	_, err := sessionplan.Plan(cfg, "/workspace", nil, "dev")
+	_, err := sessionplan.Plan(cfg, "/workspace", nil, false, "dev")
 	if err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
@@ -445,7 +445,7 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	// A path with a redundant ".." that filepath.Clean collapses to canonical.
 	dirty := filepath.Join(tmpHome, "foo", "..", "bar")
 
-	plan, err := sessionplan.Plan(testConfig(), dirty, nil, "dev")
+	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
 // — composing mountplan.Merge instead of mountplan.Plan keeps the call
 // purely data. NO t.Setenv("HOME", ...), NO t.TempDir() in this test.
 func TestMergeIsPure(t *testing.T) {
-	merged, err := sessionplan.Merge(testConfig(), "/workspace", nil, "dev")
+	merged, err := sessionplan.Merge(testConfig(), "/workspace", nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestMergeIsPure(t *testing.T) {
 func TestMergeRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Merge(cfg, "/workspace", nil, "dev")
+	_, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
 	if err == nil {
 		t.Fatal("Merge should reject bare ~ as mounts_root")
 	}
@@ -537,7 +537,7 @@ func TestMergeRejectsBadMountsRoot(t *testing.T) {
 // TestMergeRejectsBadPort asserts port-parse errors propagate at the
 // pure-data tier as well.
 func TestMergeRejectsBadPort(t *testing.T) {
-	_, err := sessionplan.Merge(testConfig(), "/workspace", []string{"not-a-port"}, "dev")
+	_, err := sessionplan.Merge(testConfig(), "/workspace", []string{"not-a-port"}, false, "dev")
 	if err == nil {
 		t.Fatal("Merge should reject malformed --publish spec")
 	}
@@ -636,7 +636,7 @@ func TestPlanComputesCmd(t *testing.T) {
 		cfg := testConfig()
 		cfg.Shell = "bash"
 		cfg.Tools["bash"] = true
-		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -650,7 +650,7 @@ func TestPlanComputesCmd(t *testing.T) {
 			Shell: "zsh",
 			Tools: map[string]bool{"zsh": false},
 		}
-		_, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		_, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 		if err == nil {
 			t.Fatal("Plan should reject shell:zsh + tools.zsh:false")
 		}
@@ -672,7 +672,7 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 	}
 
 	t.Run("codex enabled emits seccomp=unconfined", func(t *testing.T) {
-		plan, err := sessionplan.Plan(testConfig(), workspace, nil, "dev")
+		plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -684,7 +684,7 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 	t.Run("codex disabled emits nil SecurityOpt", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.Tools["codex"] = false
-		plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -707,7 +707,7 @@ func TestPlanComputesBuildArgs(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.Tools["gcloud"] = false
-	plan, err := sessionplan.Plan(cfg, workspace, nil, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -724,7 +724,7 @@ func TestMergeAlsoComputesCmd(t *testing.T) {
 		cfg := testConfig()
 		cfg.Shell = "bash"
 		cfg.Tools["bash"] = true
-		merged, err := sessionplan.Merge(cfg, "/workspace", nil, "dev")
+		merged, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
 		if err != nil {
 			t.Fatalf("Merge: %v", err)
 		}
@@ -738,7 +738,7 @@ func TestMergeAlsoComputesCmd(t *testing.T) {
 			Shell: "zsh",
 			Tools: map[string]bool{"zsh": false},
 		}
-		_, err := sessionplan.Merge(cfg, "/workspace", nil, "dev")
+		_, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
 		if err == nil {
 			t.Fatal("Merge should reject shell:zsh + tools.zsh:false")
 		}
@@ -747,6 +747,123 @@ func TestMergeAlsoComputesCmd(t *testing.T) {
 			t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
 		}
 	})
+}
+
+// --- Loopback bridge env emission ---
+
+// TestPlanLoopbackBridgeOff asserts that when bridgeLoopback=false the
+// resulting env never carries the TOOLBOX_LOOPBACK_BRIDGE_* keys, even when
+// publish specs are present. Locks the opt-in contract.
+func TestPlanLoopbackBridgeOff(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	envByKey := indexEnv(plan.Env)
+	for _, key := range []string{"TOOLBOX_LOOPBACK_BRIDGE_PORTS", "TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH"} {
+		if _, present := envByKey[key]; present {
+			t.Errorf("env contains %s with bridgeLoopback=false; should be absent", key)
+		}
+	}
+}
+
+// TestPlanLoopbackBridgeSinglePort asserts that bridgeLoopback=true with a
+// single -p emits a single-element PORTS list. The presence of _PORTS is
+// itself the "enabled" signal; the no-publish marker must be absent on the
+// happy path.
+func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	envByKey := indexEnv(plan.Env)
+	if got := envByKey["TOOLBOX_LOOPBACK_BRIDGE_PORTS"]; got != "13387" {
+		t.Errorf("TOOLBOX_LOOPBACK_BRIDGE_PORTS = %q, want \"13387\"", got)
+	}
+	if _, present := envByKey["TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH"]; present {
+		t.Error("TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH must be absent when ports are published")
+	}
+}
+
+// TestPlanLoopbackBridgeMultiPortPreservesOrder asserts that bridgeLoopback
+// on with multiple distinct publishes joins container ports in insertion
+// order (the user-supplied -p order), not sorted.
+func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	envByKey := indexEnv(plan.Env)
+	if got := envByKey["TOOLBOX_LOOPBACK_BRIDGE_PORTS"]; got != "13387,8976" {
+		t.Errorf("TOOLBOX_LOOPBACK_BRIDGE_PORTS = %q, want %q (insertion order preserved)", got, "13387,8976")
+	}
+}
+
+// TestPlanLoopbackBridgeDeduplicatesContainerPorts asserts that two -p
+// specs pointing at the same container port collapse to one entry. The
+// bridge spawns one socat per port; emitting duplicates would EADDRINUSE
+// the second listener.
+func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	envByKey := indexEnv(plan.Env)
+	if got := envByKey["TOOLBOX_LOOPBACK_BRIDGE_PORTS"]; got != "13387" {
+		t.Errorf("TOOLBOX_LOOPBACK_BRIDGE_PORTS = %q, want %q (duplicates collapsed)", got, "13387")
+	}
+}
+
+// TestPlanLoopbackBridgeEmptyPublish asserts that bridgeLoopback=true with
+// no -p emits the no-publish marker alone (no PORTS list) — the in-container
+// init.d/70 script reads the marker to warn the user about the no-op.
+func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true, "dev")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	envByKey := indexEnv(plan.Env)
+	if envByKey["TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH"] != "1" {
+		t.Errorf("TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH = %q, want \"1\"", envByKey["TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH"])
+	}
+	if _, present := envByKey["TOOLBOX_LOOPBACK_BRIDGE_PORTS"]; present {
+		t.Errorf("TOOLBOX_LOOPBACK_BRIDGE_PORTS must be absent when no -p; got %q", envByKey["TOOLBOX_LOOPBACK_BRIDGE_PORTS"])
+	}
 }
 
 // --- Helpers ---

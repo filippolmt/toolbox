@@ -225,17 +225,28 @@ Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<
 
 Port bindings are fixed when the container is created. If a container already exists for the current workspace, run `toolbox stop` before `toolbox shell -p …` so the new container picks up the flag.
 
-#### Wrangler OAuth login
+#### Loopback bridge for OAuth callbacks (`-B`)
 
-`wrangler login` defaults its temporary callback server to `--callback-host=localhost`, which inside the container resolves to the loopback interface and is invisible to the `docker -p` forward — so the host browser hits `ERR_EMPTY_RESPONSE` on the OAuth redirect and no token is written. Pass an explicit bind host so the listener accepts the forwarded connection:
+CLIs that bind their OAuth callback to `127.0.0.1:<port>` inside the container (e.g. `shopify store auth` → `127.0.0.1:13387`; vanilla `wrangler login` → `localhost:8976`) are invisible to the Docker port-forward, which delivers to the container's `eth0` interface. The host browser hits `ERR_EMPTY_RESPONSE` and no token is written. Pass `--bridge-loopback` / `-B` together with `-p` to spawn an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`:
 
 ```bash
-toolbox shell -p 8976:8976
-# inside the container:
-wrangler login --callback-host=0.0.0.0
+# shopify
+toolbox shell -B -p 13387:13387
+shopify store auth ...
+
+# wrangler
+toolbox shell -B -p 8976:8976
+wrangler login
 ```
 
-The OAuth redirect URL stays `http://localhost:8976/oauth/callback` (hard-coded upstream) so the browser still reaches the published port on `127.0.0.1`. Credentials land at `~/.config/.wrangler/config/default.toml`, bind-mounted from `~/.toolbox/wrangler/` on the host, and survive `toolbox stop`. `cf auth login` does not need this flag — its upstream listener already binds `0.0.0.0` by default.
+`cf login` is the dynamic-port carve-out: `cf` picks its callback port at run time from the range 8877-8886, so the bridge cannot pre-bind a known port. The image keeps a build-time `sed` patch that rewrites cf's bind to `0.0.0.0`, so the existing recipe is unchanged and `-B` is not needed:
+
+```bash
+toolbox shell -p 8877-8886:8877-8886
+cf login
+```
+
+Full mental model, OAuth CLI survey table, and limitations: [`docs/runtime-notes.md#loopback-bridge`](docs/runtime-notes.md#loopback-bridge).
 
 ### Browser bridge
 
@@ -269,7 +280,7 @@ Configuration is loaded from (highest priority first):
 
 | Command | Description |
 |---------|-------------|
-| `toolbox shell` | Start or attach to the toolbox container (use `-p <port>` to publish ports for OAuth callbacks / dev servers) |
+| `toolbox shell` | Start or attach to the toolbox container (use `-p <port>` to publish ports for OAuth callbacks / dev servers; add `-B` when the CLI binds container loopback — see [Loopback bridge](#loopback-bridge-for-oauth-callbacks--b)) |
 | `toolbox stop` | Stop and remove the container |
 | `toolbox build` | Build the Docker image locally |
 | `toolbox version` | Show version info |

@@ -223,6 +223,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       python3 \
       python3-pip \
       ripgrep \
+      socat \
       tree \
       unzip \
       vim-tiny \
@@ -760,10 +761,16 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     else \
       npm install -g "cf@${CF_CLI_VERSION}"; \
       cf --version; \
-      # Upstream cf hardcodes OAuth callback bind to 127.0.0.1 with no env \
-      # override, so loopback inside container is invisible to `docker -p` \
-      # forward → browser hits ERR_EMPTY_RESPONSE. grep guard fails build if \
-      # upstream restyles the literal (Renovate bumps `cf@*` regularly). \
+      # Dynamic-port carve-out. `cf` picks its OAuth callback port at run \
+      # time from the range `startPort: 8877, maxPortAttempts: 10`, so the \
+      # runtime loopback bridge (`toolbox shell -B`) cannot pre-bind it — \
+      # the bridge needs a known container port to forward. We therefore \
+      # keep this build-time `sed` rewrite (127.0.0.1 → 0.0.0.0) so `cf` \
+      # binds eth0 directly and the host's `docker -p 8877-8886:8877-8886` \
+      # forward lands on whichever port cf picks for that session. The \
+      # bridge mechanism and its split-strategy with cf are documented in \
+      # docs/runtime-notes.md#loopback-bridge. grep guard fails the build \
+      # if upstream restyles the literal (Renovate bumps `cf@*` regularly). \
       sed -i -E 's/(bindHost:\s*)["'\'']127\.0\.0\.1["'\'']/\1"0.0.0.0"/' \
         /usr/local/lib/node_modules/cf/cf-dist/index.js; \
       grep -qE 'bindHost:\s*"0\.0\.0\.0"' /usr/local/lib/node_modules/cf/cf-dist/index.js; \
@@ -800,13 +807,10 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     else \
       npm install -g "wrangler@${WRANGLER_VERSION}"; \
       wrangler --version; \
-      # Upstream wrangler hardcodes OAuth callback listen on "localhost":8976 \
-      # with no env override, so loopback inside container is invisible to \
-      # `docker -p 8976:8976` → browser hits ERR_EMPTY_RESPONSE. grep guard \
-      # fails build if upstream restyles the literal (Renovate bumps regular). \
-      sed -i -E 's/(\.listen\(8976,[[:space:]]*)"localhost"/\1"0.0.0.0"/' \
-        /usr/local/lib/node_modules/wrangler/wrangler-dist/cli.js; \
-      grep -qE '\.listen\(8976,[[:space:]]*"0\.0\.0\.0"' /usr/local/lib/node_modules/wrangler/wrangler-dist/cli.js; \
+      # Wrangler ships vanilla — no bind-literal sed. OAuth callback (static \
+      # localhost:8976) is reached via the runtime bridge: \
+      # `toolbox shell -B -p 8976:8976`. See \
+      # docs/runtime-notes.md#loopback-bridge. \
       find /usr/local/lib/node_modules/wrangler \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
         -o -type d \( -name docs -o -name examples -o -name example \) \) \
