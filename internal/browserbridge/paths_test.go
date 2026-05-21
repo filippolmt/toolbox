@@ -19,16 +19,16 @@ func TestResolveHostState_UsesHomeDir(t *testing.T) {
 		t.Errorf("Dir = %q, want %q", s.Dir, want)
 	}
 	if s.Token != filepath.Join(want, "token") {
-		t.Errorf("Token = %q", s.Token)
+		t.Errorf("Token = %q, want %q", s.Token, filepath.Join(want, "token"))
 	}
 	if s.Port != filepath.Join(want, "port") {
-		t.Errorf("Port = %q", s.Port)
+		t.Errorf("Port = %q, want %q", s.Port, filepath.Join(want, "port"))
 	}
 	if s.Log != filepath.Join(want, "log") {
-		t.Errorf("Log = %q", s.Log)
+		t.Errorf("Log = %q, want %q", s.Log, filepath.Join(want, "log"))
 	}
 	if s.PID != filepath.Join(want, "pid") {
-		t.Errorf("PID = %q", s.PID)
+		t.Errorf("PID = %q, want %q", s.PID, filepath.Join(want, "pid"))
 	}
 }
 
