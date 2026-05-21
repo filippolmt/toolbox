@@ -16,6 +16,7 @@
   "packageRules": [
     {
       "description": "Group every update — including major — into a single PR, automerge once daily at 08:00 Europe/Rome.",
+      "matchPackageNames": ["*"],
       "groupName": "all dependencies",
       "groupSlug": "all",
       "automerge": true,
