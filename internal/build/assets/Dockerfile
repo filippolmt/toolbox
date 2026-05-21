@@ -209,24 +209,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
-      curl \
-      wget \
-      ca-certificates \
-      git \
-      openssh-client \
-      ripgrep \
       bash-completion \
+      ca-certificates \
+      curl \
+      git \
+      gnupg \
+      less \
       make \
       ncurses-bin \
+      openssh-client \
+      procps \
+      python-is-python3 \
       python3 \
       python3-pip \
-      python-is-python3 \
-      gnupg \
-      vim-tiny \
-      less \
+      ripgrep \
       tree \
       unzip \
-      procps
+      vim-tiny \
+      wget
 
 # -- Layer 2: kubectl (TOOL-05, IMG-02) ---------------------------------------
 RUN set -eux; \
