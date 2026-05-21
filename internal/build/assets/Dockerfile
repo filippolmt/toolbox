@@ -101,7 +101,7 @@ ARG UV_VERSION=0.11.15
 ARG CLAUDE_CODE_VERSION=2.1.146
 ARG CODEX_CLI_VERSION=0.132.0
 ARG CF_CLI_VERSION=0.0.5
-ARG WRANGLER_VERSION=4.93.0
+ARG WRANGLER_VERSION=4.93.1
 ARG PYRIGHT_VERSION=1.1.409
 # RTK_VERSION lives in the global ARG block at the top of the file
 # (consumed only by the rtk-builder stage; the main stage just COPYs the
