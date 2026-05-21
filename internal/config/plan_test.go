@@ -291,3 +291,30 @@ func TestPlanRejectsRelativeMountsRoot(t *testing.T) {
 		t.Errorf("error should mention mounts_root, got: %v", err)
 	}
 }
+
+func TestPlan_BrowserBridgeDefaultsTrue(t *testing.T) {
+	cfg, err := Merge(nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BrowserBridge == nil {
+		t.Fatal("BrowserBridge nil, want *true")
+	}
+	if !*cfg.BrowserBridge {
+		t.Errorf("BrowserBridge = false, want true")
+	}
+}
+
+func TestPlan_BrowserBridgeExplicitFalse(t *testing.T) {
+	yaml := []byte("browser_bridge: false\n")
+	cfg, err := Merge(nil, yaml, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BrowserBridge == nil {
+		t.Fatal("BrowserBridge nil, want *false")
+	}
+	if *cfg.BrowserBridge {
+		t.Errorf("BrowserBridge = true, want false")
+	}
+}

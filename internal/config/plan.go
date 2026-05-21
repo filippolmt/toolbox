@@ -181,6 +181,7 @@ func seedToolDefaults(vp *viper.Viper) {
 	for _, k := range catalog.Keys() {
 		vp.SetDefault("tools."+k, true)
 	}
+	vp.SetDefault("browser_bridge", true)
 }
 
 // =============================================================================
@@ -233,6 +234,10 @@ func fillToolDefaultsBackstop(cfg *Config) {
 	}
 	if cfg.Shells == nil {
 		cfg.Shells = map[string]NamedShell{}
+	}
+	if cfg.BrowserBridge == nil {
+		v := true
+		cfg.BrowserBridge = &v
 	}
 }
 

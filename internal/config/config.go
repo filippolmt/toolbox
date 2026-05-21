@@ -38,6 +38,12 @@ type Config struct {
 	// the local-image hash, so a top-level field is guaranteed hash-neutral
 	// — flipping an SDD flag never forces a rebuild.
 	SDD map[string]bool `mapstructure:"sdd"`
+	// BrowserBridge toggles the host-side ~/.toolbox/browser RO mount in the
+	// container and gates the `toolbox browser-bridge install` command. When
+	// false, the mount is omitted and the install command refuses. Default
+	// true. Lives outside Tools{} so flipping it stays hash-neutral (mirrors
+	// the SDD rationale above).
+	BrowserBridge *bool `mapstructure:"browser_bridge"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
