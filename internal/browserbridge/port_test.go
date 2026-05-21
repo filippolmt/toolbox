@@ -10,7 +10,7 @@ func TestBindListener_PreferredFreePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BindListener: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	if port <= 0 {
 		t.Errorf("port = %d", port)
 	}
@@ -21,14 +21,14 @@ func TestBindListener_FallsBackWhenBusy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup listener: %v", err)
 	}
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 	busy := first.Addr().(*net.TCPAddr).Port
 
 	ln, port, err := BindListener(busy)
 	if err != nil {
 		t.Fatalf("BindListener fallback: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	if port == busy {
 		t.Errorf("expected fallback port, got busy port %d", port)
 	}
