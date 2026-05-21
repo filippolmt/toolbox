@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
+	"github.com/filippolmt/toolbox/internal/browserbridge"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -45,6 +49,10 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if cfg.BrowserBridge != nil && *cfg.BrowserBridge {
+		printBrowserBridgeTipIfNeeded()
+	}
+
 	cli, err := container.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
@@ -68,6 +76,28 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	return container.Shell(ctx, cli, plan)
+}
+
+// printBrowserBridgeTipIfNeeded prints a one-line install hint on darwin/linux
+// when the host-side browser bridge is not yet installed. Best-effort: every
+// failure path is silent so a transient launchctl/systemctl glitch never
+// blocks `toolbox shell`.
+func printBrowserBridgeTipIfNeeded() {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return
+	}
+	a, err := browserbridge.NewAgent()
+	if err != nil {
+		if errors.Is(err, browserbridge.ErrUnsupported) {
+			return
+		}
+		return
+	}
+	st, err := a.Status()
+	if err != nil || st.Installed {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox browser-bridge install' to forward in-container URLs to your host browser")
 }
 
 func init() {
