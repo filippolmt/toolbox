@@ -14,11 +14,24 @@ import (
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
+// systemInitScripts lists init.d/*.sh files that are NOT tied to a catalog
+// tool entry — they implement system-level features driven by host-CLI
+// flags or always-on infrastructure. Each entry MUST be present on disk
+// (TestSystemInitScriptsPresent locks that direction) but has no matching
+// catalog.Entry.InitScript. Keep this set tiny — every addition is an
+// implicit carve-out from the "catalog is the single discoverable list of
+// what runs at boot" invariant.
+var systemInitScripts = map[string]struct{}{
+	// `toolbox shell -B` loopback bridge — host-CLI flag, not a tool toggle.
+	"70-loopback-bridge.sh": {},
+}
+
 // TestCatalogInitDBijection enforces strict set-equality between
-// catalog.Entries[*].InitScript (non-empty values) and the *.sh files
+// (catalog.Entries[*].InitScript ∪ systemInitScripts) and the *.sh files
 // shipped under internal/build/assets/init.d/. The entrypoint iterator
 // globs every file regardless of catalog membership; this invariant exists
-// so the catalog stays the single discoverable list of "what runs at boot".
+// so the catalog (plus the explicit systemInitScripts carve-out) stays the
+// single discoverable list of "what runs at boot".
 func TestCatalogInitDBijection(t *testing.T) {
 	entries, err := fs.ReadDir(build.Assets, build.AssetDir+"/init.d")
 	if err != nil {
@@ -38,6 +51,9 @@ func TestCatalogInitDBijection(t *testing.T) {
 		if e.InitScript != "" {
 			catalogSet[e.InitScript] = struct{}{}
 		}
+	}
+	for name := range systemInitScripts {
+		catalogSet[name] = struct{}{}
 	}
 
 	var missing, extra []string

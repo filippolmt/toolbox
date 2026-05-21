@@ -79,7 +79,54 @@ Adding (or removing) an entry in `internal/catalog/catalog.go` `Entries` invalid
 
 ### Port bindings are fixed at container creation
 
-`toolbox shell -p <port>` only takes effect when the container is first created — `ContainerCreate` writes the port set, and Docker doesn't accept post-hoc port changes. Run `toolbox stop` before re-invoking `toolbox shell -p …` to add or change bindings. Accepted formats mirror `docker run -p`; host IP defaults to `127.0.0.1` when omitted. Mismatch detection lives in `sessionplan.MissingPublishPorts`.
+`toolbox shell -p <port>` only takes effect when the container is first created — `ContainerCreate` writes the port set, and Docker doesn't accept post-hoc port changes. Run `toolbox stop` before re-invoking `toolbox shell -p …` to add or change bindings. Accepted formats mirror `docker run -p`; host IP defaults to `127.0.0.1` when omitted. Mismatch detection lives in `sessionplan.MissingPublishPorts`. When the listener inside the container binds `127.0.0.1` rather than `0.0.0.0`, see [loopback bridge](#loopback-bridge).
+
+### Loopback bridge
+
+In-container CLIs that bind their OAuth callback to `127.0.0.1:<port>` (shopify, vanilla wrangler) are unreachable from the host browser even with `toolbox shell -p <port>:<port>`. Docker's port forward delivers packets to the container's `eth0` interface; a listener bound to container loopback never sees them. The `-B` / `--bridge-loopback` flag fixes that:
+
+```
+host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──▶  127.0.0.1:<port>  ──▶  CLI
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                   bridged inside the container by init.d/70
+```
+
+When `-B` is set together with at least one `-p`, `sessionplan.Plan` emits `TOOLBOX_LOOPBACK_BRIDGE_PORTS=<comma-joined>` and `internal/build/assets/init.d/70-loopback-bridge.sh` spawns one `socat TCP-LISTEN:<port>,bind=$ETH_IP,fork,reuseaddr TCP:127.0.0.1:<port>` per port. The bridge binds the container's external interface IP (`hostname -i`) explicitly so a legitimate in-container `0.0.0.0:<port>` listener does not collide with it.
+
+Standard recipes (static-port loopback CLIs):
+
+```
+toolbox shell -B -p 13387:13387   # shopify store auth
+toolbox shell -B -p 8976:8976     # wrangler login
+```
+
+**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile Layer 13c) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs. `cf login` recipe (no `-B` needed):
+
+```
+toolbox shell -p 8877-8886:8877-8886   # cf login (sed-patched, range syntax via nat.ParsePortSpec)
+```
+
+OAuth CLI survey:
+
+| CLI | Listener style | Strategy |
+|---|---|---|
+| `shopify` | `127.0.0.1:13387` (static) | bridge: `-B -p 13387:13387` |
+| `wrangler` | `localhost:8976` (static) | bridge: `-B -p 8976:8976` (vanilla wrangler, no sed) |
+| `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `-p 8877-8886:8877-8886` |
+| `gcloud` | `localhost:8085+` (dynamic) | wrapper / device-code |
+| `gws` | `127.0.0.1:0` (ephemeral) | wrapper / device-code |
+| `az` | dynamic | device-code (`--use-device-code`) |
+| `gh` / `glab` / `claude` / `codex` | none — device-code | no listener; no port forward needed |
+
+Limitations:
+
+- Bridge env is fixed at `ContainerCreate`. `toolbox shell -B …` on a container created without `-B` is a no-op — same UX as `-p`. Run `toolbox stop` first.
+- IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
+- `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
+- Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
+- `socat` is part of the always-on Layer 1 apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
+
+See also: [`port-bindings`](#port-bindings-are-fixed-at-container-creation), [`image-build`](#image-build) (socat install layer), [`browser-bridge`](#browser-bridge) (inverse direction — container→host browser opens).
 
 ### Codex nested sandbox
 

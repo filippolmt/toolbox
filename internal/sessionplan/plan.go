@@ -78,10 +78,16 @@ type MergedSessionPlan struct {
 // mount-stage validation rejects the user list, when port specs cannot
 // be parsed, or when the home directory cannot be resolved. Per-mount
 // soft skips surface via SessionPlan.Warnings.
-func Plan(cfg *config.Config, workspace string, ports []string, cliVersion string) (*SessionPlan, error) {
+//
+// bridgeLoopback toggles the in-container loopback bridge (init.d/70):
+// when true and at least one publish spec is present, the resulting env
+// carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
+// socat per published container port — see
+// docs/runtime-notes.md#loopback-bridge.
+func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, cliVersion string) (*SessionPlan, error) {
 	workspace = normalizeWorkspace(workspace)
 
-	exposed, bindings, err := parsePublishSpecs(ports)
+	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +116,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, mp.WorkingDir, cfg.SDD, cfg.Tools),
+		Env:           append(shellEnv(workspace, mp.WorkingDir, cfg.SDD, cfg.Tools), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -129,14 +135,35 @@ func browserBridgeExtraHosts(cfg *config.Config) []string {
 	return []string{"host.docker.internal:host-gateway"}
 }
 
+// loopbackBridgeEnv returns the `TOOLBOX_LOOPBACK_BRIDGE_*` env entries the
+// container needs to enable the runtime bridge for the requested publish
+// specs. Returns nil when bridgeLoopback is false. When bridgeLoopback is
+// true with no published container ports, only the no-publish marker env
+// is emitted so the in-container init.d/70 script can warn the user about
+// the no-op. When ports are present, the deduplicated, insertion-ordered
+// list is comma-joined into TOOLBOX_LOOPBACK_BRIDGE_PORTS.
+func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []string {
+	if !bridgeLoopback {
+		return nil
+	}
+	if len(uniqContainerPorts) == 0 {
+		// init.d/70 reads this marker to emit the "enabled but no -p ports
+		// published — skipping" warning. The marker is intentionally absent
+		// in the happy path; a non-empty TOOLBOX_LOOPBACK_BRIDGE_PORTS is
+		// itself the "enabled" signal.
+		return []string{"TOOLBOX_LOOPBACK_BRIDGE_NO_PUBLISH=1"}
+	}
+	return []string{"TOOLBOX_LOOPBACK_BRIDGE_PORTS=" + strings.Join(uniqContainerPorts, ",")}
+}
+
 // Merge returns the pure-data plan shape: identical to Plan but composes
 // mountplan.Merge (no fs side effects) and exposes Binds as the post-merge
 // config.Mount slice. Tests asserting the contract construct merged plans
 // without t.TempDir / HOME setup.
-func Merge(cfg *config.Config, workspace string, ports []string, cliVersion string) (*MergedSessionPlan, error) {
+func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, cliVersion string) (*MergedSessionPlan, error) {
 	workspace = normalizeWorkspace(workspace)
 
-	exposed, bindings, err := parsePublishSpecs(ports)
+	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +193,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, cliVersion stri
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           shellEnv(workspace, workingDir, cfg.SDD, cfg.Tools),
+		Env:           append(shellEnv(workspace, workingDir, cfg.SDD, cfg.Tools), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -303,19 +330,24 @@ func normalizeWorkspace(workspace string) string {
 // --- Port Parsing ---
 
 // parsePublishSpecs parses "docker run -p"-style publish specs into
-// Docker's ExposedPorts + PortBindings. Defaults the host IP to
-// 127.0.0.1 (not 0.0.0.0) so OAuth callbacks stay loopback-only
-// instead of being exposed to the LAN.
-func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
+// Docker's ExposedPorts + PortBindings, and the ordered slice of unique
+// container ports (insertion order; deduplicated) used by callers that
+// need to iterate ports deterministically — currently loopbackBridgeEnv,
+// which forwards each to its socat listener. Defaults the host IP to
+// 127.0.0.1 (not 0.0.0.0) so OAuth callbacks stay loopback-only instead
+// of being exposed to the LAN.
+func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, error) {
 	if len(specs) == 0 {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	exposed := nat.PortSet{}
 	bindings := nat.PortMap{}
+	seenPorts := make(map[string]struct{}, len(specs))
+	orderedPorts := make([]string, 0, len(specs))
 	for _, spec := range specs {
 		mappings, err := nat.ParsePortSpec(spec)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
+			return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
 		}
 		for _, m := range mappings {
 			exposed[m.Port] = struct{}{}
@@ -324,9 +356,15 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, error) {
 				b.HostIP = "127.0.0.1"
 			}
 			bindings[m.Port] = append(bindings[m.Port], b)
+
+			port := m.Port.Port() // drops "/tcp" suffix
+			if _, dup := seenPorts[port]; !dup {
+				seenPorts[port] = struct{}{}
+				orderedPorts = append(orderedPorts, port)
+			}
 		}
 	}
-	return exposed, bindings, nil
+	return exposed, bindings, orderedPorts, nil
 }
 
 // --- Workspace Env ---

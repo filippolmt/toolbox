@@ -166,6 +166,7 @@ check_zsh() {
 
 check_required "node"       node --version
 check_required "npm"        npm --version
+check_required "socat"      sh -c 'socat -V 2>&1 | head -n1'
 check_required "python3"    python3 --version
 check_required "git"        git --version
 check_required "rg"         rg --version
@@ -274,8 +275,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -lt 12 ]; then
-    echo "FAILED: only $count init.d/*.sh found, expected >= 12 (catalog declares 12 InitScripts)"
+if [ "$count" -lt 13 ]; then
+    echo "FAILED: only $count init.d/*.sh found, expected >= 13 (catalog declares 13 InitScripts)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

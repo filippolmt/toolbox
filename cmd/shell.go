@@ -15,6 +15,7 @@ import (
 var shellPublish []string
 var shellCreate bool
 var shellPath string
+var shellBridgeLoopback bool
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
@@ -36,7 +37,15 @@ Use --publish/-p to forward a host port into the container. Accepts the
 same formats as "docker run -p" (e.g. "7171", "7171:7171",
 "127.0.0.1:7171:7171"). When the host IP is omitted it defaults to
 127.0.0.1 — useful for OAuth callbacks from tools like gh/glab that listen
-on localhost inside the container.`,
+on localhost inside the container.
+
+Use --bridge-loopback/-B together with -p when the in-container CLI binds
+its OAuth callback to container loopback (127.0.0.1) rather than 0.0.0.0
+— Docker port-forward delivers to eth0, and a loopback listener never
+sees those packets. The bridge spawns one socat per published container
+port that listens on eth0 and forwards to 127.0.0.1, making the listener
+reachable from the host browser. See docs/runtime-notes.md#loopback-bridge
+for recipes (shopify, wrangler) and the dynamic-port carve-out (cf).`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runShell,
 }
@@ -60,7 +69,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, ws, shellPublish, version.Version)
+	plan, err := sessionplan.Plan(cfg, ws, shellPublish, shellBridgeLoopback, version.Version)
 	if err != nil {
 		return err
 	}
@@ -97,6 +106,10 @@ func init() {
 		"publish a container port to the host (repeatable). Format: '[host_ip:]host_port:container_port' or 'port'. "+
 			"Examples: 7171, 7171:7171, 127.0.0.1:7171:7171, 0.0.0.0:8000:8000. "+
 			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
+	shellCmd.Flags().BoolVarP(&shellBridgeLoopback, "bridge-loopback", "B", false,
+		"Forward published ports to container loopback so CLIs that bind 127.0.0.1 "+
+			"are reachable from the host browser (e.g. shopify/wrangler OAuth callbacks). "+
+			"Requires at least one -p; see docs/runtime-notes.md#loopback-bridge.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
 	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)

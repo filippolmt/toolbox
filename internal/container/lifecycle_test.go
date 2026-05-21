@@ -139,7 +139,7 @@ func testWorkspace(t *testing.T) string {
 // every test body.
 func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(testConfig(), workspace, publish, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, publish, false, "dev")
 	if err != nil {
 		t.Fatalf("testPlan: %v", err)
 	}
@@ -150,7 +150,7 @@ func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.Ses
 // codex disabled, custom tools triggering local-build).
 func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(cfg, workspace, publish, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, publish, false, "dev")
 	if err != nil {
 		t.Fatalf("testPlanWithCfg: %v", err)
 	}
@@ -1117,7 +1117,7 @@ func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
 		Tools: map[string]bool{"zsh": false},
 	}
 
-	plan, err := sessionplan.Plan(cfg, ws, nil, "dev")
+	plan, err := sessionplan.Plan(cfg, ws, nil, false, "dev")
 	if err == nil {
 		t.Fatal("sessionplan.Plan should have errored for shell:zsh + tools.zsh:false")
 	}
