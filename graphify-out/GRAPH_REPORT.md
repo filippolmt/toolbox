@@ -1,13 +1,18 @@
-# Graph Report - .  (2026-05-21)
+# Graph Report - toolbox  (2026-05-21)
 
 ## Corpus Check
-- 53 files · ~86,781 words
+- 113 files · ~72,279 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1424 nodes · 2110 edges · 142 communities (94 shown, 48 thin omitted)
-- Extraction: 81% EXTRACTED · 19% INFERRED · 0% AMBIGUOUS · INFERRED: 392 edges (avg confidence: 0.81)
-- Token cost: 206,156 input · 51,538 output
+- 1490 nodes · 2248 edges · 142 communities (92 shown, 50 thin omitted)
+- Extraction: 82% EXTRACTED · 18% INFERRED · 0% AMBIGUOUS · INFERRED: 408 edges (avg confidence: 0.81)
+- Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `88437610`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Browser Bridge Agent Core|Browser Bridge Agent Core]]
@@ -76,7 +81,6 @@
 - [[_COMMUNITY_Verify Cluster|Verify Cluster]]
 - [[_COMMUNITY_Opsx Cluster|Opsx Cluster]]
 - [[_COMMUNITY_Cmd Cluster|Cmd Cluster]]
-- [[_COMMUNITY_Cmd Cluster|Cmd Cluster]]
 - [[_COMMUNITY_Improve-Codebase-Architecture Cluster|Improve-Codebase-Architecture Cluster]]
 - [[_COMMUNITY_Openspec-Propose Cluster|Openspec-Propose Cluster]]
 - [[_COMMUNITY_References Cluster|References Cluster]]
@@ -142,16 +146,16 @@
 - [[_COMMUNITY_Sessionplan Cluster|Sessionplan Cluster]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `mkdirAll()` - 32 edges
+1. `mkdirAll()` - 37 edges
 2. `Shell()` - 30 edges
-3. `Plan()` - 25 edges
-4. `testConfig()` - 22 edges
+3. `testConfig()` - 27 edges
+4. `Plan()` - 26 edges
 5. `runSDDInit()` - 19 edges
 6. `stubExecShell()` - 19 edges
-7. `LANGUAGE.md (architecture vocabulary)` - 19 edges
-8. `testWorkspace()` - 18 edges
-9. `Order rationale` - 18 edges
-10. `testPlan()` - 17 edges
+7. `Glossary` - 19 edges
+8. `LANGUAGE.md (architecture vocabulary)` - 19 edges
+9. `resolveShellWorkspace()` - 18 edges
+10. `testWorkspace()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `config.go (Viper config example)` --semantically_similar_to--> `Config load order`  [INFERRED] [semantically similar]
@@ -160,10 +164,10 @@
   .agents/skills/improve-codebase-architecture/LANGUAGE.md → CONTEXT.md
 - `ContainerDir constant` --conceptually_related_to--> `mounts_root retarget mechanism`  [INFERRED]
   internal/browserbridge/paths.go → docs/runtime-notes.md
-- `TestRenderPlist_ContainsExpectedKeys()` --semantically_similar_to--> `renderUnit()`  [INFERRED] [semantically similar]
-  agent_darwin_test.go → agent_linux.go
-- `Browser Bridge Implementation Plan` --references--> `renderUnit()`  [EXTRACTED]
-  docs/superpowers/plans/2026-05-21-browser-bridge.md → agent_linux.go
+- `Why does Shell() bridge so many communities` --references--> `runShell()`  [EXTRACTED]
+  graphify-out/memory/query_20260517_075631_why_does_shell___bridge_container_lifecycle_to_cli.md → cmd/shell.go
+- `Why does Lookup() bridge SDD env to init scaffold` --references--> `runSDDInit()`  [EXTRACTED]
+  graphify-out/memory/query_20260517_075751_why_does_lookup___bridge_sdd_env_contract__c1__to.md → cmd/sdd.go
 
 ## Hyperedges (group relationships)
 - **Architecture vocabulary set (module/interface/depth/seam/adapter/leverage/locality)** — improve_codebase_architecture_module, improve_codebase_architecture_interface, improve_codebase_architecture_depth, improve_codebase_architecture_seam, improve_codebase_architecture_adapter, improve_codebase_architecture_leverage, improve_codebase_architecture_locality [EXTRACTED 1.00]
@@ -177,19 +181,19 @@
 - **Renovate pin guard: registry rows + regex + test** — sdd_registry_skills, concept_renovate_pin_invariant, sdd_registry_test_testrenovateregexmatcheseverysddpin [INFERRED 0.85]
 - **Container naming: workspace hash vs named-shell disjoint** — sessionplan_plan_containernamefor, sessionplan_plan_namedcontainername, concept_named_vs_workspace_container [INFERRED 0.85]
 
-## Communities (142 total, 48 thin omitted)
+## Communities (142 total, 50 thin omitted)
 
 ### Community 0 - "Browser Bridge Agent Core"
-Cohesion: 0.06
-Nodes (48): AGENTS.md symlink to CLAUDE.md, Agent interface, AgentStatus, handler (HTTP), hostOpenCommand(), newHandler(), newRateLimiter(), openLogger() (+40 more)
+Cohesion: 0.08
+Nodes (33): AGENTS.md symlink to CLAUDE.md, Agent interface, AgentStatus, fakeAgent, HostState, Install(), Status(), TestInstall_WritesTokenAndCallsAgent() (+25 more)
 
 ### Community 1 - "Teardown & Config Output"
-Cohesion: 0.06
-Nodes (45): Config, watchConfig(), colorExamples(), isTerminal(), outputExample(), printUsers(), User, --output flag for machine-readable formats (+37 more)
+Cohesion: 0.27
+Nodes (15): cached(), isAuthError(), markerPath(), pull(), record(), RefreshIfStale(), registryOf(), TestCachedFreshMarker() (+7 more)
 
 ### Community 2 - "Toolbox Init Command"
 Cohesion: 0.08
-Nodes (50): runInit(), chdirTemp(), TestInitForceOverwrites(), TestInitRefusesOverwriteWithoutForce(), TestInitWritesAnnotatedYAML(), usageError — flag/arg error wrapper for exit code 2, gitignoreFenceEnd(), gitignoreFenceStart() (+42 more)
+Nodes (49): runInit(), chdirTemp(), TestInitForceOverwrites(), TestInitRefusesOverwriteWithoutForce(), TestInitWritesAnnotatedYAML(), usageError — flag/arg error wrapper for exit code 2, gitignoreFenceEnd(), gitignoreFenceStart() (+41 more)
 
 ### Community 3 - "Mountplan Defaults & Auth Isolation"
 Cohesion: 0.06
@@ -197,43 +201,43 @@ Nodes (48): Credential isolation under ~/.toolbox/, Hash-neutral feature toggle,
 
 ### Community 4 - "Container Shell Lifecycle"
 Cohesion: 0.09
-Nodes (40): DefaultTools(), createAndStart(), dispatchOp(), formatPublishMismatch(), Shell(), Stop(), StopAll(), captureStderr() (+32 more)
+Nodes (35): Shell(), captureStderr(), stubExecShell(), testConfig(), testPlan(), testPlanWithCfg(), TestShellAutoBuildsCustomImage(), TestShellContainerNaming() (+27 more)
 
 ### Community 5 - "Browser Bridge Plan Snippets"
 Cohesion: 0.06
 Nodes (52): code:go (//go:build !darwin && !linux), code:bash (git add internal/browserbridge/agent.go internal/browserbrid), code:go (package browserbridge), code:bash (git add internal/browserbridge/install.go internal/browserbr), code:go (package cmd), code:bash (git add cmd/browser_bridge.go cmd/browser_bridge_test.go), code:block4 (make go-test), code:go (// BrowserBridge toggles the host-side ~/.toolbox/browser RO) (+44 more)
 
 ### Community 6 - "Docker Identity & UID Mapping"
-Cohesion: 0.05
-Nodes (41): Docker CLI Checksum policy, Docker Identity, Host UID Mapping, dockerSockGroups(), Resolve(), TestDockerSockGroupsAppendsHostGIDOnLinux(), TestDockerSockGroupsFallbackWhenStatFails(), TestDockerSockGroupsIncludesRootForDesktopCase() (+33 more)
+Cohesion: 0.23
+Nodes (9): Docker Identity, dockerSockGroups(), Resolve(), TestDockerSockGroupsAppendsHostGIDOnLinux(), TestDockerSockGroupsFallbackWhenStatFails(), TestDockerSockGroupsIncludesRootForDesktopCase(), TestDockerSockGroupsMatchesOnTargetNotSource(), TestDockerSockGroupsReturnsNilWhenSockNotMounted() (+1 more)
 
 ### Community 7 - "Architecture Improvement Skill"
 Cohesion: 0.05
-Nodes (41): Adapter, Deletion test, Depth (leverage at interface), Design It Twice (Ousterhout), Interface (architectural), Leverage, Locality, Module (+33 more)
+Nodes (42): Adapter, Deletion test, Depth (leverage at interface), Design It Twice (Ousterhout), Interface (architectural), Leverage, Locality, Ports & Adapters dependency category (+34 more)
 
 ### Community 8 - "Per-OS Bridge Agents"
-Cohesion: 0.06
-Nodes (22): darwinAgent, NewAgent(), renderPlist(), TestRenderPlist_ContainsExpectedKeys(), ErrUnsupported, linuxAgent.Install method, linuxAgent struct, NewAgent() (+14 more)
+Cohesion: 0.07
+Nodes (23): linuxAgent.Install method, linuxAgent struct, NewAgent(), renderUnit(), linuxAgent.Status method, TestRenderUnit_ContainsExpectedKeys(), linux unitName constant, systemd unitTemplate (+15 more)
 
 ### Community 9 - "CI Workflows & Decisions"
 Cohesion: 0.06
 Nodes (36): internal/build/assets/Dockerfile (runtime image), golangci-lint, Decision: Cobra + Viper over kong/urfave, Decision: Debian slim over Alpine (musl breaks Claude Code), Decision: Docker socket mount over DinD, STATE.md (project state), Milestone v1.3 Architecture Deepening (shipped 2026-05-07), Phase 01 image-foundation (+28 more)
 
 ### Community 10 - "Named Shell Management"
-Cohesion: 0.12
-Nodes (29): bootstrapMissingNamedShell(), createHint(), defaultShellPath(), ensureNamedShellPath(), missingPathHint(), missingShellHint(), promptPath(), promptYesNo() (+21 more)
+Cohesion: 0.10
+Nodes (35): bootstrapMissingNamedShell(), createHint(), defaultShellPath(), ensureNamedShellPath(), missingPathHint(), missingShellHint(), promptPath(), promptYesNo() (+27 more)
 
 ### Community 11 - "CLI Command Examples"
 Cohesion: 0.07
-Nodes (32): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (toolbox shell -p 8976:8976), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest), code:bash (toolbox version) (+24 more)
+Nodes (36): Browser bridge, CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:yaml (mounts:), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (toolbox shell -p 8976:8976), code:bash (toolbox browser-bridge install     # generate token, write L), code:bash (brew upgrade toolbox) (+28 more)
 
 ### Community 12 - "OpenSpec References"
 Cohesion: 0.07
 Nodes (29): Check for context, code:block1 (┌─────────────────────────────────────────┐), code:bash (openspec list --json), Ending Discovery, Guardrails, OpenSpec Awareness, The Stance, What You Don't Have To Do (+21 more)
 
 ### Community 13 - "SDD Registry & Renovate"
-Cohesion: 0.09
-Nodes (27): Gitignore fenced block (Skill.GitignoreEntries), Renovate regex bumps SDD pins, TestPlanCanonicalPipeline(), TestPlanGlobalMalformedIsBestEffort(), const EnvSkillPrefix = TOOLBOX_SDD_, Keys(), Lookup(), rationale: Versions Renovate-bumped via customManager keyed on NpmPackage (+19 more)
+Cohesion: 0.16
+Nodes (14): Gitignore fenced block (Skill.GitignoreEntries), rationale: Versions Renovate-bumped via customManager keyed on NpmPackage, Skill (struct), Skill entry: bmad (bmad-method), Skill.BinName, Skill.GitignoreEntries, Skill.InstallSteps, Skill.Key (+6 more)
 
 ### Community 14 - "Tool Catalog Phase 07"
 Cohesion: 0.07
@@ -244,24 +248,24 @@ Cohesion: 0.09
 Nodes (22): flagExamples(), main(), Execute(), initConfig(), rootCmd, serveCmd, versionCmd, Version via ldflags injection (+14 more)
 
 ### Community 16 - "Runplan Pipeline"
-Cohesion: 0.10
-Nodes (14): concept: Plan-family pipeline (Config -> Mount -> Session -> Run), Action, notFoundErr, Op, Action enum (Connect/Start/Create), Compute(), rationale: nil ContainerJSONBase routes to ActionCreate to avoid panicking on half-populated inspect record, Op struct (Action, ExistingID) (+6 more)
+Cohesion: 0.17
+Nodes (13): concept: Plan-family pipeline (Config -> Mount -> Session -> Run), Action, Op, Action enum (Connect/Start/Create), Compute(), rationale: nil ContainerJSONBase routes to ActionCreate to avoid panicking on half-populated inspect record, Op struct (Action, ExistingID), TestActionString() (+5 more)
 
 ### Community 17 - "Session Plan Tests"
-Cohesion: 0.26
-Nodes (24): Plan(), indexEnv(), mkdirAll(), testConfig(), TestMergeAlsoComputesCmd(), TestMergeIsPure(), TestMergeRejectsBadMountsRoot(), TestMergeRejectsBadPort() (+16 more)
+Cohesion: 0.06
+Nodes (75): host.docker.internal:host-gateway for browser bridge, 127.0.0.1 default HostIP for --publish, Named-shell vs workspace container name disjointness, concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, TestMerge_BrowserBridgeFalseDropsMount(), TestMerge_BrowserBridgeTrueKeepsMount(), TestPlanEndToEnd(), const EnvEnabled = TOOLBOX_SDD_ENABLED (+67 more)
 
 ### Community 18 - "Specs & Architecture"
 Cohesion: 0.09
 Nodes (20): Architecture, code:block1 (┌─ host ────────────────────────────────────────────────────), code:go (type Skill struct {), code:go ({), code:bash (_sdd_manifests_var="TOOLBOX_SDD_${_sdd_upper}_MANIFESTS"), code:bash (# _sdd_regen_gitignore_fence <skill_key> <manifests_csv> <ex), code:bash (if [ "$_sdd_failed" = "0" ] && [ -n "$_sdd_manifests" ]; the), code:go (wantsGitignore := len(skill.GitignoreEntries) > 0) (+12 more)
 
 ### Community 19 - "Session Plan Core"
-Cohesion: 0.16
-Nodes (20): 127.0.0.1 default HostIP for --publish, const EnvEnabled = TOOLBOX_SDD_ENABLED, const EnvWorkspaceHash = TOOLBOX_SDD_WORKSPACE_HASH, const StepSeparator = ;, Image, MergedSessionPlan, ContainerNameFor(), rationale: Field-per-env-var encoding (one var per Skill field) replaces pipe-packed value — typed host/container boundary, bash decodes without fragile splitting (+12 more)
+Cohesion: 0.15
+Nodes (7): darwinAgent, NewAgent(), renderPlist(), TestRenderPlist_ContainsExpectedKeys(), ErrUnsupported, NewAgent(), darwinAgent
 
 ### Community 20 - "Add-CLI Skill"
-Cohesion: 0.11
-Nodes (18): 1. Research upstream, 2. Edit the Dockerfile, 3. `internal/config/tools.go`, 4. `internal/build/assets/smoke-test.sh`, 6. Persistent state (auth, config, cache), 6a. ENV-var overrides for keyring / config-dir, 7. README, /add-cli (+10 more)
+Cohesion: 0.10
+Nodes (19): 1. Research upstream, 2. Edit the Dockerfile, 3. `internal/config/tools.go`, 4. `internal/build/assets/smoke-test.sh`, 5. `renovate.json`, 6. Persistent state (auth, config, cache), 6a. ENV-var overrides for keyring / config-dir, 7. README (+11 more)
 
 ### Community 21 - "OpenSpec Explore Mode"
 Cohesion: 0.14
@@ -272,20 +276,20 @@ Cohesion: 0.23
 Nodes (13): ensureSource(), expandHome(), resolveAll(), TestExpandHome(), TestResolveAllCreatesMissingWhenRequested(), TestResolveAllKeepsNonEmptyDirEvenWithSymlinkFrom(), TestResolveAllReadOnlyMode(), TestResolveAllRelativeSourceCreatesUnderCWD() (+5 more)
 
 ### Community 23 - "Container Exec & Attach"
-Cohesion: 0.24
-Nodes (8): execShell(), shellExecEnv(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_ForwardsTermEnv(), TestExecShell_NonTTYStdin(), TestShellExecEnv(), attachMock
+Cohesion: 0.13
+Nodes (15): execShell(), shellExecEnv(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_ForwardsTermEnv(), TestExecShell_NonTTYStdin(), TestShellExecEnv(), attachMock (+7 more)
 
 ### Community 24 - "Golang CLI Skill"
 Cohesion: 0.13
 Nodes (14): Argument Validation, code:block1 (myapp/), Exit Codes, Go CLI Best Practices, I/O Patterns, Project Structure, Quick Reference, Related Skills (+6 more)
 
 ### Community 25 - "CLI Arg Validation"
-Cohesion: 0.16
-Nodes (10): TestUsageArgsWraps(), cmd/build.go — toolbox build subcommand, cmd/completion.go — toolbox completion subcommand, cmd/config.go — toolbox config show/example, cmd/init.go — toolbox init subcommand, usageArgs(), cmd/sdd.go — toolbox sdd init/list subcommands (NEW), cmd/shell.go — toolbox shell subcommand (+2 more)
+Cohesion: 0.07
+Nodes (27): TestUsageArgsWraps(), cmd/build.go — toolbox build subcommand, cmd/completion.go — toolbox completion subcommand, cmd/config.go — toolbox config show/example, TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), resetCmdState() (+19 more)
 
 ### Community 26 - "Browser Bridge URL Allowlist"
-Cohesion: 0.19
-Nodes (11): allowedSchemes, MaxURLLen, TestValidateURL_Accepts(), TestValidateURL_Rejects(), ValidateURL(), handler.authOK, handler.handleOpen, rateLimiter (token bucket) (+3 more)
+Cohesion: 0.09
+Nodes (32): allowedSchemes, MaxURLLen, TestValidateURL_Accepts(), TestValidateURL_Rejects(), ValidateURL(), handler.authOK, handler.handleOpen, handler (HTTP) (+24 more)
 
 ### Community 27 - "Config Plan Tests"
 Cohesion: 0.19
@@ -296,48 +300,48 @@ Cohesion: 0.15
 Nodes (12): enabledPlugins, andrej-karpathy-skills@karpathy-skills, claude-code-setup@claude-plugins-official, code-review@claude-plugins-official, code-simplifier@claude-plugins-official, commit-commands@claude-plugins-official, gopls-lsp@claude-plugins-official, pr-review-toolkit@claude-plugins-official (+4 more)
 
 ### Community 29 - "Project Gotchas"
-Cohesion: 0.15
-Nodes (11): Auth Isolation under ~/.toolbox/, init.d/<NN>-<tool>.sh 3 synced edits, rtk hook auto-wiring + privacy lockdown, Skill discovery paths diverge (Claude vs Codex), Toolbox (containerised dev environment), Two Docker version streams, Architecture, Code & language (+3 more)
+Cohesion: 0.24
+Nodes (9): rtk hook auto-wiring + privacy lockdown, Skill discovery paths diverge (Claude vs Codex), Toolbox (containerised dev environment), Two Docker version streams, Architecture, Code & language, Dev commands, Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md) (+1 more)
 
 ### Community 30 - "Config Plan Group"
-Cohesion: 0.41
-Nodes (11): Config Plan, Image Plan, Image selection / local-<hash> tag, Init Sequence, Mount Plan, Run Plan, Session Plan, Teardown (+3 more)
+Cohesion: 0.16
+Nodes (19): Image Plan, Image selection / local-<hash> tag, Init Sequence, init.d/<NN>-<tool>.sh 3 synced edits, Run Plan, Session Plan, Teardown, Tool Catalog (+11 more)
 
 ### Community 31 - "References Cluster"
 Cohesion: 0.17
 Nodes (11): code:block1 (my-monorepo/), code:bash (go work init), code:go (go 1.21), code:bash (go work use ./services/auth), code:go (module github.com/user/my-monorepo/services/user), code:bash (go work init              # Initialize new workspace), Creating a Workspace, Go Workspaces for Multi-Package Repositories (+3 more)
 
 ### Community 32 - "Sessionplan Cluster"
-Cohesion: 0.23
-Nodes (9): NestedSandboxSecurityOpt(), ResolveShellCmd(), ShellMismatchError struct, TestNestedSandboxSecurityOptCodexDisabled(), TestNestedSandboxSecurityOptDefault(), TestResolveShellCmdBash(), TestResolveShellCmdZshDisabledError(), TestResolveShellCmdZshEnabled() (+1 more)
+Cohesion: 0.16
+Nodes (12): Catalog entry → image hash, Claude Code env-var matrix, Codex nested sandbox, Container lifecycle, Image selection, Image versions, Port bindings are fixed at container creation, rtk hook auto-wiring + telemetry/tee lockdown (+4 more)
 
 ### Community 33 - "10-Init-Sequence Cluster"
 Cohesion: 0.22
 Nodes (11): Plan 10-06 SUMMARY: extract MCP plugin auto-build to 50-mcp-plugins.sh, Plan 10-07 SUMMARY: init.d iterator wiring + smoke-test bijection (KEYSTONE), Plan 10-08 SUMMARY: Init Sequence glossary entry in CONTEXT.md, Plan 10-09 SUMMARY: CLAUDE.md milestone-wide final pass (DOCS-02), Phase 10 VERIFICATION: 6/7 truths verified, 3 human-needed items, D-04: single-binary self-gate at script top (npm is the owner), init.d bijection: catalog InitScript <-> embed.FS <-> in-image /usr/local/lib/toolbox/init.d, Marker log path ~/.toolbox-state/init/<name>.log (Pitfall 1) (+3 more)
 
 ### Community 34 - "Config Cluster"
-Cohesion: 0.18
-Nodes (8): internal/sdd Skill registry (conceptual), `toolbox sdd init gsd` (replaces legacy hook), Config.SDD (top-level, hash-neutral), config.Config struct, Render(), TestRenderContainsAllToolsAndMounts(), startup.d README, SDD outside Tools map = hash-neutral
+Cohesion: 0.06
+Nodes (29): BuildArg(), Defaults(), catalog.Entries (canonical tool table), IsDefault(), TestBuildArgLookup(), TestCanonicalEncodingDeterministic(), TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(), TestIsDefaultMatchesLegacy() (+21 more)
 
 ### Community 35 - "cmd package (cobra root) Group"
-Cohesion: 0.18
-Nodes (7): cmd package (cobra root), Docker publish to GHCR on main, Release flow (v* tag triggers GoReleaser + Homebrew), /verify skill (mirrors CI), internal/version package, Commits & PRs, Release flow
+Cohesion: 0.60
+Nodes (4): Docker publish to GHCR on main, Commits & PRs, Contributing, Release flow
 
 ### Community 36 - "Add-Cli Cluster"
-Cohesion: 0.20
-Nodes (10): /add-cli skill, Tool pinning + ARG INSTALL_<TOOL>, internal/build/assets/Dockerfile, Makefile (GO_IMAGE, GOLANGCI_IMAGE), customManagers, extends, packageRules, platformAutomerge (+2 more)
+Cohesion: 0.18
+Nodes (11): /add-cli skill, Tool pinning + ARG INSTALL_<TOOL>, /verify skill (mirrors CI), internal/build/assets/Dockerfile, Makefile (GO_IMAGE, GOLANGCI_IMAGE), customManagers, extends, packageRules (+3 more)
 
 ### Community 37 - "Golang-Project-Layout Cluster"
 Cohesion: 0.18
 Nodes (10): 12-Factor App, Architecture Decision: Ask First, Dependency Injection: Ask Next, Essential Configuration Files, Go Project Layout, Go Workspaces, Initialization Checklist, Quick Start: Choose Your Project Type (+2 more)
 
 ### Community 38 - "Browserbridge Cluster"
-Cohesion: 0.38
-Nodes (4): fakeAgent, TestInstall_WritesTokenAndCallsAgent(), TestStatus_BridgeAndAgent(), TestUninstall_RemovesStateAndCallsAgent()
+Cohesion: 0.24
+Nodes (12): HasActiveExecs(), OnShellExit(), rationale: sibling exec gate — leave container running if another shell is attached, otherwise stop+remove, StopOne(), TestHasActiveExecsFalseOnInspectError(), TestHasActiveExecsFalseOnNilContainerJSONBase(), TestHasActiveExecsTrueOnRunningSibling(), TestOnShellExitSkipsStopWhenSiblingExecRunning() (+4 more)
 
 ### Community 39 - "Catalog Cluster"
-Cohesion: 0.22
-Nodes (7): Defaults(), catalog.Entries (canonical tool table), IsDefault(), TestIsDefaultMatchesLegacy(), dockerfile bijection test, Entry, init.d bijection test
+Cohesion: 0.29
+Nodes (11): createAndStart(), dispatchOp(), Ensure, Info(), Success(), captureStderr(), TestInfoWritesToStderr(), TestOutputDoesNotWriteToStdout() (+3 more)
 
 ### Community 40 - "Config Cluster"
 Cohesion: 0.36
@@ -349,59 +353,59 @@ Nodes (8): code:bash (openspec status --change "<name>" --json), code:bash (open
 
 ### Community 42 - "Mountplan Cluster"
 Cohesion: 0.20
-Nodes (8): concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, TestPlanEndToEnd(), TestWorkspaceMirrorPath(), WorkspaceMirrorPath(), rationale: Skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild), package sdd (registry), concept: Three-step add-skill contract (row + Renovate entry + optional gitignore), package sessionplan (plan)
+Nodes (10): `cf` Cloudflare CLI skill auto-install, code:block1 (host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──), code:block2 (toolbox shell -B -p 13387:13387   # shopify store auth), code:block3 (toolbox shell -p 8877-8886:8877-8886   # cf login (sed-patch), code:block4 (# >>> sdd-managed/<name> (toolbox)), Loopback bridge, MCP plugin auto-build, SDD `.gitignore` fence (+2 more)
 
 ### Community 43 - "Startup.D Cluster"
 Cohesion: 0.20
 Nodes (9): code:block1 (~/.toolbox/startup.d/), code:block2 (mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.o), code:bash (#!/usr/bin/env bash), Disabling a hook, Examples, [`gsd.sh`](./gsd.sh) — Get-Shit-Done, How the hook runs, Startup hooks (+1 more)
 
 ### Community 44 - "Browserbridge Cluster"
-Cohesion: 0.64
-Nodes (7): doPost(), newTestHandler(), TestHandler_HealthZ(), TestHandler_OpenFails(), TestHandler_OpenOK(), TestHandler_RateLimit(), TestHandler_RejectBadURL()
+Cohesion: 0.31
+Nodes (7): Renovate regex bumps SDD pins, Lookup(), TestKeysMatchesSkills(), TestLookupReturnsRegisteredSkills(), TestRenovateRegexMatchesEverySDDPin(), TestSkillEnvKey(), resolveEnabledSkills()
 
 ### Community 45 - "Catalog Cluster"
-Cohesion: 0.25
-Nodes (4): TestCanonicalEncodingDeterministic(), TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(), WriteCanonical(), Optional Entry fields excluded from canonical encoding (D-09/D-10)
+Cohesion: 0.22
+Nodes (9): Architecture, Browser bridge, code:block5 (container                                          host), code:bash (toolbox browser-bridge uninstall   # supervisor unit + plist), Install topology, Mount gating, Security boundary, Troubleshooting (+1 more)
 
 ### Community 46 - "Config Cluster"
 Cohesion: 0.22
-Nodes (7): Config, Load(), TestIsDefaultTools(), TestLoadSmoke(), TestToolBuildArgGo(), Mount, NamedShell
+Nodes (8): Config, Load(), TestValidateShellAcceptsSupported(), TestValidateShellRejectsUnknown(), TestLoadSmoke(), ValidateShell(), Mount, NamedShell
 
 ### Community 47 - "Cmd Cluster"
-Cohesion: 0.31
-Nodes (5): cfg — package-level resolved *config.Config consumed by subcommands, Execute(), initConfig(), usageError, internal/config — Plan / Config resolution
+Cohesion: 0.25
+Nodes (8): Docker CLI Checksum policy, Docker CLI checksum, Host UID mapping, Image build, rtk arm64 is built from source, Rust base image tag scheme, Slim Rust images ship no `curl` / `ca-certificates`, Tool version pinning + `ARG INSTALL_<TOOL>` pattern
 
 ### Community 48 - "Cmd Cluster"
-Cohesion: 0.22
-Nodes (5): TestSignalCtxReturnsCancellableContext(), runStop(), cmd/stop.go stopCmd, NewClient(), StopByName()
+Cohesion: 0.13
+Nodes (18): runBuild(), cmd/shell_named.go — named shell resolution + bootstrap, runShell(), shellCmd cobra command, signalCtx(), TestSignalCtxReturnsCancellableContext(), runStop(), cmd/stop.go stopCmd (+10 more)
 
 ### Community 50 - "Codex nested sandbox (seccomp= Group"
-Cohesion: 0.25
-Nodes (7): Codex nested sandbox (seccomp=unconfined), Mounts patch/replace/append/remove semantics, mounts_root (retarget every default), Port bindings fixed at container creation, --publish/-p port forwarding, Startup hooks (~/.toolbox/startup.d/), Wrangler OAuth login callback-host quirk
+Cohesion: 0.16
+Nodes (13): Auth Isolation under ~/.toolbox/, Codex nested sandbox (seccomp=unconfined), Config load order, Config Plan, Module, Mount Plan, Mounts patch/replace/append/remove semantics, mounts_root (retarget every default) (+5 more)
 
 ### Community 51 - "Mountplan Cluster"
 Cohesion: 0.29
-Nodes (4): host.docker.internal:host-gateway for browser bridge, TestMerge_BrowserBridgeFalseDropsMount(), TestMerge_BrowserBridgeTrueKeepsMount(), browserBridgeExtraHosts()
+Nodes (6): TestPlanCanonicalPipeline(), TestPlanGlobalMalformedIsBestEffort(), const EnvSkillPrefix = TOOLBOX_SDD_, Keys(), SkillEnvKey(), Skill
 
 ### Community 52 - "Config Cluster"
 Cohesion: 0.33
-Nodes (6): BuildArg(), TestBuildArgLookup(), TestKnownToolsIncludesZsh(), TestValidateShellAcceptsSupported(), TestValidateShellRejectsUnknown(), ValidateShell()
+Nodes (6): Host UID Mapping, Docker CLI checksum gotcha (T-01-08), rtk telemetry/tee lockdown, SDD .gitignore fence contract, Claude vs Codex skill discovery paths, CLAUDE.md gotchas index
 
 ### Community 53 - "Openspec-Apply-Change Cluster"
 Cohesion: 0.48
 Nodes (5): code:bash (openspec status --change "<name>" --json), code:bash (openspec instructions apply --change "<name>" --json), code:block3 (## Implementing: <change-name> (schema: <schema-name>)), code:block4 (## Implementation Complete), code:block5 (## Implementation Paused)
 
 ### Community 54 - "Cmd Cluster"
-Cohesion: 0.38
-Nodes (4): TestWriteResolvedConfigDeterministic(), TestWriteResolvedConfigEmptyMounts(), TestWriteResolvedConfigNilConfigErrors(), writeResolvedConfig()
+Cohesion: 0.33
+Nodes (6): Auth isolation under `~/.toolbox/`, Mounts & auth isolation, `mounts:` merge semantics, `mounts_root` retarget, mounts_root retarget config, mounts_root retarget mechanism
 
 ### Community 55 - "Improve-Codebase-Architecture Cluster"
 Cohesion: 0.29
 Nodes (6): 1. Explore, 2. Present candidates, 3. Grilling loop, Glossary, Improve Codebase Architecture, Process
 
 ### Community 56 - "Examples Cluster"
-Cohesion: 0.38
-Nodes (7): Config load order, args.go (Cobra arg validation example), cli_test.go (Cobra programmatic test example), completion.go (shell completion example), config.go (Viper config example), exit_codes.go (error-to-exit-code pattern), golang-cli skill
+Cohesion: 0.60
+Nodes (5): args.go (Cobra arg validation example), cli_test.go (Cobra programmatic test example), completion.go (shell completion example), exit_codes.go (error-to-exit-code pattern), golang-cli skill
 
 ### Community 57 - "AGENTS.md Group"
 Cohesion: 0.29
@@ -419,14 +423,6 @@ Nodes (7): Single-binary self-gate pattern (D-04): `command -v <tool> || exit 0`
 Cohesion: 0.29
 Nodes (7): Directory Layout, code:block1 (project/), code:block2 (my-tool/), code:block3 (my-library/), Libraries (Reusable Code), Small Projects (Single Binary), Universal Layout (Most Projects)
 
-### Community 61 - "Cmd Cluster"
-Cohesion: 0.52
-Nodes (6): resetCmdState(), TestInitConfigAppliesDefaults(), TestInitConfigExplicitFileIsRead(), TestInitConfigProjectFileFromCWD(), TestInitConfigProjectFileStopsAtHome(), TestInitConfigProjectFileWalksUpFromSubdir()
-
-### Community 62 - "Sessionplan Cluster"
-Cohesion: 0.33
-Nodes (7): validateShellName(), Named-shell vs workspace container name disjointness, NamedContainerName(), NamedContainerNameFromSanitized(), SanitizeShellName(), TestNamedContainerName(), TestNamedContainerNameDisjointFromHashFormat()
-
 ### Community 63 - "Verify Cluster"
 Cohesion: 0.29
 Nodes (6): code:block1 (lint:       OK | FAIL), Order matters, Preconditions, Reporting, /verify, What not to do
@@ -435,13 +431,9 @@ Nodes (6): code:block1 (lint:       OK | FAIL), Order matters, Preconditions, Re
 Cohesion: 0.33
 Nodes (5): code:bash (mkdir -p openspec/changes/archive), code:bash (mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-), code:block3 (## Archive Complete), code:block5 (## Archive Complete (with warnings)), code:block6 (## Archive Failed)
 
-### Community 65 - "Cmd Cluster"
-Cohesion: 0.33
-Nodes (4): runBuild(), internal/build — image build + ResolveImage + BuildArgs, internal/container — Docker SDK client + Shell driver, internal/ui — Info/Warn user-facing output
-
 ### Community 66 - "Cmd Cluster"
-Cohesion: 0.40
-Nodes (4): printBrowserBridgeTipIfNeeded(), runShell(), shellCmd cobra command, Why does Shell() bridge so many communities
+Cohesion: 0.50
+Nodes (3): Refresh(), TestRefreshNoOpForLocalImage(), image readiness two-phase strategy (Refresh+Ensure)
 
 ### Community 67 - "Improve-Codebase-Architecture Cluster"
 Cohesion: 0.33
@@ -508,20 +500,20 @@ Cohesion: 0.67
 Nodes (3): goreleaser/goreleaser-action@v7, HOMEBREW_TAP_TOKEN secret for homebrew tap, Release workflow (GoReleaser on v* tag)
 
 ## Knowledge Gaps
-- **400 isolated node(s):** `version`, `source`, `sourceType`, `skillPath`, `computedHash` (+395 more)
+- **415 isolated node(s):** `version`, `$schema`, `extends`, `platformAutomerge`, `postUpdateOptions` (+410 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **48 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **50 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `mkdirAll()` connect `Session Plan Tests` to `Browser Bridge Agent Core`, `Teardown & Config Output`, `Per-OS Bridge Agents`, `Named Shell Management`, `Mountplan Cluster`, `Mountplan Resolve`, `Config Plan Tests`, `Cmd Cluster`?**
-  _High betweenness centrality (0.125) - this node is a cross-community bridge._
-- **Why does `runShell()` connect `Cmd Cluster` to `Cmd Cluster`, `Container Shell Lifecycle`, `Named Shell Management`, `Cmd Cluster`, `Cmd Cluster`, `CLI Arg Validation`, `Sessionplan Cluster`?**
-  _High betweenness centrality (0.097) - this node is a cross-community bridge._
-- **Why does `Shell()` connect `Container Shell Lifecycle` to `Teardown & Config Output`, `Cmd Cluster`, `Mountplan Defaults & Auth Isolation`, `Runplan Pipeline`, `Session Plan Core`, `Container Exec & Attach`?**
-  _High betweenness centrality (0.079) - this node is a cross-community bridge._
-- **Are the 16 inferred relationships involving `mkdirAll()` (e.g. with `.Install()` and `.Install()`) actually correct?**
+- **Why does `Shell()` connect `Container Shell Lifecycle` to `Cmd Cluster`, `Mountplan Defaults & Auth Isolation`, `Browserbridge Cluster`, `Catalog Cluster`, `Cmd Cluster`, `Runplan Pipeline`, `Session Plan Tests`, `Container Exec & Attach`?**
+  _High betweenness centrality (0.118) - this node is a cross-community bridge._
+- **Why does `mkdirAll()` connect `Session Plan Tests` to `Browser Bridge Agent Core`, `Teardown & Config Output`, `Per-OS Bridge Agents`, `Named Shell Management`, `Session Plan Core`, `Mountplan Resolve`, `CLI Arg Validation`, `Config Plan Tests`?**
+  _High betweenness centrality (0.105) - this node is a cross-community bridge._
+- **Why does `Session Plan` connect `Config Plan Group` to `Session Plan Tests`, `Codex nested sandbox (seccomp= Group`?**
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
+- **Are the 16 inferred relationships involving `mkdirAll()` (e.g. with `ensureNamedShellPath()` and `TestEnsureNamedShellPathRejectsSymlink()`) actually correct?**
   _`mkdirAll()` has 16 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 24 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
   _`Shell()` has 24 INFERRED edges - model-reasoned connections that need verification._
