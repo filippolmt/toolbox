@@ -237,6 +237,24 @@ wrangler login --callback-host=0.0.0.0
 
 The OAuth redirect URL stays `http://localhost:8976/oauth/callback` (hard-coded upstream) so the browser still reaches the published port on `127.0.0.1`. Credentials land at `~/.config/.wrangler/config/default.toml`, bind-mounted from `~/.toolbox/wrangler/` on the host, and survive `toolbox stop`. `cf auth login` does not need this flag — its upstream listener already binds `0.0.0.0` by default.
 
+### Browser bridge
+
+The toolbox container has no display server, so commands inside `toolbox shell` that try to open a URL (`xdg-open`, `$BROWSER`, OAuth redirects, `gh browse`, MCP login flows…) have nowhere to send the user by default. The browser bridge plugs that gap by running a tiny per-user daemon on the host that listens on `127.0.0.1` and delegates to the host's real browser; the container ships an `xdg-open` wrapper (and `BROWSER=xdg-open`) that POSTs to that daemon over the bind-mounted state dir.
+
+The bridge is **opt-in** — nothing runs on the host until you install it explicitly:
+
+```bash
+toolbox browser-bridge install     # generate token, write LaunchAgent/systemd unit, start daemon
+toolbox browser-bridge status      # show install state, port, daemon liveness
+toolbox browser-bridge uninstall   # stop daemon, remove unit + token
+```
+
+`install` creates `~/.toolbox/browser/` (mode 0700) with a bearer `token`, the listener `port`, a `pid` file, and a `log`. On macOS it registers `~/Library/LaunchAgents/com.filippolmt.toolbox.browser.plist` via `launchctl bootstrap gui/<uid>`; on Linux it writes the `toolbox-browser.service` unit under `~/.config/systemd/user/`. The host directory is bind-mounted **read-only** into the container at `/home/toolbox/.toolbox/browser` (regardless of the host user's home), so the wrapper inside the container can read the port + token but cannot tamper with them.
+
+Security boundary: the daemon binds `127.0.0.1` only (no LAN exposure), enforces a bearer token on every request, allowlists `http` / `https` URL schemes only, caps URL length, and rate-limits incoming requests. Anything outside that envelope is rejected with a 4xx and logged.
+
+Set `browser_bridge: false` in `.toolbox.yaml` to skip the read-only mount entirely — the container then has no `xdg-open` wrapper at all.
+
 ### Loading order
 
 Configuration is loaded from (highest priority first):
@@ -255,6 +273,7 @@ Configuration is loaded from (highest priority first):
 | `toolbox stop` | Stop and remove the container |
 | `toolbox build` | Build the Docker image locally |
 | `toolbox version` | Show version info |
+| `toolbox browser-bridge {install,uninstall,status}` | Manage the host-side daemon that forwards in-container `xdg-open` URLs to the host's real browser (opt-in, per-user) |
 | `toolbox completion [bash\|zsh\|fish]` | Generate shell completions |
 
 ## Updating
