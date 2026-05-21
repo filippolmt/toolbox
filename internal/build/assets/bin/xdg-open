@@ -1,0 +1,45 @@
+#!/bin/sh
+# toolbox browser-bridge wrapper. Replaces xdg-open inside the container so
+# every CLI that opens a URL (gh, claude, codex, etc.) hands it to the host
+# daemon over host.docker.internal. Falls back silently to stderr when the
+# daemon is not installed or unreachable so callers never block.
+
+set -eu
+
+STATE_DIR="/home/toolbox/.toolbox/browser"
+TOKEN_FILE="${STATE_DIR}/token"
+PORT_FILE="${STATE_DIR}/port"
+
+URL="${1:-}"
+if [ -z "${URL}" ]; then
+    echo "xdg-open: missing URL" >&2
+    exit 0
+fi
+
+if [ ! -r "${TOKEN_FILE}" ] || [ ! -r "${PORT_FILE}" ]; then
+    echo "xdg-open: bridge not installed; URL:" >&2
+    echo "${URL}" >&2
+    exit 0
+fi
+
+TOKEN=$(cat "${TOKEN_FILE}")
+PORT=$(cat "${PORT_FILE}")
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "xdg-open: curl missing in image; URL:" >&2
+    echo "${URL}" >&2
+    exit 0
+fi
+
+PAYLOAD=$(printf '{"url":%s}' "$(printf '%s' "${URL}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")
+
+if ! curl --silent --show-error --fail \
+    --max-time 5 \
+    --header "Authorization: Bearer ${TOKEN}" \
+    --header "Content-Type: application/json" \
+    --data "${PAYLOAD}" \
+    "http://host.docker.internal:${PORT}/open" >/dev/null 2>&1; then
+    echo "xdg-open: bridge unreachable; URL:" >&2
+    echo "${URL}" >&2
+    exit 0
+fi

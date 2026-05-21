@@ -86,7 +86,25 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 		return nil, err
 	}
 	base := applyMountsRoot(defaults(), cfg.MountsRoot)
+	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
+		base = dropMountByName(base, "browser-bridge")
+	}
 	return mergeMounts(base, cfg.Mounts)
+}
+
+// dropMountByName returns a copy of base with the entry whose Name matches
+// removed. Used to honour top-level feature toggles (e.g. browser_bridge:
+// false) at the mount-resolution seam — feature flags driven by code do not
+// need to round-trip through the user `mounts:` list.
+func dropMountByName(base []config.Mount, name string) []config.Mount {
+	out := make([]config.Mount, 0, len(base))
+	for _, m := range base {
+		if m.Name == name {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // Defaults returns the canonical default mount set. Exported so build tests

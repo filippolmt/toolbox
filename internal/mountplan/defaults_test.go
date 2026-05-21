@@ -4,14 +4,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/browserbridge"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 26 {
-		t.Fatalf("expected 26 default mounts, got %d", len(mounts))
+	if len(mounts) != 27 {
+		t.Fatalf("expected 27 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -123,4 +124,25 @@ func findMount(mounts []config.Mount, name string) *config.Mount {
 		}
 	}
 	return nil
+}
+
+func TestDefaults_IncludesBrowserBridge(t *testing.T) {
+	for _, m := range defaults() {
+		if m.Name == "browser-bridge" {
+			if !m.ReadOnly {
+				t.Error("browser-bridge mount must be ReadOnly")
+			}
+			if m.Target != browserbridge.ContainerDir {
+				t.Errorf("Target = %q, want %q", m.Target, browserbridge.ContainerDir)
+			}
+			if m.Source != "~/"+browserbridge.HostDir {
+				t.Errorf("Source = %q, want %q", m.Source, "~/"+browserbridge.HostDir)
+			}
+			if !m.CreateIfMissing {
+				t.Error("CreateIfMissing must be true so the mount is resolvable pre-install")
+			}
+			return
+		}
+	}
+	t.Error("browser-bridge mount missing from defaults()")
 }

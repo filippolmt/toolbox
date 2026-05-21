@@ -50,6 +50,11 @@ type SessionPlan struct {
 	Cmd           []string
 	SecurityOpt   []string
 	BuildArgs     map[string]*string
+	// ExtraHosts is the docker --add-host list. Populated when the browser
+	// bridge is enabled so host.docker.internal resolves on native Linux
+	// Docker (Docker Desktop already provides the mapping; the duplicate
+	// entry is harmless there).
+	ExtraHosts []string
 }
 
 // MergedSessionPlan is the pure-data shape returned by Merge. Binds are
@@ -110,7 +115,18 @@ func Plan(cfg *config.Config, workspace string, ports []string, cliVersion strin
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
 		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
+		ExtraHosts:    browserBridgeExtraHosts(cfg),
 	}, nil
+}
+
+// browserBridgeExtraHosts returns the docker --add-host entries needed for
+// the in-container wrapper to reach the host daemon. Empty when the bridge
+// is disabled.
+func browserBridgeExtraHosts(cfg *config.Config) []string {
+	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
+		return nil
+	}
+	return []string{"host.docker.internal:host-gateway"}
 }
 
 // Merge returns the pure-data plan shape: identical to Plan but composes

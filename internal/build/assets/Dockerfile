@@ -1345,6 +1345,21 @@ RUN chmod +x /usr/local/bin/entrypoint
 COPY init.d/ /usr/local/lib/toolbox/init.d/
 RUN chmod -R 0755 /usr/local/lib/toolbox/init.d/
 
+# Browser-bridge wrapper. Shadows /usr/bin/xdg-open (and synonyms) so any
+# in-container CLI that opens a URL hands it to the host daemon over
+# host.docker.internal. ENV BROWSER=xdg-open lets tools that honour $BROWSER
+# (gh, claude, …) pick it up without a flag. Mode restored explicitly because
+# embed.FS strips exec bits.
+COPY bin/xdg-open /usr/local/bin/xdg-open
+RUN set -eux; \
+    chmod 0755 /usr/local/bin/xdg-open; \
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/x-www-browser; \
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/www-browser; \
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/open
+ENV BROWSER=xdg-open
+
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]

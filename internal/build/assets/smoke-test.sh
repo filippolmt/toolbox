@@ -173,6 +173,9 @@ check_required "make"       make --version
 check_required "tini"       /usr/bin/tini --version
 check_required "vi"         vi --version
 check_required "xterm-ghostty terminfo" sh -c "infocmp xterm-ghostty >/dev/null && echo present"
+check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && echo present"
+check_required "xdg-open symlinks" sh -c "test -L /usr/local/bin/open && test -L /usr/local/bin/x-www-browser && test -L /usr/local/bin/sensible-browser && test -L /usr/local/bin/gnome-open && test -L /usr/local/bin/www-browser && echo present"
+check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version

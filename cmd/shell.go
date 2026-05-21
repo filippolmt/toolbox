@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/filippolmt/toolbox/internal/browserbridge"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -45,6 +47,10 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if cfg.BrowserBridge != nil && *cfg.BrowserBridge {
+		printBrowserBridgeTipIfNeeded()
+	}
+
 	cli, err := container.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
@@ -68,6 +74,22 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	return container.Shell(ctx, cli, plan)
+}
+
+// printBrowserBridgeTipIfNeeded prints a one-line install hint when the
+// host-side browser bridge is not yet installed. Build tags select an Agent
+// that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
+// Uses IsInstalled (stat-only) instead of Status to keep the shell-start hot
+// path off launchctl/systemctl exec costs.
+func printBrowserBridgeTipIfNeeded() {
+	a, err := browserbridge.NewAgent()
+	if err != nil {
+		return
+	}
+	if a.IsInstalled() {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox browser-bridge install' to forward in-container URLs to your host browser")
 }
 
 func init() {
