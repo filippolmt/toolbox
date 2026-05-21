@@ -2,6 +2,7 @@ package build
 
 import (
 	"archive/tar"
+	"bytes"
 	"io"
 	"io/fs"
 	"runtime"
@@ -56,8 +57,8 @@ func TestTarEmbeddedContext(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tar read: %v", err)
 		}
-		if strings.Contains(h.Name, "/") && !strings.HasPrefix(h.Name, "init.d/") {
-			t.Errorf("unexpected nested path in tar: %q — only init.d/* may be nested", h.Name)
+		if strings.Contains(h.Name, "/") && !strings.HasPrefix(h.Name, "init.d/") && !strings.HasPrefix(h.Name, "bin/") {
+			t.Errorf("unexpected nested path in tar: %q — only init.d/* and bin/* may be nested", h.Name)
 		}
 		got[h.Name] = true
 	}
@@ -179,5 +180,15 @@ func TestDockerfilePreCreatesMountParents(t *testing.T) {
 		if !strings.Contains(content, parent) {
 			t.Errorf("Dockerfile must pre-create %q (parent of a DefaultMounts target; otherwise Docker creates it as root:root 0755 at runtime)", parent)
 		}
+	}
+}
+
+func TestAssets_IncludesBrowserBridgeWrapper(t *testing.T) {
+	b, err := Assets.ReadFile("assets/bin/xdg-open")
+	if err != nil {
+		t.Fatalf("read embedded wrapper: %v", err)
+	}
+	if !bytes.HasPrefix(b, []byte("#!/bin/sh")) {
+		t.Errorf("wrapper missing shebang: %q", b[:min(20, len(b))])
 	}
 }
