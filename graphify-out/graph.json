@@ -541,7 +541,7 @@
       "source_file": "cmd/build.go",
       "source_location": "L1",
       "id": "cmd_build_go",
-      "community": 0,
+      "community": 132,
       "norm_label": "build.go"
     },
     {
@@ -550,7 +550,7 @@
       "source_file": "cmd/build.go",
       "source_location": "L31",
       "id": "cmd_build_runbuild",
-      "community": 0,
+      "community": 132,
       "norm_label": "runbuild()"
     },
     {
@@ -559,7 +559,7 @@
       "source_file": "cmd/build.go",
       "source_location": "L53",
       "id": "cmd_build_init",
-      "community": 0,
+      "community": 132,
       "norm_label": "init()"
     },
     {
@@ -712,7 +712,7 @@
       "source_file": "cmd/stop.go",
       "source_location": "L1",
       "id": "cmd_stop_go",
-      "community": 26,
+      "community": 0,
       "norm_label": "stop.go"
     },
     {
@@ -721,7 +721,7 @@
       "source_file": "cmd/stop.go",
       "source_location": "L26",
       "id": "cmd_stop_runstop",
-      "community": 26,
+      "community": 0,
       "norm_label": "runstop()"
     },
     {
@@ -730,7 +730,7 @@
       "source_file": "cmd/stop.go",
       "source_location": "L65",
       "id": "cmd_stop_init",
-      "community": 26,
+      "community": 0,
       "norm_label": "init()"
     },
     {
@@ -991,7 +991,7 @@
       "source_file": "cmd/shell_named.go",
       "source_location": "L94",
       "id": "cmd_shell_named_validateshellname",
-      "community": 1,
+      "community": 7,
       "norm_label": "validateshellname()"
     },
     {
@@ -3268,7 +3268,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L1",
       "id": "internal_sessionplan_shell_test_go",
-      "community": 1,
+      "community": 93,
       "norm_label": "shell_test.go"
     },
     {
@@ -3277,7 +3277,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L14",
       "id": "sessionplan_shell_test_testresolveshellcmdzshenabled",
-      "community": 1,
+      "community": 93,
       "norm_label": "testresolveshellcmdzshenabled()"
     },
     {
@@ -3286,7 +3286,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L26",
       "id": "sessionplan_shell_test_testresolveshellcmdbash",
-      "community": 1,
+      "community": 93,
       "norm_label": "testresolveshellcmdbash()"
     },
     {
@@ -3295,7 +3295,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L41",
       "id": "sessionplan_shell_test_testresolveshellcmdzshdisablederror",
-      "community": 1,
+      "community": 93,
       "norm_label": "testresolveshellcmdzshdisablederror()"
     },
     {
@@ -3304,7 +3304,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L69",
       "id": "sessionplan_shell_test_testnestedsandboxsecurityoptdefault",
-      "community": 1,
+      "community": 93,
       "norm_label": "testnestedsandboxsecurityoptdefault()"
     },
     {
@@ -3313,7 +3313,7 @@
       "source_file": "internal/sessionplan/shell_test.go",
       "source_location": "L77",
       "id": "sessionplan_shell_test_testnestedsandboxsecurityoptcodexdisabled",
-      "community": 1,
+      "community": 93,
       "norm_label": "testnestedsandboxsecurityoptcodexdisabled()"
     },
     {
@@ -3376,7 +3376,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L166",
       "id": "sessionplan_plan_missingpublishports",
-      "community": 1,
+      "community": 135,
       "norm_label": "missingpublishports()"
     },
     {
@@ -3394,7 +3394,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L249",
       "id": "sessionplan_plan_sanitizeshellname",
-      "community": 1,
+      "community": 7,
       "norm_label": "sanitizeshellname()"
     },
     {
@@ -3403,7 +3403,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L262",
       "id": "sessionplan_plan_namedcontainername",
-      "community": 1,
+      "community": 0,
       "norm_label": "namedcontainername()"
     },
     {
@@ -3412,7 +3412,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L270",
       "id": "sessionplan_plan_namedcontainernamefromsanitized",
-      "community": 1,
+      "community": 0,
       "norm_label": "namedcontainernamefromsanitized()"
     },
     {
@@ -3448,7 +3448,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L350",
       "id": "sessionplan_plan_sddenv",
-      "community": 1,
+      "community": 26,
       "norm_label": "sddenv()"
     },
     {
@@ -3457,7 +3457,7 @@
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L405",
       "id": "sessionplan_plan_resolveenabledskills",
-      "community": 92,
+      "community": 26,
       "norm_label": "resolveenabledskills()"
     },
     {
@@ -3475,7 +3475,7 @@
       "source_file": "internal/sessionplan/shell.go",
       "source_location": "L1",
       "id": "internal_sessionplan_shell_go",
-      "community": 1,
+      "community": 93,
       "norm_label": "shell.go"
     },
     {
@@ -3484,7 +3484,7 @@
       "source_file": "internal/sessionplan/shell.go",
       "source_location": "L15",
       "id": "sessionplan_shellmismatcherror",
-      "community": 1,
+      "community": 93,
       "norm_label": "shellmismatcherror"
     },
     {
@@ -3493,7 +3493,7 @@
       "source_file": "internal/sessionplan/shell.go",
       "source_location": "L19",
       "id": "sessionplan_shellmismatcherror_error",
-      "community": 1,
+      "community": 93,
       "norm_label": ".error()"
     },
     {
@@ -3502,7 +3502,7 @@
       "source_file": "internal/sessionplan/shell.go",
       "source_location": "L34",
       "id": "sessionplan_shell_resolveshellcmd",
-      "community": 1,
+      "community": 93,
       "norm_label": "resolveshellcmd()"
     },
     {
@@ -3511,7 +3511,7 @@
       "source_file": "internal/sessionplan/shell.go",
       "source_location": "L50",
       "id": "sessionplan_shell_nestedsandboxsecurityopt",
-      "community": 1,
+      "community": 93,
       "norm_label": "nestedsandboxsecurityopt()"
     },
     {
@@ -3664,7 +3664,7 @@
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L459",
       "id": "sessionplan_plan_test_testnamedcontainername",
-      "community": 1,
+      "community": 0,
       "norm_label": "testnamedcontainername()"
     },
     {
@@ -3673,7 +3673,7 @@
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L475",
       "id": "sessionplan_plan_test_testnamedcontainernamedisjointfromhashformat",
-      "community": 1,
+      "community": 0,
       "norm_label": "testnamedcontainernamedisjointfromhashformat()"
     },
     {
@@ -3709,7 +3709,7 @@
       "source_file": "internal/sessionplan/plan_test.go",
       "source_location": "L551",
       "id": "sessionplan_plan_test_testmissingpublishportstable",
-      "community": 1,
+      "community": 135,
       "norm_label": "testmissingpublishportstable()"
     },
     {
@@ -3826,7 +3826,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L1",
       "id": "internal_container_lifecycle_go",
-      "community": 26,
+      "community": 87,
       "norm_label": "lifecycle.go"
     },
     {
@@ -3835,7 +3835,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L47",
       "id": "container_lifecycle_formatpublishmismatch",
-      "community": 26,
+      "community": 87,
       "norm_label": "formatpublishmismatch()"
     },
     {
@@ -3862,7 +3862,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L146",
       "id": "container_lifecycle_dispatchop",
-      "community": 26,
+      "community": 87,
       "norm_label": "dispatchop()"
     },
     {
@@ -3871,7 +3871,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L169",
       "id": "container_lifecycle_createandstart",
-      "community": 26,
+      "community": 87,
       "norm_label": "createandstart()"
     },
     {
@@ -3880,7 +3880,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L214",
       "id": "container_lifecycle_stop",
-      "community": 26,
+      "community": 0,
       "norm_label": "stop()"
     },
     {
@@ -3889,7 +3889,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L219",
       "id": "container_lifecycle_stopbyname",
-      "community": 26,
+      "community": 0,
       "norm_label": "stopbyname()"
     },
     {
@@ -3898,7 +3898,7 @@
       "source_file": "internal/container/lifecycle.go",
       "source_location": "L227",
       "id": "container_lifecycle_stopall",
-      "community": 26,
+      "community": 87,
       "norm_label": "stopall()"
     },
     {
@@ -4555,7 +4555,7 @@
       "source_file": "internal/sdd/registry.go",
       "source_location": "L1",
       "id": "internal_sdd_registry_go",
-      "community": 92,
+      "community": 26,
       "norm_label": "registry.go"
     },
     {
@@ -4564,7 +4564,7 @@
       "source_file": "internal/sdd/registry.go",
       "source_location": "L40",
       "id": "sdd_registry_skillenvkey",
-      "community": 92,
+      "community": 26,
       "norm_label": "skillenvkey()"
     },
     {
@@ -4573,7 +4573,7 @@
       "source_file": "internal/sdd/registry.go",
       "source_location": "L69",
       "id": "sdd_skill",
-      "community": 92,
+      "community": 26,
       "norm_label": "skill"
     },
     {
@@ -4582,7 +4582,7 @@
       "source_file": "internal/sdd/registry.go",
       "source_location": "L190",
       "id": "sdd_registry_lookup",
-      "community": 92,
+      "community": 26,
       "norm_label": "lookup()"
     },
     {
@@ -4591,7 +4591,7 @@
       "source_file": "internal/sdd/registry.go",
       "source_location": "L199",
       "id": "sdd_registry_keys",
-      "community": 92,
+      "community": 26,
       "norm_label": "keys()"
     },
     {
@@ -4600,7 +4600,7 @@
       "source_file": "internal/sdd/registry_test.go",
       "source_location": "L1",
       "id": "internal_sdd_registry_test_go",
-      "community": 92,
+      "community": 133,
       "norm_label": "registry_test.go"
     },
     {
@@ -4609,7 +4609,7 @@
       "source_file": "internal/sdd/registry_test.go",
       "source_location": "L15",
       "id": "sdd_registry_test_testskillenvkey",
-      "community": 92,
+      "community": 133,
       "norm_label": "testskillenvkey()"
     },
     {
@@ -4618,7 +4618,7 @@
       "source_file": "internal/sdd/registry_test.go",
       "source_location": "L32",
       "id": "sdd_registry_test_testlookupreturnsregisteredskills",
-      "community": 92,
+      "community": 133,
       "norm_label": "testlookupreturnsregisteredskills()"
     },
     {
@@ -4627,7 +4627,7 @@
       "source_file": "internal/sdd/registry_test.go",
       "source_location": "L46",
       "id": "sdd_registry_test_testkeysmatchesskills",
-      "community": 92,
+      "community": 133,
       "norm_label": "testkeysmatchesskills()"
     },
     {
@@ -4636,7 +4636,7 @@
       "source_file": "internal/sdd/registry_test.go",
       "source_location": "L69",
       "id": "sdd_registry_test_testrenovateregexmatcheseverysddpin",
-      "community": 92,
+      "community": 133,
       "norm_label": "testrenovateregexmatcheseverysddpin()"
     },
     {
@@ -5684,10 +5684,28 @@
       "norm_label": "startup hooks"
     },
     {
-      "label": "Publishing ports",
+      "label": "Per-repo startup hooks",
       "file_type": "document",
       "source_file": "README.md",
       "source_location": "L198",
+      "id": "toolbox_readme_per_repo_startup_hooks",
+      "community": 23,
+      "norm_label": "per-repo startup hooks"
+    },
+    {
+      "label": "code:yaml (mounts:)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L202",
+      "id": "toolbox_readme_codeblock_10",
+      "community": 23,
+      "norm_label": "code:yaml (mounts:)"
+    },
+    {
+      "label": "Publishing ports",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L212",
       "id": "toolbox_readme_publishing_ports",
       "community": 23,
       "norm_label": "publishing ports"
@@ -5696,8 +5714,8 @@
       "label": "code:bash (# Forward host port 7171 to the same port in the container.)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L202",
-      "id": "toolbox_readme_codeblock_10",
+      "source_location": "L216",
+      "id": "toolbox_readme_codeblock_11",
       "community": 23,
       "norm_label": "code:bash (# forward host port 7171 to the same port in the container.)"
     },
@@ -5705,7 +5723,7 @@
       "label": "Wrangler OAuth login",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L214",
+      "source_location": "L228",
       "id": "toolbox_readme_wrangler_oauth_login",
       "community": 23,
       "norm_label": "wrangler oauth login"
@@ -5714,8 +5732,8 @@
       "label": "code:bash (toolbox shell -p 8976:8976)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L218",
-      "id": "toolbox_readme_codeblock_11",
+      "source_location": "L232",
+      "id": "toolbox_readme_codeblock_12",
       "community": 23,
       "norm_label": "code:bash (toolbox shell -p 8976:8976)"
     },
@@ -5723,7 +5741,7 @@
       "label": "Loading order",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L226",
+      "source_location": "L240",
       "id": "toolbox_readme_loading_order",
       "community": 23,
       "norm_label": "loading order"
@@ -5732,7 +5750,7 @@
       "label": "CLI commands",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L236",
+      "source_location": "L250",
       "id": "toolbox_readme_cli_commands",
       "community": 23,
       "norm_label": "cli commands"
@@ -5741,7 +5759,7 @@
       "label": "Updating",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L246",
+      "source_location": "L260",
       "id": "toolbox_readme_updating",
       "community": 23,
       "norm_label": "updating"
@@ -5750,8 +5768,8 @@
       "label": "code:bash (brew upgrade toolbox)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L248",
-      "id": "toolbox_readme_codeblock_12",
+      "source_location": "L262",
+      "id": "toolbox_readme_codeblock_13",
       "community": 23,
       "norm_label": "code:bash (brew upgrade toolbox)"
     },
@@ -5759,8 +5777,8 @@
       "label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L254",
-      "id": "toolbox_readme_codeblock_13",
+      "source_location": "L268",
+      "id": "toolbox_readme_codeblock_14",
       "community": 23,
       "norm_label": "code:bash (docker pull ghcr.io/filippolmt/toolbox:latest)"
     },
@@ -5768,7 +5786,7 @@
       "label": "License",
       "file_type": "document",
       "source_file": "README.md",
-      "source_location": "L258",
+      "source_location": "L272",
       "id": "toolbox_readme_license",
       "community": 23,
       "norm_label": "license"
@@ -6123,276 +6141,6 @@
       "id": "improve_codebase_architecture_interface_design_3_present_and_compare",
       "community": 119,
       "norm_label": "3. present and compare"
-    },
-    {
-      "label": "explore.md",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L1",
-      "id": "claude_commands_opsx_explore_md",
-      "community": 103,
-      "norm_label": "explore.md"
-    },
-    {
-      "label": "The Stance",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L23",
-      "id": "opsx_explore_the_stance",
-      "community": 103,
-      "norm_label": "the stance"
-    },
-    {
-      "label": "What You Might Do",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L34",
-      "id": "opsx_explore_what_you_might_do",
-      "community": 103,
-      "norm_label": "what you might do"
-    },
-    {
-      "label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L57",
-      "id": "opsx_explore_codeblock_1",
-      "community": 103,
-      "norm_label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)"
-    },
-    {
-      "label": "OpenSpec Awareness",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L81",
-      "id": "opsx_explore_openspec_awareness",
-      "community": 103,
-      "norm_label": "openspec awareness"
-    },
-    {
-      "label": "Check for context",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L85",
-      "id": "opsx_explore_check_for_context",
-      "community": 103,
-      "norm_label": "check for context"
-    },
-    {
-      "label": "code:bash (openspec list --json)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L88",
-      "id": "opsx_explore_codeblock_2",
-      "community": 103,
-      "norm_label": "code:bash (openspec list --json)"
-    },
-    {
-      "label": "When no change exists",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L99",
-      "id": "opsx_explore_when_no_change_exists",
-      "community": 103,
-      "norm_label": "when no change exists"
-    },
-    {
-      "label": "When a change exists",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L106",
-      "id": "opsx_explore_when_a_change_exists",
-      "community": 103,
-      "norm_label": "when a change exists"
-    },
-    {
-      "label": "What You Don't Have To Do",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L140",
-      "id": "opsx_explore_what_you_don_t_have_to_do",
-      "community": 103,
-      "norm_label": "what you don't have to do"
-    },
-    {
-      "label": "Ending Discovery",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L151",
-      "id": "opsx_explore_ending_discovery",
-      "community": 103,
-      "norm_label": "ending discovery"
-    },
-    {
-      "label": "Guardrails",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L164",
-      "id": "opsx_explore_guardrails",
-      "community": 103,
-      "norm_label": "guardrails"
-    },
-    {
-      "label": "archive.md",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L1",
-      "id": "claude_commands_opsx_archive_md",
-      "community": 116,
-      "norm_label": "archive.md"
-    },
-    {
-      "label": "code:bash (mkdir -p openspec/changes/archive)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L67",
-      "id": "opsx_archive_codeblock_1",
-      "community": 116,
-      "norm_label": "code:bash (mkdir -p openspec/changes/archive)"
-    },
-    {
-      "label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L77",
-      "id": "opsx_archive_codeblock_2",
-      "community": 116,
-      "norm_label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/yyyy-mm-)"
-    },
-    {
-      "label": "code:block3 (## Archive Complete)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L92",
-      "id": "opsx_archive_codeblock_3",
-      "community": 116,
-      "norm_label": "code:block3 (## archive complete)"
-    },
-    {
-      "label": "code:block4 (## Archive Complete)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L105",
-      "id": "opsx_archive_codeblock_4",
-      "community": 116,
-      "norm_label": "code:block4 (## archive complete)"
-    },
-    {
-      "label": "code:block5 (## Archive Complete (with warnings))",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L118",
-      "id": "opsx_archive_codeblock_5",
-      "community": 116,
-      "norm_label": "code:block5 (## archive complete (with warnings))"
-    },
-    {
-      "label": "code:block6 (## Archive Failed)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L136",
-      "id": "opsx_archive_codeblock_6",
-      "community": 116,
-      "norm_label": "code:block6 (## archive failed)"
-    },
-    {
-      "label": "apply.md",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L1",
-      "id": "claude_commands_opsx_apply_md",
-      "community": 121,
-      "norm_label": "apply.md"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L24",
-      "id": "opsx_apply_codeblock_1",
-      "community": 121,
-      "norm_label": "code:bash (openspec status --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L33",
-      "id": "opsx_apply_codeblock_2",
-      "community": 121,
-      "norm_label": "code:bash (openspec instructions apply --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:block3 (## Implementing: <change-name> (schema: <schema-name>))",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L88",
-      "id": "opsx_apply_codeblock_3",
-      "community": 121,
-      "norm_label": "code:block3 (## implementing: <change-name> (schema: <schema-name>))"
-    },
-    {
-      "label": "code:block4 (## Implementation Complete)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L102",
-      "id": "opsx_apply_codeblock_4",
-      "community": 121,
-      "norm_label": "code:block4 (## implementation complete)"
-    },
-    {
-      "label": "code:block5 (## Implementation Paused)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L119",
-      "id": "opsx_apply_codeblock_5",
-      "community": 121,
-      "norm_label": "code:block5 (## implementation paused)"
-    },
-    {
-      "label": "propose.md",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L1",
-      "id": "claude_commands_opsx_propose_md",
-      "community": 127,
-      "norm_label": "propose.md"
-    },
-    {
-      "label": "code:bash (openspec new change \"<name>\")",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L33",
-      "id": "opsx_propose_codeblock_1",
-      "community": 127,
-      "norm_label": "code:bash (openspec new change \"<name>\")"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L39",
-      "id": "opsx_propose_codeblock_2",
-      "community": 127,
-      "norm_label": "code:bash (openspec status --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L54",
-      "id": "opsx_propose_codeblock_3",
-      "community": 127,
-      "norm_label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\")",
-      "file_type": "document",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L79",
-      "id": "opsx_propose_codeblock_4",
-      "community": 127,
-      "norm_label": "code:bash (openspec status --change \"<name>\")"
     },
     {
       "label": "SKILL.md",
@@ -7081,60 +6829,6 @@
     {
       "label": "SKILL.md",
       "file_type": "document",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L1",
-      "id": "claude_skills_openspec_apply_change_skill_md",
-      "community": 117,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L28",
-      "id": "openspec_apply_change_skill_codeblock_1",
-      "community": 117,
-      "norm_label": "code:bash (openspec status --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L37",
-      "id": "openspec_apply_change_skill_codeblock_2",
-      "community": 117,
-      "norm_label": "code:bash (openspec instructions apply --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:block3 (## Implementing: <change-name> (schema: <schema-name>))",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L92",
-      "id": "openspec_apply_change_skill_codeblock_3",
-      "community": 117,
-      "norm_label": "code:block3 (## implementing: <change-name> (schema: <schema-name>))"
-    },
-    {
-      "label": "code:block4 (## Implementation Complete)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L106",
-      "id": "openspec_apply_change_skill_codeblock_4",
-      "community": 117,
-      "norm_label": "code:block4 (## implementation complete)"
-    },
-    {
-      "label": "code:block5 (## Implementation Paused)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L123",
-      "id": "openspec_apply_change_skill_codeblock_5",
-      "community": 117,
-      "norm_label": "code:block5 (## implementation paused)"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
       "source_file": ".claude/skills/verify/SKILL.md",
       "source_location": "L1",
       "id": "claude_skills_verify_skill_md",
@@ -7194,168 +6888,6 @@
       "id": "verify_skill_preconditions",
       "community": 118,
       "norm_label": "preconditions"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L1",
-      "id": "claude_skills_openspec_explore_skill_md",
-      "community": 99,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "The Stance",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L20",
-      "id": "openspec_explore_skill_the_stance",
-      "community": 99,
-      "norm_label": "the stance"
-    },
-    {
-      "label": "What You Might Do",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L31",
-      "id": "openspec_explore_skill_what_you_might_do",
-      "community": 99,
-      "norm_label": "what you might do"
-    },
-    {
-      "label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L54",
-      "id": "openspec_explore_skill_codeblock_1",
-      "community": 99,
-      "norm_label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)"
-    },
-    {
-      "label": "OpenSpec Awareness",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L78",
-      "id": "openspec_explore_skill_openspec_awareness",
-      "community": 99,
-      "norm_label": "openspec awareness"
-    },
-    {
-      "label": "Check for context",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L82",
-      "id": "openspec_explore_skill_check_for_context",
-      "community": 99,
-      "norm_label": "check for context"
-    },
-    {
-      "label": "code:bash (openspec list --json)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L85",
-      "id": "openspec_explore_skill_codeblock_2",
-      "community": 99,
-      "norm_label": "code:bash (openspec list --json)"
-    },
-    {
-      "label": "When no change exists",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L94",
-      "id": "openspec_explore_skill_when_no_change_exists",
-      "community": 99,
-      "norm_label": "when no change exists"
-    },
-    {
-      "label": "When a change exists",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L101",
-      "id": "openspec_explore_skill_when_a_change_exists",
-      "community": 99,
-      "norm_label": "when a change exists"
-    },
-    {
-      "label": "What You Don't Have To Do",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L135",
-      "id": "openspec_explore_skill_what_you_don_t_have_to_do",
-      "community": 99,
-      "norm_label": "what you don't have to do"
-    },
-    {
-      "label": "Handling Different Entry Points",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L146",
-      "id": "openspec_explore_skill_handling_different_entry_points",
-      "community": 99,
-      "norm_label": "handling different entry points"
-    },
-    {
-      "label": "code:block3 (User: I'm thinking about adding real-time collaboration)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L149",
-      "id": "openspec_explore_skill_codeblock_3",
-      "community": 99,
-      "norm_label": "code:block3 (user: i'm thinking about adding real-time collaboration)"
-    },
-    {
-      "label": "code:block4 (User: The auth system is a mess)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L172",
-      "id": "openspec_explore_skill_codeblock_4",
-      "community": 99,
-      "norm_label": "code:block4 (user: the auth system is a mess)"
-    },
-    {
-      "label": "code:block5 (User: /opsx:explore add-auth-system)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L203",
-      "id": "openspec_explore_skill_codeblock_5",
-      "community": 99,
-      "norm_label": "code:block5 (user: /opsx:explore add-auth-system)"
-    },
-    {
-      "label": "code:block6 (User: Should we use Postgres or SQLite?)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L220",
-      "id": "openspec_explore_skill_codeblock_6",
-      "community": 99,
-      "norm_label": "code:block6 (user: should we use postgres or sqlite?)"
-    },
-    {
-      "label": "Ending Discovery",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L250",
-      "id": "openspec_explore_skill_ending_discovery",
-      "community": 99,
-      "norm_label": "ending discovery"
-    },
-    {
-      "label": "code:block7 (## What We Figured Out)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L261",
-      "id": "openspec_explore_skill_codeblock_7",
-      "community": 99,
-      "norm_label": "code:block7 (## what we figured out)"
-    },
-    {
-      "label": "Guardrails",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L279",
-      "id": "openspec_explore_skill_guardrails",
-      "community": 99,
-      "norm_label": "guardrails"
     },
     {
       "label": "SKILL.md",
@@ -7572,87 +7104,6 @@
       "id": "golang_cli_skill_related_skills",
       "community": 94,
       "norm_label": "related skills"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L1",
-      "id": "claude_skills_openspec_archive_change_skill_md",
-      "community": 128,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "code:bash (mkdir -p openspec/changes/archive)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L71",
-      "id": "openspec_archive_change_skill_codeblock_1",
-      "community": 128,
-      "norm_label": "code:bash (mkdir -p openspec/changes/archive)"
-    },
-    {
-      "label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L81",
-      "id": "openspec_archive_change_skill_codeblock_2",
-      "community": 128,
-      "norm_label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/yyyy-mm-)"
-    },
-    {
-      "label": "code:block3 (## Archive Complete)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L96",
-      "id": "openspec_archive_change_skill_codeblock_3",
-      "community": 128,
-      "norm_label": "code:block3 (## archive complete)"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".claude/skills/openspec-propose/SKILL.md",
-      "source_location": "L1",
-      "id": "claude_skills_openspec_propose_skill_md",
-      "community": 123,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "code:bash (openspec new change \"<name>\")",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L37",
-      "id": "openspec_propose_skill_codeblock_1",
-      "community": 123,
-      "norm_label": "code:bash (openspec new change \"<name>\")"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L43",
-      "id": "openspec_propose_skill_codeblock_2",
-      "community": 123,
-      "norm_label": "code:bash (openspec status --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L58",
-      "id": "openspec_propose_skill_codeblock_3",
-      "community": 123,
-      "norm_label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)"
-    },
-    {
-      "label": "code:bash (openspec status --change \"<name>\")",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L83",
-      "id": "openspec_propose_skill_codeblock_4",
-      "community": 123,
-      "norm_label": "code:bash (openspec status --change \"<name>\")"
     },
     {
       "label": "SKILL.md",
@@ -8096,240 +7547,6 @@
       "norm_label": "claude code env-var matrix"
     },
     {
-      "label": "2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L1",
-      "id": "docs_superpowers_specs_2026_05_17_gsd_gitignore_manifest_sync_design_md",
-      "community": 96,
-      "norm_label": "2026-05-17-gsd-gitignore-manifest-sync-design.md"
-    },
-    {
-      "label": "Manifest-driven `.gitignore` sync for GSD SDD integration",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L1",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "community": 96,
-      "norm_label": "manifest-driven `.gitignore` sync for gsd sdd integration"
-    },
-    {
-      "label": "Problem",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L7",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_problem",
-      "community": 96,
-      "norm_label": "problem"
-    },
-    {
-      "label": "Decisions made (brainstorming)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L26",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_decisions_made_brainstorming",
-      "community": 96,
-      "norm_label": "decisions made (brainstorming)"
-    },
-    {
-      "label": "Architecture",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L36",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture",
-      "community": 96,
-      "norm_label": "architecture"
-    },
-    {
-      "label": "code:block1 (\u250c\u2500 host \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L38",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_1",
-      "community": 96,
-      "norm_label": "code:block1 (\u250c\u2500 host \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500)"
-    },
-    {
-      "label": "Registry contract (`internal/sdd/registry.go`)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L68",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go",
-      "community": 96,
-      "norm_label": "registry contract (`internal/sdd/registry.go`)"
-    },
-    {
-      "label": "code:go (type Skill struct {)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L72",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_2",
-      "community": 96,
-      "norm_label": "code:go (type skill struct {)"
-    },
-    {
-      "label": "code:go ({)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L95",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_3",
-      "community": 96,
-      "norm_label": "code:go ({)"
-    },
-    {
-      "label": "Env contract",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L124",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract",
-      "community": 96,
-      "norm_label": "env contract"
-    },
-    {
-      "label": "code:go (const ()",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L128",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_4",
-      "community": 96,
-      "norm_label": "code:go (const ()"
-    },
-    {
-      "label": "code:bash (_sdd_manifests_var=\"TOOLBOX_SDD_${_sdd_upper}_MANIFESTS\")",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L143",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_5",
-      "community": 96,
-      "norm_label": "code:bash (_sdd_manifests_var=\"toolbox_sdd_${_sdd_upper}_manifests\")"
-    },
-    {
-      "label": "Entrypoint regen function",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L150",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function",
-      "community": 96,
-      "norm_label": "entrypoint regen function"
-    },
-    {
-      "label": "code:bash (# _sdd_regen_gitignore_fence <skill_key> <manifests_csv> <ex)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L152",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_6",
-      "community": 96,
-      "norm_label": "code:bash (# _sdd_regen_gitignore_fence <skill_key> <manifests_csv> <ex)"
-    },
-    {
-      "label": "Trigger condition (Q4=C)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L208",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c",
-      "community": 96,
-      "norm_label": "trigger condition (q4=c)"
-    },
-    {
-      "label": "code:bash (if [ \"$_sdd_failed\" = \"0\" ] && [ -n \"$_sdd_manifests\" ]; the)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L212",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_7",
-      "community": 96,
-      "norm_label": "code:bash (if [ \"$_sdd_failed\" = \"0\" ] && [ -n \"$_sdd_manifests\" ]; the)"
-    },
-    {
-      "label": "Edge cases",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L235",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_edge_cases",
-      "community": 96,
-      "norm_label": "edge cases"
-    },
-    {
-      "label": "Host-side `cmd/sdd.go` changes",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L246",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes",
-      "community": 96,
-      "norm_label": "host-side `cmd/sdd.go` changes"
-    },
-    {
-      "label": "code:go (wantsGitignore := len(skill.GitignoreEntries) > 0)",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L250",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_8",
-      "community": 96,
-      "norm_label": "code:go (wantsgitignore := len(skill.gitignoreentries) > 0)"
-    },
-    {
-      "label": "Test plan",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L268",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_test_plan",
-      "community": 96,
-      "norm_label": "test plan"
-    },
-    {
-      "label": "Documentation updates",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L281",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_documentation_updates",
-      "community": 96,
-      "norm_label": "documentation updates"
-    },
-    {
-      "label": "Out of scope",
-      "file_type": "document",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L287",
-      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_out_of_scope",
-      "community": 96,
-      "norm_label": "out of scope"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L1",
-      "id": "codex_skills_openspec_apply_change_skill_md",
-      "community": 117,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L1",
-      "id": "codex_skills_openspec_explore_skill_md",
-      "community": 99,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L1",
-      "id": "codex_skills_openspec_archive_change_skill_md",
-      "community": 128,
-      "norm_label": "skill.md"
-    },
-    {
-      "label": "SKILL.md",
-      "file_type": "document",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L1",
-      "id": "codex_skills_openspec_propose_skill_md",
-      "community": 123,
-      "norm_label": "skill.md"
-    },
-    {
       "label": "README.md",
       "file_type": "document",
       "source_file": "examples/startup.d/README.md",
@@ -8564,6 +7781,807 @@
       "norm_label": "source nodes"
     },
     {
+      "label": "explore.md",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L1",
+      "community": 103,
+      "norm_label": "explore.md",
+      "id": "claude_commands_opsx_explore_md"
+    },
+    {
+      "label": "The Stance",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L23",
+      "community": 103,
+      "norm_label": "the stance",
+      "id": "opsx_explore_the_stance"
+    },
+    {
+      "label": "What You Might Do",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L34",
+      "community": 103,
+      "norm_label": "what you might do",
+      "id": "opsx_explore_what_you_might_do"
+    },
+    {
+      "label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L57",
+      "community": 103,
+      "norm_label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
+      "id": "opsx_explore_codeblock_1"
+    },
+    {
+      "label": "OpenSpec Awareness",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L81",
+      "community": 103,
+      "norm_label": "openspec awareness",
+      "id": "opsx_explore_openspec_awareness"
+    },
+    {
+      "label": "Check for context",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L85",
+      "community": 103,
+      "norm_label": "check for context",
+      "id": "opsx_explore_check_for_context"
+    },
+    {
+      "label": "code:bash (openspec list --json)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L88",
+      "community": 103,
+      "norm_label": "code:bash (openspec list --json)",
+      "id": "opsx_explore_codeblock_2"
+    },
+    {
+      "label": "When no change exists",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L99",
+      "community": 103,
+      "norm_label": "when no change exists",
+      "id": "opsx_explore_when_no_change_exists"
+    },
+    {
+      "label": "When a change exists",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L106",
+      "community": 103,
+      "norm_label": "when a change exists",
+      "id": "opsx_explore_when_a_change_exists"
+    },
+    {
+      "label": "What You Don't Have To Do",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L140",
+      "community": 103,
+      "norm_label": "what you don't have to do",
+      "id": "opsx_explore_what_you_don_t_have_to_do"
+    },
+    {
+      "label": "Ending Discovery",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L151",
+      "community": 103,
+      "norm_label": "ending discovery",
+      "id": "opsx_explore_ending_discovery"
+    },
+    {
+      "label": "Guardrails",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L164",
+      "community": 103,
+      "norm_label": "guardrails",
+      "id": "opsx_explore_guardrails"
+    },
+    {
+      "label": "archive.md",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L1",
+      "community": 116,
+      "norm_label": "archive.md",
+      "id": "claude_commands_opsx_archive_md"
+    },
+    {
+      "label": "code:bash (mkdir -p openspec/changes/archive)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L67",
+      "community": 116,
+      "norm_label": "code:bash (mkdir -p openspec/changes/archive)",
+      "id": "opsx_archive_codeblock_1"
+    },
+    {
+      "label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L77",
+      "community": 116,
+      "norm_label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/yyyy-mm-)",
+      "id": "opsx_archive_codeblock_2"
+    },
+    {
+      "label": "code:block3 (## Archive Complete)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L92",
+      "community": 116,
+      "norm_label": "code:block3 (## archive complete)",
+      "id": "opsx_archive_codeblock_3"
+    },
+    {
+      "label": "code:block4 (## Archive Complete)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L105",
+      "community": 116,
+      "norm_label": "code:block4 (## archive complete)",
+      "id": "opsx_archive_codeblock_4"
+    },
+    {
+      "label": "code:block5 (## Archive Complete (with warnings))",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L118",
+      "community": 116,
+      "norm_label": "code:block5 (## archive complete (with warnings))",
+      "id": "opsx_archive_codeblock_5"
+    },
+    {
+      "label": "code:block6 (## Archive Failed)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L136",
+      "community": 116,
+      "norm_label": "code:block6 (## archive failed)",
+      "id": "opsx_archive_codeblock_6"
+    },
+    {
+      "label": "apply.md",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L1",
+      "community": 121,
+      "norm_label": "apply.md",
+      "id": "claude_commands_opsx_apply_md"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L24",
+      "community": 121,
+      "norm_label": "code:bash (openspec status --change \"<name>\" --json)",
+      "id": "opsx_apply_codeblock_1"
+    },
+    {
+      "label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L33",
+      "community": 121,
+      "norm_label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
+      "id": "opsx_apply_codeblock_2"
+    },
+    {
+      "label": "code:block3 (## Implementing: <change-name> (schema: <schema-name>))",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L88",
+      "community": 121,
+      "norm_label": "code:block3 (## implementing: <change-name> (schema: <schema-name>))",
+      "id": "opsx_apply_codeblock_3"
+    },
+    {
+      "label": "code:block4 (## Implementation Complete)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L102",
+      "community": 121,
+      "norm_label": "code:block4 (## implementation complete)",
+      "id": "opsx_apply_codeblock_4"
+    },
+    {
+      "label": "code:block5 (## Implementation Paused)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L119",
+      "community": 121,
+      "norm_label": "code:block5 (## implementation paused)",
+      "id": "opsx_apply_codeblock_5"
+    },
+    {
+      "label": "propose.md",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L1",
+      "community": 127,
+      "norm_label": "propose.md",
+      "id": "claude_commands_opsx_propose_md"
+    },
+    {
+      "label": "code:bash (openspec new change \"<name>\")",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L33",
+      "community": 127,
+      "norm_label": "code:bash (openspec new change \"<name>\")",
+      "id": "opsx_propose_codeblock_1"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L39",
+      "community": 127,
+      "norm_label": "code:bash (openspec status --change \"<name>\" --json)",
+      "id": "opsx_propose_codeblock_2"
+    },
+    {
+      "label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L54",
+      "community": 127,
+      "norm_label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
+      "id": "opsx_propose_codeblock_3"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\")",
+      "file_type": "document",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L79",
+      "community": 127,
+      "norm_label": "code:bash (openspec status --change \"<name>\")",
+      "id": "opsx_propose_codeblock_4"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L1",
+      "community": 117,
+      "norm_label": "skill.md",
+      "id": "claude_skills_openspec_apply_change_skill_md"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L28",
+      "community": 117,
+      "norm_label": "code:bash (openspec status --change \"<name>\" --json)",
+      "id": "openspec_apply_change_skill_codeblock_1"
+    },
+    {
+      "label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L37",
+      "community": 117,
+      "norm_label": "code:bash (openspec instructions apply --change \"<name>\" --json)",
+      "id": "openspec_apply_change_skill_codeblock_2"
+    },
+    {
+      "label": "code:block3 (## Implementing: <change-name> (schema: <schema-name>))",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L92",
+      "community": 117,
+      "norm_label": "code:block3 (## implementing: <change-name> (schema: <schema-name>))",
+      "id": "openspec_apply_change_skill_codeblock_3"
+    },
+    {
+      "label": "code:block4 (## Implementation Complete)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L106",
+      "community": 117,
+      "norm_label": "code:block4 (## implementation complete)",
+      "id": "openspec_apply_change_skill_codeblock_4"
+    },
+    {
+      "label": "code:block5 (## Implementation Paused)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L123",
+      "community": 117,
+      "norm_label": "code:block5 (## implementation paused)",
+      "id": "openspec_apply_change_skill_codeblock_5"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L1",
+      "community": 99,
+      "norm_label": "skill.md",
+      "id": "claude_skills_openspec_explore_skill_md"
+    },
+    {
+      "label": "The Stance",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L20",
+      "community": 99,
+      "norm_label": "the stance",
+      "id": "openspec_explore_skill_the_stance"
+    },
+    {
+      "label": "What You Might Do",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L31",
+      "community": 99,
+      "norm_label": "what you might do",
+      "id": "openspec_explore_skill_what_you_might_do"
+    },
+    {
+      "label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L54",
+      "community": 99,
+      "norm_label": "code:block1 (\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510)",
+      "id": "openspec_explore_skill_codeblock_1"
+    },
+    {
+      "label": "OpenSpec Awareness",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L78",
+      "community": 99,
+      "norm_label": "openspec awareness",
+      "id": "openspec_explore_skill_openspec_awareness"
+    },
+    {
+      "label": "Check for context",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L82",
+      "community": 99,
+      "norm_label": "check for context",
+      "id": "openspec_explore_skill_check_for_context"
+    },
+    {
+      "label": "code:bash (openspec list --json)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L85",
+      "community": 99,
+      "norm_label": "code:bash (openspec list --json)",
+      "id": "openspec_explore_skill_codeblock_2"
+    },
+    {
+      "label": "When no change exists",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L94",
+      "community": 99,
+      "norm_label": "when no change exists",
+      "id": "openspec_explore_skill_when_no_change_exists"
+    },
+    {
+      "label": "When a change exists",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L101",
+      "community": 99,
+      "norm_label": "when a change exists",
+      "id": "openspec_explore_skill_when_a_change_exists"
+    },
+    {
+      "label": "What You Don't Have To Do",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L135",
+      "community": 99,
+      "norm_label": "what you don't have to do",
+      "id": "openspec_explore_skill_what_you_don_t_have_to_do"
+    },
+    {
+      "label": "Handling Different Entry Points",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L146",
+      "community": 99,
+      "norm_label": "handling different entry points",
+      "id": "openspec_explore_skill_handling_different_entry_points"
+    },
+    {
+      "label": "code:block3 (User: I'm thinking about adding real-time collaboration)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L149",
+      "community": 99,
+      "norm_label": "code:block3 (user: i'm thinking about adding real-time collaboration)",
+      "id": "openspec_explore_skill_codeblock_3"
+    },
+    {
+      "label": "code:block4 (User: The auth system is a mess)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L172",
+      "community": 99,
+      "norm_label": "code:block4 (user: the auth system is a mess)",
+      "id": "openspec_explore_skill_codeblock_4"
+    },
+    {
+      "label": "code:block5 (User: /opsx:explore add-auth-system)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L203",
+      "community": 99,
+      "norm_label": "code:block5 (user: /opsx:explore add-auth-system)",
+      "id": "openspec_explore_skill_codeblock_5"
+    },
+    {
+      "label": "code:block6 (User: Should we use Postgres or SQLite?)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L220",
+      "community": 99,
+      "norm_label": "code:block6 (user: should we use postgres or sqlite?)",
+      "id": "openspec_explore_skill_codeblock_6"
+    },
+    {
+      "label": "Ending Discovery",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L250",
+      "community": 99,
+      "norm_label": "ending discovery",
+      "id": "openspec_explore_skill_ending_discovery"
+    },
+    {
+      "label": "code:block7 (## What We Figured Out)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L261",
+      "community": 99,
+      "norm_label": "code:block7 (## what we figured out)",
+      "id": "openspec_explore_skill_codeblock_7"
+    },
+    {
+      "label": "Guardrails",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L279",
+      "community": 99,
+      "norm_label": "guardrails",
+      "id": "openspec_explore_skill_guardrails"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L1",
+      "community": 128,
+      "norm_label": "skill.md",
+      "id": "claude_skills_openspec_archive_change_skill_md"
+    },
+    {
+      "label": "code:bash (mkdir -p openspec/changes/archive)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L71",
+      "community": 128,
+      "norm_label": "code:bash (mkdir -p openspec/changes/archive)",
+      "id": "openspec_archive_change_skill_codeblock_1"
+    },
+    {
+      "label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L81",
+      "community": 128,
+      "norm_label": "code:bash (mv openspec/changes/<name> openspec/changes/archive/yyyy-mm-)",
+      "id": "openspec_archive_change_skill_codeblock_2"
+    },
+    {
+      "label": "code:block3 (## Archive Complete)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L96",
+      "community": 128,
+      "norm_label": "code:block3 (## archive complete)",
+      "id": "openspec_archive_change_skill_codeblock_3"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/openspec-propose/SKILL.md",
+      "source_location": "L1",
+      "community": 123,
+      "norm_label": "skill.md",
+      "id": "claude_skills_openspec_propose_skill_md"
+    },
+    {
+      "label": "code:bash (openspec new change \"<name>\")",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L37",
+      "community": 123,
+      "norm_label": "code:bash (openspec new change \"<name>\")",
+      "id": "openspec_propose_skill_codeblock_1"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L43",
+      "community": 123,
+      "norm_label": "code:bash (openspec status --change \"<name>\" --json)",
+      "id": "openspec_propose_skill_codeblock_2"
+    },
+    {
+      "label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L58",
+      "community": 123,
+      "norm_label": "code:bash (openspec instructions <artifact-id> --change \"<name>\" --json)",
+      "id": "openspec_propose_skill_codeblock_3"
+    },
+    {
+      "label": "code:bash (openspec status --change \"<name>\")",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L83",
+      "community": 123,
+      "norm_label": "code:bash (openspec status --change \"<name>\")",
+      "id": "openspec_propose_skill_codeblock_4"
+    },
+    {
+      "label": "2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L1",
+      "community": 96,
+      "norm_label": "2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "id": "docs_superpowers_specs_2026_05_17_gsd_gitignore_manifest_sync_design_md"
+    },
+    {
+      "label": "Manifest-driven `.gitignore` sync for GSD SDD integration",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L1",
+      "community": 96,
+      "norm_label": "manifest-driven `.gitignore` sync for gsd sdd integration",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration"
+    },
+    {
+      "label": "Problem",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L7",
+      "community": 96,
+      "norm_label": "problem",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_problem"
+    },
+    {
+      "label": "Decisions made (brainstorming)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L26",
+      "community": 96,
+      "norm_label": "decisions made (brainstorming)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_decisions_made_brainstorming"
+    },
+    {
+      "label": "Architecture",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L36",
+      "community": 96,
+      "norm_label": "architecture",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture"
+    },
+    {
+      "label": "code:block1 (\u250c\u2500 host \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L38",
+      "community": 96,
+      "norm_label": "code:block1 (\u250c\u2500 host \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_1"
+    },
+    {
+      "label": "Registry contract (`internal/sdd/registry.go`)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L68",
+      "community": 96,
+      "norm_label": "registry contract (`internal/sdd/registry.go`)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go"
+    },
+    {
+      "label": "code:go (type Skill struct {)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L72",
+      "community": 96,
+      "norm_label": "code:go (type skill struct {)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_2"
+    },
+    {
+      "label": "code:go ({)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L95",
+      "community": 96,
+      "norm_label": "code:go ({)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_3"
+    },
+    {
+      "label": "Env contract",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L124",
+      "community": 96,
+      "norm_label": "env contract",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract"
+    },
+    {
+      "label": "code:go (const ()",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L128",
+      "community": 96,
+      "norm_label": "code:go (const ()",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_4"
+    },
+    {
+      "label": "code:bash (_sdd_manifests_var=\"TOOLBOX_SDD_${_sdd_upper}_MANIFESTS\")",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L143",
+      "community": 96,
+      "norm_label": "code:bash (_sdd_manifests_var=\"toolbox_sdd_${_sdd_upper}_manifests\")",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_5"
+    },
+    {
+      "label": "Entrypoint regen function",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L150",
+      "community": 96,
+      "norm_label": "entrypoint regen function",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function"
+    },
+    {
+      "label": "code:bash (# _sdd_regen_gitignore_fence <skill_key> <manifests_csv> <ex)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L152",
+      "community": 96,
+      "norm_label": "code:bash (# _sdd_regen_gitignore_fence <skill_key> <manifests_csv> <ex)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_6"
+    },
+    {
+      "label": "Trigger condition (Q4=C)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L208",
+      "community": 96,
+      "norm_label": "trigger condition (q4=c)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c"
+    },
+    {
+      "label": "code:bash (if [ \"$_sdd_failed\" = \"0\" ] && [ -n \"$_sdd_manifests\" ]; the)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L212",
+      "community": 96,
+      "norm_label": "code:bash (if [ \"$_sdd_failed\" = \"0\" ] && [ -n \"$_sdd_manifests\" ]; the)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_7"
+    },
+    {
+      "label": "Edge cases",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L235",
+      "community": 96,
+      "norm_label": "edge cases",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_edge_cases"
+    },
+    {
+      "label": "Host-side `cmd/sdd.go` changes",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L246",
+      "community": 96,
+      "norm_label": "host-side `cmd/sdd.go` changes",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes"
+    },
+    {
+      "label": "code:go (wantsGitignore := len(skill.GitignoreEntries) > 0)",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L250",
+      "community": 96,
+      "norm_label": "code:go (wantsgitignore := len(skill.gitignoreentries) > 0)",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_8"
+    },
+    {
+      "label": "Test plan",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L268",
+      "community": 96,
+      "norm_label": "test plan",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_test_plan"
+    },
+    {
+      "label": "Documentation updates",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L281",
+      "community": 96,
+      "norm_label": "documentation updates",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_documentation_updates"
+    },
+    {
+      "label": "Out of scope",
+      "file_type": "document",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L287",
+      "community": 96,
+      "norm_label": "out of scope",
+      "id": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_out_of_scope"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L1",
+      "community": 117,
+      "norm_label": "skill.md",
+      "id": "codex_skills_openspec_apply_change_skill_md"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L1",
+      "community": 99,
+      "norm_label": "skill.md",
+      "id": "codex_skills_openspec_explore_skill_md"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L1",
+      "community": 128,
+      "norm_label": "skill.md",
+      "id": "codex_skills_openspec_archive_change_skill_md"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L1",
+      "community": 123,
+      "norm_label": "skill.md",
+      "id": "codex_skills_openspec_propose_skill_md"
+    },
+    {
       "label": "attach.go",
       "file_type": "code",
       "source_file": "attach.go",
@@ -8649,7 +8667,7 @@
       "file_type": "code",
       "source_file": "registry_test.go",
       "source_location": "L1",
-      "community": 92,
+      "community": 133,
       "norm_label": "registry_test.go",
       "id": "registry_test_go"
     },
@@ -8694,7 +8712,7 @@
       "file_type": "code",
       "source_file": "internal/sessionplan/plan.go",
       "source_location": "L405",
-      "community": 1,
+      "community": 26,
       "norm_label": "workspacehash()",
       "id": "sessionplan_plan_workspacehash"
     },
@@ -11515,7 +11533,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 132,
       "norm_label": "internal/container \u2014 docker sdk client + shell driver",
       "id": "internal_container_pkg"
     },
@@ -11528,7 +11546,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 132,
       "norm_label": "internal/build \u2014 image build + resolveimage + buildargs",
       "id": "internal_build_pkg"
     },
@@ -11554,7 +11572,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 0,
+      "community": 132,
       "norm_label": "internal/ui \u2014 info/warn user-facing output",
       "id": "internal_ui_pkg"
     },
@@ -11580,7 +11598,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 26,
+      "community": 0,
       "norm_label": "cmd/stop.go stopcmd",
       "id": "cmd_stop_stopcmd"
     },
@@ -11827,7 +11845,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 26,
+      "community": 87,
       "norm_label": "ensure",
       "id": "imageplan_imageplan_ensure"
     },
@@ -11931,7 +11949,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 134,
       "norm_label": "package sdd (registry)",
       "id": "sdd_registry_pkg"
     },
@@ -12087,7 +12105,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 26,
       "norm_label": "const envenabled = toolbox_sdd_enabled",
       "id": "sdd_registry_const_envenabled"
     },
@@ -12100,7 +12118,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 26,
       "norm_label": "const envworkspacehash = toolbox_sdd_workspace_hash",
       "id": "sdd_registry_const_envworkspacehash"
     },
@@ -12113,7 +12131,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 92,
+      "community": 26,
       "norm_label": "const envskillprefix = toolbox_sdd_",
       "id": "sdd_registry_const_envskillprefix"
     },
@@ -12191,7 +12209,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 26,
       "norm_label": "const stepseparator = ;",
       "id": "sdd_registry_const_stepseparator"
     },
@@ -12204,7 +12222,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 134,
       "norm_label": "rationale: skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild)",
       "id": "sdd_registry_hash_neutral_rationale"
     },
@@ -12230,7 +12248,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 134,
       "norm_label": "concept: three-step add-skill contract (row + renovate entry + optional gitignore)",
       "id": "sdd_registry_three_step_contract"
     },
@@ -12243,7 +12261,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 134,
       "norm_label": "package sessionplan (plan)",
       "id": "sessionplan_plan_pkg"
     },
@@ -12321,7 +12339,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 26,
       "norm_label": "rationale: field-per-env-var encoding (one var per skill field) replaces pipe-packed value \u2014 typed host/container boundary, bash decodes without fragile splitting",
       "id": "sessionplan_plan_field_per_envvar_rationale"
     },
@@ -12360,7 +12378,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 93,
       "norm_label": "shellmismatcherror struct",
       "id": "sessionplan_shell_shellmismatcherror"
     },
@@ -12542,7 +12560,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1,
+      "community": 134,
       "norm_label": "concept: sdd env contract between sessionplan.sddenv and entrypoint.sh",
       "id": "concept_sdd_env_contract"
     },
@@ -20681,9 +20699,9 @@
       "source_file": "internal/container/attach.go",
       "source_location": "L30",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_go",
-      "target": "container_attach_shellexecenv",
-      "confidence_score": 1.0
+      "target": "container_attach_shellexecenv"
     },
     {
       "relation": "contains",
@@ -20691,9 +20709,9 @@
       "source_file": "internal/container/attach.go",
       "source_location": "L44",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_go",
-      "target": "container_attach_execshell",
-      "confidence_score": 1.0
+      "target": "container_attach_execshell"
     },
     {
       "relation": "calls",
@@ -22336,9 +22354,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attachmock",
-      "confidence_score": 1.0
+      "target": "container_attachmock"
     },
     {
       "relation": "contains",
@@ -22346,9 +22364,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L43",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attach_test_testexecshell_containerexeccreateerror",
-      "confidence_score": 1.0
+      "target": "container_attach_test_testexecshell_containerexeccreateerror"
     },
     {
       "relation": "contains",
@@ -22356,9 +22374,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L70",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attach_test_testexecshell_containerexecattacherror",
-      "confidence_score": 1.0
+      "target": "container_attach_test_testexecshell_containerexecattacherror"
     },
     {
       "relation": "contains",
@@ -22366,9 +22384,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L93",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attach_test_testexecshell_nonttystdin",
-      "confidence_score": 1.0
+      "target": "container_attach_test_testexecshell_nonttystdin"
     },
     {
       "relation": "contains",
@@ -22376,9 +22394,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L154",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attach_test_testshellexecenv",
-      "confidence_score": 1.0
+      "target": "container_attach_test_testshellexecenv"
     },
     {
       "relation": "contains",
@@ -22386,9 +22404,9 @@
       "source_file": "internal/container/attach_test.go",
       "source_location": "L201",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "internal_container_attach_test_go",
-      "target": "container_attach_test_testexecshell_forwardstermenv",
-      "confidence_score": 1.0
+      "target": "container_attach_test_testexecshell_forwardstermenv"
     },
     {
       "relation": "method",
@@ -24435,11 +24453,41 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
+      "source_location": "L198",
+      "weight": 1.0,
+      "source": "toolbox_readme_startup_hooks",
+      "target": "toolbox_readme_per_repo_startup_hooks",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L202",
+      "weight": 1.0,
+      "source": "toolbox_readme_per_repo_startup_hooks",
+      "target": "toolbox_readme_codeblock_10",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
       "source_location": "L202",
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "toolbox_readme_publishing_ports",
       "target": "toolbox_readme_codeblock_10"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L216",
+      "weight": 1.0,
+      "source": "toolbox_readme_publishing_ports",
+      "target": "toolbox_readme_codeblock_11",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -24465,6 +24513,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
+      "source_location": "L232",
+      "weight": 1.0,
+      "source": "toolbox_readme_wrangler_oauth_login",
+      "target": "toolbox_readme_codeblock_12",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
       "source_location": "L248",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -24480,6 +24538,16 @@
       "confidence_score": 1.0,
       "source": "toolbox_readme_updating",
       "target": "toolbox_readme_codeblock_13"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L268",
+      "weight": 1.0,
+      "source": "toolbox_readme_updating",
+      "target": "toolbox_readme_codeblock_14",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25010,266 +25078,6 @@
       "confidence_score": 1.0,
       "source": "improve_codebase_architecture_interface_design_process",
       "target": "improve_codebase_architecture_interface_design_3_present_and_compare"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L23",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_the_stance"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L34",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_what_you_might_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L81",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_openspec_awareness"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L140",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_what_you_don_t_have_to_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L151",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_ending_discovery"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L164",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_explore_md",
-      "target": "opsx_explore_guardrails"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L57",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "opsx_explore_what_you_might_do",
-      "target": "opsx_explore_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L85",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "opsx_explore_openspec_awareness",
-      "target": "opsx_explore_check_for_context"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L99",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "opsx_explore_openspec_awareness",
-      "target": "opsx_explore_when_no_change_exists"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L106",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "opsx_explore_openspec_awareness",
-      "target": "opsx_explore_when_a_change_exists"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/explore.md",
-      "source_location": "L88",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "opsx_explore_check_for_context",
-      "target": "opsx_explore_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L67",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L77",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L92",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L105",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L118",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/archive.md",
-      "source_location": "L136",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_archive_md",
-      "target": "opsx_archive_codeblock_6"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L24",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_apply_md",
-      "target": "opsx_apply_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L33",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_apply_md",
-      "target": "opsx_apply_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L88",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_apply_md",
-      "target": "opsx_apply_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L102",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_apply_md",
-      "target": "opsx_apply_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/apply.md",
-      "source_location": "L119",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_apply_md",
-      "target": "opsx_apply_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L33",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_propose_md",
-      "target": "opsx_propose_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L39",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_propose_md",
-      "target": "opsx_propose_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L54",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_propose_md",
-      "target": "opsx_propose_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/commands/opsx/propose.md",
-      "source_location": "L79",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_commands_opsx_propose_md",
-      "target": "opsx_propose_codeblock_4"
     },
     {
       "relation": "contains",
@@ -25984,106 +25792,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L92",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L106",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L123",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L28",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L92",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L106",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
-      "source_location": "L123",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_apply_change_skill_md",
-      "target": "openspec_apply_change_skill_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": ".claude/skills/verify/SKILL.md",
       "source_location": "L6",
       "weight": 1.0,
@@ -26140,246 +25848,6 @@
       "confidence_score": 1.0,
       "source": "verify_skill_reporting",
       "target": "verify_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L20",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_the_stance"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L31",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_what_you_might_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L78",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_openspec_awareness"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L135",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_what_you_don_t_have_to_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L146",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_handling_different_entry_points"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L250",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_ending_discovery"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-explore/SKILL.md",
-      "source_location": "L279",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_guardrails"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L20",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_the_stance"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L54",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_what_you_might_do",
-      "target": "openspec_explore_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L31",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_what_you_might_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L82",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_openspec_awareness",
-      "target": "openspec_explore_skill_check_for_context"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L94",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_openspec_awareness",
-      "target": "openspec_explore_skill_when_no_change_exists"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L101",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_openspec_awareness",
-      "target": "openspec_explore_skill_when_a_change_exists"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L78",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_openspec_awareness"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L85",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_check_for_context",
-      "target": "openspec_explore_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L135",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_what_you_don_t_have_to_do"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L149",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_handling_different_entry_points",
-      "target": "openspec_explore_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L172",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_handling_different_entry_points",
-      "target": "openspec_explore_skill_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L203",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_handling_different_entry_points",
-      "target": "openspec_explore_skill_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L220",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_handling_different_entry_points",
-      "target": "openspec_explore_skill_codeblock_6"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L146",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_handling_different_entry_points"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L261",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "openspec_explore_skill_ending_discovery",
-      "target": "openspec_explore_skill_codeblock_7"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L250",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_ending_discovery"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-explore/SKILL.md",
-      "source_location": "L279",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_explore_skill_md",
-      "target": "openspec_explore_skill_guardrails"
     },
     {
       "relation": "contains",
@@ -26610,146 +26078,6 @@
       "confidence_score": 1.0,
       "source": "golang_cli_skill_example_config_file_myapp_yaml",
       "target": "golang_cli_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L71",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L81",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L96",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L71",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L81",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
-      "source_location": "L96",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_archive_change_skill_md",
-      "target": "openspec_archive_change_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-propose/SKILL.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-propose/SKILL.md",
-      "source_location": "L43",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-propose/SKILL.md",
-      "source_location": "L58",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".claude/skills/openspec-propose/SKILL.md",
-      "source_location": "L83",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "claude_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L37",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L43",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L58",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": ".codex/skills/openspec-propose/SKILL.md",
-      "source_location": "L83",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "codex_skills_openspec_propose_skill_md",
-      "target": "openspec_propose_skill_codeblock_4"
     },
     {
       "relation": "contains",
@@ -27224,216 +26552,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "docs_superpowers_specs_2026_05_17_gsd_gitignore_manifest_sync_design_md",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L7",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_problem"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L26",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_decisions_made_brainstorming"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L36",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L68",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L124",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L150",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L208",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L235",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_edge_cases"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L246",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L268",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_test_plan"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L281",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_documentation_updates"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L287",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_out_of_scope"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L38",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_1"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L72",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_2"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L95",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_3"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L128",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_4"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L143",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_5"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L152",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_6"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L212",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_7"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
-      "source_location": "L250",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes",
-      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_8"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "examples/startup.d/README.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -27670,6 +26788,956 @@
       "confidence_score": 1.0,
       "source": "query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_md",
       "target": "memory_query_20260517_075943_are_199_weakly_connected_nodes_a_documentation_gap_q_are_199_weakly_connected_nodes_a_documentation_gap_or_ast_noise"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L23",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_the_stance"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L34",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_what_you_might_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L81",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_openspec_awareness"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L140",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_what_you_don_t_have_to_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L151",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_ending_discovery"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L164",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_explore_md",
+      "target": "opsx_explore_guardrails"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L57",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "opsx_explore_what_you_might_do",
+      "target": "opsx_explore_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L85",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "opsx_explore_openspec_awareness",
+      "target": "opsx_explore_check_for_context"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L99",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "opsx_explore_openspec_awareness",
+      "target": "opsx_explore_when_no_change_exists"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "opsx_explore_openspec_awareness",
+      "target": "opsx_explore_when_a_change_exists"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/explore.md",
+      "source_location": "L88",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "opsx_explore_check_for_context",
+      "target": "opsx_explore_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L67",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L77",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L92",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L105",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L118",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/archive.md",
+      "source_location": "L136",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_archive_md",
+      "target": "opsx_archive_codeblock_6"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L24",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_apply_md",
+      "target": "opsx_apply_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L33",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_apply_md",
+      "target": "opsx_apply_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L88",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_apply_md",
+      "target": "opsx_apply_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L102",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_apply_md",
+      "target": "opsx_apply_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/apply.md",
+      "source_location": "L119",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_apply_md",
+      "target": "opsx_apply_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L33",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_propose_md",
+      "target": "opsx_propose_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_propose_md",
+      "target": "opsx_propose_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L54",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_propose_md",
+      "target": "opsx_propose_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/commands/opsx/propose.md",
+      "source_location": "L79",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_commands_opsx_propose_md",
+      "target": "opsx_propose_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L92",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L123",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L92",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-apply-change/SKILL.md",
+      "source_location": "L123",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_apply_change_skill_md",
+      "target": "openspec_apply_change_skill_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_the_stance"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_what_you_might_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L78",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_openspec_awareness"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L135",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_what_you_don_t_have_to_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L146",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_handling_different_entry_points"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L250",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_ending_discovery"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-explore/SKILL.md",
+      "source_location": "L279",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_guardrails"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_the_stance"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L54",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_what_you_might_do",
+      "target": "openspec_explore_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_what_you_might_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L82",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_openspec_awareness",
+      "target": "openspec_explore_skill_check_for_context"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L94",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_openspec_awareness",
+      "target": "openspec_explore_skill_when_no_change_exists"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L101",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_openspec_awareness",
+      "target": "openspec_explore_skill_when_a_change_exists"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L78",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_openspec_awareness"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L85",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_check_for_context",
+      "target": "openspec_explore_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L135",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_what_you_don_t_have_to_do"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L149",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_handling_different_entry_points",
+      "target": "openspec_explore_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L172",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_handling_different_entry_points",
+      "target": "openspec_explore_skill_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L203",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_handling_different_entry_points",
+      "target": "openspec_explore_skill_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L220",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_handling_different_entry_points",
+      "target": "openspec_explore_skill_codeblock_6"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L146",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_handling_different_entry_points"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L261",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "openspec_explore_skill_ending_discovery",
+      "target": "openspec_explore_skill_codeblock_7"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L250",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_ending_discovery"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-explore/SKILL.md",
+      "source_location": "L279",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_explore_skill_md",
+      "target": "openspec_explore_skill_guardrails"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L71",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L81",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L96",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L71",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L81",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-archive-change/SKILL.md",
+      "source_location": "L96",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_archive_change_skill_md",
+      "target": "openspec_archive_change_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-propose/SKILL.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-propose/SKILL.md",
+      "source_location": "L43",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-propose/SKILL.md",
+      "source_location": "L58",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/openspec-propose/SKILL.md",
+      "source_location": "L83",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "claude_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L37",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L43",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L58",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/openspec-propose/SKILL.md",
+      "source_location": "L83",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "codex_skills_openspec_propose_skill_md",
+      "target": "openspec_propose_skill_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_superpowers_specs_2026_05_17_gsd_gitignore_manifest_sync_design_md",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_problem"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_decisions_made_brainstorming"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L36",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L68",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L124",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L150",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L208",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L235",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_edge_cases"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L246",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L268",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_test_plan"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L281",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_documentation_updates"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L287",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_manifest_driven_gitignore_sync_for_gsd_sdd_integration",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_out_of_scope"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L38",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_architecture",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L72",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_2"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L95",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_registry_contract_internal_sdd_registry_go",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_3"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L128",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_4"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L143",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_env_contract",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_5"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L152",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_entrypoint_regen_function",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_6"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L212",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_trigger_condition_q4_c",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_7"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/superpowers/specs/2026-05-17-gsd-gitignore-manifest-sync-design.md",
+      "source_location": "L250",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_host_side_cmd_sdd_go_changes",
+      "target": "specs_2026_05_17_gsd_gitignore_manifest_sync_design_codeblock_8"
     },
     {
       "relation": "contains",
@@ -30137,5 +30205,5 @@
       "source_file": "internal/runplan/runplan.go"
     }
   ],
-  "built_at_commit": "289f50f3288a9194cddd7a32fcb7a64e92f83df8"
+  "built_at_commit": "fb94a7ff5cb441bae6abb29437a9f2a453ab1532"
 }

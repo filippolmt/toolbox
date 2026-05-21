@@ -1,16 +1,16 @@
-# Graph Report - toolbox  (2026-05-19)
+# Graph Report - toolbox  (2026-05-21)
 
 ## Corpus Check
-- 127 files · ~83,360 words
+- 114 files · ~73,021 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1228 nodes · 1677 edges · 131 communities (88 shown, 43 thin omitted)
+- 1230 nodes · 1682 edges · 136 communities (92 shown, 44 thin omitted)
 - Extraction: 81% EXTRACTED · 19% INFERRED · 0% AMBIGUOUS · INFERRED: 324 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `289f50f3`
+- Built from commit: `fb94a7ff`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -94,6 +94,7 @@
 - [[_COMMUNITY_Community 90|Community 90]]
 - [[_COMMUNITY_Community 91|Community 91]]
 - [[_COMMUNITY_Community 92|Community 92]]
+- [[_COMMUNITY_Community 93|Community 93]]
 - [[_COMMUNITY_Community 94|Community 94]]
 - [[_COMMUNITY_Community 95|Community 95]]
 - [[_COMMUNITY_Community 96|Community 96]]
@@ -132,6 +133,10 @@
 - [[_COMMUNITY_Community 129|Community 129]]
 - [[_COMMUNITY_Community 130|Community 130]]
 - [[_COMMUNITY_Community 131|Community 131]]
+- [[_COMMUNITY_Community 132|Community 132]]
+- [[_COMMUNITY_Community 133|Community 133]]
+- [[_COMMUNITY_Community 134|Community 134]]
+- [[_COMMUNITY_Community 135|Community 135]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `mkdirAll()` - 29 edges
@@ -180,15 +185,15 @@
 - **SDD env envelope (enabled list + workspace hash + prefix)** — sdd_registry_const_envenabled, sdd_registry_const_envworkspacehash, sdd_registry_const_envskillprefix [EXTRACTED 1.00]
 - **Container lifecycle decision triad (session plan / run plan / teardown)** — sessionplan_plan_plan_fn, runplan_runplan_compute, teardown_teardown_onshellexit [INFERRED 0.85]
 
-## Communities (131 total, 43 thin omitted)
+## Communities (136 total, 44 thin omitted)
 
 ### Community 0 - "CLI Subcommands & Init"
-Cohesion: 0.14
-Nodes (10): runBuild(), cmd/shell_named.go — named shell resolution + bootstrap, runShell(), signalCtx(), TestSignalCtxReturnsCancellableContext(), NewClient(), internal/build — image build + ResolveImage + BuildArgs, internal/container — Docker SDK client + Shell driver (+2 more)
+Cohesion: 0.13
+Nodes (14): cmd/shell_named.go — named shell resolution + bootstrap, runShell(), signalCtx(), TestSignalCtxReturnsCancellableContext(), runStop(), cmd/stop.go stopCmd, NewClient(), Stop() (+6 more)
 
 ### Community 1 - "SDD Env Contract"
-Cohesion: 0.07
-Nodes (41): validateShellName(), concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, const EnvEnabled = TOOLBOX_SDD_ENABLED, const EnvWorkspaceHash = TOOLBOX_SDD_WORKSPACE_HASH, const StepSeparator = ;, rationale: Skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild), package sdd (registry), concept: Three-step add-skill contract (row + Renovate entry + optional gitignore) (+33 more)
+Cohesion: 0.31
+Nodes (13): Image, MergedSessionPlan, ContainerNameFor(), hashWorkspace(), rationale: Default host IP 127.0.0.1 (not 0.0.0.0) so OAuth callbacks stay loopback-only, Merge(), func Merge(cfg, workspace, ports, cliVersion) (*MergedSessionPlan, error), normalizeWorkspace() (+5 more)
 
 ### Community 2 - "Repo Conventions & Skills"
 Cohesion: 0.16
@@ -212,7 +217,7 @@ Nodes (34): DefaultTools(), Shell(), captureStderr(), stubExecShell(), testConfi
 
 ### Community 7 - "Named Shells"
 Cohesion: 0.11
-Nodes (32): bootstrapMissingNamedShell(), createHint(), defaultShellPath(), ensureNamedShellPath(), missingPathHint(), missingShellHint(), promptPath(), promptYesNo() (+24 more)
+Nodes (34): bootstrapMissingNamedShell(), createHint(), defaultShellPath(), ensureNamedShellPath(), missingPathHint(), missingShellHint(), promptPath(), promptYesNo() (+26 more)
 
 ### Community 8 - "Architecture Vocabulary"
 Cohesion: 0.07
@@ -276,7 +281,7 @@ Nodes (11): enabledPlugins, andrej-karpathy-skills@karpathy-skills, claude-code-
 
 ### Community 23 - "Container Mocks"
 Cohesion: 0.06
-Nodes (32): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (toolbox shell -p 8976:8976), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest), code:bash (toolbox version) (+24 more)
+Nodes (34): CLI commands, code:bash (brew install filippolmt/tap/toolbox), code:yaml (mounts:), code:bash (# Forward host port 7171 to the same port in the container.), code:bash (toolbox shell -p 8976:8976), code:bash (brew upgrade toolbox), code:bash (docker pull ghcr.io/filippolmt/toolbox:latest), code:bash (go install github.com/filippolmt/toolbox@latest) (+26 more)
 
 ### Community 24 - "Bijection Tests"
 Cohesion: 0.29
@@ -287,8 +292,8 @@ Cohesion: 0.29
 Nodes (7): Single-binary self-gate pattern (D-04): `command -v <tool> || exit 0`, Phase 10 Plan 02 — Extract rtk init to 10-rtk.sh, Inner gate `command -v claude && [ -d $HOME/.claude ]` preserved (Pitfall 5), Phase 10 Plan 03 — Extract cf SKILL seed to 20-cf.sh, Phase 10 Plan 04 — Extract graphify install to 30-graphify.sh, Subshell wrapper `(cd "$HOME" && playwright-cli install --skills claude)` (Pitfall 4), Phase 10 Plan 05 — Extract playwright-cli install to 40-playwright-cli.sh
 
 ### Community 26 - "Community 26"
-Cohesion: 0.24
-Nodes (9): runStop(), cmd/stop.go stopCmd, createAndStart(), dispatchOp(), formatPublishMismatch(), Stop(), StopAll(), StopByName() (+1 more)
+Cohesion: 0.17
+Nodes (12): const EnvEnabled = TOOLBOX_SDD_ENABLED, const EnvSkillPrefix = TOOLBOX_SDD_, const EnvWorkspaceHash = TOOLBOX_SDD_WORKSPACE_HASH, const StepSeparator = ;, Keys(), Lookup(), SkillEnvKey(), Skill (+4 more)
 
 ### Community 29 - "Docs Glossary"
 Cohesion: 0.50
@@ -315,8 +320,8 @@ Cohesion: 0.13
 Nodes (15): execShell(), shellExecEnv(), TestExecShell_ContainerExecAttachError(), TestExecShell_ContainerExecCreateError(), TestExecShell_ForwardsTermEnv(), TestExecShell_NonTTYStdin(), TestShellExecEnv(), attachMock (+7 more)
 
 ### Community 87 - "Community 87"
-Cohesion: 0.40
-Nodes (8): Info(), Success(), captureStderr(), TestInfoWritesToStderr(), TestOutputDoesNotWriteToStdout(), TestSuccessWritesToStderr(), TestWarningWritesToStderr(), Warning()
+Cohesion: 0.23
+Nodes (13): createAndStart(), dispatchOp(), formatPublishMismatch(), StopAll(), Ensure, Info(), Success(), captureStderr() (+5 more)
 
 ### Community 88 - "Community 88"
 Cohesion: 0.24
@@ -327,8 +332,12 @@ Cohesion: 0.07
 Nodes (28): Auth isolation under `~/.toolbox/`, Catalog entry → image hash, `cf` Cloudflare CLI skill auto-install, Claude Code env-var matrix, code:block1 (# >>> sdd-managed/<name> (toolbox)), Codex nested sandbox, Container lifecycle, Docker CLI checksum (+20 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.10
-Nodes (22): const EnvSkillPrefix = TOOLBOX_SDD_, Keys(), Lookup(), rationale: Versions Renovate-bumped via customManager keyed on NpmPackage, Skill entry: bmad (bmad-method), Skill.BinName, Skill.GitignoreEntries, Skill.InstallSteps (+14 more)
+Cohesion: 0.17
+Nodes (12): rationale: Versions Renovate-bumped via customManager keyed on NpmPackage, Skill entry: bmad (bmad-method), Skill.BinName, Skill.GitignoreEntries, Skill.InstallSteps, Skill.Key, Skill.NpmPackage, Skill.RequiresMarker (+4 more)
+
+### Community 93 - "Community 93"
+Cohesion: 0.23
+Nodes (9): NestedSandboxSecurityOpt(), ResolveShellCmd(), ShellMismatchError struct, TestNestedSandboxSecurityOptCodexDisabled(), TestNestedSandboxSecurityOptDefault(), TestResolveShellCmdBash(), TestResolveShellCmdZshDisabledError(), TestResolveShellCmdZshEnabled() (+1 more)
 
 ### Community 94 - "Community 94"
 Cohesion: 0.08
@@ -478,25 +487,37 @@ Nodes (3): TestValidateShellAcceptsSupported(), TestValidateShellRejectsUnknown(
 Cohesion: 0.50
 Nodes (3): Answer, Q: Why does Shell() connect Container Lifecycle Tests to CLI Init + Lifecycle, Run Plan State Machine, Session Plan Core, Image Plan Ensure?, Source Nodes
 
+### Community 132 - "Community 132"
+Cohesion: 0.33
+Nodes (4): runBuild(), internal/build — image build + ResolveImage + BuildArgs, internal/container — Docker SDK client + Shell driver, internal/ui — Info/Warn user-facing output
+
+### Community 133 - "Community 133"
+Cohesion: 0.53
+Nodes (4): TestKeysMatchesSkills(), TestLookupReturnsRegisteredSkills(), TestRenovateRegexMatchesEverySDDPin(), TestSkillEnvKey()
+
+### Community 134 - "Community 134"
+Cohesion: 0.40
+Nodes (5): concept: SDD env contract between sessionplan.sddEnv and entrypoint.sh, rationale: Skills excluded from internal/catalog to keep image hash neutral (per-repo enablement must not force toolbox:local-<hash> rebuild), package sdd (registry), concept: Three-step add-skill contract (row + Renovate entry + optional gitignore), package sessionplan (plan)
+
 ## Knowledge Gaps
-- **388 isolated node(s):** `version`, `source`, `sourceType`, `skillPath`, `computedHash` (+383 more)
+- **385 isolated node(s):** `version`, `source`, `sourceType`, `skillPath`, `computedHash` (+380 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **43 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **44 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
+- **Why does `Shell()` connect `Container Lifecycle` to `CLI Subcommands & Init`, `Community 135`, `Image Plan`, `Run Plan Pipeline`, `Community 86`, `Community 87`, `Community 88`?**
+  _High betweenness centrality (0.104) - this node is a cross-community bridge._
 - **Why does `/add-cli skill` connect `Community 106` to `Repo Conventions & Skills`, `Community 107`, `Community 102`?**
-  _High betweenness centrality (0.102) - this node is a cross-community bridge._
-- **Why does `Shell()` connect `Container Lifecycle` to `CLI Subcommands & Init`, `SDD Env Contract`, `Image Plan`, `Run Plan Pipeline`, `Community 86`, `Community 87`, `Community 88`, `Community 26`?**
-  _High betweenness centrality (0.101) - this node is a cross-community bridge._
-- **Why does `Lookup()` connect `Community 92` to `toolbox init Scaffold`?**
-  _High betweenness centrality (0.080) - this node is a cross-community bridge._
+  _High betweenness centrality (0.100) - this node is a cross-community bridge._
+- **Why does `Lookup()` connect `Community 26` to `toolbox init Scaffold`, `Community 133`, `Community 92`?**
+  _High betweenness centrality (0.079) - this node is a cross-community bridge._
 - **Are the 13 inferred relationships involving `mkdirAll()` (e.g. with `ensureNamedShellPath()` and `TestEnsureNamedShellPathRejectsSymlink()`) actually correct?**
   _`mkdirAll()` has 13 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 24 inferred relationships involving `Shell()` (e.g. with `runShell()` and `Warning()`) actually correct?**
   _`Shell()` has 24 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `version`, `source`, `sourceType` to the rest of the system?**
-  _412 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _409 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `CLI Subcommands & Init` be split into smaller, more focused modules?**
-  _Cohesion score 0.14166666666666666 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.12631578947368421 - nodes in this community are weakly interconnected._
