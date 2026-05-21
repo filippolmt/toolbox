@@ -17,7 +17,10 @@ func TestBindListener_PreferredFreePort(t *testing.T) {
 }
 
 func TestBindListener_FallsBackWhenBusy(t *testing.T) {
-	first, _ := net.Listen("tcp", "127.0.0.1:0")
+	first, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("setup listener: %v", err)
+	}
 	defer first.Close()
 	busy := first.Addr().(*net.TCPAddr).Port
 
@@ -33,8 +36,13 @@ func TestBindListener_FallsBackWhenBusy(t *testing.T) {
 
 func TestWriteLoadClearPort(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	s, _ := ResolveHostState()
-	_ = EnsureHostDir(s)
+	s, err := ResolveHostState()
+	if err != nil {
+		t.Fatalf("ResolveHostState: %v", err)
+	}
+	if err := EnsureHostDir(s); err != nil {
+		t.Fatalf("EnsureHostDir: %v", err)
+	}
 	if err := WritePort(s, 17654); err != nil {
 		t.Fatal(err)
 	}
@@ -52,8 +60,13 @@ func TestWriteLoadClearPort(t *testing.T) {
 
 func TestWritePort_RejectsInvalid(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	s, _ := ResolveHostState()
-	_ = EnsureHostDir(s)
+	s, err := ResolveHostState()
+	if err != nil {
+		t.Fatalf("ResolveHostState: %v", err)
+	}
+	if err := EnsureHostDir(s); err != nil {
+		t.Fatalf("EnsureHostDir: %v", err)
+	}
 	for _, p := range []int{-1, 0, 65536} {
 		if err := WritePort(s, p); err == nil {
 			t.Errorf("WritePort(%d) returned nil", p)
