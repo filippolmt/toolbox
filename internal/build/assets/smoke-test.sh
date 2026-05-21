@@ -166,7 +166,7 @@ check_zsh() {
 
 check_required "node"       node --version
 check_required "npm"        npm --version
-check_required "socat"      sh -c 'socat -V 2>&1 | head -n1'
+check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
 check_required "git"        git --version
 check_required "rg"         rg --version
