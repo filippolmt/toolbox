@@ -7,18 +7,21 @@ import (
 )
 
 func TestValidateURL_Accepts(t *testing.T) {
-	cases := []string{
-		"http://example.com",
-		"https://example.com/path?q=1#frag",
-		"HTTPS://Example.com",
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"http://example.com", "http://example.com"},
+		{"https://example.com/path?q=1#frag", "https://example.com/path?q=1#frag"},
+		{"HTTPS://Example.com", "https://Example.com"},
 	}
-	for _, in := range cases {
-		got, err := ValidateURL(in)
+	for _, c := range cases {
+		got, err := ValidateURL(c.in)
 		if err != nil {
-			t.Errorf("ValidateURL(%q) err = %v", in, err)
+			t.Errorf("ValidateURL(%q) err = %v", c.in, err)
 		}
-		if !strings.HasPrefix(got, "http") {
-			t.Errorf("ValidateURL(%q) = %q, lost scheme", in, got)
+		if got != c.want {
+			t.Errorf("ValidateURL(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
