@@ -27,6 +27,21 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: echo "::add-mask::$SONAR_HOST_URL"
 
+      - name: Diagnose Sonar reachability
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          set +e
+          echo "Runner egress IP:"
+          curl -sS https://api.ipify.org && echo
+          echo "Validate token against Sonar:"
+          code=$(curl -sS -o /tmp/resp -w "%{http_code}" -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/authentication/validate")
+          echo "HTTP $code"
+          head -c 500 /tmp/resp || true
+          echo
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
