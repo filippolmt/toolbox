@@ -40,7 +40,7 @@ func TestInitWritesAnnotatedYAML(t *testing.T) {
 		t.Fatalf("read written file: %v", err)
 	}
 	got := string(body)
-	for _, want := range []string{"shell:", "mounts_root:", "tools:", "claude", "Precedence"} {
+	for _, want := range []string{"shell:", "mounts_root:", "inherit_host_auth", "claude", "Precedence"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("written yaml missing %q\n---\n%s", want, got)
 		}

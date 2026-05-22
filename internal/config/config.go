@@ -10,15 +10,18 @@ import (
 
 // Config is the top-level toolbox configuration.
 //
-// Image selection is no longer controlled by explicit image.name/image.tag
-// fields — it is derived from the Tools map by build.ResolveImage. If the
-// user needs a custom registry image, the escape hatch is to point at a
-// locally-built one via `toolbox build` + manual `docker tag`.
+// The runtime image is canonical (`ghcr.io/filippolmt/toolbox:latest`) for
+// every user — there is no per-tool opt-out. If a custom image is needed,
+// run `toolbox build` to overwrite the local cache of the canonical tag.
+//
+// InheritHostAuth opts the listed CLIs into reading the host's standard
+// credential path (read-only) instead of the isolated `~/.toolbox/<key>/`
+// default. Whitelist lives on catalog.Entry.HostAuthMount.
 type Config struct {
-	Mounts []Mount               `mapstructure:"mounts"`
-	Tools  map[string]bool       `mapstructure:"tools"`
-	Shells map[string]NamedShell `mapstructure:"shells"`
-	Shell  string                `mapstructure:"shell"`
+	Mounts          []Mount               `mapstructure:"mounts"`
+	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
+	Shells          map[string]NamedShell `mapstructure:"shells"`
+	Shell           string                `mapstructure:"shell"`
 	// MountsRoot retargets every default mount whose Source lives under
 	// ~/.toolbox/ to the given prefix. Useful when the user wants every
 	// toolbox-managed credential / state dir to live somewhere other than
@@ -34,15 +37,11 @@ type Config struct {
 	// a per-skill spec env var; entrypoint.sh loops them and runs the
 	// pinned installer in /workspace.
 	//
-	// Lives OUTSIDE the Tools map on purpose: catalog.WriteCanonical feeds
-	// the local-image hash, so a top-level field is guaranteed hash-neutral
-	// — flipping an SDD flag never forces a rebuild.
 	SDD map[string]bool `mapstructure:"sdd"`
 	// BrowserBridge toggles the host-side ~/.toolbox/browser RO mount in the
 	// container and gates the `toolbox browser-bridge install` command. When
 	// false, the mount is omitted and the install command refuses. Default
-	// true. Lives outside Tools{} so flipping it stays hash-neutral (mirrors
-	// the SDD rationale above).
+	// true.
 	BrowserBridge *bool `mapstructure:"browser_bridge"`
 }
 

@@ -81,23 +81,21 @@ On first run, `toolbox shell` creates and starts the container with default volu
 
 ## Configuration
 
-Two optional knobs: `tools:` (which CLIs to bake into the image) and `mounts:` (which host paths to expose inside the container). Both live in `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project directory (overrides).
+Two optional knobs: `inherit_host_auth:` (share host credentials with the container) and `mounts:` (which host paths to expose inside the container). Both live in `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project directory (overrides).
 
-### Opting out of tools
+Every CLI listed in the table above is installed unconditionally. There is no per-tool opt-out — every user runs the canonical `ghcr.io/filippolmt/toolbox:latest` image pulled from GHCR. Use `toolbox build` to overwrite the local cache with a custom build.
 
-Every tool in the table above is enabled by default. Disable any of them per-project:
+### Inheriting host credentials
+
+By default the container's credential paths are isolated under `~/.toolbox/<tool>/` on the host — `gh auth login` inside the container writes to `~/.toolbox/gh/`, not to the host's `~/.config/gh/`. Opt into sharing a host credential (read-only) per CLI:
 
 ```yaml
-tools:
-  gcloud: false
-  azure: false
-  oci: false
-  playwright: false
+inherit_host_auth: [gh, gcloud]
 ```
 
-When the `tools:` map matches the defaults, `toolbox shell` pulls the prebuilt `ghcr.io/filippolmt/toolbox:latest` image. Any opt-out triggers a local rebuild tagged `toolbox:local-<hash>` — the hash is derived from the selected tool set, so the same config always resolves to the same image.
+Eligible keys: `gh`, `glab`, `gcloud`, `docker`, `azure`, `oci`, `claude`, `codex`, `atuin`. Each maps the CLI's standard host path (e.g. `~/.config/gh`) to its in-container target as a read-only bind. Login flows that need writes still run on the host.
 
-Because Codex is enabled by default, newly-created toolbox containers run with Docker `seccomp=unconfined` so Codex's built-in bubblewrap sandbox can create nested user namespaces. Set `tools.codex: false` if you want to keep Docker's default seccomp profile and do not need Codex inside toolbox.
+Codex is unconditionally installed, so containers always run with Docker `seccomp=unconfined` to allow Codex's bubblewrap sandbox to create nested user namespaces.
 
 ### Overriding mounts
 

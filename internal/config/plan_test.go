@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // Plan-level fs tests live alongside the unexported walkUp tests so HOME
@@ -133,10 +131,8 @@ func TestPlanCanonicalPipeline(t *testing.T) {
 	if cfg.Shell != "zsh" {
 		t.Errorf("Shell = %q, want zsh (default)", cfg.Shell)
 	}
-	for _, k := range catalog.Keys() {
-		if !cfg.Tools[k] {
-			t.Errorf("tool %q should default to true after canonical Plan, got false", k)
-		}
+	if len(cfg.InheritHostAuth) != 0 {
+		t.Errorf("InheritHostAuth = %v, want empty (isolated default)", cfg.InheritHostAuth)
 	}
 	if cfg.MountsRoot != "" {
 		t.Errorf("MountsRoot should be empty by default, got %q", cfg.MountsRoot)
@@ -175,7 +171,7 @@ func TestPlanWalksUpFromSubdir(t *testing.T) {
 func TestPlanExplicitOverrideShortCircuits(t *testing.T) {
 	dir := t.TempDir()
 	explicit := filepath.Join(dir, "custom.yaml")
-	if err := os.WriteFile(explicit, []byte("tools:\n  gcloud: false\n"), 0o600); err != nil {
+	if err := os.WriteFile(explicit, []byte("inherit_host_auth: [gh]\n"), 0o600); err != nil {
 		t.Fatalf("write explicit: %v", err)
 	}
 	// Global at HOME and a project file at CWD that should both be ignored.
@@ -193,8 +189,8 @@ func TestPlanExplicitOverrideShortCircuits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if cfg.Tools["gcloud"] {
-		t.Error("gcloud should be false from --config")
+	if len(cfg.InheritHostAuth) != 1 || cfg.InheritHostAuth[0] != "gh" {
+		t.Errorf("InheritHostAuth = %v, want [gh] from --config", cfg.InheritHostAuth)
 	}
 	if cfg.Shell != "zsh" {
 		t.Errorf("Shell = %q, want zsh (global must NOT be read when --config set)", cfg.Shell)
@@ -244,11 +240,6 @@ func TestPlanGlobalMalformedIsBestEffort(t *testing.T) {
 	}
 	if cfg.Shell != "zsh" {
 		t.Errorf("Shell = %q, want zsh (defaults survive a dropped global)", cfg.Shell)
-	}
-	for _, k := range catalog.Keys() {
-		if !cfg.Tools[k] {
-			t.Errorf("tool %q should default to true after global drop, got false", k)
-		}
 	}
 }
 

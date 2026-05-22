@@ -28,8 +28,9 @@ check_required() {
     fi
 }
 
-# Optional tools — skip if the binary is absent (INSTALL_<TOOL>=false at build
-# time). CI always builds the full image so every optional check runs there.
+# Tools that may not yet be installed on a partial build — skip gracefully
+# when absent. All CLIs are installed unconditionally in the canonical image,
+# so this branch should not fire in production builds.
 check_optional() {
     local name="$1"
     local bin="$2"
@@ -48,8 +49,7 @@ check_optional() {
     fi
 }
 
-# Bundled zsh stack (ZSH-01..07). Gate on `command -v zsh` so an
-# INSTALL_ZSH=false image SKIPs the whole block without failing.
+# Bundled zsh stack (ZSH-01..07).
 #
 # Each sub-check is a named function (`_zsh_<name>_check`); the `_zsh_assert`
 # reporter invokes it and feeds PASS/FAIL into the outer counters. This
@@ -275,8 +275,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -lt 13 ]; then
-    echo "FAILED: only $count init.d/*.sh found, expected >= 13 (catalog declares 13 InitScripts)"
+if [ "$count" -ne 13 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 13 (12 catalog InitScripts + 1 system loopback-bridge)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

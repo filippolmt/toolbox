@@ -9,20 +9,20 @@ import (
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
-func TestRenderContainsAllToolsAndMounts(t *testing.T) {
+func TestRenderContainsExpectedSections(t *testing.T) {
 	got := configexample.Render()
 
-	for _, want := range []string{"shell:", "mounts_root:", "tools:", "mounts:", "Precedence"} {
+	for _, want := range []string{"shell:", "mounts_root:", "inherit_host_auth", "mounts:", "Precedence"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template missing %q", want)
 		}
 	}
-	for _, e := range catalog.Entries {
-		if !strings.Contains(got, e.Key+":") {
-			t.Errorf("template missing tool key %q", e.Key)
-		}
-		if !strings.Contains(got, e.BuildArg) {
-			t.Errorf("template missing build arg %q", e.BuildArg)
+	if strings.Contains(got, "tools:") {
+		t.Error("template must not contain the removed tools: block")
+	}
+	for _, k := range catalog.HostAuthEligibleKeys() {
+		if !strings.Contains(got, k) {
+			t.Errorf("template missing eligible CLI key %q in inherit_host_auth section", k)
 		}
 	}
 	for _, m := range mountplan.Defaults() {

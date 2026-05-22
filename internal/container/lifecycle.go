@@ -93,9 +93,10 @@ func NewClient() (client.APIClient, error) {
 //   - ActionStart   -> start the stopped container, then exec
 //   - ActionCreate  -> ensure image, create + start + exec
 //
-// Image ensure strategy (see build.ResolveImage):
-//   - defaults config  -> pull the canonical GHCR image (best-effort)
-//   - custom tools     -> auto-build a hash-tagged local image if missing
+// Image ensure: every user runs the canonical GHCR image; Refresh attempts
+// a best-effort registry sync, Ensure (called from createAndStart) hard-
+// requires the image be present locally — `toolbox build` is the explicit
+// path to a local rebuild.
 //
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
@@ -105,9 +106,8 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning("mount skipped: " + w)
 	}
 
-	// Phase 1 of imageplan: best-effort registry sync. No-op for local
-	// hash-tagged images. The hard guarantee runs in imageplan.Ensure
-	// inside the create branch (createAndStart).
+	// Best-effort registry sync. Hard guarantee runs in imageplan.Ensure
+	// inside createAndStart.
 	imageplan.Refresh(ctx, cli, plan.Image)
 
 	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
@@ -167,7 +167,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 // createAndStart owns the not-found path: ensure the image is present,
 // create the container from the SessionPlan, start it, return its ID.
 func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, error) {
-	if ensureErr := imageplan.Ensure(ctx, cli, plan.Image, plan.BuildArgs); ensureErr != nil {
+	if ensureErr := imageplan.Ensure(ctx, cli, plan.Image); ensureErr != nil {
 		return "", ensureErr
 	}
 

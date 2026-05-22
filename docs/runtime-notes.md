@@ -12,9 +12,15 @@ The CLI runs the container with `--user $(id -u):$(id -g)`. Because the runtime 
 
 Layer 7 of `internal/build/assets/Dockerfile` installs the static Docker CLI binary without a SHA256 verification step because Docker doesn't publish `.sha256` files for those releases. Version pin + HTTPS is the only guard. Tracked as accepted risk T-01-08.
 
-### Tool version pinning + `ARG INSTALL_<TOOL>` pattern
+### Tool version pinning
 
-Every external binary in the Dockerfile is pinned by version + SHA256 (exceptions: Docker CLI — see above — and gcloud, which uses a Google APT repo). Renovate bumps them. Adding a new tool: download tarball, verify with `sha256sum`, install. Wire opt-out via `ARG INSTALL_<TOOL>=true` (Dockerfile) coupled to the matching `tools.<key>` entry in `.toolbox.yaml` and a row in `internal/catalog/catalog.go` `Entries` (the `BuildArg` field is the literal `INSTALL_<TOOL>`).
+Every external binary in the Dockerfile is pinned by version + SHA256 (exceptions: Docker CLI — see above — and gcloud, which uses a Google APT repo). Renovate bumps them. Adding a new tool is now a 2-edit (or 3-edit when a runtime init script is needed) operation:
+
+1. New row in `internal/catalog/catalog.go` `Entries`.
+2. New install `RUN` block in `internal/build/assets/Dockerfile`.
+3. (optional) New `init.d/<NN>-<tool>.sh` if `InitScript` is set on the catalog row.
+
+There is no per-tool opt-out: every CLI is installed unconditionally. The `ARG INSTALL_<TOOL>` build-arg pattern was removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Use `inherit_host_auth:` in `.toolbox.yaml` to share host credentials with the container — see the [inherit-host-auth](#inherit-host-auth) section.
 
 ### rtk arm64 is built from source
 
@@ -67,15 +73,45 @@ Setting `mounts_root: /custom/path` rewrites every default mount whose Source st
 
 `DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); `github.com/docker/docker` in `go.mod` is the SDK the CLI launcher uses (pinned to the highest v28.x `+incompatible` tag, since upstream publishes no v29 Go module). The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically.
 
-### Catalog entry → image hash
+### Tools removal
 
-Adding (or removing) an entry in `internal/catalog/catalog.go` `Entries` invalidates the local image hash for every user with a non-default `tools:` config — the canonical hash encoding is computed over the catalog's `(Key, Default, BuildArg)` tuples, so a new entry shifts the digest even if the user never sets it. Practical effect: the next `toolbox shell` shows "Image not found locally — building toolbox:local-…" once and rebuilds. Document this in release notes when bumping the list. Users on canonical defaults are unaffected (they pull `:latest` from GHCR — `catalog.IsDefault` short-circuits before any hash compute).
+The `tools:` block in `.toolbox.yaml` and the `ARG INSTALL_<TOOL>` Dockerfile mechanism are removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Every user runs the same canonical image (`ghcr.io/filippolmt/toolbox:latest`) — the per-tool opt-out, the local-hash image build, and the catalog-driven image hash are all gone.
+
+If your config still has a `tools:` block, the loader emits a one-time warning and ignores it. Delete the block to silence the warning.
+
+### inherit-host-auth
+
+`inherit_host_auth: [<key>, …]` in `.toolbox.yaml` opts the listed CLIs into reading the host's standard credential path (read-only) instead of the isolated `~/.toolbox/<key>/` default. Default is `[]` — fully isolated, matches the pre-#276 behavior.
+
+Eligible CLIs and their host paths (catalog entries with non-nil `HostAuthMount`):
+
+| Key      | Host path                 | Container path                       |
+|----------|---------------------------|--------------------------------------|
+| `gh`     | `~/.config/gh`            | `/home/toolbox/.config/gh`           |
+| `glab`   | `~/.config/glab-cli`      | `/home/toolbox/.config/glab-cli`     |
+| `gcloud` | `~/.config/gcloud`        | `/home/toolbox/.config/gcloud`       |
+| `docker` | `~/.docker`               | `/home/toolbox/.docker`              |
+| `azure`  | `~/.azure`                | `/home/toolbox/.azure`               |
+| `oci`    | `~/.oci`                  | `/home/toolbox/.oci`                 |
+| `claude` | `~/.claude`               | `/home/toolbox/.claude`              |
+| `codex`  | `~/.codex`                | `/home/toolbox/.codex`               |
+| `atuin`  | `~/.local/share/atuin`    | `/home/toolbox/.local/share/atuin`   |
+
+Validation in `config.Plan` rejects unknown keys and keys whose catalog entry lacks `HostAuthMount`. The mount is always read-only — the container can read host credentials but cannot mutate them; a misbehaving CLI inside the container cannot corrupt the host's `~/.config/gh/hosts.yml`. Login flows that need to write (e.g. `gh auth login`) must run on the host.
+
+Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.toolbox/<key>` mount is dropped (not supplemented) — two mounts at the same container target would shadow unpredictably. User `mounts:` patches keying on the same `name:` still compose on top of the inherited mount.
+
+`mounts_root` interaction: if both `mounts_root: /custom` and `inherit_host_auth: [<key>]` are set, the `mounts_root` retargeting is bypassed for that key — host inheritance pulls from the host's canonical path (e.g. `~/.config/gh`), not from `/custom/gh`. `mounts_root` still applies to every other default mount. If you need the credential dir on an encrypted volume, choose one approach or the other.
+
+Pre-stat check: `inherit_host_auth: [<key>]` requires the host source path to exist at config-load time. If it does not, `toolbox shell` fails with a clear error pointing at the missing path — silent soft-skip would have left the container with no credential mount at all (worse than failing loud).
+
+Read-write inheritance: inherited mounts are read-write. Most listed CLIs refresh tokens or update session state during normal use (atuin appends history, claude/codex write session state, gh/docker rotate OAuth refresh tokens) — RO would EROFS those writes. You opt in explicitly: your host credential dir is now writable by container processes.
 
 ## Container lifecycle
 
 ### Image selection
 
-`toolbox shell` pulls `ghcr.io/filippolmt/toolbox:latest` only when the merged `tools:` config matches the catalog defaults (`catalog.IsDefault` returns true). Any override auto-builds `toolbox:local-<hash>` from the embedded Dockerfile via `internal/build/tag.go::ResolveImage`. The tag hash is computed by `catalog.WriteCanonical` over `(Key, Default, BuildArg)` tuples. `toolbox build` is the explicit escape hatch (supports `--no-cache`).
+`toolbox shell` always pulls `ghcr.io/filippolmt/toolbox:latest`. There is no per-tool opt-out, no local-hash fallback, no auto-build branch. `toolbox build` is the explicit escape hatch — it overwrites the local cache of the canonical tag so the next `toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream copy.
 
 ### Port bindings are fixed at container creation
 

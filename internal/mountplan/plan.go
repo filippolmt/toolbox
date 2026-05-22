@@ -85,7 +85,15 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 	if err := config.ValidateMountsRoot(cfg.MountsRoot); err != nil {
 		return nil, err
 	}
+	// HOME for inherit_host_auth's pre-stat. UserHomeDir failure leaves home
+	// empty, in which case applyInheritHostAuth treats ~/ paths as-is and
+	// os.Stat reports them missing — surfaces the misconfiguration loudly.
+	home, _ := os.UserHomeDir()
 	base := applyMountsRoot(defaults(), cfg.MountsRoot)
+	base, err := applyInheritHostAuth(base, cfg.InheritHostAuth, home)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
 		base = dropMountByName(base, "browser-bridge")
 	}

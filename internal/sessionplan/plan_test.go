@@ -1,7 +1,6 @@
 package sessionplan_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,21 +16,17 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-// testConfig returns a *config.Config whose Tools map matches the catalog
-// defaults. Pairs with build.ResolveImage's IsDefault short-circuit so the
-// happy-path tests resolve to the canonical GHCR registry tag — mirrors
-// internal/container/lifecycle_test.go::testConfig.
+// testConfig returns a baseline *config.Config that resolves to the canonical
+// GHCR registry tag — mirrors internal/container/lifecycle_test.go::testConfig.
 func testConfig() *config.Config {
-	return &config.Config{
-		Shell: "zsh",
-		Tools: config.DefaultTools(),
-	}
+	return &config.Config{Shell: "zsh"}
 }
 
 // --- Plan tier (fs side effects) ---
 
-// TestPlanComposesImage asserts that Plan delegates image resolution to
-// build.ResolveImage and lands the result on plan.Image.
+// TestPlanComposesImage asserts every config resolves to the canonical
+// registry tag (single canonical image — no per-tool opt-out, no local
+// hash fallback).
 func TestPlanComposesImage(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -40,37 +35,13 @@ func TestPlanComposesImage(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	t.Run("default tools resolve to registry tag", func(t *testing.T) {
-		plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Plan: %v", err)
-		}
-		if plan.Image.Ref != "ghcr.io/filippolmt/toolbox:latest" {
-			t.Errorf("Image.Ref = %q, want canonical GHCR tag", plan.Image.Ref)
-		}
-		if plan.Image.IsLocal {
-			t.Error("Image.IsLocal = true, want false for default tools")
-		}
-	})
-
-	t.Run("non-default tools resolve to local hash", func(t *testing.T) {
-		cfg := testConfig()
-		// Flip one tool off to force the local-build path. Pick a
-		// non-shell tool so validation doesn't reject `Shell: "zsh"`
-		// when map iteration order picks the `zsh` key.
-		cfg.Tools = config.DefaultTools()
-		cfg.Tools["claude"] = false
-		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Plan: %v", err)
-		}
-		if !strings.HasPrefix(plan.Image.Ref, "toolbox:local-") {
-			t.Errorf("Image.Ref = %q, want toolbox:local- prefix", plan.Image.Ref)
-		}
-		if !plan.Image.IsLocal {
-			t.Error("Image.IsLocal = false, want true for non-default tools")
-		}
-	})
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if plan.Image.Ref != "ghcr.io/filippolmt/toolbox:latest" {
+		t.Errorf("Image.Ref = %q, want canonical GHCR tag", plan.Image.Ref)
+	}
 }
 
 // TestPlanComposesMounts asserts Plan delegates the mount stage to
@@ -83,7 +54,7 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -92,7 +63,6 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Fatal("Binds is empty; expected mountplan.Plan to populate")
 	}
 
-	// Workspace bind always present at WorkspaceTarget.
 	wsResolved, _ := filepath.EvalSymlinks(workspace)
 	foundWS := false
 	for _, b := range plan.Binds {
@@ -104,7 +74,6 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Errorf("workspace bind missing for target %s in %v", mountplan.WorkspaceTarget, plan.Binds)
 	}
 
-	// WorkingDir matches mountplan's mirror predicate.
 	if mirror, ok := mountplan.WorkspaceMirrorPath(workspace); ok {
 		if plan.WorkingDir != mirror {
 			t.Errorf("WorkingDir = %q, want mirror %q", plan.WorkingDir, mirror)
@@ -124,7 +93,7 @@ func TestPlanComposesPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -148,8 +117,7 @@ func TestPlanComposesPorts(t *testing.T) {
 }
 
 // TestPlanComputesContainerName asserts plan.ContainerName equals the
-// standalone ContainerNameFor helper byte-for-byte (Stop/StopAll
-// observability invariant).
+// standalone ContainerNameFor helper byte-for-byte.
 func TestPlanComputesContainerName(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -158,7 +126,7 @@ func TestPlanComputesContainerName(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -172,9 +140,6 @@ func TestPlanComputesContainerName(t *testing.T) {
 	}
 }
 
-// TestPlanContainerNameDeterministic asserts two calls with the same
-// workspace produce identical container names; the format is the documented
-// toolbox-<basename>-<hash8>.
 func TestPlanContainerNameDeterministic(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -183,11 +148,11 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
+	a, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan a: %v", err)
 	}
-	b, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
+	b, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan b: %v", err)
 	}
@@ -195,7 +160,6 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 		t.Errorf("ContainerName not deterministic: %q vs %q", a.ContainerName, b.ContainerName)
 	}
 
-	// Format: toolbox-<basename>-<hash8>. Hash is exactly 8 hex chars.
 	parts := strings.Split(a.ContainerName, "-")
 	if len(parts) < 3 {
 		t.Fatalf("ContainerName format unexpected: %q", a.ContainerName)
@@ -206,7 +170,6 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 	}
 }
 
-// TestPlanComputesEnv asserts the exact two-element env slice is populated.
 func TestPlanComputesEnv(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -215,7 +178,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -231,8 +194,7 @@ func TestPlanComputesEnv(t *testing.T) {
 
 // TestPlanSDDEnvAppendedWhenEnabled asserts the field-per-env-var contract:
 // each enabled skill emits a TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}
-// quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH. Image
-// ref stays on the default GHCR tag — cfg.SDD is hash-neutral by design.
+// quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH.
 func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -244,7 +206,7 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"gsd": true}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -274,15 +236,9 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	if got := envByKey["TOOLBOX_SDD_WORKSPACE_HASH"]; len(got) != sessionplan.WorkspaceHashLen {
 		t.Errorf("TOOLBOX_SDD_WORKSPACE_HASH = %q, want %d hex chars", got, sessionplan.WorkspaceHashLen)
 	}
-
-	if plan.Image.IsLocal {
-		t.Error("cfg.SDD entries must not invalidate the local image hash (Image.IsLocal should stay false)")
-	}
 }
 
-// TestPlanSDDEnvCarriesBMADMarker locks in the bmad-specific gate: the
-// MARKER env entry must carry "_bmad" so the entrypoint skips the install
-// when the marker is missing.
+// TestPlanSDDEnvCarriesBMADMarker locks in the bmad-specific gate.
 func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -294,7 +250,7 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"bmad": true}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -305,12 +261,9 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	}
 }
 
-// TestPlanSDDEnvOpenSpecStepsTrackTools locks in the cfg.Tools-driven
-// step rewrite for openspec: the --tools= argument lists exactly the
-// catalog keys the workspace has enabled (claude, codex), so a tools.codex
-// opt-out never installs the codex adapter files. Drop both tools and the
-// skill is silently omitted from the env contract.
-func TestPlanSDDEnvOpenSpecStepsTrackTools(t *testing.T) {
+// TestPlanSDDEnvOpenSpec locks in the static install steps for openspec
+// (claude + codex are always installed, no per-tool opt-out).
+func TestPlanSDDEnvOpenSpec(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	workspace := filepath.Join(tmpHome, "ws")
@@ -318,68 +271,21 @@ func TestPlanSDDEnvOpenSpecStepsTrackTools(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	cases := []struct {
-		name      string
-		claude    bool
-		codex     bool
-		wantSteps string // empty == skill must be absent from env entirely
-	}{
-		{"both", true, true, "init --tools=claude,codex --force;update"},
-		{"claude only", true, false, "init --tools=claude --force;update"},
-		{"codex only", false, true, "init --tools=codex --force;update"},
-		{"neither", false, false, ""},
+	cfg := testConfig()
+	cfg.SDD = map[string]bool{"openspec": true}
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := testConfig()
-			cfg.Tools["claude"] = tc.claude
-			cfg.Tools["codex"] = tc.codex
-			cfg.SDD = map[string]bool{"openspec": true}
-
-			plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
-			if err != nil {
-				t.Fatalf("Plan: %v", err)
-			}
-
-			envByKey := indexEnv(plan.Env)
-			got, present := envByKey["TOOLBOX_SDD_OPENSPEC_STEPS"]
-			if tc.wantSteps == "" {
-				if present {
-					t.Errorf("openspec must be omitted from env when both claude and codex are disabled, got STEPS=%q", got)
-				}
-				if e := envByKey["TOOLBOX_SDD_ENABLED"]; strings.Contains(e, "openspec") {
-					t.Errorf("TOOLBOX_SDD_ENABLED still names openspec: %q", e)
-				}
-				return
-			}
-			if !present {
-				t.Fatalf("TOOLBOX_SDD_OPENSPEC_STEPS missing in %v", plan.Env)
-			}
-			if got != tc.wantSteps {
-				t.Errorf("TOOLBOX_SDD_OPENSPEC_STEPS = %q, want %q", got, tc.wantSteps)
-			}
-			if marker := envByKey["TOOLBOX_SDD_OPENSPEC_MARKER"]; marker != "" {
-				t.Errorf("TOOLBOX_SDD_OPENSPEC_MARKER = %q, want empty (marker dropped, bootstrap is unconditional)", marker)
-			}
-		})
+	envByKey := indexEnv(plan.Env)
+	want := "init --tools=claude,codex --force;update"
+	if got := envByKey["TOOLBOX_SDD_OPENSPEC_STEPS"]; got != want {
+		t.Errorf("TOOLBOX_SDD_OPENSPEC_STEPS = %q, want %q", got, want)
 	}
 }
 
-// indexEnv turns a docker-style "KEY=value" env slice into a lookup map.
-func indexEnv(env []string) map[string]string {
-	out := make(map[string]string, len(env))
-	for _, e := range env {
-		if k, v, ok := strings.Cut(e, "="); ok {
-			out[k] = v
-		}
-	}
-	return out
-}
-
-// TestPlanSDDEnvDropsUnknownKeys covers the silent-drop contract for
-// user typos in .toolbox.yaml — e.g. `sdd.gds: true` must never abort
-// `toolbox shell` and must NOT leak a malformed env spec.
+// TestPlanSDDEnvDropsUnknownKeys covers the silent-drop contract for typos.
 func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -391,7 +297,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]bool{"gds": true, "gsd": false}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -403,7 +309,6 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	}
 }
 
-// TestPlanRejectsBadPort asserts port-parse errors propagate.
 func TestPlanRejectsBadPort(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -412,7 +317,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false, "dev")
+	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false)
 	if err == nil {
 		t.Fatal("Plan should reject malformed --publish spec")
 	}
@@ -421,20 +326,15 @@ func TestPlanRejectsBadPort(t *testing.T) {
 	}
 }
 
-// TestPlanRejectsBadMountsRoot proves mount-stage validation errors
-// propagate through sessionplan.Plan.
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
-	cfg.MountsRoot = "~" // bare ~ is rejected by config.ValidateMountsRoot
-	_, err := sessionplan.Plan(cfg, "/workspace", nil, false, "dev")
+	cfg.MountsRoot = "~"
+	_, err := sessionplan.Plan(cfg, "/workspace", nil, false)
 	if err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
 }
 
-// TestPlanWorkspaceNormalizationOnce asserts the workspace is filepath.Abs
-// + filepath.Clean'd once at the top of Plan, so the container name and any
-// downstream consumer see the canonical absolute path.
 func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -442,10 +342,9 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	if err := mkdirAll(t, canonical); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	// A path with a redundant ".." that filepath.Clean collapses to canonical.
 	dirty := filepath.Join(tmpHome, "foo", "..", "bar")
 
-	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -465,17 +364,7 @@ func TestNamedContainerName(t *testing.T) {
 	}
 }
 
-// TestNamedContainerNameDisjointFromHashFormat locks in the invariant that
-// the named-shell container format is impossible to confuse with the
-// workspace-hash format (`toolbox-<base>-<8hex>`). Two collision-prone
-// inputs are checked: a workspace whose basename is literally "named" and a
-// named shell whose sanitized form is hash-shaped — both end up in distinct
-// container names because the named- infix is followed by user content
-// (never a bare 8-hex group).
 func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
-	// Hash-shaped names go through cmd/ validation; the helper itself
-	// still produces a name that does NOT match the workspace-hash format
-	// because it always starts with `toolbox-named-`.
 	got := sessionplan.NamedContainerName("1a2b3c4d")
 	if !strings.HasPrefix(got, sessionplan.ContainerNamePrefix+sessionplan.NamedContainerNameInfix) {
 		t.Fatalf("NamedContainerName(hash-shaped) = %q, want toolbox-named- prefix", got)
@@ -484,11 +373,8 @@ func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
 
 // --- Merge tier (pure data, NO fs side effects) ---
 
-// TestMergeIsPure asserts Merge does not require HOME setup or t.TempDir
-// — composing mountplan.Merge instead of mountplan.Plan keeps the call
-// purely data. NO t.Setenv("HOME", ...), NO t.TempDir() in this test.
 func TestMergeIsPure(t *testing.T) {
-	merged, err := sessionplan.Merge(testConfig(), "/workspace", nil, false, "dev")
+	merged, err := sessionplan.Merge(testConfig(), "/workspace", nil, false)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -501,19 +387,12 @@ func TestMergeIsPure(t *testing.T) {
 	if len(merged.Binds) == 0 {
 		t.Error("Merge.Binds empty; expected post-merge defaults")
 	}
-	// Binds is the post-merge config.Mount slice (asymmetric vs Plan's
-	// []mountplan.Bind). Type-check via assignment to a typed var; the
-	// staticcheck-friendly form uses an explicit blank identifier
-	// rather than a redundant type declaration.
 	_ = []config.Mount(merged.Binds)
 
-	// WorkingDir defaults to mountplan.WorkspaceTarget at the pure-merge
-	// tier (mirror predicate is fs-aware, only available in Plan).
 	if merged.WorkingDir != mountplan.WorkspaceTarget {
 		t.Errorf("Merge.WorkingDir = %q, want %q", merged.WorkingDir, mountplan.WorkspaceTarget)
 	}
 
-	// Env reflects the same workspace + workingDir contract.
 	wantEnv := []string{
 		"TOOLBOX_HOST_WORKSPACE=/workspace",
 		"PWD=" + mountplan.WorkspaceTarget,
@@ -523,21 +402,17 @@ func TestMergeIsPure(t *testing.T) {
 	}
 }
 
-// TestMergeRejectsBadMountsRoot exercises mountplan.Merge validation
-// surfacing through sessionplan.Merge — pure-data path, no fs.
 func TestMergeRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
+	_, err := sessionplan.Merge(cfg, "/workspace", nil, false)
 	if err == nil {
 		t.Fatal("Merge should reject bare ~ as mounts_root")
 	}
 }
 
-// TestMergeRejectsBadPort asserts port-parse errors propagate at the
-// pure-data tier as well.
 func TestMergeRejectsBadPort(t *testing.T) {
-	_, err := sessionplan.Merge(testConfig(), "/workspace", []string{"not-a-port"}, false, "dev")
+	_, err := sessionplan.Merge(testConfig(), "/workspace", []string{"not-a-port"}, false)
 	if err == nil {
 		t.Fatal("Merge should reject malformed --publish spec")
 	}
@@ -545,9 +420,6 @@ func TestMergeRejectsBadPort(t *testing.T) {
 
 // --- MissingPublishPorts ---
 
-// TestMissingPublishPortsTable absorbs the publish-mismatch table
-// previously living in internal/container/lifecycle_test.go::TestShellPublishMismatchWarning.
-// Pure-data assertions on the missing-ports list, no Docker SDK invoked.
 func TestMissingPublishPortsTable(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -594,10 +466,10 @@ func TestMissingPublishPortsTable(t *testing.T) {
 			var inspect container.InspectResponse
 			switch {
 			case tc.nilBase:
-				inspect = container.InspectResponse{} // ContainerJSONBase=nil
+				inspect = container.InspectResponse{}
 			case tc.nilHostCfg:
 				inspect = container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{}, // HostConfig=nil
+					ContainerJSONBase: &container.ContainerJSONBase{},
 				}
 			default:
 				inspect = container.InspectResponse{
@@ -618,12 +490,8 @@ func TestMissingPublishPortsTable(t *testing.T) {
 	}
 }
 
-// --- Cmd / SecurityOpt / Cfg ---
+// --- Cmd / SecurityOpt ---
 
-// TestPlanComputesCmd asserts the shell command resolution rides through
-// Plan: bash returns /bin/bash, and shell:zsh + tools.zsh:false fails
-// with a wrapped *sessionplan.ShellMismatchError before any Docker work
-// could happen.
 func TestPlanComputesCmd(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -632,37 +500,19 @@ func TestPlanComputesCmd(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	t.Run("bash with bash enabled returns /bin/bash", func(t *testing.T) {
-		cfg := testConfig()
-		cfg.Shell = "bash"
-		cfg.Tools["bash"] = true
-		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Plan: %v", err)
-		}
-		if !slices.Equal(plan.Cmd, []string{"/bin/bash"}) {
-			t.Errorf("Cmd = %v, want [/bin/bash]", plan.Cmd)
-		}
-	})
-
-	t.Run("zsh disabled returns ShellMismatchError", func(t *testing.T) {
-		cfg := &config.Config{
-			Shell: "zsh",
-			Tools: map[string]bool{"zsh": false},
-		}
-		_, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
-		if err == nil {
-			t.Fatal("Plan should reject shell:zsh + tools.zsh:false")
-		}
-		var mismatch *sessionplan.ShellMismatchError
-		if !errors.As(err, &mismatch) {
-			t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
-		}
-	})
+	cfg := testConfig()
+	cfg.Shell = "bash"
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if !slices.Equal(plan.Cmd, []string{"/bin/bash"}) {
+		t.Errorf("Cmd = %v, want [/bin/bash]", plan.Cmd)
+	}
 }
 
-// TestPlanComputesSecurityOpt: codex enabled (or absent) → seccomp opts;
-// codex explicitly disabled → nil.
+// TestPlanComputesSecurityOpt: codex is always installed → always
+// returns seccomp=unconfined.
 func TestPlanComputesSecurityOpt(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -671,89 +521,29 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	t.Run("codex enabled emits seccomp=unconfined", func(t *testing.T) {
-		plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Plan: %v", err)
-		}
-		if !slices.Equal(plan.SecurityOpt, []string{"seccomp=unconfined"}) {
-			t.Errorf("SecurityOpt = %v, want [seccomp=unconfined]", plan.SecurityOpt)
-		}
-	})
-
-	t.Run("codex disabled emits nil SecurityOpt", func(t *testing.T) {
-		cfg := testConfig()
-		cfg.Tools["codex"] = false
-		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Plan: %v", err)
-		}
-		if plan.SecurityOpt != nil {
-			t.Errorf("SecurityOpt = %v, want nil", plan.SecurityOpt)
-		}
-	})
-}
-
-// TestPlanComputesBuildArgs asserts cfg.Tools is materialised into
-// plan.BuildArgs once at Plan time so lifecycle.ensureImage stays a pure
-// consumer of the typed plan.
-func TestPlanComputesBuildArgs(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	cfg := testConfig()
-	cfg.Tools["gcloud"] = false
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	v, ok := plan.BuildArgs["INSTALL_GCLOUD"]
-	if !ok || v == nil || *v != "false" {
-		t.Errorf("BuildArgs[INSTALL_GCLOUD] = %v, want pointer to \"false\"", v)
+	if !slices.Equal(plan.SecurityOpt, []string{"seccomp=unconfined"}) {
+		t.Errorf("SecurityOpt = %v, want [seccomp=unconfined]", plan.SecurityOpt)
 	}
 }
 
-// TestMergeAlsoComputesCmd: same shell-resolution semantics surface at
-// the pure-data Merge tier (no t.TempDir / HOME setup needed).
 func TestMergeAlsoComputesCmd(t *testing.T) {
-	t.Run("bash returns /bin/bash", func(t *testing.T) {
-		cfg := testConfig()
-		cfg.Shell = "bash"
-		cfg.Tools["bash"] = true
-		merged, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
-		if err != nil {
-			t.Fatalf("Merge: %v", err)
-		}
-		if !slices.Equal(merged.Cmd, []string{"/bin/bash"}) {
-			t.Errorf("Merge.Cmd = %v, want [/bin/bash]", merged.Cmd)
-		}
-	})
-
-	t.Run("zsh disabled errors", func(t *testing.T) {
-		cfg := &config.Config{
-			Shell: "zsh",
-			Tools: map[string]bool{"zsh": false},
-		}
-		_, err := sessionplan.Merge(cfg, "/workspace", nil, false, "dev")
-		if err == nil {
-			t.Fatal("Merge should reject shell:zsh + tools.zsh:false")
-		}
-		var mismatch *sessionplan.ShellMismatchError
-		if !errors.As(err, &mismatch) {
-			t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
-		}
-	})
+	cfg := testConfig()
+	cfg.Shell = "bash"
+	merged, err := sessionplan.Merge(cfg, "/workspace", nil, false)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if !slices.Equal(merged.Cmd, []string{"/bin/bash"}) {
+		t.Errorf("Merge.Cmd = %v, want [/bin/bash]", merged.Cmd)
+	}
 }
 
 // --- Loopback bridge env emission ---
 
-// TestPlanLoopbackBridgeOff asserts that when bridgeLoopback=false the
-// resulting env never carries the TOOLBOX_LOOPBACK_BRIDGE_* keys, even when
-// publish specs are present. Locks the opt-in contract.
 func TestPlanLoopbackBridgeOff(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -762,7 +552,7 @@ func TestPlanLoopbackBridgeOff(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -774,10 +564,6 @@ func TestPlanLoopbackBridgeOff(t *testing.T) {
 	}
 }
 
-// TestPlanLoopbackBridgeSinglePort asserts that bridgeLoopback=true with a
-// single -p emits a single-element PORTS list. The presence of _PORTS is
-// itself the "enabled" signal; the no-publish marker must be absent on the
-// happy path.
 func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -786,7 +572,7 @@ func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -799,9 +585,6 @@ func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 	}
 }
 
-// TestPlanLoopbackBridgeMultiPortPreservesOrder asserts that bridgeLoopback
-// on with multiple distinct publishes joins container ports in insertion
-// order (the user-supplied -p order), not sorted.
 func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -810,7 +593,7 @@ func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -820,10 +603,6 @@ func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 	}
 }
 
-// TestPlanLoopbackBridgeDeduplicatesContainerPorts asserts that two -p
-// specs pointing at the same container port collapse to one entry. The
-// bridge spawns one socat per port; emitting duplicates would EADDRINUSE
-// the second listener.
 func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -832,7 +611,7 @@ func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -842,9 +621,6 @@ func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 	}
 }
 
-// TestPlanLoopbackBridgeEmptyPublish asserts that bridgeLoopback=true with
-// no -p emits the no-publish marker alone (no PORTS list) — the in-container
-// init.d/70 script reads the marker to warn the user about the no-op.
 func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -853,7 +629,7 @@ func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -868,7 +644,16 @@ func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
 
 // --- Helpers ---
 
-// mkdirAll is a tiny wrapper over os.MkdirAll so test bodies stay terse.
+func indexEnv(env []string) map[string]string {
+	out := make(map[string]string, len(env))
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func mkdirAll(t *testing.T, path string) error {
 	t.Helper()
 	return os.MkdirAll(path, 0o755)

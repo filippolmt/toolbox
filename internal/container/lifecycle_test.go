@@ -20,7 +20,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -117,14 +116,9 @@ func (m *mockClient) Close() error { return nil }
 // --- Helpers ---
 
 func testConfig() *config.Config {
-	// Empty Tools map is treated as default-true, so ResolveImage returns the
-	// canonical GHCR image with isLocal=false. That matches the existing test
-	// assumptions (pull path, not auto-build).
-	// Shell: "zsh" matches the Load() default so ResolveShellCmd succeeds.
-	return &config.Config{
-		Shell: "zsh",
-		Tools: config.DefaultTools(),
-	}
+	// ResolveImage always returns the canonical registry tag.
+	// Shell: "zsh" matches the Load() default.
+	return &config.Config{Shell: "zsh"}
 }
 
 // testWorkspace returns a stable workspace path for use in tests.
@@ -139,18 +133,18 @@ func testWorkspace(t *testing.T) string {
 // every test body.
 func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(testConfig(), workspace, publish, false, "dev")
+	plan, err := sessionplan.Plan(testConfig(), workspace, publish, false)
 	if err != nil {
 		t.Fatalf("testPlan: %v", err)
 	}
 	return plan
 }
 
-// testPlanWithCfg is the variant for tests that vary cfg.Tools (e.g.
-// codex disabled, custom tools triggering local-build).
+// testPlanWithCfg is the variant for tests that supply a non-default cfg
+// (e.g. custom shell selection).
 func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(cfg, workspace, publish, false, "dev")
+	plan, err := sessionplan.Plan(cfg, workspace, publish, false)
 	if err != nil {
 		t.Fatalf("testPlanWithCfg: %v", err)
 	}
@@ -471,40 +465,9 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 	}
 }
 
-func TestShellSkipsCodexSecurityOptWhenCodexDisabled(t *testing.T) {
-	_, restore := stubExecShell()
-	defer restore()
-
-	cfg := testConfig()
-	cfg.Tools["codex"] = false
-
-	origEnsure := imageplan.Ensure
-	imageplan.Ensure = func(_ context.Context, _ client.APIClient, img sessionplan.Image, _ map[string]*string) error {
-		if !img.IsLocal {
-			t.Error("expected IsLocal=true when Codex is disabled")
-		}
-		return nil
-	}
-	defer func() { imageplan.Ensure = origEnsure }()
-
-	var capturedSecurityOpt []string
-	mock := &mockClient{
-		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
-		},
-		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
-			capturedSecurityOpt = hostCfg.SecurityOpt
-			return container.CreateResponse{ID: "new123"}, nil
-		},
-	}
-
-	if err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
-		t.Fatalf("Shell() error: %v", err)
-	}
-	if len(capturedSecurityOpt) != 0 {
-		t.Errorf("expected no security opts when Codex is disabled, got %v", capturedSecurityOpt)
-	}
-}
+// (Test removed: per-tool opt-out no longer exists. Codex security opt is
+// unconditional; see TestShellAppliesCodexSecurityOpt for the always-on
+// invariant.)
 
 // TestShellMirrorsWorkspaceAtHostPath verifies that a workspace with a safe
 // absolute host path is bind-mounted at BOTH /workspace and its own host path,
@@ -620,48 +583,10 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 	}
 }
 
-// TestShellAutoBuildsCustomImage covers the new opt-out path: when the user's
-// tools config differs from defaults, ResolveImage returns a local hash-tagged
-// ref; if the image is missing, Shell should trigger a build instead of
-// erroring out. The build call is stubbed by replacing ensureImage.
-func TestShellAutoBuildsCustomImage(t *testing.T) {
-	called, restore := stubExecShell()
-	defer restore()
-
-	cfg := &config.Config{Shell: "zsh", Tools: config.DefaultTools()}
-	cfg.Tools["gcloud"] = false // triggers local hash tag
-
-	buildCalled := false
-	origEnsure := imageplan.Ensure
-	imageplan.Ensure = func(_ context.Context, _ client.APIClient, img sessionplan.Image, _ map[string]*string) error {
-		if !img.IsLocal {
-			t.Error("expected IsLocal=true when tools differ from defaults")
-		}
-		buildCalled = true
-		return nil
-	}
-	defer func() { imageplan.Ensure = origEnsure }()
-
-	mock := &mockClient{
-		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
-		},
-		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: "new123"}, nil
-		},
-	}
-
-	err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil))
-	if err != nil {
-		t.Fatalf("Shell() error: %v", err)
-	}
-	if !buildCalled {
-		t.Fatal("ensureImage (auto-build) was not invoked for custom tools config")
-	}
-	if !*called {
-		t.Fatal("execShellFn was not called after auto-build")
-	}
-}
+// (Test removed: per-tool opt-out no longer exists, so there is no
+// local-hash auto-build path. The single canonical image is always
+// pulled from the registry; TestShellErrorOnMissingImage covers the
+// missing-image case.)
 
 func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 	called, restore := stubExecShell()
@@ -1104,31 +1029,9 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	}
 }
 
-// TestSessionPlanEarlyExitOnShellMismatch: the shell mismatch is caught at
-// sessionplan.Plan composition time, before cmd/shell.go has constructed a
-// Docker client. No container is created on this path.
-func TestSessionPlanEarlyExitOnShellMismatch(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	ws := t.TempDir()
-
-	cfg := &config.Config{
-		Shell: "zsh",
-		Tools: map[string]bool{"zsh": false},
-	}
-
-	plan, err := sessionplan.Plan(cfg, ws, nil, false, "dev")
-	if err == nil {
-		t.Fatal("sessionplan.Plan should have errored for shell:zsh + tools.zsh:false")
-	}
-	if plan != nil {
-		t.Errorf("plan should be nil on error, got %+v", plan)
-	}
-	var mismatch *sessionplan.ShellMismatchError
-	if !errors.As(err, &mismatch) {
-		t.Fatalf("expected *sessionplan.ShellMismatchError, got %T: %v", err, err)
-	}
-}
+// (Test removed: per-tool opt-out no longer exists, so the shell/tools
+// mismatch path is gone. Shell selection still validates the value
+// against config.SupportedShells.)
 
 // TestShellCreateUsesResolvedShellCmd: verify the Cmd captured by
 // ContainerCreate uses the resolved shell binary. Covers both the `shell:
@@ -1166,10 +1069,7 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 				},
 			}
 
-			cfg := &config.Config{
-				Shell: tc.shell,
-				Tools: config.DefaultTools(),
-			}
+			cfg := &config.Config{Shell: tc.shell}
 
 			if err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
 				t.Fatalf("Shell() error: %v", err)

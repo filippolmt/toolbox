@@ -27,10 +27,10 @@ type buildMessage struct {
 
 // Options tunes an image build.
 type Options struct {
-	// Tag applied to the built image (e.g. "toolbox:local-<hash>").
+	// Tag applied to the built image. Always the canonical registry tag —
+	// `toolbox build` overwrites the local cache so the next `toolbox shell`
+	// picks up the freshly built image.
 	Tag string
-	// BuildArgs passed to docker build (e.g. INSTALL_GCLOUD=false).
-	BuildArgs map[string]*string
 	// NoCache forces a clean build ignoring Docker's layer cache.
 	NoCache bool
 }
@@ -49,7 +49,7 @@ func BuildImage(ctx context.Context, cli client.APIClient, opts Options) error {
 	resp, err := cli.ImageBuild(ctx, buildCtx, build.ImageBuildOptions{
 		Dockerfile: "Dockerfile",
 		Tags:       []string{opts.Tag},
-		BuildArgs:  mergeBuildArgs(opts.BuildArgs),
+		BuildArgs:  mergeBuildArgs(nil),
 		NoCache:    opts.NoCache,
 		Remove:     true,
 	})

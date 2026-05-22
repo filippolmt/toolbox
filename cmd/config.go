@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -71,17 +70,18 @@ func writeResolvedConfig(w io.Writer, c *config.Config) error {
 		}
 	}
 
-	if _, err := fmt.Fprintln(w, "tools:"); err != nil {
-		return err
-	}
-	keys := make([]string, 0, len(c.Tools))
-	for k := range c.Tools {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if _, err := fmt.Fprintf(w, "  %s: %t\n", k, c.Tools[k]); err != nil {
+	if len(c.InheritHostAuth) == 0 {
+		if _, err := fmt.Fprintln(w, "inherit_host_auth: []"); err != nil {
 			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(w, "inherit_host_auth:"); err != nil {
+			return err
+		}
+		for _, k := range c.InheritHostAuth {
+			if _, err := fmt.Fprintf(w, "  - %s\n", k); err != nil {
+				return err
+			}
 		}
 	}
 

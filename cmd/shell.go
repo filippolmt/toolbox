@@ -9,7 +9,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/browserbridge"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
-	"github.com/filippolmt/toolbox/internal/version"
 )
 
 var shellPublish []string
@@ -69,7 +68,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, ws, shellPublish, shellBridgeLoopback, version.Version)
+	plan, err := sessionplan.Plan(cfg, ws, shellPublish, shellBridgeLoopback)
 	if err != nil {
 		return err
 	}

@@ -4,27 +4,22 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
 // resetCmdState restores the package-level vars touched by initConfig so
-// tests don't bleed state into each other. Replaces the previous viper.Reset()
-// pattern (D-09 — no global viper churn).
+// tests don't bleed state into each other.
 func resetCmdState(t *testing.T, origCfgFile string) {
 	t.Helper()
 	cfgFile = origCfgFile
 	cfg = nil
 }
 
-// TestInitConfigExplicitFileIsRead is the regression guard for the bug where
-// `--config <path>` only called viper.SetConfigFile and never ReadInConfig, so
-// the user's yaml was silently ignored and defaults applied. Writes a yaml
-// with a non-default value and asserts the resolved *Config surfaces it.
+// TestInitConfigExplicitFileIsRead asserts the --config flag wiring reads
+// the supplied yaml end-to-end.
 func TestInitConfigExplicitFileIsRead(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom.yaml")
-	if err := os.WriteFile(path, []byte("tools:\n  gcloud: false\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("inherit_host_auth: [gh]\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -37,16 +32,8 @@ func TestInitConfigExplicitFileIsRead(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("cfg should be populated after initConfig")
 	}
-	if cfg.Tools["gcloud"] {
-		t.Error("gcloud should be false after --config read")
-	}
-	for _, k := range catalog.Keys() {
-		if k == "gcloud" {
-			continue
-		}
-		if !cfg.Tools[k] {
-			t.Errorf("tool %q should default to true alongside explicit override", k)
-		}
+	if len(cfg.InheritHostAuth) != 1 || cfg.InheritHostAuth[0] != "gh" {
+		t.Errorf("InheritHostAuth = %v, want [gh] after --config read", cfg.InheritHostAuth)
 	}
 }
 
@@ -130,11 +117,7 @@ func TestInitConfigProjectFileWalksUpFromSubdir(t *testing.T) {
 	}
 }
 
-// TestInitConfigProjectFileStopsAtHome: the walk-up must terminate at HOME so
-// the global ~/.toolbox.yaml is not re-read as a project file. The global
-// branch DOES read the file, so the resolved cfg.MountsRoot equals the global
-// value — the regression guard is that running from inside HOME doesn't
-// double-load the file or treat it as a project root.
+// TestInitConfigProjectFileStopsAtHome: the walk-up must terminate at HOME.
 func TestInitConfigProjectFileStopsAtHome(t *testing.T) {
 	home := t.TempDir()
 	homeMounts := filepath.Join(home, "global-mounts")
@@ -168,18 +151,13 @@ func TestInitConfigProjectFileStopsAtHome(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("cfg should be populated")
 	}
-	// Walk-up must NOT have picked up ~/.toolbox.yaml as a project file.
-	// The global branch read the same file once — so the resolved value
-	// equals homeMounts. The deeper invariant (walk-up stops at HOME) is
-	// pinned by internal/config/plan_test.go::TestWalkUpStopsAtHome (Plan 01).
 	if cfg.MountsRoot != homeMounts {
 		t.Errorf("global config not loaded: got %q, want %q", cfg.MountsRoot, homeMounts)
 	}
 }
 
-// TestInitConfigAppliesDefaults: catalog tool defaults must apply on the
-// --config branch too (regression guard from before defaults were unified
-// across both branches).
+// TestInitConfigAppliesDefaults: a config with no fields set must still
+// produce a sensible default cfg.
 func TestInitConfigAppliesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.yaml")
@@ -196,9 +174,10 @@ func TestInitConfigAppliesDefaults(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("cfg should be populated")
 	}
-	for _, k := range catalog.Keys() {
-		if !cfg.Tools[k] {
-			t.Errorf("default tools.%s should be true after initConfig, got false", k)
-		}
+	if cfg.Shell != "zsh" {
+		t.Errorf("Shell = %q, want zsh (default)", cfg.Shell)
+	}
+	if len(cfg.InheritHostAuth) != 0 {
+		t.Errorf("InheritHostAuth = %v, want empty default", cfg.InheritHostAuth)
 	}
 }
