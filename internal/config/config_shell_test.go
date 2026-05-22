@@ -30,8 +30,7 @@ func TestValidateShellRejectsUnknown(t *testing.T) {
 	}
 }
 
-// TestKnownToolsIncludesZsh verifies ZSH-01 (Go-side half): zsh is a tool key
-// the build system recognises, wired to INSTALL_ZSH.
+// TestKnownToolsIncludesZsh verifies zsh is in the catalog.
 func TestKnownToolsIncludesZsh(t *testing.T) {
 	found := false
 	for _, k := range catalog.Keys() {
@@ -41,9 +40,6 @@ func TestKnownToolsIncludesZsh(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("catalog.Keys() should contain \"zsh\" (alphabetic, after \"yq\")")
-	}
-	if got := catalog.BuildArg("zsh"); got != "INSTALL_ZSH" {
-		t.Errorf("catalog.BuildArg(\"zsh\") = %q, want %q", got, "INSTALL_ZSH")
+		t.Error("catalog.Keys() should contain \"zsh\"")
 	}
 }

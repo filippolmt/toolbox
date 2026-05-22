@@ -1,17 +1,13 @@
 package sessionplan_test
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-// TestResolveShellCmdZshEnabled: the default path returns the zsh binary
-// when tools.zsh is enabled.
-func TestResolveShellCmdZshEnabled(t *testing.T) {
+// TestResolveShellCmdZsh: the default path returns the zsh binary.
+func TestResolveShellCmdZsh(t *testing.T) {
 	cmd, err := sessionplan.ResolveShellCmd(testConfig())
 	if err != nil {
 		t.Fatalf("ResolveShellCmd err = %v, want nil", err)
@@ -21,8 +17,7 @@ func TestResolveShellCmdZshEnabled(t *testing.T) {
 	}
 }
 
-// TestResolveShellCmdBash: bash selection returns /bin/bash regardless of
-// tools.zsh (bash is always available).
+// TestResolveShellCmdBash: bash selection returns /bin/bash.
 func TestResolveShellCmdBash(t *testing.T) {
 	cfg := testConfig()
 	cfg.Shell = "bash"
@@ -35,52 +30,11 @@ func TestResolveShellCmdBash(t *testing.T) {
 	}
 }
 
-// TestResolveShellCmdZshDisabledError: the incoherent shell+tools
-// combination fails with a typed error whose message contains the two
-// canonical substrings.
-func TestResolveShellCmdZshDisabledError(t *testing.T) {
-	cfg := &config.Config{
-		Shell: "zsh",
-		Tools: map[string]bool{"zsh": false},
-	}
-	cmd, err := sessionplan.ResolveShellCmd(cfg)
-	if err == nil {
-		t.Fatalf("ResolveShellCmd should have errored, got cmd=%v", cmd)
-	}
-	if cmd != nil {
-		t.Errorf("cmd should be nil on error, got %v", cmd)
-	}
-	var mismatch *sessionplan.ShellMismatchError
-	if !errors.As(err, &mismatch) {
-		t.Fatalf("err should be *ShellMismatchError, got %T: %v", err, err)
-	}
-	if mismatch.Shell != "zsh" {
-		t.Errorf("ShellMismatchError.Shell = %q, want %q", mismatch.Shell, "zsh")
-	}
-	msg := err.Error()
-	for _, want := range []string{"shell: zsh", "tools.zsh: false"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("error %q should contain %q", msg, want)
-		}
-	}
-}
-
-// TestNestedSandboxSecurityOptDefault: codex enabled (or absent) → seccomp=unconfined.
-func TestNestedSandboxSecurityOptDefault(t *testing.T) {
+// TestNestedSandboxSecurityOpt: codex is always installed → always
+// returns seccomp=unconfined.
+func TestNestedSandboxSecurityOpt(t *testing.T) {
 	got := sessionplan.NestedSandboxSecurityOpt(testConfig())
 	if len(got) != 1 || got[0] != "seccomp=unconfined" {
 		t.Errorf("NestedSandboxSecurityOpt = %v, want [seccomp=unconfined]", got)
-	}
-}
-
-// TestNestedSandboxSecurityOptCodexDisabled: tools.codex=false → nil.
-func TestNestedSandboxSecurityOptCodexDisabled(t *testing.T) {
-	cfg := &config.Config{
-		Shell: "zsh",
-		Tools: map[string]bool{"codex": false},
-	}
-	got := sessionplan.NestedSandboxSecurityOpt(cfg)
-	if got != nil {
-		t.Errorf("NestedSandboxSecurityOpt = %v, want nil", got)
 	}
 }

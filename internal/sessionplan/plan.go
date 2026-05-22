@@ -1,9 +1,9 @@
 // Package sessionplan owns the pipeline that turns a toolbox Config, a
-// workspace path, --publish specs, and the host CLI version into the typed
-// plan handed to internal/container.Shell: image reference, bind set,
-// publish specs, env, working dir, container name, container Cmd, security
-// opts, and build args. The single external seam is Plan; Merge is the
-// pure-data twin used by tests.
+// workspace path, and --publish specs into the typed plan handed to
+// internal/container.Shell: image reference, bind set, publish specs, env,
+// working dir, container name, container Cmd, security opts. Plan is the
+// external seam with filesystem side effects; Merge is the pure-data twin
+// used by tests.
 package sessionplan
 
 import (
@@ -26,12 +26,11 @@ import (
 
 // --- Public Seams ---
 
-// Image identifies the container image to launch and whether it must be
-// built locally (custom tools config) versus pulled from the registry
-// (defaults config).
+// Image identifies the container image to launch. There is only the
+// canonical registry image; `toolbox build` overwrites its local cache for
+// users who want a custom build.
 type Image struct {
-	Ref     string
-	IsLocal bool
+	Ref string
 }
 
 // SessionPlan is the resolved-fs plan returned by Plan. Binds are the
@@ -49,7 +48,6 @@ type SessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	SecurityOpt   []string
-	BuildArgs     map[string]*string
 	// ExtraHosts is the docker --add-host list. Populated when the browser
 	// bridge is enabled so host.docker.internal resolves on native Linux
 	// Docker (Docker Desktop already provides the mapping; the duplicate
@@ -70,7 +68,6 @@ type MergedSessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	SecurityOpt   []string
-	BuildArgs     map[string]*string
 }
 
 // Plan walks the full session pipeline for cfg + workspace + ports and
@@ -84,7 +81,7 @@ type MergedSessionPlan struct {
 // carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
 // socat per published container port — see
 // docs/runtime-notes.md#loopback-bridge.
-func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, cliVersion string) (*SessionPlan, error) {
+func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool) (*SessionPlan, error) {
 	workspace = normalizeWorkspace(workspace)
 
 	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
@@ -92,7 +89,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		return nil, err
 	}
 
-	ref, isLocal := build.ResolveImage(cfg, cliVersion)
+	ref := build.ResolveImage()
 
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates
@@ -110,17 +107,16 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 	}
 
 	return &SessionPlan{
-		Image:         Image{Ref: ref, IsLocal: isLocal},
+		Image:         Image{Ref: ref},
 		Binds:         mp.Binds,
 		Warnings:      mp.Warnings,
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           append(shellEnv(workspace, mp.WorkingDir, cfg.SDD, cfg.Tools), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
+		Env:           append(shellEnv(workspace, mp.WorkingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
-		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 		ExtraHosts:    browserBridgeExtraHosts(cfg),
 	}, nil
 }
@@ -160,7 +156,7 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // mountplan.Merge (no fs side effects) and exposes Binds as the post-merge
 // config.Mount slice. Tests asserting the contract construct merged plans
 // without t.TempDir / HOME setup.
-func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, cliVersion string) (*MergedSessionPlan, error) {
+func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool) (*MergedSessionPlan, error) {
 	workspace = normalizeWorkspace(workspace)
 
 	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
@@ -168,7 +164,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 		return nil, err
 	}
 
-	ref, isLocal := build.ResolveImage(cfg, cliVersion)
+	ref := build.ResolveImage()
 
 	merged, err := mountplan.Merge(cfg)
 	if err != nil {
@@ -188,16 +184,15 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 	}
 
 	return &MergedSessionPlan{
-		Image:         Image{Ref: ref, IsLocal: isLocal},
+		Image:         Image{Ref: ref},
 		Binds:         merged,
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           append(shellEnv(workspace, workingDir, cfg.SDD, cfg.Tools), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
+		Env:           append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
-		BuildArgs:     build.BuildArgsFromTools(cfg.Tools),
 	}, nil
 }
 
@@ -381,12 +376,12 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, erro
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string, sddFlags, tools map[string]bool) []string {
+func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
 	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 	}
-	env = append(env, sddEnv(workspace, sddFlags, tools)...)
+	env = append(env, sddEnv(workspace, sddFlags)...)
 	return env
 }
 
@@ -395,13 +390,10 @@ func shellEnv(workspace, workingDir string, sddFlags, tools map[string]bool) []s
 // so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
 // — the bash bootstrap runs before any user-facing diagnostic surface.
 //
-// tools is forwarded to Skill.StepsFor when set; see internal/sdd.Skill
-// for the per-skill contract.
-//
 // Field-per-env-var encoding (vs a single pipe-packed value) keeps the
 // host/container boundary typed: bash decodes by reading one variable per
 // field with no fragile splitting.
-func sddEnv(workspace string, sddFlags, tools map[string]bool) []string {
+func sddEnv(workspace string, sddFlags map[string]bool) []string {
 	if len(sddFlags) == 0 {
 		return nil
 	}
@@ -421,12 +413,6 @@ func sddEnv(workspace string, sddFlags, tools map[string]bool) []string {
 	for _, k := range keys {
 		s := enabled[k]
 		stepArgs := s.InstallSteps
-		if s.StepsFor != nil {
-			stepArgs = s.StepsFor(tools)
-			if len(stepArgs) == 0 {
-				continue
-			}
-		}
 		steps := make([]string, len(stepArgs))
 		for i, args := range stepArgs {
 			steps[i] = strings.Join(args, " ")

@@ -1,7 +1,6 @@
 package catalog_test
 
 import (
-	"bytes"
 	"reflect"
 	"sort"
 	"strings"
@@ -10,16 +9,16 @@ import (
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
-// TestCatalogShape asserts every Entry has non-empty Key + BuildArg.
-// InitScript may be populated; when set it must end in ".sh". Description
-// and SmokeTest are reserved for future phases and must stay zero-valued.
+// TestCatalogShape asserts every Entry has a non-empty Key. InitScript may
+// be populated; when set it must end in ".sh". Description and SmokeTest are
+// reserved for future use and must stay zero-valued.
 func TestCatalogShape(t *testing.T) {
 	if len(catalog.Entries) == 0 {
 		t.Fatal("catalog.Entries must not be empty")
 	}
 	for i, e := range catalog.Entries {
-		if e.Key == "" || e.BuildArg == "" {
-			t.Errorf("entry[%d]: Key and BuildArg must be non-empty (got %+v)", i, e)
+		if e.Key == "" {
+			t.Errorf("entry[%d]: Key must be non-empty (got %+v)", i, e)
 		}
 		if e.Description != "" || e.SmokeTest != "" {
 			t.Errorf("entry[%d] %q: Description and SmokeTest must be zero; got Description=%q SmokeTest=%q",
@@ -32,8 +31,7 @@ func TestCatalogShape(t *testing.T) {
 	}
 }
 
-// TestCatalogAlphabeticalByKey enforces the alphabetical-by-Key invariant
-// inherited from internal/config/tools.go:5 and cited by Pattern 07-PATTERNS.
+// TestCatalogAlphabeticalByKey enforces the alphabetical-by-Key invariant.
 func TestCatalogAlphabeticalByKey(t *testing.T) {
 	keys := make([]string, len(catalog.Entries))
 	for i, e := range catalog.Entries {
@@ -60,116 +58,47 @@ func TestKeysReturnsAllEntries(t *testing.T) {
 	}
 }
 
-// TestBuildArgLookup spot-checks the Key→BuildArg accessor and the empty
-// fallback for unknown tools.
-func TestBuildArgLookup(t *testing.T) {
-	if got := catalog.BuildArg("rtk"); got != "INSTALL_RTK" {
-		t.Errorf("BuildArg(\"rtk\") = %q, want \"INSTALL_RTK\"", got)
+// TestFindByKey spot-checks the lookup accessor.
+func TestFindByKey(t *testing.T) {
+	if entry, ok := catalog.Find("rtk"); !ok || entry.Key != "rtk" {
+		t.Errorf("Find(\"rtk\") = %+v, %v; want Entry with Key=\"rtk\", true", entry, ok)
 	}
-	if got := catalog.BuildArg("no-such-tool"); got != "" {
-		t.Errorf("BuildArg(\"no-such-tool\") = %q, want \"\"", got)
+	if _, ok := catalog.Find("no-such-tool"); ok {
+		t.Error("Find(\"no-such-tool\") should report not found")
 	}
 }
 
-// TestDefaultsAllEnabled asserts catalog.Defaults() returns a map with one
-// entry per Entry, all true (Phase 07 ships every Entry.Default = true).
-func TestDefaultsAllEnabled(t *testing.T) {
-	d := catalog.Defaults()
-	if len(d) != len(catalog.Entries) {
-		t.Fatalf("Defaults() len=%d, want %d", len(d), len(catalog.Entries))
-	}
-	for k, v := range d {
-		if !v {
-			t.Errorf("Defaults()[%q] = false, want true (Phase 07 ships every Entry.Default = true)", k)
+// TestHostAuthMountWellFormed asserts every populated HostAuthMount has
+// non-empty HostPath and ContainerPath, and that ContainerPath is absolute.
+func TestHostAuthMountWellFormed(t *testing.T) {
+	var found int
+	for _, e := range catalog.Entries {
+		if e.HostAuthMount == nil {
+			continue
+		}
+		found++
+		if e.HostAuthMount.HostPath == "" {
+			t.Errorf("entry %q: HostAuthMount.HostPath must be non-empty", e.Key)
+		}
+		if e.HostAuthMount.ContainerPath == "" {
+			t.Errorf("entry %q: HostAuthMount.ContainerPath must be non-empty", e.Key)
+		}
+		if !strings.HasPrefix(e.HostAuthMount.ContainerPath, "/") {
+			t.Errorf("entry %q: HostAuthMount.ContainerPath must be absolute, got %q",
+				e.Key, e.HostAuthMount.ContainerPath)
 		}
 	}
-}
-
-// TestIsDefaultMatchesLegacy mirrors legacy config.IsDefaultTools semantics:
-// missing key = enabled, explicit false = non-default.
-func TestIsDefaultMatchesLegacy(t *testing.T) {
-	if !catalog.IsDefault(catalog.Defaults()) {
-		t.Error("IsDefault(Defaults()) must be true")
-	}
-	if !catalog.IsDefault(map[string]bool{}) {
-		t.Error("IsDefault(empty map) must be true (missing key = enabled)")
-	}
-	if catalog.IsDefault(map[string]bool{"rtk": false}) {
-		t.Error("IsDefault({rtk: false}) must be false")
+	if found == 0 {
+		t.Error("expected at least one Entry with HostAuthMount populated")
 	}
 }
 
-// TestCanonicalEncodingDeterministic asserts WriteCanonical produces the
-// same bytes across two calls and emits one line per Entry in catalog
-// (alphabetical) order.
-func TestCanonicalEncodingDeterministic(t *testing.T) {
-	m := catalog.Defaults()
-	var b1, b2 bytes.Buffer
-	if err := catalog.WriteCanonical(&b1, m); err != nil {
-		t.Fatalf("WriteCanonical #1: %v", err)
-	}
-	if err := catalog.WriteCanonical(&b2, m); err != nil {
-		t.Fatalf("WriteCanonical #2: %v", err)
-	}
-	if !bytes.Equal(b1.Bytes(), b2.Bytes()) {
-		t.Errorf("WriteCanonical not deterministic:\n  #1: %q\n  #2: %q", b1.String(), b2.String())
-	}
-	// Output must be sorted by Key — every line starts with the entry key after "tool:".
-	lines := strings.Split(strings.TrimRight(b1.String(), "\n"), "\n")
-	if len(lines) != len(catalog.Entries) {
-		t.Fatalf("WriteCanonical wrote %d lines, want %d", len(lines), len(catalog.Entries))
-	}
-	for i, line := range lines {
-		want := "tool:" + catalog.Entries[i].Key + "|"
-		if !strings.HasPrefix(line, want) {
-			t.Errorf("line[%d] = %q, want prefix %q (alphabetical by Key)", i, line, want)
-		}
-	}
-}
-
-// TestCanonicalEncodingIsNeutralToOptionalFieldPopulation is the D-10
-// mutation test: it constructs two test-local []Entry slices with
-// identical Key / Default / BuildArg fields. The "bare" slice leaves
-// Description / InitScript / SmokeTest at zero values; the "populated"
-// slice fills them with non-empty strings. Calling WriteCanonicalEntries
-// on each must produce byte-identical output.
-//
-// This test FAILS if a future contributor adds Description / InitScript /
-// SmokeTest to the canonical encoding format — exactly the regression
-// D-10 forbids. The previous string-grep formulation (assert "Description"
-// not in output) could not catch a new encoder format like `desc:%s` that
-// omits the field name; the mutation form is structurally complete.
-func TestCanonicalEncodingIsNeutralToOptionalFieldPopulation(t *testing.T) {
-	enabled := map[string]bool{"foo": true, "bar": false}
-
-	bareEntries := []catalog.Entry{
-		{Key: "bar", Default: false, BuildArg: "INSTALL_BAR"},
-		{Key: "foo", Default: true, BuildArg: "INSTALL_FOO"},
-	}
-	populatedEntries := []catalog.Entry{
-		{Key: "bar", Default: false, BuildArg: "INSTALL_BAR",
-			Description: "another description",
-			InitScript:  "init-bar.sh",
-			SmokeTest:   "test-bar"},
-		{Key: "foo", Default: true, BuildArg: "INSTALL_FOO",
-			Description: "this is a description",
-			InitScript:  "init-foo.sh",
-			SmokeTest:   "test-foo"},
-	}
-
-	var bareBuf, populatedBuf bytes.Buffer
-	if err := catalog.WriteCanonicalEntries(&bareBuf, bareEntries, enabled); err != nil {
-		t.Fatalf("WriteCanonicalEntries(bare): %v", err)
-	}
-	if err := catalog.WriteCanonicalEntries(&populatedBuf, populatedEntries, enabled); err != nil {
-		t.Fatalf("WriteCanonicalEntries(populated): %v", err)
-	}
-
-	if !bytes.Equal(bareBuf.Bytes(), populatedBuf.Bytes()) {
-		t.Errorf("D-10 violated: optional Entry fields shifted canonical encoding\n"+
-			"  bare:      %q\n"+
-			"  populated: %q\n"+
-			"WriteCanonicalEntries MUST NOT serialise Description / InitScript / SmokeTest.",
-			bareBuf.String(), populatedBuf.String())
+// TestHostAuthEligibleKeysSorted asserts the helper returns keys sorted.
+func TestHostAuthEligibleKeysSorted(t *testing.T) {
+	keys := catalog.HostAuthEligibleKeys()
+	sorted := append([]string(nil), keys...)
+	sort.Strings(sorted)
+	if !reflect.DeepEqual(keys, sorted) {
+		t.Errorf("HostAuthEligibleKeys() not sorted:\n  got:  %v\n want: %v", keys, sorted)
 	}
 }

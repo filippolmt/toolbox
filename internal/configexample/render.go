@@ -38,19 +38,15 @@ func Render() string {
 	b.WriteString("# Each key flips one integration on; default is false (no install).\n")
 	b.WriteString("# On the next `toolbox shell` the entrypoint installs the pinned npm\n")
 	b.WriteString("# package and runs the upstream initialiser inside /workspace.\n")
-	b.WriteString("# Top-level — does NOT invalidate the local image hash.\n")
 	b.WriteString("# Use `toolbox sdd init <name>` to flip a key on AND patch .gitignore.\n")
 	b.WriteString("# Supported keys come from internal/sdd.Skills (Renovate-bumped).\n")
 	b.WriteString("# sdd:\n")
 	b.WriteString("#   gsd: true        # get-shit-done-cc --claude --local (unconditional)\n")
 	b.WriteString("#   bmad: true       # bmad-method install --yes (ONLY when _bmad/ exists)\n")
-	b.WriteString("#   openspec: true   # openspec init --tools=<claude,codex narrowed by cfg.Tools> --force, then openspec update\n")
+	b.WriteString("#   openspec: true   # openspec init --tools=claude,codex --force, then openspec update\n")
 	b.WriteString("# bmad bootstrap requires a one-time manual `npx bmad-method install`\n")
 	b.WriteString("# (interactive). After committing _bmad/, the entrypoint auto-upgrades on\n")
 	b.WriteString("# every shell. Missing _bmad/ logs a skip message instead of aborting.\n")
-	b.WriteString("# openspec is unconditional: --tools= is the intersection of {claude,codex}\n")
-	b.WriteString("# with cfg.Tools, so opting out of one tool drops its adapter files. Both\n")
-	b.WriteString("# disabled => the skill is silently omitted from the bootstrap.\n")
 	b.WriteString("\n")
 
 	b.WriteString("# shells — reusable named workspaces for `toolbox shell <name>`.\n")
@@ -67,13 +63,18 @@ func Render() string {
 	b.WriteString("# mounts_root: ~/work-toolbox\n")
 	b.WriteString("\n")
 
-	b.WriteString("# tools — bake CLIs into the image. Default: every entry true.\n")
-	b.WriteString("# Setting any value to false rebuilds a local image (toolbox:local-<hash>)\n")
-	b.WriteString("# without that tool. Adding/removing entries is hash-invalidating.\n")
-	b.WriteString("tools:\n")
-	for _, e := range catalog.Entries {
-		fmt.Fprintf(&b, "  # %s: %t  # build arg: %s\n", e.Key, e.Default, e.BuildArg)
+	b.WriteString("# inherit_host_auth — share host credentials with the container (read-only).\n")
+	b.WriteString("# Listed CLIs read the host's standard credential path instead of the\n")
+	b.WriteString("# isolated ~/.toolbox/<key>/ default. Default: [] (fully isolated).\n")
+	b.WriteString("# Eligible keys (have a stable host credential path):\n")
+	for _, k := range catalog.HostAuthEligibleKeys() {
+		entry, ok := catalog.Find(k)
+		if !ok || entry.HostAuthMount == nil {
+			continue
+		}
+		fmt.Fprintf(&b, "#   - %-7s  %s -> %s\n", k, entry.HostAuthMount.HostPath, entry.HostAuthMount.ContainerPath)
 	}
+	b.WriteString("# inherit_host_auth: [gh, gcloud]\n")
 	b.WriteString("\n")
 
 	b.WriteString("# mounts — patch / replace / append host -> container binds.\n")

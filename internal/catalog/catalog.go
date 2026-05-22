@@ -1,100 +1,90 @@
 // Package catalog owns the canonical declaration of every bundled tool: the
-// Tool Catalog. One typed table (Entries) replaces the parallel KnownTools
-// slice + ToolBuildArg map that previously lived in internal/config/tools.go.
+// Tool Catalog. One typed table (Entries) lists every CLI baked into the
+// runtime image.
 //
-// The package exposes a small surface — Entries, Keys, BuildArg, Defaults,
-// IsDefault, WriteCanonical, WriteCanonicalEntries — that the rest of the
-// codebase consumes. internal/build uses it for Dockerfile build args and
-// the local image hash; internal/config uses it to derive default-tools and
-// IsDefault helpers. No back-compat re-exports of the legacy KnownTools /
-// ToolBuildArg names live here (D-05): callers migrate to the typed
-// accessors.
+// All catalog entries are installed unconditionally — there is no per-tool
+// opt-out. The image content is identical for every user, so the canonical
+// image (`ghcr.io/filippolmt/toolbox:latest`) is what every shell pulls.
 //
-// The Tool Catalog exists to collapse three fan-outs (the KnownTools slice,
-// the ToolBuildArg map, and a future Phase 10 init manifest carrying tool
-// metadata such as Description / InitScript / SmokeTest) into a single
-// declaration. Hash-invalidation invariant: ADDING (or removing) an entry
-// here invalidates the `toolbox:local-<hash>` tag for every user with any
-// non-default tools config — the hash is computed over the sorted Tools
-// map, so a new key shifts the digest even when the user never set it.
-// Their next `toolbox shell` will see an "Image not found locally —
-// building …" line and rebuild once. Document this in the release notes
-// when bumping this list. Optional fields (Description / InitScript /
-// SmokeTest) are EXCLUDED from the canonical encoding (D-09, D-10) so a
-// future Phase 10 contributor populating them does not shift the image
-// hash for existing users.
+// Adding a CLI: append a row to Entries (alphabetical by Key). Populate
+// InitScript when the tool needs a runtime init.d/ script. Populate
+// HostAuthMount when the tool has a stable host-side credential path users
+// may want to inherit via `inherit_host_auth:` in .toolbox.yaml.
 package catalog
 
-import (
-	"fmt"
-	"io"
-	"strconv"
-)
+import "sort"
 
-// Entry is a single bundled tool declaration. Key, Default, and BuildArg
-// are the load-bearing fields consumed today; Description, InitScript, and
-// SmokeTest are reserved for Phase 09/10 (init manifest + smoke-test
-// assertions) and are intentionally zero-valued in Phase 07. They MUST NOT
-// appear in the canonical encoding (D-10).
+// Entry is a single bundled tool declaration.
+//
+// InitScript is the relative path under internal/build/assets/init.d/ when
+// the tool needs runtime initialisation; otherwise "". The
+// TestCatalogInitDBijection test enforces strict set-equality between
+// populated InitScript values and the *.sh files shipped under init.d/.
+//
+// HostAuthMount is non-nil iff the CLI has a stable host credential
+// location that users may opt into inheriting via `inherit_host_auth:`. A
+// nil pointer means the CLI is not eligible for host inheritance — config
+// validation rejects ineligible keys.
+//
+// Description and SmokeTest are reserved for future use and must stay
+// zero-valued (TestCatalogShape locks this).
 type Entry struct {
-	Key         string // tool key in .toolbox.yaml `tools:` map
-	Default     bool   // default-on/off
-	BuildArg    string // Dockerfile ARG name, e.g. "INSTALL_GH"
-	Description string // Phase 10: init manifest copy. Phase 07 leaves "".
-	InitScript  string // Phase 10: relative path under init.d/. Phase 07 leaves "".
-	SmokeTest   string // Phase 09/10: smoke-test assertion key. Phase 07 leaves "".
+	Key           string         // tool key, also the inherit_host_auth value
+	InitScript    string         // relative path under init.d/, or "" if none
+	HostAuthMount *HostAuthMount // non-nil iff eligible for inherit_host_auth
+	Description   string         // reserved
+	SmokeTest     string         // reserved
+}
+
+// HostAuthMount declares the host → container credential path mapping used
+// when a CLI key is listed in inherit_host_auth. Always read-only: the
+// container reads the host's auth but must not mutate it.
+type HostAuthMount struct {
+	HostPath      string // ~/-relative or absolute (e.g. "~/.config/gh")
+	ContainerPath string // absolute container path (e.g. "/home/toolbox/.config/gh")
 }
 
 // Entries is the canonical, alphabetical-by-Key declaration of every
-// bundled tool. The slice ordering is itself part of the public contract:
-// callers that iterate Entries get deterministic order without re-sorting.
-//
-// Hash-invalidation: adding or removing an entry here shifts the local
-// image hash for users with non-default tools maps (see package doc).
-//
-// Optional fields (Description / InitScript / SmokeTest) are zero-valued
-// in Phase 07; Phase 10 populates them. Per D-10, the canonical encoding
-// (WriteCanonical / WriteCanonicalEntries) MUST NOT include those fields,
-// so populating them in a future phase is hash-neutral.
+// bundled tool. Slice ordering is part of the public contract — iterators
+// get deterministic order without re-sorting.
 var Entries = []Entry{
-	{Key: "atuin", Default: true, BuildArg: "INSTALL_ATUIN", InitScript: "65-atuin.sh"},
-	{Key: "azure", Default: true, BuildArg: "INSTALL_AZURE", InitScript: "06-azure-creds.sh"},
-	{Key: "bat", Default: true, BuildArg: "INSTALL_BAT"},
-	{Key: "bun", Default: true, BuildArg: "INSTALL_BUN"},
-	{Key: "cf", Default: true, BuildArg: "INSTALL_CF", InitScript: "20-cf.sh"},
-	{Key: "claude", Default: true, BuildArg: "INSTALL_CLAUDE_CODE", InitScript: "50-mcp-plugins.sh"},
-	{Key: "codex", Default: true, BuildArg: "INSTALL_CODEX_CLI", InitScript: "25-codex.sh"},
-	{Key: "compose", Default: true, BuildArg: "INSTALL_COMPOSE"},
-	{Key: "docker", Default: true, BuildArg: "INSTALL_DOCKER_CLI"},
-	{Key: "gcloud", Default: true, BuildArg: "INSTALL_GCLOUD", InitScript: "04-gcloud-creds.sh"},
-	{Key: "gh", Default: true, BuildArg: "INSTALL_GH", InitScript: "02-gh-creds.sh"},
-	{Key: "glab", Default: true, BuildArg: "INSTALL_GLAB", InitScript: "60-glab.sh"},
-	{Key: "go", Default: true, BuildArg: "INSTALL_GO"},
-	{Key: "goimports", Default: true, BuildArg: "INSTALL_GOIMPORTS"},
-	{Key: "gopls", Default: true, BuildArg: "INSTALL_GOPLS"},
-	{Key: "graphify", Default: true, BuildArg: "INSTALL_GRAPHIFY", InitScript: "30-graphify.sh"},
-	{Key: "gws", Default: true, BuildArg: "INSTALL_GWS"},
-	{Key: "helm", Default: true, BuildArg: "INSTALL_HELM"},
-	{Key: "jq", Default: true, BuildArg: "INSTALL_JQ"},
-	{Key: "kubectl", Default: true, BuildArg: "INSTALL_KUBECTL"},
-	{Key: "oci", Default: true, BuildArg: "INSTALL_OCI", InitScript: "08-oci-creds.sh"},
-	{Key: "playwright", Default: true, BuildArg: "INSTALL_PLAYWRIGHT"},
-	{Key: "playwright_cli", Default: true, BuildArg: "INSTALL_PLAYWRIGHT_CLI", InitScript: "40-playwright-cli.sh"},
-	{Key: "pnpm", Default: true, BuildArg: "INSTALL_PNPM"},
-	{Key: "pyright", Default: true, BuildArg: "INSTALL_PYRIGHT"},
-	{Key: "rtk", Default: true, BuildArg: "INSTALL_RTK", InitScript: "10-rtk.sh"},
-	{Key: "starship", Default: true, BuildArg: "INSTALL_STARSHIP"},
-	{Key: "tofu", Default: true, BuildArg: "INSTALL_TOFU"},
-	{Key: "uv", Default: true, BuildArg: "INSTALL_UV"},
-	{Key: "wrangler", Default: true, BuildArg: "INSTALL_WRANGLER"},
-	{Key: "yq", Default: true, BuildArg: "INSTALL_YQ"},
-	{Key: "zsh", Default: true, BuildArg: "INSTALL_ZSH"},
+	{Key: "atuin", InitScript: "65-atuin.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.local/share/atuin", ContainerPath: "/home/toolbox/.local/share/atuin"}},
+	{Key: "azure", InitScript: "06-azure-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.azure", ContainerPath: "/home/toolbox/.azure"}},
+	{Key: "bat"},
+	{Key: "bun"},
+	{Key: "cf", InitScript: "20-cf.sh"},
+	{Key: "claude", InitScript: "50-mcp-plugins.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.claude", ContainerPath: "/home/toolbox/.claude"}},
+	{Key: "codex", InitScript: "25-codex.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.codex", ContainerPath: "/home/toolbox/.codex"}},
+	{Key: "compose"},
+	{Key: "docker", HostAuthMount: &HostAuthMount{HostPath: "~/.docker", ContainerPath: "/home/toolbox/.docker"}},
+	{Key: "gcloud", InitScript: "04-gcloud-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/gcloud", ContainerPath: "/home/toolbox/.config/gcloud"}},
+	{Key: "gh", InitScript: "02-gh-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/gh", ContainerPath: "/home/toolbox/.config/gh"}},
+	{Key: "glab", InitScript: "60-glab.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/glab-cli", ContainerPath: "/home/toolbox/.config/glab-cli"}},
+	{Key: "go"},
+	{Key: "goimports"},
+	{Key: "gopls"},
+	{Key: "graphify", InitScript: "30-graphify.sh"},
+	{Key: "gws"},
+	{Key: "helm"},
+	{Key: "jq"},
+	{Key: "kubectl"},
+	{Key: "oci", InitScript: "08-oci-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.oci", ContainerPath: "/home/toolbox/.oci"}},
+	{Key: "playwright"},
+	{Key: "playwright_cli", InitScript: "40-playwright-cli.sh"},
+	{Key: "pnpm"},
+	{Key: "pyright"},
+	{Key: "rtk", InitScript: "10-rtk.sh"},
+	{Key: "starship"},
+	{Key: "tofu"},
+	{Key: "uv"},
+	{Key: "wrangler"},
+	{Key: "yq"},
+	{Key: "zsh"},
 }
 
 // Keys returns one string per Entry, in catalog (alphabetical) order. A
 // fresh slice is allocated on each call so callers cannot alias the
-// internal table. Memoisation is intentionally deferred until profiling
-// shows it matters (D-04).
+// internal table.
 func Keys() []string {
 	out := make([]string, len(Entries))
 	for i, e := range Entries {
@@ -103,80 +93,27 @@ func Keys() []string {
 	return out
 }
 
-// BuildArg returns Entry.BuildArg for the Entry whose Key == key, or "" if
-// no entry matches. Linear scan is acceptable at the current catalog size
-// (D-04); revisit if the catalog grows by an order of magnitude.
-func BuildArg(key string) string {
+// Find returns the Entry with matching Key and true, or the zero Entry and
+// false. Linear scan — acceptable at the current catalog size.
+func Find(key string) (Entry, bool) {
 	for _, e := range Entries {
 		if e.Key == key {
-			return e.BuildArg
+			return e, true
 		}
 	}
-	return ""
+	return Entry{}, false
 }
 
-// Defaults returns a fresh map[string]bool with one entry per Entry,
-// key=Entry.Key value=Entry.Default. Replaces the body of the legacy
-// config.DefaultTools helper.
-func Defaults() map[string]bool {
-	out := make(map[string]bool, len(Entries))
+// HostAuthEligibleKeys returns the sorted list of Entry keys with a
+// non-nil HostAuthMount. Used by config validation to enumerate valid
+// inherit_host_auth values in error messages.
+func HostAuthEligibleKeys() []string {
+	var out []string
 	for _, e := range Entries {
-		out[e.Key] = e.Default
+		if e.HostAuthMount != nil {
+			out = append(out, e.Key)
+		}
 	}
+	sort.Strings(out)
 	return out
-}
-
-// IsDefault reports whether the given user tools map matches the catalog
-// defaults. A missing key is treated as that entry's Default — the catalog
-// is the source of truth, so a config that never mentions `tools:` evaluates
-// as default regardless of which tools are opt-in vs opt-out.
-// Mirrors legacy config.IsDefaultTools semantics for the all-default-true
-// catalog and extends them coherently if any future entry ships Default:false.
-func IsDefault(m map[string]bool) bool {
-	for _, e := range Entries {
-		enabled, present := m[e.Key]
-		if present && enabled != e.Default {
-			return false
-		}
-	}
-	return true
-}
-
-// WriteCanonicalEntries writes a deterministic byte stream representing
-// the given entries under the user's enabled-bool overlay. Format:
-//
-//	tool:<key>|<resolved-bool>|<build-arg>\n
-//
-// where <resolved-bool> is enabled[e.Key] if present, otherwise e.Default.
-// Iteration is in slice order — the caller is responsible for sorting;
-// production callers use the package-level Entries which is already
-// alphabetical by Key.
-//
-// Per D-09 / D-10, optional Entry fields (Description, InitScript,
-// SmokeTest) MUST NOT appear in the output stream — the function body
-// MUST NOT reference them. This is the testable seam exercised by the
-// D-10 mutation test (TestCanonicalEncodingIsNeutralToOptionalFieldPopulation):
-// populating those fields on a test-local []Entry MUST NOT shift the
-// produced bytes.
-//
-// Returns the first non-nil error from fmt.Fprintf, or nil on success.
-func WriteCanonicalEntries(w io.Writer, entries []Entry, enabled map[string]bool) error {
-	for _, e := range entries {
-		resolved := e.Default
-		if v, ok := enabled[e.Key]; ok {
-			resolved = v
-		}
-		if _, err := fmt.Fprintf(w, "tool:%s|%s|%s\n", e.Key, strconv.FormatBool(resolved), e.BuildArg); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// WriteCanonical writes the canonical byte stream for the package-level
-// Entries table under the user's enabled overlay. Thin wrapper over
-// WriteCanonicalEntries — production callers (internal/build) use this
-// form; tests use either form.
-func WriteCanonical(w io.Writer, enabled map[string]bool) error {
-	return WriteCanonicalEntries(w, Entries, enabled)
 }

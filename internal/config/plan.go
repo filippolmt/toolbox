@@ -12,8 +12,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
@@ -40,12 +43,8 @@ func Plan(searchFrom string, explicitOverride string) (*Config, error) {
 		explicitBytes = b
 	} else {
 		// Global ~/.toolbox.yaml — best-effort. Read AND parse failures are
-		// non-fatal: pre-Plan-08 cmd/root.go::initConfig used
-		// `_ = viper.ReadInConfig()` (line 91), swallowing every error so
-		// commands that don't need configuration (e.g. `stop --all`) still
-		// run when the global file is broken. Codex review on PR #152
-		// flagged the original Plan implementation as a regression for
-		// returning hard on non-ENOENT errors. Errors go to stderr so the
+		// non-fatal: commands that don't need configuration (e.g. `stop --all`)
+		// still run when the global file is broken. Errors go to stderr so the
 		// user notices the broken file even though startup keeps going.
 		if home, herr := os.UserHomeDir(); herr == nil && home != "" {
 			globalPath := filepath.Join(home, ".toolbox.yaml")
@@ -88,11 +87,13 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	vp := viper.New()
 	vp.SetConfigType("yaml")
 
-	// Defaults Seeding stage.
-	seedToolDefaults(vp)
+	// Defaults seeding. Per-tool toggles no longer exist; only top-level
+	// feature flags (browser_bridge) get seeded.
+	vp.SetDefault("browser_bridge", true)
 
-	// File Load stage. explicit short-circuits global + project — mirrors
-	// cmd/root.go::initConfig (pre-Plan-08) lines 76-114.
+	warnLegacyTools(global, project, explicit)
+
+	// File Load stage. explicit short-circuits global + project.
 	if len(explicit) > 0 {
 		if err := vp.MergeConfig(bytes.NewReader(explicit)); err != nil {
 			return nil, fmt.Errorf("parse --config bytes: %w", err)
@@ -110,9 +111,10 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 		}
 	}
 
-	// Env-prefix overrides — applied to this instance only (D-09).
+	// Env-prefix overrides — applied to this instance only.
 	vp.SetEnvPrefix("TOOLBOX")
 	vp.AutomaticEnv()
+	warnLegacyToolsEnv()
 
 	// Unmarshal.
 	cfg := &Config{}
@@ -120,8 +122,7 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 		return nil, err
 	}
 
-	// Tool-defaults backstop (Pitfall 1 — Unmarshal misses defaulted map keys).
-	fillToolDefaultsBackstop(cfg)
+	fillDefaultsBackstop(cfg)
 
 	// Validation tail.
 	if err := applyValidationTail(cfg); err != nil {
@@ -139,10 +140,9 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 // the global ~/.toolbox.yaml is not re-read as a project file) and at the
 // filesystem root. Returns "" when no project config is found.
 //
-// HOME-resolution failures are swallowed deliberately (Pitfall 5 in
-// 08-RESEARCH.md): a misconfigured HOME must not prevent walk-up from
-// reaching the filesystem root. The home == "" short-circuit at the top of
-// the loop becomes a no-op in that case.
+// HOME-resolution failures are swallowed deliberately: a misconfigured HOME
+// must not prevent walk-up from reaching the filesystem root. The home == ""
+// short-circuit at the top of the loop becomes a no-op in that case.
 func walkUp(start string) string {
 	home, _ := os.UserHomeDir()
 	cur := filepath.Clean(start)
@@ -163,43 +163,72 @@ func walkUp(start string) string {
 }
 
 // =============================================================================
-// Defaults Seeding
+// Legacy `tools:` Warning
 // =============================================================================
 
-// seedToolDefaults applies catalog.Keys() to vp as tools.<key>=true.
-// Phase 08 D-10: Plan owns this seeding; cmd/root.go::setDefaults is
-// deleted in Plan 04 alongside initConfig thinning.
-//
-// Pitfall 2 in 08-RESEARCH: dotted-key SetDefault per scalar. Do NOT
-// SetDefault a nested object (breaks MergeConfig).
-//
-// Pitfall 8: mount defaults are NOT seeded here — that responsibility
-// stays inside the mount-plan package. Seeding the mounts slice from
-// here would double-merge against the mount-plan internal defaults,
-// producing duplicate binds.
-func seedToolDefaults(vp *viper.Viper) {
-	for _, k := range catalog.Keys() {
-		vp.SetDefault("tools."+k, true)
+// legacyToolsWarnOnce ensures the deprecation warning fires at most once per
+// process — Plan is called by almost every cmd/* subcommand (shell, stop,
+// config, sdd, …) and spamming the warning on every CLI invocation creates
+// scripting noise.
+var legacyToolsWarnOnce sync.Once
+
+// warnLegacyToolsEnv detects `TOOLBOX_TOOLS_<KEY>=...` env vars left over
+// from the legacy opt-out and emits the same deprecation warning. Shares
+// legacyToolsWarnOnce with warnLegacyTools so a user with both a yaml block
+// and env vars sees a single line.
+func warnLegacyToolsEnv() {
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "TOOLBOX_TOOLS_") {
+			legacyToolsWarnOnce.Do(func() {
+				fmt.Fprintln(os.Stderr,
+					"toolbox: warning: TOOLBOX_TOOLS_* env vars are no longer supported and have been removed.\n"+
+						"        All bundled CLIs are now installed unconditionally.\n"+
+						"        Unset them to silence this warning.\n"+
+						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/runtime-notes.md#tools-removal")
+			})
+			return
+		}
 	}
-	vp.SetDefault("browser_bridge", true)
 }
 
-// =============================================================================
-// File Load
-// =============================================================================
+// warnLegacyTools emits the deprecation warning the first time any input
+// buffer carries a top-level `tools:` key. Process-wide one-shot.
+func warnLegacyTools(buffers ...[]byte) {
+	for _, b := range buffers {
+		if len(b) == 0 {
+			continue
+		}
+		if hasTopLevelKey(b, "tools") {
+			legacyToolsWarnOnce.Do(func() {
+				fmt.Fprintln(os.Stderr,
+					"toolbox: warning: 'tools:' is no longer supported and has been removed.\n"+
+						"        All bundled CLIs are now installed unconditionally.\n"+
+						"        Remove the block from your config to silence this warning.\n"+
+						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/runtime-notes.md#tools-removal")
+			})
+			return
+		}
+	}
+}
 
-// (Plan 02 keeps the file-read logic inline inside Plan. If a future plan
-// extracts read helpers, they land under this banner.)
+// hasTopLevelKey reports whether b decodes to a YAML mapping that contains
+// key at the top level. Robust against malformed input: a parse error
+// returns false rather than propagating.
+func hasTopLevelKey(b []byte, key string) bool {
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
 
 // =============================================================================
 // Validation
 // =============================================================================
 
-// applyValidationTail runs ValidateMountsRoot, the shell default
-// fallback, and ValidateShell. Phase 08 D-12: validators run inside the
-// Seam; cmd/* never calls Validate* directly. Migrating Load() in Plan
-// 05 keeps the same call order so the deprecated wrapper preserves
-// today's error surface.
+// applyValidationTail runs ValidateMountsRoot, the shell default fallback,
+// ValidateShell, and InheritHostAuth validation.
 func applyValidationTail(cfg *Config) error {
 	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
 		return err
@@ -210,6 +239,38 @@ func applyValidationTail(cfg *Config) error {
 	if err := ValidateShell(cfg.Shell); err != nil {
 		return err
 	}
+	if err := validateInheritHostAuth(cfg.InheritHostAuth); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateInheritHostAuth rejects unknown CLI keys, ineligible CLIs (no
+// stable host credential path), and duplicate keys. The error message
+// enumerates valid eligible keys so the user can copy-paste a fix.
+func validateInheritHostAuth(keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	eligible := catalog.HostAuthEligibleKeys()
+	seen := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		if _, dup := seen[k]; dup {
+			return fmt.Errorf("inherit_host_auth: duplicate CLI key %q", k)
+		}
+		seen[k] = struct{}{}
+		entry, ok := catalog.Find(k)
+		if !ok {
+			return fmt.Errorf(
+				"inherit_host_auth: unknown CLI %q; valid keys: %s",
+				k, strings.Join(eligible, ", "))
+		}
+		if entry.HostAuthMount == nil {
+			return fmt.Errorf(
+				"inherit_host_auth: %q does not support host inheritance; valid keys: %s",
+				k, strings.Join(eligible, ", "))
+		}
+	}
 	return nil
 }
 
@@ -217,21 +278,11 @@ func applyValidationTail(cfg *Config) error {
 // Helpers
 // =============================================================================
 
-// fillToolDefaultsBackstop fills cfg.Tools entries that the YAML did
-// not override. Mirrors Load() lines 144-151 verbatim — Unmarshal does
-// not pull viper's SetDefault entries into a map[string]bool when the
-// YAML omits them. Also nil-guards cfg.Shells so cmd/* lookups never
-// observe an uninitialised map (no defaults to seed — the map is
-// purely user-driven and may legitimately stay empty).
-func fillToolDefaultsBackstop(cfg *Config) {
-	if cfg.Tools == nil {
-		cfg.Tools = map[string]bool{}
-	}
-	for _, k := range catalog.Keys() {
-		if _, ok := cfg.Tools[k]; !ok {
-			cfg.Tools[k] = true
-		}
-	}
+// fillDefaultsBackstop nil-guards cfg.Shells and seeds cfg.BrowserBridge to
+// its default value when omitted. Viper SetDefault values do not always
+// surface through Unmarshal for map/pointer types, so the Go-side backstop
+// keeps the contract explicit.
+func fillDefaultsBackstop(cfg *Config) {
 	if cfg.Shells == nil {
 		cfg.Shells = map[string]NamedShell{}
 	}

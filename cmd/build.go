@@ -4,7 +4,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/ui"
-	"github.com/filippolmt/toolbox/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -20,10 +19,10 @@ var buildCmd = &cobra.Command{
 The Dockerfile and companion scripts are embedded into the toolbox binary,
 so this works from any directory — a repo checkout is not required.
 
-The resulting image tag mirrors what 'toolbox shell' would look for:
-- When tools match the defaults, the canonical ghcr.io tag.
-- When any tool is opted out, a content-hashed local tag
-  (toolbox:local-<hash>) so different configs don't clobber each other.`,
+The build produces the canonical image tag (` + build.DefaultRegistryImage + `),
+overwriting the local cache. The next 'toolbox shell' picks up the freshly
+built image; run 'docker pull ` + build.DefaultRegistryImage + `' to restore
+the upstream one.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: runBuild,
 }
@@ -35,18 +34,15 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	ref, isLocal := build.ResolveImage(cfg, version.Version)
-	if !isLocal {
-		ui.Info("Config matches defaults — rebuilding the canonical image locally as " + ref)
-	}
+	tag := build.DefaultRegistryImage
+	ui.Info("Building " + tag + " locally (overwrites the cached copy of the registry image)")
 
 	ctx, stopSig := signalCtx()
 	defer stopSig()
 
 	return build.BuildImage(ctx, cli, build.Options{
-		Tag:       ref,
-		BuildArgs: build.BuildArgsFromTools(cfg.Tools),
-		NoCache:   buildNoCache,
+		Tag:     tag,
+		NoCache: buildNoCache,
 	})
 }
 
