@@ -5,8 +5,7 @@
     ":rebaseStalePrs"
   ],
   "timezone": "Europe/Rome",
-  "platformAutomerge": false,
-  "automergeSchedule": ["* 8 * * *"],
+  "platformAutomerge": true,
   "postUpdateOptions": ["gomodTidy"],
   "vulnerabilityAlerts": {
     "groupName": null,
@@ -15,7 +14,7 @@
   },
   "packageRules": [
     {
-      "description": "Group every update — including major — into a single PR, automerge once daily at 08:00 Europe/Rome.",
+      "description": "Group every update — including major — into a single PR, automerge as soon as checks pass via GitHub native auto-merge.",
       "matchPackageNames": ["*"],
       "groupName": "all dependencies",
       "groupSlug": "all",
