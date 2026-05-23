@@ -229,7 +229,7 @@ func TestSDDInitRejectsUnknownSkill(t *testing.T) {
 func TestSDDInitAddsKeyToExistingBlock(t *testing.T) {
 	dir := chdirTemp(t)
 
-	original := "shell: bash\nsdd:\n  gsd: true\n"
+	original := "shell: zsh\nsdd:\n  gsd: true\n"
 	yamlPath := filepath.Join(dir, ".toolbox.yaml")
 	if err := os.WriteFile(yamlPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("seed yaml: %v", err)
@@ -247,7 +247,7 @@ func TestSDDInitAddsKeyToExistingBlock(t *testing.T) {
 	if strings.Count(got, "sdd:") != 1 {
 		t.Errorf("expected single sdd: block, got:\n%s", got)
 	}
-	for _, want := range []string{"shell: bash", "gsd: true", "bmad: true"} {
+	for _, want := range []string{"shell: zsh", "gsd: true", "bmad: true"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("yaml missing %q:\n%s", want, got)
 		}

@@ -40,7 +40,7 @@ func TestStreamBuildOutputError(t *testing.T) {
 
 // TestTarEmbeddedContext verifies the tar produced from the embedded assets
 // contains the Dockerfile and companion scripts at the root (so `COPY
-// bashrc.sh …` resolves) and that init.d/ is the only allowed nesting level.
+// zshrc.sh …` resolves) and that init.d/ is the only allowed nesting level.
 func TestTarEmbeddedContext(t *testing.T) {
 	r, err := tarEmbeddedContext()
 	if err != nil {
@@ -63,7 +63,7 @@ func TestTarEmbeddedContext(t *testing.T) {
 		got[h.Name] = true
 	}
 
-	for _, want := range []string{"Dockerfile", "bashrc.sh", "entrypoint.sh", "zshrc.sh"} {
+	for _, want := range []string{"Dockerfile", "entrypoint.sh", "zshrc.sh"} {
 		if !got[want] {
 			t.Errorf("tar missing entry %q (got %v)", want, got)
 		}

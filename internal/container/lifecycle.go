@@ -81,11 +81,11 @@ func NewClient() (client.APIClient, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 }
 
-// Shell manages the container lifecycle and attaches a bash session.
+// Shell manages the container lifecycle and attaches a zsh session.
 // The workspace host path is always mounted at /workspace and used as the
 // WorkingDir. When the attached shell exits the container is stopped and
 // removed — all persistent state lives on bind-mounted volumes under
-// ~/.toolbox/ (creds, bash history, caches), so nothing is lost by trashing
+// ~/.toolbox/ (creds, shell history, caches), so nothing is lost by trashing
 // the container itself.
 //
 // State machine — dispatched by runplan.Compute on the ContainerInspect result:

@@ -19,7 +19,7 @@ var shellBridgeLoopback bool
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
 	Short: "Start an interactive shell session in the toolbox container",
-	Long: `Start the toolbox container and attach an interactive bash session.
+	Long: `Start the toolbox container and attach an interactive zsh session.
 
 Without arguments the current working directory is mounted at /workspace
 and the container name is derived from that path, so each directory gets

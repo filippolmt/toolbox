@@ -81,7 +81,7 @@ func TestExecShell_ContainerExecAttachError(t *testing.T) {
 		},
 	}
 
-	err := execShell(context.Background(), cli, "cid", []string{"/bin/bash"})
+	err := execShell(context.Background(), cli, "cid", []string{"/bin/zsh"})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("execShell err = %v, want %v", err, wantErr)
 	}
@@ -138,7 +138,7 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- execShell(context.Background(), cli, "cid", []string{"/bin/bash"})
+		done <- execShell(context.Background(), cli, "cid", []string{"/bin/zsh"})
 	}()
 
 	select {

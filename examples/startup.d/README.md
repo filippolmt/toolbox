@@ -13,7 +13,7 @@ On the host:
 └── ...
 ```
 
-At container start, `internal/build/assets/entrypoint.sh` iterates the directory and executes each `*.sh` file with `bash`. Output is printed before the bash prompt, indented under a `Toolbox startup hooks:` banner. A failing hook logs its exit code but never aborts the entrypoint — you always get a shell.
+At container start, `internal/build/assets/entrypoint.sh` iterates the directory and executes each `*.sh` file with `bash` (script interpreter — the interactive login shell is zsh). Output is printed before the zsh prompt, indented under a `Toolbox startup hooks:` banner. A failing hook logs its exit code but never aborts the entrypoint — you always get a shell.
 
 The directory is mounted **read-only** into the container at `/home/toolbox/.toolbox-startup.d/`. Edits happen on the host (e.g. with your editor, or via chezmoi / dotfiles), never from inside the container.
 

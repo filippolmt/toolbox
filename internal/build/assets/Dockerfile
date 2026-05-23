@@ -104,7 +104,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
-      bash-completion \
       ca-certificates \
       curl \
       git \
@@ -650,10 +649,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       apt-get update -qqy; \
       # node:24-bookworm-slim ships /etc/dpkg/dpkg.cfg.d/docker-clean (or
       # similar) with `path-exclude /usr/share/doc/*`, which silently strips
-      # fzf's key-bindings.{bash,zsh,fish} + completion.{bash,zsh} integration
-      # scripts at install time. Without re-including them, our bashrc/zshrc
-      # `source /usr/share/doc/fzf/examples/*` lines no-op — fzf works as a
-      # binary but Ctrl-R / Ctrl-T / Alt-C bindings stay dormant. The override
+      # fzf's key-bindings.zsh + completion.zsh integration scripts at install
+      # time. Without re-including them, our zshrc `source
+      # /usr/share/doc/fzf/examples/*` lines no-op — fzf works as a binary
+      # but Ctrl-R / Ctrl-T / Alt-C bindings stay dormant. The override
       # filename is lexically LAST in dpkg.cfg.d so it post-dates the slim
       # path-exclude rule. Applies only to fzf — every other tool's docs stay
       # stripped per upstream design. \
@@ -768,13 +767,6 @@ ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # Curated starship config. Per-user override via STARSHIP_CONFIG in a
 # ~/.toolbox-startup.d/ hook.
 COPY starship.toml /etc/toolbox/starship.toml
-
-COPY bashrc.sh /etc/toolbox-bashrc.sh
-RUN set -eux; \
-    echo '' >> /etc/bash.bashrc; \
-    echo '# toolbox shell UX (alias + completions + starship)' >> /etc/bash.bashrc; \
-    echo '[ -f /etc/toolbox-bashrc.sh ] && source /etc/toolbox-bashrc.sh' \
-      >> /etc/bash.bashrc
 
 COPY entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint

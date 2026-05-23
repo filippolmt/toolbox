@@ -223,9 +223,9 @@ echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 echo ""
 echo "=== Signal handling check (SIGTERM propagates via tini) ==="
 # Regression guard for the "docker stop hangs 10s then SIGKILLs" class of bugs:
-# interactive zsh/bash ignore SIGTERM when they own the TTY, so without a
-# proper PID-1 init (tini) the shell only dies via SIGKILL fallback. tini -g
-# forwards signals to the process group so the shell exits clean.
+# interactive zsh ignores SIGTERM when it owns the TTY, so without a proper
+# PID-1 init (tini) the shell only dies via SIGKILL fallback. tini -g forwards
+# signals to the process group so the shell exits clean.
 cid=$(docker run -d "${IMAGE}" sleep 3600)
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 start=$(date +%s)
