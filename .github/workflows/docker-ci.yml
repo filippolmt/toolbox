@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   packages: read
+  pull-requests: read
 
 env:
   # Dedicated BuildKit registry cache, separate from the image tags.
