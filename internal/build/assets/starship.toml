@@ -25,6 +25,12 @@
 # bind-mount overhead without making a sluggish prompt feel broken.
 command_timeout = 1000
 
+# Upstream default is 30ms — same bind-mount latency that trips
+# `command_timeout` also trips file-scan probes (kubernetes/gcloud
+# config files, docker_context detect_files glob). 50ms keeps the
+# prompt responsive while absorbing the host/container boundary cost.
+scan_timeout = 50
+
 format = """
 $directory\
 $git_branch\
