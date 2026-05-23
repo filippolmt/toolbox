@@ -109,6 +109,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       git \
       gnupg \
       less \
+      libpython3.11-minimal \
+      libpython3.11-stdlib \
       make \
       ncurses-bin \
       openssh-client \
