@@ -66,6 +66,7 @@ toolbox version
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) must be installed and running
+- A [Nerd Font](https://www.nerdfonts.com/) in your **host** terminal (Ghostty, iTerm2, etc.). The bundled [starship](https://starship.rs/) prompt emits Nerd Font glyphs (git branch, kubernetes, gcloud, cmd duration); without one you'll see `?`/`▢` placeholders. Install on the host — fonts are rendered by the host terminal, not the container. Example: `brew install --cask font-jetbrains-mono-nerd-font`.
 
 ## Quick start
 
