@@ -1,6 +1,7 @@
 # toolbox: zsh configuration sourced from /etc/zsh/zshrc.
-# Symmetric to bashrc.sh — keeps the two shells behaviourally aligned for the
-# bits the user interacts with (alias, history, completions, starship).
+# zsh is the only interactive login shell supported by toolbox; bash was
+# removed as an interactive option but the binary is still present for
+# init.d shebangs and smoke-test.sh.
 # Do not use `set -e`: sourced scripts must not crash the shell if a tool is
 # missing or a completion fails.
 

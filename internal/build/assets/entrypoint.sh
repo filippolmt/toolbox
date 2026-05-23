@@ -10,7 +10,7 @@ set -euo pipefail
 _uid=$(id -u)
 _gid=$(id -g)
 if ! getent passwd "${_uid}" >/dev/null 2>&1; then
-    echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/bash" >> /etc/passwd
+    echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/zsh" >> /etc/passwd
 fi
 if ! getent group "${_gid}" >/dev/null 2>&1; then
     echo "toolbox:x:${_gid}:" >> /etc/group

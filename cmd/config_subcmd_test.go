@@ -10,7 +10,7 @@ import (
 
 func TestWriteResolvedConfigDeterministic(t *testing.T) {
 	c := &config.Config{
-		Shell:           "bash",
+		Shell:           "zsh",
 		MountsRoot:      "~/work-toolbox",
 		InheritHostAuth: []string{"gh", "gcloud"},
 		Mounts: []config.Mount{
@@ -26,7 +26,7 @@ func TestWriteResolvedConfigDeterministic(t *testing.T) {
 	got := buf.String()
 
 	for _, want := range []string{
-		"shell: bash\n",
+		"shell: zsh\n",
 		"mounts_root: ~/work-toolbox\n",
 		"inherit_host_auth:\n",
 		"  - gh\n",
