@@ -105,7 +105,7 @@ func mergeBuildArgs(args map[string]*string) map[string]*string {
 // tarEmbeddedContext serialises the embedded assets into an in-memory tar the
 // Docker daemon can consume as a build context. Filenames inside the tar are
 // the path of each asset relative to AssetDir — top-level files keep their
-// basename (so `COPY bashrc.sh …` resolves) and nested entries (e.g.
+// basename (so `COPY zshrc.sh …` resolves) and nested entries (e.g.
 // `init.d/10-rtk.sh`) keep their subdirectory prefix so `COPY init.d/ …`
 // resolves too.
 //

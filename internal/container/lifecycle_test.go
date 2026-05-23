@@ -1034,9 +1034,9 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 // against config.SupportedShells.)
 
 // TestShellCreateUsesResolvedShellCmd: verify the Cmd captured by
-// ContainerCreate uses the resolved shell binary. Covers both the `shell:
-// bash` regression path and the `shell: zsh` default path at the integration
-// unit level.
+// ContainerCreate uses the resolved shell binary. Only zsh is a supported
+// interactive shell, but the test keeps the table shape to make future
+// shell additions a one-row change rather than a refactor.
 func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -1044,7 +1044,6 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 		wantCmd []string
 	}{
 		{"default zsh", "zsh", []string{"/bin/zsh"}},
-		{"explicit bash", "bash", []string{"/bin/bash"}},
 	}
 
 	for _, tc := range cases {

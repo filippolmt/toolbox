@@ -175,8 +175,11 @@ func TestPlanExplicitOverrideShortCircuits(t *testing.T) {
 		t.Fatalf("write explicit: %v", err)
 	}
 	// Global at HOME and a project file at CWD that should both be ignored.
+	// The global uses `inherit_host_auth: [glab]` as the sentinel — distinct
+	// from the explicit file's `[gh]` so the assertion below catches the
+	// regression where global leaks in via the merge path.
 	home := t.TempDir()
-	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("shell: bash\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("inherit_host_auth: [glab]\n"), 0o600); err != nil {
 		t.Fatalf("write home: %v", err)
 	}
 	cwd := t.TempDir()

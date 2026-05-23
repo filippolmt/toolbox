@@ -29,8 +29,8 @@ concurrency:
 jobs:
   detect:
     # Compute the matrix dynamically: the `amd64` variant always runs
-    # (catches regressions in entrypoint.sh / smoke-test.sh / bashrc.sh /
-    # zshrc.sh — the bulk of non-Dockerfile churn under
+    # (catches regressions in entrypoint.sh / smoke-test.sh / zshrc.sh —
+    # the bulk of non-Dockerfile churn under
     # internal/build/assets/**); `arm64` runs only when the Dockerfile or
     # this workflow itself changes (the only inputs whose arch-specific
     # behavior that variant validates). Saves ~5min on PRs that touch only

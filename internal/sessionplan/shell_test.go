@@ -17,19 +17,6 @@ func TestResolveShellCmdZsh(t *testing.T) {
 	}
 }
 
-// TestResolveShellCmdBash: bash selection returns /bin/bash.
-func TestResolveShellCmdBash(t *testing.T) {
-	cfg := testConfig()
-	cfg.Shell = "bash"
-	cmd, err := sessionplan.ResolveShellCmd(cfg)
-	if err != nil {
-		t.Fatalf("ResolveShellCmd err = %v, want nil", err)
-	}
-	if len(cmd) != 1 || cmd[0] != "/bin/bash" {
-		t.Errorf("cmd = %v, want [/bin/bash]", cmd)
-	}
-}
-
 // TestNestedSandboxSecurityOpt: codex is always installed → always
 // returns seccomp=unconfined.
 func TestNestedSandboxSecurityOpt(t *testing.T) {

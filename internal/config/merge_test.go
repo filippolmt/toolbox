@@ -33,9 +33,14 @@ func TestMergeScenarios(t *testing.T) {
 			want:    want{Shell: "zsh"},
 		},
 		{
-			name:    "shell_explicit_bash",
+			name:    "shell_explicit_zsh",
+			project: "shell: zsh\n",
+			want:    want{Shell: "zsh"},
+		},
+		{
+			name:    "shell_bash_rejected_with_migration_hint",
 			project: "shell: bash\n",
-			want:    want{Shell: "bash"},
+			want:    want{ErrSubstr: "no longer supported"},
 		},
 		{
 			name:    "shell_invalid_rejected",

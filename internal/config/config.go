@@ -91,14 +91,27 @@ const HomeMountParents = "/home/toolbox/"
 // SupportedShells is the canonical list of values accepted by the `shell`
 // key in ~/.toolbox.yaml. Exposed so tests and error messages can consume a
 // single source of truth (D-14).
-var SupportedShells = []string{"zsh", "bash"}
+//
+// Bash was removed as an interactive shell option: the runtime image now
+// ships only the zsh stack (Oh-My-Zsh + fzf + zoxide + starship). The
+// `bash` binary itself is still present (Debian Essential) and remains the
+// shebang for init.d scripts and smoke-test.sh, but `toolbox shell` no
+// longer attaches a bash login session.
+var SupportedShells = []string{"zsh"}
 
 // ValidateShell returns nil when s is a supported shell, or an error listing
 // the accepted values (D-15). Used by Load() and (defensively) by the
 // container shell resolver in a later plan.
+//
+// `bash` is rejected with an explicit migration hint instead of the generic
+// "unsupported shell" message so existing ~/.toolbox.yaml files surface the
+// breaking change clearly.
 func ValidateShell(s string) error {
 	if slices.Contains(SupportedShells, s) {
 		return nil
+	}
+	if s == "bash" {
+		return fmt.Errorf("shell %q is no longer supported: remove the `shell:` key (default zsh) or set `shell: zsh` explicitly", s)
 	}
 	return fmt.Errorf("unsupported shell %q: must be one of %s",
 		s, strings.Join(SupportedShells, ", "))

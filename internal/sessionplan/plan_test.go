@@ -501,13 +501,13 @@ func TestPlanComputesCmd(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.Shell = "bash"
+	cfg.Shell = "zsh"
 	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if !slices.Equal(plan.Cmd, []string{"/bin/bash"}) {
-		t.Errorf("Cmd = %v, want [/bin/bash]", plan.Cmd)
+	if !slices.Equal(plan.Cmd, []string{"/bin/zsh"}) {
+		t.Errorf("Cmd = %v, want [/bin/zsh]", plan.Cmd)
 	}
 }
 
@@ -532,13 +532,13 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 
 func TestMergeAlsoComputesCmd(t *testing.T) {
 	cfg := testConfig()
-	cfg.Shell = "bash"
+	cfg.Shell = "zsh"
 	merged, err := sessionplan.Merge(cfg, "/workspace", nil, false)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
-	if !slices.Equal(merged.Cmd, []string{"/bin/bash"}) {
-		t.Errorf("Merge.Cmd = %v, want [/bin/bash]", merged.Cmd)
+	if !slices.Equal(merged.Cmd, []string{"/bin/zsh"}) {
+		t.Errorf("Merge.Cmd = %v, want [/bin/zsh]", merged.Cmd)
 	}
 }
 

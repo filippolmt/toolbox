@@ -30,7 +30,7 @@ func Render() string {
 	b.WriteString("# Every field below is optional. Uncomment only what you want to override.\n")
 	b.WriteString("\n")
 
-	b.WriteString("# Login shell inside the container. One of: zsh (default), bash.\n")
+	b.WriteString("# Login shell inside the container. Only zsh is supported.\n")
 	b.WriteString("# shell: zsh\n")
 	b.WriteString("\n")
 
