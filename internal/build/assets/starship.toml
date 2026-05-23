@@ -19,6 +19,12 @@
 # possible via `STARSHIP_CONFIG=$HOME/.toolbox-state/starship.toml` in a
 # ~/.toolbox-startup.d/ hook — no edits to this file needed.
 
+# Upstream default is 500ms, which trips on macOS bind-mounted repos where
+# `git` status calls cross the host/container filesystem boundary and emit
+# `Executing command "/usr/bin/git" timed out` warnings. 1000ms absorbs the
+# bind-mount overhead without making a sluggish prompt feel broken.
+command_timeout = 1000
+
 format = """
 $directory\
 $git_branch\
