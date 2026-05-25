@@ -91,9 +91,9 @@ var Skills = []Skill{
 		// Spec output dirs (.codex/specs/, docs/superpowers/specs/) are
 		// gsd:spec-phase / gsd:sketch outputs.
 		Key:        "gsd",
-		NpmPackage: "get-shit-done-cc",
-		Version:    "1.42.3",
-		BinName:    "get-shit-done-cc",
+		NpmPackage: "@opengsd/get-shit-done-redux",
+		Version:    "1.1.0",
+		BinName:    "get-shit-done-redux",
 		InstallSteps: [][]string{
 			{"--claude", "--local"},
 			{"--codex", "--local"},

@@ -41,7 +41,7 @@ func Render() string {
 	b.WriteString("# Use `toolbox sdd init <name>` to flip a key on AND patch .gitignore.\n")
 	b.WriteString("# Supported keys come from internal/sdd.Skills (Renovate-bumped).\n")
 	b.WriteString("# sdd:\n")
-	b.WriteString("#   gsd: true        # get-shit-done-cc --claude --local (unconditional)\n")
+	b.WriteString("#   gsd: true        # @opengsd/get-shit-done-redux --claude --local (unconditional)\n")
 	b.WriteString("#   bmad: true       # bmad-method install --yes (ONLY when _bmad/ exists)\n")
 	b.WriteString("#   openspec: true   # openspec init --tools=claude,codex --force, then openspec update\n")
 	b.WriteString("# bmad bootstrap requires a one-time manual `npx bmad-method install`\n")

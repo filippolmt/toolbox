@@ -336,11 +336,11 @@
       "customType": "regex",
       "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
       "matchStrings": [
-        "NpmPackage:\\s*\"get-shit-done-cc\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
+        "NpmPackage:\\s*\"@opengsd/get-shit-done-redux\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
       ],
       "datasourceTemplate": "npm",
-      "depNameTemplate": "get-shit-done-cc",
-      "packageNameTemplate": "get-shit-done-cc"
+      "depNameTemplate": "@opengsd/get-shit-done-redux",
+      "packageNameTemplate": "@opengsd/get-shit-done-redux"
     },
     {
       "customType": "regex",
