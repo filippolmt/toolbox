@@ -215,9 +215,9 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	for _, want := range []struct{ key, prefix string }{
 		{"TOOLBOX_SDD_ENABLED", "gsd"},
 		{"TOOLBOX_SDD_WORKSPACE_HASH", ""},
-		{"TOOLBOX_SDD_GSD_PKG", "get-shit-done-cc"},
+		{"TOOLBOX_SDD_GSD_PKG", "@opengsd/get-shit-done-redux"},
 		{"TOOLBOX_SDD_GSD_VERSION", ""},
-		{"TOOLBOX_SDD_GSD_BIN", "get-shit-done-cc"},
+		{"TOOLBOX_SDD_GSD_BIN", "get-shit-done-redux"},
 		{"TOOLBOX_SDD_GSD_STEPS", "--claude --local;--codex --local"},
 		{"TOOLBOX_SDD_GSD_MARKER", ""},
 	} {

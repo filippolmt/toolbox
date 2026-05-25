@@ -8,7 +8,7 @@ On the host:
 
 ```
 ~/.toolbox/startup.d/
-├── gsd.sh          # your scripts, any name ending in .sh
+├── tldr.sh         # your scripts, any name ending in .sh
 ├── direnv.sh
 └── ...
 ```
@@ -22,7 +22,7 @@ The directory is mounted **read-only** into the container at `/home/toolbox/.too
 Rename it so the glob stops matching:
 
 ```
-mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.off
+mv ~/.toolbox/startup.d/tldr.sh ~/.toolbox/startup.d/tldr.sh.off
 ```
 
 ## Writing your own hook
@@ -43,6 +43,6 @@ Good practices:
 
 ## Examples
 
-### [`gsd.sh`](./gsd.sh) — Get-Shit-Done
+### [`tldr.sh`](./tldr.sh) — `tldr` CLI
 
-Installs [`get-shit-done-cc`](https://github.com/gsd-build/get-shit-done) idempotently. The installer builds `gsd-sdk` from source and drops it into the per-user npm prefix (persisted via the `~/.toolbox/npm-global` mount), then copies the `/gsd-*` skill pack into `~/.claude/skills/get-shit-done` (persisted via the `~/.toolbox/.claude` mount). Version drift is detected via a sentinel in `~/.toolbox-state/gsd.version`; bump `GSD_VERSION` inside the script and the next startup reconciles.
+Installs [`tldr`](https://tldr.sh) globally on first shell. The npm-global prefix is persisted via the `~/.toolbox/npm-global` mount, so subsequent shells skip the install. Minimal template for any single-binary npm CLI you want available in `toolbox shell` without baking it into the image.
