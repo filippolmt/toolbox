@@ -8,7 +8,7 @@ On the host:
 
 ```
 ~/.toolbox/startup.d/
-├── gsd.sh          # your scripts, any name ending in .sh
+├── tldr.sh         # your scripts, any name ending in .sh
 ├── direnv.sh
 └── ...
 ```
@@ -22,7 +22,7 @@ The directory is mounted **read-only** into the container at `/home/toolbox/.too
 Rename it so the glob stops matching:
 
 ```
-mv ~/.toolbox/startup.d/gsd.sh ~/.toolbox/startup.d/gsd.sh.off
+mv ~/.toolbox/startup.d/tldr.sh ~/.toolbox/startup.d/tldr.sh.off
 ```
 
 ## Writing your own hook
