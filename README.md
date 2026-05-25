@@ -35,6 +35,8 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
 | Cloudflare Wrangler CLI (`wrangler`) | 4.90.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
+| fd (user-friendly `find` replacement) | 10.4.x |
+| eza (modern `ls` replacement) | 0.23.x |
 | jq, yq, starship, bat, git | latest stable |
 
 Every optional tool above can be disabled per-project — see [Configuration](#configuration).

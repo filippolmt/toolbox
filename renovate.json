@@ -327,6 +327,22 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+FD_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "sharkdp/fd",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+EZA_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "eza-community/eza",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+RTK_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "rtk-ai/rtk",
