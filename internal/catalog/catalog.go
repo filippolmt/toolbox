@@ -57,6 +57,8 @@ var Entries = []Entry{
 	{Key: "codex", InitScript: "25-codex.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.codex", ContainerPath: "/home/toolbox/.codex"}},
 	{Key: "compose"},
 	{Key: "docker", HostAuthMount: &HostAuthMount{HostPath: "~/.docker", ContainerPath: "/home/toolbox/.docker"}},
+	{Key: "eza"},
+	{Key: "fd"},
 	{Key: "gcloud", InitScript: "04-gcloud-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/gcloud", ContainerPath: "/home/toolbox/.config/gcloud"}},
 	{Key: "gh", InitScript: "02-gh-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/gh", ContainerPath: "/home/toolbox/.config/gh"}},
 	{Key: "glab", InitScript: "60-glab.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.config/glab-cli", ContainerPath: "/home/toolbox/.config/glab-cli"}},

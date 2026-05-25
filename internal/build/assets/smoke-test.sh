@@ -137,12 +137,12 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 14 files on default build:
+    # l. vendor-completions populated (expect >= 16 files on default build:
     # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat, codex,
-    # cf, kubectx, kubens)
+    # cf, kubectx, kubens, fd, eza)
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 14 ]
+        [ "$count" -ge 16 ]
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -211,6 +211,8 @@ check_optional  "gopls"     gopls    gopls version
 check_optional  "goimports" goimports sh -c '"'"'echo "" | goimports'"'"'
 check_optional  "starship"  starship starship --version
 check_optional  "bat"       bat      bat --version
+check_optional  "fd"        fd       fd --version
+check_optional  "eza"       eza      eza --version
 check_optional  "rtk"       rtk      rtk --version
 
 check_zsh

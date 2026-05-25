@@ -81,6 +81,19 @@ ARG BAT_VERSION=0.26.1
 # by maintainer in sync with BAT_VERSION (Renovate). T-01-08-class accepted risk.
 ARG BAT_SHA256_AMD64=726f04c8f576a7fd18b7634f1bbf2f915c43494c1c0f013baa3287edb0d5a2a3
 ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6564aa
+ARG FD_VERSION=10.4.2
+# fd: same accepted-risk pattern as bat — no upstream checksum file; pin SHA256
+# per-arch + bump in sync with FD_VERSION (Renovate).
+ARG FD_SHA256_AMD64=e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde
+ARG FD_SHA256_ARM64=f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8
+ARG EZA_VERSION=0.23.4
+# eza: no upstream checksum file. Upstream ships aarch64-MUSL only as zip; we
+# fall back to aarch64-GNU on arm64 (built on ubuntu-22.04 GLIBC 2.35, compatible
+# with bookworm 2.36). amd64 stays MUSL. Completions tarball is arch-agnostic,
+# so a third pinned SHA256 covers it.
+ARG EZA_SHA256_AMD64=d231bb3ee33b08c76279b5888845dceb7034d055c42bb9be46dbe0dae39394df
+ARG EZA_SHA256_ARM64=366e8430225f9955c3dc659b452150c169894833ccfef455e01765e265a3edda
+ARG EZA_COMPLETIONS_SHA256=960c6564e5662880b49919525a6e357e9325807733467e65a95aefcee0910b07
 
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
@@ -317,6 +330,56 @@ RUN set -eux; \
       mv /tmp/bat.zsh /usr/share/zsh/vendor-completions/_bat; \
       rm "/tmp/${BAT_TARBALL}"; \
       bat --version;
+# fd (find replacement). MUSL both arches. SHA256 pinned per-arch (no
+# upstream checksum file — same accepted-risk pattern as bat/zoxide).
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) FD_ARCH=x86_64-unknown-linux-musl;  FD_SHA256="${FD_SHA256_AMD64}";; \
+        arm64) FD_ARCH=aarch64-unknown-linux-musl; FD_SHA256="${FD_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      FD_TARBALL="fd-v${FD_VERSION}-${FD_ARCH}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${FD_TARBALL}" \
+        "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/${FD_TARBALL}"; \
+      echo "${FD_SHA256}  /tmp/${FD_TARBALL}" | sha256sum -c -; \
+      tar -xzf "/tmp/${FD_TARBALL}" -C /usr/local/bin --strip-components=1 \
+        "fd-v${FD_VERSION}-${FD_ARCH}/fd"; \
+      chmod +x /usr/local/bin/fd; \
+      # fd ships a pre-generated _fd zsh completion in the tarball — same
+      # convention as bat. No `completion zsh` subcommand on fd itself.
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      tar -xzf "/tmp/${FD_TARBALL}" -C /tmp --strip-components=2 \
+        "fd-v${FD_VERSION}-${FD_ARCH}/autocomplete/_fd"; \
+      mv /tmp/_fd /usr/share/zsh/vendor-completions/_fd; \
+      rm "/tmp/${FD_TARBALL}"; \
+      fd --version;
+# eza (ls replacement). amd64 MUSL, arm64 GNU (no upstream aarch64-musl tar).
+# Completions ship in a separate arch-independent tarball; extract `_eza` to
+# vendor-completions in the same RUN so a Renovate bump of EZA_VERSION
+# invalidates both layers atomically.
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) EZA_ARCH=x86_64-unknown-linux-musl;  EZA_SHA256="${EZA_SHA256_AMD64}";; \
+        arm64) EZA_ARCH=aarch64-unknown-linux-gnu;  EZA_SHA256="${EZA_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      EZA_TARBALL="eza_${EZA_ARCH}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${EZA_TARBALL}" \
+        "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/${EZA_TARBALL}"; \
+      echo "${EZA_SHA256}  /tmp/${EZA_TARBALL}" | sha256sum -c -; \
+      tar -xzf "/tmp/${EZA_TARBALL}" -C /usr/local/bin ./eza; \
+      chmod +x /usr/local/bin/eza; \
+      rm "/tmp/${EZA_TARBALL}"; \
+      EZA_COMPLETIONS_TARBALL="completions-${EZA_VERSION}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${EZA_COMPLETIONS_TARBALL}" \
+        "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/${EZA_COMPLETIONS_TARBALL}"; \
+      echo "${EZA_COMPLETIONS_SHA256}  /tmp/${EZA_COMPLETIONS_TARBALL}" | sha256sum -c -; \
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      tar -xzf "/tmp/${EZA_COMPLETIONS_TARBALL}" -C /tmp \
+        "./target/completions-${EZA_VERSION}/_eza"; \
+      mv "/tmp/target/completions-${EZA_VERSION}/_eza" /usr/share/zsh/vendor-completions/_eza; \
+      rm -rf "/tmp/${EZA_COMPLETIONS_TARBALL}" /tmp/target; \
+      eza --version;
 # pnpm via corepack
 RUN set -eux; \
       corepack enable; \
