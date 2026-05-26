@@ -72,7 +72,7 @@ var Skills = []Skill{
 		// --yes` triggers the non-interactive Quick Update path.
 		Key:            "bmad",
 		NpmPackage:     "bmad-method",
-		Version:        "6.7.1",
+		Version:        "6.8.0",
 		BinName:        "bmad-method",
 		InstallSteps:   [][]string{{"install", "--directory", ".", "--yes"}},
 		RequiresMarker: "_bmad",
