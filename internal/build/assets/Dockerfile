@@ -640,7 +640,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
         --timeout 300 --retries 5 \
         "graphifyy==${GRAPHIFY_VERSION}"; \
       apt-get purge -y --auto-remove gcc python3-dev; \
-      rm -rf /var/lib/apt/lists/*; \
       # No `--version` subcommand; `--help` is the smoke check.
       graphify --help >/dev/null; \
       pip show graphifyy | grep ^Version:; \
