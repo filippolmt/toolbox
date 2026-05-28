@@ -44,22 +44,22 @@ FROM node:24-bookworm-slim
 # Version pins. Renovate-bumped; SHA256s fetched at build time below.
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
-ARG GH_VERSION=2.92.0
-ARG GLAB_VERSION=1.99.0
+ARG GH_VERSION=2.93.0
+ARG GLAB_VERSION=1.100.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.16.1
 ARG KUBECTL_VERSION=v1.36.1
 ARG KUBECTX_VERSION=0.11.0
 ARG HELM_VERSION=v4.2.0
-ARG TOFU_VERSION=1.12.0
+ARG TOFU_VERSION=1.12.1
 ARG DOCKER_CLI_VERSION=29.5.2
 ARG JQ_VERSION=1.8.1
 ARG YQ_VERSION=4.53.2
 ARG STARSHIP_VERSION=1.25.1
-ARG PNPM_VERSION=11.3.0
+ARG PNPM_VERSION=11.4.0
 ARG BUN_VERSION=1.3.14
 ARG UV_VERSION=0.11.16
-ARG CLAUDE_CODE_VERSION=2.1.152
+ARG CLAUDE_CODE_VERSION=2.1.153
 ARG CODEX_CLI_VERSION=0.134.0
 ARG CF_CLI_VERSION=0.0.5
 ARG WRANGLER_VERSION=4.95.0
@@ -68,7 +68,7 @@ ARG PYRIGHT_VERSION=1.1.410
 ARG GCLOUD_VERSION=570.0.0
 ARG AZURE_CLI_VERSION=2.86.0
 ARG OCI_VERSION=3.84.0
-ARG GRAPHIFY_VERSION=0.8.20
+ARG GRAPHIFY_VERSION=0.8.22
 ARG PLAYWRIGHT_VERSION=1.60.0
 ARG PLAYWRIGHT_CLI_VERSION=0.1.13
 ARG COMPOSE_VERSION=5.1.4
@@ -97,7 +97,7 @@ ARG EZA_COMPLETIONS_SHA256=960c6564e5662880b49919525a6e357e9325807733467e65a95ae
 
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=5ef67beadbe371d7f4ed3a7456240e0fd46608ce
+ARG OMZ_COMMIT=b26b5002633e865b70e17933536fe4dc99127898
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=6d21c2a1de9cb88479a0e67df492da3f3bbdb054
@@ -627,11 +627,19 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # graphify (knowledge-graph builder, Claude Code skill). PyPI name is
 # `graphifyy` (double y); binary stays `graphify`.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+# `tree-sitter-dm` (transitive dep) ships only a win_amd64 wheel on PyPI, so
+# pip builds it from sdist on Linux — gcc + python3-dev installed transiently
+# and purged after to keep the final image lean.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     set -eux; \
+      apt-get update -qqy; \
+      apt-get install -y --no-install-recommends gcc python3-dev; \
       pip install --break-system-packages \
         --timeout 300 --retries 5 \
         "graphifyy==${GRAPHIFY_VERSION}"; \
+      apt-get purge -y --auto-remove gcc python3-dev; \
       # No `--version` subcommand; `--help` is the smoke check.
       graphify --help >/dev/null; \
       pip show graphifyy | grep ^Version:; \
