@@ -627,11 +627,20 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # graphify (knowledge-graph builder, Claude Code skill). PyPI name is
 # `graphifyy` (double y); binary stays `graphify`.
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+# `tree-sitter-dm` (transitive dep) ships only a win_amd64 wheel on PyPI, so
+# pip builds it from sdist on Linux — gcc + python3-dev installed transiently
+# and purged after to keep the final image lean.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     set -eux; \
+      apt-get update -qqy; \
+      apt-get install -y --no-install-recommends gcc python3-dev; \
       pip install --break-system-packages \
         --timeout 300 --retries 5 \
         "graphifyy==${GRAPHIFY_VERSION}"; \
+      apt-get purge -y --auto-remove gcc python3-dev; \
+      rm -rf /var/lib/apt/lists/*; \
       # No `--version` subcommand; `--help` is the smoke check.
       graphify --help >/dev/null; \
       pip show graphifyy | grep ^Version:; \
