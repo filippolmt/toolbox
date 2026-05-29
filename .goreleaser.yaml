@@ -32,17 +32,24 @@ changelog:
       - "^docs:"
       - "^test:"
 
-brews:
+# `brews` (Homebrew Formula) was hard-deprecated in GoReleaser v2.16. Casks
+# are macOS-only, so the tap no longer serves Linuxbrew — Linux users install
+# via `go install` or the released binaries. The binary is unsigned, so the
+# post-install hook strips the macOS quarantine bit to avoid the
+# "toolbox is damaged" Gatekeeper alert.
+homebrew_casks:
   - name: toolbox
     repository:
       owner: filippolmt
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/filippolmt/toolbox"
     description: "CLI for the containerized dev toolbox"
     commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
-    install: |
-      bin.install "toolbox"
-    test: |
-      system "#{bin}/toolbox", "--version"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/toolbox"]
+          end

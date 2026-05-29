@@ -49,7 +49,7 @@ Every optional tool above can be disabled per-project — see [Configuration](#c
 brew install filippolmt/tap/toolbox
 ```
 
-> Migrating from an older install that used `brew install --cask toolbox`? The cask has been replaced by a formula — run `brew uninstall --cask --force toolbox && brew link --overwrite toolbox` once, then regular `brew upgrade` will keep the CLI symlink in place.
+> Migrating from an older install that used the Homebrew *formula*? GoReleaser deprecated formulas in favour of casks, so the tap now ships a cask — run `brew uninstall --force toolbox && brew install --cask filippolmt/tap/toolbox` once, then regular `brew upgrade` keeps it current.
 
 ### From source
 
