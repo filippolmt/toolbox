@@ -495,10 +495,16 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # Dynamic-port carve-out: cf picks OAuth callback port at runtime from \
       # startPort:8877, so `toolbox -B` bridge cannot pre-bind. Rewrite \
       # bindHost 127.0.0.1 → 0.0.0.0 so cf binds eth0 and host -p forward \
-      # lands directly. grep guard fails build if upstream restyles literal. \
-      sed -i -E 's/(bindHost:\s*)["'\'']127\.0\.0\.1["'\'']/\1"0.0.0.0"/' \
-        /usr/local/lib/node_modules/cf/cf-dist/index.js; \
-      grep -qE 'bindHost:\s*"0\.0\.0\.0"' /usr/local/lib/node_modules/cf/cf-dist/index.js; \
+      # lands directly. cf 0.0.6+ splits sources into hash-named dist/*.mjs \
+      # chunks (was cf-dist/index.js) and quote style drifts (backtick now, \
+      # was double-quote) — locate the chunk dynamically and accept any of \
+      # backtick/double/single as the literal delimiter. Empty match or \
+      # missing post-sed literal fails the build loud. \
+      CF_AUTH_MJS=$(grep -lE 'bindHost:[[:space:]]*[`"'\'']127\.0\.0\.1[`"'\'']' \
+        /usr/local/lib/node_modules/cf/dist/*.mjs); \
+      [ -n "$CF_AUTH_MJS" ]; \
+      sed -i -E 's/(bindHost:[[:space:]]*)[`"'\'']127\.0\.0\.1[`"'\'']/\1`0.0.0.0`/' $CF_AUTH_MJS; \
+      grep -qE 'bindHost:[[:space:]]*`0\.0\.0\.0`' $CF_AUTH_MJS; \
       find /usr/local/lib/node_modules/cf \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
