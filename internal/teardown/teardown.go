@@ -144,6 +144,10 @@ func OnShellExit(cli client.APIClient, name string) error {
 	if inspect.ContainerJSONBase != nil && inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
 		return killAutoRemove(ctx, cli, name)
 	}
+	// Transitional fallback for containers created before AutoRemove was set
+	// at create time. Once every long-lived user container has been recreated
+	// (containers are disposable, so within one upgrade cycle), this branch is
+	// dead and OnShellExit collapses to inspect -> sibling?leave : killAutoRemove.
 	return StopOne(ctx, cli, name, DefaultStopGrace)
 }
 
