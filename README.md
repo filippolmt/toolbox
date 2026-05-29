@@ -80,7 +80,13 @@ docker pull ghcr.io/filippolmt/toolbox:latest
 toolbox shell
 ```
 
-On first run, `toolbox shell` creates and starts the container with default volume mounts. If the container already exists, it reattaches to it.
+On first run, `toolbox shell` creates and starts the container with default volume mounts. If the container is already running, it reattaches to it (multiple terminals can share one container).
+
+### Disposable lifecycle
+
+The container is disposable: when the last attached shell exits it is destroyed. All persistent state lives on the bind mounts under `~/.toolbox/` (credentials, shell history, caches), so nothing is lost — the next `toolbox shell` creates a fresh container and re-mounts the same state.
+
+Teardown is offloaded to the Docker daemon (the container is created with `AutoRemove`): on `exit` the CLI sends a kill and returns immediately, while the daemon unmounts and deletes the container in the background. This keeps the prompt from blocking on the mount teardown, which is otherwise slow on macOS Docker Desktop with many bind mounts. A consequence is that exiting always removes the container — there is no stopped container to reuse, so each `toolbox shell` rebuilds the session from the canonical image plus your mounted state.
 
 ## Configuration
 

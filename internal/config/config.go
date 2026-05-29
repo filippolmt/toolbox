@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -100,8 +99,8 @@ const HomeMountParents = "/home/toolbox/"
 var SupportedShells = []string{"zsh"}
 
 // ValidateShell returns nil when s is a supported shell, or an error listing
-// the accepted values (D-15). Used by Load() and (defensively) by the
-// container shell resolver in a later plan.
+// the accepted values (D-15). Used by Plan's validation tail and
+// (defensively) by the container shell resolver (sessionplan.ResolveShellCmd).
 //
 // `bash` is rejected with an explicit migration hint instead of the generic
 // "unsupported shell" message so existing ~/.toolbox.yaml files surface the
@@ -141,23 +140,4 @@ func ValidateMountsRoot(s string) error {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
-}
-
-// Load reads the configuration via config.Plan, walking up from CWD and
-// honouring the explicit --config flag when set elsewhere in cmd/.
-//
-// Deprecated: Load is a thin compatibility wrapper around Plan, retained for
-// the duration of one release cycle. Subcommand callers (cmd/build.go,
-// cmd/shell.go, cmd/stop.go) migrate to consuming the *Config produced by
-// initConfig directly during Phase 09 (Session Plan); after the Phase 09 /
-// Phase 10 sweep this wrapper is deleted.
-//
-// New code MUST call Plan(searchFrom, explicitOverride) directly. Tests for
-// the byte-merge logic should target Merge — see internal/config/merge_test.go.
-func Load() (*Config, error) {
-	// os.Getwd() error is intentionally ignored: empty cwd resolves to "."
-	// inside Plan via filepath.Clean(""), which still triggers the walk-up
-	// search from the current process directory. Mirrors cmd/root.go::initConfig.
-	cwd, _ := os.Getwd()
-	return Plan(cwd, "")
 }

@@ -14,9 +14,12 @@
 //     never strands a container nobody will ever clean up.
 //   - OnShellExit: the deferred post-shell policy. Creates its own
 //     bounded context fresh from context.Background (parent ctx may be
-//     cancelled by Ctrl+C), skips the stop when a sibling exec is
-//     running, otherwise calls StopOne. Returns the cleanup error so
-//     the caller can fold it into its own error chain.
+//     cancelled by Ctrl+C), skips teardown when a sibling exec is
+//     running, kills (without waiting on the remove) when the container
+//     was created with AutoRemove so the daemon reaps it asynchronously,
+//     and falls back to synchronous StopOne for legacy containers.
+//     Returns the cleanup error so the caller can fold it into its own
+//     error chain.
 package teardown
 
 import (
@@ -63,7 +66,11 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 	}
 
 	rmErr := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
-	if rmErr != nil && !cerrdefs.IsNotFound(rmErr) {
+	// Conflict ("removal already in progress") is tolerated alongside NotFound:
+	// on an AutoRemove container the ContainerStop above may have already
+	// triggered the daemon's auto-remove worker, so a racing explicit remove
+	// is redundant, not an error — the container is (being) gone either way.
+	if rmErr != nil && !cerrdefs.IsNotFound(rmErr) && !cerrdefs.IsConflict(rmErr) {
 		return fmt.Errorf("failed to remove container %s: %w", name, rmErr)
 	}
 
@@ -83,6 +90,13 @@ func HasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool
 	if err != nil {
 		return false
 	}
+	return execsRunning(ctx, cli, inspect)
+}
+
+// execsRunning is the inspect-driven core of HasActiveExecs, split out so
+// OnShellExit can read both the sibling-exec signal and HostConfig.AutoRemove
+// from a single ContainerInspect instead of inspecting twice.
+func execsRunning(ctx context.Context, cli client.APIClient, inspect container.InspectResponse) bool {
 	if inspect.ContainerJSONBase == nil {
 		return false
 	}
@@ -99,18 +113,49 @@ func HasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool
 }
 
 // OnShellExit runs the deferred post-shell teardown policy with a fresh,
-// bounded context. If a sibling exec is still attached, the container is
-// left running so the sibling shell survives; otherwise the container is
-// stopped and removed. Returns the cleanup error so the caller can fold
-// it into the shell-exit error chain — a failed stop is noisy, not
-// fatal, and should not overwrite an earlier shell error.
+// bounded context. A single inspect drives three outcomes:
+//   - sibling exec still attached -> leave the container running.
+//   - AutoRemove container -> ContainerKill and return immediately; the
+//     daemon's auto-remove worker performs the (slow on macOS) bind-mount
+//     teardown asynchronously, off the user's prompt critical path.
+//   - legacy container (AutoRemove false) -> synchronous StopOne so nothing
+//     leaks during the upgrade window.
+//
+// Returns the cleanup error so the caller can fold it into the shell-exit
+// error chain — a failed teardown is noisy, not fatal, and should not
+// overwrite an earlier shell error. A missing container (inspect fails) is a
+// no-op: there is nothing left to clean up.
 func OnShellExit(cli client.APIClient, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
 
-	if HasActiveExecs(ctx, cli, name) {
+	inspect, err := cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return nil
+	}
+
+	if execsRunning(ctx, cli, inspect) {
 		ui.Info("Container " + name + " still has active sessions — leaving it running")
 		return nil
 	}
+
+	// HostConfig is promoted from the embedded *ContainerJSONBase; guard the
+	// pointer before dereferencing so a degenerate inspect can't panic.
+	if inspect.ContainerJSONBase != nil && inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
+		return killAutoRemove(ctx, cli, name)
+	}
 	return StopOne(ctx, cli, name, DefaultStopGrace)
+}
+
+// killAutoRemove SIGKILLs an AutoRemove container and returns without waiting
+// on the remove. PID 1 is `sleep infinity` with all state on bind mounts, so
+// there is nothing to flush — SIGKILL is safe and skips the SIGTERM grace.
+// The daemon's auto-remove worker deletes the container afterwards. NotFound
+// means it is already gone (a race with a prior teardown), which is success.
+func killAutoRemove(ctx context.Context, cli client.APIClient, name string) error {
+	if err := cli.ContainerKill(ctx, name, "KILL"); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("failed to kill container %s: %w", name, err)
+	}
+	ui.Success("Container " + name + " stopped (removing in background)")
+	return nil
 }

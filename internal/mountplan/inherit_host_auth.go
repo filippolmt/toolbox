@@ -3,11 +3,10 @@ package mountplan
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // applyInheritHostAuth rewrites the default mount set so that every CLI key
@@ -57,11 +56,10 @@ func applyInheritHostAuth(base []config.Mount, keys []string, home string) ([]co
 			continue
 		}
 		// Pre-stat host source so a missing path fails loud instead of
-		// silently soft-skipping the mount in resolveAll.
-		expanded := entry.HostAuthMount.HostPath
-		if home != "" && strings.HasPrefix(expanded, "~/") {
-			expanded = filepath.Join(home, expanded[2:])
-		}
+		// silently soft-skipping the mount in resolveAll. When home is empty
+		// (UserHomeDir failed upstream) ExpandTilde leaves the ~ in place and
+		// os.Stat reports the path missing — surfaces the misconfiguration.
+		expanded := fsx.ExpandTilde(entry.HostAuthMount.HostPath, home)
 		if _, err := os.Stat(expanded); err != nil {
 			return nil, fmt.Errorf(
 				"inherit_host_auth: %q host path %q is not accessible: %w (initialise the CLI on the host first, or remove it from inherit_host_auth)",

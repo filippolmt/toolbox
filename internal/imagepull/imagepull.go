@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"golang.org/x/term"
 
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -141,7 +142,7 @@ func registryOf(ref string) string {
 // errors are surfaced so the caller treats them as "no cache" rather
 // than writing to an unexpected location.
 func markerPath(ref string) (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := fsx.Home()
 	if err != nil {
 		return "", err
 	}

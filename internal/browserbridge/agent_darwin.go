@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"text/template"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 const launchLabel = "com.filippolmt.toolbox.browser"
@@ -47,7 +48,7 @@ type darwinAgent struct {
 }
 
 func NewAgent() (Agent, error) {
-	home, err := os.UserHomeDir()
+	home, err := fsx.Home()
 	if err != nil {
 		return nil, err
 	}
@@ -58,17 +59,11 @@ func NewAgent() (Agent, error) {
 }
 
 func renderPlist(execPath, logPath string) (string, error) {
-	tpl, err := template.New("plist").Parse(plistTemplate)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	err = tpl.Execute(&buf, map[string]string{
+	return renderTemplate("plist", plistTemplate, map[string]string{
 		"Label":   launchLabel,
 		"Exec":    execPath,
 		"LogPath": logPath,
 	})
-	return buf.String(), err
 }
 
 func (a *darwinAgent) Install(execPath string) error {
@@ -76,13 +71,10 @@ func (a *darwinAgent) Install(execPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(a.plistPath), 0o755); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(a.logPath), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(a.plistPath, []byte(body), 0o644); err != nil {
+	if err := writeServiceFile(a.plistPath, []byte(body)); err != nil {
 		return err
 	}
 	uid := strconv.Itoa(os.Getuid())

@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // tokenBytes is the number of random bytes used to derive the bearer token.
@@ -56,7 +58,7 @@ func generateAndWriteToken(path string) (string, error) {
 		return "", fmt.Errorf("generate token: %w", err)
 	}
 	tok := hex.EncodeToString(buf)
-	if err := os.WriteFile(path, []byte(tok+"\n"), 0o600); err != nil {
+	if err := fsx.AtomicWriteFile(path, []byte(tok+"\n"), 0o600); err != nil {
 		return "", fmt.Errorf("write token file %s: %w", path, err)
 	}
 	return tok, nil

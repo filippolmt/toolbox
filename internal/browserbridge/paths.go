@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // HostDir is the directory under the user's home that holds all
@@ -43,9 +45,9 @@ type HostState struct {
 // It does NOT create any files — callers that need the dir to exist must
 // call EnsureHostDir.
 func ResolveHostState() (HostState, error) {
-	home, err := os.UserHomeDir()
+	home, err := fsx.Home()
 	if err != nil {
-		return HostState{}, fmt.Errorf("resolve home directory: %w", err)
+		return HostState{}, err
 	}
 	dir := filepath.Join(home, HostDir)
 	return HostState{

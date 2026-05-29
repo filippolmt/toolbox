@@ -195,6 +195,11 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			PortBindings: plan.PortBindings,
 			SecurityOpt:  plan.SecurityOpt,
 			ExtraHosts:   plan.ExtraHosts,
+			// AutoRemove offloads the (slow on macOS Docker Desktop) bind-mount
+			// teardown to the daemon: on shell exit we only kill the container,
+			// and the daemon's auto-remove worker deletes it asynchronously so
+			// the user's prompt is not blocked on the unmount. See teardown.
+			AutoRemove: true,
 		},
 		nil, // network config
 		nil, // platform

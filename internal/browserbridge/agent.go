@@ -1,6 +1,12 @@
 package browserbridge
 
-import "errors"
+import (
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
+	"text/template"
+)
 
 // ErrUnsupported is returned by Agent constructors on hosts other than darwin
 // and linux. The installer surfaces this to the user instead of attempting a
@@ -24,4 +30,28 @@ type Agent interface {
 	Uninstall() error
 	Status() (AgentStatus, error)
 	IsInstalled() bool
+}
+
+// renderTemplate executes tpl with data into a string. Shared by the linux
+// (systemd unit) and darwin (launchd plist) supervisors, whose render paths
+// were otherwise identical parse-then-execute boilerplate.
+func renderTemplate(name, tpl string, data map[string]string) (string, error) {
+	t, err := template.New(name).Parse(tpl)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// writeServiceFile writes a rendered unit/plist to path, creating its parent
+// directory. Shared mkdir-then-write skeleton for both platform Install paths.
+func writeServiceFile(path string, body []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0o644)
 }
