@@ -795,8 +795,9 @@ RUN set -eux; \
       pnpm completion zsh     > /usr/share/zsh/vendor-completions/_pnpm; \
       starship completions zsh > /usr/share/zsh/vendor-completions/_starship; \
       codex completion zsh    > /usr/share/zsh/vendor-completions/_codex; \
-      # cf uses `completions` (plural) — outlier vs adjacent tools; do not "fix" to singular.
-      cf completions zsh      > /usr/share/zsh/vendor-completions/_cf; \
+      # cf 0.0.6 dropped the `completions <shell>` subcommand. No replacement
+      # yet (yargs default `completion` is not registered either); revisit on
+      # the next Renovate bump and reinstate _cf when upstream restores it.
       ls /usr/share/zsh/vendor-completions;
 # rtk (Rust CLI proxy). Binary built in rtk-builder stage above.
 # RTK_TELEMETRY_DISABLED=1: hard kill-switch surviving any `rtk telemetry
