@@ -14,12 +14,13 @@
 package configio
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // GlobalConfigPath returns the absolute path of the user's global
@@ -37,53 +38,18 @@ func GlobalConfigPath() (string, error) {
 // GlobalConfigDir returns the directory containing the global config
 // (today: the user's home directory). Exposed so callers that need a
 // writable sibling for an atomic temp file can avoid resolving HOME twice.
+// Thin facade over fsx.Home so the strict resolution lives in one place.
 func GlobalConfigDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
-	}
-	if home == "" {
-		return "", fmt.Errorf("resolve home directory: empty $HOME")
-	}
-	return home, nil
+	return fsx.Home()
 }
 
-// AtomicWriteFile writes data to dest by creating a temp file in the same
-// directory, then renaming it over dest. POSIX guarantees rename(2) is
-// atomic within a single filesystem, so a concurrent reader or a crash
-// mid-write observes either the prior content or the new content — never a
-// truncated/partially-written file. fsync is intentionally omitted: the
-// toolbox configuration is user-rewritable, so durability after a power
-// failure is not worth the extra IO syscall on every `--create` write.
+// AtomicWriteFile durably rewrites a host config file without truncating the
+// prior content on crash. Facade over fsx.AtomicWriteFile, retained so
+// configio callers (cmd/sdd, cmd/shell_named) keep a config-scoped entry
+// point; the crash-safe temp-write-then-rename implementation lives once in
+// fsx.
 func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(dest)
-	base := filepath.Base(dest)
-	tmp, err := os.CreateTemp(dir, base+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp for %s: %w", dest, err)
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpPath) }
-
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("write temp for %s: %w", dest, err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("chmod temp for %s: %w", dest, err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("close temp for %s: %w", dest, err)
-	}
-	if err := os.Rename(tmpPath, dest); err != nil {
-		cleanup()
-		return fmt.Errorf("rename %s -> %s: %w", tmpPath, dest, err)
-	}
-	return nil
+	return fsx.AtomicWriteFile(dest, data, mode)
 }
 
 // EnsureDocumentMap returns the mapping node that holds the top-level

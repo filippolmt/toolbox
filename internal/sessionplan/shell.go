@@ -5,8 +5,8 @@ import (
 )
 
 // ResolveShellCmd returns the container command for the configured shell.
-// Re-validates cfg.Shell defensively: Load() already rejects unsupported
-// values, but callers that bypass Load() (tests, future entry points) must
+// Re-validates cfg.Shell defensively: Plan() already rejects unsupported
+// values, but callers that bypass Plan() (tests, future entry points) must
 // not be able to smuggle an arbitrary string into /bin/<x>.
 func ResolveShellCmd(cfg *config.Config) ([]string, error) {
 	if err := config.ValidateShell(cfg.Shell); err != nil {

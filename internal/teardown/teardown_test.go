@@ -19,11 +19,20 @@ func (e *notFoundErr) Error() string { return e.msg }
 func (e *notFoundErr) NotFound()     {}
 func (e *notFoundErr) Unwrap() error { return nil }
 
+// conflictErr satisfies cerrdefs.IsConflict — models the daemon's "removal
+// already in progress" response when an explicit remove races AutoRemove.
+type conflictErr struct{ msg string }
+
+func (e *conflictErr) Error() string { return e.msg }
+func (e *conflictErr) Conflict()     {}
+func (e *conflictErr) Unwrap() error { return nil }
+
 // mockClient implements the subset of client.APIClient used by teardown.
 type mockClient struct {
 	client.APIClient
 	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
 	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
+	killFn        func(ctx context.Context, id string, signal string) error
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
 	execInspectFn func(ctx context.Context, execID string) (container.ExecInspect, error)
 }
@@ -31,6 +40,13 @@ type mockClient struct {
 func (m *mockClient) ContainerStop(ctx context.Context, id string, opts container.StopOptions) error {
 	if m.stopFn != nil {
 		return m.stopFn(ctx, id, opts)
+	}
+	return nil
+}
+
+func (m *mockClient) ContainerKill(ctx context.Context, id string, signal string) error {
+	if m.killFn != nil {
+		return m.killFn(ctx, id, signal)
 	}
 	return nil
 }
@@ -202,6 +218,98 @@ func TestOnShellExitStopsWhenNoSiblingExec(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !stopCalled {
-		t.Fatal("OnShellExit should stop when no sibling exec is Running")
+		t.Fatal("OnShellExit should stop when no sibling exec is Running (legacy, AutoRemove false)")
+	}
+}
+
+// autoRemoveInspect builds an inspect for a running AutoRemove container with
+// a single drained (Running:false) exec — the just-exited shell.
+func autoRemoveInspect() container.InspectResponse {
+	return container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			ID:         "x",
+			ExecIDs:    []string{"ours"},
+			HostConfig: &container.HostConfig{AutoRemove: true},
+		},
+	}
+}
+
+func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
+	killCalled := false
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return autoRemoveInspect(), nil
+		},
+		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
+			return container.ExecInspect{Running: false}, nil
+		},
+		killFn: func(_ context.Context, _ string, sig string) error {
+			killCalled = true
+			if sig != "KILL" {
+				t.Errorf("kill signal = %q, want KILL", sig)
+			}
+			return nil
+		},
+		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+			t.Fatal("AutoRemove path must not call ContainerStop")
+			return nil
+		},
+		removeFn: func(_ context.Context, _ string, _ container.RemoveOptions) error {
+			t.Fatal("AutoRemove path must not call ContainerRemove (daemon reaps it)")
+			return nil
+		},
+	}
+	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !killCalled {
+		t.Fatal("AutoRemove path must ContainerKill")
+	}
+}
+
+func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return autoRemoveInspect(), nil
+		},
+		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
+			return container.ExecInspect{Running: false}, nil
+		},
+		killFn: func(_ context.Context, _ string, _ string) error {
+			return &notFoundErr{msg: "no such container"}
+		},
+	}
+	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+		t.Fatalf("kill NotFound must be swallowed, got: %v", err)
+	}
+}
+
+func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &notFoundErr{msg: "no such container"}
+		},
+		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+			t.Fatal("missing container must be a no-op")
+			return nil
+		},
+		killFn: func(_ context.Context, _ string, _ string) error {
+			t.Fatal("missing container must be a no-op")
+			return nil
+		},
+	}
+	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
+	mock := &mockClient{
+		removeFn: func(_ context.Context, _ string, _ container.RemoveOptions) error {
+			return &conflictErr{msg: "removal of container is already in progress"}
+		},
+	}
+	if err := StopOne(context.Background(), mock, "toolbox-x", DefaultStopGrace); err != nil {
+		t.Fatalf("StopOne should swallow Conflict (AutoRemove race), got: %v", err)
 	}
 }

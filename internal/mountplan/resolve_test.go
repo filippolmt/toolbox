@@ -9,29 +9,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-func TestExpandHome(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"~/.claude", filepath.Join(home, ".claude")},
-		{"~", home},
-		{"/var/run/docker.sock", "/var/run/docker.sock"},
-	}
-
-	for _, tc := range tests {
-		got := expandHome(tc.input, home)
-		if got != tc.expected {
-			t.Errorf("expandHome(%q) = %q, want %q", tc.input, got, tc.expected)
-		}
-	}
-}
-
 func TestResolveAllSkipsMissing(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	mounts := []config.Mount{

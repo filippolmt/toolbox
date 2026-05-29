@@ -15,10 +15,10 @@
 package mountplan
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // Bind is the typed representation of a Docker bind spec. lifecycle.Shell
@@ -58,9 +58,9 @@ func Plan(cfg *config.Config, workspace string) (Result, error) {
 		return Result{}, err
 	}
 
-	home, err := os.UserHomeDir()
+	home, err := fsx.Home()
 	if err != nil {
-		return Result{}, fmt.Errorf("resolve home directory: %w", err)
+		return Result{}, err
 	}
 
 	binds, warnings := resolveAll(merged, home)

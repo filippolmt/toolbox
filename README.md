@@ -7,33 +7,33 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Tool | Version |
 |------|---------|
 | Node.js | 24 LTS |
-| pnpm | 10.33.x |
+| pnpm | 11.4.x |
 | bun (JavaScript runtime + package manager + bundler) | 1.3.x |
 | Claude Code | 2.1.x |
-| OpenAI Codex CLI | 0.125.x |
+| OpenAI Codex CLI | 0.135.x |
 | Pyright language server (`pyright-langserver`) | 1.1.x |
-| rtk (LLM token-saving CLI proxy) | 0.37.x |
-| Playwright CLI | 1.59.x |
+| rtk (LLM token-saving CLI proxy) | 0.42.x |
+| Playwright CLI | 1.60.x |
 | Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
 | Python 3 | 3.11 |
 | uv | 0.11.x |
 | Go toolchain + gopls + goimports | 1.26.x |
 | kubectl | 1.36.x |
 | kubectx + kubens (kubectl context/namespace switchers) | 0.11.x |
-| Helm | 4.1.x |
-| OpenTofu | 1.11.x |
-| GitHub CLI (gh) | 2.91.x |
-| GitLab CLI (glab) | 1.93.x |
+| Helm | 4.2.x |
+| OpenTofu | 1.12.x |
+| GitHub CLI (gh) | 2.93.x |
+| GitLab CLI (glab) | 1.100.x |
 | Google Workspace CLI (`gws`) | 0.22.x |
 | atuin (SQLite-backed shell history; Ctrl-R fuzzy search) | 18.16.x |
-| Docker CLI | 29.4.x |
+| Docker CLI | 29.5.x |
 | Docker Compose | 5.1.x |
-| Google Cloud SDK (gcloud) | 565.x |
-| Azure CLI (az) | 2.85.x |
-| Oracle OCI CLI | 3.80.x |
-| graphify (Claude Code knowledge-graph skill, PyPI `graphifyy`) | 0.7.x |
+| Google Cloud SDK (gcloud) | 570.x |
+| Azure CLI (az) | 2.86.x |
+| Oracle OCI CLI | 3.84.x |
+| graphify (Claude Code knowledge-graph skill, PyPI `graphifyy`) | 0.8.x |
 | Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
-| Cloudflare Wrangler CLI (`wrangler`) | 4.90.x |
+| Cloudflare Wrangler CLI (`wrangler`) | 4.95.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | fd (user-friendly `find` replacement) | 10.4.x |
 | eza (modern `ls` replacement) | 0.23.x |
@@ -80,7 +80,13 @@ docker pull ghcr.io/filippolmt/toolbox:latest
 toolbox shell
 ```
 
-On first run, `toolbox shell` creates and starts the container with default volume mounts. If the container already exists, it reattaches to it.
+On first run, `toolbox shell` creates and starts the container with default volume mounts. If the container is already running, it reattaches to it (multiple terminals can share one container).
+
+### Disposable lifecycle
+
+The container is disposable: when the last attached shell exits it is destroyed. All persistent state lives on the bind mounts under `~/.toolbox/` (credentials, shell history, caches), so nothing is lost — the next `toolbox shell` creates a fresh container and re-mounts the same state.
+
+Teardown is offloaded to the Docker daemon (the container is created with `AutoRemove`): on `exit` the CLI sends a kill and returns immediately, while the daemon unmounts and deletes the container in the background. This keeps the prompt from blocking on the mount teardown, which is otherwise slow on macOS Docker Desktop with many bind mounts. A consequence is that exiting always removes the container — there is no stopped container to reuse, so each `toolbox shell` rebuilds the session from the canonical image plus your mounted state.
 
 ## Configuration
 

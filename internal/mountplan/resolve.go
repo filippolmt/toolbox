@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // resolveAll expands ~ in source paths, creates or symlinks missing
@@ -28,7 +28,7 @@ func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []st
 			continue
 		}
 
-		src := expandHome(m.Source, home)
+		src := fsx.ExpandTilde(m.Source, home)
 		// Relative sources (./test, ../foo, plain "data") are resolved
 		// against the CWD at toolbox-shell invocation time — typically the
 		// project root. Docker bind mounts require absolute paths.
@@ -84,7 +84,7 @@ func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []st
 func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 	switch {
 	case m.SymlinkFrom != "":
-		target := filepath.Clean(expandHome(m.SymlinkFrom, home))
+		target := filepath.Clean(fsx.ExpandTilde(m.SymlinkFrom, home))
 		if _, statErr := os.Stat(target); statErr != nil {
 			return false, fmt.Errorf("symlink target missing, mount skipped: %s: %w", m.SymlinkFrom, statErr)
 		}
@@ -105,15 +105,4 @@ func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 	default:
 		return false, fmt.Errorf("path not found, mount skipped: %s", m.Source)
 	}
-}
-
-// expandHome replaces a leading ~ with the user's home directory.
-func expandHome(p string, home string) string {
-	if p == "~" {
-		return home
-	}
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(home, p[2:])
-	}
-	return p
 }

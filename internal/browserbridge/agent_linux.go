@@ -9,7 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"text/template"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 const unitName = "toolbox-browser.service"
@@ -32,7 +33,7 @@ type linuxAgent struct {
 }
 
 func NewAgent() (Agent, error) {
-	home, err := os.UserHomeDir()
+	home, err := fsx.Home()
 	if err != nil {
 		return nil, err
 	}
@@ -42,13 +43,7 @@ func NewAgent() (Agent, error) {
 }
 
 func renderUnit(execPath string) (string, error) {
-	tpl, err := template.New("unit").Parse(unitTemplate)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	err = tpl.Execute(&buf, map[string]string{"Exec": execPath})
-	return buf.String(), err
+	return renderTemplate("unit", unitTemplate, map[string]string{"Exec": execPath})
 }
 
 func (a *linuxAgent) Install(execPath string) error {
@@ -56,10 +51,7 @@ func (a *linuxAgent) Install(execPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(a.unitPath), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(a.unitPath, []byte(body), 0o644); err != nil {
+	if err := writeServiceFile(a.unitPath, []byte(body)); err != nil {
 		return err
 	}
 	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
