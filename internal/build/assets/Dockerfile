@@ -58,17 +58,17 @@ ARG YQ_VERSION=4.53.2
 ARG STARSHIP_VERSION=1.25.1
 ARG PNPM_VERSION=11.4.0
 ARG BUN_VERSION=1.3.14
-ARG UV_VERSION=0.11.16
-ARG CLAUDE_CODE_VERSION=2.1.153
-ARG CODEX_CLI_VERSION=0.134.0
-ARG CF_CLI_VERSION=0.0.5
+ARG UV_VERSION=0.11.17
+ARG CLAUDE_CODE_VERSION=2.1.156
+ARG CODEX_CLI_VERSION=0.135.0
+ARG CF_CLI_VERSION=0.0.6
 ARG WRANGLER_VERSION=4.95.0
 ARG PYRIGHT_VERSION=1.1.410
 # RTK_VERSION declared at top (rtk-builder stage only).
 ARG GCLOUD_VERSION=570.0.0
 ARG AZURE_CLI_VERSION=2.86.0
 ARG OCI_VERSION=3.84.0
-ARG GRAPHIFY_VERSION=0.8.22
+ARG GRAPHIFY_VERSION=0.8.24
 ARG PLAYWRIGHT_VERSION=1.60.0
 ARG PLAYWRIGHT_CLI_VERSION=0.1.13
 ARG COMPOSE_VERSION=5.1.4
@@ -97,7 +97,7 @@ ARG EZA_COMPLETIONS_SHA256=960c6564e5662880b49919525a6e357e9325807733467e65a95ae
 
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=b26b5002633e865b70e17933536fe4dc99127898
+ARG OMZ_COMMIT=d170d18746bb06db7b2fc97b67e281597a3fc152
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=6d21c2a1de9cb88479a0e67df492da3f3bbdb054
@@ -495,10 +495,16 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # Dynamic-port carve-out: cf picks OAuth callback port at runtime from \
       # startPort:8877, so `toolbox -B` bridge cannot pre-bind. Rewrite \
       # bindHost 127.0.0.1 → 0.0.0.0 so cf binds eth0 and host -p forward \
-      # lands directly. grep guard fails build if upstream restyles literal. \
-      sed -i -E 's/(bindHost:\s*)["'\'']127\.0\.0\.1["'\'']/\1"0.0.0.0"/' \
-        /usr/local/lib/node_modules/cf/cf-dist/index.js; \
-      grep -qE 'bindHost:\s*"0\.0\.0\.0"' /usr/local/lib/node_modules/cf/cf-dist/index.js; \
+      # lands directly. cf 0.0.6+ splits sources into hash-named dist/*.mjs \
+      # chunks (was cf-dist/index.js) and quote style drifts (backtick now, \
+      # was double-quote) — locate the chunk dynamically and accept any of \
+      # backtick/double/single as the literal delimiter. Empty match or \
+      # missing post-sed literal fails the build loud. \
+      CF_AUTH_MJS=$(grep -lE 'bindHost:[[:space:]]*[`"'\'']127\.0\.0\.1[`"'\'']' \
+        /usr/local/lib/node_modules/cf/dist/*.mjs); \
+      [ -n "$CF_AUTH_MJS" ]; \
+      sed -i -E 's/(bindHost:[[:space:]]*)[`"'\'']127\.0\.0\.1[`"'\'']/\1`0.0.0.0`/' $CF_AUTH_MJS; \
+      grep -qE 'bindHost:[[:space:]]*`0\.0\.0\.0`' $CF_AUTH_MJS; \
       find /usr/local/lib/node_modules/cf \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
@@ -789,8 +795,9 @@ RUN set -eux; \
       pnpm completion zsh     > /usr/share/zsh/vendor-completions/_pnpm; \
       starship completions zsh > /usr/share/zsh/vendor-completions/_starship; \
       codex completion zsh    > /usr/share/zsh/vendor-completions/_codex; \
-      # cf uses `completions` (plural) — outlier vs adjacent tools; do not "fix" to singular.
-      cf completions zsh      > /usr/share/zsh/vendor-completions/_cf; \
+      # cf 0.0.6 dropped the `completions <shell>` subcommand. No replacement
+      # yet (yargs default `completion` is not registered either); revisit on
+      # the next Renovate bump and reinstate _cf when upstream restores it.
       ls /usr/share/zsh/vendor-completions;
 # rtk (Rust CLI proxy). Binary built in rtk-builder stage above.
 # RTK_TELEMETRY_DISABLED=1: hard kill-switch surviving any `rtk telemetry

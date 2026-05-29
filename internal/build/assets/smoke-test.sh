@@ -137,12 +137,13 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 16 files on default build:
+    # l. vendor-completions populated (expect >= 15 files on default build:
     # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat, codex,
-    # cf, kubectx, kubens, fd, eza)
+    # kubectx, kubens, fd, eza). cf was here until 0.0.6 removed the
+    # `completions <shell>` subcommand — reinstate when upstream restores it.
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 16 ]
+        [ "$count" -ge 15 ]
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -161,7 +162,7 @@ check_zsh() {
     _zsh_assert "18 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
-    _zsh_assert "vendor-completions >= 14"     _zsh_vendor_completions_check
+    _zsh_assert "vendor-completions >= 15"     _zsh_vendor_completions_check
 }
 
 check_required "node"       node --version
