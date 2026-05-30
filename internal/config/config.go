@@ -73,11 +73,23 @@ type Config struct {
 	// fixed at container creation, so re-run `toolbox shell` to pick up newly
 	// routed hosts. See docs/runtime-notes.md#proximo-integration.
 	Proximo *bool `mapstructure:"proximo"`
+	// Env injects arbitrary K=V pairs into every shell spawned by the
+	// container, emitted after the curated TOOLBOX_* / PWD entries by
+	// sessionplan. Hash-neutral (lives outside the removed tools: block) so
+	// flipping a key never invalidates the image. Reserved keys — anything
+	// with the TOOLBOX_ prefix plus PWD — are rejected at validation time to
+	// keep the curated env contract authoritative. Motivating use: opt-in
+	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
+	Env map[string]string `mapstructure:"env"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
 type NamedShell struct {
 	Path string `mapstructure:"path"`
+	// Env overlays the top-level Env for this named shell only. Per-shell
+	// keys win on collision; see Config.EffectiveEnv. Same reserved-key
+	// rules as the top-level map (validated per entry).
+	Env map[string]string `mapstructure:"env"`
 }
 
 // SDDSkill is the per-skill value of the sdd: map. The YAML shorthand
@@ -233,4 +245,53 @@ func ValidateSDD(m map[string]SDDSkill) error {
 		}
 	}
 	return nil
+}
+
+// ReservedEnvPrefix is the namespace owned by the curated session env
+// contract (TOOLBOX_HOST_WORKSPACE, TOOLBOX_SDD_*, TOOLBOX_LOOPBACK_BRIDGE_*,
+// …). User-supplied env: keys may not collide with it.
+const ReservedEnvPrefix = "TOOLBOX_"
+
+// ValidateEnv rejects env: keys that are empty, contain "=", or collide with
+// the reserved curated-env namespace (the TOOLBOX_ prefix and the explicitly
+// set PWD). Keeping these reserved means the curated entries emitted by
+// sessionplan stay authoritative regardless of user config. Values are
+// unrestricted — empty values are allowed (export VAR=).
+func ValidateEnv(env map[string]string) error {
+	for k := range env {
+		if k == "" {
+			return fmt.Errorf("env: empty key is not allowed")
+		}
+		if strings.Contains(k, "=") {
+			return fmt.Errorf("env: key %q must not contain '='", k)
+		}
+		if k == "PWD" || strings.HasPrefix(k, ReservedEnvPrefix) {
+			return fmt.Errorf(
+				"env: key %q is reserved (PWD and the %s prefix are owned by toolbox)",
+				k, ReservedEnvPrefix)
+		}
+	}
+	return nil
+}
+
+// EffectiveEnv returns the env map injected into a session: the top-level Env
+// overlaid with the named shell's Env, where per-shell keys win on collision.
+// shellName is the raw shells: config key (cfg.Shells is keyed by the raw
+// name, not the sanitized container suffix); "" or an unknown key yields the
+// top-level Env. The result is always a fresh map — or nil when both layers
+// are empty — so callers never alias cfg state.
+func (c *Config) EffectiveEnv(shellName string) map[string]string {
+	var override map[string]string
+	if shellName != "" {
+		if s, ok := c.Shells[shellName]; ok {
+			override = s.Env
+		}
+	}
+	if len(c.Env) == 0 && len(override) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(c.Env)+len(override))
+	maps.Copy(out, c.Env)
+	maps.Copy(out, override)
+	return out
 }
