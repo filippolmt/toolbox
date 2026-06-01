@@ -133,6 +133,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       python3-pip \
       ripgrep \
       socat \
+      sudo \
       tree \
       unzip \
       vim-tiny \
@@ -836,6 +837,23 @@ RUN set -eux; \
     chmod -R a+rwX /home/toolbox; \
     chmod 0666 /etc/passwd /etc/group; \
     rm -rf /tmp/node-compile-cache /tmp/v8-compile-cache-*
+
+# Passwordless root for the disposable container. Runtime UID is the host's
+# (--user <host-uid>) and gets a /etc/passwd entry injected by the entrypoint;
+# the blanket `ALL` rule matches whatever UID lands, so `sudo apt-get update &&
+# sudo apt install …` works without knowing it at build time (apt lists aren't
+# baked — the `update` is required first). Safe-by-ephemerality: the container
+# is AutoRemove, so anything installed at runtime vanishes on exit. Caveat:
+# sudo writes into bind-mounted host paths (/workspace, ~/.toolbox/*) land as
+# root:root on the host — escalate only for in-container/system state.
+RUN set -eux; \
+    printf '%s\n' \
+      'Defaults !requiretty' \
+      'Defaults !fqdn' \
+      'ALL ALL=(ALL:ALL) NOPASSWD: ALL' \
+      > /etc/sudoers.d/toolbox; \
+    chmod 0440 /etc/sudoers.d/toolbox; \
+    visudo -cf /etc/sudoers.d/toolbox
 
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
