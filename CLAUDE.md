@@ -46,6 +46,7 @@ Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` gua
 ## Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)
 
 - **Host UID mapping**: container runs `--user $(id -u):$(id -g)`; `/home/toolbox` world-writable. Don't revert to fixed UID. → [host-uid](docs/runtime-notes.md#host-uid-mapping)
+- **Passwordless sudo**: base apt layer ships `sudo` + `/etc/sudoers.d/toolbox` (`ALL …NOPASSWD: ALL`, UID-agnostic by design) so runtime `sudo apt install …` works; container is `AutoRemove` so it's ephemeral. Caveat: sudo writes into bind mounts (`/workspace`, `~/.toolbox/*`) land `root:root` on host. Smoke test asserts setuid `sudo`. → [sudo](docs/runtime-notes.md#passwordless-sudo)
 - **Auth isolation**: every credential under `~/.toolbox/` (canonical list `mountplan.Defaults()`); `~/.secrets` NOT mounted. `mounts:` patches/replaces/appends/disables defaults by `name`; `mounts_root` retargets pre-merge. → [auth-isolation](docs/runtime-notes.md#auth-isolation-under-toolbox), [mounts](docs/runtime-notes.md#mounts--auth-isolation)
 - **Docker CLI checksum**: Layer 7 has no upstream `.sha256` — pin + HTTPS only (T-01-08). → [docker-checksum](docs/runtime-notes.md#docker-cli-checksum)
 - **Two Docker version streams**: `DOCKER_CLI_VERSION` (29.x) and `go.mod` SDK (28.x `+incompatible`) move independently; `client.WithAPIVersionNegotiation()` handles drift. Don't align numerically. → [docker-streams](docs/runtime-notes.md#two-docker-version-streams)
