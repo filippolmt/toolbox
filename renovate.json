@@ -352,11 +352,11 @@
       "customType": "regex",
       "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
       "matchStrings": [
-        "NpmPackage:\\s*\"@opengsd/get-shit-done-redux\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
+        "NpmPackage:\\s*\"@opengsd/gsd-core\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
       ],
       "datasourceTemplate": "npm",
-      "depNameTemplate": "@opengsd/get-shit-done-redux",
-      "packageNameTemplate": "@opengsd/get-shit-done-redux"
+      "depNameTemplate": "@opengsd/gsd-core",
+      "packageNameTemplate": "@opengsd/gsd-core"
     },
     {
       "customType": "regex",
