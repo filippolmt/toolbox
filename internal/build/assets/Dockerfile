@@ -122,6 +122,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       git \
       gnupg \
       less \
+      libnss3-tools \
       libpython3.11-minimal \
       libpython3.11-stdlib \
       make \

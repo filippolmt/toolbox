@@ -194,6 +194,10 @@ Rejected alternatives: a detached client-side `docker rm -f` (orphan process, no
 
 `internal/build/assets/init.d/50-mcp-plugins.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells cached via `.toolbox-built` marker. On failure stderr is captured to `.toolbox-build-error.log` next to the marker (in the same bind-mounted plugin dir, so it survives container restarts) and the last 5 lines are printed inline; failure stays non-fatal.
 
+### Playwright browser cache sync
+
+`internal/build/assets/init.d/40-playwright-cli.sh` does two jobs. Besides re-installing the playwright-cli skills, it syncs the bundled Chromium to the pinned playwright version. The Dockerfile bakes the `playwright` npm package + `playwright install-deps chromium` (apt deps) only — the **browser binaries** are not baked; they live in the `~/.toolbox/playwright-cache` bind (host-persisted, kept out of the image). Since nothing else downloads them, a `playwright` Renovate bump would otherwise leave the cache on the old Chromium revision and break the default headless launch: playwright resolves `chromium.launch({headless:true})` to a separate `chromium_headless_shell-<rev>` binary that a stale cache never fetched (observed: cache held `chromium-1224` with no headless shell after a bump to 1.60.0, whose pinned rev is 1223). A version sentinel (`<cache>/.toolbox-chromium-version`, compared against the playwright package.json version — read via `node`, not `playwright --version`, to dodge the rtk wrapper) makes the sync a no-op on every shell except the first after a bump, when it runs `playwright install chromium` (full + headless shell) once. Best-effort + non-fatal: an offline shell still starts. This rides the existing `40-` script (no new init.d → no `TestCatalogInitDBijection` / smoke-count edit).
+
 ### `cf` Cloudflare CLI skill auto-install
 
 When `tools.cf` is enabled (default) and `~/.claude` exists, `internal/build/assets/init.d/20-cf.sh` writes a Claude Code skill to `~/.claude/skills/cf/SKILL.md` if absent. Skill is hand-written and points Claude to `cf agent-context <product>` for on-demand product context (instead of pre-baking the ~107-product corpus). Idempotent — only re-creates when the file is missing, so user edits persist.
@@ -287,6 +291,43 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 - `toolbox browser-bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux).
 - Daemon log: `~/.toolbox/browser/log` — opened in append mode by the daemon, no built-in rotation; truncate or `logrotate` it yourself if it grows.
 - Container-side wrapper failures (no port file, no host route) surface as a single-line tip on shell entry (`cmd/shell.go`'s "browser-bridge tip" path); the wrapper itself exits non-zero so callers can detect the failure.
+
+## Proximo integration
+
+### Why `.test` is unreachable from a sibling container
+
+[proximo](https://github.com/filippolmt/proximo) makes any labelled Docker container reachable at `https://<name>.<tld>` (default `.test`): it runs Traefik publishing `:80/:443` on the **host**, installs a host resolver mapping `*.<tld> → 127.0.0.1`, and trusts a local CA in the host OS + NSS stores. That works for the host browser. It does **not** work from inside a toolbox container: `127.0.0.1` there is the container's own loopback, not the host where Traefik listens, so DNS resolves but the connection refuses. proximo also never injects its CA into arbitrary containers, so even a reachable endpoint fails TLS verification.
+
+### Enablement is auto-detected (tri-state `proximo`)
+
+`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under the user config dir). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `browser_bridge`, but with an auto rather than always-on default.
+
+### The two host-side ingredients
+
+`internal/proximo` supplies both. The toolbox CLI runs on the host alongside proximo, so it can discover routed hosts directly from Docker labels — no enumeration in `.toolbox.yaml`, no upstream proximo change, no shared Docker network.
+
+| Concern | Mechanism | Seam |
+|---------|-----------|------|
+| DNS | Every running container's `proximo.hosts` label value is read; each hostname is pinned to the Docker `host-gateway` and appended to `HostConfig.ExtraHosts`. `host-gateway` resolves to the host where Traefik publishes `:443`, bypassing Docker networks entirely. | discovery: `container/lifecycle.go` `augmentProximoHosts` (needs the Docker client); pure parser: `proximo.ExtraHosts` |
+| Cert | proximo's root CA (`<user-config-dir>/proximo/tls/ca.pem`, resolved via `os.UserConfigDir()`) is bind-mounted RO at `/etc/ssl/proximo-ca.pem`. `entrypoint.sh` then establishes **seamless** trust for every client (see below). `NODE_EXTRA_CA_CERTS` (Node uses its own bundle) and `TOOLBOX_PROXIMO_CA` (path pointer for the certifi gap) are also exported. | mount: `proximo.CAMount` injected in `mountplan.Merge`; env: `proximo.Env` appended in `sessionplan.Plan`; trust: `entrypoint.sh` proximo block |
+
+### Trust establishment (entrypoint, self-gated on the mount)
+
+`entrypoint.sh` runs a proximo block gated purely on `[ -f /etc/ssl/proximo-ca.pem ]` (the mount is the signal — no extra env). It is idempotent and every step is best-effort (`|| true`) so a trust failure never aborts boot:
+
+| Client | Trusted via | Notes |
+|--------|-------------|-------|
+| curl / git / wget / python (`ssl`, `urllib`) | system bundle | `sudo cp` into `/usr/local/share/ca-certificates/proximo.crt` + `sudo update-ca-certificates` (passwordless sudo; refreshed only when the cert changes via a `cmp` guard) |
+| Chromium / Firefox (incl. Playwright's bundled browsers) | NSS | `certutil -A -t C,, -n proximo` into `$HOME/.pki/nssdb` (`libnss3-tools`, base apt layer). `~/.pki` is a HOME subdir, not a bind-mount → ephemeral, rebuilt from the mounted CA every shell |
+| Node / Playwright (node API) | `NODE_EXTRA_CA_CERTS` | additive, set by `proximo.Env` |
+| python-requests | — | uses certifi, not the system store; set `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"` (this is the one non-seamless client) |
+
+### Boundaries and caveats
+
+- **Discovery runs at container create only.** `ExtraHosts` is fixed at `ContainerCreate` (same as port bindings — see [port-bindings](#port-bindings-are-fixed-at-container-creation)). New `.test` hosts that come up after `toolbox shell` are invisible until the next recreate. Stopped proximo stack → `augmentProximoHosts` warns and degrades to "names unreachable" rather than failing the shell.
+- **CA mount is pure host-fs.** `CAMount` is added in `Merge` (not `defaults()`), so the canonical default-mount set and the smoke-test init.d/completion bijections are untouched (the proximo trust step lives in `entrypoint.sh`, not an `init.d` script, so it ties to no catalog tool). A missing CA file (proximo not installed) soft-skips the mount with a `resolveAll` warning; `proximo.Env` independently gates on file existence so Node never points at an absent `NODE_EXTRA_CA_CERTS`, and the entrypoint block no-ops when the mount is absent.
+- **Image dependency**: the NSS trust step needs `certutil`, shipped via `libnss3-tools` in the base apt layer; `smoke-test.sh` asserts `certutil` is present. This is the one image-side cost of the integration; everything else is host-side and image-hash-neutral.
+- **Host-side toggle, no image-hash impact** — same property as the browser bridge: `proximo` lives outside any image concern.
 
 ## Runtime privacy
 

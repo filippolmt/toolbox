@@ -19,6 +19,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // Bind is the typed representation of a Docker bind spec. lifecycle.Shell
@@ -96,6 +97,12 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 	}
 	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
 		base = dropMountByName(base, "browser-bridge")
+	}
+	// proximo CA bind is injected here (not in defaults()) because its source
+	// is host-specific and only relevant when `proximo: true`. resolveAll
+	// soft-skips it with a warning when proximo is not installed.
+	if m, ok := proximo.CAMount(cfg); ok {
+		base = append(base, m)
 	}
 	return mergeMounts(base, cfg.Mounts)
 }

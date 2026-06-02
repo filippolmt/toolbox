@@ -21,6 +21,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
@@ -53,6 +54,13 @@ type SessionPlan struct {
 	// Docker (Docker Desktop already provides the mapping; the duplicate
 	// entry is harmless there).
 	ExtraHosts []string
+	// Proximo mirrors cfg.Proximo. When true, the container edge augments
+	// ExtraHosts with the proximo-routed hostnames discovered from running
+	// containers (pinned to host-gateway) just before ContainerCreate — that
+	// discovery needs the Docker client, which only the container package
+	// holds. The CA bind + NODE_EXTRA_CA_CERTS/TOOLBOX_PROXIMO_CA env are
+	// already resolved into Binds/Env here (pure, host-side).
+	Proximo bool
 }
 
 // MergedSessionPlan is the pure-data shape returned by Merge. Binds are
@@ -106,6 +114,9 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		return nil, err
 	}
 
+	env := append(shellEnv(workspace, mp.WorkingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
+	env = append(env, proximo.Env(cfg)...)
+
 	return &SessionPlan{
 		Image:         Image{Ref: ref},
 		Binds:         mp.Binds,
@@ -113,11 +124,12 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           append(shellEnv(workspace, mp.WorkingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
+		Env:           env,
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
 		ExtraHosts:    browserBridgeExtraHosts(cfg),
+		Proximo:       proximo.Enabled(cfg),
 	}, nil
 }
 

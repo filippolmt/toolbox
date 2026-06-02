@@ -29,6 +29,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
@@ -177,6 +178,15 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 	identity := dockeridentity.Resolve(binds)
 
+	// proximo: pin the host-routed `.test` names at the host-gateway so they
+	// resolve to the host where Traefik publishes :443 instead of the
+	// container's own loopback. Discovery needs the Docker client, so it lives
+	// here at the create edge rather than in the pure session planner.
+	extraHosts := plan.ExtraHosts
+	if plan.Proximo {
+		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts)
+	}
+
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx,
 		&container.Config{
@@ -194,7 +204,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			GroupAdd:     identity.GroupAdd,
 			PortBindings: plan.PortBindings,
 			SecurityOpt:  plan.SecurityOpt,
-			ExtraHosts:   plan.ExtraHosts,
+			ExtraHosts:   extraHosts,
 			// AutoRemove offloads the (slow on macOS Docker Desktop) bind-mount
 			// teardown to the daemon: on shell exit we only kill the container,
 			// and the daemon's auto-remove worker deletes it asynchronously so
@@ -214,6 +224,39 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 	ui.Success("Container started")
 	return resp.ID, nil
+}
+
+// augmentProximoHosts appends the proximo-routed hostnames (discovered from
+// the proximo.hosts label on running containers, each pinned to host-gateway)
+// to the plan's base ExtraHosts. A Docker error warns and returns base
+// unchanged; an empty result returns base silently (no routed stack right now)
+// so a missing/stopped proximo stack degrades to "names unreachable" rather
+// than failing — or spamming — the shell.
+func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []string) []string {
+	args := filters.NewArgs(filters.Arg("label", proximo.HostsLabel))
+	list, err := cli.ContainerList(ctx, container.ListOptions{Filters: args})
+	if err != nil {
+		ui.Warning("proximo: host discovery failed, .test names may be unreachable: " + err.Error())
+		return base
+	}
+	var labels []string
+	for _, c := range list {
+		if v := c.Labels[proximo.HostsLabel]; v != "" {
+			labels = append(labels, v)
+		}
+	}
+	hosts := proximo.ExtraHosts(labels)
+	if len(hosts) == 0 {
+		// No routed container right now (stack down, or auto-enabled on a host
+		// where proximo is installed but idle) — stay silent rather than warn
+		// on every shell.
+		return base
+	}
+	ui.Info(fmt.Sprintf("proximo: routing %d host(s) via host-gateway", len(hosts)))
+	out := make([]string, 0, len(base)+len(hosts))
+	out = append(out, base...)
+	out = append(out, hosts...)
+	return out
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.
