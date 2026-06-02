@@ -273,6 +273,14 @@ Security boundary: the daemon binds `127.0.0.1` only (no LAN exposure), enforces
 
 Set `browser_bridge: false` in `.toolbox.yaml` to skip the read-only mount entirely — the container then has no `xdg-open` wrapper at all.
 
+### Proximo (`.test` apps from inside the container)
+
+If you use [proximo](https://github.com/filippolmt/proximo) to reach your local-dev apps at `https://<name>.test` on the host, the toolbox makes those same URLs work **from inside the container** — for any client (`curl`, `git`, Node, Python, Playwright/Chromium, …), with proximo's certificate trusted so no `-k` / `ignoreHTTPSErrors` is needed. proximo's own `*.test → 127.0.0.1` resolver doesn't work in a sibling container (there `127.0.0.1` is the container itself), so the toolbox pins each routed host to the Docker host gateway instead.
+
+It is **auto-detected**: when proximo is installed on the host (its root CA exists), every `toolbox shell` discovers the containers proximo routes (their `proximo.hosts` labels), points each `<name>.test` at the host gateway, and mounts + trusts proximo's CA — no per-repo opt-in. Set `proximo: false` in `.toolbox.yaml` to opt a project out, or `proximo: true` to force it on even before proximo is installed.
+
+The routed hosts are resolved when the container is created, so start your proximo stack first and re-run `toolbox shell` to pick up newly added hosts. `curl`, `git`, `wget`, Python (`ssl`/`urllib`), Node and Chromium trust proximo automatically; `python-requests` (which ships its own `certifi` bundle) needs `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"`. Full mechanics: [`docs/runtime-notes.md#proximo-integration`](docs/runtime-notes.md#proximo-integration).
+
 ### Loading order
 
 Configuration is loaded from (highest priority first):
