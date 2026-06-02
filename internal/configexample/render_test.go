@@ -12,7 +12,7 @@ import (
 func TestRenderContainsExpectedSections(t *testing.T) {
 	got := configexample.Render()
 
-	for _, want := range []string{"shell:", "mounts_root:", "inherit_host_auth", "mounts:", "Precedence"} {
+	for _, want := range []string{"shell:", "mounts_root:", "inherit_host_auth", "mounts:", "proximo:", "Precedence"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template missing %q", want)
 		}

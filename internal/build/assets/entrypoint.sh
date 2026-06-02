@@ -66,6 +66,40 @@ if [ -d "$INIT_D" ]; then
 fi
 unset INIT_D TOOLBOX_INIT_LOG_DIR
 
+# proximo CA trust (docs/runtime-notes.md#proximo-integration). When the host
+# config sets `proximo: true`, sessionplan RO-mounts proximo's root CA at
+# /etc/ssl/proximo-ca.pem. Establish full trust so ANY in-container HTTPS client
+# reaches https://<name>.test without per-tool flags:
+#   - system bundle (curl / git / wget / python ssl+urllib): update-ca-certificates
+#   - NSS db (Chromium / Firefox, incl. Playwright's bundled browsers, which read
+#     $HOME/.pki/nssdb — not the system bundle, not NODE_EXTRA_CA_CERTS): certutil
+# NODE_EXTRA_CA_CERTS (set by sessionplan) already covers Node. python-requests
+# uses certifi, not the system store — point REQUESTS_CA_BUNDLE at
+# $TOOLBOX_PROXIMO_CA for that one. Self-gated on the mount, idempotent, every
+# step best-effort so a trust failure never aborts boot.
+_proximo_ca="/etc/ssl/proximo-ca.pem"
+if [ -f "$_proximo_ca" ]; then
+    # System trust: the ca-certificates source dir wants a .crt; refresh the
+    # bundle only when the cert is new (update-ca-certificates is not free).
+    # sudo is passwordless + UID-agnostic in this image (see Dockerfile).
+    if [ ! -f /usr/local/share/ca-certificates/proximo.crt ] \
+       || ! cmp -s "$_proximo_ca" /usr/local/share/ca-certificates/proximo.crt; then
+        sudo cp "$_proximo_ca" /usr/local/share/ca-certificates/proximo.crt 2>/dev/null \
+          && sudo update-ca-certificates >/dev/null 2>&1 || true
+    fi
+    # NSS trust for Chromium/Firefox. ~/.pki is ephemeral (HOME subdir, not a
+    # bind-mount) so it is rebuilt from the mounted CA on every shell.
+    if command -v certutil >/dev/null 2>&1; then
+        _nssdb="$HOME/.pki/nssdb"
+        mkdir -p "$_nssdb"
+        [ -f "$_nssdb/cert9.db" ] || certutil -d "sql:$_nssdb" -N --empty-password >/dev/null 2>&1 || true
+        certutil -d "sql:$_nssdb" -L -n proximo >/dev/null 2>&1 \
+          || certutil -d "sql:$_nssdb" -A -t C,, -n proximo -i "$_proximo_ca" >/dev/null 2>&1 || true
+        unset _nssdb
+    fi
+fi
+unset _proximo_ca
+
 # Repo-local SDD (Spec-Driven Development) bootstrap. Opt-in per skill via
 # `sdd.<key>: true` in the workspace's .toolbox.yaml. sessionplan emits one
 # env var per field (TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}) on

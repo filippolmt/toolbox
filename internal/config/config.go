@@ -42,6 +42,25 @@ type Config struct {
 	// false, the mount is omitted and the install command refuses. Default
 	// true.
 	BrowserBridge *bool `mapstructure:"browser_bridge"`
+	// Proximo controls the proximo (https://github.com/filippolmt/proximo)
+	// local-dev integration. Tri-state:
+	//   - omitted (nil) → auto: enabled iff proximo is set up on this host
+	//     (its root CA exists under the user config dir). proximo installed →
+	//     every toolbox shell reaches `.test` apps with no per-repo opt-in.
+	//   - true  → force on (even if the CA is absent; the mount soft-skips).
+	//   - false → force off.
+	// When enabled, `toolbox shell` discovers every running container labelled
+	// `proximo.hosts=…` and pins each routed hostname to the Docker
+	// host-gateway (so https://<name>.<tld> reaches the host where proximo's
+	// Traefik publishes :443 instead of the container's own loopback) and
+	// bind-mounts proximo's root CA read-only. entrypoint.sh then trusts that
+	// CA seamlessly for every in-container HTTPS client: update-ca-certificates
+	// (curl/git/wget/python-ssl), certutil into ~/.pki/nssdb (Chromium, incl.
+	// Playwright's browsers), and NODE_EXTRA_CA_CERTS (Node). TOOLBOX_PROXIMO_CA
+	// is exported for the certifi gap (REQUESTS_CA_BUNDLE). Extra-hosts are
+	// fixed at container creation, so re-run `toolbox shell` to pick up newly
+	// routed hosts. See docs/runtime-notes.md#proximo-integration.
+	Proximo *bool `mapstructure:"proximo"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
