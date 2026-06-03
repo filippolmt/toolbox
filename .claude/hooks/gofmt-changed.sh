@@ -34,10 +34,16 @@ src=${TOOLBOX_HOST_WORKSPACE:-$root}
 # `fmt ./...` runs only the configured formatters (no build, no type-check) and
 # rewrites just the files that need it. Whole-module is robust: passing named
 # files trips golangci-lint's "must all be in one directory" rule when a turn
-# touches more than one package. Non-blocking: errors surface on stderr but the
-# hook always exits 0 so it never wedges the turn.
-out=$(docker run --rm -v "$src":/src -w /src \
-	"golangci/golangci-lint:$ver" golangci-lint fmt ./... 2>&1) || true
+# touches more than one package.
+#
+# The `go.mod` sentinel guards the DooD mount: inside a toolbox shell the
+# in-container path is not what the host daemon resolves, so without a correct
+# $src (TOOLBOX_HOST_WORKSPACE, set by the toolbox CLI) the bind lands on an
+# empty dir and `fmt` would silently format nothing. Surfacing the miss beats a
+# silent no-op. Non-blocking either way: errors go to stderr and the hook
+# always exits 0 so it never wedges the turn.
+out=$(docker run --rm -v "$src":/src -w /src "golangci/golangci-lint:$ver" \
+	sh -c 'if [ ! -f go.mod ]; then echo "no go.mod at /src — workspace mount unresolved (TOOLBOX_HOST_WORKSPACE?)"; exit 0; fi; exec golangci-lint fmt ./...' 2>&1) || true
 [ -n "$out" ] && printf 'gofmt hook: %s\n' "$out" >&2
 
 exit 0
