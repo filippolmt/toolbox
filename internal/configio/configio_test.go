@@ -136,52 +136,48 @@ func TestUpsertFilePreservesCommentsAndOrder(t *testing.T) {
 	}
 }
 
-// TestUpsertFileBootstrapsMissingFile asserts a missing path materialises a
-// fresh document and the file is created with mode 0o600.
-func TestUpsertFileBootstrapsMissingFile(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
-	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
-		SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
-	})
-	if err != nil {
-		t.Fatalf("UpsertFile: %v", err)
+// TestUpsertFileBootstrapsDocument covers the two empty-input branches of
+// the read switch: a missing file (os.ErrNotExist) and a file holding only
+// whitespace (yaml.Unmarshal leaves a zero node; EnsureDocumentMap must
+// still materialise a mapping). Both must apply the mutation to a fresh
+// document and leave the file with mode 0o600.
+func TestUpsertFileBootstrapsDocument(t *testing.T) {
+	cases := []struct {
+		name string
+		seed []byte // nil → file absent
+	}{
+		{name: "missing file"},
+		{name: "whitespace-only file", seed: []byte("\n\n   \n")},
 	}
-	if !changed {
-		t.Fatal("changed = false, want true")
-	}
-	info, err := os.Stat(dest)
-	if err != nil {
-		t.Fatalf("stat dest: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode = %v, want 0600", info.Mode().Perm())
-	}
-	b, _ := os.ReadFile(dest)
-	if !strings.Contains(string(b), "openspec: true") {
-		t.Fatalf("output missing mutation:\n%s", string(b))
-	}
-}
-
-// TestUpsertFileBootstrapsWhitespaceOnlyFile mirrors the missing-file case
-// for a file that exists but holds only whitespace (yaml.Unmarshal would
-// leave a zero node; EnsureDocumentMap must still materialise a mapping).
-func TestUpsertFileBootstrapsWhitespaceOnlyFile(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
-	if err := os.WriteFile(dest, []byte("\n\n   \n"), 0o600); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
-		SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
-	})
-	if err != nil {
-		t.Fatalf("UpsertFile: %v", err)
-	}
-	if !changed {
-		t.Fatal("changed = false, want true")
-	}
-	b, _ := os.ReadFile(dest)
-	if !strings.Contains(string(b), "openspec: true") {
-		t.Fatalf("output missing mutation:\n%s", string(b))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+			if tc.seed != nil {
+				if err := os.WriteFile(dest, tc.seed, 0o600); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+			changed, err := UpsertFile(dest, func(doc *yaml.Node) {
+				SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
+			})
+			if err != nil {
+				t.Fatalf("UpsertFile: %v", err)
+			}
+			if !changed {
+				t.Fatal("changed = false, want true")
+			}
+			info, err := os.Stat(dest)
+			if err != nil {
+				t.Fatalf("stat dest: %v", err)
+			}
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("mode = %v, want 0600", info.Mode().Perm())
+			}
+			b, _ := os.ReadFile(dest)
+			if !strings.Contains(string(b), "openspec: true") {
+				t.Fatalf("output missing mutation:\n%s", string(b))
+			}
+		})
 	}
 }
 
