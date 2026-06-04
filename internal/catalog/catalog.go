@@ -51,6 +51,7 @@ var Entries = []Entry{
 	{Key: "atuin", InitScript: "65-atuin.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.local/share/atuin", ContainerPath: "/home/toolbox/.local/share/atuin"}},
 	{Key: "azure", InitScript: "06-azure-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.azure", ContainerPath: "/home/toolbox/.azure"}},
 	{Key: "bat"},
+	{Key: "brew"},
 	{Key: "bun"},
 	{Key: "cf", InitScript: "20-cf.sh"},
 	{Key: "claude", InitScript: "50-mcp-plugins.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.claude", ContainerPath: "/home/toolbox/.claude"}},

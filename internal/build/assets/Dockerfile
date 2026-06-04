@@ -72,6 +72,8 @@ ARG GRAPHIFY_VERSION=0.8.31
 ARG PLAYWRIGHT_VERSION=1.60.0
 ARG PLAYWRIGHT_CLI_VERSION=0.1.13
 ARG COMPOSE_VERSION=5.1.4
+# Homebrew tags carry no `v` prefix — bare version.
+ARG HOMEBREW_VERSION=5.1.15
 ARG GO_VERSION=1.26.4
 ARG GOPLS_VERSION=0.22.0
 ARG GOIMPORTS_VERSION=0.45.0
@@ -119,6 +121,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     apt-get install -qqy --no-install-recommends \
       ca-certificates \
       curl \
+      file \
       git \
       gnupg \
       less \
@@ -814,6 +817,28 @@ RUN set -eux; \
       mv /tmp/rtk-from-builder /usr/local/bin/rtk; \
       chmod +x /usr/local/bin/rtk; \
       rtk --version;
+# Homebrew (Linuxbrew). Shallow tag clone at the DEFAULT prefix — bottles
+# only work at /home/linuxbrew/.linuxbrew; the official installer is unusable
+# in a RUN (refuses root, clones unpinned `main`). Layout mirrors what the
+# installer produces: repo at …/Homebrew + bin/brew symlink. Pre-built _brew
+# zsh completion ships from the clone (bat/fd/eza precedent). Variable host
+# UID handling: world-writable prefix (same pattern as /home/toolbox) +
+# system-level safe.directory for the root-owned clone (~/.gitconfig may be
+# a RO host mount — must not be edited). brew refuses to RUN as root →
+# presence check only here; smoke-test.sh runs `brew --version` as the
+# runtime user. NO_ANALYTICS/NO_AUTO_UPDATE env set next to the PATH ENV
+# below (npm-global precedent).
+RUN set -eux; \
+      git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
+        https://github.com/Homebrew/brew /home/linuxbrew/.linuxbrew/Homebrew; \
+      mkdir -p /home/linuxbrew/.linuxbrew/bin; \
+      ln -s ../Homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; \
+      mkdir -p /usr/share/zsh/vendor-completions; \
+      cp /home/linuxbrew/.linuxbrew/Homebrew/completions/zsh/_brew \
+        /usr/share/zsh/vendor-completions/_brew; \
+      git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew; \
+      chmod -R a+rwX /home/linuxbrew; \
+      test -x /home/linuxbrew/.linuxbrew/bin/brew
 # xterm-ghostty terminfo. ncurses 6.4 (bookworm) predates the entry added
 # in 6.5. Bundled .src includes all `use=` fragments — tic resolves locally.
 RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
@@ -862,6 +887,14 @@ ENV HOME=/home/toolbox \
     KUBE_EDITOR=vi \
     STARSHIP_CONFIG=/etc/toolbox/starship.toml
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+# Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
+# additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
+# HOMEBREW_PREFIX/MANPATH/INFOPATH. Analytics off (privacy posture, rtk
+# telemetry-lockdown precedent); auto-update off (pin-everything policy —
+# also avoids the shallow-clone `brew update` trip on every install).
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}" \
+    HOMEBREW_NO_ANALYTICS=1 \
+    HOMEBREW_NO_AUTO_UPDATE=1
 
 # Curated starship config. Per-user override via STARSHIP_CONFIG in a
 # ~/.toolbox-startup.d/ hook.
