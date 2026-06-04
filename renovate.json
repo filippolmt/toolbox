@@ -230,6 +230,13 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+HOMEBREW_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "Homebrew/brew"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+OMZ_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
       "currentValueTemplate": "master",
       "depNameTemplate": "ohmyzsh/ohmyzsh",

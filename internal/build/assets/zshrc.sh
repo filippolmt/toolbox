@@ -164,6 +164,16 @@ if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" 2>/dev/null || true
 fi
 
+# -- Homebrew (Linuxbrew) -----------------------------------------------------
+# PATH already carries the brew bins via image ENV; shellenv is idempotent
+# (prepends only when missing) and fills in HOMEBREW_PREFIX/MANPATH/INFOPATH,
+# which the static ENV can't. Guard pattern matches atuin above: brew refuses
+# to run as root (e.g. `docker exec -u 0 … zsh`) with a multi-line stderr
+# error — suppress inside the subshell so it never reaches the prompt.
+if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" 2>/dev/null || true
+fi
+
 # -- Starship prompt (LAST — overrides PROMPT/PS1) ---------------------------
 # Starship doesn't depend on getpwuid(), so it works even with
 # --user $(id -u):$(id -g) where whoami prints "I have no name!".

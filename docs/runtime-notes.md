@@ -42,6 +42,22 @@ The base image can't move to Debian trixie yet because the Microsoft Azure CLI a
 
 `rust:1-slim-bookworm` contains cargo + git but nothing to fetch tarballs with. The rtk-builder stage installs them via apt before the amd64 tarball path. If you copy the pattern for another tool (e.g. building a Rust binary from source), replicate the apt install — it doesn't propagate from the base.
 
+### Homebrew
+
+Installed via shallow tag clone (`ARG HOMEBREW_VERSION`) at the **default Linux prefix** `/home/linuxbrew/.linuxbrew` — bottles (pre-built binaries) only work there; any other prefix forces source builds, explicitly unsupported upstream ("pick another prefix at your peril"). The official installer script is unusable in a Dockerfile `RUN`: it refuses root and clones unpinned `main`. The layer reproduces the installer's layout manually (repo at `…/Homebrew` + `bin/brew` symlink) and ships the pre-built `_brew` zsh completion from the clone.
+
+Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) because `~/.gitconfig` may be a read-only host mount.
+
+Runtime semantics:
+
+- **Ephemeral installs** — `brew install` writes into the non-mounted prefix; everything vanishes on container exit, exactly like `sudo apt install`. Intentional: no `~/.toolbox/brew` bind (a potentially multi-GB prefix over a macOS bind mount would be slow and defeats the disposable-workspace model).
+- **First `brew install` downloads Portable Ruby + formula API JSON** (~30–60 s, network required) — once per container, since containers are AutoRemove-ephemeral.
+- `HOMEBREW_NO_ANALYTICS=1` + `HOMEBREW_NO_AUTO_UPDATE=1` baked in image ENV (privacy + pin-everything policy); overridable per-session.
+- Debian is Homebrew **Tier 2** (fully functional, just outside upstream's Tier 1 CI matrix, which is Ubuntu). Bottles need glibc ≥ 2.35; bookworm ships 2.36.
+- The clone is shallow: `brew update` instructs `git fetch --unshallow` first. Acceptable — the version is image-pinned and auto-update is off; the message is self-explanatory for users who insist.
+
+PATH: image `ENV` prepends `…/.linuxbrew/bin:…/.linuxbrew/sbin` (covers non-interactive `docker exec`); interactive zsh additionally evals `brew shellenv` for `HOMEBREW_PREFIX`/`MANPATH`/`INFOPATH` (idempotent w.r.t. the ENV PATH entry). Private GitLab taps authenticate via the glab credential helper — see [GitLab git credential helper (glab)](#gitlab-git-credential-helper-glab).
+
 ## Mounts & auth isolation
 
 ### Auth isolation under `~/.toolbox/`
@@ -205,6 +221,14 @@ When `tools.cf` is enabled (default) and `~/.claude` exists, `internal/build/ass
 ### Skill discovery paths diverge between Claude and Codex
 
 Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.
+
+### GitLab git credential helper (glab)
+
+When `glab auth status` succeeds, `init.d/60-glab.sh` registers `!glab auth git-credential` as the git credential helper for **every host in glab's config** (`yq '.hosts | keys | .[]' ~/.config/glab-cli/config.yml`) — gitlab.com and any self-hosted instance the user has run `glab auth login --hostname <host>` for; new hosts need zero code changes. Written with `sudo git config --system` into the container's `/etc/gitconfig`: the host's `~/.gitconfig` is a read-only mount and stays byte-identical, while the system file is container-local and dies with the AutoRemove container. Registration is non-fatal — on failure a warning points at the SSH fallback (`git@<host>:…` keeps working via the RO `~/.ssh` mount).
+
+Primary consumer: private Homebrew taps over HTTPS — `brew tap <name> https://<gitlab-host>/<group>/homebrew-tap.git` clones with the glab token, no prompts, no extra setup (the token already persists in `~/.toolbox/glab`). Benefits any in-container git clone/pull of private GitLab repos.
+
+Limitation: the helper covers **git transports only**. Formulas that download release assets / package-registry artifacts over HTTPS go through brew's curl, which does not consult git credential helpers — such formulas need a custom download strategy reading a token. Revisit if a private tap grows that kind of formula.
 
 ### SDD `.gitignore` fence
 

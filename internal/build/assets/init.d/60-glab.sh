@@ -1,17 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Two responsibilities, gated together on `command -v glab`:
+# Three responsibilities, gated together on `command -v glab`:
 #   1. Credential probe — same configured/not-configured surface the other
 #      cred scripts emit, so all five providers report uniformly through
 #      the Init Sequence.
-#   2. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.
+#   2. git credential helper — when glab is authenticated, register
+#      `!glab auth git-credential` in the SYSTEM gitconfig for every host in
+#      glab's config (host ~/.gitconfig is a RO mount — must not be edited).
+#      Covers private GitLab HTTPS clones, e.g. `brew tap` of a private tap.
+#      Non-fatal: on failure SSH remotes keep working via the RO ~/.ssh mount.
+#   3. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.
 #      Two passes: Claude Code reads only ~/.claude/skills; Codex reads
 #      only ~/.agents/skills (cross-agent USER scope per agentskills.io).
 command -v glab >/dev/null 2>&1 || exit 0
 
 if glab auth status >/dev/null 2>&1; then
     echo "  glab: configured"
+    _glab_config="${HOME}/.config/glab-cli/config.yml"
+    if command -v yq >/dev/null 2>&1 && [ -f "${_glab_config}" ]; then
+        _glab_hosts=$(yq '.hosts | keys | .[]' "${_glab_config}" 2>/dev/null) || \
+            echo "toolbox: glab config parse failed — no credential helper registered (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
+        # flock: init.d scripts run backgrounded in parallel (entrypoint.sh) —
+        # serialize /etc/gitconfig writes so a future script touching the
+        # system gitconfig can't race git's own <file>.lock. Lock file is
+        # NOT /etc/gitconfig.lock (that name is git's internal lockfile).
+        for _glab_host in ${_glab_hosts}; do
+            sudo flock /tmp/toolbox-gitconfig.lock \
+                git config --system "credential.https://${_glab_host}.helper" '!glab auth git-credential' || \
+                echo "toolbox: glab credential helper for ${_glab_host} failed (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
+        done
+    else
+        echo "toolbox: yq or glab config missing — no credential helper registered (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
+    fi
 else
     echo "  glab: not configured"
 fi
