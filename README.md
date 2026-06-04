@@ -37,9 +37,10 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | fd (user-friendly `find` replacement) | 10.4.x |
 | eza (modern `ls` replacement) | 0.23.x |
+| Homebrew (Linuxbrew, `brew install` anything else at runtime) | 5.1.x |
 | jq, yq, starship, bat, git | latest stable |
 
-Every optional tool above can be disabled per-project — see [Configuration](#configuration).
+Every tool ships unconditionally — there is no per-tool opt-out. Need something that isn't baked in? `brew install <tool>` or `sudo apt install <tool>` inside the shell; both are ephemeral and vanish when the container exits.
 
 ## Install
 
