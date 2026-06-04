@@ -62,8 +62,14 @@ func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []st
 		}
 
 		// Resolve symlinks so the Docker daemon receives the real path.
+		// On failure keep the unresolved cleaned path and warn — resolution
+		// runs as the invoking user and can fail (e.g. EACCES on an
+		// intermediate dir) where the daemon (root) still mounts fine, so
+		// skipping here would break today-working mounts.
 		if real, err := filepath.EvalSymlinks(src); err == nil {
 			src = real
+		} else {
+			warnings = append(warnings, fmt.Sprintf("failed to resolve symlinks for mount source %s: %s", m.Source, err.Error()))
 		}
 
 		mode := "rw"

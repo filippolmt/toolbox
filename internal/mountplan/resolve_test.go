@@ -109,6 +109,77 @@ func TestResolveAllSymlinkFromSkipsWhenTargetMissing(t *testing.T) {
 	}
 }
 
+// TestResolveAllWarnsOnEvalSymlinksFailure: a source that exists as a
+// symlink whose target chain cannot be resolved must surface a warning but
+// still emit the bind with the unresolved path — resolution can fail for
+// the invoking user (e.g. EACCES on an intermediate dir) while the Docker
+// daemon (root) still mounts the path fine, so skipping would break
+// today-working mounts.
+func TestResolveAllWarnsOnEvalSymlinksFailure(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "broken-link")
+	if err := os.Symlink(filepath.Join(tmp, "missing-target"), src); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	mounts := []config.Mount{
+		{Source: src, Target: "/container/broken", ReadOnly: false},
+	}
+
+	binds, warnings := resolveAll(mounts, home)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "failed to resolve symlinks for mount source") {
+		t.Errorf("warning %q missing the resolve-failure prefix", warnings[0])
+	}
+	if !strings.Contains(warnings[0], src) {
+		t.Errorf("warning %q does not name the source %q", warnings[0], src)
+	}
+	if len(binds) != 1 {
+		t.Fatalf("expected 1 bind (mount must not be skipped), got %d", len(binds))
+	}
+	if binds[0].Source != src {
+		t.Errorf("expected unresolved source %q, got %q", src, binds[0].Source)
+	}
+}
+
+// TestResolveAllResolvesHealthySymlinkSource: a source symlink whose chain
+// resolves cleanly produces no symlink warning and the bind carries the
+// fully resolved real path.
+func TestResolveAllResolvesHealthySymlinkSource(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	tmp := t.TempDir()
+	real := filepath.Join(tmp, "real-dir")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	src := filepath.Join(tmp, "healthy-link")
+	if err := os.Symlink(real, src); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	mounts := []config.Mount{
+		{Source: src, Target: "/container/healthy", ReadOnly: false},
+	}
+
+	binds, warnings := resolveAll(mounts, home)
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if len(binds) != 1 {
+		t.Fatalf("expected 1 resolved mount, got %d", len(binds))
+	}
+	want, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if binds[0].Source != want {
+		t.Errorf("expected resolved source %q, got %q", want, binds[0].Source)
+	}
+}
+
 func TestResolveAllReplacesEmptyDirWithSymlink(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
