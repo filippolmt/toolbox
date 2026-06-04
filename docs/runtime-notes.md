@@ -326,7 +326,7 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 
 ### Enablement is auto-detected (tri-state `proximo`)
 
-`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under the user config dir). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `browser_bridge`, but with an auto rather than always-on default.
+`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under `~/.proximo`). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `browser_bridge`, but with an auto rather than always-on default.
 
 ### The two host-side ingredients
 
@@ -335,7 +335,7 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 | Concern | Mechanism | Seam |
 |---------|-----------|------|
 | DNS | Every running container's `proximo.hosts` label value is read; each hostname is pinned to the Docker `host-gateway` and appended to `HostConfig.ExtraHosts`. `host-gateway` resolves to the host where Traefik publishes `:443`, bypassing Docker networks entirely. | discovery: `container/lifecycle.go` `augmentProximoHosts` (needs the Docker client); pure parser: `proximo.ExtraHosts` |
-| Cert | proximo's root CA (`<user-config-dir>/proximo/tls/ca.pem`, resolved via `os.UserConfigDir()`) is bind-mounted RO at `/etc/ssl/proximo-ca.pem`. `entrypoint.sh` then establishes **seamless** trust for every client (see below). `NODE_EXTRA_CA_CERTS` (Node uses its own bundle) and `TOOLBOX_PROXIMO_CA` (path pointer for the certifi gap) are also exported. | mount: `proximo.CAMount` injected in `mountplan.Merge`; env: `proximo.Env` appended in `sessionplan.Plan`; trust: `entrypoint.sh` proximo block |
+| Cert | proximo's root CA (path queried via `proximo config ca-path` — the stable contract from filippolmt/proximo#20; fallback `~/.proximo/tls/ca.pem`, proximo's state home since v0.3.0, filippolmt/proximo#17) is bind-mounted RO at `/etc/ssl/proximo-ca.pem`. `entrypoint.sh` then establishes **seamless** trust for every client (see below). `NODE_EXTRA_CA_CERTS` (Node uses its own bundle) and `TOOLBOX_PROXIMO_CA` (path pointer for the certifi gap) are also exported. | mount: `proximo.CAMount` injected in `mountplan.Merge`; env: `proximo.Env` appended in `sessionplan.Plan`; trust: `entrypoint.sh` proximo block |
 
 ### Trust establishment (entrypoint, self-gated on the mount)
 

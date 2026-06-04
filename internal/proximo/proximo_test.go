@@ -72,14 +72,17 @@ func TestEnabledTristate(t *testing.T) {
 	}
 }
 
-// setupCA points os.UserConfigDir at a temp dir and optionally writes the CA
-// file. Returns the host CA path. Linux CI resolves os.UserConfigDir from
-// XDG_CONFIG_HOME, so the override is deterministic in the test container.
+// setupCA points os.UserHomeDir at a temp dir, scrubs PATH (so a proximo
+// binary on the test host can't answer the CA-path query), and optionally
+// writes the CA file at the fallback location. Returns the host CA path.
+// Linux resolves os.UserHomeDir from $HOME, so the override is deterministic
+// in the test container.
 func setupCA(t *testing.T, write bool) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	caPath := filepath.Join(dir, "proximo", "tls", "ca.pem")
+	t.Setenv("HOME", dir)
+	t.Setenv("PATH", t.TempDir())
+	caPath := filepath.Join(dir, ".proximo", "tls", "ca.pem")
 	if write {
 		if err := os.MkdirAll(filepath.Dir(caPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
@@ -89,6 +92,80 @@ func setupCA(t *testing.T, write bool) string {
 		}
 	}
 	return caPath
+}
+
+// fakeProximo installs an executable `proximo` stub on PATH with the given
+// shell body, simulating a host with proximo on PATH.
+func fakeProximo(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "proximo")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatalf("write fake proximo: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// TestEnabledAutoDetectViaQuery pins auto-detect against the queried CA path:
+// a proximo binary on PATH alone is NOT enough (`config ca-path` prints the
+// path even before `proximo install` writes the CA — existence is our check),
+// and once the CA exists at the path proximo reports, auto-detect turns on
+// even though nothing sits at the ~/.proximo fallback.
+func TestEnabledAutoDetectViaQuery(t *testing.T) {
+	setupCA(t, false) // temp HOME: nothing at the fallback location
+	caPath := filepath.Join(t.TempDir(), "tls", "ca.pem")
+	fakeProximo(t, "echo "+caPath)
+
+	if proximo.Enabled(autoCfg()) {
+		t.Error("binary on PATH but CA absent: auto-detect must stay off")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(caPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(caPath, []byte("-----BEGIN CERTIFICATE-----\n"), 0o600); err != nil {
+		t.Fatalf("write CA: %v", err)
+	}
+	if !proximo.Enabled(autoCfg()) {
+		t.Error("CA present at queried path: auto-detect must turn on")
+	}
+}
+
+// TestCAPathPrefersProximoQuery pins the stable contract from
+// filippolmt/proximo#20: when `proximo config ca-path` answers, its output
+// wins over the hardcoded state-home fallback.
+func TestCAPathPrefersProximoQuery(t *testing.T) {
+	setupCA(t, false)
+	fakeProximo(t, "echo /custom/state/tls/ca.pem")
+	path, ok := proximo.CAPath()
+	if !ok || path != "/custom/state/tls/ca.pem" {
+		t.Errorf("CAPath = %q, %v; want query result /custom/state/tls/ca.pem, true", path, ok)
+	}
+}
+
+// TestCAPathFallback covers every degraded query against the same expectation:
+// the ~/.proximo/tls/ca.pem state-home fallback.
+func TestCAPathFallback(t *testing.T) {
+	cases := []struct {
+		name   string
+		script string // empty → no proximo binary on PATH at all
+	}{
+		{name: "no proximo on PATH"},
+		{name: "subcommand missing (pre-#20 proximo)", script: "exit 1"},
+		{name: "junk stdout", script: "echo not-an-absolute-path"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := setupCA(t, false)
+			if tc.script != "" {
+				fakeProximo(t, tc.script)
+			}
+			path, ok := proximo.CAPath()
+			if !ok || path != want {
+				t.Errorf("CAPath = %q, %v; want fallback %q, true", path, ok, want)
+			}
+		})
+	}
 }
 
 func TestCAMountForceOffEvenWithCA(t *testing.T) {

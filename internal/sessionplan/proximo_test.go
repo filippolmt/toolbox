@@ -20,10 +20,9 @@ func boolPtr(b bool) *bool { return &b }
 func TestPlanWiresProximo(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	cfgDir := filepath.Join(tmp, ".config")
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
 
-	caPath := filepath.Join(cfgDir, "proximo", "tls", "ca.pem")
+	caPath := filepath.Join(tmp, ".proximo", "tls", "ca.pem")
 	if err := os.MkdirAll(filepath.Dir(caPath), 0o700); err != nil {
 		t.Fatalf("mkdir CA: %v", err)
 	}
@@ -64,12 +63,12 @@ func TestPlanWiresProximo(t *testing.T) {
 
 // TestPlanProximoDisabled is the negative: with proximo unset (auto-detect) and
 // no proximo CA on the host, the plan carries no proximo flag and no CA-trust
-// env. XDG points at a CA-less dir so auto-detect is deterministically off
+// env. HOME points at a CA-less dir so auto-detect is deterministically off
 // regardless of whether the test host has proximo installed.
 func TestPlanProximoDisabled(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config")) // no CA written → auto off
+	t.Setenv("HOME", tmp)         // no CA written → auto off
+	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
 	workspace := filepath.Join(tmp, "ws")
 	if err := mkdirAll(t, workspace); err != nil {
 		t.Fatalf("setup: %v", err)

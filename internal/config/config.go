@@ -45,7 +45,8 @@ type Config struct {
 	// Proximo controls the proximo (https://github.com/filippolmt/proximo)
 	// local-dev integration. Tri-state:
 	//   - omitted (nil) → auto: enabled iff proximo is set up on this host
-	//     (its root CA exists under the user config dir). proximo installed →
+	//     (its root CA exists — path asked to proximo itself, with a
+	//     ~/.proximo fallback; see proximo.CAPath). proximo installed →
 	//     every toolbox shell reaches `.test` apps with no per-repo opt-in.
 	//   - true  → force on (even if the CA is absent; the mount soft-skips).
 	//   - false → force off.
