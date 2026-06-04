@@ -122,46 +122,14 @@ func runSDDList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// upsertSDDFlag writes `sdd.<key>: true` to path via the configio yaml.Node
-// pipeline so user-authored comments and key order survive. Mirrors
-// upsertShellInUserConfig at cmd/shell_named.go. Returns (changed, error)
+// upsertSDDFlag writes `sdd.<key>: true` to path via configio.UpsertFile so
+// user-authored comments and key order survive. Returns (changed, error)
 // where changed reflects whether the rendered byte stream differs from
 // what is on disk (idempotent re-runs report unchanged).
 func upsertSDDFlag(path, skillKey string) (bool, error) {
-	var root yaml.Node
-	existing, readErr := os.ReadFile(path)
-	switch {
-	case readErr == nil:
-		if len(bytes.TrimSpace(existing)) > 0 {
-			if err := yaml.Unmarshal(existing, &root); err != nil {
-				return false, fmt.Errorf("parse %s: %w", path, err)
-			}
-		}
-	case errors.Is(readErr, os.ErrNotExist):
-		existing = nil
-	default:
-		return false, fmt.Errorf("read %s: %w", path, readErr)
-	}
-
-	doc := configio.EnsureDocumentMap(&root)
-	block := configio.EnsureChildMap(doc, sddYAMLKey)
-	configio.SetMapBool(block, skillKey, true)
-
-	var out bytes.Buffer
-	enc := yaml.NewEncoder(&out)
-	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
-		return false, fmt.Errorf("encode %s: %w", path, err)
-	}
-	_ = enc.Close()
-
-	if bytes.Equal(out.Bytes(), existing) {
-		return false, nil
-	}
-	if err := configio.AtomicWriteFile(path, out.Bytes(), 0o600); err != nil {
-		return false, err
-	}
-	return true, nil
+	return configio.UpsertFile(path, func(doc *yaml.Node) {
+		configio.SetMapBool(configio.EnsureChildMap(doc, sddYAMLKey), skillKey, true)
+	})
 }
 
 // upsertGitignoreFence appends or replaces the per-skill fenced block in

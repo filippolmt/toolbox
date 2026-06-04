@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -280,10 +279,10 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 	}
 }
 
-// upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml,
-// preserving existing keys/comments via yaml.Node mutation. home is
-// resolved once by the caller and threaded in so the --create path does
-// not pay for repeated os.UserHomeDir() lookups.
+// upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml via
+// configio.UpsertFile, preserving existing keys/comments. home is resolved
+// once by the caller and threaded in so the --create path does not pay for
+// repeated os.UserHomeDir() lookups.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
 		h, err := configio.GlobalConfigDir()
@@ -294,33 +293,9 @@ func upsertShellInUserConfig(home, name, path string) error {
 	}
 	cfgPath := filepath.Join(home, ".toolbox.yaml")
 
-	var root yaml.Node
-	b, readErr := os.ReadFile(cfgPath)
-	switch {
-	case readErr == nil:
-		if len(bytes.TrimSpace(b)) == 0 {
-			root = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
-		} else if err := yaml.Unmarshal(b, &root); err != nil {
-			return fmt.Errorf("parse %s: %w", cfgPath, err)
-		}
-	case os.IsNotExist(readErr):
-		root = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
-	default:
-		return fmt.Errorf("read %s: %w", cfgPath, readErr)
-	}
-
-	doc := configio.EnsureDocumentMap(&root)
-	shells := configio.EnsureChildMap(doc, "shells")
-	entry := configio.EnsureChildMap(shells, name)
-	configio.SetMapValue(entry, "path", path)
-
-	var out bytes.Buffer
-	enc := yaml.NewEncoder(&out)
-	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
-		return fmt.Errorf("encode %s: %w", cfgPath, err)
-	}
-	_ = enc.Close()
-
-	return configio.AtomicWriteFile(cfgPath, out.Bytes(), 0o600)
+	_, err := configio.UpsertFile(cfgPath, func(doc *yaml.Node) {
+		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+		configio.SetMapValue(entry, "path", path)
+	})
+	return err
 }

@@ -100,6 +100,158 @@ func TestEnsureChildMapPreservesSiblings(t *testing.T) {
 	}
 }
 
+// TestUpsertFilePreservesCommentsAndOrder exercises the full pipeline
+// against an existing file: user comments survive, pre-existing keys keep
+// their order, and the mutation lands as an appended sibling.
+func TestUpsertFilePreservesCommentsAndOrder(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	src := "# user comment\ntools:\n  gh: false # inline note\nimage: custom\n"
+	if err := os.WriteFile(dest, []byte(src), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
+		infra := EnsureChildMap(EnsureChildMap(doc, "shells"), "infra")
+		SetMapValue(infra, "path", "/tmp/infra")
+	})
+	if err != nil {
+		t.Fatalf("UpsertFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+
+	b, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	got := string(b)
+	for _, want := range []string{"# user comment", "# inline note", "gh: false", "image: custom", "shells:", "infra:", "path: /tmp/infra"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "tools:") > strings.Index(got, "image:") {
+		t.Errorf("key order not preserved:\n%s", got)
+	}
+}
+
+// TestUpsertFileBootstrapsMissingFile asserts a missing path materialises a
+// fresh document and the file is created with mode 0o600.
+func TestUpsertFileBootstrapsMissingFile(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
+		SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
+	})
+	if err != nil {
+		t.Fatalf("UpsertFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("stat dest: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, want 0600", info.Mode().Perm())
+	}
+	b, _ := os.ReadFile(dest)
+	if !strings.Contains(string(b), "openspec: true") {
+		t.Fatalf("output missing mutation:\n%s", string(b))
+	}
+}
+
+// TestUpsertFileBootstrapsWhitespaceOnlyFile mirrors the missing-file case
+// for a file that exists but holds only whitespace (yaml.Unmarshal would
+// leave a zero node; EnsureDocumentMap must still materialise a mapping).
+func TestUpsertFileBootstrapsWhitespaceOnlyFile(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	if err := os.WriteFile(dest, []byte("\n\n   \n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
+		SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
+	})
+	if err != nil {
+		t.Fatalf("UpsertFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+	b, _ := os.ReadFile(dest)
+	if !strings.Contains(string(b), "openspec: true") {
+		t.Fatalf("output missing mutation:\n%s", string(b))
+	}
+}
+
+// TestUpsertFileIdempotentRunDoesNotRewrite proves the byte-equal
+// short-circuit skips the disk write entirely: a rewrite would reset the
+// file mode to 0o600 (AtomicWriteFile), so a surviving 0o644 witness mode
+// means no write happened.
+func TestUpsertFileIdempotentRunDoesNotRewrite(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	mutate := func(doc *yaml.Node) {
+		SetMapBool(EnsureChildMap(doc, "sdd"), "openspec", true)
+	}
+	if _, err := UpsertFile(dest, mutate); err != nil {
+		t.Fatalf("first UpsertFile: %v", err)
+	}
+	before, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if err := os.Chmod(dest, 0o644); err != nil {
+		t.Fatalf("chmod witness: %v", err)
+	}
+
+	changed, err := UpsertFile(dest, mutate)
+	if err != nil {
+		t.Fatalf("second UpsertFile: %v", err)
+	}
+	if changed {
+		t.Fatal("changed = true on idempotent re-run, want false")
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("stat dest: %v", err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("mode = %v, want witness 0644 (file was rewritten)", info.Mode().Perm())
+	}
+	after, _ := os.ReadFile(dest)
+	if string(after) != string(before) {
+		t.Fatalf("content changed on idempotent re-run:\n%s", string(after))
+	}
+}
+
+// TestUpsertFileUnparseableYAMLFailsLoudly asserts a corrupt file produces
+// an error naming the path, the mutation never runs, and the file is left
+// untouched.
+func TestUpsertFileUnparseableYAMLFailsLoudly(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	bad := "tools: [unclosed\n"
+	if err := os.WriteFile(dest, []byte(bad), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	changed, err := UpsertFile(dest, func(doc *yaml.Node) {
+		t.Fatal("mutate must not run on unparseable input")
+	})
+	if err == nil {
+		t.Fatal("expected parse error, got nil")
+	}
+	if !strings.Contains(err.Error(), dest) {
+		t.Fatalf("error %q does not mention path %q", err.Error(), dest)
+	}
+	if changed {
+		t.Fatal("changed = true on parse error, want false")
+	}
+	b, _ := os.ReadFile(dest)
+	if string(b) != bad {
+		t.Fatalf("file modified on parse error:\n%s", string(b))
+	}
+}
+
 // TestSetMapValueReplacesExistingScalar locks in the in-place replacement
 // behaviour — the prior scalar is overwritten, the key/value pair count
 // stays the same.

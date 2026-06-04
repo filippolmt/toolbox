@@ -14,6 +14,9 @@
 package configio
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -50,6 +53,53 @@ func GlobalConfigDir() (string, error) {
 // fsx.
 func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
 	return fsx.AtomicWriteFile(dest, data, mode)
+}
+
+// UpsertFile is the comment-preserving YAML upsert pipeline shared by every
+// cmd/* subcommand that edits a user YAML file in place. It reads path
+// (missing or whitespace-only file bootstraps an empty document), hands the
+// top-level document mapping to mutate, re-encodes with 2-space indent, and
+// atomically rewrites the file with mode 0o600 — preserving user comments
+// and key order. When the rendered bytes equal what is on disk it returns
+// (false, nil) without touching the file.
+//
+// The node tree passed to mutate is invalid after UpsertFile returns;
+// callers must not retain doc outside the callback.
+func UpsertFile(path string, mutate func(doc *yaml.Node)) (changed bool, err error) {
+	var root yaml.Node
+	existing, readErr := os.ReadFile(path)
+	switch {
+	case readErr == nil:
+		if len(bytes.TrimSpace(existing)) > 0 {
+			if err := yaml.Unmarshal(existing, &root); err != nil {
+				return false, fmt.Errorf("parse %s: %w", path, err)
+			}
+		}
+	case errors.Is(readErr, os.ErrNotExist):
+		existing = nil
+	default:
+		return false, fmt.Errorf("read %s: %w", path, readErr)
+	}
+
+	mutate(EnsureDocumentMap(&root))
+
+	var out bytes.Buffer
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+	if err := enc.Encode(&root); err != nil {
+		return false, fmt.Errorf("encode %s: %w", path, err)
+	}
+	if err := enc.Close(); err != nil {
+		return false, fmt.Errorf("encode %s: %w", path, err)
+	}
+
+	if bytes.Equal(out.Bytes(), existing) {
+		return false, nil
+	}
+	if err := AtomicWriteFile(path, out.Bytes(), 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // EnsureDocumentMap returns the mapping node that holds the top-level

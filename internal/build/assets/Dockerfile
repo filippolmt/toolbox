@@ -9,6 +9,9 @@
 ARG RTK_VERSION=0.42.1
 
 FROM rust:1-slim-bookworm AS rtk-builder
+# Pipes in RUN fail the build when any segment fails (hadolint DL4006).
+# Per-stage: SHELL does not survive stage boundaries.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG TARGETARCH
 ARG RTK_VERSION
 # slim rust ships no curl/ca-certs; arm64 cargo build needs build-essential
@@ -40,6 +43,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
     fi
 
 FROM node:24-bookworm-slim
+# Pipes in RUN fail the build when any segment fails (hadolint DL4006).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Version pins. Renovate-bumped; SHA256s fetched at build time below.
 ARG TARGETARCH
