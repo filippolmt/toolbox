@@ -25,9 +25,16 @@ if glab auth status >/dev/null 2>&1; then
         # serialize /etc/gitconfig writes so a future script touching the
         # system gitconfig can't race git's own <file>.lock. Lock file is
         # NOT /etc/gitconfig.lock (that name is git's internal lockfile).
+        #
+        # Absolute glab path: `brew tap` clones run git under Homebrew's
+        # scrubbed PATH (/usr/bin:/bin:…, no /usr/local/bin), so a bare
+        # `!glab …` helper silently fails to exec and git falls back to a
+        # terminal prompt that fatals in non-interactive clones. Resolving
+        # the binary here keeps the helper working under any caller PATH.
+        _glab_bin=$(command -v glab)
         for _glab_host in ${_glab_hosts}; do
             sudo flock /tmp/toolbox-gitconfig.lock \
-                git config --system "credential.https://${_glab_host}.helper" '!glab auth git-credential' || \
+                git config --system "credential.https://${_glab_host}.helper" "!${_glab_bin} auth git-credential" || \
                 echo "toolbox: glab credential helper for ${_glab_host} failed (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
         done
     else
