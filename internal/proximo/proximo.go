@@ -15,7 +15,8 @@
 //     https://<host> reaches the host where Traefik listens instead of the
 //     container's own loopback. host-gateway routing bypasses Docker networks
 //     entirely — no shared network or upstream proximo change is required.
-//   - CA trust: proximo's local CA (one file under the user config dir) is
+//   - CA trust: proximo's local CA (path queried from proximo itself, with a
+//     ~/.proximo state-home fallback — see CAPath) is
 //     bind-mounted read-only at CATarget. entrypoint.sh then establishes
 //     seamless trust for every in-container HTTPS client: update-ca-certificates
 //     (curl / git / wget / python ssl+urllib) and a certutil import into
@@ -26,15 +27,19 @@
 //
 // The label discovery — the only Docker-dependent step — lives in
 // internal/container, which already owns the Docker client; ExtraHosts here is
-// the pure parser it feeds. Everything in this package is pure so it stays
+// the pure parser it feeds. Everything else in this package is host-local
+// (fs probes plus one optional `proximo config ca-path` exec) so it stays
 // unit-testable and keeps the Docker SDK out of the mount/session planners.
 package proximo
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/filippolmt/toolbox/internal/config"
 )
@@ -62,11 +67,12 @@ const (
 )
 
 // Enabled reports whether proximo integration is active for cfg. Tri-state on
-// cfg.Proximo: an explicit true/false wins; when unset (nil) it auto-detects,
-// enabling the integration iff proximo is set up on this host — i.e. its root
-// CA exists (written by `proximo install`). So a host with proximo installed
-// gets `.test` reachability in every shell with no per-repo opt-in, while a
-// host without proximo pays nothing.
+// cfg.Proximo: an explicit true/false wins (and skips the CA probe entirely);
+// when unset (nil) it auto-detects, enabling the integration iff proximo is
+// set up on this host — i.e. its root CA exists (written by `proximo
+// install`). So a host with proximo installed gets `.test` reachability in
+// every shell with no per-repo opt-in, while a host without proximo pays
+// nothing.
 func Enabled(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
@@ -74,29 +80,56 @@ func Enabled(cfg *config.Config) bool {
 	if cfg.Proximo != nil {
 		return *cfg.Proximo
 	}
-	return caExists()
+	_, _, exists := caStatus()
+	return exists
 }
 
-// CAPath returns proximo's root-CA file on the host, mirroring proximo's own
-// layout: <user-config-dir>/proximo/tls/ca.pem. ok is false when the user
-// config dir cannot be resolved.
+// caPathQueryTimeout bounds the `proximo config ca-path` exec so a
+// misbehaving binary can never hang `toolbox shell` startup. The query is
+// documented side-effect free (no Docker, no sudo), so 2s is generous.
+const caPathQueryTimeout = 2 * time.Second
+
+// CAPath returns proximo's root-CA file on the host. It asks proximo itself
+// first — `proximo config ca-path` (the stable contract from
+// filippolmt/proximo#20) always prints the path, even before `proximo
+// install` writes the CA — so toolbox survives future layout moves without a
+// code change. When the binary is absent or predates the subcommand, it falls
+// back to the known layout ~/.proximo/tls/ca.pem (proximo's state home since
+// v0.3.0, filippolmt/proximo#17). ok is false when neither resolves.
 func CAPath() (path string, ok bool) {
-	dir, err := os.UserConfigDir()
-	if err != nil || dir == "" {
+	ctx, cancel := context.WithTimeout(context.Background(), caPathQueryTimeout)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "proximo", "config", "ca-path").Output(); err == nil {
+		// IsAbs guards against junk stdout from an older proximo that exits 0
+		// on unknown subcommands (none known to, but the contract is cheap).
+		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
+			return p, true
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
 		return "", false
 	}
-	return filepath.Join(dir, "proximo", "tls", "ca.pem"), true
+	return filepath.Join(home, ".proximo", "tls", "ca.pem"), true
 }
 
-// caExists reports whether proximo's root CA is present on the host — the
-// auto-detect signal for Enabled and the existence gate for Env.
-func caExists() bool {
-	path, ok := CAPath()
+// caStatus resolves the CA path and probes its existence in one shot — the
+// single internal seam that pays the CAPath query (a subprocess spawn), so
+// every public entry point execs `proximo config ca-path` at most once.
+func caStatus() (path string, ok, exists bool) {
+	path, ok = CAPath()
 	if !ok {
-		return false
+		return "", false, false
 	}
 	_, err := os.Stat(path)
-	return err == nil
+	return path, true, err == nil
+}
+
+// forcedOff reports an explicit `proximo: false` — the one tri-state arm that
+// must short-circuit before the CA probe, so an opted-out config never pays
+// the subprocess spawn.
+func forcedOff(cfg *config.Config) bool {
+	return cfg == nil || (cfg.Proximo != nil && !*cfg.Proximo)
 }
 
 // CAMount returns the read-only bind for proximo's CA when integration is
@@ -104,11 +137,13 @@ func caExists() bool {
 // warning when the source file is absent (proximo not installed), so callers
 // need not pre-check existence.
 func CAMount(cfg *config.Config) (config.Mount, bool) {
-	if !Enabled(cfg) {
+	if forcedOff(cfg) {
 		return config.Mount{}, false
 	}
-	path, ok := CAPath()
-	if !ok {
+	path, ok, exists := caStatus()
+	// Explicit true keeps the mount even without the CA file (soft-skip
+	// downstream); auto (nil) requires the CA — same gate as Enabled.
+	if !ok || (cfg.Proximo == nil && !exists) {
 		return config.Mount{}, false
 	}
 	return config.Mount{
@@ -122,9 +157,13 @@ func CAMount(cfg *config.Config) (config.Mount, bool) {
 // Env returns the environment entries that make in-container tooling trust
 // proximo's CA. Emitted only when integration is enabled AND the CA file
 // exists on the host, so a missing CA never leaves Node pointing at an absent
-// NODE_EXTRA_CA_CERTS file.
+// NODE_EXTRA_CA_CERTS file. (With the CA present, auto and explicit true
+// coincide, so existence is the only probe needed past the forced-off gate.)
 func Env(cfg *config.Config) []string {
-	if !Enabled(cfg) || !caExists() {
+	if forcedOff(cfg) {
+		return nil
+	}
+	if _, ok, exists := caStatus(); !ok || !exists {
 		return nil
 	}
 	return []string{

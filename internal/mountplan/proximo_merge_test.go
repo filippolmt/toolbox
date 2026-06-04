@@ -10,15 +10,16 @@ import (
 func boolPtr(b bool) *bool { return &b }
 
 // TestMergeInjectsProximoCAWhenEnabled asserts the proximo CA bind is appended
-// (read-only, sourced from <config-dir>/proximo/tls/ca.pem) when proximo is
+// (read-only, sourced from ~/.proximo/tls/ca.pem) when proximo is
 // enabled, and absent when force-disabled. The mount is injected in Merge —
 // not in defaults() — so the canonical default set (and the smoke-test
 // bijection) stays unchanged. Force on/off is used (not auto) so the assertion
 // is independent of whether the build host happens to have proximo installed.
 func TestMergeInjectsProximoCAWhenEnabled(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	wantSource := filepath.Join(dir, "proximo", "tls", "ca.pem")
+	t.Setenv("HOME", dir)
+	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
+	wantSource := filepath.Join(dir, ".proximo", "tls", "ca.pem")
 
 	merged, err := Merge(&config.Config{Proximo: boolPtr(true)})
 	if err != nil {
