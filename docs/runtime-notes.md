@@ -117,7 +117,7 @@ Eligible CLIs and their host paths (catalog entries with non-nil `HostAuthMount`
 | `codex`  | `~/.codex`                | `/home/toolbox/.codex`               |
 | `atuin`  | `~/.local/share/atuin`    | `/home/toolbox/.local/share/atuin`   |
 
-Validation in `config.Plan` rejects unknown keys and keys whose catalog entry lacks `HostAuthMount`. The mount is always read-only — the container can read host credentials but cannot mutate them; a misbehaving CLI inside the container cannot corrupt the host's `~/.config/gh/hosts.yml`. Login flows that need to write (e.g. `gh auth login`) must run on the host.
+Validation in `config.Plan` rejects unknown keys and keys whose catalog entry lacks `HostAuthMount`. (An earlier revision of this note claimed the mount is read-only — it is not; see the read-write paragraph below for the rationale.)
 
 Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.toolbox/<key>` mount is dropped (not supplemented) — two mounts at the same container target would shadow unpredictably. User `mounts:` patches keying on the same `name:` still compose on top of the inherited mount.
 
@@ -126,6 +126,8 @@ Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.to
 Pre-stat check: `inherit_host_auth: [<key>]` requires the host source path to exist at config-load time. If it does not, `toolbox shell` fails with a clear error pointing at the missing path — silent soft-skip would have left the container with no credential mount at all (worse than failing loud).
 
 Read-write inheritance: inherited mounts are read-write. Most listed CLIs refresh tokens or update session state during normal use (atuin appends history, claude/codex write session state, gh/docker rotate OAuth refresh tokens) — RO would EROFS those writes. You opt in explicitly: your host credential dir is now writable by container processes.
+
+macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keychain by default — `~/.config/gh/hosts.yml` carries the account but no `oauth_token`, so inheriting that dir mounts a token-less config and `gh auth status` inside the container reports the token invalid. Workaround: re-login on the host with `gh auth login --insecure-storage` (persists the token into `hosts.yml`), or skip inheritance for gh and log in once inside the container (isolated `~/.toolbox/gh` survives recreates). The same class of issue applies to any CLI that delegates secret storage to an OS keychain.
 
 ## Container lifecycle
 
