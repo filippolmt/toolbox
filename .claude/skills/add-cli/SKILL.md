@@ -38,39 +38,48 @@ The half-installed case is real and common — a contributor adds a binary witho
 
 ### 1. Research upstream
 
-Pick the install method by matching the closest analog already in the Dockerfile. Don't invent a new pattern — every existing layer encodes a hard-won fix (GLIBC mismatches, missing checksum files, pip vs apt vs npm).
+Pick the install method by matching the closest analog already in the Dockerfile. Don't invent a new pattern — every existing stage/layer encodes a hard-won fix (GLIBC mismatches, missing checksum files, pip vs apt vs npm).
 
 | Source | Closest analog | Pattern |
 |--------|----------------|---------|
-| GitHub release, single static binary, sha256sums file published | Layer 5 (`gh`) | `curl tarball` + `curl checksums.txt` + `grep \| sha256sum -c -` |
-| GitHub release, MUSL/GNU split | Layer 6a (`gws`), Layer 20c (`zoxide`) | Pick MUSL — base image is bookworm GLIBC 2.36; `-gnu` builds targeting GLIBC ≥2.39 fail at runtime |
-| GitHub release, no checksum file | Layer 10a (`bat`), Layer 20c (`zoxide`) | Pin SHA256 per-arch as ARG literals; document accepted risk; Renovate bumps version, maintainer refreshes hashes |
-| npm package | Layer 11 (`pnpm`), Layer 13 (`claude`), Layer 13b (`codex`) | `npm install -g <pkg>@${VERSION}`; install runs as root, runtime user can't bump → disable auto-update if upstream supports it |
-| Python package | Layer 16 (`oci`) | `pip install --break-system-packages <pkg>==${VERSION}` (PEP 668 opt-out is intentional, single-purpose container) |
-| Install script | Layer 12 (`uv`) | `curl -fsSL <script> \| sh` — only when upstream provides no archive |
-| GCloud-style bundle | Layer 14 (`gcloud`) | Distro tarball, accepted-risk no-checksum (T-01-08) |
-| Debian package via apt | Layer 1 base | Last resort — pulls the world. Prefer a static binary unless the tool genuinely needs system integration |
-| Vendor CDN zip (no GitHub releases) | proposed `op` pattern | `curl` zip + per-arch SHA256 ARG literal + `python3 -m zipfile -e` for extraction (python3 is in Layer 1) |
+| GitHub release, single static binary, sha256sums file published | `fetch-gh` stage | `curl tarball` + `curl checksums.txt` + `grep \| sha256sum -c -` |
+| GitHub release, MUSL/GNU split | `fetch-gws`, `fetch-zoxide` stages | Pick MUSL — base image is bookworm GLIBC 2.36; `-gnu` builds targeting GLIBC ≥2.39 fail at runtime |
+| GitHub release, no checksum file | `fetch-bat`, `fetch-zoxide` stages | Pin SHA256 per-arch as ARG literals; document accepted risk; Renovate bumps version, maintainer refreshes hashes |
+| npm package | final-stage `pnpm` / `claude` / `codex` layers | `npm install -g <pkg>@${VERSION}`; install runs as root, runtime user can't bump → disable auto-update if upstream supports it |
+| Python package | final-stage `oci` layer | `pip install --break-system-packages <pkg>==${VERSION}` (PEP 668 opt-out is intentional, single-purpose container) |
+| Install script | (none currently) | `curl -fsSL <script> \| sh` — only when upstream provides no archive |
+| GCloud-style bundle | `fetch-gcloud` stage | Distro tarball, accepted-risk no-checksum (T-01-08); relocatable SDKs run from `/out` in-stage |
+| Debian package via apt | final-stage base apt / `azure-cli` layers | Last resort — pulls the world. Prefer a static binary unless the tool genuinely needs system integration |
+| Vendor CDN zip (no GitHub releases) | `fetch-bun` stage | `curl` zip + SHA256 check + `unzip` installed in-stage (fetch-stage helpers never reach the final image) |
 
 For GitHub releases use `gh release view --json tagName,assets -R <owner>/<repo>` to get the latest tag without scraping HTML. Verify the asset naming pattern across architectures (`linux_amd64` vs `linux-x86_64` vs `x86_64-unknown-linux-musl`) — this is the #1 source of layer bugs.
 
-**Reuse what's already in the base image** before adding apt deps. Layer 1 already provides `python3`, `curl`, `tar`, `git`, `make`, plus the standard coreutils. If you need to extract a zip, `python3 -m zipfile -e <zip> <dest>` works without `unzip`. If you need to parse JSON, jq is a later layer so use `python3 -c` in earlier layers. Pulling in `apt-get install -y unzip` for a one-shot extraction adds image size and an apt-cache cleanup step you'll forget — it's almost never the right call.
+**Helper deps cost nothing in a fetch stage.** `fetch-base` provides `curl`, `git`, `tar`, CA certs and coreutils; anything extra a fetch stage apt-installs (`unzip`, `jq`, `python3`) stays out of the final image by construction. The frugality rule only applies to **final-stage** layers: there, reuse what the base apt layer already provides (`python3 -m zipfile -e` instead of installing `unzip`, `python3 -c` instead of jq) — final-stage apt installs do land in the image.
 
 ### 2. Edit the Dockerfile
 
-Add the version pin near the top with the other `ARG <TOOL>_VERSION=...` lines. Keep the existing groupings intact.
+Add the version pin in the global `ARG` block at the top (before the first `FROM` — global ARGs are re-declared bare inside the consuming stage). Keep the existing groupings intact.
 
-Add the install layer in the right location: forge clients near gh/glab/gws (Layer 5/6/6a), cloud SDKs near gcloud/azure/oci (Layer 14+), shell utilities near jq/yq/bat (Layer 9/10/10a). Numbering is non-strict — `Layer 6a` shows that. Layers install unconditionally (no opt-out guard). New layer comments use this template:
+Where the install goes depends on the source type — see [build-layout](../../../docs/runtime-notes.md#build-layout-parallel-fetch-stages--frequency-ordered-tail):
+
+- **Static binary / tarball / relocatable bundle** → new `FROM fetch-base AS fetch-<tool>` stage next to its analogs, artefacts under `/out` mirroring the final filesystem, plus one `COPY --link --from=fetch-<tool> /out/ /` line in the final stage's COPY block. Fetch stages run in parallel and re-run independently on version bumps.
+- **npm / pip / apt installs** (need the final stage's node/python/dpkg) → final-stage `RUN` layer, **placed by Renovate bump frequency**: rarely-bumped near the top of the RUN tail (azure/oci area), frequently-bumped near the end (claude/graphify area, before the completions precompute). Don't append blindly at the end of the file.
+
+Stages install unconditionally (no opt-out guard). New fetch stages use this template:
 
 ```dockerfile
-# -- Layer Nx: <tool> (one-line purpose) --------------------------------------
+# <tool> (one-line purpose).
 # <Why this install method, what's special about it, any accepted risk>
+FROM fetch-base AS fetch-<tool>
+ARG TARGETARCH
+ARG <TOOL>_VERSION
 RUN set -eux; \
-    <install commands>; \
-    <tool> --version
+    <download + checksum verify>; \
+    <extract into /out/usr/local/bin>; \
+    /out/usr/local/bin/<tool> --version
 ```
 
-Always run `<tool> --version` (or equivalent) at the end of the layer — it's the only thing that catches a successful install with a broken binary (wrong arch, mismatched GLIBC, etc.).
+Always run `<tool> --version` (or equivalent) at the end of the stage/layer — it's the only thing that catches a successful install with a broken binary (wrong arch, mismatched GLIBC, etc.) before the smoke test.
 
 Spell the tool consistently: the catalog `Key` must appear as a whole-word token somewhere in the Dockerfile (the install layer / ARG naturally provides it). That's what `TestCatalogDockerfilePresence` checks — e.g. the underscore key `playwright_cli` is allowed to match the token `playwright-cli`, but a typo'd or missing token fails the build.
 

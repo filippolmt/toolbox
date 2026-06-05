@@ -16,8 +16,11 @@ permissions:
   pull-requests: read
 
 env:
-  # Dedicated BuildKit registry cache, separate from the image tags.
-  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache
+  # BuildKit registry cache published by the main-branch publish workflow
+  # (docker-publish.yml, cache-to mode=max). PR builds read it so a cold GHA
+  # cache still seeds from main instead of rebuilding every stage. The bare
+  # `:buildcache` tag previously referenced here is written by nothing.
+  CACHE_REF: ghcr.io/${{ github.repository }}:buildcache-main
 
 # Cancel superseded builds on the same ref to free runner minutes during
 # iterative PR pushes. Image builds are the most expensive job in the repo
@@ -108,7 +111,11 @@ jobs:
           cache-from: |
             type=registry,ref=${{ env.CACHE_REF }}
             type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+          # mode=min: final-image layers only. Intermediate fetch-stage layers
+          # live in the registry cache (CACHE_REF, mode=max) — writing them
+          # here too would burn the 10 GB/repo GHA quota (2 multi-GB scopes
+          # per active PR) for data the registry already serves.
+          cache-to: type=gha,mode=min,scope=${{ matrix.variant }}
 
       - name: Smoke test
         if: matrix.load

@@ -186,6 +186,8 @@ check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
 check_optional  "codex"     codex    codex --version
 check_optional  "pyright"   pyright-langserver pyright --version
+check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
+check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
 check_optional  "uv"        uv       uv --version

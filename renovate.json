@@ -171,6 +171,20 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+TYPESCRIPT_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "typescript"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+TYPESCRIPT_LANGUAGE_SERVER_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "typescript-language-server"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GCLOUD_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "docker",
       "packageNameTemplate": "google/cloud-sdk",

@@ -7,6 +7,12 @@
 IMAGE := ghcr.io/filippolmt/toolbox
 TAG   := latest
 FULL  := $(IMAGE):$(TAG)
+# BuildKit registry cache published by CI (docker-publish.yml, mode=max,
+# multi-arch — includes the arm64 rtk cargo build). Seeding from it makes the
+# first local build (or a rebuild after an upstream bump) mostly a layer pull.
+# Cache-import failures are non-fatal warnings, so offline builds still work.
+# Override: `make build CACHE_REF=...`.
+CACHE_REF := $(IMAGE):buildcache-main
 
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
@@ -28,7 +34,9 @@ GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(G
 .PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
-	docker build -f internal/build/assets/Dockerfile -t $(FULL) internal/build/assets
+	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
+	  --cache-from type=registry,ref=$(CACHE_REF) \
+	  --load internal/build/assets
 
 test: build ## Build the image and run the smoke test
 	internal/build/assets/smoke-test.sh $(FULL)
