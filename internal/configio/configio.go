@@ -140,6 +140,24 @@ func EnsureChildMap(parent *yaml.Node, key string) *yaml.Node {
 		})
 }
 
+// ChildValue returns the value node paired with key on parent, or nil when
+// parent is not a mapping or the key is absent. Read-only sibling of
+// EnsureChildMap for callers that must inspect a value's shape before
+// deciding whether to mutate it (e.g. cmd/sdd refusing to clobber an
+// object-form sdd.<key> entry with the bool shorthand).
+func ChildValue(parent *yaml.Node, key string) *yaml.Node {
+	if parent == nil || parent.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		k := parent.Content[i]
+		if k.Kind == yaml.ScalarNode && k.Value == key {
+			return parent.Content[i+1]
+		}
+	}
+	return nil
+}
+
 // SetMapValue upserts key=value on parent, replacing an existing scalar
 // value in place (preserving sibling key order and comments) or appending
 // a fresh key/value pair to the end.

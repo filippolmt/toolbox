@@ -204,7 +204,7 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.SDD = map[string]bool{"gsd": true}
+	cfg.SDD = map[string]config.SDDSkill{"gsd": {Enabled: true}}
 
 	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
@@ -218,7 +218,9 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 		{"TOOLBOX_SDD_GSD_PKG", "@opengsd/gsd-core"},
 		{"TOOLBOX_SDD_GSD_VERSION", ""},
 		{"TOOLBOX_SDD_GSD_BIN", "gsd-core"},
-		{"TOOLBOX_SDD_GSD_STEPS", "--claude --local;--codex --local"},
+		// Claude step is the workspace-local skill-form layout (#317):
+		// hyphen-routable /gsd-<cmd> skills under ./.claude/skills/.
+		{"TOOLBOX_SDD_GSD_STEPS", "--claude --global --config-dir ./.claude;--codex --local"},
 		{"TOOLBOX_SDD_GSD_MARKER", ""},
 	} {
 		got, ok := envByKey[want.key]
@@ -248,7 +250,7 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.SDD = map[string]bool{"bmad": true}
+	cfg.SDD = map[string]config.SDDSkill{"bmad": {Enabled: true}}
 
 	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
@@ -272,7 +274,7 @@ func TestPlanSDDEnvOpenSpec(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.SDD = map[string]bool{"openspec": true}
+	cfg.SDD = map[string]config.SDDSkill{"openspec": {Enabled: true}}
 	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -295,7 +297,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	}
 
 	cfg := testConfig()
-	cfg.SDD = map[string]bool{"gds": true, "gsd": false}
+	cfg.SDD = map[string]config.SDDSkill{"gds": {Enabled: true}, "gsd": {Enabled: false}}
 
 	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
 	if err != nil {
@@ -306,6 +308,38 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 		if strings.HasPrefix(e, "TOOLBOX_SDD_") {
 			t.Errorf("expected no TOOLBOX_SDD_* env when only unknown/false flags present, got %q", e)
 		}
+	}
+}
+
+// TestPlanSDDEnvStepsOverride locks in the per-skill steps override (#317):
+// a .toolbox.yaml steps: list replaces the registry's InstallSteps wholesale
+// in the emitted STEPS env var, while the rest of the quintet stays
+// registry-sourced.
+func TestPlanSDDEnvStepsOverride(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.SDD = map[string]config.SDDSkill{"gsd": {
+		Enabled: true,
+		Steps:   [][]string{{"--claude", "--local"}},
+	}}
+
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	envByKey := indexEnv(plan.Env)
+	if got, want := envByKey["TOOLBOX_SDD_GSD_STEPS"], "--claude --local"; got != want {
+		t.Errorf("TOOLBOX_SDD_GSD_STEPS = %q, want override %q", got, want)
+	}
+	if got := envByKey["TOOLBOX_SDD_GSD_PKG"]; got != "@opengsd/gsd-core" {
+		t.Errorf("TOOLBOX_SDD_GSD_PKG = %q, want registry package", got)
 	}
 }
 

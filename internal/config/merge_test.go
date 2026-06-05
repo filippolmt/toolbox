@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,7 @@ func TestMergeScenarios(t *testing.T) {
 		MountsRoot      string
 		InfraPath       string
 		InheritHostAuth []string
+		SDD             map[string]SDDSkill
 		ErrSubstr       string
 	}
 	tests := []struct {
@@ -99,6 +101,65 @@ func TestMergeScenarios(t *testing.T) {
 			project: "tools:\n  gcloud: false\n",
 			want:    want{Shell: "zsh"},
 		},
+		{
+			// Bool shorthand decodes to {Enabled} with nil Steps (registry
+			// defaults apply downstream in sessionplan).
+			name:    "sdd_bool_shorthand",
+			project: "sdd:\n  gsd: true\n  bmad: false\n",
+			want: want{Shell: "zsh", SDD: map[string]SDDSkill{
+				"gsd":  {Enabled: true},
+				"bmad": {Enabled: false},
+			}},
+		},
+		{
+			// Object form implies enabled: true; steps replace the registry
+			// defaults wholesale (#317).
+			name:    "sdd_steps_override_implies_enabled",
+			project: "sdd:\n  gsd:\n    steps:\n      - [\"--claude\", \"--global\", \"--config-dir\", \"./.claude\"]\n",
+			want: want{Shell: "zsh", SDD: map[string]SDDSkill{
+				"gsd": {Enabled: true, Steps: [][]string{
+					{"--claude", "--global", "--config-dir", "./.claude"},
+				}},
+			}},
+		},
+		{
+			name:    "sdd_steps_with_explicit_enabled_false",
+			project: "sdd:\n  gsd:\n    enabled: false\n    steps:\n      - [\"--claude\", \"--local\"]\n",
+			want: want{Shell: "zsh", SDD: map[string]SDDSkill{
+				"gsd": {Enabled: false, Steps: [][]string{{"--claude", "--local"}}},
+			}},
+		},
+		{
+			// Unknown key with bool shorthand stays lenient (silently dropped
+			// by sessionplan) — only the steps override is strict.
+			name:    "sdd_unknown_key_bool_tolerated",
+			project: "sdd:\n  gds: true\n",
+			want: want{Shell: "zsh", SDD: map[string]SDDSkill{
+				"gds": {Enabled: true},
+			}},
+		},
+		{
+			name:    "sdd_unknown_key_with_steps_rejected",
+			project: "sdd:\n  gds:\n    steps:\n      - [\"--claude\", \"--local\"]\n",
+			want:    want{ErrSubstr: "unknown integration"},
+		},
+		{
+			name:    "sdd_empty_steps_rejected",
+			project: "sdd:\n  gsd:\n    steps: []\n",
+			want:    want{ErrSubstr: "at least one step"},
+		},
+		{
+			// Token with whitespace would shift arg boundaries when the bash
+			// bootstrap re-splits the encoded steps string.
+			name:    "sdd_step_token_with_space_rejected",
+			project: "sdd:\n  gsd:\n    steps:\n      - [\"--config-dir\", \"./my dir\"]\n",
+			want:    want{ErrSubstr: "invalid token"},
+		},
+		{
+			name:    "sdd_step_token_with_separator_rejected",
+			project: "sdd:\n  gsd:\n    steps:\n      - [\"--claude;--codex\"]\n",
+			want:    want{ErrSubstr: "invalid token"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -127,6 +188,9 @@ func TestMergeScenarios(t *testing.T) {
 				if cfg.Shells["infra"].Path != tc.want.InfraPath {
 					t.Errorf("Shells[infra].Path = %q, want %q", cfg.Shells["infra"].Path, tc.want.InfraPath)
 				}
+			}
+			if tc.want.SDD != nil && !reflect.DeepEqual(cfg.SDD, tc.want.SDD) {
+				t.Errorf("SDD = %#v, want %#v", cfg.SDD, tc.want.SDD)
 			}
 			if len(tc.want.InheritHostAuth) > 0 {
 				if len(cfg.InheritHostAuth) != len(tc.want.InheritHostAuth) {

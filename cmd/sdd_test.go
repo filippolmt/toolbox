@@ -282,6 +282,35 @@ func TestSDDInitFlipsFalseToTrue(t *testing.T) {
 	}
 }
 
+// TestSDDInitPreservesStepsOverride asserts that re-running init on a key
+// already carrying an object-form steps: override (#317) leaves the block
+// untouched instead of clobbering it back to the bool shorthand.
+func TestSDDInitPreservesStepsOverride(t *testing.T) {
+	dir := chdirTemp(t)
+
+	original := "sdd:\n  gsd:\n    steps:\n      - [\"--claude\", \"--local\"]\n"
+	yamlPath := filepath.Join(dir, ".toolbox.yaml")
+	if err := os.WriteFile(yamlPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed yaml: %v", err)
+	}
+
+	cmd := sddInitCmd
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
+		t.Fatalf("runSDDInit gsd: %v", err)
+	}
+
+	body, _ := os.ReadFile(yamlPath)
+	got := string(body)
+	if !strings.Contains(got, "steps:") {
+		t.Errorf("steps override should survive sdd init, got:\n%s", got)
+	}
+	if strings.Contains(got, "gsd: true") {
+		t.Errorf("object form must not be replaced by bool shorthand:\n%s", got)
+	}
+}
+
 // TestSDDInitPreservesExistingGitignoreEntries asserts that unrelated
 // .gitignore lines stay intact when the per-skill fenced block is
 // appended.
