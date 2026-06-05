@@ -4,6 +4,15 @@ Deep gotchas pulled out of `CLAUDE.md` to keep the AI-loaded context lean. Refer
 
 ## Image build
 
+### Build layout: parallel fetch stages + frequency-ordered tail
+
+The Dockerfile is structured for minimal rebuild time, not for linear readability:
+
+- **Every static-binary tool lives in its own `fetch-<tool>` stage** (parent: `fetch-base`, a `debian:bookworm-slim` with curl/CA/git). Artefacts land under `/out` mirroring the final filesystem; the final stage imports them with `COPY --link --from=fetch-<tool> /out/ /`. Consequences: cold builds download all tools in parallel; a Renovate bump of one tool re-runs only its stage + COPY (never the tail, `--link` layers are independent of parent changes); helper packages a fetch stage installs (unzip, python3, jq) never reach the final image.
+- **Final-stage RUN layers (apt/pip/npm — can't fan out) are ordered rare→frequent** by measured Renovate cadence (≈6-month window: claude-code and graphifyy ~25 bumps each, pnpm 11, codex/gcloud/oci 6, playwright 2). Heavy+rare first (azure, oci, playwright install-deps, zsh), frequent npm/pip CLIs last, so the weekly claude-code bump rebuilds only a few cheap npm layers instead of gcloud+go+azure+graphify (~10 min → ~2-3 min). Re-measure with `git log --since=… --pretty=%s -- internal/build/assets/Dockerfile` before reshuffling.
+- **`make build` seeds from the CI registry cache** (`ghcr.io/filippolmt/toolbox:buildcache-main`, written by `docker-publish.yml` with `mode=max`, multi-arch — includes the arm64 rtk cargo build). First build on a fresh machine ≈ a layer pull. Cache-import failures are warnings, so offline builds still work.
+- Version checks (`<tool> --version`) run **inside the fetch stage** — they catch wrong-arch / GLIBC-mismatch before the smoke test, same as the old in-layer checks.
+
 ### Host UID mapping
 
 The CLI runs the container with `--user $(id -u):$(id -g)`. Because the runtime UID rarely matches the baked `toolbox` user (UID 1000), `/home/toolbox` is made world-writable in the image. Don't revert to a fixed UID without understanding why — host file ownership would invert and writes inside `~/.toolbox/` would fail for anyone whose host UID isn't 1000.
@@ -14,7 +23,7 @@ The base apt layer installs `sudo`, and the user-setup layer drops `/etc/sudoers
 
 ### Docker CLI checksum
 
-Layer 7 of `internal/build/assets/Dockerfile` installs the static Docker CLI binary without a SHA256 verification step because Docker doesn't publish `.sha256` files for those releases. Version pin + HTTPS is the only guard. Tracked as accepted risk T-01-08.
+The `fetch-docker` stage of `internal/build/assets/Dockerfile` installs the static Docker CLI binary without a SHA256 verification step because Docker doesn't publish `.sha256` files for those releases. Version pin + HTTPS is the only guard. Tracked as accepted risk T-01-08.
 
 ### Tool version pinning
 
@@ -28,9 +37,9 @@ There is no per-tool opt-out: every CLI is installed unconditionally. The `ARG I
 
 ### rtk arm64 is built from source
 
-Dockerfile `rtk-builder` stage + Layer 13c. Upstream only ships `aarch64-unknown-linux-gnu` linked against GLIBC 2.39, but the base image (`node:24-bookworm-slim`) ships GLIBC 2.36 — the prebuilt binary aborts with `'GLIBC_2.39' not found`. There is no `aarch64-unknown-linux-musl` release.
+Dockerfile `rtk-builder` stage + final-stage `COPY --link`. Upstream only ships `aarch64-unknown-linux-gnu` linked against GLIBC 2.39, but the base image (`node:24-bookworm-slim`) ships GLIBC 2.36 — the prebuilt binary aborts with `'GLIBC_2.39' not found`. There is no `aarch64-unknown-linux-musl` release.
 
-Fix: multi-stage build. A `rust:1-slim-bookworm` stage runs `cargo install --git rtk-ai/rtk --tag v${RTK_VERSION} --locked` against the bookworm sysroot (so the resulting binary ABI-matches the runtime), and Layer 13c COPYs it into place. The same stage handles the amd64 tarball download too, so Layer 13c is a single COPY + version check.
+Fix: multi-stage build. A `rust:1-slim-bookworm` stage runs `cargo install --git rtk-ai/rtk --tag v${RTK_VERSION} --locked` against the bookworm sysroot (so the resulting binary ABI-matches the runtime), version-checks it in-stage, and the final stage imports it with a single `COPY --link --chmod=0755`. The same stage handles the amd64 tarball download too.
 
 The base image can't move to Debian trixie yet because the Microsoft Azure CLI apt repo currently has no trixie suite.
 
@@ -158,7 +167,7 @@ toolbox shell -B -p 13387:13387   # shopify store auth
 toolbox shell -B -p 8976:8976     # wrangler login
 ```
 
-**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile Layer 13c) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs. `cf login` recipe (no `-B` needed):
+**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs. `cf login` recipe (no `-B` needed):
 
 ```
 toolbox shell -p 8877-8886:8877-8886   # cf login (sed-patched, range syntax via nat.ParsePortSpec)
@@ -182,7 +191,7 @@ Limitations:
 - IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
 - `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
-- `socat` is part of the always-on Layer 1 apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
+- `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
 
 See also: [`port-bindings`](#port-bindings-are-fixed-at-container-creation), [`image-build`](#image-build) (socat install layer), [`browser-bridge`](#browser-bridge) (inverse direction — container→host browser opens).
 

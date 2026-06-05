@@ -79,6 +79,8 @@ var Entries = []Entry{
 	{Key: "rtk", InitScript: "10-rtk.sh"},
 	{Key: "starship"},
 	{Key: "tofu"},
+	{Key: "typescript"},
+	{Key: "typescript_language_server"},
 	{Key: "uv"},
 	{Key: "wrangler"},
 	{Key: "yq"},

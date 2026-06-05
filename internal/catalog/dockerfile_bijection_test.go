@@ -52,3 +52,58 @@ func TestCatalogDockerfilePresence(t *testing.T) {
 		t.Errorf("catalog entry %q has no token in the Dockerfile — add an install layer or remove the entry", k)
 	}
 }
+
+// TestFetchStageCopyBijection asserts every `FROM fetch-base AS fetch-<x>`
+// stage in the embedded Dockerfile has a matching `COPY --from=fetch-<x>` in
+// the final stage, and vice versa. An unreferenced stage is silently skipped
+// by BuildKit (the tool never lands in the image, nothing fails at build
+// time); a COPY from a nonexistent stage fails the build but only after a
+// full local rebuild. Same drift class the init.d bijection test covers.
+// fetch-base itself is the shared parent and is exempt.
+func TestFetchStageCopyBijection(t *testing.T) {
+	data, err := fs.ReadFile(build.Assets, build.AssetDir+"/Dockerfile")
+	if err != nil {
+		t.Fatalf("read embedded Dockerfile: %v", err)
+	}
+	dockerfile := string(data)
+
+	stageRE := regexp.MustCompile(`(?im)^FROM\s+\S+\s+AS\s+(fetch-[a-z0-9-]+)\s*$`)
+	copyRE := regexp.MustCompile(`(?im)^COPY\s+(?:--\S+\s+)*--from=(fetch-[a-z0-9-]+)\s`)
+
+	stages := map[string]bool{}
+	for _, m := range stageRE.FindAllStringSubmatch(dockerfile, -1) {
+		if m[1] != "fetch-base" {
+			stages[m[1]] = true
+		}
+	}
+	copies := map[string]bool{}
+	for _, m := range copyRE.FindAllStringSubmatch(dockerfile, -1) {
+		copies[m[1]] = true
+	}
+
+	if len(stages) == 0 {
+		t.Fatal("no fetch-* stages found — regex or Dockerfile structure drifted")
+	}
+
+	var missing []string
+	for s := range stages {
+		if !copies[s] {
+			missing = append(missing, s)
+		}
+	}
+	sort.Strings(missing)
+	for _, s := range missing {
+		t.Errorf("stage %q has no COPY --from=%s in the final stage — the tool never lands in the image", s, s)
+	}
+
+	var orphan []string
+	for c := range copies {
+		if !stages[c] {
+			orphan = append(orphan, c)
+		}
+	}
+	sort.Strings(orphan)
+	for _, c := range orphan {
+		t.Errorf("COPY --from=%q references a stage that does not exist", c)
+	}
+}
