@@ -111,7 +111,11 @@ jobs:
           cache-from: |
             type=registry,ref=${{ env.CACHE_REF }}
             type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+          # mode=min: final-image layers only. Intermediate fetch-stage layers
+          # live in the registry cache (CACHE_REF, mode=max) — writing them
+          # here too would burn the 10 GB/repo GHA quota (2 multi-GB scopes
+          # per active PR) for data the registry already serves.
+          cache-to: type=gha,mode=min,scope=${{ matrix.variant }}
 
       - name: Smoke test
         if: matrix.load
