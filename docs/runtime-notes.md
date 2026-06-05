@@ -138,6 +138,14 @@ Read-write inheritance: inherited mounts are read-write. Most listed CLIs refres
 
 macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keychain by default — `~/.config/gh/hosts.yml` carries the account but no `oauth_token`, so inheriting that dir mounts a token-less config and `gh auth status` inside the container reports the token invalid. Workaround: re-login on the host with `gh auth login --insecure-storage` (persists the token into `hosts.yml`), or skip inheritance for gh and log in once inside the container (isolated `~/.toolbox/gh` survives recreates). The same class of issue applies to any CLI that delegates secret storage to an OS keychain.
 
+### Renovate automerge
+
+The grouped deps PR (`matchPackageNames: ["*"]`) merges daily in the 06:00–09:59 Europe/Rome window, Renovate-side (`platformAutomerge: false`, `automergeType: pr`). Three deliberate choices:
+
+- **Branch updates are overnight-only** (`schedule: ["after 11pm", "before 5am"]` on the rule + top-level `updateNotScheduled: false`). Without this, daytime bumps rebased the PR right before/inside the merge window, docker-ci (~20–40 min) was still pending when Renovate's in-window run checked, and the merge slipped to the next day (~20% of grouped PRs missed the window, manual-merged in the afternoon). Quiet branch by 05:00 → checks green by 06:00 → in-window merge.
+- **`platformAutomerge` stays `false`**: GitHub native auto-merge ignores `automergeSchedule` and merges at any hour — tried and reverted in `3b8d5f7`; morning-only merges are wanted.
+- **docker-ci is NOT a required status check in the `main-protection` ruleset** (required: `lint`, `test`, `renovate-validate`). docker-ci has a `paths:` filter (`internal/build/assets/**`) plus a dynamic matrix; a ruleset-required check that never reports deadlocks every PR that doesn't touch those paths, and rulesets have no conditional required checks. The red-PR gate lives in Renovate instead: default `ignoreTests: false` means Renovate only automerges a fully green PR, and deps PRs always touch the Dockerfile so docker-ci always runs on them. Residual exposure: a human hastily merging a red docker-ci PR by hand — accepted. If that ever bites, the fix is the always-run gate-job pattern (drop the `paths:` filter, add a final `ci-ok` job that succeeds immediately when no relevant path changed, and require that job).
+
 ## Container lifecycle
 
 ### Image selection

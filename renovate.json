@@ -7,6 +7,7 @@
   "timezone": "Europe/Rome",
   "platformAutomerge": false,
   "automergeSchedule": ["* 6-9 * * *"],
+  "updateNotScheduled": false,
   "postUpdateOptions": ["gomodTidy"],
   "vulnerabilityAlerts": {
     "groupName": null,
@@ -15,10 +16,11 @@
   },
   "packageRules": [
     {
-      "description": "Group every update — including major — into a single PR, automerge daily 06:00–09:59 Europe/Rome.",
+      "description": "Group every update — including major — into a single PR. Branch updates only 23:00–05:00 (updateNotScheduled false) so CI is green before the 06:00–09:59 automerge window; platformAutomerge stays false (3b8d5f7: native auto-merge ignores automergeSchedule).",
       "matchPackageNames": ["*"],
       "groupName": "all dependencies",
       "groupSlug": "all",
+      "schedule": ["after 11pm", "before 5am"],
       "automerge": true,
       "automergeType": "pr"
     }
