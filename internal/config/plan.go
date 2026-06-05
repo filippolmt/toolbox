@@ -10,11 +10,14 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v3"
 
@@ -116,9 +119,15 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	vp.AutomaticEnv()
 	warnLegacyToolsEnv()
 
-	// Unmarshal.
+	// Unmarshal. The custom hook handles the sdd.<key> bool shorthand; the
+	// other two re-add viper's defaults, which a custom DecodeHook option
+	// replaces rather than extends.
 	cfg := &Config{}
-	if err := vp.Unmarshal(cfg); err != nil {
+	if err := vp.Unmarshal(cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		sddDecodeHook,
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+	))); err != nil {
 		return nil, err
 	}
 
@@ -242,6 +251,9 @@ func applyValidationTail(cfg *Config) error {
 	if err := validateInheritHostAuth(cfg.InheritHostAuth); err != nil {
 		return err
 	}
+	if err := ValidateSDD(cfg.SDD); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -289,6 +301,41 @@ func fillDefaultsBackstop(cfg *Config) {
 	if cfg.BrowserBridge == nil {
 		v := true
 		cfg.BrowserBridge = &v
+	}
+}
+
+// sddDecodeHook normalises the two YAML shapes of an sdd: map entry onto
+// SDDSkill before mapstructure decodes it:
+//
+//   - bool shorthand (`gsd: true`) → {"enabled": <bool>}
+//   - object form (`gsd: {steps: [...]}`) → "enabled" defaults to true when
+//     absent: writing the object at all is the opt-in, so requiring a
+//     redundant `enabled: true` line would make every steps override two
+//     keys longer for no information.
+//
+// Returning a map (not a built SDDSkill) keeps mapstructure in charge of
+// the field decoding, so steps:-shape errors surface as normal decode
+// errors instead of panics here.
+func sddDecodeHook(from, to reflect.Type, data any) (any, error) {
+	if to != reflect.TypeFor[SDDSkill]() {
+		return data, nil
+	}
+	switch from.Kind() {
+	case reflect.Bool:
+		return map[string]any{"enabled": data}, nil
+	case reflect.Map:
+		m, ok := data.(map[string]any)
+		if !ok {
+			return data, nil
+		}
+		if _, has := m["enabled"]; has {
+			return data, nil
+		}
+		out := maps.Clone(m)
+		out["enabled"] = true
+		return out, nil
+	default:
+		return data, nil
 	}
 }
 

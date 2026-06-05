@@ -2,9 +2,13 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
+
+	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // Config is the top-level toolbox configuration.
@@ -36,7 +40,14 @@ type Config struct {
 	// a per-skill spec env var; entrypoint.sh loops them and runs the
 	// pinned installer in /workspace.
 	//
-	SDD map[string]bool `mapstructure:"sdd"`
+	// Two YAML shapes per key (sddDecodeHook normalises the bool shorthand):
+	//
+	//	sdd:
+	//	  gsd: true            # registry-default install steps
+	//	  gsd:                 # explicit steps override (#317)
+	//	    steps:
+	//	      - ["--claude", "--global", "--config-dir", "./.claude"]
+	SDD map[string]SDDSkill `mapstructure:"sdd"`
 	// BrowserBridge toggles the host-side ~/.toolbox/browser RO mount in the
 	// container and gates the `toolbox browser-bridge install` command. When
 	// false, the mount is omitted and the install command refuses. Default
@@ -67,6 +78,22 @@ type Config struct {
 // NamedShell is a shell workspace entry configured under shells:<name>.
 type NamedShell struct {
 	Path string `mapstructure:"path"`
+}
+
+// SDDSkill is the per-skill value of the sdd: map. The YAML shorthand
+// `sdd.<key>: true|false` decodes to {Enabled: <bool>} via sddDecodeHook;
+// the object form implies Enabled=true and may override the registry's
+// default install steps.
+//
+// Steps mirrors internal/sdd.Skill.InstallSteps: each inner slice is one
+// installer invocation's argv tail. The same token rules apply (validated
+// by ValidateSDDSteps): the host→container encoding joins args with spaces
+// and steps with the sdd.StepSeparator, and the bash bootstrap re-splits
+// on exactly those — a token containing either would silently change the
+// arg boundaries inside the container.
+type SDDSkill struct {
+	Enabled bool       `mapstructure:"enabled"`
+	Steps   [][]string `mapstructure:"steps"`
 }
 
 // Mount represents a host -> container volume bind.
@@ -160,4 +187,50 @@ func ValidateMountsRoot(s string) error {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
+}
+
+// ValidateSDD checks the steps-override entries of the sdd: map. Bool
+// shorthand entries (Steps == nil) are deliberately NOT validated: unknown
+// keys there are silently dropped by sessionplan so a typo never aborts the
+// shell. An explicit steps: override is different — the user is hand-wiring
+// installer argv, so failing loud beats a bootstrap that silently runs the
+// wrong layout.
+//
+// Token rules mirror the internal/sdd.Skill.InstallSteps contract: the
+// host→container encoding joins args with spaces and steps with
+// sdd.StepSeparator, and entrypoint.sh re-splits on exactly those, so a
+// token containing whitespace or the separator would shift arg boundaries
+// inside the container instead of erroring anywhere.
+func ValidateSDD(m map[string]SDDSkill) error {
+	for _, k := range slices.Sorted(maps.Keys(m)) { // deterministic first-error across runs
+		v := m[k]
+		if v.Steps == nil {
+			continue
+		}
+		if _, ok := sdd.Lookup(k); !ok {
+			return fmt.Errorf(
+				"sdd.%s: unknown integration for steps override; supported: %s",
+				k, strings.Join(sdd.Keys(), ", "))
+		}
+		if len(v.Steps) == 0 {
+			return fmt.Errorf(
+				"sdd.%s.steps: must list at least one step (or use `sdd.%s: true` for the registry default)",
+				k, k)
+		}
+		for i, step := range v.Steps {
+			if len(step) == 0 {
+				return fmt.Errorf("sdd.%s.steps[%d]: step must list at least one argument", k, i)
+			}
+			for _, tok := range step {
+				if tok == "" ||
+					strings.Contains(tok, sdd.StepSeparator) ||
+					strings.ContainsFunc(tok, unicode.IsSpace) {
+					return fmt.Errorf(
+						"sdd.%s.steps[%d]: invalid token %q: tokens must be non-empty, whitespace-free, and must not contain %q",
+						k, i, tok, sdd.StepSeparator)
+				}
+			}
+		}
+	}
+	return nil
 }

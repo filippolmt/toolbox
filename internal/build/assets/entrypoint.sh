@@ -139,10 +139,16 @@ if [ -n "${TOOLBOX_SDD_ENABLED:-}" ] && [ -n "${TOOLBOX_SDD_WORKSPACE_HASH:-}" ]
             echo "    Run '${_sdd_bin}' init manually once, commit, then re-shell."
             continue
         fi
+        # Sentinel fingerprint covers version AND steps: a steps override in
+        # .toolbox.yaml (no version bump) must re-run the bootstrap, or the
+        # workspace would keep the previous layout until the next Renovate
+        # bump. Pre-fingerprint sentinels (bare version) mismatch once and
+        # trigger a single idempotent reinstall.
         _sdd_sentinel="$_sdd_state_dir/sdd.${_sdd_key}.${TOOLBOX_SDD_WORKSPACE_HASH}.version"
+        _sdd_want="${_sdd_ver}|${_sdd_steps_raw}"
         _sdd_cur=""
-        read -r _sdd_cur < "$_sdd_sentinel" 2>/dev/null || true
-        if [ "$_sdd_cur" = "$_sdd_ver" ]; then
+        IFS= read -r _sdd_cur < "$_sdd_sentinel" 2>/dev/null || true
+        if [ "$_sdd_cur" = "$_sdd_want" ]; then
             continue
         fi
         _sdd_banner
@@ -168,7 +174,7 @@ if [ -n "${TOOLBOX_SDD_ENABLED:-}" ] && [ -n "${TOOLBOX_SDD_WORKSPACE_HASH:-}" ]
             unset _sdd_steps _sdd_step
         fi
         if [ "$_sdd_failed" = "0" ]; then
-            printf '%s' "$_sdd_ver" > "$_sdd_sentinel"
+            printf '%s' "$_sdd_want" > "$_sdd_sentinel"
             echo "    installed v${_sdd_ver}"
         else
             echo "    install failed (log: $_sdd_log)"
@@ -180,7 +186,7 @@ if [ -n "${TOOLBOX_SDD_ENABLED:-}" ] && [ -n "${TOOLBOX_SDD_WORKSPACE_HASH:-}" ]
     unset _sdd_state_dir _sdd_keys _sdd_key _sdd_upper \
         _sdd_pkg_var _sdd_ver_var _sdd_bin_var _sdd_steps_var _sdd_marker_var \
         _sdd_pkg _sdd_ver _sdd_bin _sdd_steps_raw _sdd_marker \
-        _sdd_sentinel _sdd_cur _sdd_printed_banner
+        _sdd_sentinel _sdd_want _sdd_cur _sdd_printed_banner
 fi
 
 # User-defined startup hooks from ~/.toolbox/startup.d/ on the host.

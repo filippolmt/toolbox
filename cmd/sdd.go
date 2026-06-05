@@ -126,9 +126,17 @@ func runSDDList(cmd *cobra.Command, _ []string) error {
 // user-authored comments and key order survive. Returns (changed, error)
 // where changed reflects whether the rendered byte stream differs from
 // what is on disk (idempotent re-runs report unchanged).
+//
+// An existing object-form entry (`sdd.<key>: {steps: [...]}`) is left
+// untouched: it already means enabled, and SetMapBool would clobber the
+// user's steps override with the bool shorthand.
 func upsertSDDFlag(path, skillKey string) (bool, error) {
 	return configio.UpsertFile(path, func(doc *yaml.Node) {
-		configio.SetMapBool(configio.EnsureChildMap(doc, sddYAMLKey), skillKey, true)
+		sddMap := configio.EnsureChildMap(doc, sddYAMLKey)
+		if v := configio.ChildValue(sddMap, skillKey); v != nil && v.Kind == yaml.MappingNode {
+			return
+		}
+		configio.SetMapBool(sddMap, skillKey, true)
 	})
 }
 

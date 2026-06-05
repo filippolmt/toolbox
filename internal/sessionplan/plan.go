@@ -388,12 +388,12 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, erro
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
+func shellEnv(workspace, workingDir string, sddCfg map[string]config.SDDSkill) []string {
 	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 	}
-	env = append(env, sddEnv(workspace, sddFlags)...)
+	env = append(env, sddEnv(workspace, sddCfg)...)
 	return env
 }
 
@@ -401,15 +401,18 @@ func shellEnv(workspace, workingDir string, sddFlags map[string]bool) []string {
 // by internal/build/assets/entrypoint.sh. Unknown keys are silently dropped
 // so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
 // — the bash bootstrap runs before any user-facing diagnostic surface.
+// (Entries with an explicit steps: override are the exception: config's
+// ValidateSDD rejects unknown keys there at load time, so they never reach
+// this point.)
 //
 // Field-per-env-var encoding (vs a single pipe-packed value) keeps the
 // host/container boundary typed: bash decodes by reading one variable per
 // field with no fragile splitting.
-func sddEnv(workspace string, sddFlags map[string]bool) []string {
-	if len(sddFlags) == 0 {
+func sddEnv(workspace string, sddCfg map[string]config.SDDSkill) []string {
+	if len(sddCfg) == 0 {
 		return nil
 	}
-	enabled := resolveEnabledSkills(sddFlags)
+	enabled := resolveEnabledSkills(sddCfg)
 	if len(enabled) == 0 {
 		return nil
 	}
@@ -452,17 +455,26 @@ func sddEnv(workspace string, sddFlags map[string]bool) []string {
 }
 
 // resolveEnabledSkills returns the map of known skill keys to their
-// registry entries, after filtering sddFlags through the registry to
-// drop unknown keys and false values.
-func resolveEnabledSkills(sddFlags map[string]bool) map[string]sdd.Skill {
-	out := make(map[string]sdd.Skill, len(sddFlags))
-	for k, on := range sddFlags {
-		if !on {
+// registry entries, after filtering sddCfg through the registry to drop
+// unknown keys and disabled entries. A per-skill steps: override from
+// .toolbox.yaml replaces the registry's InstallSteps wholesale (#317):
+// partial merge semantics would leave the user unable to drop a default
+// step, which is exactly the gsd --claude --local case the override
+// exists for.
+func resolveEnabledSkills(sddCfg map[string]config.SDDSkill) map[string]sdd.Skill {
+	out := make(map[string]sdd.Skill, len(sddCfg))
+	for k, v := range sddCfg {
+		if !v.Enabled {
 			continue
 		}
-		if s, ok := sdd.Lookup(k); ok {
-			out[k] = s
+		s, ok := sdd.Lookup(k)
+		if !ok {
+			continue
 		}
+		if v.Steps != nil {
+			s.InstallSteps = v.Steps
+		}
+		out[k] = s
 	}
 	return out
 }
