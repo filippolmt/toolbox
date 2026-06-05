@@ -81,7 +81,9 @@ jobs:
             type=registry,ref=${{ env.CACHE_REF }}
             type=gha,scope=amd64
             type=gha,scope=arm64
-          cache-to: type=gha,mode=max,scope=amd64
+          # mode=min: final-image layers only. Fetch-stage misses fall through
+          # to the registry cache (CACHE_REF) — the authoritative mode=max store.
+          cache-to: type=gha,mode=min,scope=amd64
 
       - name: Smoke test
         run: internal/build/assets/smoke-test.sh ${{ env.TEST_TAG }}
@@ -106,5 +108,5 @@ jobs:
             type=gha,scope=amd64
             type=gha,scope=arm64
           cache-to: |
-            type=gha,mode=max,scope=arm64
+            type=gha,mode=min,scope=arm64
             type=registry,ref=${{ env.CACHE_REF }},mode=max
