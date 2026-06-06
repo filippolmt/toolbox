@@ -77,6 +77,12 @@ min_time = 500
 format   = "took [$duration]($style) "
 style    = "yellow"
 
+# Symbol overrides below replace Starship's ambiguous-width defaults with
+# Nerd Font PUA glyphs: width-1 under both libc wcwidth() and Ghostty's
+# grapheme-cluster width (mode 2027), so ZLE line redraw can never drift
+# (drift = ghost characters on Backspace). Per-symbol codepoints inline;
+# backstory + diagnostic heuristic: docs/runtime-notes.md#prompt-glyph-width
+
 # Upstream default: disabled. We enable because kubectl is bundled and a
 # misclick on the wrong context is a recurring footgun. Detection reads
 # ~/.kube/config (single file stat, no live API). With no `detect_*` keys
@@ -84,10 +90,12 @@ style    = "yellow"
 # what we want.
 [kubernetes]
 disabled = false
+symbol   = "󱃾 "  # nf-md-kubernetes U+F10FE (replaces ☸ U+2638)
 format   = '[$symbol$context( \($namespace\))]($style) '
 style    = "blue bold"
 
 [terraform]
+symbol = "󱁢 "  # nf-md-terraform U+F1062 (replaces 💠 U+1F4A0)
 format = "[$symbol$workspace]($style) "
 style  = "bold purple"
 
@@ -98,15 +106,17 @@ style  = "bold purple"
 # account/region only matter when switching configs (which itself updates
 # active_config and shows up next prompt).
 [gcloud]
+symbol = "󰅟 "  # nf-md-cloud U+F015F (replaces ☁️ U+2601+FE0F)
 format = 'on [$symbol$project]($style) '
 style  = "bold blue"
 
-# docker_context inherits all upstream defaults — module appears only inside
-# dirs whose `detect_files` glob matches (Dockerfile / compose.yml /
-# docker-compose.yml etc.), and only when the current Docker context is
-# non-default OR a DOCKER_CONTEXT / DOCKER_HOST / DOCKER_MACHINE_NAME env
-# var is set. No `[docker_context]` override block needed — `$docker_context`
-# in the format string above is enough to opt the module in.
+# docker_context inherits upstream defaults except `symbol` (see PUA note
+# above) — module appears only inside dirs whose `detect_files` glob matches
+# (Dockerfile / compose.yml / docker-compose.yml etc.), and only when the
+# current Docker context is non-default OR a DOCKER_CONTEXT / DOCKER_HOST /
+# DOCKER_MACHINE_NAME env var is set.
+[docker_context]
+symbol = "󰡨 "  # nf-md-docker U+F0868 (replaces 🐳 U+1F433)
 
 # -- Right prompt segments ---------------------------------------------------
 

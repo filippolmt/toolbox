@@ -236,6 +236,10 @@ Rejected alternatives: a detached client-side `docker rm -f` (orphan process, no
 
 ## Shell start
 
+### Prompt glyph width
+
+Every symbol in `internal/build/assets/starship.toml` must be ASCII, unambiguous-narrow Unicode, or a Nerd Font PUA glyph — never an East Asian Ambiguous character or an emoji-presentation sequence (U+FE0F). Starship's *defaults* violate this: kubernetes ships `☸ ` (U+2638, EA-Ambiguous) and gcloud ships `☁️ ` (U+2601+FE0F). Ghostty measures them with Unicode grapheme-cluster width (mode 2027) → 2 columns, while zsh ZLE lays out the line with libc `wcwidth()` → 1 column. One column of drift per glyph meant every Backspace left exactly as many ghost characters as ambiguous emoji visible in the prompt — a months-long "intermittent" bug, because the k8s/gcloud modules only render where those contexts are active. Three earlier fixes (autosuggestions rebind, TERM forwarding, terminfo bundling) chased adjacent symptoms; the real confirmation was `PROMPT='> '` killing the residue while plugin/RPROMPT/highlighter toggles did nothing. **Diagnostic heuristic: any "ghost characters on redraw" report → test `PROMPT='> '` first, before suspecting ZLE plugins.** The four module symbols (`kubernetes`, `gcloud`, `terraform`, `docker_context`) are pinned to PUA glyphs with codepoint comments in `starship.toml`; PUA is width-1 under both width systems by construction, and Nerd Font on the host is already a README prerequisite.
+
 ### MCP plugin auto-build
 
 `internal/build/assets/init.d/50-mcp-plugins.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells cached via `.toolbox-built` marker. On failure stderr is captured to `.toolbox-build-error.log` next to the marker (in the same bind-mounted plugin dir, so it survives container restarts) and the last 5 lines are printed inline; failure stays non-fatal.
