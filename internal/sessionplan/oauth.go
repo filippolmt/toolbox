@@ -20,11 +20,16 @@ type OAuthRecipe struct {
 // (gh, glab, az, docker) have nothing to forward, and dynamic-port CLIs
 // (gcloud, gws, tofu) cannot be pre-bound — cf is the lone dynamic exception,
 // handled by a build-time sed patch onto a published range with no bridge.
+// Bridge is only for loopback-binding listeners: oci binds 0.0.0.0:8181
+// (cli_setup_bootstrap.py passes an empty host to HTTPServer), so Docker's
+// eth0 forward reaches it directly — and a socat holding eth0:8181 would
+// make oci's wildcard bind fail EADDRINUSE (verified live; Linux refuses
+// wildcard over a specific bind regardless of SO_REUSEADDR).
 // Ports are upstream defaults; see docs/runtime-notes.md#loopback-bridge.
 var oauthRecipes = map[string]OAuthRecipe{
 	"cf":       {Publish: "8877-8886:8877-8886", Bridge: false},
 	"codex":    {Publish: "1455:1455", Bridge: true},
-	"oci":      {Publish: "8181:8181", Bridge: true},
+	"oci":      {Publish: "8181:8181", Bridge: false},
 	"shopify":  {Publish: "13387:13387", Bridge: true},
 	"wrangler": {Publish: "8976:8976", Bridge: true},
 }

@@ -77,20 +77,20 @@ func TestShellOAuthFlagRegistered(t *testing.T) {
 
 // TestShellOAuthOCIEqualsExplicitFlags asserts the preset equivalence the
 // spec promises: --oauth oci yields the same (publish, bridge) inputs to
-// sessionplan.Plan as an explicit -B -p 8181:8181, so the resulting create
-// options are identical.
+// sessionplan.Plan as an explicit -p 8181:8181 — no -B, because oci binds
+// 0.0.0.0:8181 and a socat on eth0:8181 would break its bind (EADDRINUSE).
 func TestShellOAuthOCIEqualsExplicitFlags(t *testing.T) {
 	oauthPublish, oauthBridge, err := expandShellOAuth(nil, false, []string{"oci"})
 	if err != nil {
 		t.Fatalf("expandShellOAuth(oci): %v", err)
 	}
 
-	explicitPublish, explicitBridge := []string{"8181:8181"}, true
+	explicitPublish, explicitBridge := []string{"8181:8181"}, false
 	if !reflect.DeepEqual(oauthPublish, explicitPublish) {
 		t.Errorf("publish = %v, want %v (the -p 8181:8181 spelling)", oauthPublish, explicitPublish)
 	}
 	if oauthBridge != explicitBridge {
-		t.Errorf("bridge = %v, want %v (the -B spelling)", oauthBridge, explicitBridge)
+		t.Errorf("bridge = %v, want %v (oci must not enable -B)", oauthBridge, explicitBridge)
 	}
 }
 

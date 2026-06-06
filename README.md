@@ -247,7 +247,7 @@ toolbox shell --oauth wrangler   # wrangler login
 toolbox shell --oauth cf         # cf login
 ```
 
-Under the hood the preset is plain `-p`/`-B` sugar — `--oauth oci` equals `-B -p 8181:8181`, where `--bridge-loopback` / `-B` spawns an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`. The explicit spelling stays available for ports not in the preset map:
+Under the hood the preset is plain `-p`/`-B` sugar — `--oauth wrangler` equals `-B -p 8976:8976`, where `--bridge-loopback` / `-B` spawns an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`. CLIs that don't bind loopback skip `-B`: `--oauth oci` equals `-p 8181:8181` (oci binds `0.0.0.0`, the plain forward reaches it — a socat on its port would actually break the bind). The explicit spelling stays available for ports not in the preset map:
 
 ```bash
 toolbox shell -B -p 13387:13387

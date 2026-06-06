@@ -166,15 +166,20 @@ host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──�
                                    bridged inside the container by init.d/70
 ```
 
-When `-B` is set together with at least one `-p`, `sessionplan.Plan` emits `TOOLBOX_LOOPBACK_BRIDGE_PORTS=<comma-joined>` and `internal/build/assets/init.d/70-loopback-bridge.sh` spawns one `socat TCP-LISTEN:<port>,bind=$ETH_IP,fork,reuseaddr TCP:127.0.0.1:<port>` per port. The bridge binds the container's external interface IP (`hostname -i`) explicitly so a legitimate in-container `0.0.0.0:<port>` listener does not collide with it.
+When `-B` is set together with at least one `-p`, `sessionplan.Plan` emits `TOOLBOX_LOOPBACK_BRIDGE_PORTS=<comma-joined>` and `internal/build/assets/init.d/70-loopback-bridge.sh` spawns one `socat TCP-LISTEN:<port>,bind=$ETH_IP,fork,reuseaddr TCP:127.0.0.1:<port>` per port. The bridge binds the container's external interface IP (`hostname -i`) explicitly so it can coexist with the CLI's own `127.0.0.1:<port>` listener. It does **not** coexist with a wildcard listener: once socat holds `eth0:<port>`, a later `0.0.0.0:<port>` bind on the same port fails `EADDRINUSE` (Linux refuses wildcard over a specific bind regardless of `SO_REUSEADDR` — verified live with oci). Wildcard-binding CLIs must therefore not use `-B` on their port; the plain `-p` forward already reaches them.
 
 Standard recipes (static-port loopback CLIs). The `--oauth <tool>` preset flag on `toolbox shell` expands a known tool name to its documented recipe (`sessionplan.ExpandOAuth`, map in `internal/sessionplan/oauth.go`) — expansion only ever adds to explicit `-p`/`-B` flags, and an unknown tool errors before container creation listing the supported set:
 
 ```
-toolbox shell --oauth oci        # = -B -p 8181:8181     oci session authenticate
 toolbox shell --oauth codex      # = -B -p 1455:1455     codex ChatGPT-OAuth login
 toolbox shell --oauth shopify    # = -B -p 13387:13387   shopify store auth
 toolbox shell --oauth wrangler   # = -B -p 8976:8976     wrangler login
+```
+
+**Wildcard-bind carve-out.** `oci session authenticate` binds `0.0.0.0:8181` (`cli_setup_bootstrap.py`: `server_address = ('', 8181)`), so Docker's plain port-forward reaches it directly and the bridge is not only unnecessary but harmful — socat on `eth0:8181` makes oci's wildcard bind fail with `Could not complete bootstrap process because port 8181 is already in use`:
+
+```
+toolbox shell --oauth oci   # = -p 8181:8181 (no -B — oci binds 0.0.0.0)
 ```
 
 **Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs (`gcloud`, `gws`, `tofu` — no fixed range at all, so they get no recipe). `cf login` recipe (no `-B` needed):
@@ -187,7 +192,7 @@ OAuth CLI survey:
 
 | CLI | Listener style | Strategy |
 |---|---|---|
-| `oci` | `localhost:8181` (static) | bridge: `--oauth oci` = `-B -p 8181:8181` |
+| `oci` | `0.0.0.0:8181` (static, wildcard) | plain publish: `--oauth oci` = `-p 8181:8181` (no `-B` — socat would collide with the wildcard bind) |
 | `shopify` | `127.0.0.1:13387` (static) | bridge: `--oauth shopify` = `-B -p 13387:13387` |
 | `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
 | `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
@@ -203,6 +208,7 @@ Limitations:
 - Bridge env is fixed at `ContainerCreate`. `toolbox shell -B …` on a container created without `-B` is a no-op — same UX as `-p`. Run `toolbox stop` first.
 - IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
 - `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
+- `-B` bridges **every** published port (`TOOLBOX_LOOPBACK_BRIDGE_PORTS` enumerates the full publish set, init.d/70 spawns socat per port). Combining a bridged preset with a wildcard-bind one (e.g. `--oauth wrangler --oauth oci`) therefore puts socat on `eth0:8181` too and breaks oci's wildcard bind — same for `cf` (sed-patched to `0.0.0.0`, socat on the 8877-8886 range would exhaust its 10 port retries). Authenticate wildcard-bind CLIs in their own session.
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
 - `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
 

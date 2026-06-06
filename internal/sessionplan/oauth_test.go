@@ -11,11 +11,11 @@ import (
 // TestExpandOAuthSingleTool: one bridge-backed tool yields its publish spec
 // and the bridge bit.
 func TestExpandOAuthSingleTool(t *testing.T) {
-	publish, bridge, err := sessionplan.ExpandOAuth([]string{"oci"})
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"wrangler"})
 	if err != nil {
-		t.Fatalf("ExpandOAuth(oci) err = %v, want nil", err)
+		t.Fatalf("ExpandOAuth(wrangler) err = %v, want nil", err)
 	}
-	if want := []string{"8181:8181"}; !reflect.DeepEqual(publish, want) {
+	if want := []string{"8976:8976"}; !reflect.DeepEqual(publish, want) {
 		t.Errorf("publish = %v, want %v", publish, want)
 	}
 	if !bridge {
@@ -23,14 +23,30 @@ func TestExpandOAuthSingleTool(t *testing.T) {
 	}
 }
 
+// TestExpandOAuthOciNoBridge: oci binds 0.0.0.0:8181 (wildcard), so the
+// eth0 forward reaches it directly — and a socat on eth0:8181 would make
+// its bind fail EADDRINUSE. Publish only, no bridge.
+func TestExpandOAuthOciNoBridge(t *testing.T) {
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"oci"})
+	if err != nil {
+		t.Fatalf("ExpandOAuth(oci) err = %v, want nil", err)
+	}
+	if want := []string{"8181:8181"}; !reflect.DeepEqual(publish, want) {
+		t.Errorf("publish = %v, want %v", publish, want)
+	}
+	if bridge {
+		t.Error("bridge = true, want false (socat would collide with oci's wildcard bind)")
+	}
+}
+
 // TestExpandOAuthMultipleTools: repeatable flag composes — both publish
 // specs in input order, bridge true when any tool needs it.
 func TestExpandOAuthMultipleTools(t *testing.T) {
-	publish, bridge, err := sessionplan.ExpandOAuth([]string{"oci", "wrangler"})
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"codex", "wrangler"})
 	if err != nil {
-		t.Fatalf("ExpandOAuth(oci, wrangler) err = %v, want nil", err)
+		t.Fatalf("ExpandOAuth(codex, wrangler) err = %v, want nil", err)
 	}
-	if want := []string{"8181:8181", "8976:8976"}; !reflect.DeepEqual(publish, want) {
+	if want := []string{"1455:1455", "8976:8976"}; !reflect.DeepEqual(publish, want) {
 		t.Errorf("publish = %v, want %v", publish, want)
 	}
 	if !bridge {
@@ -83,8 +99,23 @@ func TestExpandOAuthEmptyInput(t *testing.T) {
 	}
 }
 
-// TestExpandOAuthMixedCfOci: union of publish specs; bridge true because
-// oci needs it even though cf does not.
+// TestExpandOAuthMixedCfWrangler: union of publish specs; bridge true
+// because wrangler needs it even though cf does not.
+func TestExpandOAuthMixedCfWrangler(t *testing.T) {
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"cf", "wrangler"})
+	if err != nil {
+		t.Fatalf("ExpandOAuth(cf, wrangler) err = %v, want nil", err)
+	}
+	if want := []string{"8877-8886:8877-8886", "8976:8976"}; !reflect.DeepEqual(publish, want) {
+		t.Errorf("publish = %v, want %v", publish, want)
+	}
+	if !bridge {
+		t.Error("bridge = false, want true")
+	}
+}
+
+// TestExpandOAuthMixedCfOci: two no-bridge tools never flip the bridge bit —
+// no socat must spawn, or oci's wildcard bind would fail EADDRINUSE.
 func TestExpandOAuthMixedCfOci(t *testing.T) {
 	publish, bridge, err := sessionplan.ExpandOAuth([]string{"cf", "oci"})
 	if err != nil {
@@ -93,7 +124,7 @@ func TestExpandOAuthMixedCfOci(t *testing.T) {
 	if want := []string{"8877-8886:8877-8886", "8181:8181"}; !reflect.DeepEqual(publish, want) {
 		t.Errorf("publish = %v, want %v", publish, want)
 	}
-	if !bridge {
-		t.Error("bridge = false, want true")
+	if bridge {
+		t.Error("bridge = true, want false")
 	}
 }

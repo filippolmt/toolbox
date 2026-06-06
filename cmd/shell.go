@@ -48,8 +48,9 @@ reachable from the host browser. See docs/runtime-notes.md#loopback-bridge
 for recipes (shopify, wrangler) and the dynamic-port carve-out (cf).
 
 Use --oauth <tool> as a shortcut for the documented OAuth recipes: it
-expands to the right -p/-B combination for the tool (e.g. "--oauth oci"
-equals "-B -p 8181:8181"). Supported: cf, codex, oci, shopify, wrangler.`,
+expands to the right -p/-B combination for the tool (e.g. "--oauth wrangler"
+equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
+0.0.0.0, no bridge). Supported: cf, codex, oci, shopify, wrangler.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runShell,
 }
