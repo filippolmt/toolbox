@@ -1036,23 +1036,9 @@ RUN set -eux; \
       # yet (yargs default `completion` is not registered either); revisit on
       # the next Renovate bump and reinstate _cf when upstream restores it.
       ls /usr/share/zsh/vendor-completions;
-# Claude Code env knobs:
-#   DISABLE_AUTOUPDATER: CLI binary lives under root-owned /usr/local/lib —
-#     self-update would always fail. Renovate drives version bumps instead.
-#   FORCE_AUTOUPDATE_PLUGINS: plugins live in user-writable ~/.claude/plugins
-#     bind — update path works there, keep it on.
-#   DISABLE_TELEMETRY/FEEDBACK/ERROR_REPORTING: granular privacy switches.
-#     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC umbrella correlates with
-#     intermittent /login prompts on long-lived shells — use granular set
-#     instead. If logout regression: drop DISABLE_TELEMETRY first.
-#   CLAUDE_CONFIG_DIR: relocate .credentials.json + .claude.json into the
-#     ~/.claude bind so OAuth survives container recreates.
-ENV DISABLE_AUTOUPDATER=1 \
-    FORCE_AUTOUPDATE_PLUGINS=1 \
-    DISABLE_TELEMETRY=1 \
-    DISABLE_FEEDBACK_COMMAND=1 \
-    DISABLE_ERROR_REPORTING=1 \
-    CLAUDE_CONFIG_DIR=/home/toolbox/.claude
+# Claude Code CLI. Runtime env knobs live AFTER the RUN tail (see the
+# "Claude Code env knobs" ENV block below): none of them affect the install,
+# and ENV-before-RUN would bust this layer's cache on every knob tweak.
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
@@ -1109,6 +1095,47 @@ RUN set -eux; \
       > /etc/sudoers.d/toolbox; \
     chmod 0440 /etc/sudoers.d/toolbox; \
     visudo -cf /etc/sudoers.d/toolbox
+
+# Claude Code env knobs — runtime-only (the claude binary reads them at
+# exec; no RUN consumes them), so the block sits after the RUN tail where
+# a knob tweak re-runs zero layers:
+#   DISABLE_AUTOUPDATER: CLI binary lives under root-owned /usr/local/lib —
+#     self-update would always fail. Renovate drives version bumps instead.
+#   FORCE_AUTOUPDATE_PLUGINS: plugins live in user-writable ~/.claude/plugins
+#     bind — update path works there, keep it on.
+#   DISABLE_FEEDBACK/ERROR_REPORTING: granular privacy switches.
+#     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC umbrella correlates with
+#     intermittent /login prompts on long-lived shells — use granular set
+#     instead. DISABLE_TELEMETRY intentionally NOT set: the Statsig channel
+#     doubles as feature-flag delivery, and blocking it is reported to break
+#     Remote Control entitlements and preview rollouts
+#     (anthropics/claude-code#58383); it is product analytics, not training
+#     data — the model-improvement opt-out lives in the claude.ai account
+#     privacy settings, not in this flag.
+#   CLAUDE_CONFIG_DIR: relocate .credentials.json + .claude.json into the
+#     ~/.claude bind so OAuth survives container recreates.
+#   USE_BUILTIN_RIPGREP=0: image ships apt ripgrep (base layer) — use it
+#     instead of the npm-bundled binary (pin-everything policy).
+#   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: return to the project dir
+#     after every Bash call — kills cd-drift across tool invocations.
+#   BASH_*_TIMEOUT_MS: 5m default / 20m ceiling (upstream 2m/10m) — image
+#     builds and test suites run inside the container routinely exceed 2m.
+#   CLAUDE_CODE_ENABLE_TASKS: structured cross-session task tools; state
+#     lives in ~/.claude/tasks under the bind, survives recreates.
+#   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: opt into agent teams (still
+#     experimental upstream; in-process mode works without tmux). Per-user
+#     opt-out: "env" map in the ~/.claude/settings.json bind overrides this.
+ENV DISABLE_AUTOUPDATER=1 \
+    FORCE_AUTOUPDATE_PLUGINS=1 \
+    DISABLE_FEEDBACK_COMMAND=1 \
+    DISABLE_ERROR_REPORTING=1 \
+    CLAUDE_CONFIG_DIR=/home/toolbox/.claude \
+    USE_BUILTIN_RIPGREP=0 \
+    CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 \
+    BASH_DEFAULT_TIMEOUT_MS=300000 \
+    BASH_MAX_TIMEOUT_MS=1200000 \
+    CLAUDE_CODE_ENABLE_TASKS=1 \
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
