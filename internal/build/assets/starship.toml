@@ -77,17 +77,11 @@ min_time = 500
 format   = "took [$duration]($style) "
 style    = "yellow"
 
-# Symbol overrides below replace ambiguous/emoji defaults with Nerd Font PUA
-# glyphs. Starship's defaults for kubernetes (☸ U+2638, East Asian Ambiguous)
-# and gcloud (☁️ U+2601+FE0F, emoji presentation) render 2 columns wide under
-# Ghostty's grapheme-cluster width (mode 2027) while zsh ZLE counts them 1 via
-# wcwidth() — one column of drift per glyph, which left ghost characters on
-# every Backspace. PUA codepoints are width-1 under BOTH width systems, so
-# they cannot drift; Nerd Font on the host is already a documented
-# prerequisite. terraform (💠 U+1F4A0) and docker_context (🐳 U+1F433)
-# defaults are unambiguous-Wide emoji — consistent today, but swapped to PUA
-# too so the prompt never depends on wcwidth tables agreeing with the
-# terminal. → docs/runtime-notes.md#prompt-glyph-width
+# Symbol overrides below replace Starship's ambiguous-width defaults with
+# Nerd Font PUA glyphs: width-1 under both libc wcwidth() and Ghostty's
+# grapheme-cluster width (mode 2027), so ZLE line redraw can never drift
+# (drift = ghost characters on Backspace). Per-symbol codepoints inline;
+# backstory + diagnostic heuristic: docs/runtime-notes.md#prompt-glyph-width
 
 # Upstream default: disabled. We enable because kubectl is bundled and a
 # misclick on the wrong context is a recurring footgun. Detection reads
