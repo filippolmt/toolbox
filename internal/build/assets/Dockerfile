@@ -1048,7 +1048,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
 # xterm-ghostty terminfo. ncurses 6.4 (bookworm) predates the entry added
-# in 6.5. Bundled .src includes all `use=` fragments — tic resolves locally.
+# in 6.5. Bundled .src is a fully-resolved infocmp dump of the terminfo
+# Ghostty itself ships (version in the .src provenance header) — no use=
+# fragments to resolve.
 RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
     set -eux; \
     tic -x -o /usr/share/terminfo /tmp/xterm-ghostty.src
