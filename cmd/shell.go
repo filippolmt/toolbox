@@ -15,6 +15,7 @@ var shellPublish []string
 var shellCreate bool
 var shellPath string
 var shellBridgeLoopback bool
+var shellOAuth []string
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
@@ -44,12 +45,23 @@ its OAuth callback to container loopback (127.0.0.1) rather than 0.0.0.0
 sees those packets. The bridge spawns one socat per published container
 port that listens on eth0 and forwards to 127.0.0.1, making the listener
 reachable from the host browser. See docs/runtime-notes.md#loopback-bridge
-for recipes (shopify, wrangler) and the dynamic-port carve-out (cf).`,
+for recipes (shopify, wrangler) and the dynamic-port carve-out (cf).
+
+Use --oauth <tool> as a shortcut for the documented OAuth recipes: it
+expands to the right -p/-B combination for the tool (e.g. "--oauth oci"
+equals "-B -p 8181:8181"). Supported: cf, codex, oci, shopify, wrangler.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runShell,
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
+	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
+	// fails fast before any fs side effects or container creation.
+	publish, bridgeLoopback, err := expandShellOAuth(shellPublish, shellBridgeLoopback, shellOAuth)
+	if err != nil {
+		return err
+	}
+
 	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
 	if err != nil {
 		return err
@@ -68,7 +80,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, ws, shellPublish, shellBridgeLoopback)
+	plan, err := sessionplan.Plan(cfg, ws, publish, bridgeLoopback)
 	if err != nil {
 		return err
 	}
@@ -82,6 +94,18 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	return container.Shell(ctx, cli, plan)
+}
+
+// expandShellOAuth merges --oauth recipe expansion into the explicit -p/-B
+// flag values: expanded publish specs are appended (never replacing explicit
+// ones) and the bridge bit is ORed in (never cleared). Pure so the cmd-level
+// tests can compare it against the equivalent explicit flag spelling.
+func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]string, bool, error) {
+	oauthPublish, oauthBridge, err := sessionplan.ExpandOAuth(oauthTools)
+	if err != nil {
+		return nil, false, err
+	}
+	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
 }
 
 // printBrowserBridgeTipIfNeeded prints a one-line install hint when the
@@ -105,6 +129,11 @@ func init() {
 		"publish a container port to the host (repeatable). Format: '[host_ip:]host_port:container_port' or 'port'. "+
 			"Examples: 7171, 7171:7171, 127.0.0.1:7171:7171, 0.0.0.0:8000:8000. "+
 			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
+	shellCmd.Flags().StringSliceVar(&shellOAuth, "oauth", nil,
+		"expand a known CLI's OAuth callback recipe (repeatable): publishes its callback port and "+
+			"enables the loopback bridge when the tool needs it. Supported: cf, codex, oci, shopify, wrangler. "+
+			"Composes with explicit -p/-B (only adds, never overrides). "+
+			"Bindings apply only at container creation — run 'toolbox stop' to refresh.")
 	shellCmd.Flags().BoolVarP(&shellBridgeLoopback, "bridge-loopback", "B", false,
 		"Forward published ports to container loopback so CLIs that bind 127.0.0.1 "+
 			"are reachable from the host browser (e.g. shopify/wrangler OAuth callbacks). "+
