@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +57,67 @@ func TestShellBridgeLoopbackFlagParsesLong(t *testing.T) {
 	}
 	if !shellBridgeLoopback {
 		t.Error("shellBridgeLoopback = false after --bridge-loopback; want true")
+	}
+}
+
+// TestShellOAuthFlagRegistered locks the --oauth flag contract: registered,
+// no shorthand, empty default (no preset expansion unless asked).
+func TestShellOAuthFlagRegistered(t *testing.T) {
+	flag := shellCmd.Flags().Lookup("oauth")
+	if flag == nil {
+		t.Fatal("--oauth flag not registered on shellCmd")
+	}
+	if flag.Shorthand != "" {
+		t.Errorf("--oauth shorthand = %q, want none", flag.Shorthand)
+	}
+	if flag.DefValue != "[]" {
+		t.Errorf("--oauth default = %q, want \"[]\"", flag.DefValue)
+	}
+}
+
+// TestShellOAuthOCIEqualsExplicitFlags asserts the preset equivalence the
+// spec promises: --oauth oci yields the same (publish, bridge) inputs to
+// sessionplan.Plan as an explicit -B -p 8181:8181, so the resulting create
+// options are identical.
+func TestShellOAuthOCIEqualsExplicitFlags(t *testing.T) {
+	oauthPublish, oauthBridge, err := expandShellOAuth(nil, false, []string{"oci"})
+	if err != nil {
+		t.Fatalf("expandShellOAuth(oci): %v", err)
+	}
+
+	explicitPublish, explicitBridge := []string{"8181:8181"}, true
+	if !reflect.DeepEqual(oauthPublish, explicitPublish) {
+		t.Errorf("publish = %v, want %v (the -p 8181:8181 spelling)", oauthPublish, explicitPublish)
+	}
+	if oauthBridge != explicitBridge {
+		t.Errorf("bridge = %v, want %v (the -B spelling)", oauthBridge, explicitBridge)
+	}
+}
+
+// TestShellOAuthComposesWithExplicitFlags: expansion only adds — explicit
+// -p specs stay first and untouched, an explicit -B is never cleared.
+func TestShellOAuthComposesWithExplicitFlags(t *testing.T) {
+	publish, bridge, err := expandShellOAuth([]string{"3000:3000"}, true, []string{"cf"})
+	if err != nil {
+		t.Fatalf("expandShellOAuth(cf with explicit flags): %v", err)
+	}
+	if want := []string{"3000:3000", "8877-8886:8877-8886"}; !reflect.DeepEqual(publish, want) {
+		t.Errorf("publish = %v, want %v", publish, want)
+	}
+	if !bridge {
+		t.Error("bridge = false; explicit -B must never be cleared by expansion")
+	}
+}
+
+// TestShellOAuthUnknownToolFails: device-code CLIs (gh) are intentionally
+// absent — the error lists the sorted supported tools so the user can
+// self-correct before any container is created.
+func TestShellOAuthUnknownToolFails(t *testing.T) {
+	_, _, err := expandShellOAuth(nil, false, []string{"gh"})
+	if err == nil {
+		t.Fatal("expandShellOAuth(gh) err = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "cf, codex, oci, shopify, wrangler") {
+		t.Errorf("error %q does not list supported tools", err)
 	}
 }

@@ -17,7 +17,7 @@ if [ -z "${URL}" ]; then
 fi
 
 if [ ! -r "${TOKEN_FILE}" ] || [ ! -r "${PORT_FILE}" ]; then
-    echo "xdg-open: bridge not installed; URL:" >&2
+    echo "xdg-open: bridge not installed — run 'toolbox browser-bridge install' on the host; URL:" >&2
     echo "${URL}" >&2
     exit 0
 fi
@@ -39,7 +39,7 @@ if ! curl --silent --show-error --fail \
     --header "Content-Type: application/json" \
     --data "${PAYLOAD}" \
     "http://host.docker.internal:${PORT}/open" >/dev/null 2>&1; then
-    echo "xdg-open: bridge unreachable; URL:" >&2
+    echo "xdg-open: bridge unreachable — check 'toolbox browser-bridge status' on the host; URL:" >&2
     echo "${URL}" >&2
     exit 0
 fi

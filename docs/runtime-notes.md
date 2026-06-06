@@ -168,30 +168,35 @@ host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──�
 
 When `-B` is set together with at least one `-p`, `sessionplan.Plan` emits `TOOLBOX_LOOPBACK_BRIDGE_PORTS=<comma-joined>` and `internal/build/assets/init.d/70-loopback-bridge.sh` spawns one `socat TCP-LISTEN:<port>,bind=$ETH_IP,fork,reuseaddr TCP:127.0.0.1:<port>` per port. The bridge binds the container's external interface IP (`hostname -i`) explicitly so a legitimate in-container `0.0.0.0:<port>` listener does not collide with it.
 
-Standard recipes (static-port loopback CLIs):
+Standard recipes (static-port loopback CLIs). The `--oauth <tool>` preset flag on `toolbox shell` expands a known tool name to its documented recipe (`sessionplan.ExpandOAuth`, map in `internal/sessionplan/oauth.go`) — expansion only ever adds to explicit `-p`/`-B` flags, and an unknown tool errors before container creation listing the supported set:
 
 ```
-toolbox shell -B -p 13387:13387   # shopify store auth
-toolbox shell -B -p 8976:8976     # wrangler login
+toolbox shell --oauth oci        # = -B -p 8181:8181     oci session authenticate
+toolbox shell --oauth codex      # = -B -p 1455:1455     codex ChatGPT-OAuth login
+toolbox shell --oauth shopify    # = -B -p 13387:13387   shopify store auth
+toolbox shell --oauth wrangler   # = -B -p 8976:8976     wrangler login
 ```
 
-**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs. `cf login` recipe (no `-B` needed):
+**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs (`gcloud`, `gws`, `tofu` — no fixed range at all, so they get no recipe). `cf login` recipe (no `-B` needed):
 
 ```
-toolbox shell -p 8877-8886:8877-8886   # cf login (sed-patched, range syntax via nat.ParsePortSpec)
+toolbox shell --oauth cf   # = -p 8877-8886:8877-8886 (sed-patched, range syntax via nat.ParsePortSpec)
 ```
 
 OAuth CLI survey:
 
 | CLI | Listener style | Strategy |
 |---|---|---|
-| `shopify` | `127.0.0.1:13387` (static) | bridge: `-B -p 13387:13387` |
-| `wrangler` | `localhost:8976` (static) | bridge: `-B -p 8976:8976` (vanilla wrangler, no sed) |
-| `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `-p 8877-8886:8877-8886` |
+| `oci` | `localhost:8181` (static) | bridge: `--oauth oci` = `-B -p 8181:8181` |
+| `shopify` | `127.0.0.1:13387` (static) | bridge: `--oauth shopify` = `-B -p 13387:13387` |
+| `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
+| `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
+| `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `--oauth cf` = `-p 8877-8886:8877-8886` |
 | `gcloud` | `localhost:8085+` (dynamic) | wrapper / device-code |
 | `gws` | `127.0.0.1:0` (ephemeral) | wrapper / device-code |
+| `tofu` | random port ≥1024, range from server discovery document (dynamic) | not pre-bindable; device-code/wrapper-style — no bridge recipe |
 | `az` | dynamic | device-code (`--use-device-code`) |
-| `gh` / `glab` / `claude` / `codex` | none — device-code | no listener; no port forward needed |
+| `gh` / `glab` / `claude` | none — device-code | no listener; no port forward needed |
 
 Limitations:
 

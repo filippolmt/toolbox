@@ -237,24 +237,24 @@ Port bindings are fixed when the container is created. If a container already ex
 
 #### Loopback bridge for OAuth callbacks (`-B`)
 
-CLIs that bind their OAuth callback to `127.0.0.1:<port>` inside the container (e.g. `shopify store auth` → `127.0.0.1:13387`; vanilla `wrangler login` → `localhost:8976`) are invisible to the Docker port-forward, which delivers to the container's `eth0` interface. The host browser hits `ERR_EMPTY_RESPONSE` and no token is written. Pass `--bridge-loopback` / `-B` together with `-p` to spawn an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`:
+CLIs that bind their OAuth callback to `127.0.0.1:<port>` inside the container (e.g. `shopify store auth` → `127.0.0.1:13387`; vanilla `wrangler login` → `localhost:8976`) are invisible to the Docker port-forward, which delivers to the container's `eth0` interface. The host browser hits `ERR_EMPTY_RESPONSE` and no token is written. The `--oauth <tool>` preset expands a known tool name to its documented recipe:
 
 ```bash
-# shopify
+toolbox shell --oauth oci        # oci session authenticate
+toolbox shell --oauth codex      # codex ChatGPT-OAuth login
+toolbox shell --oauth shopify    # shopify store auth
+toolbox shell --oauth wrangler   # wrangler login
+toolbox shell --oauth cf         # cf login
+```
+
+Under the hood the preset is plain `-p`/`-B` sugar — `--oauth oci` equals `-B -p 8181:8181`, where `--bridge-loopback` / `-B` spawns an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`. The explicit spelling stays available for ports not in the preset map:
+
+```bash
 toolbox shell -B -p 13387:13387
 shopify store auth ...
-
-# wrangler
-toolbox shell -B -p 8976:8976
-wrangler login
 ```
 
-`cf login` is the dynamic-port carve-out: `cf` picks its callback port at run time from the range 8877-8886, so the bridge cannot pre-bind a known port. The image keeps a build-time `sed` patch that rewrites cf's bind to `0.0.0.0`, so the existing recipe is unchanged and `-B` is not needed:
-
-```bash
-toolbox shell -p 8877-8886:8877-8886
-cf login
-```
+`cf login` is the dynamic-port carve-out: `cf` picks its callback port at run time from the range 8877-8886, so the bridge cannot pre-bind a known port. The image keeps a build-time `sed` patch that rewrites cf's bind to `0.0.0.0`, so `--oauth cf` publishes the range without `-B`.
 
 Full mental model, OAuth CLI survey table, and limitations: [`docs/runtime-notes.md#loopback-bridge`](docs/runtime-notes.md#loopback-bridge).
 
