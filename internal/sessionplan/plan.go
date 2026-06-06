@@ -258,12 +258,7 @@ func ContainerNameFor(workspace string) string {
 	abs := normalizeWorkspace(workspace)
 	hash := hashWorkspace(abs)
 
-	base := strings.ToLower(filepath.Base(abs))
-	base = sanitizeRe.ReplaceAllString(base, "-")
-	base = strings.Trim(base, "-")
-	if base == "" {
-		base = "root"
-	}
+	base := workspaceSlug(abs)
 
 	// MaxContainerNameLen - len("toolbox-") - len("-") - WorkspaceHashLen.
 	maxBasename := MaxContainerNameLen - len(ContainerNamePrefix) - 1 - WorkspaceHashLen
@@ -322,6 +317,21 @@ func NamedContainerNameFromSanitized(sanitized string) string {
 		sanitized = "shell"
 	}
 	return ContainerNamePrefix + NamedContainerNameInfix + sanitized
+}
+
+// workspaceSlug lowercases and slug-collapses the basename of a (normalized)
+// workspace path, falling back to "root" when nothing survives — e.g. the
+// filesystem root, where filepath.Base returns "/". Shared by ContainerNameFor
+// and shellEnv so the container name and the Remote Control session prefix
+// derive from a single sanitization rule.
+func workspaceSlug(abs string) string {
+	base := strings.ToLower(filepath.Base(abs))
+	base = sanitizeRe.ReplaceAllString(base, "-")
+	base = strings.Trim(base, "-")
+	if base == "" {
+		return "root"
+	}
+	return base
 }
 
 // normalizeWorkspace returns the workspace path as an absolute, cleaned
@@ -384,6 +394,11 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, erro
 // to the host daemon. PWD is set explicitly to workingDir so that scripts
 // reading $PWD directly (without a getcwd fallback) see the same path
 // bash exposes after starting in WorkingDir.
+// CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX defaults to the machine
+// hostname, which inside the container is the Docker container ID — on
+// claude.ai (web/mobile) every Remote Control session would show up as
+// hex gibberish. The workspace slug (same rule as the container name)
+// gives readable session names that match `docker ps` output.
 //
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
@@ -392,6 +407,7 @@ func shellEnv(workspace, workingDir string, sddCfg map[string]config.SDDSkill) [
 	env := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
+		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
 	}
 	env = append(env, sddEnv(workspace, sddCfg)...)
 	return env

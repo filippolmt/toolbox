@@ -186,9 +186,31 @@ func TestPlanComputesEnv(t *testing.T) {
 	want := []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + plan.WorkingDir,
+		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + filepath.Base(workspace),
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
+	}
+}
+
+// TestPlanSanitizesRemoteControlPrefix asserts the Remote Control session
+// prefix shares ContainerNameFor's slug rule (lowercase, [^a-z0-9]+ → "-")
+// instead of forwarding the raw basename.
+func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "My Project!")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if !slices.Contains(plan.Env, "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=my-project") {
+		t.Errorf("Env = %v, want sanitized prefix my-project", plan.Env)
 	}
 }
 
@@ -430,6 +452,7 @@ func TestMergeIsPure(t *testing.T) {
 	wantEnv := []string{
 		"TOOLBOX_HOST_WORKSPACE=/workspace",
 		"PWD=" + mountplan.WorkspaceTarget,
+		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=workspace",
 	}
 	if !slices.Equal(merged.Env, wantEnv) {
 		t.Errorf("Merge.Env = %v, want %v", merged.Env, wantEnv)

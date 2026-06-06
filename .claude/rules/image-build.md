@@ -1,0 +1,20 @@
+---
+paths:
+  - "internal/build/**"
+  - "internal/catalog/**"
+  - "go.mod"
+---
+
+# Image build gotchas — backstory in [`docs/runtime-notes.md`](../../docs/runtime-notes.md)
+
+- **Passwordless sudo**: base apt layer ships `sudo` + `/etc/sudoers.d/toolbox` (`ALL …NOPASSWD: ALL`, UID-agnostic by design) so runtime `sudo apt install …` works; container is `AutoRemove` so it's ephemeral. Caveat: sudo writes into bind mounts (`/workspace`, `~/.toolbox/*`) land `root:root` on host. Smoke test asserts setuid `sudo`. → [sudo](../../docs/runtime-notes.md#passwordless-sudo)
+- **Docker CLI checksum**: `fetch-docker` stage has no upstream `.sha256` — pin + HTTPS only (T-01-08). → [docker-checksum](../../docs/runtime-notes.md#docker-cli-checksum)
+- **Dockerfile build layout**: static binaries in parallel `fetch-<tool>` stages (`/out` → `COPY --link`); final-stage RUNs ordered rare→frequent by Renovate cadence — don't append new layers blindly at the end, place by bump frequency. `make build` seeds from GHCR `buildcache-main`. → [build-layout](../../docs/runtime-notes.md#build-layout-parallel-fetch-stages--frequency-ordered-tail)
+- **Two Docker version streams**: `DOCKER_CLI_VERSION` (29.x) and `go.mod` SDK (28.x `+incompatible`) move independently; `client.WithAPIVersionNegotiation()` handles drift. Don't align numerically. → [docker-streams](../../docs/runtime-notes.md#two-docker-version-streams)
+- **Tool versions pinned**, Renovate-bumped. No per-tool opt-out — every CLI is installed unconditionally. → [tool-pinning](../../docs/runtime-notes.md#tool-version-pinning)
+- **rtk arm64 / Rust base traps**: GLIBC mismatch, tag scheme `<ver>-slim-<distro>`, slim ships no curl/ca-certs. → [image-build](../../docs/runtime-notes.md#image-build)
+- **Homebrew in image**: default prefix `/home/linuxbrew/.linuxbrew` (bottles work only there), world-writable + system `safe.directory` (variable UID), runtime `brew install` ephemeral like apt, analytics/auto-update off. Private GitLab taps via glab credential helper in system gitconfig. → [homebrew](../../docs/runtime-notes.md#homebrew), [gitlab-credential](../../docs/runtime-notes.md#gitlab-git-credential-helper-glab)
+- **Adding `init.d/<NN>-<tool>.sh` requires 3 synced edits**: (1) write script, (2) `InitScript` field on the matching `internal/catalog/catalog.go` `Entries` row, (3) `count -ne N` literal in `internal/build/assets/smoke-test.sh` bijection block. `TestCatalogInitDBijection` (Go) catches (1)+(2); (3) drifts silently — count by hand.
+- **Adding shell completion for a CLI requires 2 synced edits**: (1) generate `_<tool>` into `/usr/share/zsh/vendor-completions/_<tool>` — either via `<tool> completion zsh` in the final-stage precompute layer, OR by extracting a pre-built `_<tool>` shipped in the CLI's release tarball within its own fetch stage (precedent: bat, fd, eza); (2) `count >= N` literal + adjacent comment in `internal/build/assets/smoke-test.sh` `_zsh_vendor_completions_check`. No test catches drift — count by hand on every add. (Pre-bash-removal there was a third edit in `bashrc.sh`; with bash gone as an interactive shell, the runtime loader is removed and zsh-only vendor completions are pre-baked at build time.)
+- **rtk hook auto-wiring + privacy lockdown**: `RTK_TELEMETRY_DISABLED=1`, `RTK_TEE=0` load-bearing. → [rtk-hooks](../../docs/runtime-notes.md#rtk-hook-auto-wiring--telemetrytee-lockdown)
+- **Skill discovery paths diverge**: Claude reads `~/.claude/skills/`, Codex reads `~/.agents/skills/` — wrappers shipping a SKILL.md need dual-install (see `init.d/60-glab.sh`). → [skill-paths](../../docs/runtime-notes.md#skill-discovery-paths-diverge-between-claude-and-codex)
