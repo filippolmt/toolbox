@@ -184,6 +184,11 @@ check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
+# Wrapper strips image-wide DO_NOT_TRACK for claude only (Statsig feature
+# flags / Remote Control) — see the claude install layer in the Dockerfile.
+# NB: no nested sh -c and no single quotes — the whole script body lives
+# inside a single-quoted bash -c (see header comment above check_zsh).
+check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "codex"     codex    codex --version
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
