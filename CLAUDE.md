@@ -53,6 +53,6 @@ Path-scoped gotchas live in `.claude/rules/` and lazy-load when matching files a
 
 - [`image-build.md`](.claude/rules/image-build.md) — Dockerfile / catalog / image assets: sudo, docker checksum, layer layout, version pinning/streams, rtk traps + lockdown, homebrew, init.d/completion bijections, skill paths.
 - [`container-runtime.md`](.claude/rules/container-runtime.md) — lifecycle / session planning / cmd (plus the bridge + proximo build assets): image selection, port bindings, loopback bridge, codex sandbox, teardown/AutoRemove, browser bridge, proximo.
-- [`config-mounts-sdd.md`](.claude/rules/config-mounts-sdd.md) — config / mounts / SDD (plus the catalog auth whitelist): auth isolation, inherit_host_auth, SDD fence/steps, config load order.
+- [`config-mounts-sdd.md`](.claude/rules/config-mounts-sdd.md) — config / mounts / SDD (plus the catalog auth whitelist): auth isolation, inherit_host_auth, SDD fence/steps, config load order, `env:` passthrough.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).

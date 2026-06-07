@@ -254,6 +254,14 @@ func applyValidationTail(cfg *Config) error {
 	if err := ValidateSDD(cfg.SDD); err != nil {
 		return err
 	}
+	if err := ValidateEnv(cfg.Env); err != nil {
+		return err
+	}
+	for name, s := range cfg.Shells {
+		if err := ValidateEnv(s.Env); err != nil {
+			return fmt.Errorf("shells.%s.%w", name, err)
+		}
+	}
 	return nil
 }
 

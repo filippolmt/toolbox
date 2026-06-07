@@ -214,6 +214,52 @@ func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
 	}
 }
 
+// TestPlanUserEnvAppendedAfterCurated asserts cfg.Env pairs are emitted after
+// the curated TOOLBOX_*/PWD entries, sorted by key for deterministic output.
+func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Env = map[string]string{"ZED": "z", "CLAUDE_CODE_WORKFLOWS": "1", "EMPTY": ""}
+
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	want := []string{
+		"TOOLBOX_HOST_WORKSPACE=" + workspace,
+		"PWD=" + plan.WorkingDir,
+		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=ws",
+		"CLAUDE_CODE_WORKFLOWS=1",
+		"EMPTY=",
+		"ZED=z",
+	}
+	if !slices.Equal(plan.Env, want) {
+		t.Errorf("Env = %v, want %v", plan.Env, want)
+	}
+}
+
+// TestMergeUserEnvAppended mirrors the fs-free Merge path: user env survives
+// the pure-data plan shape too.
+func TestMergeUserEnvAppended(t *testing.T) {
+	cfg := testConfig()
+	cfg.Env = map[string]string{"FOO": "bar"}
+
+	merged, err := sessionplan.Merge(cfg, "/workspace", nil, false)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if got := indexEnv(merged.Env)["FOO"]; got != "bar" {
+		t.Errorf("Env[FOO] = %q, want %q (full: %v)", got, "bar", merged.Env)
+	}
+}
+
 // TestPlanSDDEnvAppendedWhenEnabled asserts the field-per-env-var contract:
 // each enabled skill emits a TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}
 // quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH.

@@ -114,9 +114,6 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		return nil, err
 	}
 
-	env := append(shellEnv(workspace, mp.WorkingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
-	env = append(env, proximo.Env(cfg)...)
-
 	return &SessionPlan{
 		Image:         Image{Ref: ref},
 		Binds:         mp.Binds,
@@ -124,7 +121,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           env,
+		Env:           composeEnv(workspace, mp.WorkingDir, cfg, bridgeLoopback, uniqContainerPorts, proximo.Env(cfg)),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -201,11 +198,42 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...),
+		Env:           composeEnv(workspace, workingDir, cfg, bridgeLoopback, uniqContainerPorts, nil),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
 	}, nil
+}
+
+// composeEnv assembles the full ordered env slice for a session: the curated
+// workspace + SDD entries first, then the loopback-bridge markers, then any
+// caller-supplied curated extras (Plan passes proximo.Env, which stats the
+// host CA — fs-touching, so the pure-data Merge passes nil), then the
+// user-supplied env: map. Reserved-key collisions are already rejected by
+// config.ValidateEnv, so userEnv can append unconditionally.
+func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, extra []string) []string {
+	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
+	env = append(env, extra...)
+	return append(env, userEnv(cfg.Env)...)
+}
+
+// userEnv emits the cfg.Env map as deterministically ordered K=V strings.
+// Sorted by key so the plan is stable across runs (map iteration order is
+// nondeterministic) — load-bearing for the sessionplan tests.
+func userEnv(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+env[k])
+	}
+	return out
 }
 
 // MissingPublishPorts returns the wanted publish ports that the existing
