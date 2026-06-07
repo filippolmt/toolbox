@@ -91,8 +91,9 @@ jobs:
       # amd64-only pre-publish gate: load the native image and smoke-test it
       # before any digest is pushed. arm64 cannot execute on the amd64 control
       # plane, so it has no smoke-test here (its binary correctness is gated
-      # pre-merge by docker-ci.yml's arm64 leg). The push step below is a cache
-      # hit off this build, so the second build is cheap.
+      # pre-merge by docker-ci.yml's arm64 leg). The push step below reuses this
+      # build's layers from cache, so it's cheaper than a cold build — but not
+      # free: the SBOM + provenance pass it adds is not layer-cached.
       - name: Build and load for testing
         if: matrix.load
         uses: docker/build-push-action@v7
