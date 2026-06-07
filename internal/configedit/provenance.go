@@ -1,0 +1,160 @@
+package configedit
+
+import (
+	"fmt"
+	"reflect"
+
+	"github.com/filippolmt/toolbox/internal/config"
+)
+
+// Origin identifies the config layer that determined a resolved key's value.
+// The zero value is OriginDefault so missing Provenance entries read as
+// built-in defaults.
+type Origin int
+
+const (
+	OriginDefault Origin = iota
+	OriginGlobal
+	OriginProject
+	OriginExplicit
+)
+
+// Label renders the git-config-style origin annotation. OriginExplicit
+// callers that know the resolved --config path should prefer LabelWithPath.
+func (o Origin) Label() string {
+	switch o {
+	case OriginGlobal:
+		return "(~/.toolbox.yaml)"
+	case OriginProject:
+		return "(./.toolbox.yaml)"
+	case OriginExplicit:
+		return "(--config)"
+	default:
+		return "(default)"
+	}
+}
+
+// LabelWithPath is Label with the resolved --config path spliced into the
+// OriginExplicit annotation.
+func (o Origin) LabelWithPath(explicitPath string) string {
+	if o == OriginExplicit && explicitPath != "" {
+		return fmt.Sprintf("(--config %s)", explicitPath)
+	}
+	return o.Label()
+}
+
+// Provenance maps a resolved-config key to the layer that set it. Keys are
+// the top-level container names (shell, mounts_root, inherit_host_auth, …)
+// except shells and mounts, which are attributed per entry as
+// "shells.<name>" / "mounts.<name>" — granularity inside an entry stays
+// container-level in v1 (documented in --origin help).
+type Provenance map[string]Origin
+
+// Compute attributes every resolved key to its source layer by re-running
+// the pure config.Merge once per layer (defaults / +global / +project) and
+// crediting each key to the highest layer whose value differs from the layer
+// below. An explicit --config short-circuits to a defaults-vs-explicit diff,
+// matching Plan's File Load stage. Cost is two or three extra viper passes —
+// only paid by `config show --origin` / `config doctor`, never on the hot
+// `toolbox shell` path.
+func Compute(searchFrom, explicitOverride string) (Provenance, error) {
+	global, project, explicit, _, err := config.LoadLayers(searchFrom, explicitOverride)
+	if err != nil {
+		return nil, err
+	}
+
+	base, err := config.Merge(nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	prov := Provenance{}
+
+	if len(explicit) > 0 {
+		full, merr := config.Merge(nil, nil, explicit)
+		if merr != nil {
+			return nil, merr
+		}
+		diffLayer(prov, base, full, OriginExplicit)
+		return prov, nil
+	}
+
+	withGlobal, err := config.Merge(global, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	diffLayer(prov, base, withGlobal, OriginGlobal)
+
+	full, err := config.Merge(global, project, nil)
+	if err != nil {
+		return nil, err
+	}
+	diffLayer(prov, withGlobal, full, OriginProject)
+	return prov, nil
+}
+
+// diffLayer credits origin to every key whose resolved value in upper
+// differs from lower (the layer below). Shells and mounts are compared per
+// entry name; everything else per top-level container key.
+func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
+	if upper.Shell != lower.Shell {
+		prov["shell"] = origin
+	}
+	if upper.MountsRoot != lower.MountsRoot {
+		prov["mounts_root"] = origin
+	}
+	if !reflect.DeepEqual(upper.InheritHostAuth, lower.InheritHostAuth) {
+		prov["inherit_host_auth"] = origin
+	}
+	if !reflect.DeepEqual(upper.SDD, lower.SDD) {
+		prov["sdd"] = origin
+	}
+	if !boolPtrEqual(upper.BrowserBridge, lower.BrowserBridge) {
+		prov["browser_bridge"] = origin
+	}
+	if !boolPtrEqual(upper.Proximo, lower.Proximo) {
+		prov["proximo"] = origin
+	}
+	if !reflect.DeepEqual(upper.Env, lower.Env) {
+		prov["env"] = origin
+	}
+	for name, s := range upper.Shells {
+		if ls, ok := lower.Shells[name]; !ok || !reflect.DeepEqual(s, ls) {
+			prov["shells."+name] = origin
+		}
+	}
+	diffMounts(prov, lower.Mounts, upper.Mounts, origin)
+}
+
+// diffMounts attributes named user mount entries individually; anonymous
+// entries (no name) fall back to the "mounts" container key.
+func diffMounts(prov Provenance, lower, upper []config.Mount, origin Origin) {
+	lowerByName := map[string]config.Mount{}
+	var lowerAnon []config.Mount
+	for _, m := range lower {
+		if m.Name != "" {
+			lowerByName[m.Name] = m
+		} else {
+			lowerAnon = append(lowerAnon, m)
+		}
+	}
+	var upperAnon []config.Mount
+	for _, m := range upper {
+		if m.Name == "" {
+			upperAnon = append(upperAnon, m)
+			continue
+		}
+		if lm, ok := lowerByName[m.Name]; !ok || !reflect.DeepEqual(m, lm) {
+			prov["mounts."+m.Name] = origin
+		}
+	}
+	if !reflect.DeepEqual(upperAnon, lowerAnon) {
+		prov["mounts"] = origin
+	}
+}
+
+func boolPtrEqual(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}

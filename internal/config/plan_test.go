@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -283,6 +284,139 @@ func TestPlanRejectsRelativeMountsRoot(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "mounts_root") {
 		t.Errorf("error should mention mounts_root, got: %v", err)
+	}
+}
+
+// TestLoadLayersNoProject pins the no-project shape: only the global buffer
+// is populated and projectPath stays empty.
+func TestLoadLayersNoProject(t *testing.T) {
+	home := t.TempDir()
+	globalYAML := "inherit_host_auth: [gh]\n"
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte(globalYAML), 0o600); err != nil {
+		t.Fatalf("write home config: %v", err)
+	}
+	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+
+	global, project, explicit, projectPath, err := LoadLayers(cwd, "")
+	if err != nil {
+		t.Fatalf("LoadLayers: %v", err)
+	}
+	if string(global) != globalYAML {
+		t.Errorf("global = %q, want %q", global, globalYAML)
+	}
+	if project != nil || projectPath != "" {
+		t.Errorf("project = %q (path %q), want nil/empty", project, projectPath)
+	}
+	if explicit != nil {
+		t.Errorf("explicit = %q, want nil", explicit)
+	}
+}
+
+// TestLoadLayersWalkedUpProject pins that a walked-up project file populates
+// both the buffer and the discovered path.
+func TestLoadLayersWalkedUpProject(t *testing.T) {
+	workspace := t.TempDir()
+	projectYAML := "mounts_root: /tmp/x\n"
+	wantPath := filepath.Join(workspace, ".toolbox.yaml")
+	if err := os.WriteFile(wantPath, []byte(projectYAML), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	nested := filepath.Join(workspace, "deep", "sub")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	_, project, _, projectPath, err := LoadLayers(nested, "")
+	if err != nil {
+		t.Fatalf("LoadLayers: %v", err)
+	}
+	if string(project) != projectYAML {
+		t.Errorf("project = %q, want %q", project, projectYAML)
+	}
+	if projectPath != wantPath {
+		t.Errorf("projectPath = %q, want %q", projectPath, wantPath)
+	}
+}
+
+// TestLoadLayersExplicitShortCircuits pins the --config short-circuit: only
+// the explicit buffer is populated even when global + project files exist.
+func TestLoadLayersExplicitShortCircuits(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("shell: zsh\n"), 0o600); err != nil {
+		t.Fatalf("write home: %v", err)
+	}
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, ".toolbox.yaml"), []byte("mounts_root: /tmp/x\n"), 0o600); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+	explicitYAML := "inherit_host_auth: [gh]\n"
+	explicitPath := filepath.Join(t.TempDir(), "custom.yaml")
+	if err := os.WriteFile(explicitPath, []byte(explicitYAML), 0o600); err != nil {
+		t.Fatalf("write explicit: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	global, project, explicit, projectPath, err := LoadLayers(cwd, explicitPath)
+	if err != nil {
+		t.Fatalf("LoadLayers: %v", err)
+	}
+	if global != nil || project != nil || projectPath != "" {
+		t.Errorf("explicit override must short-circuit: global=%q project=%q path=%q", global, project, projectPath)
+	}
+	if string(explicit) != explicitYAML {
+		t.Errorf("explicit = %q, want %q", explicit, explicitYAML)
+	}
+}
+
+// TestPlanEqualsMergeOverLoadLayers is the regression guard for the
+// LoadLayers extraction: Plan must behave identically to composing Merge
+// over LoadLayers for a layered global + project setup.
+func TestPlanEqualsMergeOverLoadLayers(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("inherit_host_auth: [gh]\n"), 0o600); err != nil {
+		t.Fatalf("write home: %v", err)
+	}
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, ".toolbox.yaml"), []byte("mounts_root: /tmp/x\nshells:\n  infra:\n    path: /tmp/infra\n"), 0o600); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	fromPlan, err := Plan(workspace, "")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	global, project, explicit, _, err := LoadLayers(workspace, "")
+	if err != nil {
+		t.Fatalf("LoadLayers: %v", err)
+	}
+	fromCompose, err := Merge(global, project, explicit)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if !reflect.DeepEqual(fromPlan, fromCompose) {
+		t.Errorf("Plan != Merge(LoadLayers(...)):\n plan:    %+v\n compose: %+v", fromPlan, fromCompose)
+	}
+}
+
+// TestWalkUpProjectConfigDelegates pins the exported delegator against the
+// unexported walkUp on the same tree.
+func TestWalkUpProjectConfigDelegates(t *testing.T) {
+	workspace := t.TempDir()
+	want := filepath.Join(workspace, ".toolbox.yaml")
+	if err := os.WriteFile(want, []byte("# project\n"), 0o600); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+	nested := filepath.Join(workspace, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	if got := WalkUpProjectConfig(nested); got != want {
+		t.Errorf("WalkUpProjectConfig = %q, want %q", got, want)
 	}
 }
 
