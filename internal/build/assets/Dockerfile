@@ -1052,11 +1052,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +; \
-      # DO_NOT_TRACK exemption (see the ENV near the top of this stage):
-      # replace the npm symlink with a wrapper that strips the var for the
-      # claude process only. Known cost: children spawned by claude's Bash
-      # tool inherit the stripped env, so JS tooling run *from* claude loses
-      # the opt-out.
+      # DO_NOT_TRACK exemption: swap the npm symlink for a wrapper that
+      # strips the var for the claude process only. Rationale: ENV comment
+      # near the top of this stage; known cost: runtime-notes.
       target="$(readlink -f /usr/local/bin/claude)"; \
       rm /usr/local/bin/claude; \
       printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK kills the Statsig feature-flag channel\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "$target" \
