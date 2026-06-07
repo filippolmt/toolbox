@@ -1,0 +1,205 @@
+# Reusable build+publish pipeline for the toolbox runtime image on GHCR.
+# Called by docker-publish.yml (main) and docker-release.yml (v* tags) —
+# the two callers differ only in trigger, concurrency group, cache ref and tag
+# set, so the build/merge logic lives here once.
+#
+# Pattern: native per-arch build (no QEMU) -> amd64 smoke-test gate -> push by
+# digest -> manifest merge.
+#
+# Each architecture builds on its own native runner (amd64 on ubuntu-latest,
+# arm64 on ubuntu-24.04-arm) and pushes its single-platform image *by digest*
+# (no shared tag). A final `merge` job assembles the per-arch digests into the
+# multi-arch manifest list under the real tags via `docker buildx imagetools
+# create`. This is Docker's documented "distribute build across runners"
+# pattern; it removes the ~52 min QEMU emulation penalty measured on the old
+# single-runner multi-arch build.
+
+name: Reusable Docker build + publish
+
+on:
+  workflow_call:
+    inputs:
+      cache_ref:
+        description: >-
+          Dedicated BuildKit registry cache ref (separate from the image tags),
+          e.g. ghcr.io/<repo>:buildcache-main.
+        required: true
+        type: string
+      tags:
+        description: >-
+          docker/metadata-action `tags:` input (newline-separated) applied to
+          the merged manifest list.
+        required: true
+        type: string
+
+# Maximum grant for the called jobs; the caller's GITHUB_TOKEN must allow it.
+# Build legs push by digest and `merge` pushes the manifest list — both need
+# packages:write. GITHUB_TOKEN is available to a reusable workflow without
+# `secrets: inherit`.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  TEST_TAG: ghcr.io/${{ github.repository }}:test
+
+jobs:
+  build:
+    # One leg per architecture, each on its native runner. fail-fast:false so a
+    # flaky arm64 build doesn't cancel a green amd64 leg (and vice versa);
+    # runner shape mirrors docker-ci.yml.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `load` flags the leg that runs the smoke-test gate before publish
+          # (amd64 only — arm64 can't execute on the amd64 control plane);
+          # mirrors docker-ci.yml's `if: matrix.load` convention.
+          - variant: amd64
+            runner: ubuntu-latest
+            platforms: linux/amd64
+            load: true
+          - variant: arm64
+            runner: ubuntu-24.04-arm
+            platforms: linux/arm64
+            load: false
+    name: build (${{ matrix.variant }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # amd64-only pre-publish gate: load the native image and smoke-test it
+      # before any digest is pushed. arm64 cannot execute on the amd64 control
+      # plane, so it has no smoke-test here (its binary correctness is gated
+      # pre-merge by docker-ci.yml's arm64 leg). The push step below reuses this
+      # build's layers from cache, so it's cheaper than a cold build — but not
+      # free: the SBOM + provenance pass it adds is not layer-cached.
+      - name: Build and load for testing
+        if: matrix.load
+        uses: docker/build-push-action@v7
+        with:
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
+          load: true
+          platforms: ${{ matrix.platforms }}
+          tags: ${{ env.TEST_TAG }}
+          cache-from: |
+            type=registry,ref=${{ inputs.cache_ref }}
+            type=gha,scope=${{ matrix.variant }}
+          # mode=min: final-image layers only. Fetch-stage misses fall through
+          # to the registry cache (cache_ref) — the authoritative mode=max store.
+          cache-to: type=gha,mode=min,scope=${{ matrix.variant }}
+
+      - name: Smoke test
+        if: matrix.load
+        env:
+          IMAGE_TAG: ${{ env.TEST_TAG }}
+        run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
+          platforms: ${{ matrix.platforms }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Push by digest only — no shared tag, so the two single-platform legs
+          # never race the same manifest. The `merge` job assembles the digests
+          # into the tagged manifest list.
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          # SLSA build provenance + SPDX SBOM attached as OCI attestations at the
+          # per-arch build; `imagetools create` carries them onto the merged
+          # manifest so consumers can verify from `cosign verify` /
+          # `docker buildx imagetools inspect`.
+          provenance: mode=max
+          sbom: true
+          cache-from: |
+            type=registry,ref=${{ inputs.cache_ref }}
+            type=gha,scope=${{ matrix.variant }}
+          cache-to: |
+            type=gha,mode=min,scope=${{ matrix.variant }}
+            type=registry,ref=${{ inputs.cache_ref }},mode=max
+
+      # Fan-in via digest artifacts (Docker's documented multi-runner pattern):
+      # matrix job outputs are last-writer-wins across legs and would clobber
+      # each other, so each leg uploads its digest as an artifact that `merge`
+      # downloads.
+      - name: Export digest
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.variant }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: ${{ inputs.tags }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          # Intentional word-splitting: jq emits one `-t <tag>` per metadata tag
+          # and printf one `<repo>@sha256:<digest>` per matched digest file; both
+          # must expand into separate argv entries for imagetools create.
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect merged manifest
+        run: |
+          docker buildx imagetools inspect \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"

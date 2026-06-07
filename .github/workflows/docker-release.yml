@@ -1,0 +1,45 @@
+# Publishes the toolbox runtime image to GHCR on `v*` tag pushes (releases).
+# The build/merge pipeline lives in the reusable workflow
+# `docker-publish-reusable.yml`; this file is just the tag trigger + the
+# release-specific cache ref and semver tag set.
+#
+# Why a second file (vs folding into docker-publish.yml): GitHub Actions ANDs
+# `paths:` with every push event, including tag pushes. Adding `tags: ['v*']`
+# to docker-publish.yml would only fire when the tag *also* changes a path
+# under internal/build/assets/** — almost never the case for release tags. The
+# alternative (drop `paths:` from docker-publish.yml) regresses to republishing
+# on every doc-only main push. Two thin caller files is the cleanest split.
+#
+# Outputs (vs main-branch publish): semver tags (vX.Y.Z + vX.Y + vX), no
+# `latest`, no `sha-<short>`. Same SBOM + provenance attestations and the same
+# pre-publish smoke-test gate — confidence that the image content at the tagged
+# commit boots cleanly even if main has drifted since the merge.
+
+name: Toolbox Docker Release
+run-name: Toolbox Docker Release @ ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Same tag can be pushed more than once in close succession; parallel
+# runs race the GHCR push for identical image digests. Cancel the older
+# run so exactly one publish pipeline reaches the registry per tag.
+concurrency:
+  group: docker-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    uses: ./.github/workflows/docker-publish-reusable.yml
+    with:
+      cache_ref: ghcr.io/${{ github.repository }}:buildcache-release
+      tags: |
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
