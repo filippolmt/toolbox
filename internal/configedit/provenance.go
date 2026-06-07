@@ -45,10 +45,24 @@ func (o Origin) LabelWithPath(explicitPath string) string {
 
 // Provenance maps a resolved-config key to the layer that set it. Keys are
 // the top-level container names (shell, mounts_root, inherit_host_auth, …)
-// except shells and mounts, which are attributed per entry as
-// "shells.<name>" / "mounts.<name>" — granularity inside an entry stays
-// container-level in v1 (documented in --origin help).
+// except shells and mounts, which are attributed per entry via ShellKey /
+// MountKey — granularity inside an entry stays container-level in v1
+// (documented in --origin help).
 type Provenance map[string]Origin
+
+// MountKey returns the Provenance key for a named mount entry; anonymous
+// entries (no name) fall back to the "mounts" container key. Owns the key
+// format shared by Compute (producer) and the show --origin renderer
+// (consumer) so the two cannot drift.
+func MountKey(name string) string {
+	if name == "" {
+		return "mounts"
+	}
+	return "mounts." + name
+}
+
+// ShellKey is the shells: sibling of MountKey.
+func ShellKey(name string) string { return "shells." + name }
 
 // Compute attributes every resolved key to its source layer by re-running
 // the pure config.Merge once per layer (defaults / +global / +project) and
@@ -119,7 +133,7 @@ func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
 	}
 	for name, s := range upper.Shells {
 		if ls, ok := lower.Shells[name]; !ok || !reflect.DeepEqual(s, ls) {
-			prov["shells."+name] = origin
+			prov[ShellKey(name)] = origin
 		}
 	}
 	diffMounts(prov, lower.Mounts, upper.Mounts, origin)
@@ -144,11 +158,11 @@ func diffMounts(prov Provenance, lower, upper []config.Mount, origin Origin) {
 			continue
 		}
 		if lm, ok := lowerByName[m.Name]; !ok || !reflect.DeepEqual(m, lm) {
-			prov["mounts."+m.Name] = origin
+			prov[MountKey(m.Name)] = origin
 		}
 	}
 	if !reflect.DeepEqual(upperAnon, lowerAnon) {
-		prov["mounts"] = origin
+		prov[MountKey("")] = origin
 	}
 }
 

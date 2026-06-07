@@ -17,8 +17,8 @@ func TestLevenshtein(t *testing.T) {
 		{"héllo", "hello", 1}, // rune-wise, not byte-wise
 	}
 	for _, c := range cases {
-		if got := Levenshtein(c.a, c.b); got != c.want {
-			t.Errorf("Levenshtein(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		if got := levenshtein(c.a, c.b); got != c.want {
+			t.Errorf("levenshtein(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }
@@ -26,17 +26,17 @@ func TestLevenshtein(t *testing.T) {
 func TestClosest(t *testing.T) {
 	candidates := []string{"infra", "qa", "scratch"}
 
-	if got := Closest("infar", candidates); got != "infra" {
-		t.Errorf("Closest(infar) = %q, want infra", got)
+	if got := closest("infar", candidates); got != "infra" {
+		t.Errorf("closest(infar) = %q, want infra", got)
 	}
-	if got := Closest("completely-different", candidates); got != "" {
+	if got := closest("completely-different", candidates); got != "" {
 		t.Errorf("Closest beyond maxDist must return \"\", got %q", got)
 	}
-	if got := Closest("x", nil); got != "" {
+	if got := closest("x", nil); got != "" {
 		t.Errorf("Closest with no candidates must return \"\", got %q", got)
 	}
 	// Tie keeps first in slice order.
-	if got := Closest("ab", []string{"aa", "bb"}); got != "aa" {
+	if got := closest("ab", []string{"aa", "bb"}); got != "aa" {
 		t.Errorf("Closest tie must keep first candidate, got %q", got)
 	}
 }

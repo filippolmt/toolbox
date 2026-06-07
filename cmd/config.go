@@ -298,11 +298,7 @@ func writeResolvedConfigWithOrigin(w io.Writer, c *config.Config, prov configedi
 		return err
 	}
 	for _, m := range c.Mounts {
-		mountKey := "mounts"
-		if m.Name != "" {
-			mountKey = "mounts." + m.Name
-		}
-		if _, err := fmt.Fprintf(w, "  - name: %s%s\n", m.Name, ann(mountKey)); err != nil {
+		if _, err := fmt.Fprintf(w, "  - name: %s%s\n", m.Name, ann(configedit.MountKey(m.Name))); err != nil {
 			return err
 		}
 		if m.Source != "" {

@@ -124,8 +124,9 @@ func init() {
 
 func runMountsList(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
+	defaults := mountplan.Defaults()
 	if mountsListDefaultsOnly {
-		for _, m := range mountplan.Defaults() {
+		for _, m := range defaults {
 			printMountRow(out, m, "default")
 		}
 		return nil
@@ -140,7 +141,7 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 	}
 
 	defaultNames := map[string]struct{}{}
-	for _, m := range mountplan.Defaults() {
+	for _, m := range defaults {
 		defaultNames[m.Name] = struct{}{}
 	}
 	userNames := map[string]struct{}{}
@@ -160,7 +161,7 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 
 	// Defaults dropped from the resolved set were disabled (by a user patch
 	// or a feature toggle); surface them so the view stays complete.
-	for _, m := range mountplan.Defaults() {
+	for _, m := range defaults {
 		if _, ok := resolvedNames[m.Name]; !ok {
 			printMountRow(out, m, "disabled")
 		}

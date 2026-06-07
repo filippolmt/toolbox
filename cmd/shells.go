@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
@@ -237,7 +236,7 @@ func runShellsRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fileShells, err := shellsInFile(target)
+	fileShells, err := configedit.UserShells(target)
 	if err != nil {
 		return err
 	}
@@ -288,32 +287,6 @@ func purgeShellDir(out io.Writer, path string) error {
 	}
 	_, _ = fmt.Fprintf(out, "  %s: removed\n", expanded)
 	return nil
-}
-
-// shellsInFile reads the shells: block of one config file (name → path) —
-// the candidate set for remove-time existence checks and suggestions. A
-// missing file yields an empty map.
-func shellsInFile(path string) (map[string]string, error) {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var doc struct {
-		Shells map[string]struct {
-			Path string `yaml:"path"`
-		} `yaml:"shells"`
-	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	out := make(map[string]string, len(doc.Shells))
-	for n, s := range doc.Shells {
-		out[n] = s.Path
-	}
-	return out, nil
 }
 
 // resolveWriteTarget maps a --where flag value onto the config file path a

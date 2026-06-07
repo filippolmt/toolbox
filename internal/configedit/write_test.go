@@ -263,6 +263,29 @@ func TestSetMountsRoot(t *testing.T) {
 	}
 }
 
+func TestUserShells(t *testing.T) {
+	path := tmpConfigPath(t)
+
+	shells, err := UserShells(path)
+	if err != nil {
+		t.Fatalf("UserShells on missing file: %v", err)
+	}
+	if len(shells) != 0 {
+		t.Errorf("missing file must yield no shells, got %v", shells)
+	}
+
+	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+		t.Fatalf("SetShell: %v", err)
+	}
+	shells, err = UserShells(path)
+	if err != nil {
+		t.Fatalf("UserShells: %v", err)
+	}
+	if len(shells) != 1 || shells["infra"] != "/tmp/infra" {
+		t.Errorf("UserShells = %v, want map[infra:/tmp/infra]", shells)
+	}
+}
+
 func TestUserMountNames(t *testing.T) {
 	path := tmpConfigPath(t)
 

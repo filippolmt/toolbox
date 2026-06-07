@@ -7,15 +7,15 @@ package configedit
 
 import "fmt"
 
-// suggestMaxDist is the Levenshtein cut-off for Closest — mirrors cobra's
+// suggestMaxDist is the Levenshtein cut-off for closest — mirrors cobra's
 // unexported suggestion threshold so `toolbox shells get infar` feels like
 // cobra's own unknown-command suggestions.
 const suggestMaxDist = 2
 
-// Levenshtein returns the edit distance between a and b (two-row DP).
+// levenshtein returns the edit distance between a and b (two-row DP).
 // go.mod carries no string-distance dependency and cobra's ld() is
 // unexported, so the ~30 lines live here.
-func Levenshtein(a, b string) int {
+func levenshtein(a, b string) int {
 	ra, rb := []rune(a), []rune(b)
 	if len(ra) == 0 {
 		return len(rb)
@@ -42,13 +42,13 @@ func Levenshtein(a, b string) int {
 	return prev[len(rb)]
 }
 
-// Closest returns the candidate nearest to input within suggestMaxDist, or
+// closest returns the candidate nearest to input within suggestMaxDist, or
 // "" when nothing is close enough. Ties keep the first candidate in slice
 // order so callers with sorted candidates get deterministic suggestions.
-func Closest(input string, candidates []string) string {
+func closest(input string, candidates []string) string {
 	best, bestDist := "", suggestMaxDist+1
 	for _, c := range candidates {
-		if d := Levenshtein(input, c); d < bestDist {
+		if d := levenshtein(input, c); d < bestDist {
 			best, bestDist = c, d
 		}
 	}
@@ -59,7 +59,7 @@ func Closest(input string, candidates []string) string {
 // error, or "" when no candidate is close enough. Callers append it to
 // their own error message.
 func DidYouMean(input string, candidates []string) string {
-	if c := Closest(input, candidates); c != "" {
+	if c := closest(input, candidates); c != "" {
 		return fmt.Sprintf("; did you mean %q?", c)
 	}
 	return ""
