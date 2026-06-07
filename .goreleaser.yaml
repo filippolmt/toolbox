@@ -35,8 +35,11 @@ changelog:
 # `brews` (Homebrew Formula) was hard-deprecated in GoReleaser v2.16. Casks
 # are macOS-only, so the tap no longer serves Linuxbrew — Linux users install
 # via `go install` or the released binaries. The binary is unsigned, so the
-# post-install hook strips the macOS quarantine bit to avoid the
-# "toolbox is damaged" Gatekeeper alert.
+# pre-install hook strips the macOS quarantine bit to avoid the
+# "toolbox is damaged" Gatekeeper alert; it must run *pre* (not post) install
+# because `generate_completions_from_executable` executes the staged binary
+# during the install phase, and a still-quarantined unsigned binary gets
+# killed by Gatekeeper before it can emit the completion scripts.
 homebrew_casks:
   - name: toolbox
     repository:
@@ -47,8 +50,19 @@ homebrew_casks:
     homepage: "https://github.com/filippolmt/toolbox"
     description: "CLI for the containerized dev toolbox"
     commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
+    # Install shell completions by running `toolbox completion <shell>` at
+    # install time (GoReleaser >= v2.15). `shells` is pinned because
+    # cmd/completion.go only accepts bash|zsh|fish, while the default set
+    # would also try pwsh and fail the install.
+    generate_completions_from_executable:
+      args:
+        - completion
+      shells:
+        - bash
+        - zsh
+        - fish
     hooks:
-      post:
+      pre:
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/toolbox"]
