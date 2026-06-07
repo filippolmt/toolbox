@@ -146,6 +146,12 @@ check_zsh() {
         [ "$count" -ge 16 ]
     }
 
+    # m. image locale is UTF-8 (ENV LANG=C.UTF-8 in the Dockerfile) — under
+    # the debian-slim POSIX default, ZLE renders UTF-8 bytes as `<ffffffff>`.
+    _zsh_locale_check() {
+        [ "$(locale charmap 2>/dev/null)" = "UTF-8" ]
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -163,6 +169,7 @@ check_zsh() {
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
     _zsh_assert "vendor-completions >= 16"     _zsh_vendor_completions_check
+    _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
 }
 
 check_required "node"       node --version

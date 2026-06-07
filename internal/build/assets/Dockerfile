@@ -1157,11 +1157,16 @@ ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_CODE_ENABLE_TASKS=1 \
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
+# LANG (not LC_ALL, so host env passthrough can still override the locale):
+# debian-slim defaults to the POSIX locale, under which zsh's line editor
+# cannot decode UTF-8 bytes (history entries, prompt glyphs) and renders each
+# one as `<ffffffff>`. C.UTF-8 is built into glibc — no `locales` package.
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
     EDITOR=vi \
     KUBE_EDITOR=vi \
-    STARSHIP_CONFIG=/etc/toolbox/starship.toml
+    STARSHIP_CONFIG=/etc/toolbox/starship.toml \
+    LANG=C.UTF-8
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
 # additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
