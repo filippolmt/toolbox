@@ -1187,12 +1187,18 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 # it degrades to printing the URL (cf/wrangler/any OAuth CLI shells out to
 # xdg-open; container has no browser).
 COPY --link --chmod=0755 bin/xdg-open /usr/local/bin/xdg-open
+# Browser-bridge editor shims. `code`/`codium` (codium = symlink, editor
+# inferred from basename) translate /workspace paths to host paths via
+# TOOLBOX_HOST_WORKSPACE and hand them to the daemon's /edit endpoint so the
+# host editor opens them (container ships no GUI editor).
+COPY --link --chmod=0755 bin/code /usr/local/bin/code
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/x-www-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/www-browser; \
-    ln -sf /usr/local/bin/xdg-open /usr/local/bin/open
+    ln -sf /usr/local/bin/xdg-open /usr/local/bin/open; \
+    ln -sf /usr/local/bin/code /usr/local/bin/codium
 ENV BROWSER=xdg-open
 
 USER toolbox

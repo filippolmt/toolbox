@@ -318,22 +318,25 @@ The object form implies `enabled: true` (writing it at all is the opt-in; an exp
 
 ### Architecture
 
-The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The browser bridge plumbs URL opens out to the host's real browser:
+The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The browser bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium:
 
 ```
 container                                          host
 ─────────                                          ────
 xdg-open <url>                                     toolbox browser-bridge daemon
-  └─ wrapper at tail of Dockerfile                   │ listens on 127.0.0.1:<port>
-       │  reads /home/toolbox/.toolbox/browser/      │ (port + token read from
-       │  {port,token} (RO bind-mount)               │  ~/.toolbox/browser/)
-       └─ POST http://host.docker.internal:<port>   ─┘
-              Authorization: Bearer <token>
-              body: { "url": "..." }
-                                                    └─ open / xdg-open <url>
+code/codium <path>                                   │ listens on 127.0.0.1:<port>
+  └─ wrappers at tail of Dockerfile                  │ (port + token read from
+       │  read /home/toolbox/.toolbox/browser/       │  ~/.toolbox/browser/)
+       │  {port,token} (RO bind-mount)               │
+       ├─ POST http://host.docker.internal:<port>/open
+       │      body: { "url": "..." }                 ├─ open / xdg-open <url>
+       └─ POST http://host.docker.internal:<port>/edit
+              body: { "editor": "...", "path": "..." }
+                                                     └─ code / codium <path>
+              (both: Authorization: Bearer <token>)
 ```
 
-The container-side wrapper is installed at the tail of `internal/build/assets/Dockerfile` (around line 1348, after the `COPY init.d/` step), shadowing `/usr/local/bin/xdg-open` and its synonyms (`sensible-browser`, `gnome-open`, `x-www-browser`, `www-browser`, `open`). `ENV BROWSER=xdg-open` lets tools that honour `$BROWSER` route through the same wrapper.
+The container-side wrappers are installed at the tail of `internal/build/assets/Dockerfile` (after the `COPY init.d/` step): `xdg-open` shadows `/usr/local/bin/xdg-open` and its synonyms (`sensible-browser`, `gnome-open`, `x-www-browser`, `www-browser`, `open`); `code` ships with `codium` as a symlink (editor inferred from `basename $0`). `ENV BROWSER=xdg-open` lets tools that honour `$BROWSER` route through the same wrapper.
 
 State lives in `~/.toolbox/browser/` (`HostDir` in `internal/browserbridge/paths.go:16`), mounted **read-only** into the container at `/home/toolbox/.toolbox/browser` (`ContainerDir`, line 20). Four files: `token` (bearer secret, generated at install), `port` (chosen at daemon start), `pid`, `log`. The dir is mode `0700`; the bind keeps the container from rotating either secret.
 
@@ -354,11 +357,20 @@ The daemon refuses anything that isn't:
 
 1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time).
 2. Authenticated with the exact bearer token from `~/.toolbox/browser/token` (constant-time compare).
-3. Scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400.
+3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400.
 4. Below the URL length cap.
-5. Within the rate limit.
+5. Within the rate limit (one bucket shared by `/open` and `/edit`).
 
-The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser, but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace).
+The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell).
+
+### Editor shims
+
+`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the state-dir marker in both so a dropped COPY or a shadowing real binary fails the image build. Behaviour:
+
+- No args → `.`. Each path arg is resolved to absolute (`realpath -m` against `$PWD`), must live under `/workspace`, and is rewritten with `$TOOLBOX_HOST_WORKSPACE` (injected by `sessionplan` in every shell) before one `POST /edit` per path. The daemon stays workspace-agnostic: it receives host paths only.
+- Paths outside `/workspace` are rejected locally (the host cannot see them); flags (`-g`, `--diff`, …) are rejected honestly rather than silently dropped. Both exit 1 with no POST.
+- Daemon-side launch: editor CLI from `PATH`; macOS falls back to `open -a "Visual Studio Code"` / `open -a "VSCodium"` when the CLI shim isn't installed (per-OS split in `internal/browserbridge/editor_darwin.go` / `editor_linux.go`).
+- Fallback hints mirror `xdg-open` (`toolbox browser-bridge install` when state is missing, `status` when unreachable, "update the host toolbox CLI" on 404 from a pre-`/edit` daemon) — but unlike `xdg-open` (exit 0 so OAuth flows never block) the editor shims exit non-zero: they're interactive commands and a false success is misleading.
 
 ### Mount gating
 
