@@ -741,7 +741,12 @@ ARG GRAPHIFY_VERSION
 ARG PLAYWRIGHT_VERSION
 ARG PLAYWRIGHT_CLI_VERSION
 
-# consoledonottrack.com convention — honored by bun, playwright, etc.
+# consoledonottrack.com convention — honored by bun, playwright, and much of
+# the JS toolchain users run in here (next, astro, turbo, …). claude is the
+# one exemption: it treats DO_NOT_TRACK as a telemetry umbrella and shuts
+# down the Statsig feature-flag channel (breaks Remote Control — /doctor
+# flags it). Exemption lives in the claude install layer as an `env -u`
+# wrapper around the real binary.
 ENV DO_NOT_TRACK=1
 
 # Base apt deps. `rm -f docker-clean` keeps BuildKit cache mount populated.
@@ -1046,7 +1051,16 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       find /usr/local/lib/node_modules/@anthropic-ai \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
+        -prune -exec rm -rf {} +; \
+      # DO_NOT_TRACK exemption: swap the npm symlink for a wrapper that
+      # strips the var for the claude process only. Rationale: ENV comment
+      # near the top of this stage; known cost: runtime-notes.
+      target="$(readlink -f /usr/local/bin/claude)"; \
+      rm /usr/local/bin/claude; \
+      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK kills the Statsig feature-flag channel\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "$target" \
+        > /usr/local/bin/claude; \
+      chmod 0755 /usr/local/bin/claude; \
+      claude --version;
 # xterm-ghostty terminfo. ncurses 6.4 (bookworm) predates the entry added
 # in 6.5. Bundled .src is a fully-resolved infocmp dump of the terminfo
 # Ghostty itself ships (version in the .src provenance header) — no use=
@@ -1113,7 +1127,11 @@ RUN set -eux; \
 #     Remote Control entitlements and preview rollouts
 #     (anthropics/claude-code#58383); it is product analytics, not training
 #     data — the model-improvement opt-out lives in the claude.ai account
-#     privacy settings, not in this flag.
+#     privacy settings, not in this flag. Same reason the image-wide
+#     DO_NOT_TRACK=1 is stripped for claude via the /usr/local/bin/claude
+#     wrapper (install layer above): claude honors it as a telemetry
+#     umbrella and it kills Statsig exactly like DISABLE_TELEMETRY would
+#     (/doctor flags it).
 #   CLAUDE_CONFIG_DIR: relocate .credentials.json + .claude.json into the
 #     ~/.claude bind so OAuth survives container recreates.
 #   USE_BUILTIN_RIPGREP=0: image ships apt ripgrep (base layer) — use it
