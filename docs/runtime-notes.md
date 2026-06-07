@@ -104,6 +104,18 @@ Sources accept absolute, `~/`, and CWD-relative paths (resolved by `resolveAll` 
 
 Setting `mounts_root: /custom/path` rewrites every default mount whose Source starts with `~/.toolbox/` to live under the new root, applied *before* the user merge inside `mountplan.Merge`. Per-mount patches still win, so a global root + a single per-name override coexist. `docker-sock` and `SymlinkFrom` targets are not touched (they reference real host paths, not toolbox-managed mirrors). Relative values rejected at startup by `config.ValidateMountsRoot`.
 
+### mounts CLI
+
+`toolbox mounts` edits the `mounts:` list / `mounts_root:` key without hand-editing YAML, mapping 1:1 onto the merge semantics above — no new schema shapes:
+
+- `list [--defaults-only]` — effective view from `mountplan.Merge(cfg)`, each row classified against `mountplan.Defaults()` by name: `(default)` / `(patched)` / `(disabled)` / `(user)`. Disabled defaults are listed too (the resolved set drops them).
+- `add <name> --source --target [--readonly]` — writes the replace/append form; a name matching a default replaces it wholesale.
+- `disable <name>` — writes the `{name, disabled: true}` patch; the name is validated against defaults + user entries first, because a patch referencing an unknown name fails the next `Plan()` load.
+- `remove <name>` — deletes a **user-list entry only**. Defaults are not stored in the file, so a default-only name gets an explanatory error pointing at `disable` instead.
+- `root <path>` — pre-validates with `config.ValidateMountsRoot`, then writes `mounts_root:`.
+
+All writers go through the comment-preserving `configio.UpsertFile` pipeline (via `internal/configedit`) and accept `--where global|local` (see [--where targeting](#--where-targeting)). Unknown names get Levenshtein "did you mean" suggestions.
+
 ## Image versions
 
 ### Two Docker version streams
@@ -508,3 +520,20 @@ Contract:
 - **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD`/SDD entries first, then the loopback-bridge markers, then the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
 - **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`).
 - **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `browser_bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
+
+### --where targeting
+
+Every config-writing subcommand (`toolbox shells add|set|remove`, `toolbox mounts add|disable|remove|root`) accepts `--where global|local` (default `global`), mirroring the per-user/per-repo duality of the load order:
+
+- `global` → `configio.GlobalConfigPath()` (`~/.toolbox.yaml`). Default because shells/mounts are naturally per-user.
+- `local` → the **walked-up** project `.toolbox.yaml` (`config.WalkUpProjectConfig`, the same walk-up `Plan` uses), so the existing project file is patched in place rather than shadowed by a stray `./.toolbox.yaml`. Only when the walk-up finds nothing is `./.toolbox.yaml` created in the CWD.
+
+Resolution lives in `configedit.Resolve` (`internal/configedit/where.go`). Every writer reports the touched file as `<path>: created|updated|unchanged` (idempotent re-runs render byte-identically and report `unchanged`). Files created by a writer start with a header comment pointing at `toolbox config example` (`configedit.Upsert`, D7: the header policy lives in `configedit`, keeping `configio` a policy-free leaf).
+
+### config provenance & doctor
+
+`toolbox config show --origin` annotates each rendered key git-config-style with the layer that set it: `(default)`, `(~/.toolbox.yaml)`, `(./.toolbox.yaml)`, or `(--config <path>)`. Provenance is computed by re-running the pure `config.Merge` once per layer (defaults / +global / +project) and crediting each key to the highest layer whose value differs from the layer below (`configedit.Compute`); `--config` short-circuits to a defaults-vs-explicit diff, matching `Plan`. Granularity: per entry name for `shells`/`mounts`, container-level for everything else. The extra viper passes only run for `--origin`/`doctor`, never on the `toolbox shell` hot path. **Without the flag, `config show` output is byte-for-byte unchanged** (golden-tested) — users pipe it.
+
+`toolbox config doctor` is a strict read-only superset of the load path's validation tail (`configedit.Doctor`): it surfaces `Plan`/`Merge` errors, flags unknown top-level keys per layer (key set derived from `Config`'s mapstructure tags, with Levenshtein suggestions), warns on the legacy `tools:` block (→ [tools-removal](#tools-removal)), checks `shells.<name>.path` (empty = error, missing dir = warning — it may be created by `--create`), and runs `mountplan.Merge` (failure = error, duplicate resolved targets = warning; mountplan doesn't dedupe, the last bind wins silently at the Docker layer). Exit 1 iff at least one error-severity finding.
+
+`config path` lists the layers in precedence order with found/none markers; `config edit` opens `$EDITOR` (fallback `vi`) on the highest-precedence existing file — explicit `--config` > walked-up project > global — creating `~/.toolbox.yaml` with the documentation header when none exists. Both reuse the `config.LoadLayers` / `config.WalkUpProjectConfig` exports extracted from `Plan` (a pure refactor: `Plan ≡ Merge(LoadLayers(...))`, regression-tested).

@@ -33,54 +33,67 @@ import (
 // explicitOverride is the resolved --config flag value ("" when unset).
 //
 // Errors propagate; no os.Exit inside the Seam — the caller in cmd/ decides
-// how to surface failure. Plan owns walk-up + file IO; Merge (the pure-
-// inspection sibling) owns the byte-level merge mechanics.
+// how to surface failure. Plan owns walk-up + file IO (via LoadLayers); Merge
+// (the pure-inspection sibling) owns the byte-level merge mechanics.
 func Plan(searchFrom string, explicitOverride string) (*Config, error) {
-	var globalBytes, projectBytes, explicitBytes []byte
+	global, project, explicit, _, err := LoadLayers(searchFrom, explicitOverride)
+	if err != nil {
+		return nil, err
+	}
+	return Merge(global, project, explicit)
+}
 
+// LoadLayers performs Plan's filesystem half: it loads the raw global /
+// project / explicit YAML byte buffers (any of which may be nil) plus the
+// discovered project-file path, without merging or validating. An explicit
+// --config override short-circuits global + project loading, mirroring the
+// File Load stage in Merge. Exposed so provenance computation and
+// `config path` reuse the single load implementation.
+func LoadLayers(searchFrom string, explicitOverride string) (global, project, explicit []byte, projectPath string, err error) {
 	if explicitOverride != "" {
-		b, err := os.ReadFile(explicitOverride)
-		if err != nil {
-			return nil, fmt.Errorf("read --config %q: %w", explicitOverride, err)
+		b, rerr := os.ReadFile(explicitOverride)
+		if rerr != nil {
+			return nil, nil, nil, "", fmt.Errorf("read --config %q: %w", explicitOverride, rerr)
 		}
-		explicitBytes = b
-	} else {
-		// Global ~/.toolbox.yaml — best-effort. Read AND parse failures are
-		// non-fatal: commands that don't need configuration (e.g. `stop --all`)
-		// still run when the global file is broken. Errors go to stderr so the
-		// user notices the broken file even though startup keeps going.
-		if home, herr := os.UserHomeDir(); herr == nil && home != "" {
-			globalPath := filepath.Join(home, ".toolbox.yaml")
-			b, rerr := os.ReadFile(globalPath)
-			switch {
-			case rerr == nil:
-				if perr := dryParseYAML(b); perr != nil {
-					fmt.Fprintf(os.Stderr,
-						"toolbox: skipping global config %q: %v\n",
-						globalPath, perr)
-				} else {
-					globalBytes = b
-				}
-			case os.IsNotExist(rerr):
-				// OK — global is optional.
-			default:
+		return nil, nil, b, "", nil
+	}
+
+	// Global ~/.toolbox.yaml — best-effort. Read AND parse failures are
+	// non-fatal: commands that don't need configuration (e.g. `stop --all`)
+	// still run when the global file is broken. Errors go to stderr so the
+	// user notices the broken file even though startup keeps going.
+	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
+		globalPath := filepath.Join(home, ".toolbox.yaml")
+		b, rerr := os.ReadFile(globalPath)
+		switch {
+		case rerr == nil:
+			if perr := dryParseYAML(b); perr != nil {
 				fmt.Fprintf(os.Stderr,
 					"toolbox: skipping global config %q: %v\n",
-					globalPath, rerr)
+					globalPath, perr)
+			} else {
+				global = b
 			}
-		}
-
-		// Project .toolbox.yaml via walk-up — optional.
-		if path := walkUp(searchFrom); path != "" {
-			b, rerr := os.ReadFile(path)
-			if rerr != nil {
-				return nil, fmt.Errorf("read project config %q: %w", path, rerr)
-			}
-			projectBytes = b
+		case os.IsNotExist(rerr):
+			// OK — global is optional.
+		default:
+			fmt.Fprintf(os.Stderr,
+				"toolbox: skipping global config %q: %v\n",
+				globalPath, rerr)
 		}
 	}
 
-	return Merge(globalBytes, projectBytes, explicitBytes)
+	// Project .toolbox.yaml via walk-up — optional.
+	if path := walkUp(searchFrom); path != "" {
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil, nil, nil, "", fmt.Errorf("read project config %q: %w", path, rerr)
+		}
+		project = b
+		projectPath = path
+	}
+
+	return global, project, nil, projectPath, nil
 }
 
 // Merge layers global / project / explicit YAML byte buffers (any of which may
@@ -143,6 +156,12 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 // =============================================================================
 // Walk-Up
 // =============================================================================
+
+// WalkUpProjectConfig exposes walk-up discovery for callers outside the load
+// path — config-writing commands (`--where local`) need to find the project
+// file to patch without loading any layer. Returns the first .toolbox.yaml
+// found walking up from start, or "" when none exists.
+func WalkUpProjectConfig(start string) string { return walkUp(start) }
 
 // walkUp searches upward from start for a .toolbox.yaml file and returns the
 // first match's absolute path. Search stops at the user's HOME directory (so
