@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -24,9 +25,10 @@ import (
 // to the wrapper instead of hanging the in-container CLI.
 const requestTimeout = 5 * time.Second
 
-// rateLimit is the maximum number of /open requests served per rolling
-// second. Enough headroom for legitimate bursts (e.g. a CLI opening a few
-// URLs back-to-back) while still containing a buggy or hostile loop.
+// rateLimit is the maximum number of /open + /edit requests served per
+// rolling second (one shared bucket). Enough headroom for legitimate bursts
+// (e.g. a CLI opening a few URLs back-to-back) while still containing a
+// buggy or hostile loop.
 const rateLimit = 10
 
 // rateBurst is the token bucket burst capacity layered on top of rateLimit.
@@ -46,6 +48,9 @@ type DaemonOptions struct {
 	// Open invokes the host's default URL handler. Tests override; production
 	// callers leave it nil to use hostOpenCommand.
 	Open func(ctx context.Context, url string) error
+	// Edit launches a host editor on a path. Tests override; production
+	// callers leave it nil to use the per-OS launchEditor.
+	Edit func(ctx context.Context, editor, path string) error
 }
 
 // Run starts the browser-bridge HTTP server in the foreground. It returns
@@ -110,8 +115,12 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	if openFn == nil {
 		openFn = hostOpenCommand
 	}
+	editFn := opts.Edit
+	if editFn == nil {
+		editFn = launchEditor
+	}
 
-	handler := newHandler(token, openFn, logger, now)
+	handler := newHandler(token, openFn, editFn, logger, now)
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -141,25 +150,28 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	}
 }
 
-// handler is the single HTTP handler the daemon mounts on /open. Extracted
-// so tests can drive it through net/http/httptest without re-binding a real
-// socket on every case.
+// handler is the single HTTP handler the daemon mounts on /open and /edit.
+// Extracted so tests can drive it through net/http/httptest without
+// re-binding a real socket on every case.
 type handler struct {
 	token   string
 	openFn  func(ctx context.Context, url string) error
+	editFn  func(ctx context.Context, editor, path string) error
 	logger  *log.Logger
 	limiter *rateLimiter
 }
 
-func newHandler(token string, openFn func(ctx context.Context, url string) error, logger *log.Logger, now func() time.Time) http.Handler {
+func newHandler(token string, openFn func(ctx context.Context, url string) error, editFn func(ctx context.Context, editor, path string) error, logger *log.Logger, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 	h := &handler{
 		token:   token,
 		openFn:  openFn,
+		editFn:  editFn,
 		logger:  logger,
 		limiter: newRateLimiter(rateLimit, rateBurst, now),
 	}
 	mux.HandleFunc("/open", h.handleOpen)
+	mux.HandleFunc("/edit", h.handleEdit)
 	mux.HandleFunc("/healthz", h.handleHealth)
 	return mux
 }
@@ -175,19 +187,29 @@ type openRequest struct {
 	URL string `json:"url"`
 }
 
-func (h *handler) handleOpen(w http.ResponseWriter, r *http.Request) {
+// gate applies the shared request gates (POST only, bearer token, rate
+// limit) for /open and /edit. Returns false after writing the error
+// response; verb labels the audit-log lines.
+func (h *handler) gate(verb string, w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return false
 	}
 	if !h.authOK(r) {
-		h.logger.Printf("open: rejected (bad token) from %s", r.RemoteAddr)
+		h.logger.Printf("%s: rejected (bad token) from %s", verb, r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
+		return false
 	}
 	if !h.limiter.Allow() {
-		h.logger.Printf("open: rejected (rate limited) from %s", r.RemoteAddr)
+		h.logger.Printf("%s: rejected (rate limited) from %s", verb, r.RemoteAddr)
 		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return false
+	}
+	return true
+}
+
+func (h *handler) handleOpen(w http.ResponseWriter, r *http.Request) {
+	if !h.gate("open", w, r) {
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, MaxURLLen+1024))
@@ -217,6 +239,54 @@ func (h *handler) handleOpen(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// editRequest is the body shape the editor shims POST to /edit.
+type editRequest struct {
+	Editor string `json:"editor"`
+	Path   string `json:"path"`
+}
+
+func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
+	if !h.gate("edit", w, r) {
+		return
+	}
+	// Reuse the /open body cap: host paths sit far below MaxURLLen.
+	body, err := io.ReadAll(io.LimitReader(r.Body, MaxURLLen+1024))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	var req editRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "malformed json", http.StatusBadRequest)
+		return
+	}
+	if _, ok := editorAllowlist[req.Editor]; !ok {
+		h.logger.Printf("edit: rejected (unknown editor) editor=%q", truncate(req.Editor, 64))
+		http.Error(w, "unknown editor", http.StatusBadRequest)
+		return
+	}
+	clean := filepath.Clean(req.Path)
+	if !filepath.IsAbs(clean) {
+		h.logger.Printf("edit: rejected (relative path) path=%q", truncate(req.Path, 256))
+		http.Error(w, "path must be absolute", http.StatusBadRequest)
+		return
+	}
+	if _, err := os.Stat(clean); err != nil {
+		h.logger.Printf("edit: rejected (stat: %v) path=%q", err, truncate(clean, 256))
+		http.Error(w, "path does not exist on host", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	if err := h.editFn(ctx, req.Editor, clean); err != nil {
+		h.logger.Printf("edit: handler failed: %v editor=%q path=%q", err, req.Editor, truncate(clean, 256))
+		http.Error(w, "edit handler failed", http.StatusBadGateway)
+		return
+	}
+	h.logger.Printf("edit: ok editor=%q path=%q", req.Editor, truncate(clean, 256))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) authOK(r *http.Request) bool {
 	got := r.Header.Get("Authorization")
 	const prefix = "Bearer "
@@ -231,15 +301,20 @@ func (h *handler) authOK(r *http.Request) bool {
 // xdg-open from xdg-utils. Other platforms surface an error rather than
 // guessing.
 func hostOpenCommand(ctx context.Context, url string) error {
-	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "/usr/bin/open", url)
+		return runQuiet(ctx, "/usr/bin/open", url)
 	case "linux":
-		cmd = exec.CommandContext(ctx, "xdg-open", url)
+		return runQuiet(ctx, "xdg-open", url)
 	default:
 		return fmt.Errorf("browser-bridge: unsupported host OS %q", runtime.GOOS)
 	}
+}
+
+// runQuiet execs name with args detached from stdio — shared launch plumbing
+// for the URL handler and the editor launchers. Direct exec, no shell.
+func runQuiet(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
