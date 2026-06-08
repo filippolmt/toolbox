@@ -116,6 +116,15 @@ func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
 	if upper.MountsRoot != lower.MountsRoot {
 		prov["mounts_root"] = origin
 	}
+	if upper.Image != lower.Image {
+		prov["image"] = origin
+	}
+	if upper.RegistryMirror != lower.RegistryMirror {
+		prov["registry_mirror"] = origin
+	}
+	if upper.Pull != lower.Pull {
+		prov["pull"] = origin
+	}
 	if !reflect.DeepEqual(upper.InheritHostAuth, lower.InheritHostAuth) {
 		prov["inherit_host_auth"] = origin
 	}

@@ -44,6 +44,35 @@ func TestPlanComposesImage(t *testing.T) {
 	}
 }
 
+// TestMergeImageSelectionAndPullPolicy asserts registry_mirror relocates the
+// host (path+tag preserved) and the pull policy propagates onto the Image.
+func TestMergeImageSelectionAndPullPolicy(t *testing.T) {
+	cfg := &config.Config{Shell: "zsh", RegistryMirror: "harbor.corp.io/ghcr-proxy", Pull: "never"}
+	merged, err := sessionplan.Merge(cfg, "/tmp/ws", nil, false)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if merged.Image.Ref != "harbor.corp.io/ghcr-proxy/filippolmt/toolbox:latest" {
+		t.Errorf("Image.Ref = %q, want mirror-swapped ref", merged.Image.Ref)
+	}
+	if merged.Image.PullPolicy != "never" {
+		t.Errorf("PullPolicy = %q, want never", merged.Image.PullPolicy)
+	}
+}
+
+// TestMergeFullImageOverrideWins asserts an explicit image: ref beats a
+// configured registry_mirror.
+func TestMergeFullImageOverrideWins(t *testing.T) {
+	cfg := &config.Config{Shell: "zsh", Image: "ghcr.io/x/y:dev", RegistryMirror: "ignored.example/proxy"}
+	merged, err := sessionplan.Merge(cfg, "/tmp/ws", nil, false)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if merged.Image.Ref != "ghcr.io/x/y:dev" {
+		t.Errorf("Image.Ref = %q, want full override to win", merged.Image.Ref)
+	}
+}
+
 // TestPlanComposesMounts asserts Plan delegates the mount stage to
 // mountplan.Plan and propagates Binds + WorkingDir.
 func TestPlanComposesMounts(t *testing.T) {

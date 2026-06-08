@@ -94,10 +94,11 @@ func NewClient() (client.APIClient, error) {
 //   - ActionStart   -> start the stopped container, then exec
 //   - ActionCreate  -> ensure image, create + start + exec
 //
-// Image ensure: every user runs the canonical GHCR image; Refresh attempts
-// a best-effort registry sync, Ensure (called from createAndStart) hard-
-// requires the image be present locally — `toolbox build` is the explicit
-// path to a local rebuild.
+// Image ensure: the image ref defaults to the canonical GHCR tag but can be
+// relocated opt-in (config Image / RegistryMirror). Refresh attempts a
+// best-effort registry sync steered by the pull policy (auto/always/never),
+// Ensure (called from createAndStart) hard-requires the image be present
+// locally — `toolbox build` is the explicit path to a local rebuild.
 //
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the

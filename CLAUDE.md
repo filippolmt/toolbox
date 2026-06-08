@@ -42,6 +42,7 @@ Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` gua
 - **Repo content English; chat with user Italian.**
 - `AGENTS.md` is a symlink to this file (Codex CLI). Don't unlink unless dropping Codex.
 - Standard `gofmt`; lint config `.golangci.yml`.
+- Test-first changes: use the `tdd` skill (`/tdd <spec>`) — Specify-Encode-Fulfill, one test at a time, never mix a behavior change with a refactor.
 
 ## Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)
 

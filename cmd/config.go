@@ -83,6 +83,36 @@ documentation header first.`,
 	RunE: runConfigEdit,
 }
 
+var (
+	configSetImage          string
+	configSetRegistryMirror string
+	configSetPull           string
+	configSetWhere          string
+)
+
+var configSetCmd = &cobra.Command{
+	Use:   "set",
+	Short: "Set image-selection keys (image / registry_mirror / pull)",
+	Long: `Write the image-selection keys to the --where-resolved config file,
+preserving comments and sibling keys. Only the flags you pass are written;
+passing an empty value resets that key to its default.
+
+  --image            full image ref override (host/path:tag or digest)
+  --registry-mirror  relocate only the registry host — point the canonical
+                     image at a proxy hub / pull-through cache (Harbor,
+                     Artifactory, Nexus, ECR pull-through)
+  --pull             registry-sync policy: auto (default) | always | never
+
+  --where global     ~/.toolbox.yaml (default)
+  --where local      the walked-up project .toolbox.yaml, creating
+                     ./.toolbox.yaml when none is found`,
+	Example: `  toolbox config set --where global --registry-mirror harbor.corp.io/ghcr-proxy
+  toolbox config set --pull never --where local
+  toolbox config set --image ""   # reset to the canonical default`,
+	Args: usageArgs(cobra.NoArgs),
+	RunE: runConfigSet,
+}
+
 var configDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Validate the configuration without modifying it",
@@ -97,7 +127,14 @@ exists; warnings alone exit 0.`,
 
 func init() {
 	configShowCmd.Flags().BoolVar(&configShowOrigin, "origin", false, "annotate each key with the layer that set it")
+
+	configSetCmd.Flags().StringVar(&configSetImage, "image", "", "full image ref override (empty resets to default)")
+	configSetCmd.Flags().StringVar(&configSetRegistryMirror, "registry-mirror", "", "relocate the registry host (proxy hub / pull-through cache)")
+	configSetCmd.Flags().StringVar(&configSetPull, "pull", "", "registry-sync policy: auto|always|never")
+	configSetCmd.Flags().StringVar(&configSetWhere, "where", "global", "config file to write: global|local")
+
 	configCmd.AddCommand(configShowCmd)
+	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configExampleCmd)
 	configCmd.AddCommand(configPathCmd)
 	configCmd.AddCommand(configEditCmd)
@@ -156,6 +193,47 @@ func runConfigPath(cmd *cobra.Command, _ []string) error {
 		layer("TOOLBOX_* env", "(none set)")
 	}
 	layer("defaults", "(built-in)")
+	return nil
+}
+
+func runConfigSet(cmd *cobra.Command, _ []string) error {
+	flags := cmd.Flags()
+	// Each candidate maps a --flag to its config key + validator; only flags
+	// the user actually passed are collected (Changed), validated up front,
+	// then written together so a partial write never lands behind a later
+	// rejection — and all keys share one read-parse-write cycle.
+	candidates := []struct {
+		flag, key, value string
+		validate         func(string) error
+	}{
+		{"image", "image", configSetImage, config.ValidateImageRef},
+		{"registry-mirror", "registry_mirror", configSetRegistryMirror, config.ValidateRegistryMirror},
+		{"pull", "pull", configSetPull, config.ValidatePull},
+	}
+	var edits []configedit.ScalarEdit
+	for _, c := range candidates {
+		if !flags.Changed(c.flag) {
+			continue
+		}
+		if err := c.validate(c.value); err != nil {
+			return &usageError{err: err}
+		}
+		edits = append(edits, configedit.ScalarEdit{Key: c.key, Value: c.value})
+	}
+	if len(edits) == 0 {
+		return &usageError{err: fmt.Errorf("set requires at least one of --image, --registry-mirror, --pull")}
+	}
+
+	target, err := resolveWriteTarget(configSetWhere)
+	if err != nil {
+		return err
+	}
+	existed := fileExists(target)
+	changed, err := configedit.SetScalars(target, edits)
+	if err != nil {
+		return err
+	}
+	reportWrite(cmd.OutOrStdout(), target, existed, changed)
 	return nil
 }
 
@@ -248,6 +326,16 @@ func writeResolvedConfig(w io.Writer, c *config.Config) error {
 	return writeResolvedConfigWithOrigin(w, c, nil, "")
 }
 
+// quoteIfEmpty renders an empty scalar as the explicit `""` token (matching
+// the mounts_root convention) so an unset key reads as deliberately blank
+// rather than a dangling `key:`.
+func quoteIfEmpty(s string) string {
+	if s == "" {
+		return `""`
+	}
+	return s
+}
+
 // writeResolvedConfigWithOrigin is writeResolvedConfig plus optional
 // per-key origin annotations (git-config --show-origin style). With a nil
 // prov the output is identical to the historical renderer.
@@ -265,14 +353,23 @@ func writeResolvedConfigWithOrigin(w io.Writer, c *config.Config, prov configedi
 	if _, err := fmt.Fprintf(w, "shell: %s%s\n", c.Shell, ann("shell")); err != nil {
 		return err
 	}
-	if c.MountsRoot != "" {
-		if _, err := fmt.Fprintf(w, "mounts_root: %s%s\n", c.MountsRoot, ann("mounts_root")); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(w, "mounts_root: \"\"%s\n", ann("mounts_root")); err != nil {
-			return err
-		}
+
+	if _, err := fmt.Fprintf(w, "image: %s%s\n", quoteIfEmpty(c.Image), ann("image")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "registry_mirror: %s%s\n", quoteIfEmpty(c.RegistryMirror), ann("registry_mirror")); err != nil {
+		return err
+	}
+	pull := c.Pull
+	if pull == "" {
+		pull = config.PullAuto
+	}
+	if _, err := fmt.Fprintf(w, "pull: %s%s\n", pull, ann("pull")); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(w, "mounts_root: %s%s\n", quoteIfEmpty(c.MountsRoot), ann("mounts_root")); err != nil {
+		return err
 	}
 
 	if len(c.InheritHostAuth) == 0 {

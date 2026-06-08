@@ -27,11 +27,14 @@ import (
 
 // --- Public Seams ---
 
-// Image identifies the container image to launch. There is only the
-// canonical registry image; `toolbox build` overwrites its local cache for
-// users who want a custom build.
+// Image identifies the container image to launch. Ref defaults to the
+// canonical registry image (`toolbox build` overwrites its local cache) but
+// can be relocated, opt-in, via config Image / RegistryMirror —
+// build.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
+// ("auto" | "always" | "never") and drives imageplan.Refresh.
 type Image struct {
-	Ref string
+	Ref        string
+	PullPolicy string
 }
 
 // SessionPlan is the resolved-fs plan returned by Plan. Binds are the
@@ -97,7 +100,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		return nil, err
 	}
 
-	ref := build.ResolveImage()
+	ref := build.ResolveImage(cfg.Image, cfg.RegistryMirror)
 
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates
@@ -115,7 +118,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 	}
 
 	return &SessionPlan{
-		Image:         Image{Ref: ref},
+		Image:         Image{Ref: ref, PullPolicy: cfg.Pull},
 		Binds:         mp.Binds,
 		Warnings:      mp.Warnings,
 		WorkingDir:    mp.WorkingDir,
@@ -173,7 +176,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 		return nil, err
 	}
 
-	ref := build.ResolveImage()
+	ref := build.ResolveImage(cfg.Image, cfg.RegistryMirror)
 
 	merged, err := mountplan.Merge(cfg)
 	if err != nil {
@@ -193,7 +196,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 	}
 
 	return &MergedSessionPlan{
-		Image:         Image{Ref: ref},
+		Image:         Image{Ref: ref, PullPolicy: cfg.Pull},
 		Binds:         merged,
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,

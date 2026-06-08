@@ -4,9 +4,10 @@
 // so it survives across CLI runs; only successful pulls record, so a
 // network blip doesn't poison the next invocation into staleness.
 //
-// The single seam is RefreshIfStale(ctx, cli, ref): cache-hit fast-path,
-// pull on miss, record on success. Everything is best-effort — callers
-// proceed with the local image regardless. UI surfacing (per-layer
+// Two seams, both best-effort (callers proceed with the local image
+// regardless): RefreshIfStale(ctx, cli, ref) is the cache-aware default
+// (cache-hit fast-path, pull on miss, record on success), and ForcePull
+// pulls unconditionally for the "always" policy. UI surfacing (per-layer
 // progress, success/warning lines) stays inside this package so the
 // pull concern owns its own observability end-to-end.
 package imagepull
@@ -26,6 +27,7 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"golang.org/x/term"
 
+	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -46,6 +48,21 @@ func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) {
 	if cached(ref) {
 		return
 	}
+	pullAndRecord(ctx, cli, ref)
+}
+
+// ForcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
+// "always" pull policy: the user has asked for a registry round-trip on every
+// shell, so a recent cache hit must not short-circuit it. Best-effort like
+// RefreshIfStale — failures are warned and the caller falls back to the local
+// image.
+func ForcePull(ctx context.Context, cli client.APIClient, ref string) {
+	pullAndRecord(ctx, cli, ref)
+}
+
+// pullAndRecord pulls ref and stamps the cache marker on success — the shared
+// tail of RefreshIfStale (after the cache check) and ForcePull.
+func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) {
 	if pull(ctx, cli, ref) {
 		record(ref)
 	}
@@ -126,12 +143,8 @@ func isAuthError(err error) bool {
 // malformed ref falls through to docker.io rather than printing an
 // empty hostname in the user-facing remediation line.
 func registryOf(ref string) string {
-	head, _, ok := strings.Cut(ref, "/")
-	if !ok {
-		return "docker.io"
-	}
-	if strings.ContainsAny(head, ".:") || head == "localhost" {
-		return head
+	if host, _ := build.SplitRegistryHost(ref); host != "" {
+		return host
 	}
 	return "docker.io"
 }
