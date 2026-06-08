@@ -104,8 +104,16 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	vp.SetConfigType("yaml")
 
 	// Defaults seeding. Per-tool toggles no longer exist; only top-level
-	// feature flags (browser_bridge) get seeded.
+	// feature flags (browser_bridge) get seeded. The image-selection keys are
+	// seeded with their zero value not for the value itself but so they land
+	// in viper's key set — AutomaticEnv only resolves TOOLBOX_* for keys it
+	// already knows, so without these seeds TOOLBOX_IMAGE / TOOLBOX_REGISTRY_MIRROR
+	// / TOOLBOX_PULL would be silently ignored at Unmarshal (same reason
+	// browser_bridge is seeded).
 	vp.SetDefault("browser_bridge", true)
+	vp.SetDefault("image", "")
+	vp.SetDefault("registry_mirror", "")
+	vp.SetDefault("pull", "")
 
 	warnLegacyTools(global, project, explicit)
 
@@ -260,6 +268,18 @@ func hasTopLevelKey(b []byte, key string) bool {
 func applyValidationTail(cfg *Config) error {
 	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
 		return err
+	}
+	if err := ValidateImageRef(cfg.Image); err != nil {
+		return err
+	}
+	if err := ValidateRegistryMirror(cfg.RegistryMirror); err != nil {
+		return err
+	}
+	if err := ValidatePull(cfg.Pull); err != nil {
+		return err
+	}
+	if cfg.Pull == "" {
+		cfg.Pull = PullAuto
 	}
 	if cfg.Shell == "" {
 		cfg.Shell = "zsh"

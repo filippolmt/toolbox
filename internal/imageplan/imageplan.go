@@ -7,9 +7,13 @@
 //     is already in the local store, done. Otherwise the registry pull
 //     already had its chance and we fail fatally.
 //
-// The image is always the canonical registry tag (one image, no per-tool
-// opt-out, no local-hash fallback), so Ensure never builds — `toolbox
-// build` is the explicit user-driven path for a local rebuild.
+// The image ref defaults to the canonical registry tag but can be relocated
+// opt-in (config Image / RegistryMirror; build.ResolveImage owns the
+// precedence). Ensure never builds — `toolbox build` is the explicit
+// user-driven path for a local rebuild. The Pull policy carried on the
+// Image steers Refresh: "auto" (default) is cache-aware, "always" forces a
+// pull, "never" skips the registry entirely (Ensure still hard-requires the
+// image locally).
 package imageplan
 
 import (
@@ -18,15 +22,26 @@ import (
 
 	"github.com/docker/docker/client"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imagepull"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-// Refresh best-effort syncs the image against its registry. Errors are
-// swallowed by imagepull (logged as a warning at most); the caller's
-// existing local copy is the fallback.
+// Refresh best-effort syncs the image against its registry, steered by the
+// Image's pull policy: "never" skips the registry round-trip entirely (the
+// local copy is authoritative — Ensure still guards presence), "always"
+// forces a pull bypassing the TTL cache, "auto"/"" uses the cache-aware
+// default. Errors are swallowed by imagepull (logged as a warning at most);
+// the caller's existing local copy is the fallback.
 func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image) {
-	imagepull.RefreshIfStale(ctx, cli, image.Ref)
+	switch image.PullPolicy {
+	case config.PullNever:
+		return
+	case config.PullAlways:
+		imagepull.ForcePull(ctx, cli, image.Ref)
+	default: // config.PullAuto and the unset zero value
+		imagepull.RefreshIfStale(ctx, cli, image.Ref)
+	}
 }
 
 // Ensure guarantees the image referenced by `image.Ref` exists in the

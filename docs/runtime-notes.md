@@ -170,7 +170,15 @@ The grouped deps PR (`matchPackageNames: ["*"]`) merges daily in the 06:00–09:
 
 ### Image selection
 
-`toolbox shell` always pulls `ghcr.io/filippolmt/toolbox:latest`. There is no per-tool opt-out, no local-hash fallback, no auto-build branch. `toolbox build` is the explicit escape hatch — it overwrites the local cache of the canonical tag so the next `toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream copy.
+`toolbox shell` defaults to `ghcr.io/filippolmt/toolbox:latest`. There is no per-tool opt-out, no local-hash fallback, no auto-build branch. `toolbox build` is the explicit escape hatch — it overwrites the local cache of the canonical tag so the next `toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream copy.
+
+**Source relocation (opt-in).** The ref and pull behaviour are configurable — globally (`~/.toolbox.yaml`), per-repo (`.toolbox.yaml`), or via `TOOLBOX_*` env — for users who serve the image from a proxy hub / pull-through cache (Harbor, Artifactory, Nexus, ECR pull-through). `internal/build.ResolveImage(image, registryMirror)` owns the precedence, highest first:
+
+- `image` — full ref override, used verbatim. Highest. Caveat: a local `toolbox build` tags the *canonical* ref, so with a full override `imageplan.Ensure` looks for the override ref and won't find the local build — `image` is a pull-source concern, not a build target.
+- `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `build.SplitRegistryHost`, shared with `imagepull.registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`.
+- neither — the canonical default.
+
+The `pull` policy (`auto` default | `always` | `never`) steers `imageplan.Refresh`: `never` skips the registry round-trip entirely (air-gapped — `Ensure` still hard-requires the image locally), `always` forces a pull bypassing the 1 h TTL cache (`imagepull.ForcePull`), `auto` is the cache-aware default (`imagepull.RefreshIfStale`). Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
 
 ### Port bindings are fixed at container creation
 

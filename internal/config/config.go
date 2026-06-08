@@ -13,9 +13,10 @@ import (
 
 // Config is the top-level toolbox configuration.
 //
-// The runtime image is canonical (`ghcr.io/filippolmt/toolbox:latest`) for
-// every user — there is no per-tool opt-out. If a custom image is needed,
-// run `toolbox build` to overwrite the local cache of the canonical tag.
+// The runtime image defaults to the canonical
+// `ghcr.io/filippolmt/toolbox:latest` (the image content is identical across
+// users — there is no per-tool opt-out). The source can be relocated, opt-in,
+// via Image / RegistryMirror; the pull behaviour via Pull. See build.ResolveImage.
 //
 // InheritHostAuth opts the listed CLIs into reading the host's standard
 // credential path (read-only) instead of the isolated `~/.toolbox/<key>/`
@@ -25,6 +26,24 @@ type Config struct {
 	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
 	Shells          map[string]NamedShell `mapstructure:"shells"`
 	Shell           string                `mapstructure:"shell"`
+	// Image overrides the container image reference verbatim (full host/path:tag
+	// or digest). Empty = the canonical default. Highest-precedence image
+	// selector — wins over RegistryMirror. Opt-in; a full override is a
+	// pull-source concern, so a local `toolbox build` (which tags the canonical
+	// ref) no longer satisfies it. See build.ResolveImage.
+	Image string `mapstructure:"image"`
+	// RegistryMirror relocates only the registry host of the canonical image —
+	// the path+tag (`filippolmt/toolbox:latest`) is preserved — so a
+	// pull-through cache / proxy hub (Harbor, Artifactory, Nexus, ECR
+	// pull-through) serves the identical image. Empty = no relocation. Ignored
+	// when Image is set. Value is `host[:port][/path]` with no scheme.
+	RegistryMirror string `mapstructure:"registry_mirror"`
+	// Pull controls the registry-sync behaviour on every `toolbox shell`:
+	//   - "" / "auto" → best-effort TTL-cached refresh (default)
+	//   - "always"    → force a pull every shell, bypassing the TTL cache
+	//   - "never"     → skip the registry round-trip entirely (air-gapped);
+	//     the hard local-presence check (imageplan.Ensure) still applies.
+	Pull string `mapstructure:"pull"`
 	// MountsRoot retargets every default mount whose Source lives under
 	// ~/.toolbox/ to the given prefix. Useful when the user wants every
 	// toolbox-managed credential / state dir to live somewhere other than
@@ -199,6 +218,73 @@ func ValidateMountsRoot(s string) error {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
+}
+
+// Pull policy values accepted by the `pull` key. These are the single source
+// of truth for the literals — validation, the empty→default normalization, the
+// `config show` renderer, and imageplan.Refresh's dispatch all reference them
+// so a new policy can't drift between sites.
+const (
+	PullAuto   = "auto"   // best-effort, TTL-cached refresh (default)
+	PullAlways = "always" // force a pull every shell, bypassing the TTL cache
+	PullNever  = "never"  // skip the registry round-trip entirely (air-gapped)
+)
+
+// SupportedPullPolicies is the canonical list accepted by the `pull` key.
+// Empty normalises to PullAuto at validation time.
+var SupportedPullPolicies = []string{PullAuto, PullAlways, PullNever}
+
+// ValidatePull rejects pull-policy values outside SupportedPullPolicies.
+// Empty is allowed (normalised to "auto" by the validation tail).
+func ValidatePull(s string) error {
+	if s == "" || slices.Contains(SupportedPullPolicies, s) {
+		return nil
+	}
+	return fmt.Errorf("unsupported pull policy %q: must be one of %s",
+		s, strings.Join(SupportedPullPolicies, ", "))
+}
+
+// ValidateImageRef rejects image overrides that are obviously malformed.
+// Empty is allowed (no override). The check is intentionally light — the
+// Docker daemon is the real arbiter of ref validity — but whitespace or a
+// scheme prefix is always a mistake and would otherwise fail far later with
+// an opaque pull error.
+func ValidateImageRef(s string) error {
+	return validateBareRef("image", s, "(host/path:tag)")
+}
+
+// ValidateRegistryMirror rejects mirror prefixes that would not splice cleanly
+// onto the canonical image path. Empty is allowed (no relocation). The value
+// is a registry host with an optional port and path — never a scheme — so a
+// leading "http(s)://" or whitespace is refused up front.
+func ValidateRegistryMirror(s string) error {
+	if err := validateBareRef("registry_mirror", s, "(host[:port][/path])"); err != nil {
+		return err
+	}
+	// A registry host never starts with "/". Catch it here: build.ResolveImage
+	// trims trailing slashes and prepends the mirror, so a leading-slash value
+	// ("/", "//", "/harbor.io") would splice into a hostless, malformed ref
+	// ("/filippolmt/toolbox:latest") that only fails at docker-pull time.
+	if strings.HasPrefix(s, "/") {
+		return fmt.Errorf("registry_mirror %q must start with a registry host (host[:port][/path]), not %q", s, "/")
+	}
+	return nil
+}
+
+// validateBareRef is the shared guard behind ValidateImageRef and
+// ValidateRegistryMirror: empty is allowed, whitespace and a scheme prefix
+// are not. shape is the bare-form hint spliced into the scheme-rejection error.
+func validateBareRef(key, s, shape string) error {
+	if s == "" {
+		return nil
+	}
+	if strings.ContainsFunc(s, unicode.IsSpace) {
+		return fmt.Errorf("%s %q must not contain whitespace", key, s)
+	}
+	if strings.Contains(s, "://") {
+		return fmt.Errorf("%s %q must be a bare ref %s, not a URL", key, s, shape)
+	}
+	return nil
 }
 
 // ValidateSDD checks the steps-override entries of the sdd: map. Bool

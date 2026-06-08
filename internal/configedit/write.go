@@ -164,6 +164,30 @@ func SetMountsRoot(path, root string) (bool, error) {
 	})
 }
 
+// =============================================================================
+// Top-level scalar writers (image / registry_mirror / pull)
+// =============================================================================
+
+// ScalarEdit is one top-level scalar mutation. An empty Value removes the key
+// — the clean "reset to default" path that leaves no dangling key behind.
+type ScalarEdit struct{ Key, Value string }
+
+// SetScalars applies every edit in one comment-preserving Upsert, so writing
+// several keys at once costs a single read-parse-write cycle. Callers
+// pre-validate each value (config.ValidateImageRef / ValidateRegistryMirror /
+// ValidatePull).
+func SetScalars(path string, edits []ScalarEdit) (bool, error) {
+	return Upsert(path, func(doc *yaml.Node) {
+		for _, e := range edits {
+			if e.Value == "" {
+				removeMapKey(doc, e.Key)
+				continue
+			}
+			configio.SetMapValue(doc, e.Key, e.Value)
+		}
+	})
+}
+
 // UserMountNames returns the name of every named entry in path's mounts:
 // list — the candidate set for remove-time suggestions. A missing file
 // yields an empty list.

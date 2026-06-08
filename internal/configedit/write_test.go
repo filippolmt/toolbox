@@ -42,6 +42,55 @@ func TestUpsertHeaderOnCreate(t *testing.T) {
 	}
 }
 
+func TestSetScalarsWritesAllKeysAndIsIdempotent(t *testing.T) {
+	path := tmpConfigPath(t)
+	edits := []ScalarEdit{
+		{"image", "ghcr.io/x/y:1"},
+		{"registry_mirror", "harbor.corp.io/ghcr-proxy"},
+		{"pull", "never"},
+	}
+
+	changed, err := SetScalars(path, edits)
+	if err != nil {
+		t.Fatalf("SetScalars: %v", err)
+	}
+	if !changed {
+		t.Error("first write must report changed")
+	}
+	got := readFile(t, path)
+	for _, want := range []string{"image: ghcr.io/x/y:1", "registry_mirror: harbor.corp.io/ghcr-proxy", "pull: never"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+
+	// Idempotent: an identical re-write reports unchanged.
+	changed, err = SetScalars(path, edits)
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if changed {
+		t.Error("identical rewrite must report unchanged")
+	}
+}
+
+func TestSetScalarsEmptyValueRemovesKey(t *testing.T) {
+	path := tmpConfigPath(t)
+	if _, err := SetScalars(path, []ScalarEdit{{"image", "ghcr.io/x/y:1"}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	changed, err := SetScalars(path, []ScalarEdit{{"image", ""}})
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !changed {
+		t.Error("removing an existing key must report changed")
+	}
+	if got := readFile(t, path); strings.Contains(got, "image:") {
+		t.Errorf("empty value must remove the key, got:\n%s", got)
+	}
+}
+
 func TestUpsertNoHeaderOnExistingFile(t *testing.T) {
 	path := tmpConfigPath(t)
 	if err := os.WriteFile(path, []byte("shell: zsh\n"), 0o600); err != nil {

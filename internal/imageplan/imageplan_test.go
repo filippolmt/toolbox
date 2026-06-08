@@ -20,6 +20,8 @@ import (
 type mockClient struct {
 	client.APIClient
 	imgInspFn func(ctx context.Context, id string) (image.InspectResponse, error)
+	pullCount int
+	pullFn    func() (io.ReadCloser, error)
 }
 
 func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (image.InspectResponse, error) {
@@ -33,6 +35,10 @@ func (m *mockClient) ContainerCreate(_ context.Context, _ *container.Config, _ *
 	return container.CreateResponse{}, errors.New("ContainerCreate must not be called from imageplan.Ensure")
 }
 func (m *mockClient) ImagePull(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+	m.pullCount++
+	if m.pullFn != nil {
+		return m.pullFn()
+	}
 	return nil, errors.New("ImagePull must not be called from imageplan.Ensure")
 }
 func (m *mockClient) Close() error { return nil }
@@ -45,6 +51,37 @@ func TestEnsureNoOpWhenImagePresent(t *testing.T) {
 	}
 	if err := Ensure(context.Background(), mock, sessionplan.Image{Ref: "ghcr.io/example:latest"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestRefreshPullPolicy asserts the policy dispatch: "never" skips the
+// registry round-trip entirely, "always" and "auto" both pull (a fresh HOME
+// has an empty TTL cache, so "auto" misses and pulls too).
+func TestRefreshPullPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		policy    string
+		wantPulls int
+	}{
+		{"never", 0},
+		{"always", 1},
+		{"auto", 1},
+		{"", 1}, // empty normalises to auto behaviour
+	} {
+		t.Run("policy="+tt.policy, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir()) // isolate the pull-cache marker dir
+			mock := &mockClient{
+				pullFn: func() (io.ReadCloser, error) {
+					return io.NopCloser(strings.NewReader("")), nil
+				},
+			}
+			Refresh(context.Background(), mock, sessionplan.Image{
+				Ref:        "ghcr.io/example:latest",
+				PullPolicy: tt.policy,
+			})
+			if mock.pullCount != tt.wantPulls {
+				t.Errorf("policy %q: ImagePull called %d times, want %d", tt.policy, mock.pullCount, tt.wantPulls)
+			}
+		})
 	}
 }
 
