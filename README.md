@@ -285,6 +285,8 @@ It is **auto-detected**: when proximo is installed on the host (its root CA exis
 
 The routed hosts are resolved when the container is created, so start your proximo stack first and re-run `toolbox shell` to pick up newly added hosts. `curl`, `git`, `wget`, Python (`ssl`/`urllib`), Node and Chromium trust proximo automatically; `python-requests` (which ships its own `certifi` bundle) needs `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"`. Full mechanics: [`docs/runtime-notes.md#proximo-integration`](docs/runtime-notes.md#proximo-integration).
 
+With the [browser bridge](#browser-bridge) installed you can also drive the host stack from inside the shell: `proximo up`, `proximo down`, and `proximo status` are forwarded to the host daemon (fixed allowlist — `install`/`uninstall` need sudo and must run on the host).
+
 ### Loading order
 
 Configuration is loaded from (highest priority first):
