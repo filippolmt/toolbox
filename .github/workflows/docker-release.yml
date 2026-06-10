@@ -10,10 +10,17 @@
 # alternative (drop `paths:` from docker-publish.yml) regresses to republishing
 # on every doc-only main push. Two thin caller files is the cleanest split.
 #
-# Outputs (vs main-branch publish): semver tags (vX.Y.Z + vX.Y + vX), no
+# Outputs (vs main-branch publish): semver tags (vX.Y.Z + vX.Y + vX) plus
 # `latest`, no `sha-<short>`. Same SBOM + provenance attestations and the same
 # pre-publish smoke-test gate — confidence that the image content at the tagged
 # commit boots cleanly even if main has drifted since the merge.
+#
+# A release pre-empts the main-branch publisher: the cancel-main-publish job
+# kills any queued/in-flight docker-publish.yml run before building, so the
+# release's `latest` isn't immediately clobbered by an older main build. The
+# cancellation is deliberately one-directional (API cancel, not a shared
+# concurrency group): a shared group would let a main push cancel a running
+# release, losing the semver tags entirely.
 
 name: Toolbox Docker Release
 run-name: Toolbox Docker Release @ ${{ github.ref_name }}
@@ -23,19 +30,41 @@ on:
     tags:
       - 'v*'
 
-# Same tag can be pushed more than once in close succession; parallel
-# runs race the GHCR push for identical image digests. Cancel the older
-# run so exactly one publish pipeline reaches the registry per tag.
+# Static group (not per-ref): releases now also push `latest`, so two
+# different tags in close succession must not run in parallel — they'd
+# race `latest` and the shared buildcache-release ref. Queue instead of
+# cancel: cancelling the older run would silently drop its semver tags.
+# Serialisation also covers the repushed-same-tag case the old per-ref
+# group handled (the duplicate runs sequentially instead of racing).
 concurrency:
-  group: docker-release-${{ github.ref }}
-  cancel-in-progress: true
+  group: docker-release
+  cancel-in-progress: false
 
 permissions:
   contents: read
   packages: write
 
 jobs:
+  # Pre-empt the main-branch publisher: a release must win over whatever
+  # main build is queued or running, not wait behind it. `actions: write`
+  # is scoped to this job only so it doesn't leak into the reusable
+  # workflow call below.
+  cancel-main-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel queued/in-flight docker-publish runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for status in queued in_progress; do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow docker-publish.yml \
+              --status "$status" --json databaseId -q '.[].databaseId'
+          done | xargs -r -n1 gh run cancel --repo "$GITHUB_REPOSITORY"
+
   publish:
+    needs: cancel-main-publish
     uses: ./.github/workflows/docker-publish-reusable.yml
     with:
       cache_ref: ghcr.io/${{ github.repository }}:buildcache-release
@@ -43,3 +72,4 @@ jobs:
         type=semver,pattern={{version}}
         type=semver,pattern={{major}}.{{minor}}
         type=semver,pattern={{major}}
+        type=raw,value=latest

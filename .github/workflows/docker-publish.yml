@@ -18,6 +18,11 @@ on:
   # workflow files because GitHub Actions ANDs `paths:` with every push
   # event (including tag pushes), so a single workflow can't both (a)
   # path-filter main pushes AND (b) fire on every `v*` tag.
+  #
+  # A `v*` release cancels queued/in-flight runs of THIS workflow (see
+  # cancel-main-publish in docker-release.yml) and also pushes `latest`,
+  # so a release isn't stuck behind — or clobbered by — an older main
+  # build. Both workflows write `latest`; last pusher wins.
 
 # Group by ref so rapid main pushes (or workflow_dispatch landing on top
 # of an in-flight push) collapse to one publisher per `:latest` /
