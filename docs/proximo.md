@@ -1,0 +1,48 @@
+# Proximo integration
+
+If you use [proximo](https://github.com/filippolmt/proximo) to reach your local-dev apps at `https://<name>.test` on the host, the toolbox makes those same URLs work **from inside the container** — for any client (`curl`, `git`, Node, Python, Playwright/Chromium, …), with proximo's certificate trusted so no `-k` / `ignoreHTTPSErrors` is needed. This file covers why that needs toolbox plumbing, how DNS + CA trust are established, and the bridge-backed lifecycle commands.
+
+## Why `.test` is unreachable from a sibling container
+
+[proximo](https://github.com/filippolmt/proximo) makes any labelled Docker container reachable at `https://<name>.<tld>` (default `.test`): it runs Traefik publishing `:80/:443` on the **host**, installs a host resolver mapping `*.<tld> → 127.0.0.1`, and trusts a local CA in the host OS + NSS stores. That works for the host browser. It does **not** work from inside a toolbox container: `127.0.0.1` there is the container's own loopback, not the host where Traefik listens, so DNS resolves but the connection refuses. proximo also never injects its CA into arbitrary containers, so even a reachable endpoint fails TLS verification.
+
+## Enablement is auto-detected (tri-state `proximo`)
+
+`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under `~/.proximo`). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `bridge`, but with an auto rather than always-on default.
+
+## The two host-side ingredients
+
+`internal/proximo` supplies both. The toolbox CLI runs on the host alongside proximo, so it can discover routed hosts directly from Docker labels — no enumeration in `.toolbox.yaml`, no upstream proximo change, no shared Docker network.
+
+| Concern | Mechanism | Seam |
+|---------|-----------|------|
+| DNS | Every running container's `proximo.hosts` label value is read; each hostname is pinned to the Docker `host-gateway` and appended to `HostConfig.ExtraHosts`. `host-gateway` resolves to the host where Traefik publishes `:443`, bypassing Docker networks entirely. | discovery: `container/lifecycle.go` `augmentProximoHosts` (needs the Docker client); pure parser: `proximo.ExtraHosts` |
+| Cert | proximo's root CA (path queried via `proximo config ca-path` — the stable contract from filippolmt/proximo#20; fallback `~/.proximo/tls/ca.pem`, proximo's state home since v0.3.0, filippolmt/proximo#17) is bind-mounted RO at `/etc/ssl/proximo-ca.pem`. `entrypoint.sh` then establishes **seamless** trust for every client (see below). `NODE_EXTRA_CA_CERTS` (Node uses its own bundle) and `TOOLBOX_PROXIMO_CA` (path pointer for the certifi gap) are also exported. | mount: `proximo.CAMount` injected in `mountplan.Merge`; env: `proximo.Env` appended in `sessionplan.Plan`; trust: `entrypoint.sh` proximo block |
+
+## Trust establishment (entrypoint, self-gated on the mount)
+
+`entrypoint.sh` runs a proximo block gated purely on `[ -f /etc/ssl/proximo-ca.pem ]` (the mount is the signal — no extra env). It is idempotent and every step is best-effort (`|| true`) so a trust failure never aborts boot:
+
+| Client | Trusted via | Notes |
+|--------|-------------|-------|
+| curl / git / wget / python (`ssl`, `urllib`) | system bundle | `sudo cp` into `/usr/local/share/ca-certificates/proximo.crt` + `sudo update-ca-certificates` (passwordless sudo; refreshed only when the cert changes via a `cmp` guard) |
+| Chromium / Firefox (incl. Playwright's bundled browsers) | NSS | `certutil -A -t C,, -n proximo` into `$HOME/.pki/nssdb` (`libnss3-tools`, base apt layer). `~/.pki` is a HOME subdir, not a bind-mount → ephemeral, rebuilt from the mounted CA every shell |
+| Node / Playwright (node API) | `NODE_EXTRA_CA_CERTS` | additive, set by `proximo.Env` |
+| python-requests | — | uses certifi, not the system store; set `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"` (this is the one non-seamless client) |
+
+## Lifecycle from inside the container (bridge shim)
+
+`proximo up|down|status` works inside `toolbox shell` via the [bridge](bridge.md): the image ships `/usr/local/bin/proximo` (`internal/build/assets/bin/proximo`, sibling of the editor shims) which POSTs `{"command": "<sub>"}` to the daemon's `/proximo` endpoint; the daemon execs the **host** proximo binary and returns `{"exit": N, "output": "…"}`, which the shim prints and propagates. Running the real binary in-container cannot work: proximo materializes its compose stack under `~/.proximo` and bind-mounts those paths, which the host Docker daemon would resolve host-side where they don't exist.
+
+- **Allowlist at both ends, daemon authoritative.** `proximoAllowlist` (`internal/bridge/proximo.go`) = `up`/`down`/`status`, bare subcommand only — no argument passthrough (`up --observability` is rejected). The shim re-validates locally purely for UX (clear message without a round-trip; rejection there is not a trust boundary). `install`/`uninstall` need interactive sudo → rejected with a run-on-host hint, never bridged.
+- **Execution budget ≠ shared `requestTimeout`.** First `up` pulls the stack images, so `/proximo` gets `proximoTimeout` (120s) and pushes the connection write deadline past the server's `WriteTimeout: 10s` via `http.NewResponseController` (per-response, other routes keep tight limits). `cmd.WaitDelay = 2s` stops `CombinedOutput` from hanging on pipes inherited by compose children after a deadline kill. Shim `curl --max-time 135` sits above the server budget. A non-zero exit is data (propagated), not an error; only infra failures (binary missing, deadline) are 502.
+- **Binary resolution survives the service PATH.** The LaunchAgent/systemd-user environment lacks `/opt/homebrew/bin` and `~/go/bin`; `resolveProximoBinary` does `exec.LookPath` then probes `/opt/homebrew/bin/proximo`, `/usr/local/bin/proximo`, `$HOME/go/bin/proximo`. No binary → `ErrProximoNotInstalled`, surfaced verbatim by the shim. The child proximo process gets the same treatment: its PATH is augmented (`appendPathDirs` + `proximoChildPathDirs` — dir of the resolved binary, the well-known bin dirs, `~/.docker/bin`, `~/.orbstack/bin`; append-only, existing entries win) so proximo's own `docker` lookup also survives the minimal service PATH — otherwise `proximo status` bridged from inside reports "docker is not installed" on a host that runs Docker fine. Lives in daemon code → active on daemon restart, no plist/unit regeneration.
+- **Skew matrix**: old host daemon + new image → shim maps the 404 to "update the host toolbox CLI and rerun `toolbox bridge install`"; new daemon + old image → no shim, nothing to break. Daemon restart (to pick up the endpoint) = rerun `toolbox bridge install`.
+- Starting the stack from inside does **not** retro-add `ExtraHosts` to the current container (create-time discovery, below) — hosts pinned at create become reachable immediately; `.test` apps started later still need a re-shell.
+
+## Boundaries and caveats
+
+- **Discovery runs at container create only.** `ExtraHosts` is fixed at `ContainerCreate` (same as port bindings — see [publishing ports](commands.md#publishing-ports)). New `.test` hosts that come up after `toolbox shell` are invisible until the next recreate. Stopped proximo stack → `augmentProximoHosts` warns and degrades to "names unreachable" rather than failing the shell.
+- **CA mount is pure host-fs.** `CAMount` is added in `Merge` (not `defaults()`), so the canonical default-mount set and the smoke-test init.d/completion bijections are untouched (the proximo trust step lives in `entrypoint.sh`, not an `init.d` script, so it ties to no catalog tool). A missing CA file (proximo not installed) soft-skips the mount with a `resolveAll` warning; `proximo.Env` independently gates on file existence so Node never points at an absent `NODE_EXTRA_CA_CERTS`, and the entrypoint block no-ops when the mount is absent.
+- **Image dependencies**: the NSS trust step needs `certutil` (`libnss3-tools`, base apt layer) and the lifecycle shim ships at `/usr/local/bin/proximo`; `smoke-test.sh` asserts both. Everything else is host-side and image-hash-neutral.
+- **Host-side toggle** — same property as the bridge: the `proximo` config flag steers mounts/env/ExtraHosts only; the shim is unconditional in the image (it degrades with an install hint when the bridge state dir is absent).

@@ -60,7 +60,7 @@ For GitHub releases use `gh release view --json tagName,assets -R <owner>/<repo>
 
 Add the version pin in the global `ARG` block at the top (before the first `FROM` — global ARGs are re-declared bare inside the consuming stage). Keep the existing groupings intact.
 
-Where the install goes depends on the source type — see [build-layout](../../../docs/runtime-notes.md#build-layout-parallel-fetch-stages--frequency-ordered-tail):
+Where the install goes depends on the source type — see [build-layout](../../../docs/internals/image-build.md#build-layout-parallel-fetch-stages--frequency-ordered-tail):
 
 - **Static binary / tarball / relocatable bundle** → new `FROM fetch-base AS fetch-<tool>` stage next to its analogs, artefacts under `/out` mirroring the final filesystem, plus one `COPY --link --from=fetch-<tool> /out/ /` line in the final stage's COPY block. Fetch stages run in parallel and re-run independently on version bumps.
 - **npm / pip / apt installs** (need the final stage's node/python/dpkg) → final-stage `RUN` layer, **placed by Renovate bump frequency**: rarely-bumped near the top of the RUN tail (azure/oci area), frequently-bumped near the end (claude/graphify area, before the completions precompute). Don't append blindly at the end of the file.

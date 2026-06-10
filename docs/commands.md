@@ -1,0 +1,180 @@
+# Commands
+
+Reference for every `toolbox` command and subcommand. Source of truth: the cobra help text in `cmd/*.go` (`toolbox <cmd> --help`); this file adds the semantics the one-line help can't carry.
+
+## Global flag: `--config`
+
+Every command accepts `--config <file>` to bypass the normal config discovery and load exactly one file (highest precedence in the [loading order](configuration.md#loading-order)).
+
+## toolbox shell
+
+Start an interactive shell session in the toolbox container. With no argument it targets the current working directory; `toolbox shell <name>` opens a [named shell](shells.md), `toolbox shell <abs-dir>` opens a one-shot session on that directory.
+
+| Flag | Description |
+|------|-------------|
+| `-p, --publish <spec>` | Publish a host port (repeatable, docker-style syntax — see below). |
+| `-B, --bridge-loopback` | Forward published ports to container loopback (see below). |
+| `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `oci`, `shopify`, `sonar`, `wrangler`). |
+| `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
+| `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
+
+### Publishing ports
+
+By default the container has no host port bindings — it talks to the outside world through bind-mounted sockets, not TCP. When a tool inside the container needs to receive a connection from the host (typical case: an OAuth callback from `glab`, `gh`, or `gcloud` that listens on `http://localhost:<port>`), pass `--publish`/`-p` to `toolbox shell`:
+
+```bash
+# Forward host port 7171 to the same port in the container.
+toolbox shell -p 7171
+
+# Repeatable, full docker-style syntax supported.
+toolbox shell -p 3000:3000 -p 127.0.0.1:9229:9229 -p 5353/udp
+```
+
+Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<host>:<container>`, optional `/tcp|/udp` suffix). When the host IP is omitted it defaults to `127.0.0.1` — the port is reachable from your machine only, not the LAN.
+
+**Port bindings are fixed at container creation.** `toolbox shell -p <port>` only takes effect when the container is first created — `ContainerCreate` writes the port set, and Docker doesn't accept post-hoc port changes. Run `toolbox stop` before re-invoking `toolbox shell -p …` to add or change bindings. Mismatch detection lives in `sessionplan.MissingPublishPorts`. When the listener inside the container binds `127.0.0.1` rather than `0.0.0.0`, see the [loopback bridge](#loopback-bridge).
+
+### Loopback bridge
+
+In-container CLIs that bind their OAuth callback to `127.0.0.1:<port>` (shopify, vanilla wrangler) are unreachable from the host browser even with `toolbox shell -p <port>:<port>` — the host browser hits `ERR_EMPTY_RESPONSE` and no token is written. Docker's port forward delivers packets to the container's `eth0` interface; a listener bound to container loopback never sees them. The `-B` / `--bridge-loopback` flag fixes that:
+
+```
+host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──▶  127.0.0.1:<port>  ──▶  CLI
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                   bridged inside the container by init.d/70
+```
+
+When `-B` is set together with at least one `-p`, `sessionplan.Plan` emits `TOOLBOX_LOOPBACK_BRIDGE_PORTS=<comma-joined>` and `internal/build/assets/init.d/70-loopback-bridge.sh` spawns one `socat TCP-LISTEN:<port>,bind=$ETH_IP,fork,reuseaddr TCP:127.0.0.1:<port>` per port. The bridge binds the container's external interface IP (`hostname -i`) explicitly so it can coexist with the CLI's own `127.0.0.1:<port>` listener. It does **not** coexist with a wildcard listener: once socat holds `eth0:<port>`, a later `0.0.0.0:<port>` bind on the same port fails `EADDRINUSE` (Linux refuses wildcard over a specific bind regardless of `SO_REUSEADDR` — verified live with oci). Wildcard-binding CLIs must therefore not use `-B` on their port; the plain `-p` forward already reaches them.
+
+#### `--oauth` presets
+
+Standard recipes (static-port loopback CLIs). The `--oauth <tool>` preset flag on `toolbox shell` expands a known tool name to its documented recipe (`sessionplan.ExpandOAuth`, map in `internal/sessionplan/oauth.go`) — expansion only ever adds to explicit `-p`/`-B` flags, and an unknown tool errors before container creation listing the supported set:
+
+```
+toolbox shell --oauth codex      # = -B -p 1455:1455     codex ChatGPT-OAuth login
+toolbox shell --oauth shopify    # = -B -p 13387:13387   shopify store auth
+toolbox shell --oauth wrangler   # = -B -p 8976:8976     wrangler login
+toolbox shell --oauth sonar      # = -B -p 64120-64130:64120-64130   sonar auth login
+```
+
+The explicit spelling stays available for ports not in the preset map:
+
+```bash
+toolbox shell -B -p 13387:13387
+shopify store auth ...
+```
+
+A static **range** also works (`sonar`): the CLI binds `127.0.0.1` on the first free port in 64120-64130 (SonarLint Core's EmbeddedServer range — SonarQube rejects callback ports outside it, so a random OS-assigned port is not an option upstream). `nat.ParsePortSpec` expands the range and init.d/70 spawns one socat per port; the bridge binds eth0, so it never steals the loopback port the CLI itself wants.
+
+**Wildcard-bind carve-out.** `oci session authenticate` binds `0.0.0.0:8181` (`cli_setup_bootstrap.py`: `server_address = ('', 8181)`), so Docker's plain port-forward reaches it directly and the bridge is not only unnecessary but harmful — socat on `eth0:8181` makes oci's wildcard bind fail with `Could not complete bootstrap process because port 8181 is already in use`:
+
+```
+toolbox shell --oauth oci   # = -p 8181:8181 (no -B — oci binds 0.0.0.0)
+```
+
+**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs (`gcloud`, `gws`, `tofu` — no fixed range at all, so they get no recipe). `cf login` recipe (no `-B` needed):
+
+```
+toolbox shell --oauth cf   # = -p 8877-8886:8877-8886 (sed-patched, range syntax via nat.ParsePortSpec)
+```
+
+OAuth CLI survey:
+
+| CLI | Listener style | Strategy |
+|---|---|---|
+| `oci` | `0.0.0.0:8181` (static, wildcard) | plain publish: `--oauth oci` = `-p 8181:8181` (no `-B` — socat would collide with the wildcard bind) |
+| `shopify` | `127.0.0.1:13387` (static) | bridge: `--oauth shopify` = `-B -p 13387:13387` |
+| `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
+| `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
+| `sonar` | `127.0.0.1:64120-64130` (static range, first free; server rejects out-of-range ports) | bridge: `--oauth sonar` = `-B -p 64120-64130:64120-64130`; token persisted via `SONARQUBE_CLI_KEYCHAIN_FILE` (libsecret absent in container) |
+| `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `--oauth cf` = `-p 8877-8886:8877-8886` |
+| `gcloud` | `localhost:8085+` (dynamic) | wrapper / device-code |
+| `gws` | `127.0.0.1:0` (ephemeral) | wrapper / device-code |
+| `tofu` | random port ≥1024, range from server discovery document (dynamic) | not pre-bindable; device-code/wrapper-style — no bridge recipe |
+| `az` | dynamic | device-code (`--use-device-code`) |
+| `gh` / `glab` / `claude` | none — device-code | no listener; no port forward needed |
+
+Limitations:
+
+- Bridge env is fixed at `ContainerCreate`. `toolbox shell -B …` on a container created without `-B` is a no-op — same UX as `-p`. Run `toolbox stop` first.
+- IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
+- `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
+- `-B` bridges **every** published port (`TOOLBOX_LOOPBACK_BRIDGE_PORTS` enumerates the full publish set, init.d/70 spawns socat per port). Combining a bridged preset with a wildcard-bind one (e.g. `--oauth wrangler --oauth oci`) therefore puts socat on `eth0:8181` too and breaks oci's wildcard bind — same for `cf` (sed-patched to `0.0.0.0`, socat on the 8877-8886 range would exhaust its 10 port retries). Authenticate wildcard-bind CLIs in their own session.
+- Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
+- `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
+
+See also: [publishing ports](#publishing-ports), [image build internals](internals/image-build.md) (socat install layer), [bridge](bridge.md) (inverse direction — container→host browser opens).
+
+## toolbox stop
+
+Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Stop every toolbox container on the host (cannot be combined with a positional argument). |
+
+## toolbox build
+
+Build the toolbox Docker image from the embedded context (Dockerfile + assets are compiled into the binary, so it runs anywhere). The build overwrites the local cache of the canonical tag, so the next `toolbox shell` picks it up — see [image selection](configuration.md#image-selection) for how it interacts with `image` / `registry_mirror` / `pull` and how to restore the upstream copy.
+
+| Flag | Description |
+|------|-------------|
+| `--no-cache` | Disable the Docker build cache. |
+
+## toolbox version
+
+Print the toolbox version.
+
+## toolbox init
+
+Write an annotated `.toolbox.yaml` (same content as `toolbox config example`) in the current directory, mode 0600. Refuses to overwrite an existing file unless `--force` is given.
+
+## toolbox config
+
+Inspect and scaffold `.toolbox.yaml`. Key semantics live in [configuration](configuration.md).
+
+| Subcommand | Description |
+|------------|-------------|
+| `show [--origin]` | Print the fully-resolved configuration. |
+| `example` | Print an annotated `.toolbox.yaml` template (generated from the live catalog and default mount set). |
+| `path` | Show the config layers in precedence order with found/none markers. |
+| `edit` | Open the highest-precedence config file in `$EDITOR`. |
+| `set [--image] [--registry-mirror] [--pull] [--where]` | Set the image-selection keys (empty value resets the key). |
+| `doctor` | Validate the configuration without modifying it. |
+
+### config provenance & doctor
+
+`toolbox config show --origin` annotates each rendered key git-config-style with the layer that set it: `(default)`, `(~/.toolbox.yaml)`, `(./.toolbox.yaml)`, or `(--config <path>)`. Provenance is computed by re-running the pure `config.Merge` once per layer (defaults / +global / +project) and crediting each key to the highest layer whose value differs from the layer below (`configedit.Compute`); `--config` short-circuits to a defaults-vs-explicit diff, matching `Plan`. Granularity: per entry name for `shells`/`mounts`, container-level for everything else. The extra viper passes only run for `--origin`/`doctor`, never on the `toolbox shell` hot path. **Without the flag, `config show` output is byte-for-byte unchanged** (golden-tested) — users pipe it.
+
+`toolbox config doctor` is a strict read-only superset of the load path's validation tail (`configedit.Doctor`): it surfaces `Plan`/`Merge` errors, flags unknown top-level keys per layer (key set derived from `Config`'s mapstructure tags, with Levenshtein suggestions), warns on the legacy `tools:` block (→ [tools-removal](internals/image-build.md#tools-removal)), checks `shells.<name>.path` (empty = error, missing dir = warning — it may be created by `--create`), and runs `mountplan.Merge` (failure = error, duplicate resolved targets = warning; mountplan doesn't dedupe, the last bind wins silently at the Docker layer). Exit 1 iff at least one error-severity finding.
+
+`config path` lists the layers in precedence order with found/none markers; `config edit` opens `$EDITOR` (fallback `vi`) on the highest-precedence existing file — explicit `--config` > walked-up project > global — creating `~/.toolbox.yaml` with the documentation header when none exists. Both reuse the `config.LoadLayers` / `config.WalkUpProjectConfig` exports extracted from `Plan` (a pure refactor: `Plan ≡ Merge(LoadLayers(...))`, regression-tested).
+
+## toolbox mounts
+
+Edit the `mounts:` list / `mounts_root:` key without hand-editing YAML. Subcommands: `list [--defaults-only]`, `add <name> --source --target [--readonly]`, `disable <name>`, `remove <name>`, `root <path>` — all accept [`--where`](#--where-targeting). Full semantics: [mounts](mounts.md#mounts-cli).
+
+## toolbox shells
+
+Manage named shell shortcuts (the `shells:` block). Subcommands: `list`, `get <name>`, `add <name> --path [--create-dir] [--env K=V]`, `set <name> --env K=V`, `remove <name> [--purge-dir]` — all accept [`--where`](#--where-targeting). Full semantics: [shells](shells.md).
+
+## toolbox bridge
+
+Manage the host-side bridge daemon (browser / editor / proximo forwarder). Subcommands: `install`, `uninstall`, `status` (plus the hidden `daemon` the supervisor runs). `browser-bridge` survives as a deprecated alias. Full semantics: [bridge](bridge.md).
+
+## toolbox sdd
+
+Manage repo-local Spec-Driven-Development integrations. Subcommands: `list`, `init <name>`. Full semantics: [sdd](sdd.md).
+
+## toolbox completion
+
+Generate shell completion scripts: `toolbox completion [bash|zsh|fish]`.
+
+## --where targeting
+
+Every config-writing subcommand (`toolbox shells add|set|remove`, `toolbox mounts add|disable|remove|root`, `toolbox config set`) accepts `--where global|local` (default `global`), mirroring the per-user/per-repo duality of the load order:
+
+- `global` → `configio.GlobalConfigPath()` (`~/.toolbox.yaml`). Default because shells/mounts are naturally per-user.
+- `local` → the **walked-up** project `.toolbox.yaml` (`config.WalkUpProjectConfig`, the same walk-up `Plan` uses), so the existing project file is patched in place rather than shadowed by a stray `./.toolbox.yaml`. Only when the walk-up finds nothing is `./.toolbox.yaml` created in the CWD.
+
+Resolution lives in `configedit.Resolve` (`internal/configedit/where.go`). Every writer reports the touched file as `<path>: created|updated|unchanged` (idempotent re-runs render byte-identically and report `unchanged`). Files created by a writer start with a header comment pointing at `toolbox config example` (`configedit.Upsert`, D7: the header policy lives in `configedit`, keeping `configio` a policy-free leaf).
