@@ -202,7 +202,10 @@ Standard recipes (static-port loopback CLIs). The `--oauth <tool>` preset flag o
 toolbox shell --oauth codex      # = -B -p 1455:1455     codex ChatGPT-OAuth login
 toolbox shell --oauth shopify    # = -B -p 13387:13387   shopify store auth
 toolbox shell --oauth wrangler   # = -B -p 8976:8976     wrangler login
+toolbox shell --oauth sonar      # = -B -p 64120-64130:64120-64130   sonar auth login
 ```
+
+A static **range** also works (`sonar`): the CLI binds `127.0.0.1` on the first free port in 64120-64130 (SonarLint Core's EmbeddedServer range — SonarQube rejects callback ports outside it, so a random OS-assigned port is not an option upstream). `nat.ParsePortSpec` expands the range and init.d/70 spawns one socat per port; the bridge binds eth0, so it never steals the loopback port the CLI itself wants.
 
 **Wildcard-bind carve-out.** `oci session authenticate` binds `0.0.0.0:8181` (`cli_setup_bootstrap.py`: `server_address = ('', 8181)`), so Docker's plain port-forward reaches it directly and the bridge is not only unnecessary but harmful — socat on `eth0:8181` makes oci's wildcard bind fail with `Could not complete bootstrap process because port 8181 is already in use`:
 
@@ -224,6 +227,7 @@ OAuth CLI survey:
 | `shopify` | `127.0.0.1:13387` (static) | bridge: `--oauth shopify` = `-B -p 13387:13387` |
 | `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
 | `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
+| `sonar` | `127.0.0.1:64120-64130` (static range, first free; server rejects out-of-range ports) | bridge: `--oauth sonar` = `-B -p 64120-64130:64120-64130`; token persisted via `SONARQUBE_CLI_KEYCHAIN_FILE` (libsecret absent in container) |
 | `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `--oauth cf` = `-p 8877-8886:8877-8886` |
 | `gcloud` | `localhost:8085+` (dynamic) | wrapper / device-code |
 | `gws` | `127.0.0.1:0` (ephemeral) | wrapper / device-code |

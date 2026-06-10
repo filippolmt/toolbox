@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
+
+// oauthToolList renders the supported --oauth tools once for both help
+// strings, so the list never drifts from sessionplan's recipe map.
+var oauthToolList = strings.Join(sessionplan.SupportedOAuthTools(), ", ")
 
 var shellPublish []string
 var shellCreate bool
@@ -50,7 +55,7 @@ for recipes (shopify, wrangler) and the dynamic-port carve-out (cf).
 Use --oauth <tool> as a shortcut for the documented OAuth recipes: it
 expands to the right -p/-B combination for the tool (e.g. "--oauth wrangler"
 equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
-0.0.0.0, no bridge). Supported: cf, codex, oci, shopify, wrangler.`,
+0.0.0.0, no bridge). Supported: ` + oauthToolList + `.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runShell,
 }
@@ -143,7 +148,7 @@ func init() {
 			"Host IP defaults to 127.0.0.1. Bindings apply only at container creation — run 'toolbox stop' to refresh.")
 	shellCmd.Flags().StringSliceVar(&shellOAuth, "oauth", nil,
 		"expand a known CLI's OAuth callback recipe (repeatable): publishes its callback port and "+
-			"enables the loopback bridge when the tool needs it. Supported: cf, codex, oci, shopify, wrangler. "+
+			"enables the loopback bridge when the tool needs it. Supported: "+oauthToolList+". "+
 			"Composes with explicit -p/-B (only adds, never overrides). "+
 			"Bindings apply only at container creation — run 'toolbox stop' to refresh.")
 	shellCmd.Flags().BoolVarP(&shellBridgeLoopback, "bridge-loopback", "B", false,

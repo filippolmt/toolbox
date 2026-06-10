@@ -25,12 +25,17 @@ type OAuthRecipe struct {
 // eth0 forward reaches it directly — and a socat holding eth0:8181 would
 // make oci's wildcard bind fail EADDRINUSE (verified live; Linux refuses
 // wildcard over a specific bind regardless of SO_REUSEADDR).
+// sonar is static-range: `sonar auth login` binds 127.0.0.1 on the first
+// free port in 64120-64130 (SonarLint Core's EmbeddedServer range; the
+// server rejects callback ports outside it), so the whole range is
+// published and bridged — nat.ParsePortSpec expands it per-port.
 // Ports are upstream defaults; see docs/runtime-notes.md#loopback-bridge.
 var oauthRecipes = map[string]OAuthRecipe{
 	"cf":       {Publish: "8877-8886:8877-8886", Bridge: false},
 	"codex":    {Publish: "1455:1455", Bridge: true},
 	"oci":      {Publish: "8181:8181", Bridge: false},
 	"shopify":  {Publish: "13387:13387", Bridge: true},
+	"sonar":    {Publish: "64120-64130:64120-64130", Bridge: true},
 	"wrangler": {Publish: "8976:8976", Bridge: true},
 }
 
@@ -46,7 +51,7 @@ func ExpandOAuth(tools []string) (publish []string, bridge bool, err error) {
 		if !ok {
 			return nil, false, fmt.Errorf(
 				"unknown --oauth tool %q: supported tools are %s",
-				tool, strings.Join(supportedOAuthTools(), ", "))
+				tool, strings.Join(SupportedOAuthTools(), ", "))
 		}
 		publish = append(publish, recipe.Publish)
 		bridge = bridge || recipe.Bridge
@@ -54,9 +59,10 @@ func ExpandOAuth(tools []string) (publish []string, bridge bool, err error) {
 	return publish, bridge, nil
 }
 
-// supportedOAuthTools returns the recipe map keys sorted for stable error
-// messages and help text.
-func supportedOAuthTools() []string {
+// SupportedOAuthTools returns the recipe map keys sorted for stable error
+// messages and help text. Exported so cmd can render the supported set in
+// --oauth help strings without hardcoding a second copy of the list.
+func SupportedOAuthTools() []string {
 	names := make([]string, 0, len(oauthRecipes))
 	for name := range oauthRecipes {
 		names = append(names, name)
