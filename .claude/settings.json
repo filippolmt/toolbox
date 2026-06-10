@@ -1,32 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "permissions": {
-    "allow": [
-      "Bash(make go-test)",
-      "Bash(make go-test *)",
-      "Bash(make go-lint)",
-      "Bash(make go-lint *)",
-      "Bash(make renovate-test *)",
-      "Bash(git status*)",
-      "Bash(git log*)",
-      "Bash(git diff*)",
-      "Bash(git show*)",
-      "Bash(gh pr view*)",
-      "Bash(gh pr list*)",
-      "Bash(gh pr checks*)",
-      "Bash(gh run view*)",
-      "Bash(gh run list*)",
-      "Bash(docker ps*)",
-      "Bash(docker images*)"
-    ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(**/*.pem)",
-      "Read(**/id_rsa*)",
-      "Read(**/id_ed25519*)"
-    ]
-  },
   "hooks": {
     "Stop": [
       {
