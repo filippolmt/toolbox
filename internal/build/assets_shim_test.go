@@ -28,6 +28,7 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 		{"bin/bridge-lib.sh", []string{
 			`BRIDGE_STATE_DIR="` + bridge.ContainerDir + `"`,
 			`BRIDGE_STATE_DIR="` + bridge.LegacyContainerDir + `"`,
+			`BRIDGE_SOCK="` + bridge.ContainerSocket + `"`,
 		}},
 		{"bin/xdg-open", []string{sourceLib}},
 		{"bin/code", []string{

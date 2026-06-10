@@ -30,6 +30,12 @@ func TestResolveHostState_UsesHomeDir(t *testing.T) {
 	if s.PID != filepath.Join(want, "pid") {
 		t.Errorf("PID = %q, want %q", s.PID, filepath.Join(want, "pid"))
 	}
+	if s.RunDir != filepath.Join(want, "run") {
+		t.Errorf("RunDir = %q, want %q", s.RunDir, filepath.Join(want, "run"))
+	}
+	if s.Socket != filepath.Join(want, "run", "bridge.sock") {
+		t.Errorf("Socket = %q, want %q", s.Socket, filepath.Join(want, "run", "bridge.sock"))
+	}
 }
 
 func TestEnsureHostDir_Idempotent(t *testing.T) {

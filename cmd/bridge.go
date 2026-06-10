@@ -87,6 +87,9 @@ var bridgeStatusCmd = &cobra.Command{
 		fmt.Printf("state dir:       %s\n", rep.StateDir)
 		fmt.Printf("token present:   %v\n", rep.TokenPresent)
 		fmt.Printf("port:            %d\n", rep.Port)
+		if rep.SocketPath != "" {
+			fmt.Printf("socket:          %s (present=%v)\n", rep.SocketPath, rep.SocketPresent)
+		}
 		fmt.Printf("agent installed: %v\n", rep.AgentInstalled)
 		fmt.Printf("agent running:   %v\n", rep.AgentRunning)
 		fmt.Printf("agent detail:    %s\n", rep.AgentDetail)

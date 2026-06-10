@@ -98,6 +98,7 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 	if cfg.Bridge != nil && !*cfg.Bridge {
 		base = dropMountByName(base, "bridge")
 		base = dropMountByName(base, "bridge-legacy")
+		base = dropMountByName(base, "bridge-run")
 	}
 	// proximo CA bind is injected here (not in defaults()) because its source
 	// is host-specific and only relevant when `proximo: true`. resolveAll

@@ -353,20 +353,33 @@ container                                          host
 ─────────                                          ────
 xdg-open <url>                                     toolbox bridge daemon
 code/codium <path>                                   │ listens on 127.0.0.1:<port>
-  └─ wrappers at tail of Dockerfile                  │ (port + token read from
-       │  read /home/toolbox/.toolbox/bridge/       │  ~/.toolbox/toolbox/bridge/)
-       │  {port,token} (RO bind-mount)               │
-       ├─ POST http://host.docker.internal:<port>/open
-       │      body: { "url": "..." }                 ├─ open / xdg-open <url>
-       └─ POST http://host.docker.internal:<port>/edit
-              body: { "editor": "...", "path": "..." }
+  └─ wrappers at tail of Dockerfile                  │ + (Linux) unix run/bridge.sock
+       │  read /home/toolbox/.toolbox/bridge/       │ (port + token read from
+       │  {port,token} (RO bind-mount)               │  ~/.toolbox/toolbox/bridge/)
+       ├─ POST /open  body: { "url": "..." }         ├─ open / xdg-open <url>
+       └─ POST /edit  body: { "editor": …, "path": … }
                                                      └─ code / codium <path>
               (both: Authorization: Bearer <token>)
 ```
 
+#### Transport
+
+`bridge_post` in `bridge-lib.sh` tries the daemon's unix socket first (`/home/toolbox/.toolbox/bridge/run/bridge.sock`, present when the host daemon is a Linux build) and falls back to TCP `http://host.docker.internal:<port>` when the socket is absent or the connect dies (curl status `000`). The fallback fires **only** on `000`: a real HTTP status (even 4xx/5xx) is never retried, or a flaky socket would double-exec `/proximo` on the host.
+
+Why two transports: the TCP listener binds `127.0.0.1` only. On macOS that works — Docker Desktop's vpnkit proxies `host.docker.internal` connections from the host loopback. On native Linux (docker-ce) `host.docker.internal:host-gateway` resolves to the docker0 gateway IP (e.g. `172.17.0.1`), where nothing listens — connection refused, bridge unreachable. The unix socket (bound by `bindUnixListener` in `internal/bridge/socket_linux.go`, GOOS-gated like the agents) sidesteps routing entirely: the container reaches it through the `bridge-run` RW bind mount. Docker Desktop cannot share host unix sockets with containers (`docker.sock` is special-cased), so macOS has no unix listener and Docker Desktop on Linux falls through `000` to TCP, which works there via vpnkit.
+
+Version-skew matrix:
+
+| Host CLI | Image | Runtime | Result |
+|---|---|---|---|
+| new | new | docker-ce Linux | unix socket (the fix) |
+| new | pre-socket | docker-ce Linux | TCP-only shim → still unreachable (as before the fix; pull the image) |
+| pre-socket | new | any | no `run/` mount → `-S` false → TCP, identical to before |
+| new | new | Docker Desktop (macOS or Linux) | socket absent/untraversable → `000` → TCP via vpnkit → works |
+
 The container-side wrappers are installed at the tail of `internal/build/assets/Dockerfile` (after the `COPY init.d/` step): `xdg-open` shadows `/usr/local/bin/xdg-open` and its synonyms (`sensible-browser`, `gnome-open`, `x-www-browser`, `www-browser`, `open`); `code` ships with `codium` as a symlink (editor inferred from `basename $0`). `ENV BROWSER=xdg-open` lets tools that honour `$BROWSER` route through the same wrapper.
 
-State lives in `~/.toolbox/toolbox/bridge/` (`HostDir` in `internal/bridge/paths.go:16`), mounted **read-only** into the container at `/home/toolbox/.toolbox/bridge` (`ContainerDir`, line 20). Four files: `token` (bearer secret, generated at install), `port` (chosen at daemon start), `pid`, `log`. The dir is mode `0700`; the bind keeps the container from rotating either secret. `~/.toolbox/toolbox/` is the toolbox-own namespace (state lives next to `state/`, home of the pull cache): the `~/.toolbox` root is reserved for per-app config/credential dirs, so a future app can never collide with toolbox-own state. The bridge dir is deliberately a sibling of `state/`, not inside it — `state/` is rw-mounted wholesale into the container and the token must stay read-only. `toolbox shell` migrates a pre-namespace `~/.toolbox/state` onto `~/.toolbox/toolbox/state` once, best-effort (`mountplan.MigrateLegacyToolboxState`).
+State lives in `~/.toolbox/toolbox/bridge/` (`HostDir` in `internal/bridge/paths.go`), mounted **read-only** into the container at `/home/toolbox/.toolbox/bridge` (`ContainerDir`) — except the `run/` subdir, which carries the unix socket and gets its own **RW** nested mount (`bridge-run`; `connect()` on a socket inside a RO mount fails with EROFS). Four files plus the socket dir: `token` (bearer secret, generated at install), `port` (chosen at daemon start, written even when the socket transport is active — the TCP fallback and `bridge_ready` need it), `pid`, `log`, `run/bridge.sock`. The dir is mode `0700`; the bind keeps the container from rotating either secret. `~/.toolbox/toolbox/` is the toolbox-own namespace (state lives next to `state/`, home of the pull cache): the `~/.toolbox` root is reserved for per-app config/credential dirs, so a future app can never collide with toolbox-own state. The bridge dir is deliberately a sibling of `state/`, not inside it — `state/` is rw-mounted wholesale into the container and the token must stay read-only. `toolbox shell` migrates a pre-namespace `~/.toolbox/state` onto `~/.toolbox/toolbox/state` once, best-effort (`mountplan.MigrateLegacyToolboxState`).
 
 ### Install topology
 
@@ -383,7 +396,7 @@ Both run the same hidden subcommand `toolbox bridge daemon` in the foreground; t
 
 The daemon refuses anything that isn't:
 
-1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time).
+1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time); the Linux unix socket is `0600` inside a `0700` dir owned by the same UID the container runs as (`--user`), so it adds no principal beyond the user themselves. The bearer token is required on both transports.
 2. Authenticated with the exact bearer token from `~/.toolbox/toolbox/bridge/token` (constant-time compare).
 3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400.
 4. Below the URL length cap.
@@ -402,7 +415,7 @@ The container side can read `token` because the mount is RO; an attacker who lan
 
 ### Mount gating
 
-`bridge: true` in config (default — `internal/config/plan.go` seeds it) causes `mountplan.Defaults` (`internal/mountplan/defaults.go:134`) to append the RO bind. Setting `bridge: false` drops the mount entirely; the in-container wrapper has nothing to talk to and falls back to the one-line tip emitted by `cmd/shell.go` ("install the host daemon with `toolbox bridge install`"). The toggle lives outside `tools:` because it's host-side — it does not invalidate the image hash.
+`bridge: true` in config (default — `internal/config/plan.go` seeds it) causes `mountplan.Defaults` (`internal/mountplan/defaults.go`) to append the three bridge binds (RO state ×2 targets + RW `bridge-run`). Setting `bridge: false` drops all three; the in-container wrapper has nothing to talk to and falls back to the one-line tip emitted by `cmd/shell.go` ("install the host daemon with `toolbox bridge install`"). The toggle lives outside `tools:` because it's host-side — it does not invalidate the image hash.
 
 ### Uninstall surface
 
@@ -415,7 +428,8 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 
 ### Troubleshooting
 
-- `toolbox bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux).
+- `toolbox bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux). On Linux it also prints the unix socket path and whether the daemon has bound it (`present=true`).
+- Stale socket after a daemon crash (SIGKILL skips the unlink): the shim gets `000` and falls back to TCP; the daemon unlinks-before-listen on restart, so `systemctl --user restart toolbox-bridge` always recovers.
 - Daemon log: `~/.toolbox/toolbox/bridge/log` — opened in append mode by the daemon, no built-in rotation; truncate or `logrotate` it yourself if it grows.
 - Container-side wrapper failures (no port file, no host route) surface as a single-line tip on shell entry (`cmd/shell.go`'s "bridge tip" path); the wrapper itself exits non-zero so callers can detect the failure.
 

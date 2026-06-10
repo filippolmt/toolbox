@@ -11,6 +11,12 @@ if [ ! -r "${BRIDGE_STATE_DIR}/token" ]; then
     BRIDGE_STATE_DIR="/home/toolbox/.toolbox/browser"
 fi
 
+# Daemon unix socket (native-Linux hosts; RW bridge-run mount). Full literal,
+# independent of the legacy BRIDGE_STATE_DIR fallback — the run/ mount only
+# exists at the new path. Absent on macOS, on pre-socket hosts, and on Docker
+# Desktop; bridge_post falls back to TCP via host.docker.internal there.
+BRIDGE_SOCK="/home/toolbox/.toolbox/bridge/run/bridge.sock"
+
 # bridge_ready: verifies the RO-mounted bridge state and curl, then loads
 # BRIDGE_TOKEN / BRIDGE_PORT. On failure returns non-zero with the reason in
 # BRIDGE_ERROR (not_installed | no_curl) for the caller to render.
@@ -31,12 +37,34 @@ bridge_ready() {
 # the daemon endpoint, writes the response body to body-file (use /dev/null
 # to discard), and prints the HTTP status — 000 on transport failure. Never
 # propagates a curl failure, so it is safe under `set -e`.
-bridge_post() {
-    _bridge_status=$(curl --silent --output "$3" --write-out '%{http_code}' \
-        --max-time "$4" \
+# _bridge_curl <url> <payload> <body-file> <max-time> [curl-flags...]: the
+# shared curl invocation; extra flags (e.g. --unix-socket) ride on "$@".
+_bridge_curl() {
+    _bridge_url=$1; _bridge_payload=$2; _bridge_body=$3; _bridge_maxtime=$4
+    shift 4
+    curl --silent --output "${_bridge_body}" --write-out '%{http_code}' \
+        --max-time "${_bridge_maxtime}" \
         --header "Authorization: Bearer ${BRIDGE_TOKEN}" \
         --header "Content-Type: application/json" \
-        --data "$2" \
-        "http://host.docker.internal:${BRIDGE_PORT}$1" 2>/dev/null) || _bridge_status=000
+        --data "${_bridge_payload}" \
+        "$@" \
+        "${_bridge_url}" 2>/dev/null
+}
+
+bridge_post() {
+    if [ -S "${BRIDGE_SOCK}" ]; then
+        _bridge_status=$(_bridge_curl "http://localhost$1" "$2" "$3" "$4" \
+            --unix-socket "${BRIDGE_SOCK}") || _bridge_status=000
+        # 000 = dead transport (stale socket after a daemon crash, or a file
+        # that is visible but not traversable — Docker Desktop on Linux):
+        # retry over TCP. Any real HTTP status (even 4xx/5xx) must NOT be
+        # retried — a second POST would re-execute /proximo on the host.
+        if [ "${_bridge_status}" != "000" ]; then
+            printf '%s' "${_bridge_status}"
+            return 0
+        fi
+    fi
+    _bridge_status=$(_bridge_curl "http://host.docker.internal:${BRIDGE_PORT}$1" \
+        "$2" "$3" "$4") || _bridge_status=000
     printf '%s' "${_bridge_status}"
 }

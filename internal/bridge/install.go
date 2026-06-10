@@ -16,6 +16,8 @@ type StatusReport struct {
 	StateDir       string
 	TokenPresent   bool
 	Port           int
+	SocketPath     string // empty on hosts without the unix transport (macOS)
+	SocketPresent  bool
 	AgentInstalled bool
 	AgentRunning   bool
 	AgentDetail    string
@@ -104,6 +106,7 @@ func Status(a Agent) (StatusReport, error) {
 	if p, err := LoadPort(s); err == nil {
 		rep.Port = p
 	}
+	rep.SocketPath, rep.SocketPresent = socketStatus(s)
 	as, err := a.Status()
 	if err != nil {
 		return rep, err

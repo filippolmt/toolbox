@@ -139,6 +139,14 @@ func defaults() []config.Mount {
 		// images working: their shims hardcode the old in-container path.
 		{Name: "bridge", Source: "~/" + bridge.HostDir, Target: bridge.ContainerDir, ReadOnly: true, CreateIfMissing: true},
 		{Name: "bridge-legacy", Source: "~/" + bridge.HostDir, Target: bridge.LegacyContainerDir, ReadOnly: true, CreateIfMissing: true},
+		// Daemon unix socket (bound on native Linux hosts only; on macOS the
+		// dir stays empty and the mount is inert). RW because connect() on a
+		// socket inside a RO mount fails with EROFS — run/ is the only
+		// writable subdir of the bridge state dir. Nested inside the RO
+		// "bridge" target: Docker mounts binds in target-depth order, so this
+		// overrides the parent. No legacy target — pre-socket shims are
+		// TCP-only and would never read it.
+		{Name: "bridge-run", Source: "~/" + bridge.HostRunDir, Target: bridge.ContainerRunDir, ReadOnly: false, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
 		{Name: "docker-sock", Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}
