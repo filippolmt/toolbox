@@ -33,6 +33,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Google Cloud SDK (gcloud) | 570.x |
 | Azure CLI (az) | 2.86.x |
 | Oracle OCI CLI | 3.84.x |
+| SonarQube CLI (`sonar`) | 0.14.x |
 | graphify (Claude Code knowledge-graph skill, PyPI `graphifyy`) | 0.8.x |
 | Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
 | Cloudflare Wrangler CLI (`wrangler`) | 4.95.x |

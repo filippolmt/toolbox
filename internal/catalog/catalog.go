@@ -77,6 +77,7 @@ var Entries = []Entry{
 	{Key: "pnpm"},
 	{Key: "pyright"},
 	{Key: "rtk", InitScript: "10-rtk.sh"},
+	{Key: "sonar"},
 	{Key: "starship"},
 	{Key: "tofu"},
 	{Key: "typescript"},

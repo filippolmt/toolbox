@@ -69,6 +69,22 @@ func TestExpandOAuthCfNoBridge(t *testing.T) {
 	}
 }
 
+// TestExpandOAuthSonarRangeBridge: sonar binds 127.0.0.1 on the first free
+// port in the fixed 64120-64130 range (server rejects out-of-range callback
+// ports), so the recipe publishes the whole range AND bridges it.
+func TestExpandOAuthSonarRangeBridge(t *testing.T) {
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"sonar"})
+	if err != nil {
+		t.Fatalf("ExpandOAuth(sonar) err = %v, want nil", err)
+	}
+	if want := []string{"64120-64130:64120-64130"}; !reflect.DeepEqual(publish, want) {
+		t.Errorf("publish = %v, want %v", publish, want)
+	}
+	if !bridge {
+		t.Error("bridge = false, want true (sonar binds container loopback)")
+	}
+}
+
 // TestExpandOAuthUnknownTool: hard error naming the offender and listing
 // the sorted supported tools (device-code CLIs intentionally absent).
 func TestExpandOAuthUnknownTool(t *testing.T) {
@@ -80,7 +96,7 @@ func TestExpandOAuthUnknownTool(t *testing.T) {
 	if !strings.Contains(msg, `"gh"`) {
 		t.Errorf("error %q does not name the unknown tool", msg)
 	}
-	if !strings.Contains(msg, "cf, codex, oci, shopify, wrangler") {
+	if !strings.Contains(msg, "cf, codex, oci, shopify, sonar, wrangler") {
 		t.Errorf("error %q does not list sorted supported tools", msg)
 	}
 }

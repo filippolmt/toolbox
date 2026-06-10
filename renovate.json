@@ -202,6 +202,14 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+SONARQUBE_CLI_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "SonarSource/sonarqube-cli",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+AZURE_CLI_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "Azure/azure-cli",

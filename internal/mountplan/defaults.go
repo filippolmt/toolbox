@@ -50,6 +50,11 @@ func defaults() []config.Mount {
 		{Name: "azure", Source: "~/.toolbox/azure", Target: "/home/toolbox/.azure", ReadOnly: false, CreateIfMissing: true},
 		// Oracle OCI CLI auth + config — populated by `oci setup config` inside the container.
 		{Name: "oci", Source: "~/.toolbox/oci", Target: "/home/toolbox/.oci", ReadOnly: false, CreateIfMissing: true},
+		// SonarQube CLI state — populated by `sonar auth login` inside the container.
+		// Default data dir is ~/.sonar/sonarqube-cli (overridable via SONAR_USER_HOME).
+		// The image sets SONARQUBE_CLI_KEYCHAIN_FILE inside this bind-mount because
+		// the default token store (libsecret keyring) doesn't exist in the container.
+		{Name: "sonar", Source: "~/.toolbox/sonar", Target: "/home/toolbox/.sonar", ReadOnly: false, CreateIfMissing: true},
 		// Docker CLI config (~/.docker/config.json) — credHelpers + auths written by
 		// `docker login`, `gcloud auth configure-docker`, `aws ecr get-login-password`,
 		// etc. Without this bind every registry login wipes on `toolbox stop`. The

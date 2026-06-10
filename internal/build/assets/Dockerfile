@@ -38,6 +38,9 @@ ARG STARSHIP_VERSION=1.25.1
 ARG PNPM_VERSION=11.5.2
 ARG BUN_VERSION=1.3.14
 ARG UV_VERSION=0.11.19
+# sonarqube-cli tags carry no `v` prefix and use a 4-segment
+# MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
+ARG SONARQUBE_CLI_VERSION=0.14.1.2338
 ARG CLAUDE_CODE_VERSION=2.1.170
 ARG CODEX_CLI_VERSION=0.139.0
 ARG CF_CLI_VERSION=0.0.6
@@ -519,6 +522,30 @@ RUN set -eux; \
       rm "/tmp/${UV_TARBALL}" /tmp/uv.sha256; \
       /out/usr/local/bin/uv --version
 
+# sonar (SonarQube CLI). Bun-compiled single binary from the SonarSource CDN —
+# the GitHub releases carry no assets. Per-file .sha256 published alongside
+# (bare hex digest, no filename column). glibc-dynamic (min 2.17, libsecret
+# loaded lazily via dlopen), fine on bookworm; no musl build exists.
+FROM fetch-base AS fetch-sonar
+ARG TARGETARCH
+ARG SONARQUBE_CLI_VERSION
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) SONAR_ARCH=x86-64;; \
+        arm64) SONAR_ARCH=arm64;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      SONAR_BIN="sonarqube-cli-${SONARQUBE_CLI_VERSION}-linux-${SONAR_ARCH}.bin"; \
+      SONAR_URL="https://binaries.sonarsource.com/Distribution/sonarqube-cli/${SONARQUBE_CLI_VERSION}/linux"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${SONAR_BIN}" \
+        "${SONAR_URL}/${SONAR_BIN}"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/sonar.sha256 \
+        "${SONAR_URL}/${SONAR_BIN}.sha256"; \
+      echo "$(cat /tmp/sonar.sha256)  /tmp/${SONAR_BIN}" | sha256sum -c -; \
+      install -m 0755 "/tmp/${SONAR_BIN}" /out/usr/local/bin/sonar; \
+      rm "/tmp/${SONAR_BIN}" /tmp/sonar.sha256; \
+      /out/usr/local/bin/sonar --version
+
 # zoxide. SHA256 from build-arg literal (no upstream checksum file). MUSL
 # both arches (upstream only ships musl for arm64).
 FROM fetch-base AS fetch-zoxide
@@ -801,6 +828,7 @@ COPY --link --from=fetch-fd       /out/ /
 COPY --link --from=fetch-eza      /out/ /
 COPY --link --from=fetch-bun      /out/ /
 COPY --link --from=fetch-uv       /out/ /
+COPY --link --from=fetch-sonar    /out/ /
 COPY --link --from=fetch-zoxide   /out/ /
 COPY --link --from=fetch-tini     /out/ /
 COPY --link --from=fetch-go       /out/ /
@@ -828,8 +856,14 @@ COPY --link --chmod=0755 --from=rtk-builder /out/bin/rtk /usr/local/bin/rtk
 #   RTK_TEE=0: hard kill-switch for tee feature — writes failed-command
 #     stdout/stderr (often carrying tokens) to ~/.local/share/rtk/tee/*.log.
 #     Source-side override checked at src/core/tee.rs (v0.37.2 lines 152, 200).
+#   SONARQUBE_CLI_KEYCHAIN_FILE: sonar stores tokens via Bun.secrets →
+#     libsecret, which fails fatally without a D-Bus secret service; the
+#     file backend (src/lib/keychain.ts) lands the token (plaintext JSON)
+#     inside the ~/.sonar bind-mount so `sonar auth login` survives
+#     `toolbox stop`.
 ENV CHECKPOINT_DISABLE=1 \
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+    SONARQUBE_CLI_KEYCHAIN_FILE=/home/toolbox/.sonar/sonarqube-cli/keychain.json \
     ATUIN_CONFIG_DIR=/home/toolbox/.local/share/atuin/config \
     CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true \
     CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=1 \
