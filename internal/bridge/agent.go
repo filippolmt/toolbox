@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"bytes"
@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // ErrUnsupported is returned by Agent constructors on hosts other than darwin
 // and linux. The installer surfaces this to the user instead of attempting a
 // platform-specific path that cannot work.
-var ErrUnsupported = errors.New("browser-bridge: unsupported host OS")
+var ErrUnsupported = errors.New("bridge: unsupported host OS")
 
 // AgentStatus is the snapshot Agent.Status reports.
 type AgentStatus struct {
@@ -53,5 +55,5 @@ func writeServiceFile(path string, body []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, body, 0o644)
+	return fsx.AtomicWriteFile(path, body, 0o644)
 }

@@ -131,6 +131,11 @@ func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
 	if !reflect.DeepEqual(upper.SDD, lower.SDD) {
 		prov["sdd"] = origin
 	}
+	if !boolPtrEqual(upper.Bridge, lower.Bridge) {
+		prov["bridge"] = origin
+	}
+	// Deprecated spelling — still tracked so `config show --origin` explains
+	// where a legacy browser_bridge: came from until the user renames it.
 	if !boolPtrEqual(upper.BrowserBridge, lower.BrowserBridge) {
 		prov["browser_bridge"] = origin
 	}

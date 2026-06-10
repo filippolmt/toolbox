@@ -67,10 +67,13 @@ type Config struct {
 	//	    steps:
 	//	      - ["--claude", "--global", "--config-dir", "./.claude"]
 	SDD map[string]SDDSkill `mapstructure:"sdd"`
-	// BrowserBridge toggles the host-side ~/.toolbox/browser RO mount in the
-	// container and gates the `toolbox browser-bridge install` command. When
-	// false, the mount is omitted and the install command refuses. Default
-	// true.
+	// Bridge toggles the host-side ~/.toolbox/bridge RO mount in the
+	// container and gates the `toolbox bridge install` command. When false,
+	// the mount is omitted and the install command refuses. Default true.
+	Bridge *bool `mapstructure:"bridge"`
+	// BrowserBridge is the deprecated spelling of Bridge, kept as input-only
+	// compat: fillDefaultsBackstop folds it into Bridge when `bridge:` is
+	// absent. Consumers must read Bridge. Remove in a major release.
 	BrowserBridge *bool `mapstructure:"browser_bridge"`
 	// Proximo controls the proximo (https://github.com/filippolmt/proximo)
 	// local-dev integration. Tri-state:

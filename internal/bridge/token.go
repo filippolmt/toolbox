@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"crypto/rand"
@@ -23,7 +23,7 @@ const tokenBytes = 32
 //
 // Tokens are intentionally not rotated automatically: rotation would require
 // the daemon to update the in-container mount, which is read-only. Users who
-// want to invalidate the current token can `toolbox browser-bridge uninstall`
+// want to invalidate the current token can `toolbox bridge uninstall`
 // followed by `install`, which regenerates fresh state.
 func LoadOrCreateToken(s HostState) (string, error) {
 	if tok, err := loadToken(s.Token); err == nil {

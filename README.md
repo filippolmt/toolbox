@@ -261,21 +261,21 @@ Full mental model, OAuth CLI survey table, and limitations: [`docs/runtime-notes
 
 ### Browser bridge
 
-The toolbox container has no display server, so commands inside `toolbox shell` that try to open a URL (`xdg-open`, `$BROWSER`, OAuth redirects, `gh browse`, MCP login flows…) have nowhere to send the user by default. The browser bridge plugs that gap by running a tiny per-user daemon on the host that listens on `127.0.0.1` and delegates to the host's real browser; the container ships an `xdg-open` wrapper (and `BROWSER=xdg-open`) that POSTs to that daemon over the bind-mounted state dir.
+The toolbox container has no display server, so commands inside `toolbox shell` that try to open a URL (`xdg-open`, `$BROWSER`, OAuth redirects, `gh browse`, MCP login flows…) have nowhere to send the user by default. The bridge plugs that gap by running a tiny per-user daemon on the host that listens on `127.0.0.1` and delegates to the host's real browser; the container ships an `xdg-open` wrapper (and `BROWSER=xdg-open`) that POSTs to that daemon over the bind-mounted state dir.
 
 The bridge is **opt-in** — nothing runs on the host until you install it explicitly:
 
 ```bash
-toolbox browser-bridge install     # generate token, write LaunchAgent/systemd unit, start daemon
-toolbox browser-bridge status      # show install state, port, daemon liveness
-toolbox browser-bridge uninstall   # stop daemon, remove unit + token
+toolbox bridge install     # generate token, write LaunchAgent/systemd unit, start daemon
+toolbox bridge status      # show install state, port, daemon liveness
+toolbox bridge uninstall   # stop daemon, remove unit + token
 ```
 
-`install` creates `~/.toolbox/browser/` (mode 0700) with a bearer `token`, the listener `port`, a `pid` file, and a `log`. On macOS it registers `~/Library/LaunchAgents/com.filippolmt.toolbox.browser.plist` via `launchctl bootstrap gui/<uid>`; on Linux it writes the `toolbox-browser.service` unit under `~/.config/systemd/user/`. The host directory is bind-mounted **read-only** into the container at `/home/toolbox/.toolbox/browser` (regardless of the host user's home), so the wrapper inside the container can read the port + token but cannot tamper with them.
+`install` creates `~/.toolbox/toolbox/bridge/` (mode 0700) with a bearer `token`, the listener `port`, a `pid` file, and a `log`. On macOS it registers `~/Library/LaunchAgents/com.filippolmt.toolbox.bridge.plist` via `launchctl bootstrap gui/<uid>`; on Linux it writes the `toolbox-bridge.service` unit under `~/.config/systemd/user/`. The host directory is bind-mounted **read-only** into the container at `/home/toolbox/.toolbox/bridge` (regardless of the host user's home), so the wrapper inside the container can read the port + token but cannot tamper with them.
 
 Security boundary: the daemon binds `127.0.0.1` only (no LAN exposure), enforces a bearer token on every request, allowlists `http` / `https` URL schemes only, caps URL length, and rate-limits incoming requests. Anything outside that envelope is rejected with a 4xx and logged.
 
-Set `browser_bridge: false` in `.toolbox.yaml` to skip the read-only mount entirely — the container then has no `xdg-open` wrapper at all.
+Set `bridge: false` in `.toolbox.yaml` to skip the read-only mount entirely — the container then has no `xdg-open` wrapper at all.
 
 ### Proximo (`.test` apps from inside the container)
 
@@ -285,7 +285,7 @@ It is **auto-detected**: when proximo is installed on the host (its root CA exis
 
 The routed hosts are resolved when the container is created, so start your proximo stack first and re-run `toolbox shell` to pick up newly added hosts. `curl`, `git`, `wget`, Python (`ssl`/`urllib`), Node and Chromium trust proximo automatically; `python-requests` (which ships its own `certifi` bundle) needs `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"`. Full mechanics: [`docs/runtime-notes.md#proximo-integration`](docs/runtime-notes.md#proximo-integration).
 
-With the [browser bridge](#browser-bridge) installed you can also drive the host stack from inside the shell: `proximo up`, `proximo down`, and `proximo status` are forwarded to the host daemon (fixed allowlist — `install`/`uninstall` need sudo and must run on the host).
+With the [bridge](#bridge) installed you can also drive the host stack from inside the shell: `proximo up`, `proximo down`, and `proximo status` are forwarded to the host daemon (fixed allowlist — `install`/`uninstall` need sudo and must run on the host).
 
 ### Loading order
 
@@ -305,7 +305,7 @@ Configuration is loaded from (highest priority first):
 | `toolbox stop` | Stop and remove the container |
 | `toolbox build` | Build the Docker image locally |
 | `toolbox version` | Show version info |
-| `toolbox browser-bridge {install,uninstall,status}` | Manage the host-side daemon that forwards in-container `xdg-open` URLs to the host's real browser (opt-in, per-user) |
+| `toolbox bridge {install,uninstall,status}` | Manage the host-side daemon that forwards in-container `xdg-open` URLs to the host's real browser (opt-in, per-user) |
 | `toolbox completion [bash\|zsh\|fish]` | Generate shell completions |
 
 ## Updating

@@ -95,8 +95,9 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
-		base = dropMountByName(base, "browser-bridge")
+	if cfg.Bridge != nil && !*cfg.Bridge {
+		base = dropMountByName(base, "bridge")
+		base = dropMountByName(base, "bridge-legacy")
 	}
 	// proximo CA bind is injected here (not in defaults()) because its source
 	// is host-specific and only relevant when `proximo: true`. resolveAll
@@ -108,7 +109,7 @@ func Merge(cfg *config.Config) ([]config.Mount, error) {
 }
 
 // dropMountByName returns a copy of base with the entry whose Name matches
-// removed. Used to honour top-level feature toggles (e.g. browser_bridge:
+// removed. Used to honour top-level feature toggles (e.g. bridge:
 // false) at the mount-resolution seam — feature flags driven by code do not
 // need to round-trip through the user `mounts:` list.
 func dropMountByName(base []config.Mount, name string) []config.Mount {

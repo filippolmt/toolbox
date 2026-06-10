@@ -7,8 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -73,8 +74,18 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if cfg.BrowserBridge != nil && *cfg.BrowserBridge {
-		printBrowserBridgeTipIfNeeded()
+	// One-time relocation of toolbox-own state into the ~/.toolbox/toolbox
+	// namespace. Best-effort: on failure CreateIfMissing rebuilds an empty
+	// state dir and the pull cache regenerates, so warn instead of failing
+	// the shell.
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if err := mountplan.MigrateLegacyToolboxState(home); err != nil {
+			fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
+		}
+	}
+
+	if cfg.Bridge != nil && *cfg.Bridge {
+		printBridgeTipIfNeeded()
 	}
 
 	cli, err := container.NewClient()
@@ -125,20 +136,20 @@ func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]str
 	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
 }
 
-// printBrowserBridgeTipIfNeeded prints a one-line install hint when the
-// host-side browser bridge is not yet installed. Build tags select an Agent
+// printBridgeTipIfNeeded prints a one-line install hint when the
+// host-side bridge is not yet installed. Build tags select an Agent
 // that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
 // Uses IsInstalled (stat-only) instead of Status to keep the shell-start hot
 // path off launchctl/systemctl exec costs.
-func printBrowserBridgeTipIfNeeded() {
-	a, err := browserbridge.NewAgent()
+func printBridgeTipIfNeeded() {
+	a, err := bridge.NewAgent()
 	if err != nil {
 		return
 	}
 	if a.IsInstalled() {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox browser-bridge install' to forward in-container URLs to your host browser")
+	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs to your host browser")
 }
 
 func init() {

@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 // editorAllowlist is the fixed set of editors /edit may launch. A
 // client-supplied name never reaches exec without passing this gate.

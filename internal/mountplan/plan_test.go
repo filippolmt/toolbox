@@ -123,7 +123,7 @@ func TestPlanEndToEnd(t *testing.T) {
 	// Source dirs created on disk for CreateIfMissing defaults.
 	expectCreated := []string{
 		filepath.Join(tmpHome, ".toolbox", ".claude"),
-		filepath.Join(tmpHome, ".toolbox", "state"),
+		filepath.Join(tmpHome, ".toolbox", "toolbox", "state"),
 		filepath.Join(tmpHome, ".toolbox", "go"),
 	}
 	for _, p := range expectCreated {
@@ -186,29 +186,32 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 	}
 }
 
-func TestMerge_BrowserBridgeFalseDropsMount(t *testing.T) {
+func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	off := false
-	got, err := Merge(&config.Config{BrowserBridge: &off})
+	got, err := Merge(&config.Config{Bridge: &off})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
 	for _, m := range got {
-		if m.Name == "browser-bridge" {
-			t.Errorf("browser-bridge mount must be dropped when BrowserBridge=false")
+		if m.Name == "bridge" || m.Name == "bridge-legacy" {
+			t.Errorf("%s mount must be dropped when Bridge=false", m.Name)
 		}
 	}
 }
 
-func TestMerge_BrowserBridgeTrueKeepsMount(t *testing.T) {
+func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
-	got, err := Merge(&config.Config{BrowserBridge: &on})
+	got, err := Merge(&config.Config{Bridge: &on})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
+	found := map[string]bool{}
 	for _, m := range got {
-		if m.Name == "browser-bridge" {
-			return
+		found[m.Name] = true
+	}
+	for _, name := range []string{"bridge", "bridge-legacy"} {
+		if !found[name] {
+			t.Errorf("%s mount missing when Bridge=true", name)
 		}
 	}
-	t.Error("browser-bridge mount missing when BrowserBridge=true")
 }

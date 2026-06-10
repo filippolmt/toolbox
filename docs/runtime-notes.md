@@ -244,7 +244,7 @@ Limitations:
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
 - `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
 
-See also: [`port-bindings`](#port-bindings-are-fixed-at-container-creation), [`image-build`](#image-build) (socat install layer), [`browser-bridge`](#browser-bridge) (inverse direction — container→host browser opens).
+See also: [`port-bindings`](#port-bindings-are-fixed-at-container-creation), [`image-build`](#image-build) (socat install layer), [`bridge`](#bridge) (inverse direction — container→host browser opens).
 
 ### Codex nested sandbox
 
@@ -342,19 +342,19 @@ The object form implies `enabled: true` (writing it at all is the opt-in; an exp
 
 **Migration residue (upstream gap):** re-running the skill-form install over a legacy `--claude --local` layout cleans `.claude/commands/gsd/` but leaves the gsd hooks block in `.claude/settings.local.json` next to the new `.claude/settings.json` copy — Claude Code merges both, so gsd hooks fire twice until the stale block in `settings.local.json` is removed by hand (one-time).
 
-## Browser bridge
+## Bridge
 
 ### Architecture
 
-The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The browser bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium:
+The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium:
 
 ```
 container                                          host
 ─────────                                          ────
-xdg-open <url>                                     toolbox browser-bridge daemon
+xdg-open <url>                                     toolbox bridge daemon
 code/codium <path>                                   │ listens on 127.0.0.1:<port>
   └─ wrappers at tail of Dockerfile                  │ (port + token read from
-       │  read /home/toolbox/.toolbox/browser/       │  ~/.toolbox/browser/)
+       │  read /home/toolbox/.toolbox/bridge/       │  ~/.toolbox/toolbox/bridge/)
        │  {port,token} (RO bind-mount)               │
        ├─ POST http://host.docker.internal:<port>/open
        │      body: { "url": "..." }                 ├─ open / xdg-open <url>
@@ -366,25 +366,25 @@ code/codium <path>                                   │ listens on 127.0.0.1:<p
 
 The container-side wrappers are installed at the tail of `internal/build/assets/Dockerfile` (after the `COPY init.d/` step): `xdg-open` shadows `/usr/local/bin/xdg-open` and its synonyms (`sensible-browser`, `gnome-open`, `x-www-browser`, `www-browser`, `open`); `code` ships with `codium` as a symlink (editor inferred from `basename $0`). `ENV BROWSER=xdg-open` lets tools that honour `$BROWSER` route through the same wrapper.
 
-State lives in `~/.toolbox/browser/` (`HostDir` in `internal/browserbridge/paths.go:16`), mounted **read-only** into the container at `/home/toolbox/.toolbox/browser` (`ContainerDir`, line 20). Four files: `token` (bearer secret, generated at install), `port` (chosen at daemon start), `pid`, `log`. The dir is mode `0700`; the bind keeps the container from rotating either secret.
+State lives in `~/.toolbox/toolbox/bridge/` (`HostDir` in `internal/bridge/paths.go:16`), mounted **read-only** into the container at `/home/toolbox/.toolbox/bridge` (`ContainerDir`, line 20). Four files: `token` (bearer secret, generated at install), `port` (chosen at daemon start), `pid`, `log`. The dir is mode `0700`; the bind keeps the container from rotating either secret. `~/.toolbox/toolbox/` is the toolbox-own namespace (state lives next to `state/`, home of the pull cache): the `~/.toolbox` root is reserved for per-app config/credential dirs, so a future app can never collide with toolbox-own state. The bridge dir is deliberately a sibling of `state/`, not inside it — `state/` is rw-mounted wholesale into the container and the token must stay read-only. `toolbox shell` migrates a pre-namespace `~/.toolbox/state` onto `~/.toolbox/toolbox/state` once, best-effort (`mountplan.MigrateLegacyToolboxState`).
 
 ### Install topology
 
-Per-host supervisor differs by platform — implementation in `internal/browserbridge/agent_darwin.go` and `agent_linux.go`:
+Per-host supervisor differs by platform — implementation in `internal/bridge/agent_darwin.go` and `agent_linux.go`:
 
 | Host | Unit | Registered via |
 |------|------|----------------|
-| macOS | `~/Library/LaunchAgents/com.filippolmt.toolbox.browser.plist` | `launchctl bootstrap gui/<uid>` |
-| Linux | `~/.config/systemd/user/toolbox-browser.service` | `systemctl --user daemon-reload && enable --now` |
+| macOS | `~/Library/LaunchAgents/com.filippolmt.toolbox.bridge.plist` | `launchctl bootstrap gui/<uid>` |
+| Linux | `~/.config/systemd/user/toolbox-bridge.service` | `systemctl --user daemon-reload && enable --now` |
 
-Both run the same hidden subcommand `toolbox browser-bridge daemon` in the foreground; the supervisor handles restart-on-crash and login-time start. `toolbox browser-bridge install` writes the unit + token then triggers the bootstrap; `uninstall` reverses both steps. Anything else (status reads, log inspection) is read-only on the state dir.
+Both run the same hidden subcommand `toolbox bridge daemon` in the foreground; the supervisor handles restart-on-crash and login-time start. `toolbox bridge install` writes the unit + token then triggers the bootstrap; `uninstall` reverses both steps. Install/uninstall also retire the pre-rename `browser-bridge` era artifacts: the `com.filippolmt.toolbox.browser` LaunchAgent / `toolbox-browser.service` unit is stopped and removed, and `install` renames a `~/.toolbox/browser` state dir onto the new location (token preserved, so running containers keep authenticating). Stale leftovers go too: the old macOS log file (`toolbox-browser.log`) and any legacy dir recreated by an old binary's CreateIfMissing mount are deleted on the next install / shell start. The `browser-bridge` CLI spelling survives as a deprecated cobra alias — installed units keep invoking it until the user reruns `toolbox bridge install`; drop it only in a major release. Anything else (status reads, log inspection) is read-only on the state dir.
 
 ### Security boundary
 
 The daemon refuses anything that isn't:
 
 1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time).
-2. Authenticated with the exact bearer token from `~/.toolbox/browser/token` (constant-time compare).
+2. Authenticated with the exact bearer token from `~/.toolbox/toolbox/bridge/token` (constant-time compare).
 3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400.
 4. Below the URL length cap.
 5. Within the rate limit (one bucket shared by `/open` and `/edit`).
@@ -393,31 +393,31 @@ The container side can read `token` because the mount is RO; an attacker who lan
 
 ### Editor shims
 
-`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the bridge-lib marker in both so a dropped COPY or a shadowing real binary fails the image build. All bridge shims (`xdg-open`, `code`/`codium`, `proximo`) source `/usr/local/lib/toolbox/bridge-lib.sh` for the shared transport (state-dir location, readiness checks, curl POST — `TestShimPathsMatchGoConstants` pins the state dir there against `browserbridge.ContainerDir`); each shim keeps only its own validation, messages, and exit policy. Behaviour:
+`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the bridge-lib marker in both so a dropped COPY or a shadowing real binary fails the image build. All bridge shims (`xdg-open`, `code`/`codium`, `proximo`) source `/usr/local/lib/toolbox/bridge-lib.sh` for the shared transport (state-dir location, readiness checks, curl POST — `TestShimPathsMatchGoConstants` pins the state dir there against `bridge.ContainerDir`); each shim keeps only its own validation, messages, and exit policy. Behaviour:
 
 - No args → `.`. Each path arg is resolved to absolute (`realpath -m` against `$PWD`), must live under `/workspace`, and is rewritten with `$TOOLBOX_HOST_WORKSPACE` (injected by `sessionplan` in every shell) before one `POST /edit` per path. The daemon stays workspace-agnostic: it receives host paths only.
 - Paths outside `/workspace` are rejected locally (the host cannot see them); flags (`-g`, `--diff`, …) are rejected honestly rather than silently dropped. Both exit 1 with no POST.
-- Daemon-side launch: editor CLI from `PATH`; macOS falls back to `open -a "Visual Studio Code"` / `open -a "VSCodium"` when the CLI shim isn't installed (per-OS split in `internal/browserbridge/editor_darwin.go` / `editor_linux.go`).
-- Fallback hints mirror `xdg-open` (`toolbox browser-bridge install` when state is missing, `status` when unreachable, "update the host toolbox CLI" on 404 from a pre-`/edit` daemon) — but unlike `xdg-open` (exit 0 so OAuth flows never block) the editor shims exit non-zero: they're interactive commands and a false success is misleading.
+- Daemon-side launch: editor CLI from `PATH`; macOS falls back to `open -a "Visual Studio Code"` / `open -a "VSCodium"` when the CLI shim isn't installed (per-OS split in `internal/bridge/editor_darwin.go` / `editor_linux.go`).
+- Fallback hints mirror `xdg-open` (`toolbox bridge install` when state is missing, `status` when unreachable, "update the host toolbox CLI" on 404 from a pre-`/edit` daemon) — but unlike `xdg-open` (exit 0 so OAuth flows never block) the editor shims exit non-zero: they're interactive commands and a false success is misleading.
 
 ### Mount gating
 
-`browser_bridge: true` in config (default — `internal/config/plan.go` seeds it) causes `mountplan.Defaults` (`internal/mountplan/defaults.go:134`) to append the RO bind. Setting `browser_bridge: false` drops the mount entirely; the in-container wrapper has nothing to talk to and falls back to the one-line tip emitted by `cmd/shell.go` ("install the host daemon with `toolbox browser-bridge install`"). The toggle lives outside `tools:` because it's host-side — it does not invalidate the image hash.
+`bridge: true` in config (default — `internal/config/plan.go` seeds it) causes `mountplan.Defaults` (`internal/mountplan/defaults.go:134`) to append the RO bind. Setting `bridge: false` drops the mount entirely; the in-container wrapper has nothing to talk to and falls back to the one-line tip emitted by `cmd/shell.go` ("install the host daemon with `toolbox bridge install`"). The toggle lives outside `tools:` because it's host-side — it does not invalidate the image hash.
 
 ### Uninstall surface
 
 ```bash
-toolbox browser-bridge uninstall   # supervisor unit + plist/service file
-rm -rf ~/.toolbox/browser          # token + port + pid + log
+toolbox bridge uninstall   # supervisor unit + plist/service file
+rm -rf ~/.toolbox/toolbox/bridge          # token + port + pid + log
 ```
 
 Both steps are independent: `uninstall` removes only what `install` wrote. The state dir is left behind if a user revokes the daemon but wants to keep the token around (rare; documented for completeness). No system-level files, no `sudo`, no Homebrew formula touch.
 
 ### Troubleshooting
 
-- `toolbox browser-bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux).
-- Daemon log: `~/.toolbox/browser/log` — opened in append mode by the daemon, no built-in rotation; truncate or `logrotate` it yourself if it grows.
-- Container-side wrapper failures (no port file, no host route) surface as a single-line tip on shell entry (`cmd/shell.go`'s "browser-bridge tip" path); the wrapper itself exits non-zero so callers can detect the failure.
+- `toolbox bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux).
+- Daemon log: `~/.toolbox/toolbox/bridge/log` — opened in append mode by the daemon, no built-in rotation; truncate or `logrotate` it yourself if it grows.
+- Container-side wrapper failures (no port file, no host route) surface as a single-line tip on shell entry (`cmd/shell.go`'s "bridge tip" path); the wrapper itself exits non-zero so callers can detect the failure.
 
 ## Proximo integration
 
@@ -427,7 +427,7 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 
 ### Enablement is auto-detected (tri-state `proximo`)
 
-`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under `~/.proximo`). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `browser_bridge`, but with an auto rather than always-on default.
+`config.Config.Proximo` is a `*bool` (`proximo.Enabled`): an explicit `true`/`false` wins; **omitted (nil) auto-detects** — on iff proximo's root CA exists on the host (`proximo install` wrote it under `~/.proximo`). So a host with proximo installed gets `.test` reachability in every shell with zero per-repo opt-in, and a host without it pays nothing. `proximo: false` opts a project out; `proximo: true` forces it on even when the CA is absent (the mount then soft-skips). `*bool` (vs a plain `bool`) is what makes nil mean "auto" rather than "off" — the same tri-state shape as `bridge`, but with an auto rather than always-on default.
 
 ### The two host-side ingredients
 
@@ -451,12 +451,12 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 
 ### Lifecycle from inside the container (bridge shim)
 
-`proximo up|down|status` works inside `toolbox shell` via the [browser bridge](#browser-bridge): the image ships `/usr/local/bin/proximo` (`internal/build/assets/bin/proximo`, sibling of the editor shims) which POSTs `{"command": "<sub>"}` to the daemon's `/proximo` endpoint; the daemon execs the **host** proximo binary and returns `{"exit": N, "output": "…"}`, which the shim prints and propagates. Running the real binary in-container cannot work: proximo materializes its compose stack under `~/.proximo` and bind-mounts those paths, which the host Docker daemon would resolve host-side where they don't exist.
+`proximo up|down|status` works inside `toolbox shell` via the [bridge](#bridge): the image ships `/usr/local/bin/proximo` (`internal/build/assets/bin/proximo`, sibling of the editor shims) which POSTs `{"command": "<sub>"}` to the daemon's `/proximo` endpoint; the daemon execs the **host** proximo binary and returns `{"exit": N, "output": "…"}`, which the shim prints and propagates. Running the real binary in-container cannot work: proximo materializes its compose stack under `~/.proximo` and bind-mounts those paths, which the host Docker daemon would resolve host-side where they don't exist.
 
-- **Allowlist at both ends, daemon authoritative.** `proximoAllowlist` (`internal/browserbridge/proximo.go`) = `up`/`down`/`status`, bare subcommand only — no argument passthrough (`up --observability` is rejected). The shim re-validates locally purely for UX (clear message without a round-trip; rejection there is not a trust boundary). `install`/`uninstall` need interactive sudo → rejected with a run-on-host hint, never bridged.
+- **Allowlist at both ends, daemon authoritative.** `proximoAllowlist` (`internal/bridge/proximo.go`) = `up`/`down`/`status`, bare subcommand only — no argument passthrough (`up --observability` is rejected). The shim re-validates locally purely for UX (clear message without a round-trip; rejection there is not a trust boundary). `install`/`uninstall` need interactive sudo → rejected with a run-on-host hint, never bridged.
 - **Execution budget ≠ shared `requestTimeout`.** First `up` pulls the stack images, so `/proximo` gets `proximoTimeout` (120s) and pushes the connection write deadline past the server's `WriteTimeout: 10s` via `http.NewResponseController` (per-response, other routes keep tight limits). `cmd.WaitDelay = 2s` stops `CombinedOutput` from hanging on pipes inherited by compose children after a deadline kill. Shim `curl --max-time 135` sits above the server budget. A non-zero exit is data (propagated), not an error; only infra failures (binary missing, deadline) are 502.
-- **Binary resolution survives the service PATH.** The LaunchAgent/systemd-user environment lacks `/opt/homebrew/bin` and `~/go/bin`; `resolveProximoBinary` does `exec.LookPath` then probes `/opt/homebrew/bin/proximo`, `/usr/local/bin/proximo`, `$HOME/go/bin/proximo`. No binary → `ErrProximoNotInstalled`, surfaced verbatim by the shim.
-- **Skew matrix**: old host daemon + new image → shim maps the 404 to "update the host toolbox CLI and rerun `toolbox browser-bridge install`"; new daemon + old image → no shim, nothing to break. Daemon restart (to pick up the endpoint) = rerun `toolbox browser-bridge install`.
+- **Binary resolution survives the service PATH.** The LaunchAgent/systemd-user environment lacks `/opt/homebrew/bin` and `~/go/bin`; `resolveProximoBinary` does `exec.LookPath` then probes `/opt/homebrew/bin/proximo`, `/usr/local/bin/proximo`, `$HOME/go/bin/proximo`. No binary → `ErrProximoNotInstalled`, surfaced verbatim by the shim. The child proximo process gets the same treatment: its PATH is augmented (`appendPathDirs` + `proximoChildPathDirs` — dir of the resolved binary, the well-known bin dirs, `~/.docker/bin`, `~/.orbstack/bin`; append-only, existing entries win) so proximo's own `docker` lookup also survives the minimal service PATH — otherwise `proximo status` bridged from inside reports "docker is not installed" on a host that runs Docker fine. Lives in daemon code → active on daemon restart, no plist/unit regeneration.
+- **Skew matrix**: old host daemon + new image → shim maps the 404 to "update the host toolbox CLI and rerun `toolbox bridge install`"; new daemon + old image → no shim, nothing to break. Daemon restart (to pick up the endpoint) = rerun `toolbox bridge install`.
 - Starting the stack from inside does **not** retro-add `ExtraHosts` to the current container (create-time discovery, below) — hosts pinned at create become reachable immediately; `.test` apps started later still need a re-shell.
 
 ### Boundaries and caveats
@@ -464,7 +464,7 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 - **Discovery runs at container create only.** `ExtraHosts` is fixed at `ContainerCreate` (same as port bindings — see [port-bindings](#port-bindings-are-fixed-at-container-creation)). New `.test` hosts that come up after `toolbox shell` are invisible until the next recreate. Stopped proximo stack → `augmentProximoHosts` warns and degrades to "names unreachable" rather than failing the shell.
 - **CA mount is pure host-fs.** `CAMount` is added in `Merge` (not `defaults()`), so the canonical default-mount set and the smoke-test init.d/completion bijections are untouched (the proximo trust step lives in `entrypoint.sh`, not an `init.d` script, so it ties to no catalog tool). A missing CA file (proximo not installed) soft-skips the mount with a `resolveAll` warning; `proximo.Env` independently gates on file existence so Node never points at an absent `NODE_EXTRA_CA_CERTS`, and the entrypoint block no-ops when the mount is absent.
 - **Image dependencies**: the NSS trust step needs `certutil` (`libnss3-tools`, base apt layer) and the lifecycle shim ships at `/usr/local/bin/proximo`; `smoke-test.sh` asserts both. Everything else is host-side and image-hash-neutral.
-- **Host-side toggle** — same property as the browser bridge: the `proximo` config flag steers mounts/env/ExtraHosts only; the shim is unconditional in the image (it degrades with an install hint when the bridge state dir is absent).
+- **Host-side toggle** — same property as the bridge: the `proximo` config flag steers mounts/env/ExtraHosts only; the shim is unconditional in the image (it degrades with an install hint when the bridge state dir is absent).
 
 ## Runtime privacy
 
@@ -506,19 +506,19 @@ When a plugin is refreshed Claude Code prompts for `/reload-plugins`. Bumping th
 
 ### Shared fs primitives
 
-Three host-filesystem primitives were copy-pasted across packages as the CLI grew: home-directory resolution (`os.UserHomeDir` + the literal `"resolve home directory: %w"` in six packages — only `configio` guarded the empty-`$HOME` case, the rest would silently `filepath.Join("", …)`), tilde expansion (`mountplan.expandHome`, re-inlined in `inherit_host_auth.go`), and crash-safe atomic writes (`configio.AtomicWriteFile`, not reused by `browserbridge/token.go`'s bare `os.WriteFile`).
+Three host-filesystem primitives were copy-pasted across packages as the CLI grew: home-directory resolution (`os.UserHomeDir` + the literal `"resolve home directory: %w"` in six packages — only `configio` guarded the empty-`$HOME` case, the rest would silently `filepath.Join("", …)`), tilde expansion (`mountplan.expandHome`, re-inlined in `inherit_host_auth.go`), and crash-safe atomic writes (`configio.AtomicWriteFile`, not reused by `bridge/token.go`'s bare `os.WriteFile`).
 
 `internal/fsx` collapses them into one stdlib-only leaf package (no import-cycle risk, so every package can depend on it):
 
 - `fsx.Home()` — strict resolution, **with** the empty-`$HOME` guard. Adopting it at the five sites that lacked the guard is strictly safer: they already hard-failed on a `UserHomeDir` error and now also fail loud on an empty `$HOME` instead of joining onto `""`.
 - `fsx.ExpandTilde(p, home)` — moved verbatim from `mountplan.expandHome`; `resolve.go` and `inherit_host_auth.go` both call it.
-- `fsx.AtomicWriteFile(dest, data, mode)` — implementation moved from `configio`; `browserbridge/token.go` now reuses it.
+- `fsx.AtomicWriteFile(dest, data, mode)` — implementation moved from `configio`; every bridge state write reuses it (`token.go`, `port.go`, `daemon.go`'s pid file, `agent.go`'s service files), so a crash mid-write never leaves a torn token/port/plist behind.
 
 `configio.GlobalConfigDir` / `configio.AtomicWriteFile` are kept as thin facades over `fsx` so `cmd/*` keeps a single config-IO import surface and existing callers/tests are untouched — the implementation lives once, in `fsx`.
 
 Deliberately **not** routed through `fsx.Home`: the best-effort `home, _ := os.UserHomeDir()` sites (`config/plan.go` global-config read, `mountplan.Merge`'s pre-stat, `cmd/shell_named.go`) that must tolerate an empty home rather than hard-fail. `fsx`'s package doc reserves these for direct `os.UserHomeDir` use; routing them through the loud `Home()` would invert their contract. Likewise `config.ValidateMountsRoot`'s `~`/`~/` checks are *validation* (classifying a string), not expansion, so they do not call `ExpandTilde`.
 
-The linux/darwin browser-bridge service supervisors share their template-render and mkdir-then-write skeletons via `renderTemplate` / `writeServiceFile` in the non-tagged `browserbridge/agent.go`; the platform files keep only the genuinely divergent content (systemd unit vs launchd plist, `systemctl` vs `launchctl`).
+The linux/darwin bridge service supervisors share their template-render and mkdir-then-write skeletons via `renderTemplate` / `writeServiceFile` in the non-tagged `bridge/agent.go`; the platform files keep only the genuinely divergent content (systemd unit vs launchd plist, `systemctl` vs `launchctl`).
 
 ### `env:` passthrough
 
@@ -541,7 +541,7 @@ Contract:
 - **Scope.** Resolved by the normal config load order (`--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults), so the top-level `env:` is set globally (`~/.toolbox.yaml`) or per-project (`.toolbox.yaml`). The per-shell `shells.<name>.env` overlays it for that named shell only — per-shell keys win on collision (`config.Config.EffectiveEnv`, keyed by the *raw* `shells:` name, not the sanitized container suffix).
 - **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD`/SDD entries first, then the loopback-bridge markers, then the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
 - **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`).
-- **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `browser_bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
+- **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
 
 ### --where targeting
 

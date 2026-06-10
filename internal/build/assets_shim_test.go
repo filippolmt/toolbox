@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
@@ -15,7 +15,7 @@ const bridgeLib = "/usr/local/lib/toolbox/bridge-lib.sh"
 
 // TestShimPathsMatchGoConstants guards the constants duplicated between the
 // Go packages and the embedded bridge shims: the state dir
-// (browserbridge.ContainerDir) hardcoded in bin/bridge-lib.sh (the shared
+// (bridge.ContainerDir) hardcoded in bin/bridge-lib.sh (the shared
 // transport every shim sources), and the workspace mount target
 // (mountplan.WorkspaceTarget) in bin/code. The shims are static shell
 // assets, so a rename on the Go side would otherwise drift silently.
@@ -25,7 +25,10 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 		shim    string
 		needles []string
 	}{
-		{"bin/bridge-lib.sh", []string{`BRIDGE_STATE_DIR="` + browserbridge.ContainerDir + `"`}},
+		{"bin/bridge-lib.sh", []string{
+			`BRIDGE_STATE_DIR="` + bridge.ContainerDir + `"`,
+			`BRIDGE_STATE_DIR="` + bridge.LegacyContainerDir + `"`,
+		}},
 		{"bin/xdg-open", []string{sourceLib}},
 		{"bin/code", []string{
 			sourceLib,

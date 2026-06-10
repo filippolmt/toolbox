@@ -1,6 +1,6 @@
 //go:build !darwin && !linux
 
-package browserbridge
+package bridge
 
 import (
 	"context"
@@ -9,5 +9,5 @@ import (
 )
 
 func launchEditor(_ context.Context, _, _ string) error {
-	return fmt.Errorf("browser-bridge: unsupported host OS %q", runtime.GOOS)
+	return fmt.Errorf("bridge: unsupported host OS %q", runtime.GOOS)
 }

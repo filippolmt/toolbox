@@ -19,7 +19,7 @@ import (
 // cannot be determined. The empty-$HOME case is treated as an error (rather
 // than returning "") so callers never silently filepath.Join onto an empty
 // base and bind/stat a wrong path. Used by every hard-failing home-resolution
-// site (config write path, mount plan, browser-bridge state + agents, image
+// site (config write path, mount plan, bridge state + agents, image
 // pull cache).
 func Home() (string, error) {
 	home, err := os.UserHomeDir()

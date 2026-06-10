@@ -1,5 +1,5 @@
 //go:build !darwin && !linux
 
-package browserbridge
+package bridge
 
 func NewAgent() (Agent, error) { return nil, ErrUnsupported }

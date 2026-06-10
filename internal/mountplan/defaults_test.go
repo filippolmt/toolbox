@@ -4,15 +4,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 28 {
-		t.Fatalf("expected 28 default mounts, got %d", len(mounts))
+	if len(mounts) != 29 {
+		t.Fatalf("expected 29 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -34,8 +34,8 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/.claude", false, true)
 	// ~/.toolbox/.codex must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/.codex", false, true)
-	// ~/.toolbox/state must be rw and auto-created.
-	assertMount(t, mounts, "~/.toolbox/state", false, true)
+	// ~/.toolbox/toolbox/state (toolbox-own namespace) must be rw and auto-created.
+	assertMount(t, mounts, "~/.toolbox/toolbox/state", false, true)
 	// Every cloud / forge CLI must have a rw, auto-created state dir.
 	assertMount(t, mounts, "~/.toolbox/gh", false, true)
 	assertMount(t, mounts, "~/.toolbox/glab", false, true)
@@ -127,23 +127,34 @@ func findMount(mounts []config.Mount, name string) *config.Mount {
 	return nil
 }
 
-func TestDefaults_IncludesBrowserBridge(t *testing.T) {
-	for _, m := range defaults() {
-		if m.Name == "browser-bridge" {
-			if !m.ReadOnly {
-				t.Error("browser-bridge mount must be ReadOnly")
-			}
-			if m.Target != browserbridge.ContainerDir {
-				t.Errorf("Target = %q, want %q", m.Target, browserbridge.ContainerDir)
-			}
-			if m.Source != "~/"+browserbridge.HostDir {
-				t.Errorf("Source = %q, want %q", m.Source, "~/"+browserbridge.HostDir)
-			}
-			if !m.CreateIfMissing {
-				t.Error("CreateIfMissing must be true so the mount is resolvable pre-install")
-			}
-			return
-		}
+func TestDefaults_IncludesBridge(t *testing.T) {
+	// Both the current target and the pre-rename legacy target must be bound
+	// from the same host state dir: a pre-rename image hardcodes the legacy
+	// path in its shims and must keep working against a renamed host CLI.
+	want := map[string]string{
+		"bridge":        bridge.ContainerDir,
+		"bridge-legacy": bridge.LegacyContainerDir,
 	}
-	t.Error("browser-bridge mount missing from defaults()")
+	for _, m := range defaults() {
+		target, ok := want[m.Name]
+		if !ok {
+			continue
+		}
+		if !m.ReadOnly {
+			t.Errorf("%s mount must be ReadOnly", m.Name)
+		}
+		if m.Target != target {
+			t.Errorf("%s Target = %q, want %q", m.Name, m.Target, target)
+		}
+		if m.Source != "~/"+bridge.HostDir {
+			t.Errorf("%s Source = %q, want %q", m.Name, m.Source, "~/"+bridge.HostDir)
+		}
+		if !m.CreateIfMissing {
+			t.Errorf("%s CreateIfMissing must be true so the mount is resolvable pre-install", m.Name)
+		}
+		delete(want, m.Name)
+	}
+	for name := range want {
+		t.Errorf("%s mount missing from defaults()", name)
+	}
 }

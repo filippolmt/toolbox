@@ -1,5 +1,5 @@
 #!/bin/sh
-# toolbox browser-bridge wrapper. Replaces xdg-open inside the container so
+# toolbox bridge wrapper. Replaces xdg-open inside the container so
 # every CLI that opens a URL (gh, claude, codex, etc.) hands it to the host
 # daemon over host.docker.internal. Falls back silently to stderr when the
 # daemon is not installed or unreachable so callers never block.
@@ -16,7 +16,7 @@ fi
 
 if ! bridge_ready; then
     case "${BRIDGE_ERROR}" in
-    not_installed) echo "xdg-open: bridge not installed — run 'toolbox browser-bridge install' on the host; URL:" >&2 ;;
+    not_installed) echo "xdg-open: bridge not installed — run 'toolbox bridge install' on the host; URL:" >&2 ;;
     *) echo "xdg-open: curl missing in image; URL:" >&2 ;;
     esac
     echo "${URL}" >&2
@@ -29,7 +29,7 @@ STATUS=$(bridge_post /open "${PAYLOAD}" /dev/null 5)
 case "${STATUS}" in
 2??) ;;
 *)
-    echo "xdg-open: bridge unreachable — check 'toolbox browser-bridge status' on the host; URL:" >&2
+    echo "xdg-open: bridge unreachable — check 'toolbox bridge status' on the host; URL:" >&2
     echo "${URL}" >&2
     ;;
 esac
