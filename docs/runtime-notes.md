@@ -393,7 +393,7 @@ The container side can read `token` because the mount is RO; an attacker who lan
 
 ### Editor shims
 
-`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the state-dir marker in both so a dropped COPY or a shadowing real binary fails the image build. Behaviour:
+`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the bridge-lib marker in both so a dropped COPY or a shadowing real binary fails the image build. All bridge shims (`xdg-open`, `code`/`codium`, `proximo`) source `/usr/local/lib/toolbox/bridge-lib.sh` for the shared transport (state-dir location, readiness checks, curl POST — `TestShimPathsMatchGoConstants` pins the state dir there against `browserbridge.ContainerDir`); each shim keeps only its own validation, messages, and exit policy. Behaviour:
 
 - No args → `.`. Each path arg is resolved to absolute (`realpath -m` against `$PWD`), must live under `/workspace`, and is rewritten with `$TOOLBOX_HOST_WORKSPACE` (injected by `sessionplan` in every shell) before one `POST /edit` per path. The daemon stays workspace-agnostic: it receives host paths only.
 - Paths outside `/workspace` are rejected locally (the host cannot see them); flags (`-g`, `--diff`, …) are rejected honestly rather than silently dropped. Both exit 1 with no POST.
@@ -449,12 +449,22 @@ Both steps are independent: `uninstall` removes only what `install` wrote. The s
 | Node / Playwright (node API) | `NODE_EXTRA_CA_CERTS` | additive, set by `proximo.Env` |
 | python-requests | — | uses certifi, not the system store; set `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"` (this is the one non-seamless client) |
 
+### Lifecycle from inside the container (bridge shim)
+
+`proximo up|down|status` works inside `toolbox shell` via the [browser bridge](#browser-bridge): the image ships `/usr/local/bin/proximo` (`internal/build/assets/bin/proximo`, sibling of the editor shims) which POSTs `{"command": "<sub>"}` to the daemon's `/proximo` endpoint; the daemon execs the **host** proximo binary and returns `{"exit": N, "output": "…"}`, which the shim prints and propagates. Running the real binary in-container cannot work: proximo materializes its compose stack under `~/.proximo` and bind-mounts those paths, which the host Docker daemon would resolve host-side where they don't exist.
+
+- **Allowlist at both ends, daemon authoritative.** `proximoAllowlist` (`internal/browserbridge/proximo.go`) = `up`/`down`/`status`, bare subcommand only — no argument passthrough (`up --observability` is rejected). The shim re-validates locally purely for UX (clear message without a round-trip; rejection there is not a trust boundary). `install`/`uninstall` need interactive sudo → rejected with a run-on-host hint, never bridged.
+- **Execution budget ≠ shared `requestTimeout`.** First `up` pulls the stack images, so `/proximo` gets `proximoTimeout` (120s) and pushes the connection write deadline past the server's `WriteTimeout: 10s` via `http.NewResponseController` (per-response, other routes keep tight limits). `cmd.WaitDelay = 2s` stops `CombinedOutput` from hanging on pipes inherited by compose children after a deadline kill. Shim `curl --max-time 135` sits above the server budget. A non-zero exit is data (propagated), not an error; only infra failures (binary missing, deadline) are 502.
+- **Binary resolution survives the service PATH.** The LaunchAgent/systemd-user environment lacks `/opt/homebrew/bin` and `~/go/bin`; `resolveProximoBinary` does `exec.LookPath` then probes `/opt/homebrew/bin/proximo`, `/usr/local/bin/proximo`, `$HOME/go/bin/proximo`. No binary → `ErrProximoNotInstalled`, surfaced verbatim by the shim.
+- **Skew matrix**: old host daemon + new image → shim maps the 404 to "update the host toolbox CLI and rerun `toolbox browser-bridge install`"; new daemon + old image → no shim, nothing to break. Daemon restart (to pick up the endpoint) = rerun `toolbox browser-bridge install`.
+- Starting the stack from inside does **not** retro-add `ExtraHosts` to the current container (create-time discovery, below) — hosts pinned at create become reachable immediately; `.test` apps started later still need a re-shell.
+
 ### Boundaries and caveats
 
 - **Discovery runs at container create only.** `ExtraHosts` is fixed at `ContainerCreate` (same as port bindings — see [port-bindings](#port-bindings-are-fixed-at-container-creation)). New `.test` hosts that come up after `toolbox shell` are invisible until the next recreate. Stopped proximo stack → `augmentProximoHosts` warns and degrades to "names unreachable" rather than failing the shell.
 - **CA mount is pure host-fs.** `CAMount` is added in `Merge` (not `defaults()`), so the canonical default-mount set and the smoke-test init.d/completion bijections are untouched (the proximo trust step lives in `entrypoint.sh`, not an `init.d` script, so it ties to no catalog tool). A missing CA file (proximo not installed) soft-skips the mount with a `resolveAll` warning; `proximo.Env` independently gates on file existence so Node never points at an absent `NODE_EXTRA_CA_CERTS`, and the entrypoint block no-ops when the mount is absent.
-- **Image dependency**: the NSS trust step needs `certutil`, shipped via `libnss3-tools` in the base apt layer; `smoke-test.sh` asserts `certutil` is present. This is the one image-side cost of the integration; everything else is host-side and image-hash-neutral.
-- **Host-side toggle, no image-hash impact** — same property as the browser bridge: `proximo` lives outside any image concern.
+- **Image dependencies**: the NSS trust step needs `certutil` (`libnss3-tools`, base apt layer) and the lifecycle shim ships at `/usr/local/bin/proximo`; `smoke-test.sh` asserts both. Everything else is host-side and image-hash-neutral.
+- **Host-side toggle** — same property as the browser bridge: the `proximo` config flag steers mounts/env/ExtraHosts only; the shim is unconditional in the image (it degrades with an install hint when the bridge state dir is absent).
 
 ## Runtime privacy
 

@@ -183,11 +183,17 @@ check_required "tini"       /usr/bin/tini --version
 check_required "vi"         vi --version
 check_required "certutil"   sh -c "command -v certutil"
 check_required "xterm-ghostty terminfo" sh -c "infocmp xterm-ghostty >/dev/null && echo present"
-check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && echo present"
+# The shared transport every bridge shim sources; the state-dir constant
+# lives here (not in the shims), so this is where the marker is asserted.
+check_required "bridge-lib" sh -c "test -r /usr/local/lib/toolbox/bridge-lib.sh && grep -q /home/toolbox/.toolbox/browser /usr/local/lib/toolbox/bridge-lib.sh && echo present"
+check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && grep -q bridge-lib.sh /usr/local/bin/xdg-open && echo present"
 check_required "xdg-open symlinks" sh -c "test -L /usr/local/bin/open && test -L /usr/local/bin/x-www-browser && test -L /usr/local/bin/sensible-browser && test -L /usr/local/bin/gnome-open && test -L /usr/local/bin/www-browser && echo present"
-# Editor shims must be the bridge wrappers (state-dir marker), not a real
+# Editor shims must be the bridge wrappers (bridge-lib marker), not a real
 # code/codium binary that shadowed them — a dropped COPY fails here too.
-check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr/local/bin/codium && grep -q /home/toolbox/.toolbox/browser /usr/local/bin/code && grep -q /home/toolbox/.toolbox/browser /usr/local/bin/codium && echo present"
+check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr/local/bin/codium && grep -q bridge-lib.sh /usr/local/bin/code && grep -q bridge-lib.sh /usr/local/bin/codium && echo present"
+# Proximo shim must be the bridge wrapper (bridge-lib marker) — proximo never
+# ships as a real binary in the image; a dropped COPY fails here too.
+check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q bridge-lib.sh /usr/local/bin/proximo && echo present"
 check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
 check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u \"\$(command -v sudo)\" && echo present"
 

@@ -8,15 +8,17 @@
 
 set -eu
 
-STATE_DIR="/home/toolbox/.toolbox/browser"
-TOKEN_FILE="${STATE_DIR}/token"
-PORT_FILE="${STATE_DIR}/port"
+. /usr/local/lib/toolbox/bridge-lib.sh
+
 WORKSPACE="/workspace"
 
 EDITOR_NAME="$(basename "$0")"
 
-if [ ! -r "${TOKEN_FILE}" ] || [ ! -r "${PORT_FILE}" ]; then
-    echo "${EDITOR_NAME}: bridge not installed — run 'toolbox browser-bridge install' on the host" >&2
+if ! bridge_ready; then
+    case "${BRIDGE_ERROR}" in
+    not_installed) echo "${EDITOR_NAME}: bridge not installed — run 'toolbox browser-bridge install' on the host" >&2 ;;
+    *) echo "${EDITOR_NAME}: curl missing in image" >&2 ;;
+    esac
     exit 1
 fi
 
@@ -24,14 +26,6 @@ if [ -z "${TOOLBOX_HOST_WORKSPACE:-}" ]; then
     echo "${EDITOR_NAME}: TOOLBOX_HOST_WORKSPACE not set — cannot map ${WORKSPACE} to a host path" >&2
     exit 1
 fi
-
-if ! command -v curl >/dev/null 2>&1; then
-    echo "${EDITOR_NAME}: curl missing in image" >&2
-    exit 1
-fi
-
-TOKEN=$(cat "${TOKEN_FILE}")
-PORT=$(cat "${PORT_FILE}")
 
 # No args → open the current directory.
 [ "$#" -eq 0 ] && set -- .
@@ -64,12 +58,7 @@ for HOST_PATH in "$@"; do
     PAYLOAD=$(EDITOR_NAME="${EDITOR_NAME}" HOST_PATH="${HOST_PATH}" python3 -c \
         'import json, os; print(json.dumps({"editor": os.environ["EDITOR_NAME"], "path": os.environ["HOST_PATH"]}))')
 
-    STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' \
-        --max-time 5 \
-        --header "Authorization: Bearer ${TOKEN}" \
-        --header "Content-Type: application/json" \
-        --data "${PAYLOAD}" \
-        "http://host.docker.internal:${PORT}/edit" 2>/dev/null) || STATUS=000
+    STATUS=$(bridge_post /edit "${PAYLOAD}" /dev/null 5)
 
     case "${STATUS}" in
     2??) ;;

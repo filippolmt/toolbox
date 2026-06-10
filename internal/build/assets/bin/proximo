@@ -1,0 +1,72 @@
+#!/bin/sh
+# toolbox browser-bridge proximo shim. proximo runs on the HOST (its stack
+# bind-mounts host paths, so running the real binary in here cannot work);
+# this shim forwards an allowlisted lifecycle subcommand to the host daemon's
+# /proximo endpoint, prints the host output, and propagates the exit code.
+# install/uninstall need interactive sudo and are deliberately not bridged.
+
+set -eu
+
+. /usr/local/lib/toolbox/bridge-lib.sh
+
+usage() {
+    echo "usage: proximo up|down|status   (toolbox bridge shim — other subcommands run on the host)" >&2
+    exit 2
+}
+
+[ "$#" -eq 1 ] || usage
+
+case "$1" in
+up | down | status) COMMAND="$1" ;;
+install | uninstall)
+    echo "proximo: '$1' needs interactive sudo — run it on the host" >&2
+    exit 1
+    ;;
+*) usage ;;
+esac
+
+if ! bridge_ready; then
+    case "${BRIDGE_ERROR}" in
+    not_installed) echo "proximo: bridge not installed — run 'toolbox browser-bridge install' on the host" >&2 ;;
+    *) echo "proximo: curl missing in image" >&2 ;;
+    esac
+    exit 1
+fi
+
+# COMMAND is one of three fixed literals (case above), so no JSON escaping is
+# needed — unlike bin/code, which encodes arbitrary paths via python3.
+PAYLOAD=$(printf '{"command":"%s"}' "${COMMAND}")
+
+BODY_FILE=$(mktemp)
+trap 'rm -f "${BODY_FILE}"' EXIT
+
+# --max-time slightly above the daemon's 120s execution budget: the first
+# `up` pulls the proximo stack images.
+STATUS=$(bridge_post /proximo "${PAYLOAD}" "${BODY_FILE}" 135)
+
+case "${STATUS}" in
+2??)
+    # Print the host command's output and exit with its exit code.
+    BODY_FILE="${BODY_FILE}" python3 -c '
+import json, os, sys
+with open(os.environ["BODY_FILE"]) as f:
+    resp = json.load(f)
+sys.stdout.write(resp.get("output", ""))
+sys.exit(int(resp.get("exit", 0)))
+'
+    ;;
+404)
+    echo "proximo: host daemon has no /proximo endpoint — update the host toolbox CLI and rerun 'toolbox browser-bridge install'" >&2
+    exit 1
+    ;;
+000)
+    echo "proximo: bridge unreachable — check 'toolbox browser-bridge status' on the host" >&2
+    exit 1
+    ;;
+*)
+    # The daemon's error text (e.g. "proximo not installed on host") is the
+    # useful part — surface it.
+    echo "proximo: bridge rejected the request (HTTP ${STATUS}): $(cat "${BODY_FILE}")" >&2
+    exit 1
+    ;;
+esac

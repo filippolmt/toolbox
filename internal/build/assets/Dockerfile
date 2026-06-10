@@ -1221,6 +1221,9 @@ COPY --link starship.toml /etc/toolbox/starship.toml
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
+# Browser-bridge shim transport, sourced by the xdg-open/code/proximo shims
+# below (state-dir location + readiness checks + curl POST in one place).
+COPY --link --chmod=0644 bin/bridge-lib.sh /usr/local/lib/toolbox/bridge-lib.sh
 # Browser-bridge wrapper. Shadows /usr/bin/xdg-open (+synonyms) so URL
 # opens hand off to host daemon via host.docker.internal; without the daemon
 # it degrades to printing the URL (cf/wrangler/any OAuth CLI shells out to
@@ -1231,6 +1234,11 @@ COPY --link --chmod=0755 bin/xdg-open /usr/local/bin/xdg-open
 # TOOLBOX_HOST_WORKSPACE and hand them to the daemon's /edit endpoint so the
 # host editor opens them (container ships no GUI editor).
 COPY --link --chmod=0755 bin/code /usr/local/bin/code
+# Browser-bridge proximo shim. proximo itself runs on the host (its stack
+# bind-mounts host paths); the shim forwards up/down/status to the daemon's
+# /proximo endpoint and propagates output + exit code. install/uninstall need
+# interactive sudo and are rejected with a run-on-host hint.
+COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \

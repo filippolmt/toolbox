@@ -51,6 +51,9 @@ type DaemonOptions struct {
 	// Edit launches a host editor on a path. Tests override; production
 	// callers leave it nil to use the per-OS launchEditor.
 	Edit func(ctx context.Context, editor, path string) error
+	// Proximo executes an allowlisted proximo subcommand on the host. Tests
+	// override; production callers leave it nil to use launchProximo.
+	Proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
 }
 
 // Run starts the browser-bridge HTTP server in the foreground. It returns
@@ -111,16 +114,18 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	if now == nil {
 		now = time.Now
 	}
-	openFn := opts.Open
-	if openFn == nil {
-		openFn = hostOpenCommand
+	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo}
+	if fns.open == nil {
+		fns.open = hostOpenCommand
 	}
-	editFn := opts.Edit
-	if editFn == nil {
-		editFn = launchEditor
+	if fns.edit == nil {
+		fns.edit = launchEditor
+	}
+	if fns.proximo == nil {
+		fns.proximo = launchProximo
 	}
 
-	handler := newHandler(token, openFn, editFn, logger, now)
+	handler := newHandler(token, fns, logger, now)
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -150,28 +155,37 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	}
 }
 
-// handler is the single HTTP handler the daemon mounts on /open and /edit.
+// handlerFns bundles the resolved host-action callbacks, one field per
+// endpoint — adding an endpoint adds a field here instead of another
+// positional parameter on newHandler (and lets tests override only the
+// field they exercise).
+type handlerFns struct {
+	open    func(ctx context.Context, url string) error
+	edit    func(ctx context.Context, editor, path string) error
+	proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
+}
+
+// handler is the single HTTP handler the daemon mounts its endpoints on.
 // Extracted so tests can drive it through net/http/httptest without
 // re-binding a real socket on every case.
 type handler struct {
 	token   string
-	openFn  func(ctx context.Context, url string) error
-	editFn  func(ctx context.Context, editor, path string) error
+	fns     handlerFns
 	logger  *log.Logger
 	limiter *rateLimiter
 }
 
-func newHandler(token string, openFn func(ctx context.Context, url string) error, editFn func(ctx context.Context, editor, path string) error, logger *log.Logger, now func() time.Time) http.Handler {
+func newHandler(token string, fns handlerFns, logger *log.Logger, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 	h := &handler{
 		token:   token,
-		openFn:  openFn,
-		editFn:  editFn,
+		fns:     fns,
 		logger:  logger,
 		limiter: newRateLimiter(rateLimit, rateBurst, now),
 	}
 	mux.HandleFunc("/open", h.handleOpen)
 	mux.HandleFunc("/edit", h.handleEdit)
+	mux.HandleFunc("/proximo", h.handleProximo)
 	mux.HandleFunc("/healthz", h.handleHealth)
 	return mux
 }
@@ -185,6 +199,21 @@ func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // openRequest is the body shape the wrapper POSTs to /open.
 type openRequest struct {
 	URL string `json:"url"`
+}
+
+// decodeJSON reads at most limit bytes of r's body into dst, writing the 400
+// response itself on failure — the shared prologue of every POST handler.
+func (h *handler) decodeJSON(w http.ResponseWriter, r *http.Request, limit int64, dst any) bool {
+	body, err := io.ReadAll(io.LimitReader(r.Body, limit))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return false
+	}
+	if err := json.Unmarshal(body, dst); err != nil {
+		http.Error(w, "malformed json", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 // gate applies the shared request gates (POST only, bearer token, rate
@@ -212,14 +241,8 @@ func (h *handler) handleOpen(w http.ResponseWriter, r *http.Request) {
 	if !h.gate("open", w, r) {
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, MaxURLLen+1024))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
-		return
-	}
 	var req openRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "malformed json", http.StatusBadRequest)
+	if !h.decodeJSON(w, r, MaxURLLen+1024, &req) {
 		return
 	}
 	clean, err := ValidateURL(req.URL)
@@ -230,7 +253,7 @@ func (h *handler) handleOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	if err := h.openFn(ctx, clean); err != nil {
+	if err := h.fns.open(ctx, clean); err != nil {
 		h.logger.Printf("open: handler failed: %v url=%q", err, truncate(clean, 256))
 		http.Error(w, "open handler failed", http.StatusBadGateway)
 		return
@@ -250,14 +273,8 @@ func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reuse the /open body cap: host paths sit far below MaxURLLen.
-	body, err := io.ReadAll(io.LimitReader(r.Body, MaxURLLen+1024))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
-		return
-	}
 	var req editRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "malformed json", http.StatusBadRequest)
+	if !h.decodeJSON(w, r, MaxURLLen+1024, &req) {
 		return
 	}
 	if _, ok := editorAllowlist[req.Editor]; !ok {
@@ -278,13 +295,57 @@ func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	if err := h.editFn(ctx, req.Editor, clean); err != nil {
+	if err := h.fns.edit(ctx, req.Editor, clean); err != nil {
 		h.logger.Printf("edit: handler failed: %v editor=%q path=%q", err, req.Editor, truncate(clean, 256))
 		http.Error(w, "edit handler failed", http.StatusBadGateway)
 		return
 	}
 	h.logger.Printf("edit: ok editor=%q path=%q", req.Editor, truncate(clean, 256))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// proximoRequest is the body shape the proximo shim POSTs to /proximo. The
+// command must match proximoAllowlist verbatim — no arguments.
+type proximoRequest struct {
+	Command string `json:"command"`
+}
+
+// proximoResponse carries the host command's combined output and exit code
+// back to the shim, which prints the output and propagates the exit.
+type proximoResponse struct {
+	Exit   int    `json:"exit"`
+	Output string `json:"output"`
+}
+
+func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
+	if !h.gate("proximo", w, r) {
+		return
+	}
+	var req proximoRequest
+	if !h.decodeJSON(w, r, 4096, &req) {
+		return
+	}
+	if _, ok := proximoAllowlist[req.Command]; !ok {
+		h.logger.Printf("proximo: rejected (command not allowed) command=%q", truncate(req.Command, 64))
+		http.Error(w, "command not allowed — only up, down, status are bridged; run anything else on the host", http.StatusBadRequest)
+		return
+	}
+	// The exec can legitimately run for minutes (first `up` pulls the stack
+	// images), far past the server's WriteTimeout — push the connection's
+	// write deadline beyond the execution budget for this response only.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(proximoTimeout + 10*time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), proximoTimeout)
+	defer cancel()
+	out, exit, err := h.fns.proximo(ctx, req.Command)
+	if err != nil {
+		h.logger.Printf("proximo: handler failed: %v command=%q", err, req.Command)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	h.logger.Printf("proximo: ok command=%q exit=%d", req.Command, exit)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(proximoResponse{Exit: exit, Output: string(out)})
 }
 
 func (h *handler) authOK(r *http.Request) bool {

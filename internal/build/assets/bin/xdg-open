@@ -6,9 +6,7 @@
 
 set -eu
 
-STATE_DIR="/home/toolbox/.toolbox/browser"
-TOKEN_FILE="${STATE_DIR}/token"
-PORT_FILE="${STATE_DIR}/port"
+. /usr/local/lib/toolbox/bridge-lib.sh
 
 URL="${1:-}"
 if [ -z "${URL}" ]; then
@@ -16,30 +14,23 @@ if [ -z "${URL}" ]; then
     exit 0
 fi
 
-if [ ! -r "${TOKEN_FILE}" ] || [ ! -r "${PORT_FILE}" ]; then
-    echo "xdg-open: bridge not installed — run 'toolbox browser-bridge install' on the host; URL:" >&2
-    echo "${URL}" >&2
-    exit 0
-fi
-
-TOKEN=$(cat "${TOKEN_FILE}")
-PORT=$(cat "${PORT_FILE}")
-
-if ! command -v curl >/dev/null 2>&1; then
-    echo "xdg-open: curl missing in image; URL:" >&2
+if ! bridge_ready; then
+    case "${BRIDGE_ERROR}" in
+    not_installed) echo "xdg-open: bridge not installed — run 'toolbox browser-bridge install' on the host; URL:" >&2 ;;
+    *) echo "xdg-open: curl missing in image; URL:" >&2 ;;
+    esac
     echo "${URL}" >&2
     exit 0
 fi
 
 PAYLOAD=$(printf '{"url":%s}' "$(printf '%s' "${URL}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")
 
-if ! curl --silent --show-error --fail \
-    --max-time 5 \
-    --header "Authorization: Bearer ${TOKEN}" \
-    --header "Content-Type: application/json" \
-    --data "${PAYLOAD}" \
-    "http://host.docker.internal:${PORT}/open" >/dev/null 2>&1; then
+STATUS=$(bridge_post /open "${PAYLOAD}" /dev/null 5)
+case "${STATUS}" in
+2??) ;;
+*)
     echo "xdg-open: bridge unreachable — check 'toolbox browser-bridge status' on the host; URL:" >&2
     echo "${URL}" >&2
-    exit 0
-fi
+    ;;
+esac
+exit 0
