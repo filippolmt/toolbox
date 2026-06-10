@@ -7,26 +7,31 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/bridge"
 )
 
-var browserBridgeCmd = &cobra.Command{
-	Use:   "browser-bridge",
-	Short: "Manage the host-side browser bridge (xdg-open forwarder)",
+var bridgeCmd = &cobra.Command{
+	Use: "bridge",
+	// Deprecated spelling. Installed LaunchAgents/systemd units keep invoking
+	// `browser-bridge daemon` until the user reruns `toolbox bridge install`,
+	// so the alias is load-bearing — remove only in a major release.
+	Aliases: []string{"browser-bridge"},
+	Short:   "Manage the host-side bridge (browser, editor, proximo forwarder)",
 	Long: `Install, uninstall, inspect, or run the per-user daemon that forwards
-URLs from inside 'toolbox shell' to the host's real browser. Opt-in: the
-daemon only starts after 'toolbox browser-bridge install'.`,
+URLs, editor opens, and proximo lifecycle commands from inside 'toolbox shell'
+to the host. Opt-in: the daemon only starts after 'toolbox bridge install'.
+'browser-bridge' is a deprecated alias for this command.`,
 }
 
-var browserBridgeInstallCmd = &cobra.Command{
+var bridgeInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Generate token, write service file, start the daemon",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
-		a, err := browserbridge.NewAgent()
+		a, err := bridge.NewAgent()
 		if err != nil {
-			if errors.Is(err, browserbridge.ErrUnsupported) {
-				return fmt.Errorf("browser-bridge: only macOS and Linux hosts are supported")
+			if errors.Is(err, bridge.ErrUnsupported) {
+				return fmt.Errorf("bridge: only macOS and Linux hosts are supported")
 			}
 			return err
 		}
@@ -34,48 +39,48 @@ var browserBridgeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := browserbridge.Install(a, exe); err != nil {
+		if err := bridge.Install(a, exe); err != nil {
 			return err
 		}
-		fmt.Println("browser-bridge: installed and running")
+		fmt.Println("bridge: installed and running")
 		return nil
 	},
 }
 
-var browserBridgeUninstallCmd = &cobra.Command{
+var bridgeUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Stop the daemon, remove service file + state",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
-		a, err := browserbridge.NewAgent()
+		a, err := bridge.NewAgent()
 		if err != nil {
-			if errors.Is(err, browserbridge.ErrUnsupported) {
+			if errors.Is(err, bridge.ErrUnsupported) {
 				return nil
 			}
 			return err
 		}
-		if err := browserbridge.Uninstall(a); err != nil {
+		if err := bridge.Uninstall(a); err != nil {
 			return err
 		}
-		fmt.Println("browser-bridge: uninstalled")
+		fmt.Println("bridge: uninstalled")
 		return nil
 	},
 }
 
-var browserBridgeStatusCmd = &cobra.Command{
+var bridgeStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Report install state, daemon liveness, port",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
-		a, err := browserbridge.NewAgent()
+		a, err := bridge.NewAgent()
 		if err != nil {
-			if errors.Is(err, browserbridge.ErrUnsupported) {
+			if errors.Is(err, bridge.ErrUnsupported) {
 				fmt.Println("unsupported host")
 				return nil
 			}
 			return err
 		}
-		rep, err := browserbridge.Status(a)
+		rep, err := bridge.Status(a)
 		if err != nil {
 			return err
 		}
@@ -89,7 +94,7 @@ var browserBridgeStatusCmd = &cobra.Command{
 	},
 }
 
-var browserBridgeDaemonCmd = &cobra.Command{
+var bridgeDaemonCmd = &cobra.Command{
 	Use:    "daemon",
 	Short:  "Foreground daemon (invoked by LaunchAgent / systemd)",
 	Hidden: true,
@@ -97,14 +102,14 @@ var browserBridgeDaemonCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, stop := signalCtx()
 		defer stop()
-		return browserbridge.Run(ctx, browserbridge.DaemonOptions{})
+		return bridge.Run(ctx, bridge.DaemonOptions{})
 	},
 }
 
 func init() {
-	browserBridgeCmd.AddCommand(browserBridgeInstallCmd)
-	browserBridgeCmd.AddCommand(browserBridgeUninstallCmd)
-	browserBridgeCmd.AddCommand(browserBridgeStatusCmd)
-	browserBridgeCmd.AddCommand(browserBridgeDaemonCmd)
-	rootCmd.AddCommand(browserBridgeCmd)
+	bridgeCmd.AddCommand(bridgeInstallCmd)
+	bridgeCmd.AddCommand(bridgeUninstallCmd)
+	bridgeCmd.AddCommand(bridgeStatusCmd)
+	bridgeCmd.AddCommand(bridgeDaemonCmd)
+	rootCmd.AddCommand(bridgeCmd)
 }

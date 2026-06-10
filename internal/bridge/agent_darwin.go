@@ -1,6 +1,6 @@
 //go:build darwin
 
-package browserbridge
+package bridge
 
 import (
 	"bytes"
@@ -14,7 +14,11 @@ import (
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
-const launchLabel = "com.filippolmt.toolbox.browser"
+const launchLabel = "com.filippolmt.toolbox.bridge"
+
+// legacyLaunchLabel is the pre-rename LaunchAgent label. Install/Uninstall
+// boot it out and remove its plist so one daemon never runs twice.
+const legacyLaunchLabel = "com.filippolmt.toolbox.browser"
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -25,7 +29,7 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <key>ProgramArguments</key>
   <array>
     <string>{{.Exec}}</string>
-    <string>browser-bridge</string>
+    <string>bridge</string>
     <string>daemon</string>
   </array>
   <key>RunAtLoad</key>
@@ -43,8 +47,9 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 type darwinAgent struct {
-	plistPath string
-	logPath   string
+	plistPath       string
+	legacyPlistPath string
+	logPath         string
 }
 
 func NewAgent() (Agent, error) {
@@ -52,10 +57,24 @@ func NewAgent() (Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	agents := filepath.Join(home, "Library", "LaunchAgents")
 	return &darwinAgent{
-		plistPath: filepath.Join(home, "Library", "LaunchAgents", launchLabel+".plist"),
-		logPath:   filepath.Join(home, "Library", "Logs", "toolbox-browser.log"),
+		plistPath:       filepath.Join(agents, launchLabel+".plist"),
+		legacyPlistPath: filepath.Join(agents, legacyLaunchLabel+".plist"),
+		logPath:         filepath.Join(home, "Library", "Logs", "toolbox-bridge.log"),
 	}, nil
+}
+
+// removeLegacy boots out the pre-rename LaunchAgent and deletes its plist.
+// The bootout is best-effort (already gone is fine); the file removal only
+// fails on real fs errors.
+func (a *darwinAgent) removeLegacy() error {
+	uid := strconv.Itoa(os.Getuid())
+	_ = exec.Command("launchctl", "bootout", "gui/"+uid, a.legacyPlistPath).Run()
+	if err := os.Remove(a.legacyPlistPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func renderPlist(execPath, logPath string) (string, error) {
@@ -77,6 +96,9 @@ func (a *darwinAgent) Install(execPath string) error {
 	if err := writeServiceFile(a.plistPath, []byte(body)); err != nil {
 		return err
 	}
+	if err := a.removeLegacy(); err != nil {
+		return err
+	}
 	uid := strconv.Itoa(os.Getuid())
 	_ = exec.Command("launchctl", "bootout", "gui/"+uid, a.plistPath).Run()
 	out, err := exec.Command("launchctl", "bootstrap", "gui/"+uid, a.plistPath).CombinedOutput()
@@ -92,7 +114,7 @@ func (a *darwinAgent) Uninstall() error {
 	if err := os.Remove(a.plistPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return nil
+	return a.removeLegacy()
 }
 
 func (a *darwinAgent) IsInstalled() bool {

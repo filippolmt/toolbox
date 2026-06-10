@@ -1,11 +1,13 @@
-package browserbridge
+package bridge
 
 import (
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -100,6 +102,98 @@ func TestResolveProximoBinary_NotFound(t *testing.T) {
 	}
 	if !errors.Is(err, ErrProximoNotInstalled) {
 		t.Errorf("err = %v, want ErrProximoNotInstalled", err)
+	}
+}
+
+func TestAppendPathDirs(t *testing.T) {
+	sep := string(os.PathListSeparator)
+	tests := []struct {
+		name string
+		env  []string
+		dirs []string
+		want []string
+	}{
+		{
+			name: "appends missing dirs after existing entries",
+			env:  []string{"PATH=/usr/bin" + sep + "/bin"},
+			dirs: []string{"/opt/homebrew/bin"},
+			want: []string{"PATH=/usr/bin" + sep + "/bin" + sep + "/opt/homebrew/bin"},
+		},
+		{
+			name: "skips dirs already on PATH",
+			env:  []string{"PATH=/usr/bin" + sep + "/opt/homebrew/bin"},
+			dirs: []string{"/opt/homebrew/bin", "/usr/local/bin"},
+			want: []string{"PATH=/usr/bin" + sep + "/opt/homebrew/bin" + sep + "/usr/local/bin"},
+		},
+		{
+			name: "creates PATH entry when none exists",
+			env:  []string{"HOME=/root"},
+			dirs: []string{"/usr/local/bin"},
+			want: []string{"HOME=/root", "PATH=/usr/local/bin"},
+		},
+		{
+			name: "empty PATH value yields no leading separator",
+			env:  []string{"PATH="},
+			dirs: []string{"/usr/local/bin"},
+			want: []string{"PATH=/usr/local/bin"},
+		},
+		{
+			name: "empty dirs returns env unchanged",
+			env:  []string{"PATH=/usr/bin", "HOME=/root"},
+			dirs: nil,
+			want: []string{"PATH=/usr/bin", "HOME=/root"},
+		},
+		{
+			name: "dedupes duplicate input dirs",
+			env:  []string{"PATH=/usr/bin"},
+			dirs: []string{"/usr/local/bin", "/usr/local/bin"},
+			want: []string{"PATH=/usr/bin" + sep + "/usr/local/bin"},
+		},
+		{
+			name: "non-PATH vars pass through untouched",
+			env:  []string{"HOME=/root", "PATH=/usr/bin", "LANG=C"},
+			dirs: []string{"/usr/local/bin"},
+			want: []string{"HOME=/root", "PATH=/usr/bin" + sep + "/usr/local/bin", "LANG=C"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appendPathDirs(tt.env, tt.dirs)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("appendPathDirs(%q, %q) = %q, want %q", tt.env, tt.dirs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProximoChildPathDirs_IncludesBinDir(t *testing.T) {
+	dirs := proximoChildPathDirs("/somewhere/bin")
+	if len(dirs) == 0 || dirs[0] != "/somewhere/bin" {
+		t.Errorf("binDir must lead the result, got %q", dirs)
+	}
+}
+
+func TestProximoChildPathDirs_SkipEmptyHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	for _, d := range proximoChildPathDirs("/somewhere/bin") {
+		if !filepath.IsAbs(d) {
+			t.Errorf("empty HOME must not yield a relative dir, got %q", d)
+		}
+	}
+}
+
+func TestLaunchProximo_ChildPATHAugmented(t *testing.T) {
+	dir := fakeProximo(t, `echo "$PATH"`)
+	t.Setenv("PATH", dir)
+	out, exit, err := launchProximo(context.Background(), "status")
+	if err != nil || exit != 0 {
+		t.Fatalf("err = %v, exit = %d", err, exit)
+	}
+	childPath := strings.TrimSpace(string(out))
+	for _, want := range []string{dir, "/opt/homebrew/bin"} {
+		if !strings.Contains(childPath, want) {
+			t.Errorf("child PATH %q missing %q", childPath, want)
+		}
 	}
 }
 

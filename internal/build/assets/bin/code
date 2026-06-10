@@ -1,5 +1,5 @@
 #!/bin/sh
-# toolbox browser-bridge editor shim. Shadows `code`/`codium` inside the
+# toolbox bridge editor shim. Shadows `code`/`codium` inside the
 # container (editor inferred from basename): resolves each path argument,
 # translates the /workspace prefix to the host path from
 # TOOLBOX_HOST_WORKSPACE, and POSTs it to the host daemon's /edit endpoint
@@ -16,7 +16,7 @@ EDITOR_NAME="$(basename "$0")"
 
 if ! bridge_ready; then
     case "${BRIDGE_ERROR}" in
-    not_installed) echo "${EDITOR_NAME}: bridge not installed — run 'toolbox browser-bridge install' on the host" >&2 ;;
+    not_installed) echo "${EDITOR_NAME}: bridge not installed — run 'toolbox bridge install' on the host" >&2 ;;
     *) echo "${EDITOR_NAME}: curl missing in image" >&2 ;;
     esac
     exit 1
@@ -67,11 +67,11 @@ for HOST_PATH in "$@"; do
         exit 1
         ;;
     000)
-        echo "${EDITOR_NAME}: bridge unreachable — check 'toolbox browser-bridge status' on the host" >&2
+        echo "${EDITOR_NAME}: bridge unreachable — check 'toolbox bridge status' on the host" >&2
         exit 1
         ;;
     *)
-        echo "${EDITOR_NAME}: bridge rejected ${HOST_PATH} (HTTP ${STATUS}) — check 'toolbox browser-bridge status' on the host" >&2
+        echo "${EDITOR_NAME}: bridge rejected ${HOST_PATH} (HTTP ${STATUS}) — check 'toolbox bridge status' on the host" >&2
         exit 1
         ;;
     esac

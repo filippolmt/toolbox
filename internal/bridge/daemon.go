@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // requestTimeout caps how long the daemon waits for the URL handler to
@@ -56,9 +58,9 @@ type DaemonOptions struct {
 	Proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
 }
 
-// Run starts the browser-bridge HTTP server in the foreground. It returns
+// Run starts the bridge HTTP server in the foreground. It returns
 // only when ctx is cancelled or the listener fails. Intended to be invoked
-// by the LaunchAgent / systemd unit; `toolbox browser-bridge daemon` is a
+// by the LaunchAgent / systemd unit; `toolbox bridge daemon` is a
 // thin cobra wrapper.
 func Run(ctx context.Context, opts DaemonOptions) error {
 	state, err := ResolveHostState()
@@ -368,7 +370,7 @@ func hostOpenCommand(ctx context.Context, url string) error {
 	case "linux":
 		return runQuiet(ctx, "xdg-open", url)
 	default:
-		return fmt.Errorf("browser-bridge: unsupported host OS %q", runtime.GOOS)
+		return fmt.Errorf("bridge: unsupported host OS %q", runtime.GOOS)
 	}
 }
 
@@ -387,7 +389,7 @@ func runQuiet(ctx context.Context, name string, args ...string) error {
 
 // openLogger opens (or creates) the audit log in append mode and returns a
 // log.Logger plus a close func. Logs are kept simple (timestamped lines) so
-// `tail -f ~/.toolbox/browser/log` is the supported diagnostic path.
+// `tail -f ~/.toolbox/toolbox/bridge/log` is the supported diagnostic path.
 func openLogger(path string) (*log.Logger, func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -398,7 +400,7 @@ func openLogger(path string) (*log.Logger, func(), error) {
 }
 
 func writePIDFile(path string) error {
-	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
+	return fsx.AtomicWriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 }
 
 func truncate(s string, max int) string {

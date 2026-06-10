@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"errors"
@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // DefaultPort is the preferred TCP port the daemon binds to on 127.0.0.1.
@@ -51,7 +53,7 @@ func WritePort(s HostState, port int) error {
 	if port <= 0 || port > 65535 {
 		return fmt.Errorf("invalid port %d", port)
 	}
-	if err := os.WriteFile(s.Port, []byte(strconv.Itoa(port)+"\n"), 0o644); err != nil {
+	if err := fsx.AtomicWriteFile(s.Port, []byte(strconv.Itoa(port)+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write port file %s: %w", s.Port, err)
 	}
 	return nil

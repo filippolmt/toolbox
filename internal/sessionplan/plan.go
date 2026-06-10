@@ -137,7 +137,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 // the in-container wrapper to reach the host daemon. Empty when the bridge
 // is disabled.
 func browserBridgeExtraHosts(cfg *config.Config) []string {
-	if cfg.BrowserBridge != nil && !*cfg.BrowserBridge {
+	if cfg.Bridge != nil && !*cfg.Bridge {
 		return nil
 	}
 	return []string{"host.docker.internal:host-gateway"}

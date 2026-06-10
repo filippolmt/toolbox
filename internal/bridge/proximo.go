@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,65 @@ func proximoFallbackCandidates() []string {
 	return candidates
 }
 
+// proximoChildPathDirs returns bin dirs appended to the child proximo
+// process's PATH so its own lookups (docker, docker compose) survive the
+// minimal LaunchAgent / systemd-user PATH — the same problem
+// resolveProximoBinary solves for the proximo binary itself. binDir (dir of
+// the resolved binary) leads; home-relative entries are skipped when home is
+// empty.
+func proximoChildPathDirs(binDir string) []string {
+	dirs := []string{
+		binDir,
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, "go", "bin"),
+			filepath.Join(home, ".docker", "bin"),
+			filepath.Join(home, ".orbstack", "bin"),
+		)
+	}
+	return dirs
+}
+
+// appendPathDirs returns env with its PATH entry extended by dirs not already
+// present; a PATH entry is added when none exists. Existing entries keep
+// priority — dirs are fallbacks, mirroring resolveProximoBinary's "PATH
+// first, well-known locations second" order.
+func appendPathDirs(env []string, dirs []string) []string {
+	if len(dirs) == 0 {
+		return env
+	}
+	pathIdx := -1
+	var entries []string
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			pathIdx = i
+			entries = filepath.SplitList(strings.TrimPrefix(kv, "PATH="))
+			break
+		}
+	}
+	seen := make(map[string]struct{}, len(entries)+len(dirs))
+	for _, e := range entries {
+		seen[e] = struct{}{}
+	}
+	for _, d := range dirs {
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		entries = append(entries, d)
+	}
+	kv := "PATH=" + strings.Join(entries, string(os.PathListSeparator))
+	if pathIdx < 0 {
+		return append(append([]string{}, env...), kv)
+	}
+	out := append([]string{}, env...)
+	out[pathIdx] = kv
+	return out
+}
+
 // resolveProximoBinary returns the proximo binary to exec: PATH lookup first,
 // then the given fallback candidates in order.
 func resolveProximoBinary(candidates []string) (string, error) {
@@ -70,6 +130,9 @@ func launchProximo(ctx context.Context, command string) (output []byte, exit int
 	}
 	cmd := exec.CommandContext(ctx, bin, command)
 	cmd.Stdin = nil
+	// Child PATH augmented so proximo's own lookups (docker, compose) survive
+	// the minimal service PATH — see proximoChildPathDirs.
+	cmd.Env = appendPathDirs(os.Environ(), proximoChildPathDirs(filepath.Dir(bin)))
 	// Stop waiting on the stdout/stderr pipes shortly after a deadline kill:
 	// proximo's docker-compose children inherit the pipes and would otherwise
 	// hold CombinedOutput open past proximoTimeout.

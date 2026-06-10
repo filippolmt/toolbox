@@ -1,10 +1,15 @@
-# toolbox browser-bridge shim transport. Sourced (not executed) by the three
+# toolbox bridge shim transport. Sourced (not executed) by the three
 # shims — xdg-open, code/codium, proximo — so the state-dir location, the
 # readiness checks, and the curl POST live in one place. Callers own every
 # user-facing message and exit policy (xdg-open exits 0 so OAuth flows never
 # block; code/proximo exit non-zero), so only the mechanics live here.
 
-BRIDGE_STATE_DIR="/home/toolbox/.toolbox/browser"
+BRIDGE_STATE_DIR="/home/toolbox/.toolbox/bridge"
+# Pre-rename host CLI mounts only the legacy browser-bridge location; fall
+# back so a new image keeps working until the host toolbox is updated.
+if [ ! -r "${BRIDGE_STATE_DIR}/token" ]; then
+    BRIDGE_STATE_DIR="/home/toolbox/.toolbox/browser"
+fi
 
 # bridge_ready: verifies the RO-mounted bridge state and curl, then loads
 # BRIDGE_TOKEN / BRIDGE_PORT. On failure returns non-zero with the reason in

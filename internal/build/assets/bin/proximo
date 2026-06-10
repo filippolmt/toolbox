@@ -1,5 +1,5 @@
 #!/bin/sh
-# toolbox browser-bridge proximo shim. proximo runs on the HOST (its stack
+# toolbox bridge proximo shim. proximo runs on the HOST (its stack
 # bind-mounts host paths, so running the real binary in here cannot work);
 # this shim forwards an allowlisted lifecycle subcommand to the host daemon's
 # /proximo endpoint, prints the host output, and propagates the exit code.
@@ -27,7 +27,7 @@ esac
 
 if ! bridge_ready; then
     case "${BRIDGE_ERROR}" in
-    not_installed) echo "proximo: bridge not installed — run 'toolbox browser-bridge install' on the host" >&2 ;;
+    not_installed) echo "proximo: bridge not installed — run 'toolbox bridge install' on the host" >&2 ;;
     *) echo "proximo: curl missing in image" >&2 ;;
     esac
     exit 1
@@ -56,11 +56,11 @@ sys.exit(int(resp.get("exit", 0)))
 '
     ;;
 404)
-    echo "proximo: host daemon has no /proximo endpoint — update the host toolbox CLI and rerun 'toolbox browser-bridge install'" >&2
+    echo "proximo: host daemon has no /proximo endpoint — update the host toolbox CLI and rerun 'toolbox bridge install'" >&2
     exit 1
     ;;
 000)
-    echo "proximo: bridge unreachable — check 'toolbox browser-bridge status' on the host" >&2
+    echo "proximo: bridge unreachable — check 'toolbox bridge status' on the host" >&2
     exit 1
     ;;
 *)

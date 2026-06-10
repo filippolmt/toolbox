@@ -1,7 +1,7 @@
 package mountplan
 
 import (
-	"github.com/filippolmt/toolbox/internal/browserbridge"
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
@@ -23,7 +23,7 @@ func defaults() []config.Mount {
 		// OpenAI Codex CLI auth + config — populated by `codex login` inside the container.
 		{Name: "codex", Source: "~/.toolbox/.codex", Target: "/home/toolbox/.codex", ReadOnly: false, CreateIfMissing: true},
 		// Bash history and other shell state, shared across every toolbox shell.
-		{Name: "state", Source: "~/.toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
+		{Name: "state", Source: "~/.toolbox/toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
 		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,
 		// so changes made with `ssh-keygen` / `git config` on the host are
 		// immediately visible inside the container (and vice versa).
@@ -131,12 +131,14 @@ func defaults() []config.Mount {
 		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
 		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
 		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
-		// Browser bridge state: token + port + log + pid written by
-		// `toolbox browser-bridge daemon` on the host. RO inside the container
-		// because the wrapper only reads. CreateIfMissing keeps the mount
-		// resolvable even before the user runs `toolbox browser-bridge install`
-		// (the wrapper falls back to printing the URL on stderr in that case).
-		{Name: "browser-bridge", Source: "~/" + browserbridge.HostDir, Target: browserbridge.ContainerDir, ReadOnly: true, CreateIfMissing: true},
+		// Bridge state: token + port + log + pid written by `toolbox bridge
+		// daemon` on the host. RO inside the container because the shims only
+		// read. CreateIfMissing keeps the mount resolvable even before the
+		// user runs `toolbox bridge install` (the shims fall back to printing
+		// the URL on stderr in that case). The legacy target keeps pre-rename
+		// images working: their shims hardcode the old in-container path.
+		{Name: "bridge", Source: "~/" + bridge.HostDir, Target: bridge.ContainerDir, ReadOnly: true, CreateIfMissing: true},
+		{Name: "bridge-legacy", Source: "~/" + bridge.HostDir, Target: bridge.LegacyContainerDir, ReadOnly: true, CreateIfMissing: true},
 		// Docker socket for DinD-free container access.
 		{Name: "docker-sock", Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: false},
 	}

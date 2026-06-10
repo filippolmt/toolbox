@@ -1,6 +1,6 @@
 // Package imagepull owns the "refresh canonical image, best-effort, with
 // a TTL cache" concern that used to live inline in container.Shell. The
-// cache marker file lives at ~/.toolbox/state/pull-cache/<sha256-of-ref>
+// cache marker file lives at ~/.toolbox/toolbox/state/pull-cache/<sha256-of-ref>
 // so it survives across CLI runs; only successful pulls record, so a
 // network blip doesn't poison the next invocation into staleness.
 //
@@ -37,7 +37,7 @@ import (
 // pushed image lands on developer machines within the same work block,
 // and long enough that rapid `toolbox shell` cycles (open → exit → open)
 // don't each pay a round-trip to GHCR. Override is intentional fs-only:
-// delete ~/.toolbox/state/pull-cache/* to force a fresh pull on next
+// delete ~/.toolbox/toolbox/state/pull-cache/* to force a fresh pull on next
 // invocation.
 const TTL = 1 * time.Hour
 
@@ -160,7 +160,7 @@ func markerPath(ref string) (string, error) {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(ref))
-	return filepath.Join(home, ".toolbox", "state", "pull-cache", hex.EncodeToString(sum[:])), nil
+	return filepath.Join(home, ".toolbox", "toolbox", "state", "pull-cache", hex.EncodeToString(sum[:])), nil
 }
 
 // cached reports whether a successful pull of ref happened within the

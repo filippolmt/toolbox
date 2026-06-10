@@ -1,6 +1,6 @@
 //go:build linux
 
-package browserbridge
+package bridge
 
 import (
 	"strings"
@@ -14,9 +14,9 @@ func TestRenderUnit_ContainsExpectedKeys(t *testing.T) {
 	}
 	mustContain := []string{
 		"[Unit]",
-		"Description=Toolbox Browser Bridge",
+		"Description=Toolbox Bridge",
 		"[Service]",
-		"ExecStart=/usr/local/bin/toolbox browser-bridge daemon",
+		"ExecStart=/usr/local/bin/toolbox bridge daemon",
 		"Restart=on-failure",
 		"[Install]",
 		"WantedBy=default.target",

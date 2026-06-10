@@ -1,6 +1,6 @@
 //go:build darwin
 
-package browserbridge
+package bridge
 
 import (
 	"strings"
@@ -8,21 +8,21 @@ import (
 )
 
 func TestRenderPlist_ContainsExpectedKeys(t *testing.T) {
-	got, err := renderPlist("/opt/homebrew/bin/toolbox", "/Users/u/Library/Logs/toolbox-browser.log")
+	got, err := renderPlist("/opt/homebrew/bin/toolbox", "/Users/u/Library/Logs/toolbox-bridge.log")
 	if err != nil {
 		t.Fatal(err)
 	}
 	mustContain := []string{
 		"<key>Label</key>",
-		"<string>com.filippolmt.toolbox.browser</string>",
+		"<string>com.filippolmt.toolbox.bridge</string>",
 		"<string>/opt/homebrew/bin/toolbox</string>",
-		"<string>browser-bridge</string>",
+		"<string>bridge</string>",
 		"<string>daemon</string>",
 		"<key>RunAtLoad</key>",
 		"<true/>",
 		"<key>KeepAlive</key>",
 		"<key>StandardOutPath</key>",
-		"/Users/u/Library/Logs/toolbox-browser.log",
+		"/Users/u/Library/Logs/toolbox-bridge.log",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(got, s) {

@@ -12,7 +12,7 @@ import (
 )
 
 // proximoCreatePlan builds a minimal create-path plan with the proximo flag
-// and a base ExtraHosts entry (the browser-bridge mapping).
+// and a base ExtraHosts entry (the bridge mapping).
 func proximoCreatePlan(t *testing.T, proximoOn bool) *sessionplan.SessionPlan {
 	t.Helper()
 	ws := testWorkspace(t)

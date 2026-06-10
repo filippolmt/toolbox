@@ -103,19 +103,25 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	vp := viper.New()
 	vp.SetConfigType("yaml")
 
-	// Defaults seeding. Per-tool toggles no longer exist; only top-level
-	// feature flags (browser_bridge) get seeded. The image-selection keys are
-	// seeded with their zero value not for the value itself but so they land
-	// in viper's key set — AutomaticEnv only resolves TOOLBOX_* for keys it
-	// already knows, so without these seeds TOOLBOX_IMAGE / TOOLBOX_REGISTRY_MIRROR
-	// / TOOLBOX_PULL would be silently ignored at Unmarshal (same reason
-	// browser_bridge is seeded).
-	vp.SetDefault("browser_bridge", true)
+	// Defaults seeding. Per-tool toggles no longer exist. The image-selection
+	// keys are seeded with their zero value not for the value itself but so
+	// they land in viper's key set — AutomaticEnv only resolves TOOLBOX_* for
+	// keys it already knows, so without these seeds TOOLBOX_IMAGE /
+	// TOOLBOX_REGISTRY_MIRROR / TOOLBOX_PULL would be silently ignored at
+	// Unmarshal. `bridge` gets BindEnv instead of SetDefault: a seeded
+	// default surfaces through Unmarshal as a non-nil *bool, which would
+	// shadow the deprecated browser_bridge fallback in fillDefaultsBackstop
+	// (the default lives there instead). Same reason browser_bridge itself
+	// is neither seeded nor bound: non-nil must mean "the user wrote it".
+	// Explicit env name: SetEnvPrefix runs later in Merge, and BindEnv with a
+	// single argument captures the prefix at call time.
+	_ = vp.BindEnv("bridge", "TOOLBOX_BRIDGE")
 	vp.SetDefault("image", "")
 	vp.SetDefault("registry_mirror", "")
 	vp.SetDefault("pull", "")
 
 	warnLegacyTools(global, project, explicit)
+	warnLegacyBrowserBridge(global, project, explicit)
 
 	// File Load stage. explicit short-circuits global + project.
 	if len(explicit) > 0 {
@@ -207,6 +213,29 @@ func walkUp(start string) string {
 // config, sdd, …) and spamming the warning on every CLI invocation creates
 // scripting noise.
 var legacyToolsWarnOnce sync.Once
+
+// legacyBrowserBridgeWarnOnce mirrors legacyToolsWarnOnce for the deprecated
+// browser_bridge key.
+var legacyBrowserBridgeWarnOnce sync.Once
+
+// warnLegacyBrowserBridge emits a deprecation warning the first time any
+// input buffer carries a top-level `browser_bridge:` key. The key still
+// works (fillDefaultsBackstop folds it into Bridge) — this is a rename
+// nudge, not a removal notice.
+func warnLegacyBrowserBridge(buffers ...[]byte) {
+	for _, b := range buffers {
+		if len(b) == 0 {
+			continue
+		}
+		if hasTopLevelKey(b, "browser_bridge") {
+			legacyBrowserBridgeWarnOnce.Do(func() {
+				fmt.Fprintln(os.Stderr,
+					"toolbox: warning: 'browser_bridge:' is deprecated — rename the key to 'bridge:'.")
+			})
+			return
+		}
+	}
+}
 
 // warnLegacyToolsEnv detects `TOOLBOX_TOOLS_<KEY>=...` env vars left over
 // from the legacy opt-out and emits the same deprecation warning. Shares
@@ -337,17 +366,21 @@ func validateInheritHostAuth(keys []string) error {
 // Helpers
 // =============================================================================
 
-// fillDefaultsBackstop nil-guards cfg.Shells and seeds cfg.BrowserBridge to
-// its default value when omitted. Viper SetDefault values do not always
-// surface through Unmarshal for map/pointer types, so the Go-side backstop
-// keeps the contract explicit.
+// fillDefaultsBackstop nil-guards cfg.Shells and seeds cfg.Bridge to its
+// default value when omitted. Viper SetDefault values do not always surface
+// through Unmarshal for map/pointer types, so the Go-side backstop keeps the
+// contract explicit. The deprecated browser_bridge spelling folds into
+// Bridge here — only when `bridge:` is absent, so the new key always wins.
 func fillDefaultsBackstop(cfg *Config) {
 	if cfg.Shells == nil {
 		cfg.Shells = map[string]NamedShell{}
 	}
-	if cfg.BrowserBridge == nil {
+	if cfg.Bridge == nil {
+		cfg.Bridge = cfg.BrowserBridge
+	}
+	if cfg.Bridge == nil {
 		v := true
-		cfg.BrowserBridge = &v
+		cfg.Bridge = &v
 	}
 }
 

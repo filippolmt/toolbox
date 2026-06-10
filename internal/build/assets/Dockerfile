@@ -1221,7 +1221,7 @@ COPY --link starship.toml /etc/toolbox/starship.toml
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
-# Browser-bridge shim transport, sourced by the xdg-open/code/proximo shims
+# Bridge shim transport, sourced by the xdg-open/code/proximo shims
 # below (state-dir location + readiness checks + curl POST in one place).
 COPY --link --chmod=0644 bin/bridge-lib.sh /usr/local/lib/toolbox/bridge-lib.sh
 # Browser-bridge wrapper. Shadows /usr/bin/xdg-open (+synonyms) so URL

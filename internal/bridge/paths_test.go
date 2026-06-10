@@ -1,4 +1,4 @@
-package browserbridge
+package bridge
 
 import (
 	"os"

@@ -24,7 +24,7 @@ func TestMarkerPath(t *testing.T) {
 		t.Fatalf("markerPath: unexpected error: %v", err)
 	}
 
-	want := filepath.Join(home, ".toolbox", "state", "pull-cache")
+	want := filepath.Join(home, ".toolbox", "toolbox", "state", "pull-cache")
 	if !strings.HasPrefix(p1, want) {
 		t.Errorf("markerPath root = %q, want prefix %q", p1, want)
 	}
@@ -81,7 +81,7 @@ func TestRecordCreatesMissingDirs(t *testing.T) {
 
 	record("ghcr.io/foo/bar:latest")
 
-	dir := filepath.Join(home, ".toolbox", "state", "pull-cache")
+	dir := filepath.Join(home, ".toolbox", "toolbox", "state", "pull-cache")
 	info, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("pull-cache dir not created: %v", err)

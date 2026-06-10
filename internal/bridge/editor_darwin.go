@@ -1,6 +1,6 @@
 //go:build darwin
 
-package browserbridge
+package bridge
 
 import (
 	"context"
@@ -17,7 +17,7 @@ func launchEditor(ctx context.Context, editor, path string) error {
 	}
 	app, ok := editorApps[editor]
 	if !ok {
-		return fmt.Errorf("browser-bridge: no app mapping for editor %q", editor)
+		return fmt.Errorf("bridge: no app mapping for editor %q", editor)
 	}
 	return runQuiet(ctx, "/usr/bin/open", "-a", app, path)
 }

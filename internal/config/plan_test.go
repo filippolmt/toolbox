@@ -420,29 +420,71 @@ func TestWalkUpProjectConfigDelegates(t *testing.T) {
 	}
 }
 
-func TestPlan_BrowserBridgeDefaultsTrue(t *testing.T) {
+func TestPlan_BridgeDefaultsTrue(t *testing.T) {
 	cfg, err := Merge(nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BrowserBridge == nil {
-		t.Fatal("BrowserBridge nil, want *true")
+	if cfg.Bridge == nil {
+		t.Fatal("Bridge nil, want *true")
 	}
-	if !*cfg.BrowserBridge {
-		t.Errorf("BrowserBridge = false, want true")
+	if !*cfg.Bridge {
+		t.Errorf("Bridge = false, want true")
 	}
 }
 
-func TestPlan_BrowserBridgeExplicitFalse(t *testing.T) {
+func TestPlan_BridgeExplicitFalse(t *testing.T) {
+	yaml := []byte("bridge: false\n")
+	cfg, err := Merge(nil, yaml, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Bridge == nil {
+		t.Fatal("Bridge nil, want *false")
+	}
+	if *cfg.Bridge {
+		t.Errorf("Bridge = true, want false")
+	}
+}
+
+func TestPlan_BridgeLegacyKeyFallsBack(t *testing.T) {
 	yaml := []byte("browser_bridge: false\n")
 	cfg, err := Merge(nil, yaml, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BrowserBridge == nil {
-		t.Fatal("BrowserBridge nil, want *false")
+	if cfg.Bridge == nil {
+		t.Fatal("Bridge nil, want *false from legacy browser_bridge key")
 	}
-	if *cfg.BrowserBridge {
-		t.Errorf("BrowserBridge = true, want false")
+	if *cfg.Bridge {
+		t.Errorf("Bridge = true, want false from legacy browser_bridge key")
+	}
+}
+
+func TestPlan_BridgeEnvOverride(t *testing.T) {
+	t.Setenv("TOOLBOX_BRIDGE", "false")
+	cfg, err := Merge(nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Bridge == nil {
+		t.Fatal("Bridge nil, want *false from TOOLBOX_BRIDGE")
+	}
+	if *cfg.Bridge {
+		t.Errorf("Bridge = true, want false from TOOLBOX_BRIDGE")
+	}
+}
+
+func TestPlan_BridgeNewKeyWinsOverLegacy(t *testing.T) {
+	yaml := []byte("bridge: true\nbrowser_bridge: false\n")
+	cfg, err := Merge(nil, yaml, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Bridge == nil {
+		t.Fatal("Bridge nil, want *true")
+	}
+	if !*cfg.Bridge {
+		t.Errorf("Bridge = false, want true — explicit bridge: must outrank legacy browser_bridge:")
 	}
 }
