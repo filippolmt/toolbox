@@ -112,6 +112,23 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 
 	logger.Printf("daemon: listening on 127.0.0.1:%d (toolbox %s)", port, runtime.GOOS)
 
+	// Linux-only second transport: native docker-ce containers cannot reach
+	// the loopback TCP listener (host-gateway resolves to the docker0 gateway
+	// IP), so they connect through this socket via the bridge-run RW mount.
+	// Failure to bind (e.g. $HOME beyond sun_path's ~108-char limit) degrades
+	// to TCP-only instead of crash-looping the systemd unit.
+	unixLn, err := bindUnixListener(state)
+	if err != nil {
+		logger.Printf("daemon: unix socket unavailable (%v) — TCP only", err)
+	}
+	if unixLn != nil {
+		defer func() {
+			_ = unixLn.Close()
+			_ = os.Remove(state.Socket)
+		}()
+		logger.Printf("daemon: listening on unix %s", state.Socket)
+	}
+
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -137,10 +154,17 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 		IdleTimeout:       30 * time.Second,
 	}
 
-	serveErr := make(chan error, 1)
+	// Buffer 2: both Serve goroutines must be able to send after a shutdown
+	// or the second one leaks.
+	serveErr := make(chan error, 2)
 	go func() {
 		serveErr <- srv.Serve(ln)
 	}()
+	if unixLn != nil {
+		go func() {
+			serveErr <- srv.Serve(unixLn)
+		}()
+	}
 
 	select {
 	case <-ctx.Done():

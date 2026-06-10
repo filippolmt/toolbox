@@ -193,7 +193,7 @@ func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 		t.Fatalf("Merge: %v", err)
 	}
 	for _, m := range got {
-		if m.Name == "bridge" || m.Name == "bridge-legacy" {
+		if m.Name == "bridge" || m.Name == "bridge-legacy" || m.Name == "bridge-run" {
 			t.Errorf("%s mount must be dropped when Bridge=false", m.Name)
 		}
 	}
@@ -209,7 +209,7 @@ func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	for _, m := range got {
 		found[m.Name] = true
 	}
-	for _, name := range []string{"bridge", "bridge-legacy"} {
+	for _, name := range []string{"bridge", "bridge-legacy", "bridge-run"} {
 		if !found[name] {
 			t.Errorf("%s mount missing when Bridge=true", name)
 		}

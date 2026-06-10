@@ -1124,7 +1124,8 @@ RUN set -eux; \
       /home/toolbox/.toolbox-startup.d \
       /home/toolbox/.cache \
       /home/toolbox/.config \
-      /home/toolbox/.local/share; \
+      /home/toolbox/.local/share \
+      /home/toolbox/.toolbox/bridge; \
     chmod -R a+rwX /home/toolbox; \
     chmod 0666 /etc/passwd /etc/group; \
     rm -rf /tmp/node-compile-cache /tmp/v8-compile-cache-*

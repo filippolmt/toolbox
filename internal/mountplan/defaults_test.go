@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 29 {
-		t.Fatalf("expected 29 default mounts, got %d", len(mounts))
+	if len(mounts) != 30 {
+		t.Fatalf("expected 30 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -131,23 +131,30 @@ func TestDefaults_IncludesBridge(t *testing.T) {
 	// Both the current target and the pre-rename legacy target must be bound
 	// from the same host state dir: a pre-rename image hardcodes the legacy
 	// path in its shims and must keep working against a renamed host CLI.
-	want := map[string]string{
-		"bridge":        bridge.ContainerDir,
-		"bridge-legacy": bridge.LegacyContainerDir,
+	// run/ is the lone RW mount — the daemon's unix socket lives there and
+	// connect() on a socket inside a RO mount fails with EROFS.
+	want := map[string]struct {
+		target   string
+		source   string
+		readOnly bool
+	}{
+		"bridge":        {bridge.ContainerDir, "~/" + bridge.HostDir, true},
+		"bridge-legacy": {bridge.LegacyContainerDir, "~/" + bridge.HostDir, true},
+		"bridge-run":    {bridge.ContainerRunDir, "~/" + bridge.HostRunDir, false},
 	}
 	for _, m := range defaults() {
-		target, ok := want[m.Name]
+		w, ok := want[m.Name]
 		if !ok {
 			continue
 		}
-		if !m.ReadOnly {
-			t.Errorf("%s mount must be ReadOnly", m.Name)
+		if m.ReadOnly != w.readOnly {
+			t.Errorf("%s ReadOnly = %v, want %v", m.Name, m.ReadOnly, w.readOnly)
 		}
-		if m.Target != target {
-			t.Errorf("%s Target = %q, want %q", m.Name, m.Target, target)
+		if m.Target != w.target {
+			t.Errorf("%s Target = %q, want %q", m.Name, m.Target, w.target)
 		}
-		if m.Source != "~/"+bridge.HostDir {
-			t.Errorf("%s Source = %q, want %q", m.Name, m.Source, "~/"+bridge.HostDir)
+		if m.Source != w.source {
+			t.Errorf("%s Source = %q, want %q", m.Name, m.Source, w.source)
 		}
 		if !m.CreateIfMissing {
 			t.Errorf("%s CreateIfMissing must be true so the mount is resolvable pre-install", m.Name)

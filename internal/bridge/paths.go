@@ -19,12 +19,28 @@ import (
 // for per-app config/credential dirs. Deliberately a SIBLING of
 // ~/.toolbox/toolbox/state, not inside it: state/ is rw-mounted wholesale
 // into the container, and the bridge token must stay read-only there.
-// Mounted RO into the container at ContainerDir.
+// Mounted RO into the container at ContainerDir — except the run/ subdir,
+// which carries the unix socket and needs its own RW mount (connect() on a
+// socket inside a read-only mount fails with EROFS).
 const HostDir = ".toolbox/toolbox/bridge"
 
 // ContainerDir is the in-container path that mirrors HostDir read-only.
 // Must match the mount Target declared in mountplan.defaults.
 const ContainerDir = "/home/toolbox/.toolbox/bridge"
+
+// HostRunDir is HostDir's run/ subdir on the host — the source of the RW
+// bridge-run mount in mountplan.defaults.
+const HostRunDir = HostDir + "/" + runDirName
+
+// ContainerRunDir / ContainerSocket are the in-container paths of the RW
+// run/ mount and the daemon's unix socket inside it (Linux hosts only —
+// Docker Desktop cannot share host unix sockets with containers, so macOS
+// stays on the TCP transport). Must match the bridge-run mount Target in
+// mountplan.defaults and BRIDGE_SOCK in bridge-lib.sh.
+const (
+	ContainerRunDir = ContainerDir + "/" + runDirName
+	ContainerSocket = ContainerRunDir + "/" + socketFile
+)
 
 // LegacyHostDir is the pre-rename (`browser-bridge` era) state location.
 // Install migrates it to HostDir; Uninstall removes both.
@@ -40,21 +56,25 @@ const LegacyContainerDir = "/home/toolbox/.toolbox/browser"
 // File names inside HostDir / ContainerDir. Kept in one place so the daemon
 // (host) and the wrapper script (container) cannot drift apart.
 const (
-	tokenFile = "token"
-	portFile  = "port"
-	logFile   = "log"
-	pidFile   = "pid"
+	tokenFile  = "token"
+	portFile   = "port"
+	logFile    = "log"
+	pidFile    = "pid"
+	runDirName = "run"
+	socketFile = "bridge.sock"
 )
 
 // HostState is the resolved set of absolute paths under HostDir for the
 // current user. Daemon and CLI subcommands consume this; the wrapper script
 // reads the container-side mirror directly.
 type HostState struct {
-	Dir   string // ~/<HostDir>
-	Token string // <Dir>/token
-	Port  string // <Dir>/port
-	Log   string // <Dir>/log
-	PID   string // <Dir>/pid
+	Dir    string // ~/<HostDir>
+	Token  string // <Dir>/token
+	Port   string // <Dir>/port
+	Log    string // <Dir>/log
+	PID    string // <Dir>/pid
+	RunDir string // <Dir>/run — the only RW-mounted subdir in the container
+	Socket string // <RunDir>/bridge.sock — bound by the daemon on Linux only
 }
 
 // ResolveHostState returns the absolute host paths for bridge state.
@@ -67,11 +87,13 @@ func ResolveHostState() (HostState, error) {
 	}
 	dir := filepath.Join(home, HostDir)
 	return HostState{
-		Dir:   dir,
-		Token: filepath.Join(dir, tokenFile),
-		Port:  filepath.Join(dir, portFile),
-		Log:   filepath.Join(dir, logFile),
-		PID:   filepath.Join(dir, pidFile),
+		Dir:    dir,
+		Token:  filepath.Join(dir, tokenFile),
+		Port:   filepath.Join(dir, portFile),
+		Log:    filepath.Join(dir, logFile),
+		PID:    filepath.Join(dir, pidFile),
+		RunDir: filepath.Join(dir, runDirName),
+		Socket: filepath.Join(dir, runDirName, socketFile),
 	}, nil
 }
 
