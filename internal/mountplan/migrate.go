@@ -11,9 +11,11 @@ import (
 // cache. ~/.toolbox root is reserved for per-app config/credential dirs;
 // everything toolbox-own lives under ~/.toolbox/toolbox so a future app
 // named "state" can never collide. No-op when there is nothing to migrate;
-// when both dirs exist the new one wins and the stale legacy dir is left
-// alone. Callers treat failures as a warning: CreateIfMissing rebuilds an
-// empty state dir and the pull cache regenerates on the next pull.
+// when both dirs exist the new one wins and the stale legacy dir (recreated
+// by an old binary's CreateIfMissing mount) is removed — it only ever holds
+// the regenerable pull cache. Callers treat failures as a warning:
+// CreateIfMissing rebuilds an empty state dir and the pull cache regenerates
+// on the next pull.
 func MigrateLegacyToolboxState(home string) error {
 	legacy := filepath.Join(home, ".toolbox", "state")
 	if _, err := os.Stat(legacy); err != nil {
@@ -21,7 +23,7 @@ func MigrateLegacyToolboxState(home string) error {
 	}
 	dest := filepath.Join(home, ".toolbox", "toolbox", "state")
 	if _, err := os.Stat(dest); err == nil {
-		return nil
+		return os.RemoveAll(legacy)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err

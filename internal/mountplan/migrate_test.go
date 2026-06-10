@@ -27,7 +27,7 @@ func TestMigrateLegacyToolboxState_MovesLegacyDir(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacyToolboxState_NoopWhenNewExists(t *testing.T) {
+func TestMigrateLegacyToolboxState_RemovesStaleLegacyWhenNewExists(t *testing.T) {
 	home := t.TempDir()
 	newDir := filepath.Join(home, ".toolbox", "toolbox", "state")
 	if err := os.MkdirAll(newDir, 0o755); err != nil {
@@ -40,8 +40,8 @@ func TestMigrateLegacyToolboxState_NoopWhenNewExists(t *testing.T) {
 	if err := MigrateLegacyToolboxState(home); err != nil {
 		t.Fatalf("MigrateLegacyToolboxState: %v", err)
 	}
-	if _, err := os.Stat(legacy); err != nil {
-		t.Errorf("stale legacy dir must be left alone when the new dir exists: %v", err)
+	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale legacy dir must be removed when the new dir exists")
 	}
 }
 

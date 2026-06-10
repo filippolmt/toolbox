@@ -86,7 +86,7 @@ func TestInstall_MigratesLegacyStateDir(t *testing.T) {
 	}
 }
 
-func TestInstall_LegacyDirIgnoredWhenNewExists(t *testing.T) {
+func TestInstall_StaleLegacyDirRemovedWhenNewExists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := Install(&fakeAgent{}, "/x"); err != nil {
@@ -112,6 +112,9 @@ func TestInstall_LegacyDirIgnoredWhenNewExists(t *testing.T) {
 	}
 	if string(got) != string(newTok) {
 		t.Errorf("token = %q, want existing token untouched by stale legacy dir", got)
+	}
+	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale legacy dir must be removed when the new dir already exists")
 	}
 }
 

@@ -50,6 +50,7 @@ type darwinAgent struct {
 	plistPath       string
 	legacyPlistPath string
 	logPath         string
+	legacyLogPath   string
 }
 
 func NewAgent() (Agent, error) {
@@ -58,20 +59,25 @@ func NewAgent() (Agent, error) {
 		return nil, err
 	}
 	agents := filepath.Join(home, "Library", "LaunchAgents")
+	logs := filepath.Join(home, "Library", "Logs")
 	return &darwinAgent{
 		plistPath:       filepath.Join(agents, launchLabel+".plist"),
 		legacyPlistPath: filepath.Join(agents, legacyLaunchLabel+".plist"),
-		logPath:         filepath.Join(home, "Library", "Logs", "toolbox-bridge.log"),
+		logPath:         filepath.Join(logs, "toolbox-bridge.log"),
+		legacyLogPath:   filepath.Join(logs, "toolbox-browser.log"),
 	}, nil
 }
 
-// removeLegacy boots out the pre-rename LaunchAgent and deletes its plist.
-// The bootout is best-effort (already gone is fine); the file removal only
-// fails on real fs errors.
+// removeLegacy boots out the pre-rename LaunchAgent and deletes its plist
+// and log file. The bootout is best-effort (already gone is fine); the file
+// removals only fail on real fs errors.
 func (a *darwinAgent) removeLegacy() error {
 	uid := strconv.Itoa(os.Getuid())
 	_ = exec.Command("launchctl", "bootout", "gui/"+uid, a.legacyPlistPath).Run()
 	if err := os.Remove(a.legacyPlistPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(a.legacyLogPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

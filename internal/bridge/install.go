@@ -44,7 +44,8 @@ func Install(a Agent, execPath string) error {
 // migrateLegacyHostDir renames the pre-rename state dir (~/LegacyHostDir)
 // onto s.Dir, preserving the existing token so in-flight containers keep
 // authenticating. No-op when there is nothing to migrate; when both dirs
-// exist the new one wins and the stale legacy dir is left for Uninstall.
+// exist the new one wins and the stale legacy dir (recreated by an old
+// binary's CreateIfMissing mount or `browser-bridge install`) is removed.
 func migrateLegacyHostDir(s HostState) error {
 	home, err := fsx.Home()
 	if err != nil {
@@ -55,7 +56,7 @@ func migrateLegacyHostDir(s HostState) error {
 		return nil
 	}
 	if _, err := os.Stat(s.Dir); err == nil {
-		return nil
+		return os.RemoveAll(legacy)
 	}
 	// Parent (~/.toolbox/toolbox) may not exist yet on a host that never ran
 	// `toolbox shell` after the rename.
