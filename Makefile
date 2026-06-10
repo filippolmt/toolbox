@@ -59,7 +59,7 @@ check-links: ## Validate Markdown links and anchors offline (lychee in Docker)
 	docker run --rm -w /input -v "$(HOST_SRC)":/input $(LYCHEE_IMAGE) \
 	  --offline --include-fragments --no-progress \
 	  --exclude-path docs/superpowers \
-	  README.md CLAUDE.md docs .claude/rules .claude/skills
+	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md docs .claude/rules .claude/skills
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'

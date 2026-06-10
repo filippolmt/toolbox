@@ -42,5 +42,5 @@ jobs:
           args: >-
             --offline --include-fragments --no-progress
             --exclude-path docs/superpowers
-            README.md CLAUDE.md docs .claude/rules .claude/skills
+            README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md docs .claude/rules .claude/skills
           fail: true
