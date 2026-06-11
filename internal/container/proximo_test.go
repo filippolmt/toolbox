@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -37,10 +37,10 @@ func TestShellProximoAugmentsExtraHosts(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
-		listFn: func(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+		listFn: func(_ context.Context, _ client.ContainerListOptions) ([]container.Summary, error) {
 			return []container.Summary{
 				{Labels: map[string]string{"proximo.hosts": "zeromiglia.test,mailpit.test"}},
 				{Labels: map[string]string{"some.other": "x"}},
@@ -79,8 +79,8 @@ func TestShellNonProximoSkipsDiscovery(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		// listFn intentionally nil: ContainerList must NOT be called.
 		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 // notFoundErr satisfies cerrdefs.IsNotFound — mirrors the stub in
@@ -30,46 +30,47 @@ func (e *conflictErr) Unwrap() error { return nil }
 // mockClient implements the subset of client.APIClient used by teardown.
 type mockClient struct {
 	client.APIClient
-	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
-	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
+	stopFn        func(ctx context.Context, id string, opts client.ContainerStopOptions) error
+	removeFn      func(ctx context.Context, id string, opts client.ContainerRemoveOptions) error
 	killFn        func(ctx context.Context, id string, signal string) error
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
-	execInspectFn func(ctx context.Context, execID string) (container.ExecInspect, error)
+	execInspectFn func(ctx context.Context, execID string) (client.ExecInspectResult, error)
 }
 
-func (m *mockClient) ContainerStop(ctx context.Context, id string, opts container.StopOptions) error {
+func (m *mockClient) ContainerStop(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error) {
 	if m.stopFn != nil {
-		return m.stopFn(ctx, id, opts)
+		return client.ContainerStopResult{}, m.stopFn(ctx, id, opts)
 	}
-	return nil
+	return client.ContainerStopResult{}, nil
 }
 
-func (m *mockClient) ContainerKill(ctx context.Context, id string, signal string) error {
+func (m *mockClient) ContainerKill(ctx context.Context, id string, opts client.ContainerKillOptions) (client.ContainerKillResult, error) {
 	if m.killFn != nil {
-		return m.killFn(ctx, id, signal)
+		return client.ContainerKillResult{}, m.killFn(ctx, id, opts.Signal)
 	}
-	return nil
+	return client.ContainerKillResult{}, nil
 }
 
-func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts container.RemoveOptions) error {
+func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	if m.removeFn != nil {
-		return m.removeFn(ctx, id, opts)
+		return client.ContainerRemoveResult{}, m.removeFn(ctx, id, opts)
 	}
-	return nil
+	return client.ContainerRemoveResult{}, nil
 }
 
-func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container.InspectResponse, error) {
+func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	if m.inspectFn != nil {
-		return m.inspectFn(ctx, id)
+		inspect, err := m.inspectFn(ctx, id)
+		return client.ContainerInspectResult{Container: inspect}, err
 	}
-	return container.InspectResponse{}, fmt.Errorf("ContainerInspect not mocked")
+	return client.ContainerInspectResult{}, fmt.Errorf("ContainerInspect not mocked")
 }
 
-func (m *mockClient) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+func (m *mockClient) ExecInspect(ctx context.Context, execID string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
 	if m.execInspectFn != nil {
 		return m.execInspectFn(ctx, execID)
 	}
-	return container.ExecInspect{}, fmt.Errorf("ContainerExecInspect not mocked")
+	return client.ExecInspectResult{}, fmt.Errorf("ExecInspect not mocked")
 }
 
 func (m *mockClient) Close() error { return nil }
@@ -77,13 +78,13 @@ func (m *mockClient) Close() error { return nil }
 func TestStopOneStopsAndRemoves(t *testing.T) {
 	stopCalled := false
 	removeCalled := false
-	var capturedRemoveOpts container.RemoveOptions
+	var capturedRemoveOpts client.ContainerRemoveOptions
 	mock := &mockClient{
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
-		removeFn: func(_ context.Context, _ string, opts container.RemoveOptions) error {
+		removeFn: func(_ context.Context, _ string, opts client.ContainerRemoveOptions) error {
 			removeCalled = true
 			capturedRemoveOpts = opts
 			return nil
@@ -102,7 +103,7 @@ func TestStopOneStopsAndRemoves(t *testing.T) {
 
 func TestStopOneSwallowsNotFound(t *testing.T) {
 	mock := &mockClient{
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			return &notFoundErr{msg: "no such container"}
 		},
 	}
@@ -114,7 +115,7 @@ func TestStopOneSwallowsNotFound(t *testing.T) {
 func TestStopOnePassesGraceTimeout(t *testing.T) {
 	var capturedTimeout *int
 	mock := &mockClient{
-		stopFn: func(_ context.Context, _ string, opts container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, opts client.ContainerStopOptions) error {
 			capturedTimeout = opts.Timeout
 			return nil
 		},
@@ -131,14 +132,12 @@ func TestHasActiveExecsTrueOnRunningSibling(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:      "x",
-					ExecIDs: []string{"sibling"},
-				},
+				ID:      "x",
+				ExecIDs: []string{"sibling"},
 			}, nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: true}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: true}, nil
 		},
 	}
 	if !HasActiveExecs(context.Background(), mock, "toolbox-x") {
@@ -157,14 +156,14 @@ func TestHasActiveExecsFalseOnInspectError(t *testing.T) {
 	}
 }
 
-func TestHasActiveExecsFalseOnNilContainerJSONBase(t *testing.T) {
+func TestHasActiveExecsFalseOnEmptyInspect(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, nil
 		},
 	}
 	if HasActiveExecs(context.Background(), mock, "toolbox-x") {
-		t.Fatal("nil ContainerJSONBase must yield false")
+		t.Fatal("empty inspect must yield false")
 	}
 }
 
@@ -173,16 +172,14 @@ func TestOnShellExitSkipsStopWhenSiblingExecRunning(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:      "x",
-					ExecIDs: []string{"sibling"},
-				},
+				ID:      "x",
+				ExecIDs: []string{"sibling"},
 			}, nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: true}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: true}, nil
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
@@ -200,16 +197,14 @@ func TestOnShellExitStopsWhenNoSiblingExec(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:      "x",
-					ExecIDs: []string{"ours"},
-				},
+				ID:      "x",
+				ExecIDs: []string{"ours"},
 			}, nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: false}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
@@ -226,11 +221,9 @@ func TestOnShellExitStopsWhenNoSiblingExec(t *testing.T) {
 // a single drained (Running:false) exec — the just-exited shell.
 func autoRemoveInspect() container.InspectResponse {
 	return container.InspectResponse{
-		ContainerJSONBase: &container.ContainerJSONBase{
-			ID:         "x",
-			ExecIDs:    []string{"ours"},
-			HostConfig: &container.HostConfig{AutoRemove: true},
-		},
+		ID:         "x",
+		ExecIDs:    []string{"ours"},
+		HostConfig: &container.HostConfig{AutoRemove: true},
 	}
 }
 
@@ -240,8 +233,8 @@ func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return autoRemoveInspect(), nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: false}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
 		},
 		killFn: func(_ context.Context, _ string, sig string) error {
 			killCalled = true
@@ -250,11 +243,11 @@ func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
 			}
 			return nil
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			t.Fatal("AutoRemove path must not call ContainerStop")
 			return nil
 		},
-		removeFn: func(_ context.Context, _ string, _ container.RemoveOptions) error {
+		removeFn: func(_ context.Context, _ string, _ client.ContainerRemoveOptions) error {
 			t.Fatal("AutoRemove path must not call ContainerRemove (daemon reaps it)")
 			return nil
 		},
@@ -272,8 +265,8 @@ func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return autoRemoveInspect(), nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: false}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
 		},
 		killFn: func(_ context.Context, _ string, _ string) error {
 			return &notFoundErr{msg: "no such container"}
@@ -289,7 +282,7 @@ func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &notFoundErr{msg: "no such container"}
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			t.Fatal("missing container must be a no-op")
 			return nil
 		},
@@ -305,7 +298,7 @@ func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 
 func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
 	mock := &mockClient{
-		removeFn: func(_ context.Context, _ string, _ container.RemoveOptions) error {
+		removeFn: func(_ context.Context, _ string, _ client.ContainerRemoveOptions) error {
 			return &conflictErr{msg: "removal of container is already in progress"}
 		},
 	}

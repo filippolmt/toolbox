@@ -9,8 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/ui"
@@ -18,8 +17,8 @@ import (
 
 // shellExecEnv returns the host env vars forwarded into the exec session.
 //
-// Docker exec does NOT inherit the client's environment: ContainerExecCreate
-// only sees what we put in ExecOptions.Env, on top of the container's
+// Docker exec does NOT inherit the client's environment: ExecCreate
+// only sees what we put in ExecCreateOptions.Env, on top of the container's
 // Config.Env (set once at ContainerCreate). Without an explicit pass-through
 // the shell sees the Docker default TERM=xterm regardless of what the host
 // terminal actually is, which on Ghostty + multi-line Starship breaks the
@@ -42,11 +41,11 @@ func shellExecEnv() []string {
 // sessionplan.ResolveShellCmd). Handles TTY raw mode, signal forwarding
 // (SIGINT/SIGTERM), terminal resize (SIGWINCH), and bidirectional I/O.
 func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) error {
-	execResp, err := cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+	execResp, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Tty:          true,
+		TTY:          true,
 		Cmd:          cmd,
 		Env:          shellExecEnv(),
 	})
@@ -54,7 +53,7 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 		return fmt.Errorf("create exec for container %s: %w", containerID, err)
 	}
 
-	resp, err := cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{Tty: true})
+	resp, err := cli.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{TTY: true})
 	if err != nil {
 		return fmt.Errorf("attach exec %s: %w", execResp.ID, err)
 	}
@@ -123,7 +122,7 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 					if sizeErr != nil {
 						continue
 					}
-					_ = cli.ContainerExecResize(sessionCtx, execResp.ID, container.ResizeOptions{
+					_, _ = cli.ExecResize(sessionCtx, execResp.ID, client.ExecResizeOptions{
 						Height: uint(h),
 						Width:  uint(w),
 					})
@@ -135,7 +134,7 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 
 		// Initial resize to sync dimensions.
 		if w, h, sizeErr := term.GetSize(fd); sizeErr == nil {
-			_ = cli.ContainerExecResize(sessionCtx, execResp.ID, container.ResizeOptions{
+			_, _ = cli.ExecResize(sessionCtx, execResp.ID, client.ExecResizeOptions{
 				Height: uint(h),
 				Width:  uint(w),
 			})

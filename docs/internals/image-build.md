@@ -75,7 +75,7 @@ Known cost: children spawned by claude's Bash tool inherit the stripped environm
 
 ## Two Docker version streams
 
-`DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); `github.com/docker/docker` in `go.mod` is the SDK the CLI launcher uses (pinned to the highest v28.x `+incompatible` tag, since upstream publishes no v29 Go module). The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically.
+`DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); the SDK the CLI launcher uses lives in `go.mod` as the moby modules `github.com/moby/moby/client` (own v0.x series) + `github.com/moby/moby/api` (versioned after the Engine API, v1.x) — the deprecated `github.com/docker/docker` module is gone. The client negotiates the API version by default, so version drift between CLI binary, SDK, and daemon is expected and handled. Don't try to "align" them numerically.
 
 ## Tools removal
 

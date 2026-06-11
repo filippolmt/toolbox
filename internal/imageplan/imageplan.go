@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imagepull"
