@@ -10,13 +10,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
@@ -46,8 +48,8 @@ type SessionPlan struct {
 	Binds         []mountplan.Bind
 	Warnings      []string
 	WorkingDir    string
-	ExposedPorts  nat.PortSet
-	PortBindings  nat.PortMap
+	ExposedPorts  network.PortSet
+	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
 	Cmd           []string
@@ -73,8 +75,8 @@ type MergedSessionPlan struct {
 	Image         Image
 	Binds         []config.Mount
 	WorkingDir    string
-	ExposedPorts  nat.PortSet
-	PortBindings  nat.PortMap
+	ExposedPorts  network.PortSet
+	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
 	Cmd           []string
@@ -242,17 +244,16 @@ func userEnv(env map[string]string) []string {
 // MissingPublishPorts returns the wanted publish ports that the existing
 // container was not created with. PortBindings are fixed at create time,
 // so "--publish" on a reused container is a silent no-op for any port
-// not in this list. nil-safe against InspectResponse.ContainerJSONBase
-// and HostConfig.
-func MissingPublishPorts(wanted nat.PortMap, inspect container.InspectResponse) []string {
-	if inspect.ContainerJSONBase == nil || inspect.HostConfig == nil {
+// not in this list. nil-safe against InspectResponse.HostConfig.
+func MissingPublishPorts(wanted network.PortMap, inspect container.InspectResponse) []string {
+	if inspect.HostConfig == nil {
 		return nil
 	}
 	current := inspect.HostConfig.PortBindings
 	var missing []string
 	for port := range wanted {
 		if _, ok := current[port]; !ok {
-			missing = append(missing, string(port))
+			missing = append(missing, port.String())
 		}
 	}
 	return missing
@@ -377,6 +378,30 @@ func normalizeWorkspace(workspace string) string {
 
 // --- Port Parsing ---
 
+// defaultHostIP keeps OAuth callbacks loopback-only: publish specs with no
+// explicit host IP bind 127.0.0.1, not 0.0.0.0, so a callback port is never
+// exposed to the LAN.
+var defaultHostIP = netip.MustParseAddr("127.0.0.1")
+
+// natMappingToBinding converts a go-connections publish mapping (kept solely
+// because nat.ParsePortSpec has no moby equivalent) into the moby port +
+// binding pair, applying the loopback host-IP default. This is the only
+// nat→moby seam in the codebase.
+func natMappingToBinding(m nat.PortMapping) (network.Port, network.PortBinding, error) {
+	p, err := network.ParsePort(string(m.Port))
+	if err != nil {
+		return network.Port{}, network.PortBinding{}, err
+	}
+	hostIP := defaultHostIP
+	if m.Binding.HostIP != "" {
+		hostIP, err = netip.ParseAddr(m.Binding.HostIP)
+		if err != nil {
+			return network.Port{}, network.PortBinding{}, err
+		}
+	}
+	return p, network.PortBinding{HostIP: hostIP, HostPort: m.Binding.HostPort}, nil
+}
+
 // parsePublishSpecs parses "docker run -p"-style publish specs into
 // Docker's ExposedPorts + PortBindings, and the ordered slice of unique
 // container ports (insertion order; deduplicated) used by callers that
@@ -384,12 +409,12 @@ func normalizeWorkspace(workspace string) string {
 // which forwards each to its socat listener. Defaults the host IP to
 // 127.0.0.1 (not 0.0.0.0) so OAuth callbacks stay loopback-only instead
 // of being exposed to the LAN.
-func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, error) {
+func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []string, error) {
 	if len(specs) == 0 {
 		return nil, nil, nil, nil
 	}
-	exposed := nat.PortSet{}
-	bindings := nat.PortMap{}
+	exposed := network.PortSet{}
+	bindings := network.PortMap{}
 	seenPorts := make(map[string]struct{}, len(specs))
 	orderedPorts := make([]string, 0, len(specs))
 	for _, spec := range specs {
@@ -398,14 +423,14 @@ func parsePublishSpecs(specs []string) (nat.PortSet, nat.PortMap, []string, erro
 			return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
 		}
 		for _, m := range mappings {
-			exposed[m.Port] = struct{}{}
-			b := m.Binding
-			if b.HostIP == "" {
-				b.HostIP = "127.0.0.1"
+			p, binding, perr := natMappingToBinding(m)
+			if perr != nil {
+				return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, perr)
 			}
-			bindings[m.Port] = append(bindings[m.Port], b)
+			exposed[p] = struct{}{}
+			bindings[p] = append(bindings[p], binding)
 
-			port := m.Port.Port() // drops "/tcp" suffix
+			port := p.Port() // drops "/tcp" suffix
 			if _, dup := seenPorts[port]; !dup {
 				seenPorts[port] = struct{}{}
 				orderedPorts = append(orderedPorts, port)

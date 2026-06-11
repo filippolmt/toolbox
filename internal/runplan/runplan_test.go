@@ -4,24 +4,15 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
-
-// notFoundErr mimics the errdefs "not found" interface so cerrdefs.IsNotFound
-// returns true for it inside Compute. Mirrors internal/container/lifecycle_test.go
-// so the two layers share the same NotFound shape.
-type notFoundErr struct{ msg string }
-
-func (e *notFoundErr) Error() string { return e.msg }
-func (e *notFoundErr) NotFound()     {}
-func (e *notFoundErr) Unwrap() error { return nil }
 
 func TestComputeActionConnectWhenRunning(t *testing.T) {
 	inspect := container.InspectResponse{
-		ContainerJSONBase: &container.ContainerJSONBase{
-			ID:    "abc123",
-			State: &container.State{Running: true},
-		},
+		ID:    "abc123",
+		State: &container.State{Running: true},
 	}
 	op, err := Compute(inspect, nil)
 	if err != nil {
@@ -37,10 +28,8 @@ func TestComputeActionConnectWhenRunning(t *testing.T) {
 
 func TestComputeActionStartWhenStopped(t *testing.T) {
 	inspect := container.InspectResponse{
-		ContainerJSONBase: &container.ContainerJSONBase{
-			ID:    "stopped123",
-			State: &container.State{Running: false},
-		},
+		ID:    "stopped123",
+		State: &container.State{Running: false},
 	}
 	op, err := Compute(inspect, nil)
 	if err != nil {
@@ -55,7 +44,7 @@ func TestComputeActionStartWhenStopped(t *testing.T) {
 }
 
 func TestComputeActionCreateWhenNotFound(t *testing.T) {
-	op, err := Compute(container.InspectResponse{}, &notFoundErr{msg: "no such container"})
+	op, err := Compute(container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,11 +56,11 @@ func TestComputeActionCreateWhenNotFound(t *testing.T) {
 	}
 }
 
-// TestComputeActionCreateWhenNilContainerJSONBase pins the regression: an
-// InspectResponse whose embedded *ContainerJSONBase is nil must route to
-// ActionCreate so callers don't dereference a nil pointer when reading
+// TestComputeActionCreateWhenEmptyInspect pins the regression: a zero
+// InspectResponse (empty ID, nil State) must route to ActionCreate so
+// callers don't act on a half-populated record when reading
 // inspect.ID / inspect.State / inspect.HostConfig.
-func TestComputeActionCreateWhenNilContainerJSONBase(t *testing.T) {
+func TestComputeActionCreateWhenEmptyInspect(t *testing.T) {
 	op, err := Compute(container.InspectResponse{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -10,7 +10,7 @@ package runplan
 
 import (
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
 )
 
 // Action enumerates the three terminal outcomes Compute can return.
@@ -51,15 +51,15 @@ type Op struct {
 
 // Compute derives the Op from a ContainerInspect result.
 //
-// A nil inspect.ContainerJSONBase is treated as "no usable record": the
-// SDK can return that on edge cases (mocks, daemon shape changes), and
-// dereferencing the promoted fields (inspect.ID, inspect.State,
-// inspect.HostConfig) would panic. Both nil-base and NotFound errors
-// route to ActionCreate so the caller falls through to create-fresh
-// instead of touching a half-populated record. Any other inspect error
-// is returned verbatim and the caller should abort.
+// An InspectResponse with an empty ID is treated as "no usable record":
+// the SDK can return that on edge cases (mocks, daemon shape changes),
+// and dispatching ContainerStart / exec on an empty ExistingID would
+// target nothing. Both empty-ID and NotFound errors route to
+// ActionCreate so the caller falls through to create-fresh instead of
+// touching a half-populated record. Any other inspect error is returned
+// verbatim and the caller should abort.
 func Compute(inspect container.InspectResponse, inspectErr error) (Op, error) {
-	hasData := inspectErr == nil && inspect.ContainerJSONBase != nil
+	hasData := inspectErr == nil && inspect.ID != ""
 	if hasData {
 		if inspect.State != nil && inspect.State.Running {
 			return Op{Action: ActionConnect, ExistingID: inspect.ID}, nil

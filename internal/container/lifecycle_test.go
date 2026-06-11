@@ -11,25 +11,15 @@ import (
 	"strings"
 	"testing"
 
-	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
-
-// notFoundError implements the errdefs "not found" interface.
-type notFoundError struct{ msg string }
-
-func (e *notFoundError) Error() string { return e.msg }
-func (e *notFoundError) NotFound()     {}
-func (e *notFoundError) Unwrap() error { return nil }
 
 // mockClient implements the subset of client.APIClient used by the tests.
 // Unmocked methods panic to surface unexpected calls.
@@ -38,77 +28,84 @@ type mockClient struct {
 
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
 	createFn      func(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, name string) (container.CreateResponse, error)
-	startFn       func(ctx context.Context, id string, opts container.StartOptions) error
-	stopFn        func(ctx context.Context, id string, opts container.StopOptions) error
-	removeFn      func(ctx context.Context, id string, opts container.RemoveOptions) error
-	imgInspFn     func(ctx context.Context, id string) (image.InspectResponse, error)
-	imgPullFn     func(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error)
-	listFn        func(ctx context.Context, opts container.ListOptions) ([]container.Summary, error)
-	execInspectFn func(ctx context.Context, execID string) (container.ExecInspect, error)
+	startFn       func(ctx context.Context, id string, opts client.ContainerStartOptions) error
+	stopFn        func(ctx context.Context, id string, opts client.ContainerStopOptions) error
+	removeFn      func(ctx context.Context, id string, opts client.ContainerRemoveOptions) error
+	imgInspFn     func(ctx context.Context, id string) (client.ImageInspectResult, error)
+	imgPullFn     func(ctx context.Context, ref string, opts client.ImagePullOptions) (io.ReadCloser, error)
+	listFn        func(ctx context.Context, opts client.ContainerListOptions) ([]container.Summary, error)
+	execInspectFn func(ctx context.Context, execID string) (client.ExecInspectResult, error)
 }
 
-func (m *mockClient) ContainerInspect(ctx context.Context, id string) (container.InspectResponse, error) {
+func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	if m.inspectFn != nil {
-		return m.inspectFn(ctx, id)
+		inspect, err := m.inspectFn(ctx, id)
+		return client.ContainerInspectResult{Container: inspect}, err
 	}
-	return container.InspectResponse{}, fmt.Errorf("ContainerInspect not mocked")
+	return client.ContainerInspectResult{}, fmt.Errorf("ContainerInspect not mocked")
 }
 
-func (m *mockClient) ContainerCreate(ctx context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, name string) (container.CreateResponse, error) {
+func (m *mockClient) ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
 	if m.createFn != nil {
-		return m.createFn(ctx, cfg, hostCfg, name)
+		resp, err := m.createFn(ctx, options.Config, options.HostConfig, options.Name)
+		return client.ContainerCreateResult{ID: resp.ID, Warnings: resp.Warnings}, err
 	}
-	return container.CreateResponse{}, fmt.Errorf("ContainerCreate not mocked")
+	return client.ContainerCreateResult{}, fmt.Errorf("ContainerCreate not mocked")
 }
 
-func (m *mockClient) ContainerStart(ctx context.Context, id string, opts container.StartOptions) error {
+func (m *mockClient) ContainerStart(ctx context.Context, id string, opts client.ContainerStartOptions) (client.ContainerStartResult, error) {
 	if m.startFn != nil {
-		return m.startFn(ctx, id, opts)
+		return client.ContainerStartResult{}, m.startFn(ctx, id, opts)
 	}
-	return nil
+	return client.ContainerStartResult{}, nil
 }
 
-func (m *mockClient) ContainerStop(ctx context.Context, id string, opts container.StopOptions) error {
+func (m *mockClient) ContainerStop(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error) {
 	if m.stopFn != nil {
-		return m.stopFn(ctx, id, opts)
+		return client.ContainerStopResult{}, m.stopFn(ctx, id, opts)
 	}
-	return nil
+	return client.ContainerStopResult{}, nil
 }
 
-func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts container.RemoveOptions) error {
+func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	if m.removeFn != nil {
-		return m.removeFn(ctx, id, opts)
+		return client.ContainerRemoveResult{}, m.removeFn(ctx, id, opts)
 	}
-	return nil
+	return client.ContainerRemoveResult{}, nil
 }
 
-func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (image.InspectResponse, error) {
+func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
 	if m.imgInspFn != nil {
 		return m.imgInspFn(ctx, id)
 	}
-	return image.InspectResponse{}, fmt.Errorf("ImageInspect not mocked")
+	return client.ImageInspectResult{}, fmt.Errorf("ImageInspect not mocked")
 }
 
-func (m *mockClient) ImagePull(ctx context.Context, ref string, opts image.PullOptions) (io.ReadCloser, error) {
+func (m *mockClient) ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error) {
 	if m.imgPullFn != nil {
-		return m.imgPullFn(ctx, ref, opts)
+		rc, err := m.imgPullFn(ctx, ref, opts)
+		if err != nil {
+			return nil, err
+		}
+		return dockertest.PullResponse{ReadCloser: rc}, nil
 	}
 	// Default: succeed with an empty body so Shell can proceed.
-	return io.NopCloser(bytes.NewReader(nil)), nil
+	return dockertest.PullResponse{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
-func (m *mockClient) ContainerList(ctx context.Context, opts container.ListOptions) ([]container.Summary, error) {
+func (m *mockClient) ContainerList(ctx context.Context, opts client.ContainerListOptions) (client.ContainerListResult, error) {
 	if m.listFn != nil {
-		return m.listFn(ctx, opts)
+		items, err := m.listFn(ctx, opts)
+		return client.ContainerListResult{Items: items}, err
 	}
-	return nil, fmt.Errorf("ContainerList not mocked")
+	return client.ContainerListResult{}, fmt.Errorf("ContainerList not mocked")
 }
 
-func (m *mockClient) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+func (m *mockClient) ExecInspect(ctx context.Context, execID string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
 	if m.execInspectFn != nil {
 		return m.execInspectFn(ctx, execID)
 	}
-	return container.ExecInspect{}, fmt.Errorf("ContainerExecInspect not mocked")
+	return client.ExecInspectResult{}, fmt.Errorf("ExecInspect not mocked")
 }
 
 func (m *mockClient) Close() error { return nil }
@@ -247,10 +244,10 @@ func TestShellContainerNaming(t *testing.T) {
 			var capturedName string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
-				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-					return image.InspectResponse{}, nil
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
 				},
 				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
 					capturedName = name
@@ -283,10 +280,10 @@ func TestShellContainerNaming(t *testing.T) {
 		var second string
 		mock := &mockClient{
 			inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-				return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 			},
-			imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-				return image.InspectResponse{}, nil
+			imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+				return client.ImageInspectResult{}, nil
 			},
 			createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
 				second = name
@@ -315,10 +312,8 @@ func TestShellExecInRunningContainer(t *testing.T) {
 				t.Errorf("inspect called with %q, want %q", id, want)
 			}
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:    "abc123",
-					State: &container.State{Running: true},
-				},
+				ID:    "abc123",
+				State: &container.State{Running: true},
 			}, nil
 		},
 	}
@@ -340,13 +335,11 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:    "stopped123",
-					State: &container.State{Running: false},
-				},
+				ID:    "stopped123",
+				State: &container.State{Running: false},
 			}, nil
 		},
-		startFn: func(_ context.Context, id string, _ container.StartOptions) error {
+		startFn: func(_ context.Context, id string, _ client.ContainerStartOptions) error {
 			startCalled = true
 			if id != "stopped123" {
 				t.Errorf("start called with id=%q, want %q", id, "stopped123")
@@ -381,10 +374,10 @@ func TestShellCreatesNewContainer(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			createCalled = true
@@ -392,7 +385,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 			capturedWorkDir = cfg.WorkingDir
 			return container.CreateResponse{ID: "new123"}, nil
 		},
-		startFn: func(_ context.Context, id string, _ container.StartOptions) error {
+		startFn: func(_ context.Context, id string, _ client.ContainerStartOptions) error {
 			startCalled = true
 			if id != "new123" {
 				t.Errorf("start called with id=%q, want %q", id, "new123")
@@ -446,10 +439,10 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 	var capturedSecurityOpt []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedSecurityOpt = hostCfg.SecurityOpt
@@ -485,10 +478,10 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
@@ -528,10 +521,10 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedBinds = hostCfg.Binds
@@ -563,12 +556,12 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, &notFoundError{msg: "no such image"}
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, &dockertest.NotFoundError{Msg: "no such image"}
 		},
-		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+		imgPullFn: func(_ context.Context, _ string, _ client.ImagePullOptions) (io.ReadCloser, error) {
 			// Pull fails (offline) and there is no local image either.
 			return nil, errors.New("pull failed")
 		},
@@ -594,13 +587,13 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			// Local image exists even though pull failed.
-			return image.InspectResponse{}, nil
+			return client.ImageInspectResult{}, nil
 		},
-		imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+		imgPullFn: func(_ context.Context, _ string, _ client.ImagePullOptions) (io.ReadCloser, error) {
 			return nil, errors.New("offline")
 		},
 		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
@@ -620,14 +613,14 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 func TestStopAndRemove(t *testing.T) {
 	stopCalled := false
 	removeCalled := false
-	var capturedRemoveOpts container.RemoveOptions
+	var capturedRemoveOpts client.ContainerRemoveOptions
 
 	mock := &mockClient{
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
-		removeFn: func(_ context.Context, _ string, opts container.RemoveOptions) error {
+		removeFn: func(_ context.Context, _ string, opts client.ContainerRemoveOptions) error {
 			removeCalled = true
 			capturedRemoveOpts = opts
 			return nil
@@ -651,8 +644,8 @@ func TestStopAndRemove(t *testing.T) {
 
 func TestStopContainerNotFound(t *testing.T) {
 	mock := &mockClient{
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
-			return &notFoundError{msg: "no such container"}
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
+			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
 
@@ -667,7 +660,7 @@ func TestStopAll(t *testing.T) {
 	removed := map[string]bool{}
 
 	mock := &mockClient{
-		listFn: func(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+		listFn: func(_ context.Context, _ client.ContainerListOptions) ([]container.Summary, error) {
 			return []container.Summary{
 				{Names: []string{"/toolbox-project-a-abcdef12"}},
 				{Names: []string{"/toolbox-project-b-11223344"}},
@@ -675,11 +668,11 @@ func TestStopAll(t *testing.T) {
 				{Names: []string{"/unrelated-toolbox-clone"}},
 			}, nil
 		},
-		stopFn: func(_ context.Context, name string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, name string, _ client.ContainerStopOptions) error {
 			stopped[name] = true
 			return nil
 		},
-		removeFn: func(_ context.Context, name string, _ container.RemoveOptions) error {
+		removeFn: func(_ context.Context, name string, _ client.ContainerRemoveOptions) error {
 			removed[name] = true
 			return nil
 		},
@@ -708,14 +701,6 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
-// Verify notFoundError satisfies cerrdefs.IsNotFound.
-func TestNotFoundErrorSatisfiesErrdefs(t *testing.T) {
-	err := &notFoundError{msg: "test"}
-	if !cerrdefs.IsNotFound(err) {
-		t.Fatal("notFoundError should satisfy cerrdefs.IsNotFound")
-	}
-}
-
 // TestShellSetsHostWorkspaceEnv verifies that ContainerCreate receives
 // TOOLBOX_HOST_WORKSPACE set to the absolute host workspace path, so that
 // nested `docker run -v` invocations against the bind-mounted host socket
@@ -729,10 +714,10 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedEnv = cfg.Env
@@ -771,17 +756,15 @@ func TestShellSkipsStopWhenSiblingExecRunning(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:      "abc123",
-					State:   &container.State{Running: true},
-					ExecIDs: []string{"sibling-exec"},
-				},
+				ID:      "abc123",
+				State:   &container.State{Running: true},
+				ExecIDs: []string{"sibling-exec"},
 			}, nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: true}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: true}, nil
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
@@ -806,17 +789,15 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					ID:      "abc123",
-					State:   &container.State{Running: true},
-					ExecIDs: []string{"our-exec"},
-				},
+				ID:      "abc123",
+				State:   &container.State{Running: true},
+				ExecIDs: []string{"our-exec"},
 			}, nil
 		},
-		execInspectFn: func(_ context.Context, _ string) (container.ExecInspect, error) {
-			return container.ExecInspect{Running: false}, nil
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
 		},
-		stopFn: func(_ context.Context, _ string, _ container.StopOptions) error {
+		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
 		},
@@ -883,10 +864,10 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 			var capturedHost *container.HostConfig
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
-				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-					return image.InspectResponse{}, nil
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
 				},
 				createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 					capturedCfg = cfg
@@ -901,7 +882,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 			if capturedCfg == nil || capturedHost == nil {
 				t.Fatal("ContainerCreate was not invoked")
 			}
-			port := nat.Port(tc.wantPort)
+			port := network.MustParsePort(tc.wantPort)
 			if _, ok := capturedCfg.ExposedPorts[port]; !ok {
 				t.Errorf("ExposedPorts missing %q: %v", port, capturedCfg.ExposedPorts)
 			}
@@ -909,7 +890,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 			if len(binds) != 1 {
 				t.Fatalf("want 1 host binding, got %d", len(binds))
 			}
-			if binds[0].HostIP != tc.wantHost {
+			if binds[0].HostIP.String() != tc.wantHost {
 				t.Errorf("HostIP = %q, want %q", binds[0].HostIP, tc.wantHost)
 			}
 			if tc.wantHP != "" && binds[0].HostPort != tc.wantHP {
@@ -933,10 +914,10 @@ func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
 	var capturedHost *container.HostConfig
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
 			capturedCfg = cfg
@@ -959,22 +940,21 @@ func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
 	}
 }
 
-// TestShellInspectNilContainerJSONBase pins the regression: when
-// ContainerInspect returns an InspectResponse whose embedded
-// *ContainerJSONBase is nil (e.g. a future SDK shape change, a misbehaving
-// daemon, or a hand-rolled mock returning the zero value), Shell must not
-// panic on the promoted-field access. inspect.State is a promoted field
-// through the embedded pointer, but so are inspect.ID, inspect.HostConfig,
-// inspect.ExecIDs, etc. Guarding only the running derivation leaves
-// inspect.ID accesses on the start-by-ID branch unprotected. The fix lifts
-// the nil-base check into a single hasInspectData boolean that gates every
-// promoted-field access; a nil base falls through to the create-fresh
-// branch (logically: "no usable container record, must create"). The test
-// asserts: (a) Shell does not panic, (b) the running derivation evaluates
-// to false, (c) warnMissingPublish does not emit a "publish mismatch"
-// warning even when the user passed --publish, (d) Shell falls through to
-// ContainerCreate (no usable inspect data ⇒ create from scratch).
-func TestShellInspectNilContainerJSONBase(t *testing.T) {
+// TestShellInspectZeroValueResponse pins the regression: when
+// ContainerInspect returns a zero-value container.InspectResponse with a
+// nil error (e.g. a future SDK shape change, a misbehaving daemon, or a
+// hand-rolled mock returning the zero value), Shell must not treat the
+// empty record as a usable container. inspect.State is nil and inspect.ID
+// is empty, so the running derivation and the start-by-ID branch would
+// both misfire on a half-populated record. The fix gates every field
+// access on a single has-data check; an empty record falls through to the
+// create-fresh branch (logically: "no usable container record, must
+// create"). The test asserts: (a) Shell does not panic, (b) the running
+// derivation evaluates to false, (c) warnMissingPublish does not emit a
+// "publish mismatch" warning even when the user passed --publish, (d)
+// Shell falls through to ContainerCreate (no usable inspect data ⇒ create
+// from scratch).
+func TestShellInspectZeroValueResponse(t *testing.T) {
 	// Stub the real exec — no Docker attach during the test.
 	_, restore := stubExecShell()
 	defer restore()
@@ -988,25 +968,25 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	createCalled := false
 	startCalled := false
 	mock := &mockClient{
-		// Zero-value InspectResponse — embedded *ContainerJSONBase is naturally nil.
+		// Zero-value InspectResponse — no usable container record.
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, nil
 		},
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
 			createCalled = true
 			return container.CreateResponse{ID: "fresh"}, nil
 		},
-		startFn: func(_ context.Context, _ string, _ container.StartOptions) error {
+		startFn: func(_ context.Context, _ string, _ client.ContainerStartOptions) error {
 			startCalled = true
 			return nil
 		},
 	}
 
-	// Non-empty publish bindings — exercises both the nil-base running
-	// derivation and the warnMissingPublish call path on the nil-base path.
+	// Non-empty publish bindings — exercises both the zero-value running
+	// derivation and the warnMissingPublish call path on the zero-value path.
 	publish := []string{"127.0.0.1:8080:8080"}
 
 	captured := captureStderr(t, func() {
@@ -1016,7 +996,7 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	})
 
 	if !createCalled {
-		t.Fatalf("expected Shell to fall through to ContainerCreate when inspect data is unusable (nil ContainerJSONBase)")
+		t.Fatalf("expected Shell to fall through to ContainerCreate when inspect data is unusable (zero-value InspectResponse)")
 	}
 	if !startCalled {
 		t.Fatalf("expected Shell to call ContainerStart on the freshly created container")
@@ -1025,7 +1005,7 @@ func TestShellInspectNilContainerJSONBase(t *testing.T) {
 	// can also pick up unrelated warnings (mount-skipped, etc.), matching
 	// TestShellPublishMismatchWarning's pattern.
 	if strings.Contains(captured, "publish mismatch") {
-		t.Fatalf("expected no publish-mismatch warning on nil-base path, got stderr: %q", captured)
+		t.Fatalf("expected no publish-mismatch warning on zero-value path, got stderr: %q", captured)
 	}
 }
 
@@ -1054,12 +1034,12 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 			var capturedCmd []string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
-				imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-					return image.InspectResponse{}, nil
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
 				},
-				imgPullFn: func(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+				imgPullFn: func(_ context.Context, _ string, _ client.ImagePullOptions) (io.ReadCloser, error) {
 					return nil, errors.New("offline — use local image")
 				},
 				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {

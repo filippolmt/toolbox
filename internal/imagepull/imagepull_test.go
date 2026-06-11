@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/moby/moby/api/types/jsonstream"
 )
 
 // markerPath stability + HOME-based rooting is load-bearing for the TTL
@@ -97,9 +97,9 @@ func TestIsAuthError(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"jsonmessage 401", &jsonmessage.JSONError{Code: 401, Message: "unauthorized"}, true},
-		{"jsonmessage 403", &jsonmessage.JSONError{Code: 403, Message: "forbidden"}, true},
-		{"jsonmessage 500", &jsonmessage.JSONError{Code: 500, Message: "server error"}, false},
+		{"jsonstream 401", &jsonstream.Error{Code: 401, Message: "unauthorized"}, true},
+		{"jsonstream 403", &jsonstream.Error{Code: 403, Message: "forbidden"}, true},
+		{"jsonstream 500", &jsonstream.Error{Code: 500, Message: "server error"}, false},
 		{"plain unauthorized", errors.New("Error response from daemon: unauthorized: token expired"), true},
 		{"plain denied", errors.New("denied: requested access to the resource is denied"), true},
 		{"plain auth required", errors.New("authentication required"), true},

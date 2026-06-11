@@ -18,7 +18,7 @@ linters:
         # Close() on clients/streams is idiomatic fire-and-forget.
         - (io.Closer).Close
         - (io.ReadCloser).Close
-        - (github.com/docker/docker/client.APIClient).Close
+        - (github.com/moby/moby/client.APIClient).Close
         # Cobra completion generators in RunE — we return nil either way.
         - (*github.com/spf13/cobra.Command).GenBashCompletionV2
         - (*github.com/spf13/cobra.Command).GenZshCompletion

@@ -14,8 +14,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/docker/docker/api/types/build"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
+
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -46,7 +46,7 @@ func BuildImage(ctx context.Context, cli client.APIClient, opts Options) error {
 		return fmt.Errorf("creating build context: %w", err)
 	}
 
-	resp, err := cli.ImageBuild(ctx, buildCtx, build.ImageBuildOptions{
+	resp, err := cli.ImageBuild(ctx, buildCtx, client.ImageBuildOptions{
 		Dockerfile: "Dockerfile",
 		Tags:       []string{opts.Tag},
 		BuildArgs:  mergeBuildArgs(nil),

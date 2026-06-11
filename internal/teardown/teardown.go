@@ -28,8 +28,8 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -55,7 +55,7 @@ const DefaultStopGrace = 2
 // Any other error propagates.
 func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace int) error {
 	timeout := stopGrace
-	stopErr := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
+	_, stopErr := cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout})
 
 	if cerrdefs.IsNotFound(stopErr) {
 		ui.Warning("Container " + name + " not found")
@@ -65,7 +65,7 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 		return fmt.Errorf("failed to stop container %s: %w", name, stopErr)
 	}
 
-	rmErr := cli.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
+	_, rmErr := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
 	// Conflict ("removal already in progress") is tolerated alongside NotFound:
 	// on an AutoRemove container the ContainerStop above may have already
 	// triggered the daemon's auto-remove worker, so a racing explicit remove
@@ -86,22 +86,22 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 // Inspect errors are treated as "no active execs" so a transient daemon
 // hiccup does not strand a container that nobody will ever clean up.
 func HasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool {
-	inspect, err := cli.ContainerInspect(ctx, name)
+	result, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return false
 	}
-	return execsRunning(ctx, cli, inspect)
+	return execsRunning(ctx, cli, result.Container)
 }
 
 // execsRunning is the inspect-driven core of HasActiveExecs, split out so
 // OnShellExit can read both the sibling-exec signal and HostConfig.AutoRemove
 // from a single ContainerInspect instead of inspecting twice.
 func execsRunning(ctx context.Context, cli client.APIClient, inspect container.InspectResponse) bool {
-	if inspect.ContainerJSONBase == nil {
+	if inspect.ID == "" {
 		return false
 	}
 	for _, execID := range inspect.ExecIDs {
-		exec, err := cli.ContainerExecInspect(ctx, execID)
+		exec, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 		if err != nil {
 			continue
 		}
@@ -129,19 +129,20 @@ func OnShellExit(cli client.APIClient, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
 
-	inspect, err := cli.ContainerInspect(ctx, name)
+	result, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil
 	}
+	inspect := result.Container
 
 	if execsRunning(ctx, cli, inspect) {
 		ui.Info("Container " + name + " still has active sessions — leaving it running")
 		return nil
 	}
 
-	// HostConfig is promoted from the embedded *ContainerJSONBase; guard the
-	// pointer before dereferencing so a degenerate inspect can't panic.
-	if inspect.ContainerJSONBase != nil && inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
+	// HostConfig is a pointer field on InspectResponse; guard it before
+	// dereferencing so a degenerate inspect can't panic.
+	if inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
 		return killAutoRemove(ctx, cli, name)
 	}
 	// Transitional fallback for containers created before AutoRemove was set
@@ -157,7 +158,7 @@ func OnShellExit(cli client.APIClient, name string) error {
 // The daemon's auto-remove worker deletes the container afterwards. NotFound
 // means it is already gone (a race with a prior teardown), which is success.
 func killAutoRemove(ctx context.Context, cli client.APIClient, name string) error {
-	if err := cli.ContainerKill(ctx, name, "KILL"); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "KILL"}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("failed to kill container %s: %w", name, err)
 	}
 	ui.Success("Container " + name + " stopped (removing in background)")

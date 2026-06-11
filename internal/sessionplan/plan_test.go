@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
@@ -130,7 +130,7 @@ func TestPlanComposesPorts(t *testing.T) {
 	if len(plan.ExposedPorts) != 2 {
 		t.Errorf("ExposedPorts size = %d, want 2", len(plan.ExposedPorts))
 	}
-	for _, want := range []nat.Port{"7171/tcp", "8080/tcp"} {
+	for _, want := range []network.Port{network.MustParsePort("7171/tcp"), network.MustParsePort("8080/tcp")} {
 		if _, ok := plan.ExposedPorts[want]; !ok {
 			t.Errorf("ExposedPorts missing %s; got %v", want, plan.ExposedPorts)
 		}
@@ -139,7 +139,7 @@ func TestPlanComposesPorts(t *testing.T) {
 			t.Errorf("PortBindings[%s] empty", want)
 			continue
 		}
-		if bindings[0].HostIP != "127.0.0.1" {
+		if bindings[0].HostIP.String() != "127.0.0.1" {
 			t.Errorf("PortBindings[%s][0].HostIP = %q, want 127.0.0.1", want, bindings[0].HostIP)
 		}
 	}
@@ -555,39 +555,32 @@ func TestMergeRejectsBadPort(t *testing.T) {
 func TestMissingPublishPortsTable(t *testing.T) {
 	cases := []struct {
 		name        string
-		wanted      nat.PortMap
-		existing    nat.PortMap
-		nilBase     bool
+		wanted      network.PortMap
+		existing    network.PortMap
 		nilHostCfg  bool
 		wantMissing []string
 	}{
 		{
 			name:        "no_mismatch_when_all_bound",
-			wanted:      nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
-			existing:    nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
+			wanted:      network.PortMap{network.MustParsePort("7171/tcp"): nil, network.MustParsePort("8080/tcp"): nil},
+			existing:    network.PortMap{network.MustParsePort("7171/tcp"): nil, network.MustParsePort("8080/tcp"): nil},
 			wantMissing: nil,
 		},
 		{
 			name:        "missing_port_reported",
-			wanted:      nat.PortMap{"7171/tcp": nil, "8080/tcp": nil},
-			existing:    nat.PortMap{"7171/tcp": nil},
+			wanted:      network.PortMap{network.MustParsePort("7171/tcp"): nil, network.MustParsePort("8080/tcp"): nil},
+			existing:    network.PortMap{network.MustParsePort("7171/tcp"): nil},
 			wantMissing: []string{"8080/tcp"},
 		},
 		{
 			name:        "empty_existing_reports_all",
-			wanted:      nat.PortMap{"7171/tcp": nil},
-			existing:    nat.PortMap{},
+			wanted:      network.PortMap{network.MustParsePort("7171/tcp"): nil},
+			existing:    network.PortMap{},
 			wantMissing: []string{"7171/tcp"},
 		},
 		{
-			name:        "nil_base_returns_nil",
-			wanted:      nat.PortMap{"7171/tcp": nil},
-			nilBase:     true,
-			wantMissing: nil,
-		},
-		{
 			name:        "nil_hostconfig_returns_nil",
-			wanted:      nat.PortMap{"7171/tcp": nil},
+			wanted:      network.PortMap{network.MustParsePort("7171/tcp"): nil},
 			nilHostCfg:  true,
 			wantMissing: nil,
 		},
@@ -596,18 +589,9 @@ func TestMissingPublishPortsTable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var inspect container.InspectResponse
-			switch {
-			case tc.nilBase:
-				inspect = container.InspectResponse{}
-			case tc.nilHostCfg:
+			if !tc.nilHostCfg {
 				inspect = container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{},
-				}
-			default:
-				inspect = container.InspectResponse{
-					ContainerJSONBase: &container.ContainerJSONBase{
-						HostConfig: &container.HostConfig{PortBindings: tc.existing},
-					},
+					HostConfig: &container.HostConfig{PortBindings: tc.existing},
 				}
 			}
 

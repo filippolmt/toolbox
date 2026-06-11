@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 )
 
 // attachMock is a minimal Docker SDK mock for the three exec methods used
@@ -20,44 +18,45 @@ import (
 type attachMock struct {
 	client.APIClient
 
-	createFn func(ctx context.Context, containerID string, opts container.ExecOptions) (container.ExecCreateResponse, error)
-	attachFn func(ctx context.Context, execID string, opts container.ExecAttachOptions) (types.HijackedResponse, error)
-	resizeFn func(ctx context.Context, execID string, opts container.ResizeOptions) error
+	createFn func(ctx context.Context, containerID string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
+	attachFn func(ctx context.Context, execID string, opts client.ExecAttachOptions) (client.HijackedResponse, error)
+	resizeFn func(ctx context.Context, execID string, opts client.ExecResizeOptions) error
 }
 
-func (a *attachMock) ContainerExecCreate(ctx context.Context, id string, opts container.ExecOptions) (container.ExecCreateResponse, error) {
+func (a *attachMock) ExecCreate(ctx context.Context, id string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
 	return a.createFn(ctx, id, opts)
 }
 
-func (a *attachMock) ContainerExecAttach(ctx context.Context, id string, opts container.ExecAttachOptions) (types.HijackedResponse, error) {
-	return a.attachFn(ctx, id, opts)
+func (a *attachMock) ExecAttach(ctx context.Context, id string, opts client.ExecAttachOptions) (client.ExecAttachResult, error) {
+	resp, err := a.attachFn(ctx, id, opts)
+	return client.ExecAttachResult{HijackedResponse: resp}, err
 }
 
-func (a *attachMock) ContainerExecResize(ctx context.Context, id string, opts container.ResizeOptions) error {
+func (a *attachMock) ExecResize(ctx context.Context, id string, opts client.ExecResizeOptions) (client.ExecResizeResult, error) {
 	if a.resizeFn != nil {
-		return a.resizeFn(ctx, id, opts)
+		return client.ExecResizeResult{}, a.resizeFn(ctx, id, opts)
 	}
-	return nil
+	return client.ExecResizeResult{}, nil
 }
 
-func TestExecShell_ContainerExecCreateError(t *testing.T) {
+func TestExecShell_ExecCreateError(t *testing.T) {
 	wantErr := errors.New("create boom")
 	cli := &attachMock{
-		createFn: func(_ context.Context, id string, opts container.ExecOptions) (container.ExecCreateResponse, error) {
+		createFn: func(_ context.Context, id string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
 			if id != "cid-123" {
-				t.Errorf("ContainerExecCreate id = %q, want cid-123", id)
+				t.Errorf("ExecCreate id = %q, want cid-123", id)
 			}
-			if !opts.AttachStdin || !opts.AttachStdout || !opts.AttachStderr || !opts.Tty {
+			if !opts.AttachStdin || !opts.AttachStdout || !opts.AttachStderr || !opts.TTY {
 				t.Errorf("exec opts missing flags: %+v", opts)
 			}
 			if got, want := opts.Cmd, []string{"/bin/zsh"}; !reflect.DeepEqual(got, want) {
 				t.Errorf("exec Cmd = %v, want %v", got, want)
 			}
-			return container.ExecCreateResponse{}, wantErr
+			return client.ExecCreateResult{}, wantErr
 		},
-		attachFn: func(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error) {
-			t.Fatal("ContainerExecAttach should not be called when ExecCreate fails")
-			return types.HijackedResponse{}, nil
+		attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
+			t.Fatal("ExecAttach should not be called when ExecCreate fails")
+			return client.HijackedResponse{}, nil
 		},
 	}
 
@@ -67,17 +66,17 @@ func TestExecShell_ContainerExecCreateError(t *testing.T) {
 	}
 }
 
-func TestExecShell_ContainerExecAttachError(t *testing.T) {
+func TestExecShell_ExecAttachError(t *testing.T) {
 	wantErr := errors.New("attach boom")
 	cli := &attachMock{
-		createFn: func(context.Context, string, container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: "exec-1"}, nil
+		createFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{ID: "exec-1"}, nil
 		},
-		attachFn: func(_ context.Context, id string, _ container.ExecAttachOptions) (types.HijackedResponse, error) {
+		attachFn: func(_ context.Context, id string, _ client.ExecAttachOptions) (client.HijackedResponse, error) {
 			if id != "exec-1" {
-				t.Errorf("ContainerExecAttach id = %q, want exec-1", id)
+				t.Errorf("ExecAttach id = %q, want exec-1", id)
 			}
-			return types.HijackedResponse{}, wantErr
+			return client.HijackedResponse{}, wantErr
 		},
 	}
 
@@ -128,11 +127,11 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 	t.Cleanup(func() { _ = clientConn.Close() })
 
 	cli := &attachMock{
-		createFn: func(context.Context, string, container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: "exec-x"}, nil
+		createFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{ID: "exec-x"}, nil
 		},
-		attachFn: func(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error) {
-			return types.NewHijackedResponse(clientConn, ""), nil
+		attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
+			return client.NewHijackedResponse(clientConn, ""), nil
 		},
 	}
 
@@ -205,13 +204,13 @@ func TestExecShell_ForwardsTermEnv(t *testing.T) {
 	var gotEnv []string
 	wantErr := errors.New("stop after capture")
 	cli := &attachMock{
-		createFn: func(_ context.Context, _ string, opts container.ExecOptions) (container.ExecCreateResponse, error) {
+		createFn: func(_ context.Context, _ string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
 			gotEnv = opts.Env
-			return container.ExecCreateResponse{}, wantErr
+			return client.ExecCreateResult{}, wantErr
 		},
-		attachFn: func(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error) {
+		attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
 			t.Fatal("attach should not be called")
-			return types.HijackedResponse{}, nil
+			return client.HijackedResponse{}, nil
 		},
 	}
 	if err := execShell(context.Background(), cli, "cid", []string{"/bin/zsh"}); !errors.Is(err, wantErr) {
@@ -219,6 +218,6 @@ func TestExecShell_ForwardsTermEnv(t *testing.T) {
 	}
 	want := []string{"TERM=xterm-ghostty", "TERM_PROGRAM=ghostty"}
 	if !reflect.DeepEqual(gotEnv, want) {
-		t.Errorf("ExecOptions.Env = %v, want %v", gotEnv, want)
+		t.Errorf("ExecCreateOptions.Env = %v, want %v", gotEnv, want)
 	}
 }

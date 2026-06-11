@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/jsonmessage"
 	"golang.org/x/term"
 
 	"github.com/filippolmt/toolbox/internal/build"
@@ -82,7 +82,7 @@ func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) {
 // turns an opaque warning into a single-command fix.
 func pull(ctx context.Context, cli client.APIClient, ref string) bool {
 	ui.Info("Checking for image updates: " + ref + "...")
-	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
+	rc, err := cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
 		warnPullError(ref, "image pull failed", err)
 		return false
@@ -102,7 +102,7 @@ func pull(ctx context.Context, cli client.APIClient, ref string) bool {
 
 // warnPullError dispatches between auth-specific guidance and generic
 // "using local image" wording. Detection inspects both the
-// jsonmessage.JSONError code (when the stream carried a structured error)
+// jsonstream.Error code (when the stream carried a structured error)
 // and the error string (when ImagePull surfaced a plain network/auth
 // error before the stream started) — auth signals show up at both layers
 // depending on how the registry rejects the request.
@@ -117,13 +117,13 @@ func warnPullError(ref, prefix string, err error) {
 
 // isAuthError reports whether err denotes an authentication/authorization
 // failure surfaced from the registry. Two signal sources: a structured
-// jsonmessage.JSONError with HTTP 401/403, and the freeform error string
+// jsonstream.Error with HTTP 401/403, and the freeform error string
 // for cases that bypass the stream (e.g. transport-layer rejection from
 // ImagePull itself). String matching is intentionally broad — registries
 // use varied phrasing ("unauthorized", "denied", "authentication
 // required") and a false positive only changes the wording, not behavior.
 func isAuthError(err error) bool {
-	if jerr, ok := errors.AsType[*jsonmessage.JSONError](err); ok {
+	if jerr, ok := errors.AsType[*jsonstream.Error](err); ok {
 		if jerr.Code == 401 || jerr.Code == 403 {
 			return true
 		}

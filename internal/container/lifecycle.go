@@ -23,9 +23,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
@@ -53,14 +52,14 @@ func formatPublishMismatch(plan *sessionplan.SessionPlan, inspect container.Insp
 
 	wantedPorts := make([]string, 0, len(plan.PortBindings))
 	for port := range plan.PortBindings {
-		wantedPorts = append(wantedPorts, string(port))
+		wantedPorts = append(wantedPorts, port.String())
 	}
 	sort.Strings(wantedPorts)
 
 	actual := []string{}
 	if inspect.HostConfig != nil {
 		for port := range inspect.HostConfig.PortBindings {
-			actual = append(actual, string(port))
+			actual = append(actual, port.String())
 		}
 		sort.Strings(actual)
 	}
@@ -79,7 +78,7 @@ func formatPublishMismatch(plan *sessionplan.SessionPlan, inspect container.Insp
 
 // NewClient returns a Docker client configured from the environment.
 func NewClient() (client.APIClient, error) {
-	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	return client.New(client.FromEnv)
 }
 
 // Shell manages the container lifecycle and attaches a zsh session.
@@ -112,7 +111,8 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// inside createAndStart.
 	imageplan.Refresh(ctx, cli, plan.Image)
 
-	inspect, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName)
+	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
+	inspect := inspectResult.Container
 	op, opErr := runplan.Compute(inspect, inspectErr)
 	if opErr != nil {
 		return fmt.Errorf("failed to inspect container: %w", opErr)
@@ -153,7 +153,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 
 	case runplan.ActionStart:
 		ui.Info("Starting stopped container " + plan.ContainerName + "...")
-		if startErr := cli.ContainerStart(ctx, op.ExistingID, container.StartOptions{}); startErr != nil {
+		if _, startErr := cli.ContainerStart(ctx, op.ExistingID, client.ContainerStartOptions{}); startErr != nil {
 			return "", fmt.Errorf("failed to start container: %w", startErr)
 		}
 		return op.ExistingID, nil
@@ -189,8 +189,9 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 
 	ui.Info("Creating container " + plan.ContainerName + "...")
-	resp, createErr := cli.ContainerCreate(ctx,
-		&container.Config{
+	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name: plan.ContainerName,
+		Config: &container.Config{
 			Image:        plan.Image.Ref,
 			Tty:          true,
 			OpenStdin:    true,
@@ -200,7 +201,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
 		},
-		&container.HostConfig{
+		HostConfig: &container.HostConfig{
 			Binds:        binds,
 			GroupAdd:     identity.GroupAdd,
 			PortBindings: plan.PortBindings,
@@ -212,15 +213,12 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			// the user's prompt is not blocked on the unmount. See teardown.
 			AutoRemove: true,
 		},
-		nil, // network config
-		nil, // platform
-		plan.ContainerName,
-	)
+	})
 	if createErr != nil {
 		return "", fmt.Errorf("failed to create container: %w", createErr)
 	}
 
-	if startErr := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); startErr != nil {
+	if _, startErr := cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); startErr != nil {
 		return "", fmt.Errorf("failed to start container: %w", startErr)
 	}
 	ui.Success("Container started")
@@ -234,14 +232,14 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 // so a missing/stopped proximo stack degrades to "names unreachable" rather
 // than failing — or spamming — the shell.
 func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []string) []string {
-	args := filters.NewArgs(filters.Arg("label", proximo.HostsLabel))
-	list, err := cli.ContainerList(ctx, container.ListOptions{Filters: args})
+	args := make(client.Filters).Add("label", proximo.HostsLabel)
+	list, err := cli.ContainerList(ctx, client.ContainerListOptions{Filters: args})
 	if err != nil {
 		ui.Warning("proximo: host discovery failed, .test names may be unreachable: " + err.Error())
 		return base
 	}
 	var labels []string
-	for _, c := range list {
+	for _, c := range list.Items {
 		if v := c.Labels[proximo.HostsLabel]; v != "" {
 			labels = append(labels, v)
 		}
@@ -275,15 +273,15 @@ func StopByName(ctx context.Context, cli client.APIClient, name string) error {
 // Failures on a single container don't short-circuit the rest — partial
 // cleanup beats fail-fast when `--all` is meant to be a bulk sweep.
 func StopAll(ctx context.Context, cli client.APIClient) error {
-	args := filters.NewArgs(filters.Arg("name", "toolbox"))
-	list, err := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	args := make(client.Filters).Add("name", "toolbox")
+	list, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: args})
 	if err != nil {
 		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	found := 0
 	var errs []error
-	for _, c := range list {
+	for _, c := range list.Items {
 		if len(c.Names) == 0 {
 			continue
 		}

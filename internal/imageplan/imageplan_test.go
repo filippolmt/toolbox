@@ -7,37 +7,38 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // mockClient implements the subset of client.APIClient used by Ensure.
 type mockClient struct {
 	client.APIClient
-	imgInspFn func(ctx context.Context, id string) (image.InspectResponse, error)
+	imgInspFn func(ctx context.Context, id string) (client.ImageInspectResult, error)
 	pullCount int
 	pullFn    func() (io.ReadCloser, error)
 }
 
-func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (image.InspectResponse, error) {
+func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
 	if m.imgInspFn != nil {
 		return m.imgInspFn(ctx, id)
 	}
-	return image.InspectResponse{}, errors.New("ImageInspect not mocked")
+	return client.ImageInspectResult{}, errors.New("ImageInspect not mocked")
 }
 
-func (m *mockClient) ContainerCreate(_ context.Context, _ *container.Config, _ *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, _ string) (container.CreateResponse, error) {
-	return container.CreateResponse{}, errors.New("ContainerCreate must not be called from imageplan.Ensure")
+func (m *mockClient) ContainerCreate(_ context.Context, _ client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
+	return client.ContainerCreateResult{}, errors.New("ContainerCreate must not be called from imageplan.Ensure")
 }
-func (m *mockClient) ImagePull(_ context.Context, _ string, _ image.PullOptions) (io.ReadCloser, error) {
+func (m *mockClient) ImagePull(_ context.Context, _ string, _ client.ImagePullOptions) (client.ImagePullResponse, error) {
 	m.pullCount++
 	if m.pullFn != nil {
-		return m.pullFn()
+		rc, err := m.pullFn()
+		if err != nil {
+			return nil, err
+		}
+		return dockertest.PullResponse{ReadCloser: rc}, nil
 	}
 	return nil, errors.New("ImagePull must not be called from imageplan.Ensure")
 }
@@ -45,8 +46,8 @@ func (m *mockClient) Close() error { return nil }
 
 func TestEnsureNoOpWhenImagePresent(t *testing.T) {
 	mock := &mockClient{
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, nil
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
 		},
 	}
 	if err := Ensure(context.Background(), mock, sessionplan.Image{Ref: "ghcr.io/example:latest"}); err != nil {
@@ -87,8 +88,8 @@ func TestRefreshPullPolicy(t *testing.T) {
 
 func TestEnsureRegistryMissingErrors(t *testing.T) {
 	mock := &mockClient{
-		imgInspFn: func(_ context.Context, _ string) (image.InspectResponse, error) {
-			return image.InspectResponse{}, errors.New("no such image")
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, errors.New("no such image")
 		},
 	}
 	err := Ensure(context.Background(), mock, sessionplan.Image{Ref: "ghcr.io/example:latest"})
