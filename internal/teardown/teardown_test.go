@@ -8,16 +8,9 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
-
-// notFoundErr satisfies cerrdefs.IsNotFound — mirrors the stub in
-// internal/container/lifecycle_test.go and internal/runplan/runplan_test.go
-// so all three layers share the same NotFound shape.
-type notFoundErr struct{ msg string }
-
-func (e *notFoundErr) Error() string { return e.msg }
-func (e *notFoundErr) NotFound()     {}
-func (e *notFoundErr) Unwrap() error { return nil }
 
 // conflictErr satisfies cerrdefs.IsConflict — models the daemon's "removal
 // already in progress" response when an explicit remove races AutoRemove.
@@ -104,7 +97,7 @@ func TestStopOneStopsAndRemoves(t *testing.T) {
 func TestStopOneSwallowsNotFound(t *testing.T) {
 	mock := &mockClient{
 		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
-			return &notFoundErr{msg: "no such container"}
+			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
 	if err := StopOne(context.Background(), mock, "missing", DefaultStopGrace); err != nil {
@@ -269,7 +262,7 @@ func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
 			return client.ExecInspectResult{Running: false}, nil
 		},
 		killFn: func(_ context.Context, _ string, _ string) error {
-			return &notFoundErr{msg: "no such container"}
+			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
 	if err := OnShellExit(mock, "toolbox-x"); err != nil {
@@ -280,7 +273,7 @@ func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
 func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundErr{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			t.Fatal("missing container must be a no-op")

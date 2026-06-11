@@ -6,29 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"os"
 	"slices"
 	"strings"
 	"testing"
 
-	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
-
-// notFoundError implements the errdefs "not found" interface.
-type notFoundError struct{ msg string }
-
-func (e *notFoundError) Error() string { return e.msg }
-func (e *notFoundError) NotFound()     {}
-func (e *notFoundError) Unwrap() error { return nil }
 
 // mockClient implements the subset of client.APIClient used by the tests.
 // Unmocked methods panic to surface unexpected calls.
@@ -44,16 +35,6 @@ type mockClient struct {
 	imgPullFn     func(ctx context.Context, ref string, opts client.ImagePullOptions) (io.ReadCloser, error)
 	listFn        func(ctx context.Context, opts client.ContainerListOptions) ([]container.Summary, error)
 	execInspectFn func(ctx context.Context, execID string) (client.ExecInspectResult, error)
-}
-
-// fakePullResponse adapts a plain io.ReadCloser to client.ImagePullResponse.
-type fakePullResponse struct {
-	io.ReadCloser
-}
-
-func (fakePullResponse) Wait(context.Context) error { return nil }
-func (fakePullResponse) JSONMessages(context.Context) iter.Seq2[jsonstream.Message, error] {
-	return func(func(jsonstream.Message, error) bool) {}
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -106,10 +87,10 @@ func (m *mockClient) ImagePull(ctx context.Context, ref string, opts client.Imag
 		if err != nil {
 			return nil, err
 		}
-		return fakePullResponse{rc}, nil
+		return dockertest.PullResponse{ReadCloser: rc}, nil
 	}
 	// Default: succeed with an empty body so Shell can proceed.
-	return fakePullResponse{io.NopCloser(bytes.NewReader(nil))}, nil
+	return dockertest.PullResponse{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
 func (m *mockClient) ContainerList(ctx context.Context, opts client.ContainerListOptions) (client.ContainerListResult, error) {
@@ -263,7 +244,7 @@ func TestShellContainerNaming(t *testing.T) {
 			var capturedName string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
 				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, nil
@@ -299,7 +280,7 @@ func TestShellContainerNaming(t *testing.T) {
 		var second string
 		mock := &mockClient{
 			inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-				return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+				return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 			},
 			imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 				return client.ImageInspectResult{}, nil
@@ -332,7 +313,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 			}
 			return container.InspectResponse{
 				ID:    "abc123",
-				State: &container.State{Status: container.StateRunning, Running: true},
+				State: &container.State{Running: true},
 			}, nil
 		},
 	}
@@ -355,7 +336,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:    "stopped123",
-				State: &container.State{Status: container.StateExited},
+				State: &container.State{Running: false},
 			}, nil
 		},
 		startFn: func(_ context.Context, id string, _ client.ContainerStartOptions) error {
@@ -393,7 +374,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -458,7 +439,7 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 	var capturedSecurityOpt []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -497,7 +478,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -540,7 +521,7 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -575,10 +556,10 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
-			return client.ImageInspectResult{}, &notFoundError{msg: "no such image"}
+			return client.ImageInspectResult{}, &dockertest.NotFoundError{Msg: "no such image"}
 		},
 		imgPullFn: func(_ context.Context, _ string, _ client.ImagePullOptions) (io.ReadCloser, error) {
 			// Pull fails (offline) and there is no local image either.
@@ -606,7 +587,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			// Local image exists even though pull failed.
@@ -664,7 +645,7 @@ func TestStopAndRemove(t *testing.T) {
 func TestStopContainerNotFound(t *testing.T) {
 	mock := &mockClient{
 		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
-			return &notFoundError{msg: "no such container"}
+			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
 
@@ -720,14 +701,6 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
-// Verify notFoundError satisfies cerrdefs.IsNotFound.
-func TestNotFoundErrorSatisfiesErrdefs(t *testing.T) {
-	err := &notFoundError{msg: "test"}
-	if !cerrdefs.IsNotFound(err) {
-		t.Fatal("notFoundError should satisfy cerrdefs.IsNotFound")
-	}
-}
-
 // TestShellSetsHostWorkspaceEnv verifies that ContainerCreate receives
 // TOOLBOX_HOST_WORKSPACE set to the absolute host workspace path, so that
 // nested `docker run -v` invocations against the bind-mounted host socket
@@ -741,7 +714,7 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -784,7 +757,7 @@ func TestShellSkipsStopWhenSiblingExecRunning(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:      "abc123",
-				State:   &container.State{Status: container.StateRunning, Running: true},
+				State:   &container.State{Running: true},
 				ExecIDs: []string{"sibling-exec"},
 			}, nil
 		},
@@ -817,7 +790,7 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:      "abc123",
-				State:   &container.State{Status: container.StateRunning, Running: true},
+				State:   &container.State{Running: true},
 				ExecIDs: []string{"our-exec"},
 			}, nil
 		},
@@ -891,7 +864,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 			var capturedHost *container.HostConfig
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
 				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, nil
@@ -941,7 +914,7 @@ func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
 	var capturedHost *container.HostConfig
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -1061,7 +1034,7 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 			var capturedCmd []string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 				},
 				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, nil

@@ -378,6 +378,30 @@ func normalizeWorkspace(workspace string) string {
 
 // --- Port Parsing ---
 
+// defaultHostIP keeps OAuth callbacks loopback-only: publish specs with no
+// explicit host IP bind 127.0.0.1, not 0.0.0.0, so a callback port is never
+// exposed to the LAN.
+var defaultHostIP = netip.MustParseAddr("127.0.0.1")
+
+// natMappingToBinding converts a go-connections publish mapping (kept solely
+// because nat.ParsePortSpec has no moby equivalent) into the moby port +
+// binding pair, applying the loopback host-IP default. This is the only
+// nat→moby seam in the codebase.
+func natMappingToBinding(m nat.PortMapping) (network.Port, network.PortBinding, error) {
+	p, err := network.ParsePort(string(m.Port))
+	if err != nil {
+		return network.Port{}, network.PortBinding{}, err
+	}
+	hostIP := defaultHostIP
+	if m.Binding.HostIP != "" {
+		hostIP, err = netip.ParseAddr(m.Binding.HostIP)
+		if err != nil {
+			return network.Port{}, network.PortBinding{}, err
+		}
+	}
+	return p, network.PortBinding{HostIP: hostIP, HostPort: m.Binding.HostPort}, nil
+}
+
 // parsePublishSpecs parses "docker run -p"-style publish specs into
 // Docker's ExposedPorts + PortBindings, and the ordered slice of unique
 // container ports (insertion order; deduplicated) used by callers that
@@ -399,19 +423,12 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 			return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, err)
 		}
 		for _, m := range mappings {
-			p, perr := network.ParsePort(string(m.Port))
+			p, binding, perr := natMappingToBinding(m)
 			if perr != nil {
 				return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, perr)
 			}
 			exposed[p] = struct{}{}
-			hostIP := netip.MustParseAddr("127.0.0.1")
-			if m.Binding.HostIP != "" {
-				hostIP, perr = netip.ParseAddr(m.Binding.HostIP)
-				if perr != nil {
-					return nil, nil, nil, fmt.Errorf("invalid --publish %q: %w", spec, perr)
-				}
-			}
-			bindings[p] = append(bindings[p], network.PortBinding{HostIP: hostIP, HostPort: m.Binding.HostPort})
+			bindings[p] = append(bindings[p], binding)
 
 			port := p.Port() // drops "/tcp" suffix
 			if _, dup := seenPorts[port]; !dup {

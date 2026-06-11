@@ -5,21 +5,14 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
-
-// notFoundErr mimics the errdefs "not found" interface so cerrdefs.IsNotFound
-// returns true for it inside Compute. Mirrors internal/container/lifecycle_test.go
-// so the two layers share the same NotFound shape.
-type notFoundErr struct{ msg string }
-
-func (e *notFoundErr) Error() string { return e.msg }
-func (e *notFoundErr) NotFound()     {}
-func (e *notFoundErr) Unwrap() error { return nil }
 
 func TestComputeActionConnectWhenRunning(t *testing.T) {
 	inspect := container.InspectResponse{
 		ID:    "abc123",
-		State: &container.State{Status: container.StateRunning, Running: true},
+		State: &container.State{Running: true},
 	}
 	op, err := Compute(inspect, nil)
 	if err != nil {
@@ -36,7 +29,7 @@ func TestComputeActionConnectWhenRunning(t *testing.T) {
 func TestComputeActionStartWhenStopped(t *testing.T) {
 	inspect := container.InspectResponse{
 		ID:    "stopped123",
-		State: &container.State{Status: container.StateExited},
+		State: &container.State{Running: false},
 	}
 	op, err := Compute(inspect, nil)
 	if err != nil {
@@ -51,7 +44,7 @@ func TestComputeActionStartWhenStopped(t *testing.T) {
 }
 
 func TestComputeActionCreateWhenNotFound(t *testing.T) {
-	op, err := Compute(container.InspectResponse{}, &notFoundErr{msg: "no such container"})
+	op, err := Compute(container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

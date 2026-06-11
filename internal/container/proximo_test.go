@@ -8,6 +8,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -35,7 +36,7 @@ func TestShellProximoAugmentsExtraHosts(t *testing.T) {
 	var capturedHosts []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
@@ -77,7 +78,7 @@ func TestShellNonProximoSkipsDiscovery(t *testing.T) {
 	var capturedHosts []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-			return container.InspectResponse{}, &notFoundError{msg: "no such container"}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil

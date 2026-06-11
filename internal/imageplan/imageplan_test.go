@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
-	"iter"
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -20,16 +19,6 @@ type mockClient struct {
 	imgInspFn func(ctx context.Context, id string) (client.ImageInspectResult, error)
 	pullCount int
 	pullFn    func() (io.ReadCloser, error)
-}
-
-// fakePullResponse adapts a plain io.ReadCloser to client.ImagePullResponse.
-type fakePullResponse struct {
-	io.ReadCloser
-}
-
-func (fakePullResponse) Wait(context.Context) error { return nil }
-func (fakePullResponse) JSONMessages(context.Context) iter.Seq2[jsonstream.Message, error] {
-	return func(func(jsonstream.Message, error) bool) {}
 }
 
 func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
@@ -49,7 +38,7 @@ func (m *mockClient) ImagePull(_ context.Context, _ string, _ client.ImagePullOp
 		if err != nil {
 			return nil, err
 		}
-		return fakePullResponse{rc}, nil
+		return dockertest.PullResponse{ReadCloser: rc}, nil
 	}
 	return nil, errors.New("ImagePull must not be called from imageplan.Ensure")
 }
