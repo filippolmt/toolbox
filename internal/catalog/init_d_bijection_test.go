@@ -24,6 +24,8 @@ import (
 var systemInitScripts = map[string]struct{}{
 	// `toolbox shell -B` loopback bridge — host-CLI flag, not a tool toggle.
 	"70-loopback-bridge.sh": {},
+	// LSP version-drift heal — system hygiene, not a tool toggle.
+	"15-npm-lsp-dedupe.sh": {},
 }
 
 // TestCatalogInitDBijection enforces strict set-equality between
