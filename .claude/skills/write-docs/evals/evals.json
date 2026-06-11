@@ -1,0 +1,23 @@
+{
+  "skill_name": "write-docs",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "ho appena mergiato (su un altro branch, fidati delle spec qui) la chiave `pull_timeout` in .toolbox.yaml: stringa durata Go tipo \"30s\", default \"30s\", validata da config.ValidatePullTimeout, limita il round-trip del pull dell'immagine; override env TOOLBOX_PULL_TIMEOUT. aggiorna la documentazione",
+      "expected_output": "Row in docs/configuration.md Key reference + section (or extension of Image selection), README config-index row, TOOLBOX_* table row, docs/README.md index updated if a new ## was added, no duplication, links resolve",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "utenti con registry_mirror configurato beccano 'manifest unknown' al primo toolbox shell quando il mirror non ha ancora copiato l'immagine. fix: warm-up del pull-through cache, oppure pull: never + docker pull manuale dal mirror. documentalo",
+      "expected_output": "New ## section in docs/troubleshooting.md (symptom → cause → fix) linking configuration.md#image-selection, docs/README.md index row added, no content duplicated into configuration.md",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "dove documento il fatto che socat è installato nel base layer e non ha opt-out? aggiungilo se manca",
+      "expected_output": "Recognizes the fact already lives in docs/commands.md loopback-bridge limitations (and image-build internals socat mention); answers with the location, adds NO duplicate content",
+      "files": []
+    }
+  ]
+}
