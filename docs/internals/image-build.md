@@ -1,0 +1,92 @@
+# Image build internals
+
+Maintainer notes on how the runtime image is built: Dockerfile layout, layer ordering, version pinning, and the build-time decisions behind individual tools. User-facing image knobs (`image`, `registry_mirror`, `pull`) live in [configuration](../configuration.md#image-selection).
+
+## Build layout: parallel fetch stages + frequency-ordered tail
+
+The Dockerfile is structured for minimal rebuild time, not for linear readability:
+
+- **Every static-binary tool lives in its own `fetch-<tool>` stage** (parent: `fetch-base`, a `debian:bookworm-slim` with curl/CA/git). Artefacts land under `/out` mirroring the final filesystem; the final stage imports them with `COPY --link --from=fetch-<tool> /out/ /`. Consequences: cold builds download all tools in parallel; a Renovate bump of one tool re-runs only its stage + COPY (never the tail, `--link` layers are independent of parent changes); helper packages a fetch stage installs (unzip, python3, jq) never reach the final image.
+- **Final-stage RUN layers (apt/pip/npm — can't fan out) are ordered rare→frequent** by measured Renovate cadence (≈6-month window: claude-code and graphifyy ~25 bumps each, pnpm 11, codex/gcloud/oci 6, playwright 2). Heavy+rare first (azure, oci, playwright install-deps, zsh), frequent npm/pip CLIs last, so the weekly claude-code bump rebuilds only a few cheap npm layers instead of gcloud+go+azure+graphify (~10 min → ~2-3 min). Re-measure with `git log --since=… --pretty=%s -- internal/build/assets/Dockerfile` before reshuffling.
+- **`make build` seeds from the CI registry cache** (`ghcr.io/filippolmt/toolbox:buildcache-main`, written by `docker-publish.yml` with `mode=max`, multi-arch — includes the arm64 rtk cargo build). First build on a fresh machine ≈ a layer pull. Cache-import failures are warnings, so offline builds still work.
+- Version checks (`<tool> --version`) run **inside the fetch stage** — they catch wrong-arch / GLIBC-mismatch before the smoke test, same as the old in-layer checks.
+
+## Host UID mapping
+
+The CLI runs the container with `--user $(id -u):$(id -g)`. Because the runtime UID rarely matches the baked `toolbox` user (UID 1000), `/home/toolbox` is made world-writable in the image. Don't revert to a fixed UID without understanding why — host file ownership would invert and writes inside `~/.toolbox/` would fail for anyone whose host UID isn't 1000.
+
+## Passwordless sudo
+
+The base apt layer installs `sudo`, and the user-setup layer drops `/etc/sudoers.d/toolbox` with `ALL ALL=(ALL:ALL) NOPASSWD: ALL` (`!requiretty`, `!fqdn`). The runtime UID is the host's and rarely matches the baked `toolbox` user, so the rule is deliberately UID-agnostic — it matches whatever UID the entrypoint injects into `/etc/passwd`. This lets `sudo apt-get update && sudo apt install …` (or any root op) work inside a running container without baking the tool into the image (apt lists aren't baked, so `update` runs first). Safe because the container is `AutoRemove` (see [Container teardown](container-lifecycle.md#container-teardown)): everything installed at runtime vanishes on exit. **Caveat:** sudo writing into bind-mounted host paths (`/workspace`, `~/.toolbox/*`) produces `root:root` files on the host — escalate for in-container/system state, not for editing mounted project files. `visudo -cf` validates the drop-in at build; the smoke test asserts the `sudo` binary is present and setuid root.
+
+## Docker CLI checksum
+
+The `fetch-docker` stage of `internal/build/assets/Dockerfile` installs the static Docker CLI binary without a SHA256 verification step because Docker doesn't publish `.sha256` files for those releases. Version pin + HTTPS is the only guard. Tracked as accepted risk T-01-08.
+
+## Tool version pinning
+
+Every external binary in the Dockerfile is pinned by version + SHA256 (exceptions: Docker CLI — see above — and gcloud, which uses a Google APT repo). Renovate bumps them. Adding a new tool is now a 2-edit (or 3-edit when a runtime init script is needed) operation:
+
+1. New row in `internal/catalog/catalog.go` `Entries`.
+2. New install `RUN` block in `internal/build/assets/Dockerfile`.
+3. (optional) New `init.d/<NN>-<tool>.sh` if `InitScript` is set on the catalog row.
+
+There is no per-tool opt-out: every CLI is installed unconditionally. The `ARG INSTALL_<TOOL>` build-arg pattern was removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Use `inherit_host_auth:` in `.toolbox.yaml` to share host credentials with the container — see [inherit-host-auth](../configuration.md#inherit-host-auth).
+
+## rtk arm64 is built from source
+
+Dockerfile `rtk-builder` stage + final-stage `COPY --link`. Upstream only ships `aarch64-unknown-linux-gnu` linked against GLIBC 2.39, but the base image (`node:24-bookworm-slim`) ships GLIBC 2.36 — the prebuilt binary aborts with `'GLIBC_2.39' not found`. There is no `aarch64-unknown-linux-musl` release.
+
+Fix: multi-stage build. A `rust:1-slim-bookworm` stage runs `cargo install --git rtk-ai/rtk --tag v${RTK_VERSION} --locked` against the bookworm sysroot (so the resulting binary ABI-matches the runtime), version-checks it in-stage, and the final stage imports it with a single `COPY --link --chmod=0755`. The same stage handles the amd64 tarball download too.
+
+The base image can't move to Debian trixie yet because the Microsoft Azure CLI apt repo currently has no trixie suite.
+
+## Rust base image tag scheme
+
+`<ver>-slim-<distro>`, not `<ver>-<distro>-slim`. Docker Hub publishes `rust:1-slim-bookworm` (correct) but **not** `rust:1-bookworm-slim` (404). PR #89 hit this — the rtk-builder stage failed at image-pull time. When bumping or referencing the rust base, use `<ver>-slim-<distro>` (or bare `<ver>-slim` for the default trixie variant when we eventually move).
+
+## Slim Rust images ship no `curl` / `ca-certificates`
+
+`rust:1-slim-bookworm` contains cargo + git but nothing to fetch tarballs with. The rtk-builder stage installs them via apt before the amd64 tarball path. If you copy the pattern for another tool (e.g. building a Rust binary from source), replicate the apt install — it doesn't propagate from the base.
+
+## Homebrew
+
+Installed via shallow tag clone (`ARG HOMEBREW_VERSION`) at the **default Linux prefix** `/home/linuxbrew/.linuxbrew` — bottles (pre-built binaries) only work there; any other prefix forces source builds, explicitly unsupported upstream ("pick another prefix at your peril"). The official installer script is unusable in a Dockerfile `RUN`: it refuses root and clones unpinned `main`. The layer reproduces the installer's layout manually (repo at `…/Homebrew` + `bin/brew` symlink) and ships the pre-built `_brew` zsh completion from the clone.
+
+Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) because `~/.gitconfig` may be a read-only host mount.
+
+Runtime semantics:
+
+- **Ephemeral installs** — `brew install` writes into the non-mounted prefix; everything vanishes on container exit, exactly like `sudo apt install`. Intentional: no `~/.toolbox/brew` bind (a potentially multi-GB prefix over a macOS bind mount would be slow and defeats the disposable-workspace model).
+- **First `brew install` downloads Portable Ruby + formula API JSON** (~30–60 s, network required) — once per container, since containers are AutoRemove-ephemeral.
+- `HOMEBREW_NO_ANALYTICS=1` + `HOMEBREW_NO_AUTO_UPDATE=1` baked in image ENV (privacy + pin-everything policy); overridable per-session.
+- Debian is Homebrew **Tier 2** (fully functional, just outside upstream's Tier 1 CI matrix, which is Ubuntu). Bottles need glibc ≥ 2.35; bookworm ships 2.36.
+- The clone is shallow: `brew update` instructs `git fetch --unshallow` first. Acceptable — the version is image-pinned and auto-update is off; the message is self-explanatory for users who insist.
+
+PATH: image `ENV` prepends `…/.linuxbrew/bin:…/.linuxbrew/sbin` (covers non-interactive `docker exec`); interactive zsh additionally evals `brew shellenv` for `HOMEBREW_PREFIX`/`MANPATH`/`INFOPATH` (idempotent w.r.t. the ENV PATH entry). Private GitLab taps authenticate via the glab credential helper — see [GitLab git credential helper (glab)](shell-start.md#gitlab-git-credential-helper-glab).
+
+## DO_NOT_TRACK + claude wrapper
+
+Image sets `ENV DO_NOT_TRACK=1` ([consoledonottrack.com](https://consoledonottrack.com) convention) — honored by bun, playwright, and most JS toolchains users run inside the container (next, astro, turbo, …). Claude Code honors it too, but as a **telemetry umbrella**: it also shuts down the Statsig channel that doubles as feature-flag delivery, which breaks Remote Control and preview rollouts (`/doctor` reports "Feature-flag evaluation enabled (disabled by DO_NOT_TRACK)"). Same failure mode as `DISABLE_TELEMETRY` — see the "Claude Code env knobs" comment block in the Dockerfile for why that flag is intentionally unset.
+
+Fix: the claude install layer replaces the npm `/usr/local/bin/claude` symlink with a `#!/bin/sh` wrapper that does `exec env -u DO_NOT_TRACK <real-cli> "$@"` — the var is stripped for the claude process only, everything else in the container stays opted out. Don't "simplify" the wrapper back to a plain symlink; the smoke test (`claude DO_NOT_TRACK wrapper`) asserts the `env -u` line is present.
+
+Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
+
+## Two Docker version streams
+
+`DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); `github.com/docker/docker` in `go.mod` is the SDK the CLI launcher uses (pinned to the highest v28.x `+incompatible` tag, since upstream publishes no v29 Go module). The client calls `client.WithAPIVersionNegotiation()` so API drift between the two is expected and handled. Don't try to "align" them numerically.
+
+## Tools removal
+
+The `tools:` block in `.toolbox.yaml` and the `ARG INSTALL_<TOOL>` Dockerfile mechanism are removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Every user runs the same canonical image (`ghcr.io/filippolmt/toolbox:latest`) — the per-tool opt-out, the local-hash image build, and the catalog-driven image hash are all gone.
+
+If your config still has a `tools:` block, the loader emits a one-time warning and ignores it. Delete the block to silence the warning.
+
+## Renovate automerge
+
+The grouped deps PR (`matchPackageNames: ["*"]`) merges daily in the 06:00–09:59 Europe/Rome window, Renovate-side (`platformAutomerge: false`, `automergeType: pr`). Three deliberate choices:
+
+- **Branch updates are overnight-only** (`schedule: ["after 11pm", "before 5am"]` on the rule + top-level `updateNotScheduled: false`). Without this, daytime bumps rebased the PR right before/inside the merge window, docker-ci (~20–40 min) was still pending when Renovate's in-window run checked, and the merge slipped to the next day (~20% of grouped PRs missed the window, manual-merged in the afternoon). Quiet branch by 05:00 → checks green by 06:00 → in-window merge.
+- **`platformAutomerge` stays `false`**: GitHub native auto-merge ignores `automergeSchedule` and merges at any hour — tried and reverted in `3b8d5f7`; morning-only merges are wanted.
+- **docker-ci is NOT a required status check in the `main-protection` ruleset** (required: `lint`, `test`, `renovate-validate`). docker-ci has a `paths:` filter (`internal/build/assets/**`) plus a dynamic matrix; a ruleset-required check that never reports deadlocks every PR that doesn't touch those paths, and rulesets have no conditional required checks. The red-PR gate lives in Renovate instead: default `ignoreTests: false` means Renovate only automerges a fully green PR, and deps PRs always touch the Dockerfile so docker-ci always runs on them. Residual exposure: a human hastily merging a red docker-ci PR by hand — accepted. If that ever bites, the fix is the always-run gate-job pattern (drop the `paths:` filter, add a final `ci-ok` job that succeeds immediately when no relevant path changed, and require that job).

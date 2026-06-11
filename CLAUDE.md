@@ -21,9 +21,9 @@ Guidance for Claude Code on this repo.
 
 Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.
 
-`make build` overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream one.
+`make build` overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image — restore/interaction details in [image selection](docs/configuration.md#image-selection).
 
-Repo-local SDD: `./toolbox sdd list` shows pinned skill packs; `./toolbox sdd init <name>` wires the current repo (`.toolbox.yaml` opt-in + `.gitignore` fence from `Skill.GitignoreEntries`).
+Repo-local SDD: `./toolbox sdd list` / `./toolbox sdd init <name>` — see [docs/sdd.md](docs/sdd.md).
 
 **Pre-push validation: use the `/verify` skill.** Mirrors `.github/workflows/ci.yml`. Never invoke `go test` / `golangci-lint` directly — host has no Go.
 
@@ -33,9 +33,9 @@ Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `se
 
 Adding a CLI to the image: use the `add-cli` skill — it covers all required edits (Dockerfile layer + ARG + `internal/catalog` `Entries` row + smoke bijection + Renovate + optional `~/.toolbox/<tool>` mount) and finishes with `/verify`. No per-tool opt-out (see `.claude/rules/image-build.md`).
 
-Pipeline seams (config plan, mount plan, session plan, tool catalog, init sequence) — read package code + `docs/runtime-notes.md` before refactoring.
+Pipeline seams (config plan, mount plan, session plan, tool catalog, init sequence) — read package code + the topic files under `docs/` and `docs/internals/` before refactoring.
 
-Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` guard), `ExpandTilde()`, `AtomicWriteFile()`. Don't re-implement these per-package — `configio` re-exports the last two as thin facades. Soft sites that tolerate an empty home keep calling `os.UserHomeDir` directly. → [shared-fs-primitives](docs/runtime-notes.md#shared-fs-primitives)
+Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` guard), `ExpandTilde()`, `AtomicWriteFile()`. Don't re-implement these per-package — `configio` re-exports the last two as thin facades. Soft sites that tolerate an empty home keep calling `os.UserHomeDir` directly. → [shared-fs-primitives](docs/internals/host-cli.md#shared-fs-primitives)
 
 ## Code & language
 
@@ -44,11 +44,11 @@ Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` gua
 - Standard `gofmt`; lint config `.golangci.yml`.
 - Test-first changes: use the `tdd` skill (`/tdd <spec>`) — Specify-Encode-Fulfill, one test at a time, never mix a behavior change with a refactor.
 
-## Gotchas — backstory in [`docs/runtime-notes.md`](docs/runtime-notes.md)
+## Gotchas — backstory under [`docs/`](docs/) and [`docs/internals/`](docs/internals/)
 
 Always-on:
 
-- **Host UID mapping**: container runs `--user $(id -u):$(id -g)`; `/home/toolbox` world-writable. Don't revert to fixed UID. → [host-uid](docs/runtime-notes.md#host-uid-mapping)
+- **Host UID mapping**: container runs `--user $(id -u):$(id -g)`; `/home/toolbox` world-writable. Don't revert to fixed UID. → [host-uid](docs/internals/image-build.md#host-uid-mapping)
 
 Path-scoped gotchas live in `.claude/rules/` and lazy-load when matching files are touched; the authoritative scope is each file's `paths:` frontmatter (Codex doesn't auto-load them — read the relevant file before editing those areas):
 

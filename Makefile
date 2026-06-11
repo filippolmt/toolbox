@@ -31,7 +31,7 @@ GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false"
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean
+.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean check-links
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -49,6 +49,17 @@ shell-bash: build ## Build the image and open an interactive bash shell (overrid
 
 clean: ## Remove the toolbox image
 	docker rmi $(FULL) 2>/dev/null || true
+
+# Offline = relative links + #fragment anchors only; external URLs are never
+# checked, so the target works air-gapped and can't flake on third-party
+# downtime. docs/superpowers is gitignored historical material — excluded.
+LYCHEE_IMAGE := lycheeverse/lychee:latest
+
+check-links: ## Validate Markdown links and anchors offline (lychee in Docker)
+	docker run --rm -w /input -v "$(HOST_SRC)":/input $(LYCHEE_IMAGE) \
+	  --offline --include-fragments --no-progress \
+	  --exclude-path docs/superpowers \
+	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md docs .claude/rules .claude/skills
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'

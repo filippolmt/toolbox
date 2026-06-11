@@ -90,223 +90,60 @@ On first run, `toolbox shell` creates and starts the container with default volu
 
 The container is disposable: when the last attached shell exits it is destroyed. All persistent state lives on the bind mounts under `~/.toolbox/` (credentials, shell history, caches), so nothing is lost — the next `toolbox shell` creates a fresh container and re-mounts the same state.
 
-Teardown is offloaded to the Docker daemon (the container is created with `AutoRemove`): on `exit` the CLI sends a kill and returns immediately, while the daemon unmounts and deletes the container in the background. This keeps the prompt from blocking on the mount teardown, which is otherwise slow on macOS Docker Desktop with many bind mounts. A consequence is that exiting always removes the container — there is no stopped container to reuse, so each `toolbox shell` rebuilds the session from the canonical image plus your mounted state.
-
-## Configuration
-
-Two optional knobs: `inherit_host_auth:` (share host credentials with the container) and `mounts:` (which host paths to expose inside the container). Both live in `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project directory (overrides).
-
-Every CLI listed in the table above is installed unconditionally. There is no per-tool opt-out — every user runs the canonical `ghcr.io/filippolmt/toolbox:latest` image pulled from GHCR. Use `toolbox build` to overwrite the local cache with a custom build.
-
-### Inheriting host credentials
-
-By default the container's credential paths are isolated under `~/.toolbox/<tool>/` on the host — `gh auth login` inside the container writes to `~/.toolbox/gh/`, not to the host's `~/.config/gh/`. Opt into sharing a host credential (read-only) per CLI:
-
-```yaml
-inherit_host_auth: [gh, gcloud]
-```
-
-Eligible keys: `gh`, `glab`, `gcloud`, `docker`, `azure`, `oci`, `claude`, `codex`, `atuin`. Each maps the CLI's standard host path (e.g. `~/.config/gh`) to its in-container target as a read-only bind. Login flows that need writes still run on the host.
-
-Codex is unconditionally installed, so containers always run with Docker `seccomp=unconfined` to allow Codex's bubblewrap sandbox to create nested user namespaces.
-
-### Overriding mounts
-
-The defaults isolate every credential path under `~/.toolbox/` on the host, so the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly. The `mounts:` list is merged on top of the defaults — you only declare what changes.
-
-Each user entry is interpreted by `name`:
-
-| Form | Behavior |
-|------|----------|
-| `name` matches a default, `target` omitted | **Patch**: only the fields you set override the default (typically `source`). |
-| `name` matches a default, `target` set | **Replace**: the entire default entry is swapped for yours. |
-| `name` not a default (or omitted) | **Append**: added after the default set. |
-| `name` matches a default, `disabled: true` | **Remove**: the default is dropped from the resolved set. |
-
-Default mount names: `claude`, `codex`, `state`, `ssh`, `gitconfig`, `gh`, `glab`, `gcloud`, `gws`, `azure`, `oci`, `kube`, `playwright-cache`, `startup.d`, `npm-global`, `go`, `docker-sock`. A patch referencing an unknown name fails at startup so typos surface immediately.
-
-Examples:
-
-```yaml
-mounts:
-  # Retarget the gws auth dir to a custom host path.
-  - name: gws
-    source: /Volumes/work/creds/gws
-
-  # Drop the Docker socket bind for a project that shouldn't see it.
-  - name: docker-sock
-    disabled: true
-
-  # Add an extra project-specific mount.
-  - name: project-data
-    source: /opt/data
-    target: /data
-    readonly: true
-```
-
-Bool fields in a *patch* can flip `false → true` but not `true → false` (mapstructure can't tell "not set" from `false`). For that case, use the replace form by also setting `target`.
-
-#### Retargeting every default at once
-
-When you want every toolbox-managed credential / state dir to live somewhere other than `~/.toolbox/` (encrypted volume, shared work drive, alternate user home), set `mounts_root` instead of patching each entry individually:
-
-```yaml
-# Move ~/.toolbox/.claude → /Volumes/work/toolbox/.claude,
-# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every default.
-mounts_root: /Volumes/work/toolbox
-
-mounts:
-  # Per-mount patches still win — gws stays on a different drive.
-  - name: gws
-    source: /Volumes/secure/gws
-```
-
-`mounts_root` accepts absolute paths (`/Volumes/work/toolbox`) and home-relative paths (`~/work/toolbox-state`). Relative paths are rejected at startup. Mounts whose source already lives outside `~/.toolbox/` (e.g. `docker-sock` → `/var/run/docker.sock`, `ssh`/`gitconfig` symlink targets) are not touched — only the toolbox-managed mirrors are retargeted.
-
-**Scope: global vs per-project.** `mounts_root` follows the same precedence as every other config field:
-
-| Where you set it | Effect |
-|------------------|--------|
-| `~/.toolbox.yaml` only | Applied to every `toolbox shell`, in every project. |
-| `./.toolbox.yaml` only | Applied only when `toolbox shell` runs in that project directory. |
-| Both | Project file replaces the global value for that project; other projects keep the global one. (Scalar field — no concatenation.) |
-
-`mounts_root` is applied first to retarget every default; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
-
-**Migration note.** `mounts_root` only changes where the container *binds* its state — it does not move data. If you already have credentials and history in `~/.toolbox/` and switch to a new root, the new directories are auto-created empty (per default `create_if_missing: true`) and the original `~/.toolbox/` data is left untouched. Move it yourself before the next `toolbox shell` if you want continuity:
-
-```bash
-# Stop any running toolbox, then carry your state over.
-toolbox stop
-mv ~/.toolbox /Volumes/work/toolbox
-```
-
-Bare `~` is rejected — it would rewrite `~/.toolbox/.claude` to `~/.claude`, exposing toolbox state on the real host home and defeating credential isolation. Use a sub-path (`~/toolbox-state`) or an absolute path.
-
-Validation: any entry that sets `target` (replace or anonymous append) must also set a non-empty `source`. An empty source would silently bind the current working directory, so it's rejected at startup.
-
-`source` accepts:
-- absolute paths (`/Volumes/work/creds/gws`),
-- home-relative paths (`~/credentials/github` — `~` expands to the host user's home),
-- CWD-relative paths (`./test`, `../shared/data`, or plain `data`) — resolved against the directory you invoked `toolbox shell` from, which is normally the project root.
-
-CWD resolution lets per-project `.toolbox.yaml` reference paths inside the project without hardcoding absolute prefixes:
-
-```yaml
-mounts:
-  - name: project-data
-    source: ./fixtures
-    target: /workspace/fixtures
-    create_if_missing: true
-```
-
-### Startup hooks
-
-Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be executed by the entrypoint on every `toolbox shell`, before your zsh prompt. Use this for per-user bootstrap that should not live in the image (installing Claude Code skill packs, `direnv` shims, custom env bootstrap, etc.). Hooks run as the toolbox user, share the mounted credentials, and can write to the per-user npm prefix at `~/.toolbox/npm-global/` without needing root.
-
-See [`examples/startup.d/`](examples/startup.d/) for a ready-to-copy example that installs a single-binary npm CLI on first shell.
-
-#### Per-repo startup hooks
-
-When bootstrap logic should live with the project (e.g. installing a one-off lint tool, seeding a fixture DB) instead of in your global `~/.toolbox/startup.d/`, patch the default `startup.d` mount in the repo's `.toolbox.yaml`:
-
-```yaml
-mounts:
-  - name: startup.d
-    source: ./startup.d
-```
-
-Then drop hook scripts into `./startup.d/*.sh` at the repo root. The patch retargets the `startup.d` mount by name, so the default `create_if_missing: true` and read-only flags are kept; only the host source changes. Because the source is CWD-relative, it resolves to the repo root when you run `toolbox shell` there, and the hooks only fire for that project. Run `toolbox stop` once after editing `.toolbox.yaml` so the new mount source takes effect (port/mount bindings are fixed at container creation).
-
-Trade-off vs. the global directory: per-repo hooks let a repo's `.toolbox.yaml` (and any contributor with push access) run code inside your container with your mounted credentials — treat them like any other repo-shipped automation. Commit the `startup.d/` directory if the hooks should be shared, or add it to `.gitignore` for per-user setup.
-
-### Publishing ports
-
-By default the container has no host port bindings — it talks to the outside world through bind-mounted sockets, not TCP. When a tool inside the container needs to receive a connection from the host (typical case: an OAuth callback from `glab`, `gh`, or `gcloud` that listens on `http://localhost:<port>`), pass `--publish`/`-p` to `toolbox shell`:
-
-```bash
-# Forward host port 7171 to the same port in the container.
-toolbox shell -p 7171
-
-# Repeatable, full docker-style syntax supported.
-toolbox shell -p 3000:3000 -p 127.0.0.1:9229:9229 -p 5353/udp
-```
-
-Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<host>:<container>`, optional `/tcp|/udp` suffix). When the host IP is omitted it defaults to `127.0.0.1` — the port is reachable from your machine only, not the LAN.
-
-Port bindings are fixed when the container is created. If a container already exists for the current workspace, run `toolbox stop` before `toolbox shell -p …` so the new container picks up the flag.
-
-#### Loopback bridge for OAuth callbacks (`-B`)
-
-CLIs that bind their OAuth callback to `127.0.0.1:<port>` inside the container (e.g. `shopify store auth` → `127.0.0.1:13387`; vanilla `wrangler login` → `localhost:8976`) are invisible to the Docker port-forward, which delivers to the container's `eth0` interface. The host browser hits `ERR_EMPTY_RESPONSE` and no token is written. The `--oauth <tool>` preset expands a known tool name to its documented recipe:
-
-```bash
-toolbox shell --oauth oci        # oci session authenticate
-toolbox shell --oauth codex      # codex ChatGPT-OAuth login
-toolbox shell --oauth shopify    # shopify store auth
-toolbox shell --oauth wrangler   # wrangler login
-toolbox shell --oauth cf         # cf login
-```
-
-Under the hood the preset is plain `-p`/`-B` sugar — `--oauth wrangler` equals `-B -p 8976:8976`, where `--bridge-loopback` / `-B` spawns an in-container `socat` per published port that forwards `eth0:<port>` → `127.0.0.1:<port>`. CLIs that don't bind loopback skip `-B`: `--oauth oci` equals `-p 8181:8181` (oci binds `0.0.0.0`, the plain forward reaches it — a socat on its port would actually break the bind). The explicit spelling stays available for ports not in the preset map:
-
-```bash
-toolbox shell -B -p 13387:13387
-shopify store auth ...
-```
-
-`cf login` is the dynamic-port carve-out: `cf` picks its callback port at run time from the range 8877-8886, so the bridge cannot pre-bind a known port. The image keeps a build-time `sed` patch that rewrites cf's bind to `0.0.0.0`, so `--oauth cf` publishes the range without `-B`.
-
-Full mental model, OAuth CLI survey table, and limitations: [`docs/runtime-notes.md#loopback-bridge`](docs/runtime-notes.md#loopback-bridge).
-
-### Browser bridge
-
-The toolbox container has no display server, so commands inside `toolbox shell` that try to open a URL (`xdg-open`, `$BROWSER`, OAuth redirects, `gh browse`, MCP login flows…) have nowhere to send the user by default. The bridge plugs that gap by running a tiny per-user daemon on the host that listens on `127.0.0.1` and delegates to the host's real browser; the container ships an `xdg-open` wrapper (and `BROWSER=xdg-open`) that POSTs to that daemon over the bind-mounted state dir.
-
-The bridge is **opt-in** — nothing runs on the host until you install it explicitly:
-
-```bash
-toolbox bridge install     # generate token, write LaunchAgent/systemd unit, start daemon
-toolbox bridge status      # show install state, port, daemon liveness
-toolbox bridge uninstall   # stop daemon, remove unit + token
-```
-
-`install` creates `~/.toolbox/toolbox/bridge/` (mode 0700) with a bearer `token`, the listener `port`, a `pid` file, and a `log`. On macOS it registers `~/Library/LaunchAgents/com.filippolmt.toolbox.bridge.plist` via `launchctl bootstrap gui/<uid>`; on Linux it writes the `toolbox-bridge.service` unit under `~/.config/systemd/user/`. The host directory is bind-mounted **read-only** into the container at `/home/toolbox/.toolbox/bridge` (regardless of the host user's home), so the wrapper inside the container can read the port + token but cannot tamper with them.
-
-Security boundary: the daemon binds `127.0.0.1` only (no LAN exposure), enforces a bearer token on every request, allowlists `http` / `https` URL schemes only, caps URL length, and rate-limits incoming requests. Anything outside that envelope is rejected with a 4xx and logged.
-
-Set `bridge: false` in `.toolbox.yaml` to skip the read-only mount entirely — the container then has no `xdg-open` wrapper at all.
-
-### Proximo (`.test` apps from inside the container)
-
-If you use [proximo](https://github.com/filippolmt/proximo) to reach your local-dev apps at `https://<name>.test` on the host, the toolbox makes those same URLs work **from inside the container** — for any client (`curl`, `git`, Node, Python, Playwright/Chromium, …), with proximo's certificate trusted so no `-k` / `ignoreHTTPSErrors` is needed. proximo's own `*.test → 127.0.0.1` resolver doesn't work in a sibling container (there `127.0.0.1` is the container itself), so the toolbox pins each routed host to the Docker host gateway instead.
-
-It is **auto-detected**: when proximo is installed on the host (its root CA exists), every `toolbox shell` discovers the containers proximo routes (their `proximo.hosts` labels), points each `<name>.test` at the host gateway, and mounts + trusts proximo's CA — no per-repo opt-in. Set `proximo: false` in `.toolbox.yaml` to opt a project out, or `proximo: true` to force it on even before proximo is installed.
-
-The routed hosts are resolved when the container is created, so start your proximo stack first and re-run `toolbox shell` to pick up newly added hosts. `curl`, `git`, `wget`, Python (`ssl`/`urllib`), Node and Chromium trust proximo automatically; `python-requests` (which ships its own `certifi` bundle) needs `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"`. Full mechanics: [`docs/runtime-notes.md#proximo-integration`](docs/runtime-notes.md#proximo-integration).
-
-With the [bridge](#bridge) installed you can also drive the host stack from inside the shell: `proximo up`, `proximo down`, and `proximo status` are forwarded to the host daemon (fixed allowlist — `install`/`uninstall` need sudo and must run on the host).
-
-### Loading order
-
-Configuration is loaded from (highest priority first):
-
-1. `--config` flag
-2. The nearest `.toolbox.yaml` walking up from the current working directory (search stops at `$HOME` or the filesystem root) — running `toolbox shell` from any subdirectory of a workspace still picks up that workspace's project config
-3. `~/.toolbox.yaml` (global)
-4. `TOOLBOX_*` environment variables
-5. Built-in defaults
+Teardown is offloaded to the Docker daemon (the container is created with `AutoRemove`): on `exit` the CLI sends a kill and returns immediately, while the daemon unmounts and deletes the container in the background. This keeps the prompt from blocking on the mount teardown, which is otherwise slow on macOS Docker Desktop with many bind mounts. A consequence is that exiting always removes the container — there is no stopped container to reuse, so each `toolbox shell` rebuilds the session from the canonical image plus your mounted state. Full mechanics: [container lifecycle internals](docs/internals/container-lifecycle.md#container-teardown).
 
 ## CLI commands
 
 | Command | Description |
 |---------|-------------|
-| `toolbox shell` | Start or attach to the toolbox container (use `-p <port>` to publish ports for OAuth callbacks / dev servers; add `-B` when the CLI binds container loopback — see [Loopback bridge](#loopback-bridge-for-oauth-callbacks--b)) |
-| `toolbox stop` | Stop and remove the container |
-| `toolbox build` | Build the Docker image locally |
-| `toolbox version` | Show version info |
-| `toolbox bridge {install,uninstall,status}` | Manage the host-side daemon that forwards in-container `xdg-open` URLs to the host's real browser (opt-in, per-user) |
-| `toolbox completion [bash\|zsh\|fish]` | Generate shell completions |
+| [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, named shells via [`shells:`](docs/shells.md)) |
+| [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
+| [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
+| [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
+| [`toolbox init`](docs/commands.md#toolbox-init) | Write an annotated `.toolbox.yaml` in the current directory |
+| [`toolbox config`](docs/commands.md#toolbox-config) | Inspect and scaffold configuration (`show`, `example`, `path`, `edit`, `set`, `doctor`) |
+| [`toolbox mounts`](docs/mounts.md#mounts-cli) | Manage bind-mount entries (`list`, `add`, `disable`, `remove`, `root`) |
+| [`toolbox shells`](docs/shells.md) | Manage named shell shortcuts (`list`, `get`, `add`, `set`, `remove`) |
+| [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo calls (`install`, `uninstall`, `status`) |
+| [`toolbox sdd`](docs/sdd.md) | Manage repo-local Spec-Driven-Development skill packs (`list`, `init`) |
+| [`toolbox completion [bash\|zsh\|fish]`](docs/commands.md#toolbox-completion) | Generate shell completions |
+| [`--config <file>`](docs/commands.md#global-flag---config) | Global flag on every command: load exactly this config file |
+
+Full flag-level reference: [docs/commands.md](docs/commands.md).
+
+## Configuration
+
+Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project directory (overrides; found by walking up from the CWD). `toolbox init` scaffolds an annotated file; full key semantics in [docs/configuration.md](docs/configuration.md).
+
+| Key | One-liner |
+|-----|-----------|
+| [`mounts`](docs/mounts.md#mounts-merge-semantics) | Patch / replace / append / disable the default bind mounts by `name`. |
+| [`mounts_root`](docs/mounts.md#mounts_root-retarget) | Retarget every `~/.toolbox/`-managed default mount to a custom root (encrypted volume, work drive). |
+| [`inherit_host_auth`](docs/configuration.md#inherit-host-auth) | Opt listed CLIs (`gh`, `gcloud`, …) into the host's real credential path instead of the isolated default. |
+| [`shells`](docs/shells.md) | Named shell shortcuts: `<name>: {path, env}` → `toolbox shell <name>`. |
+| [`shell`](docs/configuration.md#shell) | Login shell inside the container (only `zsh` is supported). |
+| [`image`](docs/configuration.md#image-selection) | Full image ref override (proxy hub / pull-through cache). |
+| [`registry_mirror`](docs/configuration.md#image-selection) | Swap only the registry host of the canonical image ref. |
+| [`pull`](docs/configuration.md#image-selection) | Registry-sync policy: `auto` (default) / `always` / `never`. |
+| [`sdd`](docs/sdd.md) | Per-repo Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`). |
+| [`bridge`](docs/bridge.md) | Toggle the host bridge mounts (browser / editor / proximo forwarding); default on. |
+| [`browser_bridge`](docs/configuration.md#browser_bridge-deprecated) | **Deprecated** alias of `bridge`. |
+| [`proximo`](docs/proximo.md) | `.test` apps + CA trust inside the container; omitted = auto-detect. |
+| [`env`](docs/configuration.md#env-passthrough) | Arbitrary env vars injected into the in-container shell (global or per-shell). |
+
+### Highlights
+
+**Credential isolation & mounts.** By default the container never sees your real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. — every credential path is isolated under `~/.toolbox/` on the host. The `mounts:` list patches the defaults by name, `mounts_root` relocates them wholesale, and `~/.toolbox/startup.d/*.sh` hooks run on every shell start. → [docs/mounts.md](docs/mounts.md)
+
+**Publishing ports & OAuth callbacks.** `toolbox shell -p <port>` forwards host ports docker-style; `--oauth <tool>` expands the documented recipe for CLIs with OAuth callback listeners (`-B` bridges container-loopback binds). → [docs/commands.md](docs/commands.md#publishing-ports)
+
+**Bridge (browser / editor / proximo).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and `proximo up|down|status` reach the host's browser, editor, and proximo binary — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
+
+**Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
+
+## Documentation
+
+Section-level index of every guide (commands, configuration, mounts, shells, bridge, proximo, SDD, troubleshooting, maintainer internals): **[docs/README.md](docs/README.md)**. Something broke? Start from [troubleshooting](docs/troubleshooting.md). Link integrity is CI-enforced (`make check-links` locally).
 
 ## Updating
 

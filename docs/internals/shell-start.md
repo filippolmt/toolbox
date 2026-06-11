@@ -1,0 +1,35 @@
+# Shell start internals
+
+Maintainer notes on what happens between `toolbox shell` attaching and the zsh prompt rendering: prompt/locale plumbing, `init.d/` boot scripts, and per-tool bootstrap.
+
+## Prompt glyph width
+
+Every symbol in `internal/build/assets/starship.toml` must be ASCII, unambiguous-narrow Unicode, or a Nerd Font PUA glyph — never an East Asian Ambiguous character or an emoji-presentation sequence (U+FE0F). Starship's *defaults* violate this: kubernetes ships `☸ ` (U+2638, EA-Ambiguous) and gcloud ships `☁️ ` (U+2601+FE0F). Ghostty measures them with Unicode grapheme-cluster width (mode 2027) → 2 columns, while zsh ZLE lays out the line with libc `wcwidth()` → 1 column. One column of drift per glyph meant every Backspace left exactly as many ghost characters as ambiguous emoji visible in the prompt — a months-long "intermittent" bug, because the k8s/gcloud modules only render where those contexts are active. Three earlier fixes (autosuggestions rebind, TERM forwarding, terminfo bundling) chased adjacent symptoms; the real confirmation was `PROMPT='> '` killing the residue while plugin/RPROMPT/highlighter toggles did nothing. **Diagnostic heuristic: any "ghost characters on redraw" report → test `PROMPT='> '` first, before suspecting ZLE plugins.** The four module symbols (`kubernetes`, `gcloud`, `terraform`, `docker_context`) are pinned to PUA glyphs with codepoint comments in `starship.toml`; PUA is width-1 under both width systems by construction, and Nerd Font on the host is already a README prerequisite.
+
+## UTF-8 locale
+
+The image bakes `ENV LANG=C.UTF-8` (Dockerfile final stage). debian-slim ships no `LANG` at all, so the container otherwise runs in the POSIX locale — under which zsh's ZLE cannot decode multibyte input and renders every UTF-8 byte it has to redraw as `<ffffffff>`. The visible symptom: typing a command that prefix-matches a history entry containing non-ASCII bytes (starship glyphs pasted into heredocs, accented letters, `…`) makes zsh-autosuggestions' ghost text show up as `➜  cd <ffffffff><ffffffff>`. Same ZLE-encoding family as [prompt glyph width](#prompt-glyph-width), different mechanism — that one is width drift, this one is decode failure. `C.UTF-8` is compiled into glibc (`locale -a` lists `C.utf8` on a stock bookworm-slim), so no `locales` package or `locale-gen` layer is needed. Deliberately `LANG` only, **not** `LC_ALL`: `LC_ALL` outranks everything, so baking it would override any locale the user forwards via `.toolbox.yaml` `env:` passthrough. Smoke test asserts `locale charmap` = `UTF-8`.
+
+## MCP plugin auto-build
+
+`internal/build/assets/init.d/50-mcp-plugins.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells cached via `.toolbox-built` marker. On failure stderr is captured to `.toolbox-build-error.log` next to the marker (in the same bind-mounted plugin dir, so it survives container restarts) and the last 5 lines are printed inline; failure stays non-fatal.
+
+## Playwright browser cache sync
+
+`internal/build/assets/init.d/40-playwright-cli.sh` does two jobs. Besides re-installing the playwright-cli skills, it syncs the bundled Chromium to the pinned playwright version. The Dockerfile bakes the `playwright` npm package + `playwright install-deps chromium` (apt deps) only — the **browser binaries** are not baked; they live in the `~/.toolbox/playwright-cache` bind (host-persisted, kept out of the image). Since nothing else downloads them, a `playwright` Renovate bump would otherwise leave the cache on the old Chromium revision and break the default headless launch: playwright resolves `chromium.launch({headless:true})` to a separate `chromium_headless_shell-<rev>` binary that a stale cache never fetched (observed: cache held `chromium-1224` with no headless shell after a bump to 1.60.0, whose pinned rev is 1223). A version sentinel (`<cache>/.toolbox-chromium-version`, compared against the playwright package.json version — read via `node`, not `playwright --version`, to dodge the rtk wrapper) makes the sync a no-op on every shell except the first after a bump, when it runs `playwright install chromium` (full + headless shell) once. Best-effort + non-fatal: an offline shell still starts. This rides the existing `40-` script (no new init.d → no `TestCatalogInitDBijection` / smoke-count edit).
+
+## `cf` Cloudflare CLI skill auto-install
+
+When the `cf` and `claude` binaries are present and `~/.claude` exists, `internal/build/assets/init.d/20-cf.sh` writes a Claude Code skill to `~/.claude/skills/cf/SKILL.md` if absent. Skill is hand-written and points Claude to `cf agent-context <product>` for on-demand product context (instead of pre-baking the ~107-product corpus). Idempotent — only re-creates when the file is missing, so user edits persist.
+
+## Skill discovery paths diverge between Claude and Codex
+
+Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.
+
+## GitLab git credential helper (glab)
+
+When `glab auth status` succeeds, `init.d/60-glab.sh` registers `!glab auth git-credential` as the git credential helper for **every host in glab's config** (`yq '.hosts | keys | .[]' ~/.config/glab-cli/config.yml`) — gitlab.com and any self-hosted instance the user has run `glab auth login --hostname <host>` for; new hosts need zero code changes. Written with `sudo git config --system` into the container's `/etc/gitconfig`: the host's `~/.gitconfig` is a read-only mount and stays byte-identical, while the system file is container-local and dies with the AutoRemove container. Registration is non-fatal — on failure a warning points at the SSH fallback (`git@<host>:…` keeps working via the RO `~/.ssh` mount).
+
+Primary consumer: private Homebrew taps over HTTPS — `brew tap <name> https://<gitlab-host>/<group>/homebrew-tap.git` clones with the glab token, no prompts, no extra setup (the token already persists in `~/.toolbox/glab`). Benefits any in-container git clone/pull of private GitLab repos.
+
+Limitation: the helper covers **git transports only**. Formulas that download release assets / package-registry artifacts over HTTPS go through brew's curl, which does not consult git credential helpers — such formulas need a custom download strategy reading a token. Revisit if a private tap grows that kind of formula.

@@ -40,3 +40,4 @@ openspec/
 .codex/skills/openspec-*/
 openspec/config.yaml
 # <<< sdd-managed/openspec (toolbox)
+.claude/skills/write-docs-workspace/
