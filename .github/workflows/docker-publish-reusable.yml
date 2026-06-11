@@ -88,6 +88,13 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
+      # Single source of truth for the Go version is go.mod's `toolchain`
+      # directive (Renovate-bumped). The buildx context is the assets subdir,
+      # so read go.mod from the repo root here and inject it into both builds.
+      - name: Resolve Go version from go.mod
+        id: gover
+        run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
+
       # amd64-only pre-publish gate: load the native image and smoke-test it
       # before any digest is pushed. arm64 cannot execute on the amd64 control
       # plane, so it has no smoke-test here (its binary correctness is gated
@@ -100,6 +107,8 @@ jobs:
         with:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
+          build-args: |
+            GO_VERSION=${{ steps.gover.outputs.version }}
           load: true
           platforms: ${{ matrix.platforms }}
           tags: ${{ env.TEST_TAG }}
@@ -122,6 +131,8 @@ jobs:
         with:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
+          build-args: |
+            GO_VERSION=${{ steps.gover.outputs.version }}
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
           # Push by digest only — no shared tag, so the two single-platform legs
