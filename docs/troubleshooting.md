@@ -45,3 +45,11 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 **Cause:** proximo-routed hosts are discovered and pinned at container create time; apps started afterwards are invisible to the running container.
 
 **Fix:** start the proximo stack (or the new app) first, then `toolbox stop` + `toolbox shell` to re-discover. Details: [proximo boundaries](proximo.md#boundaries-and-caveats).
+
+## "manifest unknown" with a registry mirror
+
+**Symptom:** with [`registry_mirror`](configuration.md#image-selection) configured, the first `toolbox shell` on a machine warns about a failed pull (`manifest unknown` / `not found` from the mirror), then aborts with `image "<mirror>/filippolmt/toolbox:latest" not available locally and pull failed — check registry access`.
+
+**Cause:** a pull-through cache (Harbor proxy project, ECR pull-through, Artifactory/Nexus remote repo) only copies an image from GHCR when something asks for it — and some return `manifest unknown` on the very first request while they ingest the upstream copy asynchronously; replication-based mirrors serve nothing until a replication run completes. The registry refresh is best-effort, but on a first shell there is no local copy to fall back to, so `imageplan.Ensure` fails loud instead of starting a container without an image. Only *successful* pulls stamp the refresh TTL cache, so the failed attempt doesn't poison later ones — a retry asks the mirror again.
+
+**Fix:** warm the cache before the first shell — `docker pull <mirror-host>/filippolmt/toolbox:latest` (re-run once if the mirror 404s while it ingests). Once the mirror serves the manifest, `toolbox shell` works with the default `pull: auto`. Alternatively take the registry out of the startup path entirely: pull manually from the mirror as above, then set `toolbox config set --pull never --where global` — the local copy becomes authoritative and no round-trip happens at shell start. Note the presence check is by exact ref: an image pulled from GHCR directly needs a retag first (`docker tag ghcr.io/filippolmt/toolbox:latest <mirror-host>/filippolmt/toolbox:latest`). Mechanism and precedence: [image selection](configuration.md#image-selection).

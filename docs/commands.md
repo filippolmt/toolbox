@@ -103,7 +103,7 @@ Limitations:
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
 - `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
 
-See also: [publishing ports](#publishing-ports), [image build internals](internals/image-build.md) (socat install layer), [bridge](bridge.md) (inverse direction — container→host browser opens).
+See also: [publishing ports](#publishing-ports), [image build internals](internals/image-build.md) (socat ships in the always-on base apt layer), [bridge](bridge.md) (inverse direction — container→host browser opens).
 
 ## toolbox stop
 
