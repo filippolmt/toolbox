@@ -1,0 +1,59 @@
+# Frees the BuildKit GHA cache that docker-ci.yml writes for each PR.
+#
+# docker-ci.yml writes `type=gha,mode=min,scope=<variant>` caches keyed under
+# the PR's merge ref (refs/pull/N/merge) — up to two scopes (amd64 + arm64) per
+# run. GitHub only evicts a GHA cache after 7 days idle, so a merged/closed PR
+# keeps occupying the 10 GB/repo pool for a week. As open-PR count grows that
+# pushes the repo toward the limit, where eviction turns into cache thrashing
+# (entries created and deleted at high frequency). Deleting a PR's caches the
+# moment it closes keeps the pool tight — the registry cache (buildcache-main /
+# buildcache-release, mode=max) remains the authoritative cross-run store, so
+# nothing of value is lost.
+
+name: Cleanup PR caches
+run-name: Cleanup PR caches #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write   # delete GHA caches via the Actions API
+  contents: read
+
+# Serialize per-PR so a reopen->close race can't double-delete the same ids.
+concurrency:
+  group: cache-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    # Skip fork PRs: a `pull_request` run from a fork carries a read-only
+    # GITHUB_TOKEN that `permissions:` cannot elevate, so the DELETE would 403
+    # and redden the checks list on every external contributor's PR close.
+    # Their caches still fall away via GitHub's 7-day idle eviction.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete BuildKit GHA caches scoped to this PR's merge ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          ids=$(gh api --paginate \
+            "/repos/$REPO/actions/caches?ref=$REF&per_page=100" \
+            -q '.actions_caches[].id')
+          if [ -z "$ids" ]; then
+            echo "No caches for $REF."
+            exit 0
+          fi
+          # Tolerate a per-id failure (e.g. an id already evicted by the 7-day
+          # policy, now 404) so one stale delete doesn't abort the loop under
+          # the default `bash -e` and leave the rest behind.
+          for id in $ids; do
+            echo "Deleting cache id=$id"
+            gh api --method DELETE "/repos/$REPO/actions/caches/$id" \
+              || echo "skip (already gone or not deletable): $id"
+          done
