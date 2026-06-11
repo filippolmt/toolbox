@@ -23,6 +23,12 @@
       "schedule": ["after 11pm", "before 5am"],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "Runtime image (Dockerfile) deps get their own PR, split out of the catch-all group above (later rule wins on groupName). Schedule/automerge are inherited from the catch-all. The Go version is NOT here — it lives in go.mod's toolchain directive (single source of truth) and the image derives it via a GO_VERSION build-arg.",
+      "matchFileNames": ["internal/build/assets/Dockerfile"],
+      "groupName": "dockerfile image",
+      "groupSlug": "dockerfile"
     }
   ],
   "customManagers": [
@@ -319,13 +325,6 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
-      "matchStrings": ["ARG\\s+GO_VERSION=(?<currentValue>\\S+)"],
-      "datasourceTemplate": "golang-version",
-      "depNameTemplate": "golang"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GOPLS_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "go",
       "packageNameTemplate": "golang.org/x/tools/gopls",
@@ -412,16 +411,10 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": ["GO_IMAGE\\s*:?=\\s*golang:(?<currentValue>\\S+)"],
-      "datasourceTemplate": "docker",
-      "packageNameTemplate": "golang"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^Makefile$/"],
-      "matchStrings": ["GOLANGCI_IMAGE\\s*:?=\\s*golangci/golangci-lint:(?<currentValue>\\S+)"],
-      "datasourceTemplate": "docker",
-      "packageNameTemplate": "golangci/golangci-lint"
+      "matchStrings": ["GOLANGCI_VERSION\\s*:?=\\s*(?<currentValue>v\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "golangci/golangci-lint",
+      "extractVersionTemplate": "^(?<version>.*)$"
     }
   ]
 }

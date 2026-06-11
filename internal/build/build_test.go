@@ -140,6 +140,40 @@ func TestMergeBuildArgsInjectsTargetArch(t *testing.T) {
 	}
 }
 
+// TestMergeBuildArgsInjectsGoVersion locks in that the runtime image's Go is
+// pinned to the toolchain that compiled the CLI (go.mod single source of
+// truth), so it never drifts from the build/test container.
+func TestMergeBuildArgsInjectsGoVersion(t *testing.T) {
+	want := goVersion(runtime.Version())
+	out := mergeBuildArgs(nil)
+	v, ok := out["GO_VERSION"]
+	if want == "" {
+		// devel toolchain: nothing to inject, Dockerfile default applies.
+		if ok {
+			t.Errorf("GO_VERSION should be omitted for devel runtime %q, got %v", runtime.Version(), *v)
+		}
+		return
+	}
+	if !ok || v == nil || *v != want {
+		t.Errorf("GO_VERSION = %v, want pointer to %q (from %q)", v, want, runtime.Version())
+	}
+}
+
+func TestGoVersion(t *testing.T) {
+	cases := map[string]string{
+		"go1.26.4":              "1.26.4",
+		"go1.27":                "1.27",
+		"devel go1.27-abc123":   "",
+		"go1.26.4 X:fieldtrack": "",
+		"":                      "",
+	}
+	for in, want := range cases {
+		if got := goVersion(in); got != want {
+			t.Errorf("goVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestMergeBuildArgsPreservesCaller(t *testing.T) {
 	disabled := "false"
 	out := mergeBuildArgs(map[string]*string{"INSTALL_GCLOUD": &disabled})

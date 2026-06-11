@@ -16,8 +16,16 @@ CACHE_REF := $(IMAGE):buildcache-main
 
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
-GO_IMAGE        := golang:1.26
-GOLANGCI_IMAGE  := golangci/golangci-lint:v2.12.2-alpine
+#
+# GO_VERSION is the single source of truth for the Go version across the repo:
+# the `toolchain` directive in go.mod (Renovate-bumped by default). Falls back
+# to the `go` directive when no toolchain line is present. Both the build/test
+# container (GO_IMAGE) and the runtime image (build target, --build-arg) derive
+# from it, so a single Renovate bump aligns everything.
+GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$2} END{print (v?v:g)}' go.mod)
+GO_IMAGE        := golang:$(GO_VERSION)
+GOLANGCI_VERSION := v2.12.2
+GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
 GO_MOD_VOL      := toolbox-gomod
 # When running inside a toolbox shell we are talking to the host daemon over
 # the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
@@ -35,6 +43,7 @@ GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(G
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
+	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --cache-from type=registry,ref=$(CACHE_REF) \
 	  --load internal/build/assets
 

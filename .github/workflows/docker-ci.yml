@@ -6,6 +6,11 @@ on:
     paths:
       - 'internal/build/assets/**'
       - '.github/workflows/docker-ci.yml'
+      # go.mod's `toolchain` directive is the single source of truth for the
+      # runtime image's Go (injected via the GO_VERSION build-arg), so a Go
+      # bump there must rebuild + smoke-test the image even though it leaves
+      # internal/build/assets/** untouched.
+      - 'go.mod'
   # No push: branches: [main] trigger — docker-publish.yml runs the same
   # smoke-test pre-publish on main, so a re-run here would be redundant work
   # (~7min). Pre-merge validation happens on the pull_request event above.
@@ -34,10 +39,10 @@ jobs:
     # Compute the matrix dynamically: the `amd64` variant always runs
     # (catches regressions in entrypoint.sh / smoke-test.sh / zshrc.sh —
     # the bulk of non-Dockerfile churn under
-    # internal/build/assets/**); `arm64` runs only when the Dockerfile or
-    # this workflow itself changes (the only inputs whose arch-specific
-    # behavior that variant validates). Saves ~5min on PRs that touch only
-    # the runtime scripts.
+    # internal/build/assets/**); `arm64` runs only when the Dockerfile, this
+    # workflow, or go.mod changes (the inputs whose arch-specific behavior that
+    # variant validates — incl. the per-arch Go tarball pulled via GO_VERSION).
+    # Saves ~5min on PRs that touch only the runtime scripts.
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -53,6 +58,7 @@ jobs:
             arch_coverage:
               - 'internal/build/assets/Dockerfile'
               - '.github/workflows/docker-ci.yml'
+              - 'go.mod'
       - name: Build matrix
         id: set
         env:
@@ -98,11 +104,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Single source of truth for the Go version is go.mod's `toolchain`
+      # directive (Renovate-bumped). The buildx context is the assets subdir,
+      # so read go.mod from the repo root here and inject it as a build arg.
+      - name: Resolve Go version from go.mod
+        id: gover
+        run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
+
       - name: Build image
         uses: docker/build-push-action@v7
         with:
           context: internal/build/assets
           file: internal/build/assets/Dockerfile
+          build-args: |
+            GO_VERSION=${{ steps.gover.outputs.version }}
           load: ${{ matrix.load }}
           platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}

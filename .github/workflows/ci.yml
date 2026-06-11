@@ -50,14 +50,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Single source of truth for the golangci-lint version is GOLANGCI_VERSION
+      # in the Makefile (Renovate-bumped); read it here so CI and `make go-lint`
+      # never drift.
+      - name: Resolve golangci-lint version from Makefile
+        id: gola
+        run: echo "version=$(awk -F'[[:space:]:=]+' '/^GOLANGCI_VERSION/{print $2}' Makefile)" >> "$GITHUB_OUTPUT"
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: ${{ steps.gola.outputs.version }}
 
   renovate-validate:
     # Validates renovate.json with the official validator so that future edits
-    # to customManagers (GO_VERSION, GOPLS_VERSION, GOIMPORTS_VERSION, …) do
+    # to customManagers (GOPLS_VERSION, GOIMPORTS_VERSION, GOLANGCI_VERSION, …) do
     # not silently produce an invalid config.
     #
     # Node 24 is required: renovate@43.x (current latest) declares

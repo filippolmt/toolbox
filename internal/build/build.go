@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -98,8 +99,29 @@ func mergeBuildArgs(args map[string]*string) map[string]*string {
 	out := map[string]*string{}
 	arch := runtime.GOARCH // "amd64" or "arm64" — matches Docker's TARGETARCH naming.
 	out["TARGETARCH"] = &arch
+	// Pin the runtime image's Go to the toolchain that compiled this binary
+	// (go.mod's `toolchain` directive, via setup-go/GoReleaser) so a single
+	// Renovate bump keeps every artefact on the same Go. Skipped for devel
+	// builds where the version isn't a released tag — the Dockerfile's ARG
+	// default then applies.
+	if v := goVersion(runtime.Version()); v != "" {
+		out["GO_VERSION"] = &v
+	}
 	maps.Copy(out, args)
 	return out
+}
+
+// goVersionPattern captures the X.Y[.Z] release number out of a
+// runtime.Version() string ("go1.26.4" → "1.26.4"). Returns "" for devel
+// builds ("devel go1.27-abc123 ...") so the caller can fall back.
+var goVersionPattern = regexp.MustCompile(`^go(\d+\.\d+(?:\.\d+)?)$`)
+
+func goVersion(raw string) string {
+	m := goVersionPattern.FindStringSubmatch(raw)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }
 
 // tarEmbeddedContext serialises the embedded assets into an in-memory tar the

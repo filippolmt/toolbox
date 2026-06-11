@@ -2,6 +2,8 @@ module github.com/filippolmt/toolbox
 
 go 1.26.2
 
+toolchain go1.26.4
+
 require (
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/containerd/errdefs v1.0.0
