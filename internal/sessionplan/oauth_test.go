@@ -39,6 +39,22 @@ func TestExpandOAuthOciNoBridge(t *testing.T) {
 	}
 }
 
+// TestExpandOAuthGlabNoBridge: glab binds 0.0.0.0:7171 (wildcard), so the
+// eth0 forward reaches it directly — and a socat on eth0:7171 would make
+// its bind fail EADDRINUSE. Publish only, no bridge.
+func TestExpandOAuthGlabNoBridge(t *testing.T) {
+	publish, bridge, err := sessionplan.ExpandOAuth([]string{"glab"})
+	if err != nil {
+		t.Fatalf("ExpandOAuth(glab) err = %v, want nil", err)
+	}
+	if want := []string{"7171:7171"}; !reflect.DeepEqual(publish, want) {
+		t.Errorf("publish = %v, want %v", publish, want)
+	}
+	if bridge {
+		t.Error("bridge = true, want false (socat would collide with glab's wildcard bind)")
+	}
+}
+
 // TestExpandOAuthMultipleTools: repeatable flag composes — both publish
 // specs in input order, bridge true when any tool needs it.
 func TestExpandOAuthMultipleTools(t *testing.T) {
@@ -96,7 +112,7 @@ func TestExpandOAuthUnknownTool(t *testing.T) {
 	if !strings.Contains(msg, `"gh"`) {
 		t.Errorf("error %q does not name the unknown tool", msg)
 	}
-	if !strings.Contains(msg, "cf, codex, oci, shopify, sonar, wrangler") {
+	if !strings.Contains(msg, "cf, codex, glab, oci, shopify, sonar, wrangler") {
 		t.Errorf("error %q does not list sorted supported tools", msg)
 	}
 }

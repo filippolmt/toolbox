@@ -17,14 +17,16 @@ type OAuthRecipe struct {
 
 // oauthRecipes maps tool names accepted by `toolbox shell --oauth` to their
 // recipe. Only static-port browser-OAuth CLIs belong here: device-code CLIs
-// (gh, glab, az, docker) have nothing to forward, and dynamic-port CLIs
+// (gh, az, docker) have nothing to forward, and dynamic-port CLIs
 // (gcloud, gws, tofu) cannot be pre-bound — cf is the lone dynamic exception,
 // handled by a build-time sed patch onto a published range with no bridge.
 // Bridge is only for loopback-binding listeners: oci binds 0.0.0.0:8181
 // (cli_setup_bootstrap.py passes an empty host to HTTPServer), so Docker's
 // eth0 forward reaches it directly — and a socat holding eth0:8181 would
 // make oci's wildcard bind fail EADDRINUSE (verified live; Linux refuses
-// wildcard over a specific bind regardless of SO_REUSEADDR).
+// wildcard over a specific bind regardless of SO_REUSEADDR). glab binds
+// 0.0.0.0:7171 — same no-bridge reason; socat on eth0:7171 would fail
+// EADDRINUSE.
 // sonar is static-range: `sonar auth login` binds 127.0.0.1 on the first
 // free port in 64120-64130 (SonarLint Core's EmbeddedServer range; the
 // server rejects callback ports outside it), so the whole range is
@@ -33,6 +35,7 @@ type OAuthRecipe struct {
 var oauthRecipes = map[string]OAuthRecipe{
 	"cf":       {Publish: "8877-8886:8877-8886", Bridge: false},
 	"codex":    {Publish: "1455:1455", Bridge: true},
+	"glab":     {Publish: "7171:7171", Bridge: false},
 	"oci":      {Publish: "8181:8181", Bridge: false},
 	"shopify":  {Publish: "13387:13387", Bridge: true},
 	"sonar":    {Publish: "64120-64130:64120-64130", Bridge: true},
