@@ -117,7 +117,7 @@ func TestShellOAuthUnknownToolFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expandShellOAuth(gh) err = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "cf, codex, oci, shopify, sonar, wrangler") {
+	if !strings.Contains(err.Error(), "cf, codex, glab, oci, shopify, sonar, wrangler") {
 		t.Errorf("error %q does not list supported tools", err)
 	}
 }
