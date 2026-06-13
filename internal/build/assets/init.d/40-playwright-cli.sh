@@ -33,16 +33,26 @@ if command -v playwright >/dev/null 2>&1; then
     unset _pw_cache _pw_ver _pw_sentinel _pw_have
 fi
 
-# Re-install playwright-cli skills on every shell so ~/.claude/skills/
-# playwright-cli/ tracks PLAYWRIGHT_CLI_VERSION. User edits are overwritten;
-# customisations belong in a wrapper skill.
+# Per-repo opt-in (mirrors graphify/codegraph). The user runs
+# `playwright-cli install --skills claude` once inside a repo they want browser
+# automation in; with no `cd $HOME` wrapper the command initialises the
+# workspace in CWD and writes the skill to `$PWD/.claude/skills/playwright-cli/`
+# (plus a `.playwright/` workspace dir). Nothing is registered globally.
 #
-# `playwright-cli install` writes to CWD (no global-target flag). The
-# `cd "$HOME"` wrapper is load-bearing: without it the skill would land in
-# /workspace/.claude/skills/playwright-cli/ and pollute every repo.
+# On every shell, IF the current workspace already has that per-repo skill dir,
+# re-run the local install so the skill stays in sync with the bundled
+# playwright-cli version after an image upgrade. Repos WITHOUT it are left
+# untouched — opening an un-opted-in repo never dirties it. (Replaces the
+# previous always-on `(cd "$HOME" && playwright-cli install --skills claude)`,
+# which registered the skill into ~/.claude/skills/ on every shell regardless of
+# the repo; an existing global copy is left as-is, just no longer refreshed.)
+#
+# Inner gate: `claude` binary AND ~/.claude exist (bind-mount auto-creates the
+# dir even when tools.claude=false).
 command -v playwright-cli >/dev/null 2>&1 || exit 0
+[ -d "$PWD/.claude/skills/playwright-cli" ] || exit 0
 
 if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    (cd "$HOME" && playwright-cli install --skills claude) >/dev/null 2>&1 || \
-        echo "toolbox: playwright-cli install --skills failed (non-fatal — run \`(cd ~ && playwright-cli install --skills claude)\` manually to retry)"
+    playwright-cli install --skills claude >/dev/null 2>&1 || \
+        echo "toolbox: playwright-cli skill refresh failed (non-fatal — run \`playwright-cli install --skills claude\` manually to retry)"
 fi

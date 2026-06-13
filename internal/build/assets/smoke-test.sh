@@ -172,6 +172,26 @@ check_zsh() {
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
 }
 
+# playwright-cli per-repo skill install (functional, offline). `playwright-cli
+# install --skills` copies the skill templates bundled in the package into
+# `$CWD/.claude/skills/playwright-cli/`. The generic *.md weight-prune in the
+# Dockerfile would empty those templates unless it spares them, so this asserts
+# the install lands a non-empty SKILL.md + populated references in a throwaway
+# CWD — guarding both the prune exclusion and the per-repo install path. No
+# single quotes — this body lives inside a single-quoted bash -c.
+_pw_skill_check() {
+    local d skill refs n
+    d=$(mktemp -d) || return 1
+    ( cd "$d" && playwright-cli install --skills claude ) >/dev/null 2>&1 || { rm -rf "$d"; return 1; }
+    skill="$d/.claude/skills/playwright-cli/SKILL.md"
+    refs="$d/.claude/skills/playwright-cli/references"
+    test -s "$skill" || { rm -rf "$d"; return 1; }
+    n=$(find "$refs" -type f 2>/dev/null | wc -l)
+    rm -rf "$d"
+    [ "$n" -ge 1 ] || return 1
+    echo "install --skills populated SKILL.md + ${n} references in CWD"
+}
+
 check_required "node"       node --version
 check_required "npm"        npm --version
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
@@ -215,6 +235,7 @@ check_optional  "typescript-language-server" typescript-language-server typescri
 check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
+check_optional  "playwright-cli skill install" playwright-cli _pw_skill_check
 check_optional  "uv"        uv       uv --version
 check_optional  "kubectl"   kubectl  kubectl version --client
 check_optional  "kubectx"   kubectx  kubectx --version

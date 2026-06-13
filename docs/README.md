@@ -119,6 +119,7 @@ host-CLI primitives.
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
 - [Tools removal](internals/image-build.md#tools-removal)
+- [Node package weight prune](internals/image-build.md#node-package-weight-prune)
 - [Renovate automerge](internals/image-build.md#renovate-automerge)
 
 ### [internals/container-lifecycle.md](internals/container-lifecycle.md)
@@ -135,6 +136,7 @@ host-CLI primitives.
 - [Playwright browser cache sync](internals/shell-start.md#playwright-browser-cache-sync)
 - [cf Cloudflare CLI skill auto-install](internals/shell-start.md#cf-cloudflare-cli-skill-auto-install)
 - [Per-repo code-graph skills: graphify and codegraph](internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
+- [Per-repo playwright-cli skill](internals/shell-start.md#per-repo-playwright-cli-skill)
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
 
