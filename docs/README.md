@@ -94,6 +94,7 @@ sections.**
 - ["unknown mount name" at startup](troubleshooting.md#unknown-mount-name-at-startup)
 - [Nerd Font placeholders in the prompt](troubleshooting.md#nerd-font-placeholders-in-the-prompt)
 - [xdg-open, code, or OAuth login does nothing](troubleshooting.md#xdg-open-code-or-oauth-login-does-nothing)
+- [Stale local branches pile up after merges](troubleshooting.md#stale-local-branches-pile-up-after-merges)
 - [A new .test app is unreachable from the container](troubleshooting.md#a-new-test-app-is-unreachable-from-the-container)
 - ["manifest unknown" with a registry mirror](troubleshooting.md#manifest-unknown-with-a-registry-mirror)
 

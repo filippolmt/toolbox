@@ -1240,6 +1240,11 @@ COPY --link --chmod=0755 bin/code /usr/local/bin/code
 # /proximo endpoint and propagates output + exit code. install/uninstall need
 # interactive sudo and are rejected with a run-on-host hint.
 COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
+# Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
+# invoked as `git prune-dead`: deletes local branches with a gone upstream
+# (squash-merged PRs) + merged worktree-agent-* leftovers, then prunes stale
+# worktree entries. Never touches the current or default branch.
+COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \
