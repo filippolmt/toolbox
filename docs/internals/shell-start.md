@@ -22,6 +22,17 @@ The image bakes `ENV LANG=C.UTF-8` (Dockerfile final stage). debian-slim ships n
 
 When the `cf` and `claude` binaries are present and `~/.claude` exists, `internal/build/assets/init.d/20-cf.sh` writes a Claude Code skill to `~/.claude/skills/cf/SKILL.md` if absent. Skill is hand-written and points Claude to `cf agent-context <product>` for on-demand product context (instead of pre-baking the ~107-product corpus). Idempotent — only re-creates when the file is missing, so user edits persist.
 
+## Per-repo code-graph skills: graphify and codegraph
+
+Both `graphify` (`init.d/30-graphify.sh`) and `codegraph` (`init.d/31-codegraph.sh`) wire themselves into a project **only when that project has opted in** — neither registers anything globally. Opt-in is a one-time manual step the user runs inside the repo they want indexed:
+
+- graphify: `graphify claude install` writes a `## graphify` section into the repo's local `CLAUDE.md`; the graph data lives in `graphify-out/`.
+- codegraph: `codegraph install --target=claude --location=local --yes` writes the per-project MCP config + a marker-fenced section into `CLAUDE.md`/`AGENTS.md`; the symbol graph lives in `.codegraph/codegraph.db`.
+
+On every shell each script gates on the presence of the tool's marker dir in `$PWD` (`graphify-out/` resp. `.codegraph/`) **plus** the `claude` binary and `~/.claude`. When the dir is present it re-runs the install so the marker/config stays in sync with the bundled tool version after an image upgrade; when absent it exits 0 and writes nothing — so opening an un-opted-in repo never dirties it. Both refreshes are idempotent and non-fatal. Because the workspace is a host bind-mount, the marker dirs, MCP config, and `CLAUDE.md` edits persist on the host repo across sessions; codegraph has no global DB location, so persistence is exactly the per-repo `.codegraph/`.
+
+This replaces graphify's previous always-on global `graphify install`, which refreshed `~/.claude/skills/graphify/SKILL.md` on every shell regardless of the repo. The global `/graphify` slash skill is no longer auto-installed; the `graphify` CLI stays bundled and the integration is per-repo via `graphify claude install`.
+
 ## Skill discovery paths diverge between Claude and Codex
 
 Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.

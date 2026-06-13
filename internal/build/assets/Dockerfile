@@ -43,6 +43,7 @@ ARG UV_VERSION=0.11.21
 ARG SONARQUBE_CLI_VERSION=1.0.0.2628
 ARG CLAUDE_CODE_VERSION=2.1.177
 ARG CODEX_CLI_VERSION=0.139.0
+ARG CODEGRAPH_VERSION=1.0.0
 ARG CF_CLI_VERSION=0.0.6
 ARG WRANGLER_VERSION=4.100.0
 ARG PYRIGHT_VERSION=1.1.410
@@ -809,6 +810,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG PNPM_VERSION
 ARG CLAUDE_CODE_VERSION
 ARG CODEX_CLI_VERSION
+ARG CODEGRAPH_VERSION
 ARG CF_CLI_VERSION
 ARG WRANGLER_VERSION
 ARG PYRIGHT_VERSION
@@ -1057,6 +1059,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
       codex --version; \
       find /usr/local/lib/node_modules/@openai \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +;
+# CodeGraph (deterministic code-symbol graph: tree-sitter -> SQLite/FTS5,
+# exposed as an MCP server + CLI). The npm meta-package is a thin shim; the
+# matching @colbymchenry/codegraph-<os>-<arch> optional dep carries the
+# bundled runtime + compiled library, so the prune is scoped to the shim
+# package only — never the platform package that holds the binary.
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      npm install -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
+      codegraph --version; \
+      find /usr/local/lib/node_modules/@colbymchenry/codegraph \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
