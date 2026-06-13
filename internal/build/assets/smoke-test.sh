@@ -291,6 +291,23 @@ echo "OK: passwd entry injected for uid $(id -u)"
 '
 
 echo ""
+echo "=== SSH host-key trust (git-over-ssh, issue #366) ==="
+# The baked /etc/ssh/ssh_config.d/10-toolbox.conf must make `ssh -G` report
+# StrictHostKeyChecking=accept-new (no first-contact prompt, still rejects
+# CHANGED keys) and point UserKnownHostsFile at the writable, persistent state
+# mount. A dropped COPY or a base image without the ssh_config.d Include fails
+# here.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+cfg=$(ssh -G github.com)
+echo "$cfg" | grep -qx "stricthostkeychecking accept-new" \
+    || { echo "FAILED: StrictHostKeyChecking not accept-new (ssh_config.d drop-in not loaded?)"; exit 1; }
+echo "$cfg" | grep -qiE "^userknownhostsfile .*toolbox-state" \
+    || { echo "FAILED: UserKnownHostsFile not on the state mount"; exit 1; }
+echo "OK: ssh accept-new + known_hosts on state mount"
+'
+
+echo ""
 echo "=== init.d bijection + executability ==="
 # Shell-side counterpart of TestCatalogInitDBijection: confirms the
 # Dockerfile COPY → in-image direction restored exec bits despite embed.FS

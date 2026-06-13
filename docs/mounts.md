@@ -15,6 +15,17 @@ rtk and cf are the two tools whose state spans two binds because upstream splits
 
 In both cases the bind sources are nested under a single `~/.toolbox/<tool>/` root so the host layout stays flat.
 
+## SSH host-key trust (git over SSH)
+
+Git operations against SSH remotes (`git@github.com`, `git@gitlab.com`, …) work without re-prompting host-key verification on every call. Because the `ssh` mount is a read-only symlink to the host, the Debian default (`StrictHostKeyChecking ask` + `UserKnownHostsFile ~/.ssh/known_hosts`) would deadlock inside the container — ssh prompts on first contact but cannot persist the accepted key to the read-only `known_hosts`, so the prompt returns forever.
+
+The image ships `/etc/ssh/ssh_config.d/10-toolbox.conf` (baked, system-wide) that sets:
+
+- `StrictHostKeyChecking accept-new` — host keys are trusted on first contact without a prompt, while *changed* keys are still rejected (anti-MITM).
+- `UserKnownHostsFile ~/.toolbox-state/known_hosts` — known_hosts lives on the writable, persistent `state` mount instead of the read-only `~/.ssh/known_hosts`, so accepted keys survive `toolbox stop` and never re-prompt on the next session.
+
+The `ssh` and `gitconfig` mounts stay read-only by design — this trust handling deliberately avoids making them writable. Build seam in [image-build internals](internals/image-build.md). The state mount itself is the writable `state` default in `internal/mountplan/defaults.go`.
+
 ## `mounts:` merge semantics
 
 User-declared mounts in `.toolbox.yaml` patch / replace / append / disable defaults by `name` (see `mergeMounts` in `internal/mountplan/merge.go`). The `mounts:` list is merged on top of the defaults — you only declare what changes. Each user entry is interpreted by `name`:
