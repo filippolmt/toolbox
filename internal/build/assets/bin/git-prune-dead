@@ -1,0 +1,74 @@
+#!/bin/sh
+# git-prune-dead — delete local branches whose work is finished:
+#   * upstream gone        — the remote branch was deleted (e.g. after a
+#                            squash-merged PR), so the local tracking branch is
+#                            dead weight.
+#   * worktree-agent-*     — throwaway branches left behind by agent worktrees,
+#                            once merged into the default branch.
+# Then prune stale `git worktree` administrative entries.
+#
+# Never deletes the current branch or the repository's default branch. Invoke
+# as `git prune-dead` — git resolves any `git-*` on PATH as a subcommand.
+set -u
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+	echo "git-prune-dead: not inside a git repository" >&2
+	exit 1
+}
+
+current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+
+# Default branch from origin/HEAD (set by `git remote set-head`). When it is
+# unset (no remote, or never fetched) fall back to whichever of main/master
+# exists locally, then to the current branch — so we never compare against a
+# non-existent ref.
+default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+if [ -z "$default" ]; then
+	for cand in main master; do
+		if git show-ref --verify --quiet "refs/heads/$cand"; then
+			default=$cand
+			break
+		fi
+	done
+fi
+[ -n "$default" ] || default=$current
+
+delete_branch() {
+	# Skip the default and current branches; tolerate a refusal (e.g. the
+	# branch is checked out in another worktree) without aborting the run.
+	[ "$1" = "$default" ] && return 0
+	[ "$1" = "$current" ] && return 0
+	if git branch -D "$1" >/dev/null 2>&1; then
+		echo "  deleted $1"
+	fi
+}
+
+if [ -n "$(git remote)" ]; then
+	echo "git-prune-dead: fetching + pruning remote refs..."
+	git fetch --prune --quiet
+else
+	echo "git-prune-dead: no remote configured — skipping fetch"
+fi
+
+echo "git-prune-dead: removing branches with a gone upstream..."
+git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
+	while read -r name track; do
+		[ "$track" = "[gone]" ] && delete_branch "$name"
+	done
+
+# Only meaningful when a default branch could be resolved; skip otherwise so
+# we never run `git branch --merged ''`.
+if [ -n "$default" ]; then
+	echo "git-prune-dead: removing merged worktree-agent-* leftovers..."
+	git branch --merged "$default" --format='%(refname:short)' |
+		grep '^worktree-agent-' |
+		while read -r name; do
+			delete_branch "$name"
+		done
+fi
+
+git worktree prune
+
+kept="kept $default"
+[ -n "$current" ] && [ "$current" != "$default" ] && kept="$kept, current $current"
+echo "git-prune-dead: done ($kept)"

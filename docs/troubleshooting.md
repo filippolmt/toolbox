@@ -38,6 +38,16 @@ Symptoms, causes, and fixes for the failure modes users actually hit. Bridge-spe
 
 See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are the bridge daemon not installed (`toolbox bridge install`), not running (`toolbox bridge status`), or a version-skewed host CLI. For OAuth callbacks that never reach the in-container CLI, see the [loopback bridge](commands.md#loopback-bridge).
 
+## Stale local branches pile up after merges
+
+**Symptom:** `git branch` lists many local branches whose PRs were already merged — squash-merged branches (the local copy isn't recognised as merged) and leftover `worktree-agent-*` branches from agent worktrees.
+
+**Cause:** a squash merge rewrites history, so `git branch -d` refuses the branch as "not fully merged"; the remote branch is gone but the local tracking branch lingers. Agent worktrees leave throwaway branches behind once their worktree is removed.
+
+**Fix:** run `git prune-dead` (baked into the image, invoked as a `git` subcommand). It `git fetch --prune`s, deletes every branch whose upstream is gone and every merged `worktree-agent-*` branch, then `git worktree prune`s stale entries. It never touches the current branch or the repository's default branch (resolved from `origin/HEAD`, falling back to a local `main`/`master`, then the current branch), so a branch with a live remote — or one checked out in another worktree — is left alone.
+
+Deletes use `git branch -D` (force): a gone upstream means the remote branch was deleted, which is not the same as "merged", so a branch whose remote was removed without merging is dropped along with any unmerged local commits. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
+
 ## A new `.test` app is unreachable from the container
 
 **Symptom:** `https://<name>.test` works in the host browser but fails to resolve/connect inside a shell that was already open.

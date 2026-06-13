@@ -194,6 +194,9 @@ check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr
 # Proximo shim must be the bridge wrapper (bridge-lib marker) — proximo never
 # ships as a real binary in the image; a dropped COPY fails here too.
 check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q bridge-lib.sh /usr/local/bin/proximo && echo present"
+# git-prune-dead is a `git prune-dead` subcommand helper; assert it ships
+# executable on PATH (no flag invocation — running it would prune branches).
+check_required "git-prune-dead" sh -c "test -x /usr/local/bin/git-prune-dead && command -v git-prune-dead >/dev/null && echo present"
 check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
 check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u \"\$(command -v sudo)\" && echo present"
 
