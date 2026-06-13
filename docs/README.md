@@ -47,6 +47,7 @@ sections.**
 ## mounts.md
 
 - [Auth isolation under ~/.toolbox/](mounts.md#auth-isolation-under-toolbox)
+- [SSH host-key trust (git over SSH)](mounts.md#ssh-host-key-trust-git-over-ssh)
 - [mounts: merge semantics](mounts.md#mounts-merge-semantics) — [Source paths](mounts.md#source-paths)
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
@@ -107,6 +108,7 @@ host-CLI primitives.
 
 - [Build layout: parallel fetch stages + frequency-ordered tail](internals/image-build.md#build-layout-parallel-fetch-stages--frequency-ordered-tail)
 - [Host UID mapping](internals/image-build.md#host-uid-mapping)
+- [SSH host-key trust](internals/image-build.md#ssh-host-key-trust)
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)

@@ -1288,6 +1288,14 @@ COPY --link zshrc.sh /etc/zsh/zshrc
 # Curated starship config. Per-user override via STARSHIP_CONFIG in a
 # ~/.toolbox-startup.d/ hook.
 COPY --link starship.toml /etc/toolbox/starship.toml
+# SSH host-key trust for git-over-ssh (issue #366). The ~/.ssh credential mount
+# is read-only by design, so the Debian default (StrictHostKeyChecking=ask +
+# read-only ~/.ssh/known_hosts) deadlocks: it prompts on first contact and
+# can't persist the answer. accept-new + a writable known_hosts on the state
+# mount fixes it without making the RO ssh mount writable. Picked up via the
+# base ssh_config's `Include /etc/ssh/ssh_config.d/*.conf` (Debian default);
+# the smoke test asserts the policy is effective via `ssh -G`.
+COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
