@@ -101,6 +101,12 @@ The `tools:` block in `.toolbox.yaml` and the `ARG INSTALL_<TOOL>` Dockerfile me
 
 If your config still has a `tools:` block, the loader emits a one-time warning and ignores it. Delete the block to silence the warning.
 
+## Node package weight prune
+
+Each globally-installed npm tool layer (playwright-cli, codex, codegraph, …) ends with a `find … -prune -exec rm -rf {} +` that strips weight from `node_modules`: source maps, `*.md` / `*.markdown`, `CHANGELOG*`, `AUTHORS*`, and `docs/`/`examples/`/`__tests__/`/`.github/` dirs.
+
+**Gotcha — functional `.md` assets are collateral.** Some packages ship runtime-required content as `.md`. `playwright-cli` is the live example: its agent skill ships as `SKILL.md` + `references/*.md` under `playwright-core/lib/tools/cli-client/skill/` (and a `@playwright/cli/skills/` copy). The blanket `*.md` prune empties those, so `playwright-cli install --skills` then copies an **empty** skill — the failure looks like a working install (exit 0, dirs created) but no `SKILL.md`. The playwright-cli prune therefore leads with `-type d \( -path '*/cli/skills' -o -path '*/cli-client/skill' \) -prune -o …` to spare both template trees, and the layer ends with a build-time `test -s …/cli-client/skill/SKILL.md` so a future prune/layout change that re-empties the source fails the build instead of shipping a silently-broken skill. The smoke test (`playwright-cli skill install`) re-checks it functionally at runtime. When adding a `.md`-pruning layer for a tool that bundles `.md` assets it actually uses, spare the asset dir the same way.
+
 ## Renovate automerge
 
 Updates land in **two grouped PRs**: runtime-image deps from the Dockerfile (`matchFileNames: ["internal/build/assets/Dockerfile"]` → group `dockerfile image`) and everything else (`matchPackageNames: ["*"]` → group `all dependencies`). The Dockerfile rule comes after the catch-all so its `groupName` wins for those deps; schedule/automerge are inherited from the catch-all. Both merge daily in the 06:00–09:59 Europe/Rome window, Renovate-side (`platformAutomerge: false`, `automergeType: pr`). Three deliberate choices:
