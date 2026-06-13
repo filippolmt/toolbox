@@ -132,6 +132,7 @@ host-CLI primitives.
 - [MCP plugin auto-build](internals/shell-start.md#mcp-plugin-auto-build)
 - [Playwright browser cache sync](internals/shell-start.md#playwright-browser-cache-sync)
 - [cf Cloudflare CLI skill auto-install](internals/shell-start.md#cf-cloudflare-cli-skill-auto-install)
+- [Per-repo code-graph skills: graphify and codegraph](internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
 

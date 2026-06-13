@@ -209,6 +209,7 @@ check_optional  "claude"    claude   claude --version
 # inside a single-quoted bash -c (see header comment above check_zsh).
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "codex"     codex    codex --version
+check_optional  "codegraph" codegraph codegraph --version
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
 check_optional  "tsc"       tsc      tsc --version
@@ -310,8 +311,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 14 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 14 (12 catalog InitScripts + 2 system)"
+if [ "$count" -ne 15 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 15 (13 catalog InitScripts + 2 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

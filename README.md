@@ -34,7 +34,8 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Azure CLI (az) | 2.86.x |
 | Oracle OCI CLI | 3.84.x |
 | SonarQube CLI (`sonar`) | 0.14.x |
-| graphify (Claude Code knowledge-graph skill, PyPI `graphifyy`) | 0.8.x |
+| graphify (per-repo knowledge-graph builder, PyPI `graphifyy`) | 0.8.x |
+| codegraph (per-repo code-symbol graph: MCP server + CLI, npm `@colbymchenry/codegraph`) | 1.0.x |
 | Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
 | Cloudflare Wrangler CLI (`wrangler`) | 4.95.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |

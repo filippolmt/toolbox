@@ -55,6 +55,7 @@ var Entries = []Entry{
 	{Key: "bun"},
 	{Key: "cf", InitScript: "20-cf.sh"},
 	{Key: "claude", InitScript: "50-mcp-plugins.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.claude", ContainerPath: "/home/toolbox/.claude"}},
+	{Key: "codegraph", InitScript: "31-codegraph.sh"},
 	{Key: "codex", InitScript: "25-codex.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.codex", ContainerPath: "/home/toolbox/.codex"}},
 	{Key: "compose"},
 	{Key: "docker", HostAuthMount: &HostAuthMount{HostPath: "~/.docker", ContainerPath: "/home/toolbox/.docker"}},
