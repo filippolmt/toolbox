@@ -26,8 +26,10 @@ When the `cf` and `claude` binaries are present and `~/.claude` exists, `interna
 
 Both `graphify` (`init.d/30-graphify.sh`) and `codegraph` (`init.d/31-codegraph.sh`) wire themselves into a project **only when that project has opted in** — neither registers anything globally. Opt-in is a one-time manual step the user runs inside the repo they want indexed:
 
-- graphify: `graphify claude install` writes a `## graphify` section into the repo's local `CLAUDE.md` and registers PreToolUse hooks in the repo's `.claude/settings.json`; the graph data lives in `graphify-out/`.
-- codegraph: `codegraph install --target=claude --location=local --yes` writes the per-project MCP config + a marker-fenced section into `CLAUDE.md`/`AGENTS.md`; the symbol graph lives in `.codegraph/codegraph.db`.
+- graphify: `graphify claude install` (alias `graphify-init`) writes a `## graphify` section into the repo's local `CLAUDE.md` and registers PreToolUse hooks in the repo's `.claude/settings.json`; the graph data lives in `graphify-out/`.
+- codegraph: `codegraph install --target=claude --location=local --yes` (alias `codegraph-init`) writes the per-project MCP config + a marker-fenced section into `CLAUDE.md`/`AGENTS.md`; the symbol graph lives in `.codegraph/codegraph.db`.
+
+The `*-init` aliases (`graphify-init`, `codegraph-init`, plus `pwcli-init` for the playwright-cli skill) are defined in `zshrc.sh` as shorthands for these one-time opt-in commands.
 
 On every shell each script gates on the presence of the tool's marker dir in `$PWD` (`graphify-out/` resp. `.codegraph/`) **plus** the `claude` binary and `~/.claude`. When the dir is present it re-runs the install so the marker/config stays in sync with the bundled tool version after an image upgrade; when absent it exits 0 and writes nothing — so opening an un-opted-in repo never dirties it. Both refreshes are idempotent and non-fatal. Because the workspace is a host bind-mount, the marker dirs, MCP config, and `CLAUDE.md` edits persist on the host repo across sessions; codegraph has no global DB location, so persistence is exactly the per-repo `.codegraph/`.
 
