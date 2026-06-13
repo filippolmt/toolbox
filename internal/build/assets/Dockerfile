@@ -90,6 +90,15 @@ ARG ZOXIDE_VERSION=0.9.9
 # zoxide: no upstream sha256sums file. Same T-01-08-class accepted risk as bat.
 ARG ZOXIDE_SHA256_AMD64=4ff057d3c4d957946937274c2b8be7af2a9bbae7f90a1b5e9baaa7cb65a20caa
 ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d93315cb0
+ARG SHELLCHECK_VERSION=0.11.0
+# shellcheck: no upstream checksum file. Same accepted-risk pattern as bat/fd —
+# pin SHA256 per-arch (.tar.gz; slim base has no xz) + bump in sync (Renovate).
+ARG SHELLCHECK_SHA256_AMD64=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
+ARG SHELLCHECK_SHA256_ARM64=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc
+ARG SHFMT_VERSION=3.13.1
+# shfmt: single static binary, no upstream checksum file. SHA256 pinned per-arch.
+ARG SHFMT_SHA256_AMD64=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+ARG SHFMT_SHA256_ARM64=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
 
 # rtk builder: amd64 uses upstream MUSL tarball, arm64 builds from source
 # against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
@@ -464,6 +473,48 @@ RUN set -eux; \
       rm -rf "/tmp/${EZA_COMPLETIONS_TARBALL}" /tmp/target; \
       /out/usr/local/bin/eza --version
 
+# shellcheck (shell linter). Static binary, .tar.gz (slim base has no xz).
+# No upstream checksum file → SHA256 pinned per-arch. No shipped completion.
+FROM fetch-base AS fetch-shellcheck
+ARG TARGETARCH
+ARG SHELLCHECK_VERSION
+ARG SHELLCHECK_SHA256_AMD64
+ARG SHELLCHECK_SHA256_ARM64
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) SC_ARCH=x86_64;   SC_SHA256="${SHELLCHECK_SHA256_AMD64}";; \
+        arm64) SC_ARCH=aarch64;  SC_SHA256="${SHELLCHECK_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      SC_TARBALL="shellcheck-v${SHELLCHECK_VERSION}.linux.${SC_ARCH}.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${SC_TARBALL}" \
+        "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${SC_TARBALL}"; \
+      echo "${SC_SHA256}  /tmp/${SC_TARBALL}" | sha256sum -c -; \
+      tar -xzf "/tmp/${SC_TARBALL}" -C /out/usr/local/bin --strip-components=1 \
+        "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"; \
+      chmod +x /out/usr/local/bin/shellcheck; \
+      rm "/tmp/${SC_TARBALL}"; \
+      /out/usr/local/bin/shellcheck --version
+
+# shfmt (shell formatter). Single static binary, no upstream checksum file →
+# SHA256 pinned per-arch.
+FROM fetch-base AS fetch-shfmt
+ARG TARGETARCH
+ARG SHFMT_VERSION
+ARG SHFMT_SHA256_AMD64
+ARG SHFMT_SHA256_ARM64
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) SHFMT_SHA256="${SHFMT_SHA256_AMD64}";; \
+        arm64) SHFMT_SHA256="${SHFMT_SHA256_ARM64}";; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /out/usr/local/bin/shfmt \
+        "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${TARGETARCH}"; \
+      echo "${SHFMT_SHA256}  /out/usr/local/bin/shfmt" | sha256sum -c -; \
+      chmod +x /out/usr/local/bin/shfmt; \
+      /out/usr/local/bin/shfmt --version
+
 # bun. GLIBC variant (NOT -musl) — bun's musl build is dynamically linked
 # against /lib/ld-musl-x86_64.so.1, which Debian doesn't ship → ENOENT.
 # Bun's GLIBC build targets ≥ 2.27, well below bookworm's 2.36. Opposite
@@ -826,6 +877,8 @@ COPY --link --from=fetch-yq       /out/ /
 COPY --link --from=fetch-bat      /out/ /
 COPY --link --from=fetch-fd       /out/ /
 COPY --link --from=fetch-eza      /out/ /
+COPY --link --from=fetch-shellcheck /out/ /
+COPY --link --from=fetch-shfmt    /out/ /
 COPY --link --from=fetch-bun      /out/ /
 COPY --link --from=fetch-uv       /out/ /
 COPY --link --from=fetch-sonar    /out/ /

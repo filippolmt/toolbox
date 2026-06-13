@@ -40,6 +40,8 @@ A containerized development environment (Debian slim) bundling all the tools you
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | fd (user-friendly `find` replacement) | 10.4.x |
 | eza (modern `ls` replacement) | 0.23.x |
+| shellcheck (shell linter) | 0.11.x |
+| shfmt (shell formatter) | 3.13.x |
 | Homebrew (Linuxbrew, `brew install` anything else at runtime) | 5.1.x |
 | jq, yq, starship, bat, git | latest stable |
 

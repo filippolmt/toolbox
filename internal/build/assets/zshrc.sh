@@ -112,6 +112,10 @@ alias d=docker
 alias ll='ls -la'
 alias la='ls -A'
 alias l='ls -CF'
+# Toolbox-specific: `cdw` jumps to the fixed workspace mount; `reload` re-execs
+# the shell to pick up config edits without leaving the container.
+alias cdw='cd /workspace'
+alias reload='exec zsh'
 
 if command -v bat >/dev/null 2>&1; then
     alias cat=bat
