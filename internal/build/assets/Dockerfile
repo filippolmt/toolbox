@@ -1292,10 +1292,16 @@ COPY --link starship.toml /etc/toolbox/starship.toml
 # is read-only by design, so the Debian default (StrictHostKeyChecking=ask +
 # read-only ~/.ssh/known_hosts) deadlocks: it prompts on first contact and
 # can't persist the answer. accept-new + a writable known_hosts on the state
-# mount fixes it without making the RO ssh mount writable. Picked up via the
-# base ssh_config's `Include /etc/ssh/ssh_config.d/*.conf` (Debian default);
-# the smoke test asserts the policy is effective via `ssh -G`.
+# mount fixes it without making the RO ssh mount writable. The smoke test
+# asserts the policy is effective via `ssh -G`.
 COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
+# Guarantee the drop-in is loaded: ssh uses the first-obtained value per
+# keyword, so the Include must sit at the top of /etc/ssh/ssh_config (ahead of
+# any built-in default) for accept-new to win. Debian's base config has it
+# there, but make it explicit + idempotent rather than silently depending on
+# upstream not moving it.
+RUN grep -qxF 'Include /etc/ssh/ssh_config.d/*.conf' /etc/ssh/ssh_config \
+    || sed -i '1i Include /etc/ssh/ssh_config.d/*.conf' /etc/ssh/ssh_config
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
