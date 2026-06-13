@@ -509,10 +509,11 @@ RUN set -eux; \
         arm64) SHFMT_SHA256="${SHFMT_SHA256_ARM64}";; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
-      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /out/usr/local/bin/shfmt \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/shfmt \
         "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${TARGETARCH}"; \
-      echo "${SHFMT_SHA256}  /out/usr/local/bin/shfmt" | sha256sum -c -; \
-      chmod +x /out/usr/local/bin/shfmt; \
+      echo "${SHFMT_SHA256}  /tmp/shfmt" | sha256sum -c -; \
+      install -m 0755 /tmp/shfmt /out/usr/local/bin/shfmt; \
+      rm /tmp/shfmt; \
       /out/usr/local/bin/shfmt --version
 
 # bun. GLIBC variant (NOT -musl) — bun's musl build is dynamically linked
