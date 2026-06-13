@@ -117,6 +117,14 @@ alias l='ls -CF'
 alias cdw='cd /workspace'
 alias reload='exec zsh'
 
+# `pwcli-init` opts the current repo into the playwright-cli skill: it writes
+# .claude/skills/playwright-cli/ into the CWD, after which 40-playwright-cli.sh
+# refreshes it on every shell (per-repo opt-in, never global). One-time per repo.
+# → docs/internals/shell-start.md#per-repo-playwright-cli-skill
+if command -v playwright-cli >/dev/null 2>&1; then
+    alias pwcli-init='playwright-cli install --skills claude'
+fi
+
 if command -v bat >/dev/null 2>&1; then
     alias cat=bat
 fi
