@@ -244,6 +244,8 @@ check_optional  "bat"       bat      bat --version
 check_optional  "brew"      brew     brew --version
 check_optional  "fd"        fd       fd --version
 check_optional  "eza"       eza      eza --version
+check_optional  "shellcheck" shellcheck shellcheck --version
+check_optional  "shfmt"     shfmt    shfmt --version
 check_optional  "rtk"       rtk      rtk --version
 
 check_zsh
