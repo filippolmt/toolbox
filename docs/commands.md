@@ -14,7 +14,7 @@ Start an interactive shell session in the toolbox container. With no argument it
 |------|-------------|
 | `-p, --publish <spec>` | Publish a host port (repeatable, docker-style syntax — see below). |
 | `-B, --bridge-loopback` | Forward published ports to container loopback (see below). |
-| `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `shopify`, `sonar`, `wrangler`). |
+| `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `sonar`, `wrangler`). |
 | `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
 | `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
 
@@ -36,7 +36,7 @@ Accepted formats mirror `docker run -p` (`<port>`, `<host>:<container>`, `<ip>:<
 
 ### Loopback bridge
 
-In-container CLIs that bind their OAuth callback to `127.0.0.1:<port>` (shopify, vanilla wrangler) are unreachable from the host browser even with `toolbox shell -p <port>:<port>` — the host browser hits `ERR_EMPTY_RESPONSE` and no token is written. Docker's port forward delivers packets to the container's `eth0` interface; a listener bound to container loopback never sees them. The `-B` / `--bridge-loopback` flag fixes that:
+In-container CLIs that bind their OAuth callback to `127.0.0.1:<port>` (codex, vanilla wrangler) are unreachable from the host browser even with `toolbox shell -p <port>:<port>` — the host browser hits `ERR_EMPTY_RESPONSE` and no token is written. Docker's port forward delivers packets to the container's `eth0` interface; a listener bound to container loopback never sees them. The `-B` / `--bridge-loopback` flag fixes that:
 
 ```
 host browser  ──  Docker -p  ──▶  eth0:<port>  ──[ socat ]──▶  127.0.0.1:<port>  ──▶  CLI
@@ -52,7 +52,6 @@ Standard recipes (static-port loopback CLIs). The `--oauth <tool>` preset flag o
 
 ```
 toolbox shell --oauth codex      # = -B -p 1455:1455     codex ChatGPT-OAuth login
-toolbox shell --oauth shopify    # = -B -p 13387:13387   shopify store auth
 toolbox shell --oauth wrangler   # = -B -p 8976:8976     wrangler login
 toolbox shell --oauth sonar      # = -B -p 64120-64130:64120-64130   sonar auth login
 ```
@@ -60,8 +59,8 @@ toolbox shell --oauth sonar      # = -B -p 64120-64130:64120-64130   sonar auth 
 The explicit spelling stays available for ports not in the preset map:
 
 ```bash
-toolbox shell -B -p 13387:13387
-shopify store auth ...
+toolbox shell -B -p 9999:9999
+some-cli auth login ...   # CLI binds 127.0.0.1:9999
 ```
 
 A static **range** also works (`sonar`): the CLI binds `127.0.0.1` on the first free port in 64120-64130 (SonarLint Core's EmbeddedServer range — SonarQube rejects callback ports outside it, so a random OS-assigned port is not an option upstream). `nat.ParsePortSpec` expands the range and init.d/70 spawns one socat per port; the bridge binds eth0, so it never steals the loopback port the CLI itself wants.
@@ -85,7 +84,6 @@ OAuth CLI survey:
 |---|---|---|
 | `oci` | `0.0.0.0:8181` (static, wildcard) | plain publish: `--oauth oci` = `-p 8181:8181` (no `-B` — socat would collide with the wildcard bind) |
 | `glab` | `0.0.0.0:7171` (static, wildcard) | plain publish: `--oauth glab` = `-p 7171:7171` (no `-B` — socat would collide with the wildcard bind) |
-| `shopify` | `127.0.0.1:13387` (static) | bridge: `--oauth shopify` = `-B -p 13387:13387` |
 | `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
 | `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
 | `sonar` | `127.0.0.1:64120-64130` (static range, first free; server rejects out-of-range ports) | bridge: `--oauth sonar` = `-B -p 64120-64130:64120-64130`; token persisted via `SONARQUBE_CLI_KEYCHAIN_FILE` (libsecret absent in container) |

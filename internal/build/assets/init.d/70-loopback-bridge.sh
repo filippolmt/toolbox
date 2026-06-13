@@ -7,7 +7,7 @@ set -euo pipefail
 # the user passed `-B` together with `-p`. For each port we spawn one socat
 # process that listens on the container's external interface IP (eth0) and
 # forwards to 127.0.0.1:<port>, making CLIs that bind container loopback
-# (shopify store auth, vanilla wrangler login, …) reachable from the host
+# (vanilla wrangler login, codex login, …) reachable from the host
 # browser via the existing `docker -p` forward.
 #
 # Explicit bind=$ETH_IP (not 0.0.0.0) so a legitimate in-container

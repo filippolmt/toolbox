@@ -112,7 +112,7 @@ func TestExpandOAuthUnknownTool(t *testing.T) {
 	if !strings.Contains(msg, `"gh"`) {
 		t.Errorf("error %q does not name the unknown tool", msg)
 	}
-	if !strings.Contains(msg, "cf, codex, glab, oci, shopify, sonar, wrangler") {
+	if !strings.Contains(msg, "cf, codex, glab, oci, sonar, wrangler") {
 		t.Errorf("error %q does not list sorted supported tools", msg)
 	}
 }

@@ -37,7 +37,6 @@ var oauthRecipes = map[string]OAuthRecipe{
 	"codex":    {Publish: "1455:1455", Bridge: true},
 	"glab":     {Publish: "7171:7171", Bridge: false},
 	"oci":      {Publish: "8181:8181", Bridge: false},
-	"shopify":  {Publish: "13387:13387", Bridge: true},
 	"sonar":    {Publish: "64120-64130:64120-64130", Bridge: true},
 	"wrangler": {Publish: "8976:8976", Bridge: true},
 }
