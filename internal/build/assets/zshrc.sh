@@ -118,9 +118,13 @@ alias cdw='cd /workspace'
 alias reload='exec zsh'
 
 # Per-repo opt-in initialisers. Each `*-init` alias runs the one-time command
-# that wires its tool into the CURRENT repo (writes the marker dir + agent
-# integration in CWD); the matching init.d/ script then refreshes that repo on
-# every shell, leaving un-opted-in repos untouched. Never registers globally.
+# that opts the CURRENT repo into its tool's agent integration (never global);
+# the matching init.d/ script then refreshes that repo on every shell, gated on
+# a per-repo marker dir, leaving un-opted-in repos untouched. `codegraph-init`
+# and `pwcli-init` also create that marker (`.codegraph/` resp.
+# `.claude/skills/playwright-cli/`); `graphify-init` writes the CLAUDE.md section
+# + hooks, and `graphify-out/` (its gate marker) appears once the graph is first
+# built (by the hooks on first use, or `graphify update .`).
 # → docs/internals/shell-start.md (per-repo skill / code-graph sections)
 if command -v playwright-cli >/dev/null 2>&1; then
     alias pwcli-init='playwright-cli install --skills claude'
