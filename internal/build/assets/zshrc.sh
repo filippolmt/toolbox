@@ -122,15 +122,16 @@ alias reload='exec zsh'
 # the matching init.d/ script then refreshes that repo on every shell, gated on
 # a per-repo marker dir, leaving un-opted-in repos untouched. `codegraph-init`
 # and `pwcli-init` also create that marker (`.codegraph/` resp.
-# `.claude/skills/playwright-cli/`); `graphify-init` writes the CLAUDE.md section
-# + hooks, and `graphify-out/` (its gate marker) appears once the graph is first
+# `.claude/skills/playwright-cli/`); `graphify-init` installs the project-scoped
+# `/graphify` skill (`.claude/skills/graphify/`) plus the CLAUDE.md section + hooks,
+# and `graphify-out/` (its gate marker) appears once the graph is first
 # built (by the hooks on first use, or `graphify update .`).
 # → docs/internals/shell-start.md (per-repo skill / code-graph sections)
 if command -v playwright-cli >/dev/null 2>&1; then
     alias pwcli-init='playwright-cli install --skills claude'
 fi
 if command -v graphify >/dev/null 2>&1; then
-    alias graphify-init='graphify claude install'
+    alias graphify-init='graphify install --project --platform claude'
 fi
 if command -v codegraph >/dev/null 2>&1; then
     alias codegraph-init='codegraph install --target=claude --location=local --yes'
