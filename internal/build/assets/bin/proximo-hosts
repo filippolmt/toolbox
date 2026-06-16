@@ -33,21 +33,16 @@ note() { echo "proximo-hosts: $1" >&2; }
 
 command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; exit 1; }
 
-# host-gateway IP: prefer the host.docker.internal entry (pinned at create
-# unless `bridge: false`), fall back to the default-route gateway (docker0) so
-# the sync still works without that pin. Both resolve to the same host-gateway.
-# IPv4 is forced (ahostsv4): Traefik publishes :443 on IPv4, and host.docker.
-# internal can resolve IPv6-first on some Docker setups.
+# host-gateway IP: the host.docker.internal entry (pinned at create unless
+# `bridge: false`), else the default-route gateway (docker0) so the sync still
+# works without that pin. Both resolve to the same host-gateway. IPv4 is forced
+# (ahostsv4 / `ip -4`): Traefik publishes :443 on IPv4, and host.docker.internal
+# can resolve IPv6-first on some Docker setups.
 gateway_ip() {
     _gw=$(getent ahostsv4 host.docker.internal 2>/dev/null | awk '{print $1; exit}')
-    if [ -z "${_gw:-}" ]; then
-        _gw=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
-    fi
     if [ -n "${_gw:-}" ]; then
         printf '%s' "${_gw}"
-        return 0
-    fi
-    if command -v ip >/dev/null 2>&1; then
+    elif command -v ip >/dev/null 2>&1; then
         ip -4 route show default 2>/dev/null | awk '{print $3; exit}'
     fi
 }
@@ -79,21 +74,28 @@ run_sync() {
         grep -v '^$' |
         sort -u)
 
-    # Build the managed block. The markers are emitted even when no host is
-    # routed, so a brought-down stack clears its previous pins.
-    _block=$(
+    # Build the candidate /etc/hosts: strip any prior managed block, then append
+    # a fresh one. The markers are emitted even when no host is routed, so a
+    # brought-down stack clears its previous pins.
+    _tmp=$(mktemp)
+    sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${_tmp}"
+    {
         printf '%s\n' "${BEGIN_MARKER}"
         for _h in ${_hosts}; do
             printf '%s\t%s\n' "${_gw}" "${_h}"
         done
-        printf '%s' "${END_MARKER}"
-    )
+        printf '%s\n' "${END_MARKER}"
+    } >>"${_tmp}"
 
-    # Rewrite /etc/hosts atomically: strip any prior managed block, append the
-    # new one. /etc/hosts is root-owned; sudo is passwordless + UID-agnostic.
-    _tmp=$(mktemp)
-    sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${_tmp}"
-    printf '%s\n' "${_block}" >>"${_tmp}"
+    # Skip the privileged write when nothing changed: a compose up/down fires one
+    # event per container, but the managed block usually changes at most once, so
+    # this keeps the event burst cheap (no sudo, no log spam).
+    if cmp -s "${_tmp}" "${HOSTS_FILE}"; then
+        rm -f "${_tmp}"
+        return 0
+    fi
+
+    # /etc/hosts is root-owned; sudo is passwordless + UID-agnostic.
     if ! sudo cp "${_tmp}" "${HOSTS_FILE}"; then
         rm -f "${_tmp}"
         note "failed to write ${HOSTS_FILE} (sudo)"

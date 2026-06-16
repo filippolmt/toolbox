@@ -106,7 +106,8 @@ if [ -f "$_proximo_ca" ]; then
     if command -v docker >/dev/null 2>&1 && command -v proximo-hosts >/dev/null 2>&1; then
         _px_log="$HOME/.toolbox-state/proximo-hosts.log"
         mkdir -p "$(dirname "$_px_log")" 2>/dev/null || true
-        setsid nohup proximo-hosts --watch >>"$_px_log" 2>&1 &
+        setsid nohup proximo-hosts --watch >>"$_px_log" 2>&1 </dev/null &
+        disown 2>/dev/null || true
         unset _px_log
     fi
 fi
