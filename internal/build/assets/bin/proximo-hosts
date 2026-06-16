@@ -14,8 +14,14 @@
 # and rewrites a managed block in /etc/hosts pinning every routed hostname to
 # the host-gateway, where proximo's Traefik publishes :443. /etc/hosts is
 # mutable at runtime (unlike --add-host), so reachability tracks the running
-# stacks without recreating the container. Idempotent — re-run it whenever you
-# bring stacks up or down.
+# stacks without recreating the container.
+#
+# Usage:
+#   proximo-hosts            sync once and exit (idempotent)
+#   proximo-hosts --watch    sync, then keep syncing on every start/die of a
+#                            proximo.hosts-labelled container (docker events).
+#                            entrypoint.sh launches this in the background when
+#                            proximo is enabled, so the sync is automatic.
 
 set -eu
 
@@ -23,12 +29,9 @@ BEGIN_MARKER="# >>> toolbox proximo (managed) >>>"
 END_MARKER="# <<< toolbox proximo (managed) <<<"
 HOSTS_FILE="/etc/hosts"
 
-fail() {
-    echo "proximo-hosts: $1" >&2
-    exit 1
-}
+note() { echo "proximo-hosts: $1" >&2; }
 
-command -v docker >/dev/null 2>&1 || fail "docker CLI missing in image"
+command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; exit 1; }
 
 # host-gateway IP: prefer the host.docker.internal entry (pinned at create
 # unless `bridge: false`), fall back to the default-route gateway (docker0) so
@@ -49,46 +52,83 @@ gateway_ip() {
     fi
 }
 
-GW=$(gateway_ip)
-[ -n "${GW:-}" ] || fail "cannot determine host-gateway IP (keep 'bridge' enabled, or install iproute2)"
+# run_sync rewrites the managed /etc/hosts block from the current proximo.hosts
+# labels. Returns non-zero on a recoverable error (so --watch keeps running)
+# rather than exiting, leaving /etc/hosts untouched.
+run_sync() {
+    _gw=$(gateway_ip)
+    [ -n "${_gw:-}" ] || { note "cannot determine host-gateway IP"; return 1; }
 
-# Discover proximo.hosts labels from running containers via the host daemon.
-# `docker ps --format` exposes .Labels as a flat string, so list the matching
-# container IDs and read the label off each via `docker inspect`, whose
-# .Config.Labels IS a map. Each value is a comma-separated hostname list; split,
-# trim, drop blanks, de-duplicate and sort — the shell mirror of the host-side
-# internal/proximo.ExtraHosts parser.
-IDS=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
-    fail "docker ps failed — is /var/run/docker.sock mounted?"
-RAW=""
-if [ -n "${IDS}" ]; then
-    # shellcheck disable=SC2086  # word-split the newline-separated ID list
-    RAW=$(docker inspect --format '{{index .Config.Labels "proximo.hosts"}}' ${IDS} 2>/dev/null) ||
-        fail "docker inspect failed"
-fi
-HOSTS=$(printf '%s\n' "${RAW}" |
-    tr ',' '\n' |
-    sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
-    grep -v '^$' |
-    sort -u)
+    # Discover proximo.hosts labels from running containers via the host daemon.
+    # `docker ps --format` exposes .Labels as a flat string, so list the matching
+    # container IDs and read the label off each via `docker inspect`, whose
+    # .Config.Labels IS a map. Each value is a comma-separated hostname list;
+    # split, trim, drop blanks, de-duplicate and sort — the shell mirror of the
+    # host-side internal/proximo.ExtraHosts parser.
+    _ids=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
+        { note "docker ps failed — is /var/run/docker.sock mounted?"; return 1; }
+    _raw=""
+    if [ -n "${_ids}" ]; then
+        # shellcheck disable=SC2086  # word-split the newline-separated ID list
+        _raw=$(docker inspect --format '{{index .Config.Labels "proximo.hosts"}}' ${_ids} 2>/dev/null) ||
+            { note "docker inspect failed"; return 1; }
+    fi
+    _hosts=$(printf '%s\n' "${_raw}" |
+        tr ',' '\n' |
+        sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
+        grep -v '^$' |
+        sort -u)
 
-# Build the managed block. The markers are emitted even when no host is routed,
-# so a brought-down stack clears its previous pins on the next run.
-BLOCK=$(
-    printf '%s\n' "${BEGIN_MARKER}"
-    for h in ${HOSTS}; do
-        printf '%s\t%s\n' "${GW}" "${h}"
+    # Build the managed block. The markers are emitted even when no host is
+    # routed, so a brought-down stack clears its previous pins.
+    _block=$(
+        printf '%s\n' "${BEGIN_MARKER}"
+        for _h in ${_hosts}; do
+            printf '%s\t%s\n' "${_gw}" "${_h}"
+        done
+        printf '%s' "${END_MARKER}"
+    )
+
+    # Rewrite /etc/hosts atomically: strip any prior managed block, append the
+    # new one. /etc/hosts is root-owned; sudo is passwordless + UID-agnostic.
+    _tmp=$(mktemp)
+    sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${_tmp}"
+    printf '%s\n' "${_block}" >>"${_tmp}"
+    if ! sudo cp "${_tmp}" "${HOSTS_FILE}"; then
+        rm -f "${_tmp}"
+        note "failed to write ${HOSTS_FILE} (sudo)"
+        return 1
+    fi
+    rm -f "${_tmp}"
+
+    _count=$(printf '%s\n' "${_hosts}" | grep -c . || true)
+    note "pinned ${_count} host(s) -> ${_gw}"
+}
+
+case "${1:-}" in
+"")
+    run_sync
+    ;;
+--watch)
+    # Initial sync, then re-sync on every start/die of a proximo.hosts-labelled
+    # container. docker events is a streaming long-poll (near-zero idle cost);
+    # the outer loop reconnects if the stream ends (daemon restart / socket
+    # blip). run_sync never exits, so a transient error can't kill the watcher.
+    run_sync || true
+    while :; do
+        docker events \
+            --filter 'label=proximo.hosts' \
+            --filter 'event=start' \
+            --filter 'event=die' \
+            --format '{{.Time}}' 2>/dev/null |
+            while IFS= read -r _; do
+                run_sync || true
+            done
+        sleep 2
     done
-    printf '%s' "${END_MARKER}"
-)
-
-# Rewrite /etc/hosts atomically: strip any prior managed block, append the new
-# one. /etc/hosts is root-owned; sudo is passwordless + UID-agnostic here.
-TMP=$(mktemp)
-trap 'rm -f "${TMP}"' EXIT
-sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${TMP}"
-printf '%s\n' "${BLOCK}" >>"${TMP}"
-sudo cp "${TMP}" "${HOSTS_FILE}" || fail "failed to write ${HOSTS_FILE} (sudo)"
-
-COUNT=$(printf '%s\n' "${HOSTS}" | grep -c . || true)
-echo "proximo-hosts: pinned ${COUNT} host(s) -> ${GW}"
+    ;;
+*)
+    note "usage: proximo-hosts [--watch]"
+    exit 2
+    ;;
+esac
