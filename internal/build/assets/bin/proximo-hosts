@@ -1,0 +1,94 @@
+#!/bin/sh
+# toolbox proximo /etc/hosts sync.
+#
+# proximo routes *.<tld> apps on the HOST via a wildcard resolver, so it never
+# goes stale there. The toolbox container instead gets one-shot `--add-host`
+# pins computed once at container create (HostConfig.ExtraHosts, immutable
+# afterwards): any proximo stack started AFTER `toolbox shell` is invisible to
+# those pins, so `<name>.test` falls through to the host resolver, resolves to
+# 127.0.0.1 (correct for the host, wrong inside the container) and the
+# connection is refused.
+#
+# This command is the runtime complement: it re-discovers the `proximo.hosts`
+# labels from the host Docker daemon (over the mounted /var/run/docker.sock)
+# and rewrites a managed block in /etc/hosts pinning every routed hostname to
+# the host-gateway, where proximo's Traefik publishes :443. /etc/hosts is
+# mutable at runtime (unlike --add-host), so reachability tracks the running
+# stacks without recreating the container. Idempotent — re-run it whenever you
+# bring stacks up or down.
+
+set -eu
+
+BEGIN_MARKER="# >>> toolbox proximo (managed) >>>"
+END_MARKER="# <<< toolbox proximo (managed) <<<"
+HOSTS_FILE="/etc/hosts"
+
+fail() {
+    echo "proximo-hosts: $1" >&2
+    exit 1
+}
+
+command -v docker >/dev/null 2>&1 || fail "docker CLI missing in image"
+
+# host-gateway IP: prefer the host.docker.internal entry (pinned at create
+# unless `bridge: false`), fall back to the default-route gateway (docker0) so
+# the sync still works without that pin. Both resolve to the same host-gateway.
+# IPv4 is forced (ahostsv4): Traefik publishes :443 on IPv4, and host.docker.
+# internal can resolve IPv6-first on some Docker setups.
+gateway_ip() {
+    _gw=$(getent ahostsv4 host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+    if [ -z "${_gw:-}" ]; then
+        _gw=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+    fi
+    if [ -n "${_gw:-}" ]; then
+        printf '%s' "${_gw}"
+        return 0
+    fi
+    if command -v ip >/dev/null 2>&1; then
+        ip -4 route show default 2>/dev/null | awk '{print $3; exit}'
+    fi
+}
+
+GW=$(gateway_ip)
+[ -n "${GW:-}" ] || fail "cannot determine host-gateway IP (keep 'bridge' enabled, or install iproute2)"
+
+# Discover proximo.hosts labels from running containers via the host daemon.
+# `docker ps --format` exposes .Labels as a flat string, so list the matching
+# container IDs and read the label off each via `docker inspect`, whose
+# .Config.Labels IS a map. Each value is a comma-separated hostname list; split,
+# trim, drop blanks, de-duplicate and sort — the shell mirror of the host-side
+# internal/proximo.ExtraHosts parser.
+IDS=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
+    fail "docker ps failed — is /var/run/docker.sock mounted?"
+RAW=""
+if [ -n "${IDS}" ]; then
+    # shellcheck disable=SC2086  # word-split the newline-separated ID list
+    RAW=$(docker inspect --format '{{index .Config.Labels "proximo.hosts"}}' ${IDS} 2>/dev/null) ||
+        fail "docker inspect failed"
+fi
+HOSTS=$(printf '%s\n' "${RAW}" |
+    tr ',' '\n' |
+    sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
+    grep -v '^$' |
+    sort -u)
+
+# Build the managed block. The markers are emitted even when no host is routed,
+# so a brought-down stack clears its previous pins on the next run.
+BLOCK=$(
+    printf '%s\n' "${BEGIN_MARKER}"
+    for h in ${HOSTS}; do
+        printf '%s\t%s\n' "${GW}" "${h}"
+    done
+    printf '%s' "${END_MARKER}"
+)
+
+# Rewrite /etc/hosts atomically: strip any prior managed block, append the new
+# one. /etc/hosts is root-owned; sudo is passwordless + UID-agnostic here.
+TMP=$(mktemp)
+trap 'rm -f "${TMP}"' EXIT
+sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${TMP}"
+printf '%s\n' "${BLOCK}" >>"${TMP}"
+sudo cp "${TMP}" "${HOSTS_FILE}" || fail "failed to write ${HOSTS_FILE} (sudo)"
+
+COUNT=$(printf '%s\n' "${HOSTS}" | grep -c . || true)
+echo "proximo-hosts: pinned ${COUNT} host(s) -> ${GW}"
