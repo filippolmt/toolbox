@@ -1,0 +1,136 @@
+#!/bin/sh
+# toolbox proximo /etc/hosts sync.
+#
+# proximo routes *.<tld> apps on the HOST via a wildcard resolver, so it never
+# goes stale there. The toolbox container instead gets one-shot `--add-host`
+# pins computed once at container create (HostConfig.ExtraHosts, immutable
+# afterwards): any proximo stack started AFTER `toolbox shell` is invisible to
+# those pins, so `<name>.test` falls through to the host resolver, resolves to
+# 127.0.0.1 (correct for the host, wrong inside the container) and the
+# connection is refused.
+#
+# This command is the runtime complement: it re-discovers the `proximo.hosts`
+# labels from the host Docker daemon (over the mounted /var/run/docker.sock)
+# and rewrites a managed block in /etc/hosts pinning every routed hostname to
+# the host-gateway, where proximo's Traefik publishes :443. /etc/hosts is
+# mutable at runtime (unlike --add-host), so reachability tracks the running
+# stacks without recreating the container.
+#
+# Usage:
+#   proximo-hosts            sync once and exit (idempotent)
+#   proximo-hosts --watch    sync, then keep syncing on every start/die of a
+#                            proximo.hosts-labelled container (docker events).
+#                            entrypoint.sh launches this in the background when
+#                            proximo is enabled, so the sync is automatic.
+
+set -eu
+
+BEGIN_MARKER="# >>> toolbox proximo (managed) >>>"
+END_MARKER="# <<< toolbox proximo (managed) <<<"
+HOSTS_FILE="/etc/hosts"
+
+note() { echo "proximo-hosts: $1" >&2; }
+
+command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; exit 1; }
+
+# host-gateway IP: the host.docker.internal entry (pinned at create unless
+# `bridge: false`), else the default-route gateway (docker0) so the sync still
+# works without that pin. Both resolve to the same host-gateway. IPv4 is forced
+# (ahostsv4 / `ip -4`): Traefik publishes :443 on IPv4, and host.docker.internal
+# can resolve IPv6-first on some Docker setups.
+gateway_ip() {
+    _gw=$(getent ahostsv4 host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+    if [ -n "${_gw:-}" ]; then
+        printf '%s' "${_gw}"
+    elif command -v ip >/dev/null 2>&1; then
+        ip -4 route show default 2>/dev/null | awk '{print $3; exit}'
+    fi
+}
+
+# run_sync rewrites the managed /etc/hosts block from the current proximo.hosts
+# labels. Returns non-zero on a recoverable error (so --watch keeps running)
+# rather than exiting, leaving /etc/hosts untouched.
+run_sync() {
+    _gw=$(gateway_ip)
+    [ -n "${_gw:-}" ] || { note "cannot determine host-gateway IP"; return 1; }
+
+    # Discover proximo.hosts labels from running containers via the host daemon.
+    # `docker ps --format` exposes .Labels as a flat string, so list the matching
+    # container IDs and read the label off each via `docker inspect`, whose
+    # .Config.Labels IS a map. Each value is a comma-separated hostname list;
+    # split, trim, drop blanks, de-duplicate and sort — the shell mirror of the
+    # host-side internal/proximo.ExtraHosts parser.
+    _ids=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
+        { note "docker ps failed — is /var/run/docker.sock mounted?"; return 1; }
+    _raw=""
+    if [ -n "${_ids}" ]; then
+        # shellcheck disable=SC2086  # word-split the newline-separated ID list
+        _raw=$(docker inspect --format '{{index .Config.Labels "proximo.hosts"}}' ${_ids} 2>/dev/null) ||
+            { note "docker inspect failed"; return 1; }
+    fi
+    _hosts=$(printf '%s\n' "${_raw}" |
+        tr ',' '\n' |
+        sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
+        grep -v '^$' |
+        sort -u)
+
+    # Build the candidate /etc/hosts: strip any prior managed block, then append
+    # a fresh one. The markers are emitted even when no host is routed, so a
+    # brought-down stack clears its previous pins.
+    _tmp=$(mktemp)
+    sed "/^${BEGIN_MARKER}\$/,/^${END_MARKER}\$/d" "${HOSTS_FILE}" >"${_tmp}"
+    {
+        printf '%s\n' "${BEGIN_MARKER}"
+        for _h in ${_hosts}; do
+            printf '%s\t%s\n' "${_gw}" "${_h}"
+        done
+        printf '%s\n' "${END_MARKER}"
+    } >>"${_tmp}"
+
+    # Skip the privileged write when nothing changed: a compose up/down fires one
+    # event per container, but the managed block usually changes at most once, so
+    # this keeps the event burst cheap (no sudo, no log spam).
+    if cmp -s "${_tmp}" "${HOSTS_FILE}"; then
+        rm -f "${_tmp}"
+        return 0
+    fi
+
+    # /etc/hosts is root-owned; sudo is passwordless + UID-agnostic.
+    if ! sudo cp "${_tmp}" "${HOSTS_FILE}"; then
+        rm -f "${_tmp}"
+        note "failed to write ${HOSTS_FILE} (sudo)"
+        return 1
+    fi
+    rm -f "${_tmp}"
+
+    _count=$(printf '%s\n' "${_hosts}" | grep -c . || true)
+    note "pinned ${_count} host(s) -> ${_gw}"
+}
+
+case "${1:-}" in
+"")
+    run_sync
+    ;;
+--watch)
+    # Initial sync, then re-sync on every start/die of a proximo.hosts-labelled
+    # container. docker events is a streaming long-poll (near-zero idle cost);
+    # the outer loop reconnects if the stream ends (daemon restart / socket
+    # blip). run_sync never exits, so a transient error can't kill the watcher.
+    run_sync || true
+    while :; do
+        docker events \
+            --filter 'label=proximo.hosts' \
+            --filter 'event=start' \
+            --filter 'event=die' \
+            --format '{{.Time}}' 2>/dev/null |
+            while IFS= read -r _; do
+                run_sync || true
+            done
+        sleep 2
+    done
+    ;;
+*)
+    note "usage: proximo-hosts [--watch]"
+    exit 2
+    ;;
+esac

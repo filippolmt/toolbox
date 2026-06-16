@@ -1335,6 +1335,12 @@ COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 # (squash-merged PRs) + merged worktree-agent-* leftovers, then prunes stale
 # worktree entries. Never touches the current or default branch.
 COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
+# proximo /etc/hosts sync. Re-discovers the proximo.hosts labels from the host
+# daemon (mounted docker.sock) and rewrites a managed /etc/hosts block pinning
+# each routed *.test name to the host-gateway — the runtime complement to the
+# one-shot --add-host pins fixed at container create, so stacks started after
+# `toolbox shell` become reachable without recreating the container.
+COPY --link --chmod=0755 bin/proximo-hosts /usr/local/bin/proximo-hosts
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \
