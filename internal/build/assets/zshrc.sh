@@ -204,4 +204,64 @@ if command -v starship >/dev/null 2>&1; then
     eval "$(starship init zsh)"
 fi
 
+# -- Update-availability banner (update-notification) ------------------------
+# A precmd hook surfaces "a newer runtime image / CLI is available" without
+# ever blocking the prompt: it reads ONLY a local cache file written by the
+# disowned background poller (toolbox-update-check), and fires that poller in
+# the background when the cache is stale. The banner shows once per distinct
+# result (keyed on a shown-signature file). Opt out by exporting
+# TOOLBOX_NO_UPDATE_CHECK to a truthy value — no banner, no poller.
+# → docs/update-notification.md
+if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ] && command -v toolbox-update-check >/dev/null 2>&1; then
+    _toolbox_update_cache="${HOME}/.toolbox-state/update-check"
+    _toolbox_update_shown="${HOME}/.toolbox-state/update-check.shown"
+    _toolbox_update_stamp="${HOME}/.toolbox-state/update-check.stamp"
+    _toolbox_update_ttl="${TOOLBOX_UPDATE_CHECK_TTL:-21600}"
+    zmodload zsh/datetime 2>/dev/null
+    zmodload zsh/stat 2>/dev/null
+
+    _toolbox_update_precmd() {
+        emulate -L zsh
+        # Fire the poller in the background when the last attempt (stamp) is
+        # missing or older than the TTL. The subshell+& detaches it so the
+        # prompt never waits and no job-control line appears.
+        local mtime=0
+        [[ -f $_toolbox_update_stamp ]] && \
+            mtime=$(zstat +mtime -- $_toolbox_update_stamp 2>/dev/null || echo 0)
+        if (( ${EPOCHSECONDS:-0} - mtime >= _toolbox_update_ttl )); then
+            ( toolbox-update-check >/dev/null 2>&1 & ) >/dev/null 2>&1
+        fi
+
+        # Render from the cache, once per distinct result. The shown-signature
+        # file records the last result we displayed (including "nothing to
+        # report"), so a stable cache never re-nags on every prompt.
+        [[ -r $_toolbox_update_cache ]] || return 0
+        local sig shown=""
+        sig=$(<$_toolbox_update_cache) 2>/dev/null || return 0
+        [[ -z $sig ]] && return 0
+        [[ -r $_toolbox_update_shown ]] && shown=$(<$_toolbox_update_shown) 2>/dev/null
+        [[ $sig == $shown ]] && return 0
+
+        local image_update=0 cli_update=0 cli_latest="" line
+        while IFS= read -r line; do
+            case $line in
+                image_update=*) image_update=${line#image_update=} ;;
+                cli_update=*)   cli_update=${line#cli_update=} ;;
+                cli_latest=*)   cli_latest=${line#cli_latest=} ;;
+            esac
+        done < $_toolbox_update_cache
+
+        [[ $image_update == 1 ]] && \
+            print -P "%F{yellow}toolbox:%f a newer runtime image is available — exit the shell and run %B'toolbox stop'%b, then reopen it (or %B'toolbox build'%b to rebuild locally)."
+        [[ $cli_update == 1 ]] && \
+            print -P "%F{yellow}toolbox:%f a newer CLI${cli_latest:+ ($cli_latest)} is available — run %B'brew upgrade'%b on the host."
+
+        # Mark this result shown even when nothing surfaced, so the comparison
+        # above short-circuits until the cached result actually changes.
+        print -r -- "$sig" > $_toolbox_update_shown 2>/dev/null || true
+    }
+    autoload -Uz add-zsh-hook
+    add-zsh-hook precmd _toolbox_update_precmd
+fi
+
 return 0

@@ -1341,6 +1341,11 @@ COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
 # one-shot --add-host pins fixed at container create, so stacks started after
 # `toolbox shell` become reachable without recreating the container.
 COPY --link --chmod=0755 bin/proximo-hosts /usr/local/bin/proximo-hosts
+# Update-availability poller. Best-effort, fail-silent network check for a
+# newer runtime image (GHCR :latest digest) and host CLI release (GitHub
+# releases/latest), TTL-gated and written to a cache the zsh precmd reads. The
+# prompt never runs this synchronously; zshrc.sh fires it in the background.
+COPY --link --chmod=0755 bin/toolbox-update-check /usr/local/bin/toolbox-update-check
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \

@@ -25,6 +25,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/sdd"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // --- Public Seams ---
@@ -94,7 +95,14 @@ type MergedSessionPlan struct {
 // carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
 // socat per published container port — see
 // docs/runtime-notes.md#loopback-bridge.
-func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool) (*SessionPlan, error) {
+//
+// imageDigest is the running image's resolved repo digest (`sha256:...`),
+// supplied host-side by the caller (it needs the Docker client, which the
+// pure planner does not hold). Empty when unresolvable — e.g. a locally
+// built untagged image; the identity injection then omits the digest entry
+// so the in-container poller skips the image check rather than treating an
+// empty value as a stale digest. See update-notification.
+func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, imageDigest string) (*SessionPlan, error) {
 	workspace = normalizeWorkspace(workspace)
 
 	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
@@ -126,7 +134,7 @@ func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback b
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           composeEnv(workspace, mp.WorkingDir, cfg, bridgeLoopback, uniqContainerPorts, proximo.Env(cfg)),
+		Env:           composeEnv(workspace, mp.WorkingDir, cfg, bridgeLoopback, uniqContainerPorts, imageDigest, proximo.Env(cfg)),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -203,7 +211,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           composeEnv(workspace, workingDir, cfg, bridgeLoopback, uniqContainerPorts, nil),
+		Env:           composeEnv(workspace, workingDir, cfg, bridgeLoopback, uniqContainerPorts, "", nil),
 		ContainerName: ContainerNameFor(workspace),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
@@ -211,15 +219,33 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 }
 
 // composeEnv assembles the full ordered env slice for a session: the curated
-// workspace + SDD entries first, then the loopback-bridge markers, then any
-// caller-supplied curated extras (Plan passes proximo.Env, which stats the
-// host CA — fs-touching, so the pure-data Merge passes nil), then the
-// user-supplied env: map. Reserved-key collisions are already rejected by
-// config.ValidateEnv, so userEnv can append unconditionally.
-func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, extra []string) []string {
+// workspace + SDD entries first, then the loopback-bridge markers, then the
+// self-identity entries (CLI version + image digest) the in-container update
+// poller compares against published releases, then any caller-supplied
+// curated extras (Plan passes proximo.Env, which stats the host CA —
+// fs-touching, so the pure-data Merge passes nil), then the user-supplied
+// env: map. Reserved-key collisions are already rejected by config.ValidateEnv,
+// so userEnv can append unconditionally.
+func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, imageDigest string, extra []string) []string {
 	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
+	env = append(env, identityEnv(imageDigest)...)
 	env = append(env, extra...)
 	return append(env, userEnv(cfg.Env)...)
+}
+
+// identityEnv emits the self-identification env that lets the in-container
+// update poller compare the running toolbox against published releases:
+// TOOLBOX_CLI_VERSION (always, from the host CLI build) and
+// TOOLBOX_IMAGE_DIGEST (only when the host resolved a repo digest). The
+// digest entry is omitted — not emitted empty — when unresolvable so the
+// poller skips the image check instead of reading an empty value as a stale
+// digest and reporting a bogus "update available". See update-notification.
+func identityEnv(imageDigest string) []string {
+	out := []string{"TOOLBOX_CLI_VERSION=" + version.Version}
+	if imageDigest != "" {
+		out = append(out, "TOOLBOX_IMAGE_DIGEST="+imageDigest)
+	}
+	return out
 }
 
 // userEnv emits the cfg.Env map as deterministically ordered K=V strings.

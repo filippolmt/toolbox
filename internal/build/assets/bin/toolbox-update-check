@@ -1,0 +1,123 @@
+#!/bin/sh
+# toolbox-update-check — best-effort, fail-silent poll for a newer toolbox
+# runtime image and host CLI release. Writes a parseable result to
+# $HOME/.toolbox-state/update-check; the zsh precmd hook (see zshrc.sh) reads
+# ONLY that cache and renders a one-shot banner. This script does the network
+# work and MUST stay silent — it never writes to the user's terminal.
+#
+# Two checks, both independent and either-or:
+#   * image — anonymous GHCR bearer token -> manifest HEAD -> the
+#     Docker-Content-Digest header for :latest, compared to TOOLBOX_IMAGE_DIGEST
+#     (the running image's digest, injected host-side at container creation).
+#   * cli   — the GitHub releases/latest tag_name, semver-compared to
+#     TOOLBOX_CLI_VERSION (the host CLI build version, likewise injected).
+#
+# GHCR is queried for the canonical repo even when the container was pulled
+# from a registry mirror: a mirror serves identical content, and GHCR :latest
+# remains the authoritative "is there something newer" signal.
+#
+# A `.stamp` sibling records every attempt (success OR failure) so the TTL gate
+# throttles retries even while offline — without it a persistently failing
+# check would re-fire on every prompt. The result cache itself is only
+# rewritten on a check that reached the registry, so an offline run preserves a
+# previously valid result (per the update-notification spec).
+set -u
+
+# -- Opt-out: a single truthy env var disables polling entirely --------------
+case "${TOOLBOX_NO_UPDATE_CHECK:-}" in
+	1 | true | TRUE | yes | YES | on | ON) exit 0 ;;
+esac
+
+[ -n "${HOME:-}" ] || exit 0
+command -v curl >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+state_dir="${HOME}/.toolbox-state"
+cache="${state_dir}/update-check"
+stamp="${state_dir}/update-check.stamp"
+ttl="${TOOLBOX_UPDATE_CHECK_TTL:-21600}" # 6h
+
+ghcr_repo="${TOOLBOX_GHCR_REPO:-filippolmt/toolbox}"
+gh_repo="${TOOLBOX_GH_REPO:-filippolmt/toolbox}"
+tag="latest"
+
+# -- TTL gate: skip the network when the last attempt is still fresh ---------
+if [ -f "$stamp" ]; then
+	now=$(date +%s 2>/dev/null || echo 0)
+	mtime=$(stat -c %Y "$stamp" 2>/dev/null || echo 0)
+	if [ "$now" -gt 0 ] && [ "$mtime" -gt 0 ] && [ "$((now - mtime))" -lt "$ttl" ]; then
+		exit 0
+	fi
+fi
+
+mkdir -p "$state_dir" 2>/dev/null || exit 0
+# Record the attempt up front so a failing check still resets the TTL.
+: >"$stamp" 2>/dev/null || true
+
+attempted=0
+succeeded=0
+image_update=0
+image_latest=""
+cli_update=0
+cli_latest=""
+
+# -- Image check -------------------------------------------------------------
+if [ -n "${TOOLBOX_IMAGE_DIGEST:-}" ]; then
+	attempted=$((attempted + 1))
+	token=$(curl -fsSL --max-time 10 \
+		"https://ghcr.io/token?scope=repository:${ghcr_repo}:pull" 2>/dev/null |
+		jq -r '.token // empty' 2>/dev/null)
+	if [ -n "$token" ]; then
+		latest_digest=$(curl -fsSL -I --max-time 10 \
+			-H "Authorization: Bearer ${token}" \
+			-H "Accept: application/vnd.oci.image.index.v1+json" \
+			-H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+			"https://ghcr.io/v2/${ghcr_repo}/manifests/${tag}" 2>/dev/null |
+			tr -d '\r' | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest:[[:space:]]*//p')
+		if [ -n "$latest_digest" ]; then
+			succeeded=$((succeeded + 1))
+			image_latest="$latest_digest"
+			[ "$latest_digest" != "$TOOLBOX_IMAGE_DIGEST" ] && image_update=1
+		fi
+	fi
+fi
+
+# -- CLI check ---------------------------------------------------------------
+# "dev" is the un-stamped local-build version; there is no release to compare.
+if [ -n "${TOOLBOX_CLI_VERSION:-}" ] && [ "${TOOLBOX_CLI_VERSION}" != "dev" ]; then
+	attempted=$((attempted + 1))
+	tag_name=$(curl -fsSL --max-time 10 \
+		-H "Accept: application/vnd.github+json" \
+		"https://api.github.com/repos/${gh_repo}/releases/latest" 2>/dev/null |
+		jq -r '.tag_name // empty' 2>/dev/null)
+	if [ -n "$tag_name" ]; then
+		succeeded=$((succeeded + 1))
+		cli_latest="$tag_name"
+		cur="${TOOLBOX_CLI_VERSION#v}"
+		new="${tag_name#v}"
+		if [ "$cur" != "$new" ]; then
+			greatest=$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -n1)
+			[ "$greatest" = "$new" ] && cli_update=1
+		fi
+	fi
+fi
+
+# Offline / API failure: every attempted check failed to reach the registry.
+# Leave the previous (still valid) cache untouched — the stamp above already
+# throttled the next retry.
+if [ "$attempted" -gt 0 ] && [ "$succeeded" -eq 0 ]; then
+	exit 0
+fi
+
+tmp="${cache}.$$"
+if {
+	echo "image_update=${image_update}"
+	echo "image_latest=${image_latest}"
+	echo "cli_update=${cli_update}"
+	echo "cli_latest=${cli_latest}"
+} >"$tmp" 2>/dev/null; then
+	mv -f "$tmp" "$cache" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+else
+	rm -f "$tmp" 2>/dev/null
+fi
+exit 0

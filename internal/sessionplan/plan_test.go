@@ -14,6 +14,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // testConfig returns a baseline *config.Config that resolves to the canonical
@@ -35,7 +36,7 @@ func TestPlanComposesImage(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestPlanComposesPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestPlanComputesContainerName(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -177,11 +178,11 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	a, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan a: %v", err)
 	}
-	b, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	b, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan b: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -216,9 +217,48 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + filepath.Base(workspace),
+		"TOOLBOX_CLI_VERSION=" + version.Version,
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
+	}
+}
+
+// TestPlanInjectsImageIdentity asserts the self-identity contract the
+// in-container update poller depends on: TOOLBOX_CLI_VERSION is always
+// emitted, and TOOLBOX_IMAGE_DIGEST appears verbatim when a digest is
+// supplied but is omitted entirely (not emitted empty) when it is not.
+func TestPlanInjectsImageIdentity(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	digest := "sha256:" + strings.Repeat("a", 64)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, digest)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if !slices.Contains(plan.Env, "TOOLBOX_IMAGE_DIGEST="+digest) {
+		t.Errorf("Env missing TOOLBOX_IMAGE_DIGEST=%s; got %v", digest, plan.Env)
+	}
+	if !slices.Contains(plan.Env, "TOOLBOX_CLI_VERSION="+version.Version) {
+		t.Errorf("Env missing TOOLBOX_CLI_VERSION=%s; got %v", version.Version, plan.Env)
+	}
+
+	bare, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	if err != nil {
+		t.Fatalf("Plan (no digest): %v", err)
+	}
+	for _, e := range bare.Env {
+		if strings.HasPrefix(e, "TOOLBOX_IMAGE_DIGEST=") {
+			t.Errorf("Env should omit TOOLBOX_IMAGE_DIGEST when digest unresolved; got %q", e)
+		}
+	}
+	if !slices.Contains(bare.Env, "TOOLBOX_CLI_VERSION="+version.Version) {
+		t.Errorf("Env missing TOOLBOX_CLI_VERSION when digest unresolved; got %v", bare.Env)
 	}
 }
 
@@ -233,7 +273,7 @@ func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -256,7 +296,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 	cfg := testConfig()
 	cfg.Env = map[string]string{"ZED": "z", "CLAUDE_CODE_WORKFLOWS": "1", "EMPTY": ""}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -265,6 +305,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=ws",
+		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
 		"ZED=z",
@@ -303,7 +344,7 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gsd": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -349,7 +390,7 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"bmad": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -372,7 +413,7 @@ func TestPlanSDDEnvOpenSpec(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"openspec": {Enabled: true}}
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -396,7 +437,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gds": {Enabled: true}, "gsd": {Enabled: false}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -426,7 +467,7 @@ func TestPlanSDDEnvStepsOverride(t *testing.T) {
 		Steps:   [][]string{{"--claude", "--local"}},
 	}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -448,7 +489,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false)
+	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false, "")
 	if err == nil {
 		t.Fatal("Plan should reject malformed --publish spec")
 	}
@@ -460,7 +501,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Plan(cfg, "/workspace", nil, false)
+	_, err := sessionplan.Plan(cfg, "/workspace", nil, false, "")
 	if err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
@@ -475,7 +516,7 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	}
 	dirty := filepath.Join(tmpHome, "foo", "..", "bar")
 
-	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -528,6 +569,7 @@ func TestMergeIsPure(t *testing.T) {
 		"TOOLBOX_HOST_WORKSPACE=/workspace",
 		"PWD=" + mountplan.WorkspaceTarget,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=workspace",
+		"TOOLBOX_CLI_VERSION=" + version.Version,
 	}
 	if !slices.Equal(merged.Env, wantEnv) {
 		t.Errorf("Merge.Env = %v, want %v", merged.Env, wantEnv)
@@ -618,7 +660,7 @@ func TestPlanComputesCmd(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.Shell = "zsh"
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false)
+	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -637,7 +679,7 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -668,7 +710,7 @@ func TestPlanLoopbackBridgeOff(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -688,7 +730,7 @@ func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true)
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -709,7 +751,7 @@ func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true)
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -727,7 +769,7 @@ func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true)
+	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -745,7 +787,7 @@ func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

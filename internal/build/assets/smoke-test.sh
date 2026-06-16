@@ -224,6 +224,10 @@ check_required "proximo-hosts watcher wired" sh -c "grep -q proximo-hosts.--watc
 # git-prune-dead is a `git prune-dead` subcommand helper; assert it ships
 # executable on PATH (no flag invocation — running it would prune branches).
 check_required "git-prune-dead" sh -c "test -x /usr/local/bin/git-prune-dead && command -v git-prune-dead >/dev/null && echo present"
+# Update poller ships executable and runs clean. Invoke with the opt-out set so
+# the smoke run exercises the script body (parse, gates, exit) without any
+# network round-trip to GHCR / GitHub.
+check_required "toolbox-update-check" sh -c "test -x /usr/local/bin/toolbox-update-check && TOOLBOX_NO_UPDATE_CHECK=1 toolbox-update-check && echo present"
 check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
 check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u \"\$(command -v sudo)\" && echo present"
 

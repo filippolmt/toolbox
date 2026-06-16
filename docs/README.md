@@ -12,6 +12,7 @@ sections.**
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
 | [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
+| [update-notification.md](update-notification.md) | explanation | In-shell "newer image / CLI available" banner |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
 | [internals/](#internals) | explanation | Maintainer-only material |
@@ -80,6 +81,13 @@ sections.**
 - [Trust establishment (entrypoint, self-gated on the mount)](proximo.md#trust-establishment-entrypoint-self-gated-on-the-mount)
 - [Lifecycle from inside the container (bridge shim)](proximo.md#lifecycle-from-inside-the-container-bridge-shim)
 - [Boundaries and caveats](proximo.md#boundaries-and-caveats)
+
+## update-notification.md
+
+- [What you see](update-notification.md#what-you-see)
+- [How it works](update-notification.md#how-it-works)
+- [Cache and TTL](update-notification.md#cache-and-ttl)
+- [Opt out](update-notification.md#opt-out)
 
 ## sdd.md
 
