@@ -35,6 +35,42 @@ func ResolveImage(image, registryMirror string) string {
 	return DefaultRegistryImage
 }
 
+// RepoDigest picks the `sha256:...` content digest of ref out of a Docker
+// image's RepoDigests list (each entry is `repo@sha256:...`), matching the
+// entry whose repo equals ref's repo (registry path minus any tag/digest).
+// Returns "" when no entry matches — e.g. a locally built image carries no
+// repo digest — so callers treat an unresolvable digest as "unknown" rather
+// than guessing. Used host-side to stamp TOOLBOX_IMAGE_DIGEST for the
+// in-container update poller (see update-notification).
+func RepoDigest(ref string, repoDigests []string) string {
+	want := repoOf(ref)
+	for _, rd := range repoDigests {
+		repo, digest, ok := strings.Cut(rd, "@")
+		if !ok {
+			continue
+		}
+		if repoOf(repo) == want {
+			return digest
+		}
+	}
+	return ""
+}
+
+// repoOf strips any tag and digest suffix from an image ref, leaving the
+// bare registry path (`host[:port]/path`). The tag colon is the last colon
+// after the last slash, so a registry-host port (e.g. `localhost:5000/img`)
+// is not mistaken for a tag.
+func repoOf(ref string) string {
+	if i := strings.IndexByte(ref, '@'); i >= 0 {
+		ref = ref[:i]
+	}
+	slash := strings.LastIndexByte(ref, '/')
+	if colon := strings.LastIndexByte(ref, ':'); colon > slash {
+		ref = ref[:colon]
+	}
+	return ref
+}
+
 // SplitRegistryHost splits an image ref into its registry host and the
 // remaining path+tag. The first slash-separated segment is treated as the
 // registry host only when it looks like one — it contains "." or ":", or is

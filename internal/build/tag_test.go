@@ -51,6 +51,62 @@ func TestResolveImage(t *testing.T) {
 	}
 }
 
+// TestRepoDigest covers matching ref's repo against a RepoDigests list,
+// the registry-port-vs-tag disambiguation, and the no-match fallback.
+func TestRepoDigest(t *testing.T) {
+	const sha = "sha256:abc123"
+	tests := []struct {
+		name        string
+		ref         string
+		repoDigests []string
+		want        string
+	}{
+		{
+			name:        "tagged ref matches repo digest",
+			ref:         "ghcr.io/filippolmt/toolbox:latest",
+			repoDigests: []string{"ghcr.io/filippolmt/toolbox@" + sha},
+			want:        sha,
+		},
+		{
+			name:        "untagged ref matches",
+			ref:         "ghcr.io/filippolmt/toolbox",
+			repoDigests: []string{"ghcr.io/filippolmt/toolbox@" + sha},
+			want:        sha,
+		},
+		{
+			name:        "picks matching repo among several",
+			ref:         "ghcr.io/filippolmt/toolbox:latest",
+			repoDigests: []string{"docker.io/other/img@sha256:zzz", "ghcr.io/filippolmt/toolbox@" + sha},
+			want:        sha,
+		},
+		{
+			name:        "registry port is not mistaken for a tag",
+			ref:         "localhost:5000/toolbox:latest",
+			repoDigests: []string{"localhost:5000/toolbox@" + sha},
+			want:        sha,
+		},
+		{
+			name:        "no repo digest yields empty",
+			ref:         "ghcr.io/filippolmt/toolbox:latest",
+			repoDigests: nil,
+			want:        "",
+		},
+		{
+			name:        "different repo does not match",
+			ref:         "ghcr.io/filippolmt/toolbox:latest",
+			repoDigests: []string{"ghcr.io/someone/else@" + sha},
+			want:        "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RepoDigest(tt.ref, tt.repoDigests); got != tt.want {
+				t.Errorf("RepoDigest(%q, %v) = %q, want %q", tt.ref, tt.repoDigests, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestSplitRegistryHost covers the host-detection heuristic.
 func TestSplitRegistryHost(t *testing.T) {
 	tests := []struct {

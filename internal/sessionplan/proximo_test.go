@@ -35,7 +35,7 @@ func TestPlanWiresProximo(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(&config.Config{Shell: "zsh", Proximo: boolPtr(true)}, workspace, nil, false)
+	plan, err := sessionplan.Plan(&config.Config{Shell: "zsh", Proximo: boolPtr(true)}, workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestPlanProximoDisabled(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false)
+	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

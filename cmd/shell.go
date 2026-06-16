@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
+	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -105,10 +108,17 @@ func runShell(cmd *cobra.Command, args []string) error {
 	}
 	cfg.Env = cfg.EffectiveEnv(rawShellName)
 
+	// Resolve the running image's repo digest host-side and thread it to the
+	// planner so the in-container update poller can compare it against GHCR's
+	// :latest. Best-effort: an unresolvable digest (locally built image,
+	// inspect failure, image not yet pulled) yields "" and the planner omits
+	// the env entry. See update-notification.
+	imageDigest := resolveImageDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
+
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, ws, publish, bridgeLoopback)
+	plan, err := sessionplan.Plan(cfg, ws, publish, bridgeLoopback, imageDigest)
 	if err != nil {
 		return err
 	}
@@ -122,6 +132,20 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	return container.Shell(ctx, cli, plan)
+}
+
+// resolveImageDigest returns the resolved repo digest (`sha256:...`) of the
+// image at ref, read from the local daemon's RepoDigests. Best-effort: any
+// inspect failure (image absent, daemon error) or a locally built image with
+// no repo digest returns "" so the caller threads an empty identity rather
+// than failing the shell. The digest is what the in-container poller compares
+// against GHCR's :latest manifest.
+func resolveImageDigest(ctx context.Context, cli client.APIClient, ref string) string {
+	res, err := cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return ""
+	}
+	return build.RepoDigest(ref, res.RepoDigests)
 }
 
 // expandShellOAuth merges --oauth recipe expansion into the explicit -p/-B
