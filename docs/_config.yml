@@ -1,0 +1,6 @@
+title: Toolbox
+description: Containerised Debian-slim dev environment managed by a host-side Go CLI
+theme: jekyll-theme-primer
+markdown: GFM
+plugins:
+  - jekyll-relative-links
