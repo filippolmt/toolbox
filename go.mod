@@ -9,8 +9,8 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-connections v0.7.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/moby/moby/api v1.54.2
-	github.com/moby/moby/client v0.4.1
+	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/client v0.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	golang.org/x/term v0.44.0
