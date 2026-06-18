@@ -840,6 +840,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       ca-certificates \
       curl \
       file \
+      gettext-base \
       git \
       gnupg \
       less \
