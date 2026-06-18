@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # --exclude-path docs/superpowers matches the make target; the dir is
       # gitignored so it never exists in CI checkouts — kept for parity.
