@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.24
+# syntax=docker/dockerfile:1.25
 # Toolbox image. BuildKit required.
 #
 # Build-time strategy (wall-clock first):
@@ -29,7 +29,7 @@ ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.16.1
 ARG KUBECTL_VERSION=v1.36.2
 ARG KUBECTX_VERSION=0.11.0
-ARG HELM_VERSION=v4.2.1
+ARG HELM_VERSION=v4.2.2
 ARG TOFU_VERSION=1.12.2
 ARG DOCKER_CLI_VERSION=29.5.3
 ARG JQ_VERSION=1.8.1
@@ -41,7 +41,7 @@ ARG UV_VERSION=0.11.21
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
 ARG SONARQUBE_CLI_VERSION=1.0.0.2628
-ARG CLAUDE_CODE_VERSION=2.1.179
+ARG CLAUDE_CODE_VERSION=2.1.181
 ARG CODEX_CLI_VERSION=0.140.0
 ARG CODEGRAPH_VERSION=1.0.1
 ARG CF_CLI_VERSION=0.0.6
