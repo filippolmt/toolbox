@@ -34,7 +34,7 @@ type OAuthRecipe struct {
 // no dist patch (it binds loopback natively post-0.1.0); the historical
 // `localhost`→`0.0.0.0` sed was dropped (it poisoned the redirect_uri —
 // Cloudflare rejected the `0.0.0.0` callback).
-// Ports are upstream defaults; see docs/runtime-notes.md#loopback-bridge.
+// Ports are upstream defaults; see docs/commands.md#loopback-bridge.
 var oauthRecipes = map[string]OAuthRecipe{
 	"cf":       {Publish: "8877-8886:8877-8886", Bridge: true},
 	"codex":    {Publish: "1455:1455", Bridge: true},

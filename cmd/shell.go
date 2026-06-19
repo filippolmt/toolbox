@@ -53,8 +53,8 @@ its OAuth callback to container loopback (127.0.0.1) rather than 0.0.0.0
 — Docker port-forward delivers to eth0, and a loopback listener never
 sees those packets. The bridge spawns one socat per published container
 port that listens on eth0 and forwards to 127.0.0.1, making the listener
-reachable from the host browser. See docs/runtime-notes.md#loopback-bridge
-for recipes (codex, wrangler) and the dynamic-port carve-out (cf).
+reachable from the host browser. See docs/commands.md#loopback-bridge
+for recipes (codex, wrangler, sonar, cf) and the wildcard-bind carve-out (oci, glab).
 
 Use --oauth <tool> as a shortcut for the documented OAuth recipes: it
 expands to the right -p/-B combination for the tool (e.g. "--oauth wrangler"
@@ -189,7 +189,7 @@ func init() {
 	shellCmd.Flags().BoolVarP(&shellBridgeLoopback, "bridge-loopback", "B", false,
 		"Forward published ports to container loopback so CLIs that bind 127.0.0.1 "+
 			"are reachable from the host browser (e.g. codex/wrangler OAuth callbacks). "+
-			"Requires at least one -p; see docs/runtime-notes.md#loopback-bridge.")
+			"Requires at least one -p; see docs/commands.md#loopback-bridge.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
 	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)

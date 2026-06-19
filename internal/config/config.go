@@ -93,7 +93,7 @@ type Config struct {
 	// Playwright's browsers), and NODE_EXTRA_CA_CERTS (Node). TOOLBOX_PROXIMO_CA
 	// is exported for the certifi gap (REQUESTS_CA_BUNDLE). Extra-hosts are
 	// fixed at container creation, so re-run `toolbox shell` to pick up newly
-	// routed hosts. See docs/runtime-notes.md#proximo-integration.
+	// routed hosts. See docs/proximo.md#proximo-integration.
 	Proximo *bool `mapstructure:"proximo"`
 	// Env injects arbitrary K=V pairs into every shell spawned by the
 	// container, emitted after the curated TOOLBOX_* / PWD entries by
