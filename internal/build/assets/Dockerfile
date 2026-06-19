@@ -1011,19 +1011,21 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "cf@${CF_CLI_VERSION}"; \
       cf --version; \
-      # Dynamic-port carve-out: cf picks OAuth callback port at runtime from \
-      # startPort:8877, so `toolbox -B` bridge cannot pre-bind. Rewrite \
-      # bindHost 127.0.0.1 → 0.0.0.0 so cf binds eth0 and host -p forward \
-      # lands directly. cf 0.0.6+ splits sources into hash-named dist/*.mjs \
-      # chunks (was cf-dist/index.js) and quote style drifts (backtick now, \
-      # was double-quote) — locate the chunk dynamically and accept any of \
-      # backtick/double/single as the literal delimiter. Empty match or \
-      # missing post-sed literal fails the build loud. \
-      CF_AUTH_MJS=$(grep -lE 'bindHost:[[:space:]]*[`"'\'']127\.0\.0\.1[`"'\'']' \
+      # Dynamic-port carve-out: cf serves the OAuth callback from startPort \
+      # 8877, so `toolbox -B` bridge cannot pre-bind. Rewrite the callback \
+      # host loopback → 0.0.0.0 so cf binds eth0 and host -p forward lands \
+      # directly. cf ships hash-named minified dist/*.mjs chunks; the auth \
+      # chunk now declares `const <p>=8877,<h>=`localhost`,…/oauth/callback` \
+      # (was a `bindHost: '127.0.0.1'` property pre-0.1.0). Anchor on the \
+      # stable 8877 port literal — minify-var names drift every release (the \
+      # JS ident class allows digits, so match [A-Za-z_$][A-Za-z0-9_$]*) — and \
+      # rewrite the adjacent host literal. Empty match or missing post-sed \
+      # literal fails the build loud. \
+      CF_AUTH_MJS=$(grep -lE '=8877,[A-Za-z_$][A-Za-z0-9_$]*=`localhost`' \
         /usr/local/lib/node_modules/cf/dist/*.mjs); \
       [ -n "$CF_AUTH_MJS" ]; \
-      sed -i -E 's/(bindHost:[[:space:]]*)[`"'\'']127\.0\.0\.1[`"'\'']/\1`0.0.0.0`/' $CF_AUTH_MJS; \
-      grep -qE 'bindHost:[[:space:]]*`0\.0\.0\.0`' $CF_AUTH_MJS; \
+      sed -i -E 's/(=8877,[A-Za-z_$][A-Za-z0-9_$]*=)`localhost`/\1`0.0.0.0`/' $CF_AUTH_MJS; \
+      grep -qE '=8877,[A-Za-z_$][A-Za-z0-9_$]*=`0\.0\.0\.0`' $CF_AUTH_MJS; \
       find /usr/local/lib/node_modules/cf \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
