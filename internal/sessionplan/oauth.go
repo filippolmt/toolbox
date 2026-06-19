@@ -16,24 +16,27 @@ type OAuthRecipe struct {
 }
 
 // oauthRecipes maps tool names accepted by `toolbox shell --oauth` to their
-// recipe. Only static-port browser-OAuth CLIs belong here: device-code CLIs
-// (gh, az, docker) have nothing to forward, and dynamic-port CLIs
-// (gcloud, gws, tofu) cannot be pre-bound — cf is the lone dynamic exception,
-// handled by a build-time sed patch onto a published range with no bridge.
-// Bridge is only for loopback-binding listeners: oci binds 0.0.0.0:8181
-// (cli_setup_bootstrap.py passes an empty host to HTTPServer), so Docker's
-// eth0 forward reaches it directly — and a socat holding eth0:8181 would
-// make oci's wildcard bind fail EADDRINUSE (verified live; Linux refuses
-// wildcard over a specific bind regardless of SO_REUSEADDR). glab binds
-// 0.0.0.0:7171 — same no-bridge reason; socat on eth0:7171 would fail
-// EADDRINUSE.
-// sonar is static-range: `sonar auth login` binds 127.0.0.1 on the first
-// free port in 64120-64130 (SonarLint Core's EmbeddedServer range; the
-// server rejects callback ports outside it), so the whole range is
-// published and bridged — nat.ParsePortSpec expands it per-port.
+// recipe. Only browser-OAuth CLIs with a known callback port (or range)
+// belong here: device-code CLIs (gh, az, docker) have nothing to forward,
+// and free-port CLIs with no fixed range (gcloud, gws, tofu) cannot be
+// pre-bound. Bridge is only for loopback-binding listeners: oci binds
+// 0.0.0.0:8181 (cli_setup_bootstrap.py passes an empty host to HTTPServer),
+// so Docker's eth0 forward reaches it directly — and a socat holding
+// eth0:8181 would make oci's wildcard bind fail EADDRINUSE (verified live;
+// Linux refuses wildcard over a specific bind regardless of SO_REUSEADDR).
+// glab binds 0.0.0.0:7171 — same no-bridge reason; socat on eth0:7171 would
+// fail EADDRINUSE.
+// cf and sonar are loopback-bind ranges: each binds 127.0.0.1 on a port from
+// a fixed range (cf: startPort 8877, maxPortAttempts 10; sonar: SonarLint
+// Core's EmbeddedServer 64120-64130, which rejects out-of-range callback
+// ports) and advertises a `localhost` redirect_uri. The whole range is
+// published and bridged — nat.ParsePortSpec expands it per-port. cf carries
+// no dist patch (it binds loopback natively post-0.1.0); the historical
+// `localhost`→`0.0.0.0` sed was dropped (it poisoned the redirect_uri —
+// Cloudflare rejected the `0.0.0.0` callback).
 // Ports are upstream defaults; see docs/runtime-notes.md#loopback-bridge.
 var oauthRecipes = map[string]OAuthRecipe{
-	"cf":       {Publish: "8877-8886:8877-8886", Bridge: false},
+	"cf":       {Publish: "8877-8886:8877-8886", Bridge: true},
 	"codex":    {Publish: "1455:1455", Bridge: true},
 	"glab":     {Publish: "7171:7171", Bridge: false},
 	"oci":      {Publish: "8181:8181", Bridge: false},

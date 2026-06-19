@@ -72,11 +72,13 @@ toolbox shell --oauth oci    # = -p 8181:8181 (no -B — oci binds 0.0.0.0)
 toolbox shell --oauth glab   # = -p 7171:7171 (no -B — glab binds 0.0.0.0)
 ```
 
-**Dynamic-port carve-out.** `cf` picks its callback port at run time from the range `startPort: 8877, maxPortAttempts: 10`. The bridge needs a known container port to forward, so `cf` cannot use it — the existing build-time `sed` patch (Dockerfile `cf` install layer) that rewrites `127.0.0.1` → `0.0.0.0` is retained for `cf` and similar dynamic-port CLIs (`gcloud`, `gws`, `tofu` — no fixed range at all, so they get no recipe). `cf login` recipe (no `-B` needed):
+`cf` is a loopback-bind range too: it picks its callback port from `startPort: 8877, maxPortAttempts: 10`, binds `127.0.0.1`, and advertises a `localhost` redirect_uri — the same shape as `sonar`, so the whole range is published and bridged. It carries **no** dist patch: cf 0.1.0 binds loopback natively, and the historical build-time `sed` that rewrote the callback host `localhost` → `0.0.0.0` was dropped — post-0.1.0 that literal **is** the redirect_uri, so the rewrite made Cloudflare reject the `0.0.0.0` callback as an unregistered redirect url. `cf login` recipe:
 
 ```
-toolbox shell --oauth cf   # = -p 8877-8886:8877-8886 (sed-patched, range syntax via nat.ParsePortSpec)
+toolbox shell --oauth cf   # = -B -p 8877-8886:8877-8886 (loopback-bind range, range syntax via nat.ParsePortSpec)
 ```
+
+**Dynamic-port CLIs with no fixed range** (`gcloud`, `gws`, `tofu`) cannot be pre-bound — the bridge needs a known container port to forward, so they get no `--oauth` recipe (use a wrapper / device-code flow).
 
 OAuth CLI survey:
 
@@ -87,7 +89,7 @@ OAuth CLI survey:
 | `wrangler` | `localhost:8976` (static) | bridge: `--oauth wrangler` = `-B -p 8976:8976` (vanilla wrangler, no sed) |
 | `codex` | `localhost:1455` (static, default ChatGPT-OAuth flow) | bridge: `--oauth codex` = `-B -p 1455:1455`; device-code (`codex login --device-auth`) exists but is an opt-in beta, not the default |
 | `sonar` | `127.0.0.1:64120-64130` (static range, first free; server rejects out-of-range ports) | bridge: `--oauth sonar` = `-B -p 64120-64130:64120-64130`; token persisted via `SONARQUBE_CLI_KEYCHAIN_FILE` (libsecret absent in container) |
-| `cf` | `127.0.0.1:8877-8886` (dynamic) | build-time sed → `0.0.0.0` + `--oauth cf` = `-p 8877-8886:8877-8886` |
+| `cf` | `127.0.0.1:8877-8886` (range, first free; localhost redirect_uri) | bridge: `--oauth cf` = `-B -p 8877-8886:8877-8886` (no sed — binds loopback natively post-0.1.0) |
 | `gcloud` | `localhost:8085+` (dynamic) | wrapper / device-code |
 | `gws` | `127.0.0.1:0` (ephemeral) | wrapper / device-code |
 | `tofu` | random port ≥1024, range from server discovery document (dynamic) | not pre-bindable; device-code/wrapper-style — no bridge recipe |
@@ -99,7 +101,7 @@ Limitations:
 - Bridge env is fixed at `ContainerCreate`. `toolbox shell -B …` on a container created without `-B` is a no-op — same UX as `-p`. Run `toolbox stop` first.
 - IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
 - `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
-- `-B` bridges **every** published port (`TOOLBOX_LOOPBACK_BRIDGE_PORTS` enumerates the full publish set, init.d/70 spawns socat per port). Combining a bridged preset with a wildcard-bind one (e.g. `--oauth wrangler --oauth oci`) therefore puts socat on `eth0:8181` too and breaks oci's wildcard bind — same for `glab` (socat on `eth0:7171` would break its `0.0.0.0:7171` bind) and `cf` (sed-patched to `0.0.0.0`, socat on the 8877-8886 range would exhaust its 10 port retries). Authenticate wildcard-bind CLIs (`oci`, `glab`, `cf`) in their own session.
+- `-B` bridges **every** published port (`TOOLBOX_LOOPBACK_BRIDGE_PORTS` enumerates the full publish set, init.d/70 spawns socat per port). Combining a bridged preset with a wildcard-bind one (e.g. `--oauth wrangler --oauth oci`) therefore puts socat on `eth0:8181` too and breaks oci's wildcard bind — same for `glab` (socat on `eth0:7171` would break its `0.0.0.0:7171` bind). `cf` is itself bridged now (loopback-bind range, like `wrangler`/`sonar`), so it composes safely with other bridged presets but conflicts with the wildcard-bind ones — authenticate `cf` alongside `oci`/`glab` in separate sessions.
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.
 - `socat` is part of the always-on base apt-install set (~350KB) — no per-tool opt-out. The bridge feature is system-level, not a catalog tool.
 

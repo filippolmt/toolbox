@@ -1011,21 +1011,15 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "cf@${CF_CLI_VERSION}"; \
       cf --version; \
-      # Dynamic-port carve-out: cf serves the OAuth callback from startPort \
-      # 8877, so `toolbox -B` bridge cannot pre-bind. Rewrite the callback \
-      # host loopback → 0.0.0.0 so cf binds eth0 and host -p forward lands \
-      # directly. cf ships hash-named minified dist/*.mjs chunks; the auth \
-      # chunk now declares `const <p>=8877,<h>=`localhost`,…/oauth/callback` \
-      # (was a `bindHost: '127.0.0.1'` property pre-0.1.0). Anchor on the \
-      # stable 8877 port literal — minify-var names drift every release (the \
-      # JS ident class allows digits, so match [A-Za-z_$][A-Za-z0-9_$]*) — and \
-      # rewrite the adjacent host literal. Empty match or missing post-sed \
-      # literal fails the build loud. \
-      CF_AUTH_MJS=$(grep -lE '=8877,[A-Za-z_$][A-Za-z0-9_$]*=`localhost`' \
-        /usr/local/lib/node_modules/cf/dist/*.mjs); \
-      [ -n "$CF_AUTH_MJS" ]; \
-      sed -i -E 's/(=8877,[A-Za-z_$][A-Za-z0-9_$]*=)`localhost`/\1`0.0.0.0`/' $CF_AUTH_MJS; \
-      grep -qE '=8877,[A-Za-z_$][A-Za-z0-9_$]*=`0\.0\.0\.0`' $CF_AUTH_MJS; \
+      # No dist patch: cf 0.1.0 binds 127.0.0.1 on a port from its callback \
+      # range (startPort 8877, maxPortAttempts 10) and advertises a `localhost` \
+      # redirect_uri — same shape as sonar. The OAuth callback is delivered by \
+      # the loopback bridge (`--oauth cf` = `-B -p 8877-8886:8877-8886`; see \
+      # internal/sessionplan/oauth.go and docs/commands.md#loopback-bridge), so \
+      # no host-literal rewrite is needed. The pre-0.1.0 `localhost`→`0.0.0.0` \
+      # sed was retargeted every release as minify-var names drifted (#403) and, \
+      # post-0.1.0, poisoned the redirect_uri itself — Cloudflare rejected the \
+      # `0.0.0.0` callback as an unregistered redirect url. Dropped for good. \
       find /usr/local/lib/node_modules/cf \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
