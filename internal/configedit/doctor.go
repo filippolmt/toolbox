@@ -30,9 +30,9 @@ type Finding struct {
 	Message  string
 }
 
-// toolsRemovalDoc is the runtime-notes anchor explaining why the legacy
-// tools: block is ignored.
-const toolsRemovalDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/runtime-notes.md#tools-removal"
+// toolsRemovalDoc is the image-build internals anchor explaining why the
+// legacy tools: block is ignored.
+const toolsRemovalDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal"
 
 // Doctor validates the configuration without mutating anything: it surfaces
 // load/merge errors (everything Plan's validation tail already checks),

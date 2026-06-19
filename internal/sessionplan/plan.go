@@ -94,7 +94,7 @@ type MergedSessionPlan struct {
 // when true and at least one publish spec is present, the resulting env
 // carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
 // socat per published container port — see
-// docs/runtime-notes.md#loopback-bridge.
+// docs/commands.md#loopback-bridge.
 //
 // imageDigest is the running image's resolved repo digest (`sha256:...`),
 // supplied host-side by the caller (it needs the Docker client, which the

@@ -70,9 +70,11 @@ func TestExpandOAuthMultipleTools(t *testing.T) {
 	}
 }
 
-// TestExpandOAuthCfNoBridge: cf is the dynamic-port carve-out — published
-// range, no loopback bridge (build-time sed patch handles the callback).
-func TestExpandOAuthCfNoBridge(t *testing.T) {
+// TestExpandOAuthCfRangeBridge: cf binds 127.0.0.1 on a port from its
+// callback range (startPort 8877, maxPortAttempts 10) and advertises a
+// localhost redirect_uri, so the recipe publishes the whole range AND
+// bridges it — same shape as sonar, no dist patch.
+func TestExpandOAuthCfRangeBridge(t *testing.T) {
 	publish, bridge, err := sessionplan.ExpandOAuth([]string{"cf"})
 	if err != nil {
 		t.Fatalf("ExpandOAuth(cf) err = %v, want nil", err)
@@ -80,8 +82,8 @@ func TestExpandOAuthCfNoBridge(t *testing.T) {
 	if want := []string{"8877-8886:8877-8886"}; !reflect.DeepEqual(publish, want) {
 		t.Errorf("publish = %v, want %v", publish, want)
 	}
-	if bridge {
-		t.Error("bridge = true, want false")
+	if !bridge {
+		t.Error("bridge = false, want true (cf binds container loopback)")
 	}
 }
 
@@ -131,8 +133,8 @@ func TestExpandOAuthEmptyInput(t *testing.T) {
 	}
 }
 
-// TestExpandOAuthMixedCfWrangler: union of publish specs; bridge true
-// because wrangler needs it even though cf does not.
+// TestExpandOAuthMixedCfWrangler: union of publish specs; bridge true —
+// both cf and wrangler bind container loopback.
 func TestExpandOAuthMixedCfWrangler(t *testing.T) {
 	publish, bridge, err := sessionplan.ExpandOAuth([]string{"cf", "wrangler"})
 	if err != nil {
@@ -146,8 +148,12 @@ func TestExpandOAuthMixedCfWrangler(t *testing.T) {
 	}
 }
 
-// TestExpandOAuthMixedCfOci: two no-bridge tools never flip the bridge bit —
-// no socat must spawn, or oci's wildcard bind would fail EADDRINUSE.
+// TestExpandOAuthMixedCfOci: cf now bridges (binds container loopback), so
+// pairing it with the wildcard-bind oci flips the bridge bit — which would
+// put socat on eth0:8181 and break oci's 0.0.0.0:8181 bind (EADDRINUSE).
+// ExpandOAuth is pure (it only ORs the bits); the union being a footgun is
+// documented in docs/commands.md — cf must be authenticated in its own
+// session, like wrangler+oci.
 func TestExpandOAuthMixedCfOci(t *testing.T) {
 	publish, bridge, err := sessionplan.ExpandOAuth([]string{"cf", "oci"})
 	if err != nil {
@@ -156,7 +162,7 @@ func TestExpandOAuthMixedCfOci(t *testing.T) {
 	if want := []string{"8877-8886:8877-8886", "8181:8181"}; !reflect.DeepEqual(publish, want) {
 		t.Errorf("publish = %v, want %v", publish, want)
 	}
-	if bridge {
-		t.Error("bridge = true, want false")
+	if !bridge {
+		t.Error("bridge = false, want true (cf now binds container loopback)")
 	}
 }

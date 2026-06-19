@@ -249,7 +249,7 @@ func warnLegacyToolsEnv() {
 					"toolbox: warning: TOOLBOX_TOOLS_* env vars are no longer supported and have been removed.\n"+
 						"        All bundled CLIs are now installed unconditionally.\n"+
 						"        Unset them to silence this warning.\n"+
-						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/runtime-notes.md#tools-removal")
+						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal")
 			})
 			return
 		}
@@ -269,7 +269,7 @@ func warnLegacyTools(buffers ...[]byte) {
 					"toolbox: warning: 'tools:' is no longer supported and has been removed.\n"+
 						"        All bundled CLIs are now installed unconditionally.\n"+
 						"        Remove the block from your config to silence this warning.\n"+
-						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/runtime-notes.md#tools-removal")
+						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal")
 			})
 			return
 		}
