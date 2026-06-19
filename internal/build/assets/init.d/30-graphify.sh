@@ -32,7 +32,10 @@ if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
 fi
 
 # Git commit hook only makes sense inside a git repo; skip non-git workspaces.
-if [ -d "$PWD/.git" ]; then
+# Ask git rather than testing for a `.git/` dir: in a worktree or submodule
+# `.git` is a gitdir-pointer file, not a directory, so a `-d` test would wrongly
+# skip the install and let the graph go stale on commit.
+if git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     graphify hook install >/dev/null 2>&1 || \
         echo "toolbox: graphify git-hook install failed (non-fatal — run \`graphify hook install\` manually to retry)"
 fi
