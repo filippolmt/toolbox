@@ -28,6 +28,8 @@ var systemInitScripts = map[string]struct{}{
 	"15-npm-lsp-dedupe.sh": {},
 	// Managed Claude Code statusline — image-owned policy, not a tool toggle.
 	"35-statusline.sh": {},
+	// Reconcile ponytail/caveman mode flags with enabledPlugins — image policy.
+	"36-mode-flags.sh": {},
 }
 
 // TestCatalogInitDBijection enforces strict set-equality between

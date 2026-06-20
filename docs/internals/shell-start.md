@@ -16,7 +16,9 @@ The image ships a curated Claude Code statusline at `/etc/toolbox/statusline-com
 
 Opt-out: `managed_statusline: false` in `.toolbox.yaml` makes the host emit the curated `TOOLBOX_MANAGED_STATUSLINE=0` env (`sessionplan.managedStatuslineEnv`); the boot hook sees it and exits before touching settings.json, so the user keeps their own `statusLine`. The script resolves its own paths against `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` so it runs in any environment, and degrades silently when optional inputs are missing: the ponytail/caveman mode badges appear only if those plugins are installed (glob no-match → no badge), and its Nerd Font glyphs render as tofu without a Nerd Font on the host.
 
-Registered as a system init script (`systemInitScripts` in `internal/catalog/init_d_bijection_test.go`) — it is image policy, not a catalog tool toggle — and counted in the `smoke-test.sh` init.d bijection literals.
+`init.d/36-mode-flags.sh` keeps the badges honest. ponytail/caveman draw their `[PONYTAIL]`/`[CAVEMAN]` badge from a `~/.claude/.<mode>-active` flag written by the plugin's own SessionStart hook — but a *disabled* plugin's hook never runs, so a flag left from a previous session goes stale and the badge shows for an inactive mode. This hook runs before `claude` starts and removes the flag for any mode whose `enabledPlugins["<plugin>"]` is not `true`; enabled plugins are left alone (their hook rewrites the flag with the live level on start, so both badges show when both are enabled). On an unreadable settings.json it defaults to "enabled" and deletes nothing — it only removes a flag on a definite `false`.
+
+Both are registered as system init scripts (`systemInitScripts` in `internal/catalog/init_d_bijection_test.go`) — image policy, not catalog tool toggles — and counted in the `smoke-test.sh` init.d bijection literals.
 
 ## MCP plugin auto-build
 

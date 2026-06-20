@@ -367,8 +367,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 16 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 16 (13 catalog InitScripts + 3 system)"
+if [ "$count" -ne 17 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 17 (13 catalog InitScripts + 4 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then
