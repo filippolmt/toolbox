@@ -80,7 +80,7 @@ var Entries = []Entry{
 	{Key: "rtk", InitScript: "10-rtk.sh"},
 	{Key: "shellcheck"},
 	{Key: "shfmt"},
-	{Key: "sonar"},
+	{Key: "sonar", InitScript: "32-sonar.sh"},
 	{Key: "starship"},
 	{Key: "tofu"},
 	{Key: "typescript"},
