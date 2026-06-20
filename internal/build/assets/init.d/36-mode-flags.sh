@@ -11,14 +11,17 @@ set -euo pipefail
 # the flag (with the live level) when `claude` starts, so both badges can show
 # at once when both plugins are enabled.
 command -v jq >/dev/null 2>&1 || exit 0
-_settings="$HOME/.claude/settings.json"
+# Resolve the config dir like statusline-command.sh and the plugin hooks do.
+_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+_settings="$_cfg/settings.json"
 [ -s "$_settings" ] || exit 0
 
 # <plugin-key>:<flag-file> pairs — the behavioral-mode plugins the statusline
-# renders. Keep in sync with emit_mode_badge in statusline-command.sh.
+# renders. Keep in sync with emit_mode_badge in statusline-command.sh
+# (enforced by TestModePluginListsAgree).
 for _pair in "ponytail@ponytail:.ponytail-active" "caveman@caveman:.caveman-active"; do
     _plugin="${_pair%%:*}"
-    _flag="$HOME/.claude/${_pair#*:}"
+    _flag="$_cfg/${_pair#*:}"
     # Default to "enabled" when the key is unreadable (jq failure on a corrupt
     # file): never delete a flag on uncertain state — only on a definite false.
     _enabled=$(jq -r --arg p "$_plugin" '.enabledPlugins[$p] // false' "$_settings" 2>/dev/null) || _enabled=true

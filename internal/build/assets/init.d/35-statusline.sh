@@ -17,9 +17,13 @@ set -euo pipefail
 [ "${TOOLBOX_MANAGED_STATUSLINE:-1}" = "0" ] && exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 command -v claude >/dev/null 2>&1 || exit 0
-[ -d "$HOME/.claude" ] || exit 0
 
-_settings="$HOME/.claude/settings.json"
+# Resolve the config dir the same way statusline-command.sh and the plugin
+# hooks do, so all of them agree on which settings.json to read/write.
+_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+[ -d "$_cfg" ] || exit 0
+
+_settings="$_cfg/settings.json"
 _statusline='/etc/toolbox/statusline-command.sh'
 _claude_lock="$HOME/.toolbox-state/.claude-settings.lock"
 mkdir -p "$(dirname "$_claude_lock")"

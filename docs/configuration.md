@@ -50,7 +50,7 @@ Login shell inside the container. Only `zsh` is supported (the default); `bash` 
 
 The runtime image ships a curated Claude Code statusline and applies it to every container by force-setting `~/.claude/settings.json` `statusLine` on each shell start (only that key is rewritten — everything else in your settings is preserved). It is image-owned policy: a local edit to the statusline is overwritten on the next shell, so **change it via a PR to this repo**, not in the container.
 
-![The managed statusline rendered in a toolbox shell: cwd, repo:branch, model + effort, context bar, token count, lines changed, session duration, behavioral-mode badge, and rate limits.](img/statusline.png)
+![The managed statusline rendered in a toolbox shell: cwd, repo:branch, model + effort, context bar, token count, lines changed, session duration, and behavioral-mode badge.](img/statusline.png)
 
 Set `managed_statusline: false` to opt out — the boot hook then leaves your own `statusLine` untouched. Default (omitted or `true`) is managed-on. Mechanics in [shell-start internals](internals/shell-start.md#managed-statusline).
 
