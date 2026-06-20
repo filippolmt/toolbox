@@ -367,12 +367,24 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 15 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 15 (13 catalog InitScripts + 2 system)"
+if [ "$count" -ne 16 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 16 (13 catalog InitScripts + 3 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then
     echo "OK: $count init.d scripts present and executable"
 fi
 exit $fail
+'
+
+echo ""
+echo "=== managed statusline baked ==="
+# 35-statusline.sh force-points settings.json at this baked script every boot;
+# assert it shipped and parses (a syntax error would break every prompt render).
+docker run --rm "${IMAGE}" bash -c '
+set -e
+SL=/etc/toolbox/statusline-command.sh
+[ -f "$SL" ] || { echo "FAILED: $SL missing inside image"; exit 1; }
+bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
+echo "OK: managed statusline present and parses"
 '
