@@ -27,10 +27,12 @@ mkdir -p "$(dirname "$_claude_lock")"
 (
     flock 200
     _tmp=$(mktemp "${_settings}.XXXXXX") || exit 1
-    # Seed from the existing settings, or {} if absent/corrupt, then force the
-    # key. Only replace the live file when jq produced non-empty output, so a
-    # parse failure never truncates a valid settings.json.
-    if jq --arg cmd "bash '$_statusline'" \
+    # Seed from the existing settings, or {} if absent/empty/corrupt, then force
+    # the key. The `-s` guard routes a 0-byte file to the {} fallback (jq exits
+    # 0 with no output on empty input, which would otherwise leave _tmp empty and
+    # silently skip the patch). Only replace the live file when jq produced
+    # non-empty output, so a parse failure never truncates a valid settings.json.
+    if [ -s "$_settings" ] && jq --arg cmd "bash '$_statusline'" \
             '.statusLine = {type: "command", command: $cmd}' \
             "$_settings" >"$_tmp" 2>/dev/null \
         || printf '{}' | jq --arg cmd "bash '$_statusline'" \

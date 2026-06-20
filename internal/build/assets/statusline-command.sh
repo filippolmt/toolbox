@@ -112,13 +112,19 @@ build_git_seg() {
 
 git_seg=""
 if [ -n "$sid" ]; then
-  GIT_CACHE="/tmp/claude-statusline-git-${sid}"
+  # Key the cache on session_id + cwd: the session_id is stable across a `cd`,
+  # so keying on it alone would serve another directory's git segment for the
+  # 5s TTL. cksum is one spawn; read is a builtin.
+  read -r _cwdsum _ < <(cksum <<<"$cwd")
+  GIT_CACHE="/tmp/claude-statusline-git-${sid}-${_cwdsum}"
   now=${EPOCHSECONDS:-$(date +%s)}
   if [ -f "$GIT_CACHE" ] && (( now - $(stat -c %Y "$GIT_CACHE" 2>/dev/null || echo 0) < 5 )); then
     git_seg=$(<"$GIT_CACHE")
   else
     git_seg=$(build_git_seg)
-    printf '%s' "$git_seg" > "$GIT_CACHE"
+    # Atomic publish: write to a PID-suffixed temp then rename, so a concurrent
+    # reader never sees a half-written segment ($$ is unique per render process).
+    printf '%s' "$git_seg" > "${GIT_CACHE}.$$" && mv -f "${GIT_CACHE}.$$" "$GIT_CACHE"
   fi
 else
   git_seg=$(build_git_seg)
