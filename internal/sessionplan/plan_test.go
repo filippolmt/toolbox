@@ -262,6 +262,46 @@ func TestPlanInjectsImageIdentity(t *testing.T) {
 	}
 }
 
+// TestPlanManagedStatuslineOptOut asserts the managed-statusline opt-out
+// contract that init.d/35-statusline.sh reads: TOOLBOX_MANAGED_STATUSLINE=0 is
+// emitted only when managed_statusline is explicitly false; nil (default) and
+// true emit nothing so the boot hook's default-on path runs.
+func TestPlanManagedStatuslineOptOut(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	hasOptOut := func(env []string) bool {
+		return slices.Contains(env, "TOOLBOX_MANAGED_STATUSLINE=0")
+	}
+
+	optOut := false
+	on := true
+	cases := []struct {
+		name    string
+		managed *bool
+		want    bool
+	}{
+		{"default nil → managed", nil, false},
+		{"true → managed", &on, false},
+		{"false → opt out", &optOut, true},
+	}
+	for _, tc := range cases {
+		cfg := testConfig()
+		cfg.ManagedStatusline = tc.managed
+		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+		if err != nil {
+			t.Fatalf("%s: Plan: %v", tc.name, err)
+		}
+		if got := hasOptOut(plan.Env); got != tc.want {
+			t.Errorf("%s: TOOLBOX_MANAGED_STATUSLINE=0 present=%v, want %v; env=%v", tc.name, got, tc.want, plan.Env)
+		}
+	}
+}
+
 // TestPlanSanitizesRemoteControlPrefix asserts the Remote Control session
 // prefix shares ContainerNameFor's slug rule (lowercase, [^a-z0-9]+ → "-")
 // instead of forwarding the raw basename.

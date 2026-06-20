@@ -140,6 +140,7 @@ host-CLI primitives.
 
 - [Prompt glyph width](internals/shell-start.md#prompt-glyph-width)
 - [UTF-8 locale](internals/shell-start.md#utf-8-locale)
+- [Managed statusline](internals/shell-start.md#managed-statusline)
 - [MCP plugin auto-build](internals/shell-start.md#mcp-plugin-auto-build)
 - [Playwright browser cache sync](internals/shell-start.md#playwright-browser-cache-sync)
 - [cf Cloudflare CLI skill auto-install](internals/shell-start.md#cf-cloudflare-cli-skill-auto-install)

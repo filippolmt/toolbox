@@ -95,6 +95,16 @@ type Config struct {
 	// fixed at container creation, so re-run `toolbox shell` to pick up newly
 	// routed hosts. See docs/proximo.md#proximo-integration.
 	Proximo *bool `mapstructure:"proximo"`
+	// ManagedStatusline controls the image-owned Claude Code statusline that
+	// init.d/35-statusline.sh force-applies to ~/.claude/settings.json on every
+	// shell start. Tri-state:
+	//   - omitted (nil) / true → managed: settings.json `statusLine` is set to
+	//     the baked /etc/toolbox/statusline-command.sh every boot (change it via
+	//     a repo PR, not locally).
+	//   - false → opt out: sessionplan emits TOOLBOX_MANAGED_STATUSLINE=0, the
+	//     boot hook skips the rewrite, and the user keeps their own statusLine.
+	// See docs/internals/shell-start.md#managed-statusline.
+	ManagedStatusline *bool `mapstructure:"managed_statusline"`
 	// Env injects arbitrary K=V pairs into every shell spawned by the
 	// container, emitted after the curated TOOLBOX_* / PWD entries by
 	// sessionplan. Hash-neutral (lives outside the removed tools: block) so

@@ -1301,6 +1301,11 @@ COPY --link zshrc.sh /etc/zsh/zshrc
 # Curated starship config. Per-user override via STARSHIP_CONFIG in a
 # ~/.toolbox-startup.d/ hook.
 COPY --link starship.toml /etc/toolbox/starship.toml
+# Managed Claude Code statusline, baked read-only. init.d/35-statusline.sh
+# force-points ~/.claude/settings.json `statusLine` at this path on every boot,
+# so the prompt is image-owned policy — change it via a repo PR, not locally
+# (a local edit is overwritten on the next shell start).
+COPY --link --chmod=0755 statusline-command.sh /etc/toolbox/statusline-command.sh
 # SSH host-key trust for git-over-ssh (issue #366). The ~/.ssh credential mount
 # is read-only by design, so the Debian default (StrictHostKeyChecking=ask +
 # read-only ~/.ssh/known_hosts) deadlocks: it prompts on first contact and

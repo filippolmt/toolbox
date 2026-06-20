@@ -229,6 +229,7 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, imageDigest string, extra []string) []string {
 	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
 	env = append(env, identityEnv(imageDigest)...)
+	env = append(env, managedStatuslineEnv(cfg.ManagedStatusline)...)
 	env = append(env, extra...)
 	return append(env, userEnv(cfg.Env)...)
 }
@@ -246,6 +247,17 @@ func identityEnv(imageDigest string) []string {
 		out = append(out, "TOOLBOX_IMAGE_DIGEST="+imageDigest)
 	}
 	return out
+}
+
+// managedStatuslineEnv emits TOOLBOX_MANAGED_STATUSLINE=0 only when the user
+// opted out (managed_statusline: false); nil/true emit nothing so the boot
+// hook's default-on path runs. Emitting only on opt-out keeps the env minimal
+// and the value unambiguous: present-and-0 = opt out, absent = managed.
+func managedStatuslineEnv(managed *bool) []string {
+	if managed != nil && !*managed {
+		return []string{"TOOLBOX_MANAGED_STATUSLINE=0"}
+	}
+	return nil
 }
 
 // userEnv emits the cfg.Env map as deterministically ordered K=V strings.
