@@ -979,6 +979,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
 # NPM_CONFIG_FUND/AUDIT: suppress banner + audit on every npm install -g below.
 ENV NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false
+# Loopback OAuth CLIs (cf, wrangler, codex) call server.listen('localhost'); on
+# Node 17+ `localhost` resolves to ::1 (IPv6) first, so they bind ::1:<port>. The
+# loopback bridge (init.d/70-loopback-bridge.sh) forwards IPv4 127.0.0.1 only, so
+# an ::1 listener never receives the OAuth callback (browser → ERR_EMPTY_RESPONSE,
+# the CLI then times out waiting for the code). Force IPv4-first resolution so
+# `localhost` binds 127.0.0.1, matching the bridge. The flag only reorders DNS
+# results (Node <17 default); benign for every other Node process.
+# See docs/commands.md#loopback-bridge.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
 
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
