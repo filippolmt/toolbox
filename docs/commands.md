@@ -99,7 +99,7 @@ OAuth CLI survey:
 Limitations:
 
 - Bridge env is fixed at `ContainerCreate`. `toolbox shell -B …` on a container created without `-B` is a no-op — same UX as `-p`. Run `toolbox stop` first.
-- IPv4 only. Docker port-forward IPv6 support is patchy; not in scope.
+- IPv4 only. Docker port-forward IPv6 support is patchy; not in scope. The bridge socat forwards to `127.0.0.1:<port>` (IPv4). Node CLIs that `listen('localhost')` would bind `::1` (IPv6) on Node 17+ and never receive the callback (browser shows `ERR_EMPTY_RESPONSE`, the CLI times out), so the image sets `ENV NODE_OPTIONS=--dns-result-order=ipv4first` to force `localhost` to resolve IPv4-first — cf, wrangler and codex all rely on this.
 - `-B` without `-p` is not an error. The init.d script logs a one-line `loopback bridge: enabled but no -p ports published — skipping` warning so the misconfiguration is visible.
 - `-B` bridges **every** published port (`TOOLBOX_LOOPBACK_BRIDGE_PORTS` enumerates the full publish set, init.d/70 spawns socat per port). Combining a bridged preset with a wildcard-bind one (e.g. `--oauth wrangler --oauth oci`) therefore puts socat on `eth0:8181` too and breaks oci's wildcard bind — same for `glab` (socat on `eth0:7171` would break its `0.0.0.0:7171` bind). `cf` is itself bridged now (loopback-bind range, like `wrangler`/`sonar`), so it composes safely with other bridged presets but conflicts with the wildcard-bind ones — authenticate `cf` alongside `oci`/`glab` in separate sessions.
 - Per-port failure (e.g. `EADDRINUSE` because another in-container process already binds `eth0:<port>`) is logged to `~/.toolbox-state/init/70-loopback-bridge.log` and the loop continues with the remaining ports. The bridge never aborts boot.

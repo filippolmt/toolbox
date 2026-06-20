@@ -194,6 +194,13 @@ _pw_skill_check() {
 
 check_required "node"       node --version
 check_required "npm"        npm --version
+# NODE_OPTIONS=--dns-result-order=ipv4first must make a localhost listen bind
+# IPv4 127.0.0.1 (not ::1), or OAuth CLIs (cf/wrangler/codex) are unreachable
+# through the IPv4-only loopback bridge. See docs/commands.md#loopback-bridge.
+# This whole body runs inside `docker run ... bash -c '...'` (single-quoted), so
+# this line must use only escaped double quotes — a literal single quote would
+# close that block (do not "simplify" the quoting).
+check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
 check_required "git"        git --version
