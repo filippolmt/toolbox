@@ -1013,8 +1013,8 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
         "oci-cli==${OCI_VERSION}"; \
       oci --version; \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
-# Cloudflare `cf` (Wrangler vNext preview). State split: ~/.cf/config.toml
-# (auth) + ~/.config/cf/config.json (context defaults) — both bound under
+# Cloudflare `cf` (Wrangler vNext preview). State split: ~/.config/.cf/auth.jsonc
+# (OAuth tokens) + ~/.config/cf/config.json (context defaults) — both bound under
 # ~/.toolbox/cf/ via mountplan defaults.
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \

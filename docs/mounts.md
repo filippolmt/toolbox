@@ -11,7 +11,7 @@ So by default the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.cl
 rtk and cf are the two tools whose state spans two binds because upstream splits config across non-XDG paths and exposes no env override:
 
 - rtk: `~/.config/rtk` (config) + `~/.local/share/rtk` (analytics/tee dumps).
-- cf: `~/.cf/config.toml` (OAuth tokens) + `~/.config/cf/config.json` (context defaults, completion marker).
+- cf: `~/.config/.cf/auth.jsonc` (OAuth tokens) + `~/.config/cf/config.json` (context defaults, completion marker).
 
 In both cases the bind sources are nested under a single `~/.toolbox/<tool>/` root so the host layout stays flat.
 

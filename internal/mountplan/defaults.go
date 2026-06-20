@@ -65,10 +65,12 @@ func defaults() []config.Mount {
 		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
 		// on the host (flat layout) while the container keeps the upstream split.
 		//
-		// "cf-auth" — ~/.cf/config.toml stores the OAuth access_token + refresh_token
-		// written by `cf auth login`. Without this bind the auth wipes on every
-		// `toolbox stop`.
-		{Name: "cf-auth", Source: "~/.toolbox/cf/auth", Target: "/home/toolbox/.cf", ReadOnly: false, CreateIfMissing: true},
+		// "cf-auth" — cf (Wrangler vNext) stores its OAuth tokens in
+		// ~/.config/.cf/auth.jsonc (access_token + refresh_token), the same
+		// ~/.config/.<tool> layout wrangler uses. Written by `cf auth login`;
+		// without this bind the auth wipes on every `toolbox stop`. Pre-0.1.0 cf
+		// used ~/.cf/config.toml — no longer read, so we mount the new path only.
+		{Name: "cf-auth", Source: "~/.toolbox/cf/auth", Target: "/home/toolbox/.config/.cf", ReadOnly: false, CreateIfMissing: true},
 		// "cf-config" — ~/.config/cf/config.json stores context defaults
 		// (`cf context set …`), the shell-completion install marker, and other
 		// UI prefs. Lighter than the auth file but still useful to persist.
