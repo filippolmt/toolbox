@@ -316,6 +316,9 @@ func applyValidationTail(cfg *Config) error {
 	if err := ValidateShell(cfg.Shell); err != nil {
 		return err
 	}
+	if err := ValidateAgent(cfg.Agent); err != nil {
+		return err
+	}
 	if err := validateInheritHostAuth(cfg.InheritHostAuth); err != nil {
 		return err
 	}

@@ -54,7 +54,14 @@ type SessionPlan struct {
 	Env           []string
 	ContainerName string
 	Cmd           []string
-	SecurityOpt   []string
+	// ExecCmd overrides the command run in the attached interactive exec
+	// session. When nil the exec reuses Cmd (the normal shell). Callers that
+	// must keep the container's main process an idle shell while running a
+	// different command in the user's attached session (e.g. toolbox worktree
+	// auto-launching an agent) set this so the agent does not also run headless
+	// in the container's main PID. Lifecycle.Shell reads it at the exec edge.
+	ExecCmd     []string
+	SecurityOpt []string
 	// ExtraHosts is the docker --add-host list. Populated when the browser
 	// bridge is enabled so host.docker.internal resolves on native Linux
 	// Docker (Docker Desktop already provides the mapping; the duplicate

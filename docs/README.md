@@ -21,6 +21,7 @@ sections.**
 
 - [Global flag: `--config`](commands.md#global-flag---config)
 - [toolbox shell](commands.md#toolbox-shell) — [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
+- [toolbox worktree](commands.md#toolbox-worktree)
 - [toolbox stop](commands.md#toolbox-stop)
 - [toolbox build](commands.md#toolbox-build)
 - [toolbox version](commands.md#toolbox-version)
@@ -39,6 +40,7 @@ sections.**
 - [Loading order](configuration.md#loading-order)
 - [Key reference](configuration.md#key-reference)
 - [shell](configuration.md#shell)
+- [agent](configuration.md#agent)
 - [inherit-host-auth](configuration.md#inherit-host-auth)
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)

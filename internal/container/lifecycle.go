@@ -138,7 +138,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
-	return execShellFn(ctx, cli, containerID, plan.Cmd)
+	execCmd := plan.Cmd
+	if plan.ExecCmd != nil {
+		execCmd = plan.ExecCmd
+	}
+	return execShellFn(ctx, cli, containerID, execCmd)
 }
 
 // dispatchOp executes the runplan.Op against the Docker daemon and returns

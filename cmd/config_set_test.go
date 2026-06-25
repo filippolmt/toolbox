@@ -17,8 +17,8 @@ func setConfigSetFlag(t *testing.T, name, value string) {
 		t.Fatalf("set --%s: %v", name, err)
 	}
 	t.Cleanup(func() {
-		configSetImage, configSetRegistryMirror, configSetPull, configSetWhere = "", "", "", "global"
-		for _, n := range []string{"image", "registry-mirror", "pull", "where"} {
+		configSetImage, configSetRegistryMirror, configSetPull, configSetAgent, configSetWhere = "", "", "", "", "global"
+		for _, n := range []string{"image", "registry-mirror", "pull", "agent", "where"} {
 			if f := configSetCmd.Flags().Lookup(n); f != nil {
 				f.Changed = false
 			}
