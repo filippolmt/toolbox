@@ -1257,11 +1257,13 @@ RUN set -eux; \
 #     after every Bash call — kills cd-drift across tool invocations.
 #   BASH_*_TIMEOUT_MS: 5m default / 20m ceiling (upstream 2m/10m) — image
 #     builds and test suites run inside the container routinely exceed 2m.
-#   CLAUDE_CODE_ENABLE_TASKS: structured cross-session task tools; state
-#     lives in ~/.claude/tasks under the bind, survives recreates.
 #   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: opt into agent teams (still
 #     experimental upstream; in-process mode works without tmux). Per-user
 #     opt-out: "env" map in the ~/.claude/settings.json bind overrides this.
+#   CLAUDE_CODE_NEW_INIT: switch `/init` to the interactive multi-phase flow —
+#     picks which artifacts to scaffold (CLAUDE.md, skills, hooks), explores the
+#     repo with a subagent, then proposes before writing. Per-user opt-out:
+#     "env" map in the ~/.claude/settings.json bind overrides this.
 ENV DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
@@ -1271,8 +1273,8 @@ ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 \
     BASH_DEFAULT_TIMEOUT_MS=300000 \
     BASH_MAX_TIMEOUT_MS=1200000 \
-    CLAUDE_CODE_ENABLE_TASKS=1 \
-    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
+    CLAUDE_CODE_NEW_INIT=1
 
 # LANG (not LC_ALL, so host env passthrough can still override the locale):
 # debian-slim defaults to the POSIX locale, under which zsh's line editor
