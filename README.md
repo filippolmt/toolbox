@@ -100,6 +100,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | Command | Description |
 |---------|-------------|
 | [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, named shells via [`shells:`](docs/shells.md)) |
+| [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`; alias `wt`) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
 | [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
@@ -125,6 +126,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | [`inherit_host_auth`](docs/configuration.md#inherit-host-auth) | Opt listed CLIs (`gh`, `gcloud`, …) into the host's real credential path instead of the isolated default. |
 | [`shells`](docs/shells.md) | Named shell shortcuts: `<name>: {path, env}` → `toolbox shell <name>`. |
 | [`shell`](docs/configuration.md#shell) | Login shell inside the container (only `zsh` is supported). |
+| [`agent`](docs/configuration.md#agent) | Default AI agent for [`toolbox worktree`](docs/commands.md#toolbox-worktree) sessions: `claude` (default) / `codex`. |
 | [`image`](docs/configuration.md#image-selection) | Full image ref override (proxy hub / pull-through cache). |
 | [`registry_mirror`](docs/configuration.md#image-selection) | Swap only the registry host of the canonical image ref. |
 | [`pull`](docs/configuration.md#image-selection) | Registry-sync policy: `auto` (default) / `always` / `never`. |

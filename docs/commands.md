@@ -107,6 +107,26 @@ Limitations:
 
 See also: [publishing ports](#publishing-ports), [image build internals](internals/image-build.md) (socat ships in the always-on base apt layer), [bridge](bridge.md) (inverse direction — container→host browser opens).
 
+## toolbox worktree
+
+Map one branch to one git worktree to one path-scoped container running an AI agent (alias `wt`). Each worktree lives under `<repo-root>/.worktrees/tbx-<branch>`; because toolbox derives a [deterministic container per absolute path](#toolbox-shell), several worktrees run as several isolated dev environments at once. The git branch name stays unprefixed (only the directory carries `tbx-`), so pull requests are unaffected.
+
+| Subcommand | Description |
+|------------|-------------|
+| `create <branch> [--agent] [--from <base>] [--no-fetch]` | Fetch the base, add a worktree branched from `origin/<base>`, launch the container, auto-start the agent. |
+| `open <branch> [--agent]` (alias `attach`) | Re-attach to an existing toolbox worktree — recreates the [auto-removed](internals/container-lifecycle.md#container-teardown) container scoped to the same path and relaunches the agent. |
+| `list` (alias `ls`) | Print toolbox worktrees only (branch · container status · path); worktrees an agent creates outside the `tbx-` convention are excluded. |
+| `rm <branch> [--force]` | Best-effort stop the worktree's container, then `git worktree remove [--force]`. |
+| `prune [--dry-run]` | Fetch the base and remove toolbox worktrees whose branch is merged into `origin/<base>`; `--dry-run` lists candidates without removing. |
+
+The base branch for `create` is `--from` when given, else the repository default branch (`origin/HEAD`). `create` always branches from the freshly fetched `origin/<base>` so the new branch is remote-aligned by construction; `--no-fetch` branches from the local base ref for offline work. The agent is resolved with precedence `--agent` flag > the [`agent`](configuration.md#agent) config key > the default `claude`, restricted to `claude` or `codex`. When the agent exits, the session drops to an interactive shell in the worktree rather than tearing down.
+
+Git resolves inside the container because the session mounts both the worktree (at its own absolute host path, via the workspace mirror) and the main repo's `<repo-root>/.git` at the same absolute path the worktree's gitdir pointer references — so `status`/`commit`/`push` work unchanged.
+
+`prune` uses local merge ancestry (`git branch --merged origin/<base>`), so squash-merged branches (no merge commit) are not detected — use `rm <branch>` for those. It removes without `--force`, so a worktree with uncommitted or untracked changes is preserved (git refuses) even if its branch reads as merged.
+
+`create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
+
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.

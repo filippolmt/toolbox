@@ -26,6 +26,13 @@ type Config struct {
 	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
 	Shells          map[string]NamedShell `mapstructure:"shells"`
 	Shell           string                `mapstructure:"shell"`
+	// Agent is the default AI agent auto-launched by `toolbox worktree`
+	// sessions. Resolved with precedence --agent flag > this key > the
+	// DefaultAgent ("claude"); the resolution default lives in cmd so this
+	// key stays empty when unset (and `config show` omits it). Honours the
+	// standard config layering, so it can be set globally (~/.toolbox.yaml)
+	// or per-directory (.toolbox.yaml). Validated to claude|codex.
+	Agent string `mapstructure:"agent"`
 	// Image overrides the container image reference verbatim (full host/path:tag
 	// or digest). Empty = the canonical default. Highest-precedence image
 	// selector — wins over RegistryMirror. Opt-in; a full override is a
@@ -205,6 +212,27 @@ func ValidateShell(s string) error {
 	}
 	return fmt.Errorf("unsupported shell %q: must be one of %s",
 		s, strings.Join(SupportedShells, ", "))
+}
+
+// SupportedAgents is the canonical list accepted by the `agent` key and the
+// `--agent` flag: the AI agents baked into the canonical image. Empty
+// resolves to DefaultAgent at use time (cmd/worktree.go resolveAgent).
+var SupportedAgents = []string{"claude", "codex"}
+
+// DefaultAgent is the agent launched by `toolbox worktree` when neither
+// --agent nor the agent config key is set.
+const DefaultAgent = "claude"
+
+// ValidateAgent returns nil when s is empty (unset — resolved to DefaultAgent
+// later) or one of SupportedAgents, else an error listing the accepted values.
+// Empty is allowed so the validation tail accepts an unset key; the cmd layer
+// applies the default after the flag/config precedence chain.
+func ValidateAgent(s string) error {
+	if s == "" || slices.Contains(SupportedAgents, s) {
+		return nil
+	}
+	return fmt.Errorf("unsupported agent %q: must be one of %s",
+		s, strings.Join(SupportedAgents, ", "))
 }
 
 // ValidateMountsRoot rejects mounts_root values that would silently bind
