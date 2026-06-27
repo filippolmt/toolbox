@@ -861,7 +861,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       tzdata \
       unzip \
       vim-tiny \
-      wget
+      wget; \
+    # vim-tiny is sourced as /etc/vim/vimrc.tiny when invoked as `vi`, and that
+    # file sets `compatible` — which leaves arrow keys unmapped in insert mode
+    # (they emit literal A/B/C/D) and backspace unable to delete past the insert
+    # point. Override both so `vi`/`kubectl edit` are usable. Last `set` wins.
+    printf '\nset nocompatible\nset backspace=indent,eol,start\n' >> /etc/vim/vimrc.tiny
 
 # Fetched tools land here. Each COPY --link is an independent layer: a version
 # bump re-runs only its fetch stage + this COPY, and parent-layer changes
