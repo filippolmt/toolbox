@@ -858,6 +858,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       socat \
       sudo \
       tree \
+      tzdata \
       unzip \
       vim-tiny \
       wget
@@ -1280,12 +1281,17 @@ ENV DISABLE_AUTOUPDATER=1 \
 # debian-slim defaults to the POSIX locale, under which zsh's line editor
 # cannot decode UTF-8 bytes (history entries, prompt glyphs) and renders each
 # one as `<ffffffff>`. C.UTF-8 is built into glibc — no `locales` package.
+# TZ: bookworm-slim defaults to UTC (zoneinfo stripped, restored via the
+# tzdata apt dep above). Default to Europe/Rome so timestamps (statusline
+# rate-limit resets, `date`, `ls`) render in local time; overridable per
+# session via the `env:` passthrough (e.g. env: { TZ: America/New_York }).
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
     EDITOR=vi \
     KUBE_EDITOR=vi \
     STARSHIP_CONFIG=/etc/toolbox/starship.toml \
-    LANG=C.UTF-8
+    LANG=C.UTF-8 \
+    TZ=Europe/Rome
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
 # additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
