@@ -152,6 +152,13 @@ check_zsh() {
         [ "$(locale charmap 2>/dev/null)" = "UTF-8" ]
     }
 
+    # n. image timezone is Europe/Rome (ENV TZ + tzdata in the Dockerfile).
+    # bookworm-slim defaults to UTC; assert we left it. `!= UTC` is robust to
+    # the CET/CEST DST swing without pinning the abbreviation.
+    _zsh_tz_check() {
+        [ -f /usr/share/zoneinfo/Europe/Rome ] && [ "$(date +%Z 2>/dev/null)" != "UTC" ]
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -170,6 +177,7 @@ check_zsh() {
     _zsh_assert "zoxide z function"            _zsh_z_function_check
     _zsh_assert "vendor-completions >= 16"     _zsh_vendor_completions_check
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
+    _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli
