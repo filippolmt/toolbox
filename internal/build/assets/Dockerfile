@@ -837,12 +837,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
+      bind9-dnsutils \
       ca-certificates \
       curl \
       file \
       gettext-base \
       git \
       gnupg \
+      inetutils-telnet \
       less \
       libnss3-tools \
       libpython3.11-minimal \

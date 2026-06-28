@@ -214,6 +214,8 @@ check_required "python3"    python3 --version
 check_required "git"        git --version
 check_required "rg"         rg --version
 check_required "make"       make --version
+check_required "dig"        dig -v
+check_required "telnet"     telnet --version
 check_required "tini"       /usr/bin/tini --version
 check_required "vi"         vi --version
 check_required "certutil"   sh -c "command -v certutil"
