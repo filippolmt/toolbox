@@ -274,10 +274,26 @@ func defaultBranch() (string, error) {
 // worktree. push.autoSetupRemote is repo-wide (git has no per-branch knob) and
 // only set when unset, so a user's explicit choice is never overridden.
 func configureWorktreeBranch(root, branch, base string) {
-	_, _ = gitOutput("-C", root, "config", "branch."+branch+".base", base)
-	if _, err := gitOutput("-C", root, "config", "--get", "push.autoSetupRemote"); err != nil {
-		_, _ = gitOutput("-C", root, "config", "push.autoSetupRemote", "true")
+	if _, err := gitOutput("-C", root, "config", "branch."+branch+".base", base); err != nil {
+		// prune falls back to the default base when this is missing, so warn
+		// rather than abort — but don't leave the user guessing why prune later
+		// targets the wrong base.
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not record base for %s: %v\n", branch, err)
 	}
+	if _, err := gitOutput("-C", root, "config", "--get", "push.autoSetupRemote"); err != nil {
+		if _, serr := gitOutput("-C", root, "config", "push.autoSetupRemote", "true"); serr != nil {
+			// With --no-track and no autoSetupRemote, the first push needs -u.
+			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not set push.autoSetupRemote (first push may need -u): %v\n", serr)
+		}
+	}
+}
+
+// forgetWorktreeBase drops the base recorded for branch once its worktree is
+// gone, so stale metadata cannot outlive the worktree and mislead a later prune
+// if the branch name is reused. Best-effort: `git config --unset` exits
+// non-zero when the key is already absent.
+func forgetWorktreeBase(root, branch string) {
+	_, _ = gitOutput("-C", root, "config", "--unset", "branch."+branch+".base")
 }
 
 // worktreeBase returns the base branch persisted for branch at create
@@ -509,7 +525,11 @@ func runWorktreeRm(cmd *cobra.Command, args []string) error {
 	if wtForce {
 		gitArgs = append(gitArgs, "--force")
 	}
-	return runGit(append(gitArgs, wtPath)...)
+	if err := runGit(append(gitArgs, wtPath)...); err != nil {
+		return err
+	}
+	forgetWorktreeBase(root, args[0])
+	return nil
 }
 
 // pruneCandidates selects toolbox worktrees that are merged into their own
@@ -563,15 +583,22 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 		bases[base] = true
 	}
 
-	// Fetch each distinct base once, then its merged-branch set.
+	// Fetch each distinct base once, then its merged-branch set. Per-base
+	// failures are best-effort: a base that was deleted/renamed on the remote
+	// (a worktree's --from base merged and gone) must not abort the whole
+	// sweep — skip that base with a warning and still prune the healthy ones.
+	// A skipped base leaves mergedByBase[base] nil, so its worktrees read as
+	// not-merged and are preserved (the safe default).
 	mergedByBase := map[string]map[string]bool{}
 	for base := range bases {
 		if err := runGit("fetch", "origin", base); err != nil {
-			return err
+			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: skipping base %s: %v\n", base, err)
+			continue
 		}
 		m, err := mergedBranches(base)
 		if err != nil {
-			return err
+			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: skipping base %s: %v\n", base, err)
+			continue
 		}
 		mergedByBase[base] = m
 	}
@@ -608,7 +635,9 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 		// the user is still working in is preserved rather than discarded.
 		if err := runGit("worktree", "remove", w.Path); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
+			continue
 		}
+		forgetWorktreeBase(root, w.Branch)
 	}
 	if len(candidates) == 0 {
 		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
