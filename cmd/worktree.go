@@ -14,6 +14,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -162,8 +163,33 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent 
 	if err != nil {
 		return err
 	}
+	seedLocalSettings(root, wtPath)
 	applyWorktreeSession(plan, root, cfg.Shell, agent)
 	return container.Shell(ctx, cli, plan)
+}
+
+// seedLocalSettings copies the main repo's .claude/settings.local.json into the
+// worktree so the agent inherits the local permission allowlist. That file is
+// per-repo (not per-branch) yet gitignored, so a fresh worktree checkout lacks
+// it and every session would otherwise re-prompt for the same permissions. A
+// copy (not a symlink/bind) is deliberate: the main repo's working tree is not
+// mounted in the worktree container, so a link would dangle; the copy lives in
+// the worktree checkout, which is. Best-effort and non-clobbering — a missing
+// source, an already-seeded worktree, or a write error must never block the
+// session (the agent still runs, just with fewer pre-approved permissions).
+func seedLocalSettings(root, wtPath string) {
+	data, err := os.ReadFile(filepath.Join(root, ".claude", "settings.local.json"))
+	if err != nil {
+		return
+	}
+	dst := filepath.Join(wtPath, ".claude", "settings.local.json")
+	if _, err := os.Stat(dst); err == nil {
+		return // already present — keep any worktree-local edits
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return
+	}
+	_ = configio.AtomicWriteFile(dst, data, 0o644)
 }
 
 // gitOutput runs git and returns its trimmed stdout, wrapping failures with

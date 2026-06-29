@@ -123,6 +123,8 @@ The base branch for `create` is `--from` when given, else the repository default
 
 Git resolves inside the container because the session mounts both the worktree (at its own absolute host path, via the workspace mirror) and the main repo's `<repo-root>/.git` at the same absolute path the worktree's gitdir pointer references — so `status`/`commit`/`push` work unchanged.
 
+A worktree is a clean checkout of git-tracked files, so per-repo state that is gitignored does not reach it. `create`/`open` copy the main repo's `.claude/settings.local.json` into the worktree when present (never clobbering a worktree-local edit), so the agent keeps its pre-approved permission allowlist instead of re-prompting in every worktree. Knowledge-graph indexes are deliberately *not* copied: `graphify-out/` and the codegraph database are per-branch, so sharing them would make one branch read another's graph — regenerate them inside the worktree (`graphify update .`; the codegraph watcher rebuilds from its tracked config).
+
 `prune` uses local merge ancestry (`git branch --merged origin/<base>`), so squash-merged branches (no merge commit) are not detected — use `rm <branch>` for those. It removes without `--force`, so a worktree with uncommitted or untracked changes is preserved (git refuses) even if its branch reads as merged.
 
 `create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
