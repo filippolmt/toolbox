@@ -131,6 +131,47 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func TestPruneCandidates(t *testing.T) {
+	root := "/repo"
+	infos := []worktreeInfo{
+		{Path: "/repo", Branch: "main"},                         // main worktree → skip
+		{Path: "/repo/.worktrees/tbx-merged", Branch: "merged"}, // merged into its base
+		{Path: "/repo/.worktrees/tbx-open", Branch: "open"},     // not merged
+		{Path: "/repo/.worktrees/other", Branch: "stray"},       // not tbx- → skip
+		{Path: "/repo/.worktrees/tbx-detached", Branch: ""},     // detached → skip
+		{Path: "/repo/.worktrees/tbx-nobase", Branch: "nobase"}, // base unresolvable → skip
+		{Path: "/repo/.worktrees/tbx-feat", Branch: "feat"},     // merged into a CUSTOM base only
+	}
+
+	// 'feat' was branched --from develop and is merged into develop but NOT into
+	// the default base — it must still be a candidate (per-base correctness).
+	baseOf := map[string]string{
+		"merged": "main",
+		"open":   "main",
+		"feat":   "develop",
+		"nobase": "", // unresolvable
+	}
+	mergedInto := map[string]map[string]bool{
+		"main":    {"merged": true},                // 'open' absent → not merged
+		"develop": {"feat": true, "merged": false}, // 'feat' merged only here
+	}
+
+	got := pruneCandidates(root, infos,
+		func(b string) string { return baseOf[b] },
+		func(base, branch string) bool { return mergedInto[base][branch] },
+	)
+
+	want := map[string]bool{"merged": true, "feat": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %d candidates %v, want %d %v", len(got), got, len(want), want)
+	}
+	for _, w := range got {
+		if !want[w.Branch] {
+			t.Errorf("unexpected prune candidate %q", w.Branch)
+		}
+	}
+}
+
 func TestResolveAgentPrecedence(t *testing.T) {
 	orig := cfg
 	t.Cleanup(func() { cfg = orig })
