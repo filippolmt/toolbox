@@ -14,7 +14,6 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -178,18 +177,32 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent 
 // source, an already-seeded worktree, or a write error must never block the
 // session (the agent still runs, just with fewer pre-approved permissions).
 func seedLocalSettings(root, wtPath string) {
-	data, err := os.ReadFile(filepath.Join(root, ".claude", "settings.local.json"))
+	src := filepath.Join(root, ".claude", "settings.local.json")
+	data, err := os.ReadFile(src)
+	if errors.Is(err, os.ErrNotExist) {
+		return // no local settings to seed
+	}
 	if err != nil {
+		// Present-but-unreadable (EACCES, odd ownership, a directory): warn so a
+		// missing allowlist in the worktree is diagnosable, not silent.
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
 		return
 	}
 	dst := filepath.Join(wtPath, ".claude", "settings.local.json")
-	if _, err := os.Stat(dst); err == nil {
+	if info, err := os.Stat(dst); err == nil && !info.IsDir() {
 		return // already present — keep any worktree-local edits
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return
 	}
-	_ = configio.AtomicWriteFile(dst, data, 0o644)
+	// Plain write, not AtomicWriteFile: the destination is guaranteed absent
+	// (the Stat guard above), so there is no prior content for an atomic rename
+	// to protect — and a rename would leave a non-gitignored .tmp-* orphan if
+	// interrupted. 0o600 to match the repo-wide convention for config files
+	// (this is an auth-adjacent permission allowlist).
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
+	}
 }
 
 // gitOutput runs git and returns its trimmed stdout, wrapping failures with
