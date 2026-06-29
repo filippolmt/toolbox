@@ -162,8 +162,47 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent 
 	if err != nil {
 		return err
 	}
+	seedLocalSettings(root, wtPath)
 	applyWorktreeSession(plan, root, cfg.Shell, agent)
 	return container.Shell(ctx, cli, plan)
+}
+
+// seedLocalSettings copies the main repo's .claude/settings.local.json into the
+// worktree so the agent inherits the local permission allowlist. That file is
+// per-repo (not per-branch) yet gitignored, so a fresh worktree checkout lacks
+// it and every session would otherwise re-prompt for the same permissions. A
+// copy (not a symlink/bind) is deliberate: the main repo's working tree is not
+// mounted in the worktree container, so a link would dangle; the copy lives in
+// the worktree checkout, which is. Best-effort and non-clobbering — a missing
+// source, an already-seeded worktree, or a write error must never block the
+// session (the agent still runs, just with fewer pre-approved permissions).
+func seedLocalSettings(root, wtPath string) {
+	src := filepath.Join(root, ".claude", "settings.local.json")
+	data, err := os.ReadFile(src)
+	if errors.Is(err, os.ErrNotExist) {
+		return // no local settings to seed
+	}
+	if err != nil {
+		// Present-but-unreadable (EACCES, odd ownership, a directory): warn so a
+		// missing allowlist in the worktree is diagnosable, not silent.
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
+		return
+	}
+	dst := filepath.Join(wtPath, ".claude", "settings.local.json")
+	if info, err := os.Stat(dst); err == nil && !info.IsDir() {
+		return // already present — keep any worktree-local edits
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return
+	}
+	// Plain write, not AtomicWriteFile: the destination is guaranteed absent
+	// (the Stat guard above), so there is no prior content for an atomic rename
+	// to protect — and a rename would leave a non-gitignored .tmp-* orphan if
+	// interrupted. 0o600 to match the repo-wide convention for config files
+	// (this is an auth-adjacent permission allowlist).
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
+	}
 }
 
 // gitOutput runs git and returns its trimmed stdout, wrapping failures with

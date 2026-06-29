@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,6 +72,62 @@ func TestApplyWorktreeSessionMutatesPlan(t *testing.T) {
 	}
 	if strings.Join(plan.Cmd, " ") != "/bin/zsh -i" {
 		t.Errorf("plan.Cmd (container main process) must stay the idle shell, got %q", plan.Cmd)
+	}
+}
+
+func TestSeedLocalSettings(t *testing.T) {
+	const body = `{"permissions":{"allow":["Bash(go test:*)"]}}`
+
+	// seeds when the worktree lacks the file and the main repo has it
+	t.Run("seeds into fresh worktree", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		writeFile(t, filepath.Join(root, ".claude", "settings.local.json"), body)
+
+		seedLocalSettings(root, wt)
+
+		got, err := os.ReadFile(filepath.Join(wt, ".claude", "settings.local.json"))
+		if err != nil {
+			t.Fatalf("expected seeded file: %v", err)
+		}
+		if string(got) != body {
+			t.Errorf("seeded content = %q, want %q", got, body)
+		}
+	})
+
+	// never clobbers a worktree-local copy the user already edited
+	t.Run("does not clobber existing", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		writeFile(t, filepath.Join(root, ".claude", "settings.local.json"), body)
+		dst := filepath.Join(wt, ".claude", "settings.local.json")
+		writeFile(t, dst, `{"local":"edit"}`)
+
+		seedLocalSettings(root, wt)
+
+		got, _ := os.ReadFile(dst)
+		if string(got) != `{"local":"edit"}` {
+			t.Errorf("clobbered worktree-local edit: %q", got)
+		}
+	})
+
+	// no source in the main repo => no-op, no error, no file created
+	t.Run("no source is a no-op", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+
+		seedLocalSettings(root, wt)
+
+		if _, err := os.Stat(filepath.Join(wt, ".claude", "settings.local.json")); !os.IsNotExist(err) {
+			t.Errorf("expected no seeded file, stat err = %v", err)
+		}
+	})
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
