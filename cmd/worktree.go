@@ -920,18 +920,22 @@ func mergedBranches(base string) (map[string]bool, error) {
 }
 
 // syncPlan returns the ordered git arg-vectors for a sync: an optional
-// `fetch origin <base>`, a rebase onto origin/<base> (or the local base ref
-// when fetch is skipped), and an optional `push --force-with-lease`. Each
-// vector is the git subcommand only; the runner prepends `-C <wtPath>`. Pure so
-// the sequence is unit-testable without a repo (mirrors pruneCandidates).
+// `fetch origin <base>`, a rebase onto `origin/<base>`, and an optional
+// `push --force-with-lease`. Each vector is the git subcommand only; the runner
+// prepends `-C <wtPath>`. Pure so the sequence is unit-testable without a repo
+// (mirrors pruneCandidates).
+//
+// The rebase target is always the remote-tracking ref `origin/<base>`, never a
+// bare local `<base>` branch: a worktree made by `create` is branched
+// `--no-track` from `origin/<base>` and has no local `<base>` branch, so
+// rebasing onto `<base>` would fail with "invalid upstream". With --no-fetch
+// the remote-tracking ref is used as last fetched — no network, still valid.
 func syncPlan(base string, fetch, push bool) [][]string {
-	target := base
 	var steps [][]string
 	if fetch {
 		steps = append(steps, []string{"fetch", "origin", base})
-		target = "origin/" + base
 	}
-	steps = append(steps, []string{"rebase", target})
+	steps = append(steps, []string{"rebase", "origin/" + base})
 	if push {
 		steps = append(steps, []string{"push", "--force-with-lease"})
 	}
@@ -939,14 +943,18 @@ func syncPlan(base string, fetch, push bool) [][]string {
 }
 
 // runSyncSteps runs each syncPlan step as `run("-C", wtPath, step...)`, stopping
-// at the first failure. A failed rebase is turned into conflict guidance (leave
-// the rebase in progress, continue or abort, never push) — the push step is
-// unreachable after it. git I/O is injected via run so the stop-on-conflict
-// branch is testable without a repo (mirrors pruneCandidates).
-func runSyncSteps(wtPath string, steps [][]string, run func(args ...string) error) error {
+// at the first failure. A rebase that fails AND leaves a rebase in progress
+// (rebaseInProgress) is a conflict: emit continue/abort guidance, and the push
+// step is unreachable after it. Any other failure — a dirty worktree or a
+// missing base ref, where git bails before starting and no rebase is in
+// progress — is returned as-is so git's own stderr (already streamed by runGit)
+// is the whole story, not a misleading "resolve the conflict" message. git I/O
+// and the in-progress check are injected so both branches are testable without a
+// repo (mirrors pruneCandidates).
+func runSyncSteps(wtPath string, steps [][]string, run func(args ...string) error, rebaseInProgress func() bool) error {
 	for _, step := range steps {
 		if err := run(append([]string{"-C", wtPath}, step...)...); err != nil {
-			if step[0] == "rebase" {
+			if step[0] == "rebase" && rebaseInProgress() {
 				return fmt.Errorf("rebase stopped with conflicts in %s; no push was performed\n"+
 					"resolve, then 'git -C %s rebase --continue' (or 'git -C %s rebase --abort' to back out)",
 					wtPath, wtPath, wtPath)
@@ -957,6 +965,24 @@ func runSyncSteps(wtPath string, steps [][]string, run func(args ...string) erro
 	return nil
 }
 
+// rebaseInProgress reports whether a rebase is mid-flight in wtPath, by probing
+// git's rebase state dirs (rebase-merge for the default merge backend,
+// rebase-apply for the am backend). --path-format=absolute so the path is
+// stattable regardless of cwd. Used to tell a conflict (rebase left in
+// progress) from an immediate rebase bail (dirty tree, bad ref).
+func rebaseInProgress(wtPath string) bool {
+	for _, dir := range []string{"rebase-merge", "rebase-apply"} {
+		p, err := gitOutput("-C", wtPath, "rev-parse", "--path-format=absolute", "--git-path", dir)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func runWorktreeSync(cmd *cobra.Command, args []string) error {
 	root, err := repoRoot()
 	if err != nil {
@@ -965,12 +991,24 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 
 	var branch, wtPath string
 	if len(args) == 0 {
-		// No branch: operate on the worktree the command is invoked from.
+		// No branch: operate on the worktree the command is invoked from, but
+		// only a toolbox worktree — never the primary checkout. Without this
+		// guard, running `sync` from the main repo on `main` would fetch, rebase
+		// and force-push the shared default branch. resolveToolboxWorktree
+		// enforces the same on the branch-arg path.
+		if wtPath, err = gitOutput("rev-parse", "--show-toplevel"); err != nil {
+			return err
+		}
+		if !isToolboxWorktree(root, wtPath) {
+			return fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
+		}
 		if branch, err = gitOutput("rev-parse", "--abbrev-ref", "HEAD"); err != nil {
 			return err
 		}
-		if wtPath, err = gitOutput("rev-parse", "--show-toplevel"); err != nil {
-			return err
+		// A detached HEAD reports the literal "HEAD"; there is no branch to sync
+		// or push, so fail clearly rather than rebasing detached commits.
+		if branch == "HEAD" {
+			return fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
 		}
 	} else {
 		branch = args[0]
@@ -987,7 +1025,8 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
 	}
 
-	return runSyncSteps(wtPath, syncPlan(base, !wtNoFetch, !wtNoPush), runGit)
+	return runSyncSteps(wtPath, syncPlan(base, !wtNoFetch, !wtNoPush), runGit,
+		func() bool { return rebaseInProgress(wtPath) })
 }
 
 func init() {

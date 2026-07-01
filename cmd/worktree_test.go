@@ -424,9 +424,9 @@ func TestSyncPlan(t *testing.T) {
 			want: [][]string{{"fetch", "origin", "main"}, {"rebase", "origin/main"}, {"push", "--force-with-lease"}},
 		},
 		{
-			name:  "no-fetch rebases onto local base",
+			name:  "no-fetch rebases onto the remote-tracking ref without fetching",
 			fetch: false, push: true,
-			want: [][]string{{"rebase", "main"}, {"push", "--force-with-lease"}},
+			want: [][]string{{"rebase", "origin/main"}, {"push", "--force-with-lease"}},
 		},
 		{
 			name:  "no-push skips the push step",
@@ -455,7 +455,8 @@ func TestRunSyncStepsStopsOnRebaseConflict(t *testing.T) {
 		return nil
 	}
 
-	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run)
+	// rebaseInProgress=true → a real conflict left a rebase mid-flight.
+	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run, func() bool { return true })
 	if err == nil {
 		t.Fatal("expected an error on rebase conflict")
 	}
@@ -468,5 +469,29 @@ func TestRunSyncStepsStopsOnRebaseConflict(t *testing.T) {
 		if slices.Contains(c, "push") {
 			t.Errorf("push ran after a rebase conflict: %v", c)
 		}
+	}
+}
+
+// A rebase that bails before starting (dirty worktree, bad base ref) leaves no
+// rebase in progress: the raw git error must surface as-is, not be rewritten
+// into misleading "resolve the conflict" guidance.
+func TestRunSyncStepsSurfacesNonConflictRebaseError(t *testing.T) {
+	steps := syncPlan("main", true, true)
+	run := func(args ...string) error {
+		if slices.Contains(args, "rebase") {
+			return errors.New("cannot rebase: You have unstaged changes")
+		}
+		return nil
+	}
+
+	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run, func() bool { return false })
+	if err == nil {
+		t.Fatal("expected the raw rebase error")
+	}
+	if !strings.Contains(err.Error(), "unstaged changes") {
+		t.Errorf("error %q should surface git's message", err.Error())
+	}
+	if strings.Contains(err.Error(), "rebase --continue") {
+		t.Errorf("error %q must not add conflict guidance when no rebase is in progress", err.Error())
 	}
 }
