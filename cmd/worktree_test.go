@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
@@ -80,6 +83,37 @@ func TestAgentCommand(t *testing.T) {
 		if got := agentCommand(c.agent, c.prompt); got != c.want {
 			t.Errorf("agentCommand(%q, %q) = %q, want %q", c.agent, c.prompt, got, c.want)
 		}
+	}
+}
+
+func TestWorktreeCreateArgs(t *testing.T) {
+	// ArgsLenAtDash is only populated by cobra's own arg parsing, so exercise
+	// the validator through a real command Execute rather than calling it bare.
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{"branch only", []string{"feat"}, false},
+		{"branch then prompt after dash", []string{"feat", "--", "add", "auth"}, false},
+		{"branch then empty dash", []string{"feat", "--"}, false},
+		{"stray token without dash rejected", []string{"feat", "typo"}, true},
+		{"no args rejected", []string{}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := &cobra.Command{
+				Use:  "create",
+				Args: worktreeCreateArgs,
+				RunE: func(*cobra.Command, []string) error { return nil },
+			}
+			cmd.SetArgs(c.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			if err := cmd.Execute(); (err != nil) != c.wantErr {
+				t.Errorf("args %v: err = %v, wantErr = %v", c.args, err, c.wantErr)
+			}
+		})
 	}
 }
 

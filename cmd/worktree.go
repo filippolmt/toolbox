@@ -66,8 +66,24 @@ Anything after a '--' separator is passed to the agent as its initial task
 prompt, so the worktree spins up already working (e.g.
 'create feat-auth -- add an auth module'). With no '--', the agent launches
 bare, exactly as before.`,
-	Args: usageArgs(cobra.MinimumNArgs(1)),
+	Args: usageArgs(worktreeCreateArgs),
 	RunE: runWorktreeCreate,
+}
+
+// worktreeCreateArgs requires exactly one positional argument — the branch —
+// before any `--` separator. Tokens after `--` are the optional task prompt and
+// are not counted. Without this, MinimumNArgs(1) would silently accept stray
+// tokens typed without `--` (e.g. `create feat-auth typo`) as an agent prompt,
+// contradicting the documented `-- <task>` contract and firing unintended work.
+func worktreeCreateArgs(cmd *cobra.Command, args []string) error {
+	n := len(args)
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		n = dash // count only args before the `--`
+	}
+	if n != 1 {
+		return fmt.Errorf("accepts one branch argument (put the optional task prompt after '--'), received %d", n)
+	}
+	return nil
 }
 
 var worktreeOpenCmd = &cobra.Command{
@@ -160,20 +176,14 @@ func shellSingleQuote(s string) string {
 
 // agentCommand composes the shell fragment that launches agent, optionally with
 // an initial prompt. An empty prompt launches the agent bare (unchanged
-// behaviour). The switch is the per-agent prompt mapping: both supported agents
-// take the prompt as a single positional argument, so a future agent with
-// different ergonomics (e.g. a --task flag) gets its own case here rather than a
-// rewrite.
+// behaviour); otherwise the prompt is passed as a single positional argument —
+// the convention both supported agents (claude, codex) follow. An agent needing
+// different ergonomics (e.g. a --task flag) would branch on agent here.
 func agentCommand(agent, prompt string) string {
 	if prompt == "" {
 		return agent
 	}
-	switch agent {
-	case "codex":
-		return "codex " + shellSingleQuote(prompt)
-	default: // claude and any other positional-prompt agent
-		return agent + " " + shellSingleQuote(prompt)
-	}
+	return agent + " " + shellSingleQuote(prompt)
 }
 
 // applyWorktreeSession mutates a planned session into a worktree session: it
@@ -429,10 +439,13 @@ func containerStatus(ctx context.Context, cli client.APIClient, wtPath string) s
 
 func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	branch := args[0]
-	// Everything after the branch is the optional initial prompt. cobra stops
-	// flag parsing at `--`, so `create <branch> -- fix the bug` arrives as
-	// args = [branch, "fix", "the", "bug"]; join into one free-form prompt.
-	prompt := strings.Join(args[1:], " ")
+	// Only tokens after the `--` separator are the initial prompt; ArgsLenAtDash
+	// is the count of args before `--` (-1 when absent), so args[dash:] is exactly
+	// the post-`--` tail. worktreeCreateArgs guarantees a lone branch before it.
+	prompt := ""
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		prompt = strings.Join(args[dash:], " ")
+	}
 	agent, err := resolveAgent(wtAgent)
 	if err != nil {
 		return &usageError{err: err}
