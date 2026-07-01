@@ -52,6 +52,17 @@ func TestIsToolboxWorktreeFilter(t *testing.T) {
 	}
 }
 
+func TestBranchDeleteArgs(t *testing.T) {
+	// Safe delete (-d refuses an unmerged branch); --force escalates to -D, the
+	// same flag that forced the worktree removal.
+	if got, want := branchDeleteArgs("fix-bug", false), []string{"branch", "-d", "fix-bug"}; !slices.Equal(got, want) {
+		t.Errorf("branchDeleteArgs(safe) = %v, want %v", got, want)
+	}
+	if got, want := branchDeleteArgs("fix-bug", true), []string{"branch", "-D", "fix-bug"}; !slices.Equal(got, want) {
+		t.Errorf("branchDeleteArgs(force) = %v, want %v", got, want)
+	}
+}
+
 func TestShellSingleQuote(t *testing.T) {
 	// $(...), backticks and ; must survive as literal text, never expanded or
 	// treated as a command separator by the session's `-c` wrapper.
