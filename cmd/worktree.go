@@ -30,15 +30,31 @@ const (
 	worktreesSubdir   = ".worktrees"
 )
 
+// Per-command flag state. Each subcommand owns its own struct so no flag var is
+// bound to two commands — cobra parses one command per invocation, but sharing a
+// package var across bindings is a latent footgun (a future persistent binding
+// would leak state between subcommands).
 var (
-	wtAgent   string
-	wtFrom    string
-	wtNoFetch bool
-	wtNoPush  bool
-	wtForce   bool
-	wtDryRun  bool
-
-	wtDeleteRemote bool
+	createFlags struct {
+		agent   string
+		from    string
+		noFetch bool
+	}
+	openFlags struct {
+		agent string
+	}
+	rmFlags struct {
+		force        bool
+		deleteRemote bool
+	}
+	pruneFlags struct {
+		dryRun       bool
+		deleteRemote bool
+	}
+	syncFlags struct {
+		noFetch bool
+		noPush  bool
+	}
 )
 
 var agentFlagUsage = "AI agent to launch (" + strings.Join(config.SupportedAgents, "|") +
@@ -540,6 +556,63 @@ func configureWorktreeBranch(root, branch, base string) {
 	}
 }
 
+// excludeEntry is the .git/info/exclude line that hides the toolbox worktrees
+// directory from the main repository's `git status`. Trailing slash so it only
+// matches the directory, mirroring a .gitignore dir rule.
+const excludeEntry = worktreesSubdir + "/"
+
+// ensureExcludeLine returns body with entry present exactly once. When a line
+// already equals entry exactly it returns body unchanged and changed=false;
+// otherwise it appends entry on its own line (adding a trailing newline to body
+// first if missing) and returns changed=true. The match is exact, not
+// whitespace-trimmed: git does not strip a leading space from an exclude
+// pattern, so a padded " .worktrees/" line does not actually exclude the
+// directory — treating it as present would leave .worktrees/ visible in status,
+// the very thing this prevents. Pure so idempotency and newline handling are
+// unit-tested without a repo.
+func ensureExcludeLine(body, entry string) (out string, changed bool) {
+	for line := range strings.SplitSeq(body, "\n") {
+		if line == entry {
+			return body, false
+		}
+	}
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + entry + "\n", true
+}
+
+// excludeWorktreesDir records the toolbox worktrees directory in the
+// repository-local exclude file (.git/info/exclude) so it never shows up as
+// untracked in the main checkout's `git status`. The exclude file is resolved
+// via --git-common-dir (the shared .git, correct even when invoked from inside
+// a linked worktree); the tracked .gitignore is never touched. Idempotent and
+// best-effort: a failure warns but must not abort an already-created worktree.
+func excludeWorktreesDir(root string) {
+	gitDir, err := gitOutput("-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not locate .git to exclude %s: %v\n", excludeEntry, err)
+		return
+	}
+	excludePath := filepath.Join(gitDir, "info", "exclude")
+	body, err := os.ReadFile(excludePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not read %s: %v\n", excludePath, err)
+		return
+	}
+	next, changed := ensureExcludeLine(string(body), excludeEntry)
+	if !changed {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not create %s: %v\n", filepath.Dir(excludePath), err)
+		return
+	}
+	if err := os.WriteFile(excludePath, []byte(next), 0o644); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not update %s: %v\n", excludePath, err)
+	}
+}
+
 // forgetWorktreeBase drops the base recorded for branch once its worktree is
 // gone, so stale metadata cannot outlive the worktree and mislead a later prune
 // if the branch name is reused. Best-effort: `git config --unset` exits
@@ -701,8 +774,26 @@ func resolveToolboxWorktree(root, branch string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return findToolboxWorktree(root, branch, infos)
+}
+
+// findToolboxWorktree returns the path of the toolbox worktree for branch among
+// infos, matched by exact branch name — or, for a worktree mid-rebase whose
+// detached HEAD leaves the branch field empty, by the deterministic tbx-
+// directory. The directory fallback is what lets `sync <branch>` resume a
+// rebase in progress: during a rebase `git worktree list` reports the worktree
+// as detached (no branch line), so a branch-only match would fail exactly when
+// resume is needed. Distinct branches that sanitize to the same directory never
+// coexist (git refuses the second `worktree add`), so the fallback is
+// unambiguous. Pure so the dual match is unit-tested without a repo (mirrors
+// pruneCandidates).
+func findToolboxWorktree(root, branch string, infos []worktreeInfo) (string, error) {
+	dir := worktreeDirName(branch)
 	for _, w := range infos {
-		if w.Branch == branch && isToolboxWorktree(root, w.Path) {
+		if !isToolboxWorktree(root, w.Path) {
+			continue
+		}
+		if w.Branch == branch || (w.Branch == "" && filepath.Base(w.Path) == dir) {
 			return w.Path, nil
 		}
 	}
@@ -744,7 +835,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
 		prompt = strings.Join(args[dash:], " ")
 	}
-	agent, err := resolveAgent(wtAgent)
+	agent, err := resolveAgent(createFlags.agent)
 	if err != nil {
 		return &usageError{err: err}
 	}
@@ -753,7 +844,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	base := wtFrom
+	base := createFlags.from
 	if base == "" {
 		base, err = defaultBranch()
 		if err != nil {
@@ -762,7 +853,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	startRef := base
-	if !wtNoFetch {
+	if !createFlags.noFetch {
 		if err := runGit("fetch", "origin", base); err != nil {
 			return err
 		}
@@ -778,6 +869,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	configureWorktreeBranch(root, branch, base)
+	excludeWorktreesDir(root)
 
 	cli, err := container.NewClient()
 	if err != nil {
@@ -798,7 +890,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 
 func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 	branch := args[0]
-	agent, err := resolveAgent(wtAgent)
+	agent, err := resolveAgent(openFlags.agent)
 	if err != nil {
 		return &usageError{err: err}
 	}
@@ -873,7 +965,7 @@ func runWorktreeRm(cmd *cobra.Command, args []string) error {
 	stopWorktreeContainer(wtPath)
 
 	gitArgs := []string{"worktree", "remove"}
-	if wtForce {
+	if rmFlags.force {
 		gitArgs = append(gitArgs, "--force")
 	}
 	if err := runGit(append(gitArgs, wtPath)...); err != nil {
@@ -882,7 +974,7 @@ func runWorktreeRm(cmd *cobra.Command, args []string) error {
 	// The worktree is gone; delete its now-orphaned branch (best-effort). --force
 	// already forced the worktree removal, so it also escalates the branch delete
 	// to -D — one flag means "I accept losing unmerged work".
-	deleteBranch(root, args[0], wtForce, wtDeleteRemote)
+	deleteBranch(root, args[0], rmFlags.force, rmFlags.deleteRemote)
 	forgetWorktreeBase(root, args[0])
 	return nil
 }
@@ -966,7 +1058,7 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 	// One client for the whole sweep (best-effort: a down daemon still lets us
 	// remove worktrees). Reused across candidates instead of reconnecting each.
 	var cli client.APIClient
-	if wtDryRun {
+	if pruneFlags.dryRun {
 		cli = nil
 	} else if c, cerr := container.NewClient(); cerr == nil {
 		cli = c
@@ -978,7 +1070,7 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 	var remoteToDelete []string // branches whose origin ref to delete in one push
 	for _, w := range candidates {
-		if wtDryRun {
+		if pruneFlags.dryRun {
 			// A dirty worktree fails the no-force `git worktree remove` below, so
 			// its branch is not deleted either — don't overstate the removal.
 			if worktreeDirty(w.Path) {
@@ -986,7 +1078,7 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 				continue
 			}
 			msg := fmt.Sprintf("would remove %s (%s) and delete local branch %s", w.Branch, w.Path, w.Branch)
-			if wtDeleteRemote && hasRemoteBranch(root, w.Branch) {
+			if pruneFlags.deleteRemote && hasRemoteBranch(root, w.Branch) {
 				msg += " and remote origin/" + w.Branch
 			}
 			_, _ = fmt.Fprintln(out, msg)
@@ -1009,7 +1101,7 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 		// the local default branch lags origin — orphaning a branch that is in
 		// fact merged upstream.
 		localDeleted := deleteLocalBranch(root, w.Branch, true)
-		if shouldDeleteRemote(localDeleted, wtDeleteRemote, hasRemoteBranch(root, w.Branch)) {
+		if shouldDeleteRemote(localDeleted, pruneFlags.deleteRemote, hasRemoteBranch(root, w.Branch)) {
 			remoteToDelete = append(remoteToDelete, w.Branch)
 		}
 		forgetWorktreeBase(root, w.Branch)
@@ -1056,6 +1148,20 @@ func syncPlan(base string, fetch, push bool) [][]string {
 		steps = append(steps, []string{"fetch", "origin", base})
 	}
 	steps = append(steps, []string{"rebase", "origin/" + base})
+	if push {
+		steps = append(steps, []string{"push", "--force-with-lease"})
+	}
+	return steps
+}
+
+// continuePlan returns the git arg-vectors for resuming a rebase already in
+// progress: `rebase --continue`, then `push --force-with-lease` unless push is
+// false. There is no fetch or base — the rebase is mid-flight, so the target was
+// fixed when it started. Routed through runSyncSteps like syncPlan, so a resume
+// that stops again on a further conflict gets the same continue/abort guidance.
+// Pure so the sequence is unit-tested without a repo (mirrors syncPlan).
+func continuePlan(push bool) [][]string {
+	steps := [][]string{{"rebase", "--continue"}}
 	if push {
 		steps = append(steps, []string{"push", "--force-with-lease"})
 	}
@@ -1122,6 +1228,29 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 		if !isToolboxWorktree(root, wtPath) {
 			return fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
 		}
+	} else {
+		branch = args[0]
+		if wtPath, err = resolveToolboxWorktree(root, branch); err != nil {
+			return err
+		}
+	}
+
+	// A rebase already in progress means a previous sync stopped on a conflict
+	// the user has since resolved: resume it (continue, then push) rather than
+	// starting a fresh rebase. Checked before branch/base resolution — a rebase
+	// leaves HEAD detached, so the no-arg branch lookup below would otherwise
+	// fail with the detached-HEAD error and strand the resume.
+	if rebaseInProgress(wtPath) {
+		// Announce the resume so it is not silent: this path skips fetch/rebase
+		// and does not re-resolve the base (the rebase already fixed its target),
+		// so --no-fetch has no effect here — only --no-push still applies.
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: resuming rebase in progress in %s\n", wtPath)
+		return runSyncSteps(wtPath, continuePlan(!syncFlags.noPush), runGit,
+			func() bool { return rebaseInProgress(wtPath) })
+	}
+
+	// No rebase in progress: for the no-arg case, resolve the current branch now.
+	if len(args) == 0 {
 		if branch, err = gitOutput("rev-parse", "--abbrev-ref", "HEAD"); err != nil {
 			return err
 		}
@@ -1129,11 +1258,6 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 		// or push, so fail clearly rather than rebasing detached commits.
 		if branch == "HEAD" {
 			return fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
-		}
-	} else {
-		branch = args[0]
-		if wtPath, err = resolveToolboxWorktree(root, branch); err != nil {
-			return err
 		}
 	}
 
@@ -1145,21 +1269,21 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
 	}
 
-	return runSyncSteps(wtPath, syncPlan(base, !wtNoFetch, !wtNoPush), runGit,
+	return runSyncSteps(wtPath, syncPlan(base, !syncFlags.noFetch, !syncFlags.noPush), runGit,
 		func() bool { return rebaseInProgress(wtPath) })
 }
 
 func init() {
-	worktreeCreateCmd.Flags().StringVar(&wtAgent, "agent", "", agentFlagUsage)
-	worktreeCreateCmd.Flags().StringVar(&wtFrom, "from", "", "base branch to branch from (default: repository default branch)")
-	worktreeCreateCmd.Flags().BoolVar(&wtNoFetch, "no-fetch", false, "branch from the local base ref without contacting the remote")
-	worktreeOpenCmd.Flags().StringVar(&wtAgent, "agent", "", agentFlagUsage)
-	worktreeRmCmd.Flags().BoolVar(&wtForce, "force", false, "pass --force to git worktree remove (discards local changes)")
-	worktreeRmCmd.Flags().BoolVar(&wtDeleteRemote, "delete-remote", false, "also delete the branch on origin (git push origin --delete)")
-	worktreePruneCmd.Flags().BoolVar(&wtDryRun, "dry-run", false, "list worktrees that would be removed without removing them")
-	worktreePruneCmd.Flags().BoolVar(&wtDeleteRemote, "delete-remote", false, "also delete each pruned branch on origin (git push origin --delete)")
-	worktreeSyncCmd.Flags().BoolVar(&wtNoFetch, "no-fetch", false, "rebase onto the local base ref without contacting the remote")
-	worktreeSyncCmd.Flags().BoolVar(&wtNoPush, "no-push", false, "rebase without pushing (skip the force-with-lease push)")
+	worktreeCreateCmd.Flags().StringVar(&createFlags.agent, "agent", "", agentFlagUsage)
+	worktreeCreateCmd.Flags().StringVar(&createFlags.from, "from", "", "base branch to branch from (default: repository default branch)")
+	worktreeCreateCmd.Flags().BoolVar(&createFlags.noFetch, "no-fetch", false, "branch from the local base ref without contacting the remote")
+	worktreeOpenCmd.Flags().StringVar(&openFlags.agent, "agent", "", agentFlagUsage)
+	worktreeRmCmd.Flags().BoolVar(&rmFlags.force, "force", false, "pass --force to git worktree remove (discards local changes)")
+	worktreeRmCmd.Flags().BoolVar(&rmFlags.deleteRemote, "delete-remote", false, "also delete the branch on origin (git push origin --delete)")
+	worktreePruneCmd.Flags().BoolVar(&pruneFlags.dryRun, "dry-run", false, "list worktrees that would be removed without removing them")
+	worktreePruneCmd.Flags().BoolVar(&pruneFlags.deleteRemote, "delete-remote", false, "also delete each pruned branch on origin (git push origin --delete)")
+	worktreeSyncCmd.Flags().BoolVar(&syncFlags.noFetch, "no-fetch", false, "rebase onto the local base ref without contacting the remote")
+	worktreeSyncCmd.Flags().BoolVar(&syncFlags.noPush, "no-push", false, "rebase without pushing (skip the force-with-lease push)")
 
 	worktreeCmd.AddCommand(worktreeCreateCmd)
 	worktreeCmd.AddCommand(worktreeOpenCmd)
