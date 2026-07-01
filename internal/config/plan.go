@@ -325,6 +325,9 @@ func applyValidationTail(cfg *Config) error {
 	if err := ValidateSDD(cfg.SDD); err != nil {
 		return err
 	}
+	if err := ValidateWorktreeSeed(cfg.Worktree.Seed); err != nil {
+		return err
+	}
 	if err := ValidateEnv(cfg.Env); err != nil {
 		return err
 	}

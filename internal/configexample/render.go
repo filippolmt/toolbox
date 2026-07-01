@@ -135,6 +135,16 @@ func Render() string {
 	b.WriteString("#     target: /home/toolbox/.cache/extra\n")
 	b.WriteString("#     readonly: false\n")
 	b.WriteString("#     create_if_missing: true\n")
+	b.WriteString("\n")
+
+	b.WriteString("# worktree — tune `toolbox worktree` sessions.\n")
+	b.WriteString("# seed: extra repo-relative paths to copy from the main repo into a new\n")
+	b.WriteString("# worktree, on top of the built-in defaults (.claude/settings.local.json,\n")
+	b.WriteString("# .env[.*], openspec/, .planning/). Only paths git ignores are copied.\n")
+	b.WriteString("# worktree:\n")
+	b.WriteString("#   seed:\n")
+	b.WriteString("#     - .secrets.local\n")
+	b.WriteString("#     - config/local.yaml\n")
 
 	return b.String()
 }

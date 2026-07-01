@@ -145,6 +145,9 @@ func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
 	if !reflect.DeepEqual(upper.Env, lower.Env) {
 		prov["env"] = origin
 	}
+	if !reflect.DeepEqual(upper.Worktree, lower.Worktree) {
+		prov["worktree"] = origin
+	}
 	for name, s := range upper.Shells {
 		if ls, ok := lower.Shells[name]; !ok || !reflect.DeepEqual(s, ls) {
 			prov[ShellKey(name)] = origin

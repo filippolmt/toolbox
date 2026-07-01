@@ -120,6 +120,22 @@ type Config struct {
 	// keep the curated env contract authoritative. Motivating use: opt-in
 	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
 	Env map[string]string `mapstructure:"env"`
+	// Worktree tunes `toolbox worktree` sessions. Currently only Seed: extra
+	// repo-relative paths to carry from the main repo into a freshly created
+	// worktree, on top of the built-in defaults. Only paths git actually
+	// ignores are copied (see cmd.seedWorktreeFiles); a non-ignored entry is a
+	// silent no-op.
+	Worktree WorktreeConfig `mapstructure:"worktree"`
+}
+
+// WorktreeConfig holds the `worktree:` config block.
+type WorktreeConfig struct {
+	// Seed is a list of extra repo-relative paths to seed into a new worktree,
+	// unioned with the built-in defaults. Validated by ValidateWorktreeSeed:
+	// relative, no `..`, non-empty — these paths drive filesystem reads under
+	// the repo root and writes under the worktree, so traversal must not escape
+	// either tree.
+	Seed []string `mapstructure:"seed"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
@@ -396,6 +412,26 @@ func ValidateEnv(env map[string]string) error {
 			return fmt.Errorf(
 				"env: key %q is reserved (PWD and the %s prefix are owned by toolbox)",
 				k, ReservedEnvPrefix)
+		}
+	}
+	return nil
+}
+
+// ValidateWorktreeSeed rejects worktree.seed entries that would let the
+// seeding step read or write outside the repo root / worktree: empty strings,
+// absolute paths, and any entry containing a `..` component. Entries are
+// repo-relative and joined onto both the source root and the destination
+// worktree, so traversal must be impossible before either join happens.
+func ValidateWorktreeSeed(paths []string) error {
+	for _, p := range paths {
+		if p == "" {
+			return fmt.Errorf("worktree.seed: empty path is not allowed")
+		}
+		if filepath.IsAbs(p) {
+			return fmt.Errorf("worktree.seed: %q must be a relative path", p)
+		}
+		if slices.Contains(strings.Split(filepath.ToSlash(p), "/"), "..") {
+			return fmt.Errorf("worktree.seed: %q must not contain '..'", p)
 		}
 	}
 	return nil

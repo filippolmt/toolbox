@@ -42,6 +42,7 @@ Configuration is loaded from (highest priority first):
 | [`proximo`](proximo.md) | bool | auto | `.test` reachability + CA trust; omitted = auto-detect (on iff proximo's CA exists on the host). |
 | [`managed_statusline`](#managed_statusline) | bool | `true` | Image-owned Claude Code statusline, re-applied every shell start; `false` keeps your own. |
 | [`env`](#env-passthrough) | map | – | Arbitrary env vars injected into the in-container shell. |
+| [`worktree`](#worktree) | map | – | Tune `toolbox worktree` sessions; `seed` adds extra gitignored paths to carry into a new worktree. |
 
 ## `shell`
 
@@ -129,6 +130,23 @@ Contract:
 - **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD`/SDD entries first, then the loopback-bridge markers, then the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
 - **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`).
 - **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
+
+## worktree
+
+Tunes [`toolbox worktree`](commands.md#toolbox-worktree) sessions. A worktree is a checkout of git-tracked files only, so `create`/`open` seed a curated set of gitignored per-repo working state from the main repo into the new worktree (`.claude/settings.local.json`, `.env`/`.env.*`, `openspec/`, gsd's `.planning/`). `worktree.seed` adds extra repo-relative paths to that set:
+
+```yaml
+worktree:
+  seed:
+    - .secrets.local
+    - config/local.yaml
+```
+
+Contract:
+
+- **Gitignore-gated.** Every candidate — built-in defaults and `seed` entries alike — is copied **only if `git check-ignore` reports it ignored** in the main repo. A tracked path already arrives with the checkout; a non-ignored untracked path is left alone. So a `seed` entry that isn't gitignored is a silent no-op, and the built-in defaults self-correct in a repo that tracks one of them.
+- **Additive.** `seed` is unioned with the built-in defaults (not a replacement); directories are copied recursively. Copies never clobber a worktree-local edit (an existing destination is kept).
+- **Validation.** `config.ValidateWorktreeSeed` rejects absolute paths, entries containing `..`, and empty strings — the paths drive filesystem reads under the repo root and writes under the worktree, so traversal must not escape either tree.
 
 ## `TOOLBOX_*` environment variables
 

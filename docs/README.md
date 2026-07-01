@@ -45,6 +45,7 @@ sections.**
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)
 - [env: passthrough](configuration.md#env-passthrough)
+- [worktree](configuration.md#worktree)
 - [TOOLBOX_* environment variables](configuration.md#toolbox_-environment-variables)
 
 ## mounts.md

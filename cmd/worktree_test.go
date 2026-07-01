@@ -3,6 +3,7 @@ package cmd
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -166,49 +167,100 @@ func TestApplyWorktreeSessionMutatesPlan(t *testing.T) {
 	})
 }
 
-func TestSeedLocalSettings(t *testing.T) {
+// gitInitRepo initialises a git repo at root with the given .gitignore body so
+// seedWorktreeFiles' `git check-ignore` gate has real rules to evaluate.
+func gitInitRepo(t *testing.T, root, gitignore string) {
+	t.Helper()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	writeFile(t, filepath.Join(root, ".gitignore"), gitignore)
+}
+
+func mustExist(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected seeded file %s: %v", path, err)
+	}
+	if string(got) != want {
+		t.Errorf("seeded content = %q, want %q", got, want)
+	}
+}
+
+func mustAbsent(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected %s absent, stat err = %v", path, err)
+	}
+}
+
+func TestSeedWorktreeFiles(t *testing.T) {
 	const body = `{"permissions":{"allow":["Bash(go test:*)"]}}`
 
-	// seeds when the worktree lacks the file and the main repo has it
-	t.Run("seeds into fresh worktree", func(t *testing.T) {
+	// gitignored file + recursive dir + .env variants are all seeded
+	t.Run("seeds gitignored state", func(t *testing.T) {
 		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, ".claude/settings.local.json\n.env\n.env.local\nopenspec/\n")
 		writeFile(t, filepath.Join(root, ".claude", "settings.local.json"), body)
+		writeFile(t, filepath.Join(root, ".env"), "SECRET=1")
+		writeFile(t, filepath.Join(root, ".env.local"), "LOCAL=2")
+		writeFile(t, filepath.Join(root, "openspec", "changes", "x", "spec.md"), "# spec")
 
-		seedLocalSettings(root, wt)
+		seedWorktreeFiles(root, wt, nil)
 
-		got, err := os.ReadFile(filepath.Join(wt, ".claude", "settings.local.json"))
-		if err != nil {
-			t.Fatalf("expected seeded file: %v", err)
-		}
-		if string(got) != body {
-			t.Errorf("seeded content = %q, want %q", got, body)
-		}
+		mustExist(t, filepath.Join(wt, ".claude", "settings.local.json"), body)
+		mustExist(t, filepath.Join(wt, ".env"), "SECRET=1")
+		mustExist(t, filepath.Join(wt, ".env.local"), "LOCAL=2")
+		mustExist(t, filepath.Join(wt, "openspec", "changes", "x", "spec.md"), "# spec")
+	})
+
+	// a candidate that git does NOT ignore is never copied — the core constraint
+	t.Run("skips non-ignored paths", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, "openspec/\n") // .env deliberately NOT ignored
+		writeFile(t, filepath.Join(root, ".env"), "SECRET=1")
+		writeFile(t, filepath.Join(root, "openspec", "spec.md"), "# spec")
+
+		seedWorktreeFiles(root, wt, nil)
+
+		mustExist(t, filepath.Join(wt, "openspec", "spec.md"), "# spec")
+		mustAbsent(t, filepath.Join(wt, ".env"))
 	})
 
 	// never clobbers a worktree-local copy the user already edited
 	t.Run("does not clobber existing", func(t *testing.T) {
 		root, wt := t.TempDir(), t.TempDir()
-		writeFile(t, filepath.Join(root, ".claude", "settings.local.json"), body)
-		dst := filepath.Join(wt, ".claude", "settings.local.json")
-		writeFile(t, dst, `{"local":"edit"}`)
+		gitInitRepo(t, root, ".env\n")
+		writeFile(t, filepath.Join(root, ".env"), "SECRET=1")
+		writeFile(t, filepath.Join(wt, ".env"), "LOCAL_EDIT")
 
-		seedLocalSettings(root, wt)
+		seedWorktreeFiles(root, wt, nil)
 
-		got, _ := os.ReadFile(dst)
-		if string(got) != `{"local":"edit"}` {
-			t.Errorf("clobbered worktree-local edit: %q", got)
-		}
+		mustExist(t, filepath.Join(wt, ".env"), "LOCAL_EDIT")
 	})
 
-	// no source in the main repo => no-op, no error, no file created
-	t.Run("no source is a no-op", func(t *testing.T) {
+	// config extra paths are seeded only when gitignored
+	t.Run("config extra gated by gitignore", func(t *testing.T) {
 		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, "config/local.yaml\n") // tracked.txt not ignored
+		writeFile(t, filepath.Join(root, "config", "local.yaml"), "a: 1")
+		writeFile(t, filepath.Join(root, "tracked.txt"), "keep")
 
-		seedLocalSettings(root, wt)
+		seedWorktreeFiles(root, wt, []string{"config/local.yaml", "tracked.txt"})
 
-		if _, err := os.Stat(filepath.Join(wt, ".claude", "settings.local.json")); !os.IsNotExist(err) {
-			t.Errorf("expected no seeded file, stat err = %v", err)
-		}
+		mustExist(t, filepath.Join(wt, "config", "local.yaml"), "a: 1")
+		mustAbsent(t, filepath.Join(wt, "tracked.txt"))
+	})
+
+	// no candidate present in the repo => no-op, no error
+	t.Run("no candidates is a no-op", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, ".env\n")
+
+		seedWorktreeFiles(root, wt, nil)
+
+		mustAbsent(t, filepath.Join(wt, ".env"))
 	})
 }
 
