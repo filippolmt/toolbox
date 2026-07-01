@@ -33,6 +33,7 @@ var (
 	wtAgent   string
 	wtFrom    string
 	wtNoFetch bool
+	wtNoPush  bool
 	wtForce   bool
 	wtDryRun  bool
 )
@@ -126,6 +127,25 @@ Detection is local merge ancestry, so squash-merged branches (no merge
 commit) are not detected — use 'toolbox worktree rm <branch>' for those.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: runWorktreePrune,
+}
+
+var worktreeSyncCmd = &cobra.Command{
+	Use:     "sync [<branch>]",
+	Aliases: []string{"rebase"},
+	Short:   "Rebase a worktree branch onto its recorded base and push",
+	Long: `Fetch a worktree branch's recorded base, rebase the branch onto
+origin/<base>, and push with --force-with-lease — the "Rebase Before PR"
+discipline as one command.
+
+The base is the branch.<branch>.base recorded at create, falling back to the
+repository default branch (origin/HEAD). With no <branch> it operates on the
+worktree it is invoked from; given a branch it targets that toolbox worktree.
+
+--no-fetch rebases onto the local base ref for offline use; --no-push rebases
+without pushing. On a rebase conflict it stops with the rebase in progress,
+never auto-resolves or pushes, and prints how to continue or abort.`,
+	Args: usageArgs(cobra.MaximumNArgs(1)),
+	RunE: runWorktreeSync,
 }
 
 // resolveAgent applies the precedence chain: --agent flag > cfg.Agent >
@@ -899,6 +919,77 @@ func mergedBranches(base string) (map[string]bool, error) {
 	return merged, nil
 }
 
+// syncPlan returns the ordered git arg-vectors for a sync: an optional
+// `fetch origin <base>`, a rebase onto origin/<base> (or the local base ref
+// when fetch is skipped), and an optional `push --force-with-lease`. Each
+// vector is the git subcommand only; the runner prepends `-C <wtPath>`. Pure so
+// the sequence is unit-testable without a repo (mirrors pruneCandidates).
+func syncPlan(base string, fetch, push bool) [][]string {
+	target := base
+	var steps [][]string
+	if fetch {
+		steps = append(steps, []string{"fetch", "origin", base})
+		target = "origin/" + base
+	}
+	steps = append(steps, []string{"rebase", target})
+	if push {
+		steps = append(steps, []string{"push", "--force-with-lease"})
+	}
+	return steps
+}
+
+// runSyncSteps runs each syncPlan step as `run("-C", wtPath, step...)`, stopping
+// at the first failure. A failed rebase is turned into conflict guidance (leave
+// the rebase in progress, continue or abort, never push) — the push step is
+// unreachable after it. git I/O is injected via run so the stop-on-conflict
+// branch is testable without a repo (mirrors pruneCandidates).
+func runSyncSteps(wtPath string, steps [][]string, run func(args ...string) error) error {
+	for _, step := range steps {
+		if err := run(append([]string{"-C", wtPath}, step...)...); err != nil {
+			if step[0] == "rebase" {
+				return fmt.Errorf("rebase stopped with conflicts in %s; no push was performed\n"+
+					"resolve, then 'git -C %s rebase --continue' (or 'git -C %s rebase --abort' to back out)",
+					wtPath, wtPath, wtPath)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func runWorktreeSync(cmd *cobra.Command, args []string) error {
+	root, err := repoRoot()
+	if err != nil {
+		return err
+	}
+
+	var branch, wtPath string
+	if len(args) == 0 {
+		// No branch: operate on the worktree the command is invoked from.
+		if branch, err = gitOutput("rev-parse", "--abbrev-ref", "HEAD"); err != nil {
+			return err
+		}
+		if wtPath, err = gitOutput("rev-parse", "--show-toplevel"); err != nil {
+			return err
+		}
+	} else {
+		branch = args[0]
+		if wtPath, err = resolveToolboxWorktree(root, branch); err != nil {
+			return err
+		}
+	}
+
+	// defaultBranch is only a fallback, so origin/HEAD being unset is fatal only
+	// when the branch also lacks a persisted base (mirrors prune).
+	fallback, _ := defaultBranch()
+	base := worktreeBase(root, branch, fallback)
+	if base == "" {
+		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
+	}
+
+	return runSyncSteps(wtPath, syncPlan(base, !wtNoFetch, !wtNoPush), runGit)
+}
+
 func init() {
 	worktreeCreateCmd.Flags().StringVar(&wtAgent, "agent", "", agentFlagUsage)
 	worktreeCreateCmd.Flags().StringVar(&wtFrom, "from", "", "base branch to branch from (default: repository default branch)")
@@ -906,11 +997,14 @@ func init() {
 	worktreeOpenCmd.Flags().StringVar(&wtAgent, "agent", "", agentFlagUsage)
 	worktreeRmCmd.Flags().BoolVar(&wtForce, "force", false, "pass --force to git worktree remove (discards local changes)")
 	worktreePruneCmd.Flags().BoolVar(&wtDryRun, "dry-run", false, "list worktrees that would be removed without removing them")
+	worktreeSyncCmd.Flags().BoolVar(&wtNoFetch, "no-fetch", false, "rebase onto the local base ref without contacting the remote")
+	worktreeSyncCmd.Flags().BoolVar(&wtNoPush, "no-push", false, "rebase without pushing (skip the force-with-lease push)")
 
 	worktreeCmd.AddCommand(worktreeCreateCmd)
 	worktreeCmd.AddCommand(worktreeOpenCmd)
 	worktreeCmd.AddCommand(worktreeListCmd)
 	worktreeCmd.AddCommand(worktreeRmCmd)
 	worktreeCmd.AddCommand(worktreePruneCmd)
+	worktreeCmd.AddCommand(worktreeSyncCmd)
 	rootCmd.AddCommand(worktreeCmd)
 }

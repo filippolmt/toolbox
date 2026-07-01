@@ -100,7 +100,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | Command | Description |
 |---------|-------------|
 | [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, named shells via [`shells:`](docs/shells.md)) |
-| [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`; alias `wt`) |
+| [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`, `sync`; alias `wt`) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
 | [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
