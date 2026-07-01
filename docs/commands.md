@@ -113,13 +113,15 @@ Map one branch to one git worktree to one path-scoped container running an AI ag
 
 | Subcommand | Description |
 |------------|-------------|
-| `create <branch> [--agent] [--from <base>] [--no-fetch]` | Fetch the base, add a worktree branched from `origin/<base>`, launch the container, auto-start the agent. |
+| `create <branch> [--agent] [--from <base>] [--no-fetch] [-- <task>]` | Fetch the base, add a worktree branched from `origin/<base>`, launch the container, auto-start the agent — optionally already working on `<task>`. |
 | `open <branch> [--agent]` (alias `attach`) | Re-attach to an existing toolbox worktree — recreates the [auto-removed](internals/container-lifecycle.md#container-teardown) container scoped to the same path and relaunches the agent. |
 | `list` (alias `ls`) | Print toolbox worktrees only (branch · container status · path); worktrees an agent creates outside the `tbx-` convention are excluded. |
 | `rm <branch> [--force]` | Best-effort stop the worktree's container, then `git worktree remove [--force]`. |
 | `prune [--dry-run]` | Fetch the base and remove toolbox worktrees whose branch is merged into `origin/<base>`; `--dry-run` lists candidates without removing. |
 
 The base branch for `create` is `--from` when given, else the repository default branch (`origin/HEAD`). `create` always branches from the freshly fetched `origin/<base>` so the new branch is remote-aligned by construction; `--no-fetch` branches from the local base ref for offline work. The branch is created `--no-track` (so it does not adopt the base as its upstream and read as "ahead of origin/<base>"), and `create` sets `push.autoSetupRemote=true` once when unset so the first `git push` from the worktree creates the branch's own upstream instead of erroring. The base is recorded in `branch.<branch>.base` for `prune` to reuse. The agent is resolved with precedence `--agent` flag > the [`agent`](configuration.md#agent) config key > the default `claude`, restricted to `claude` or `codex`. When the agent exits, the session drops to an interactive shell in the worktree rather than tearing down.
+
+Anything after a `--` separator on `create` is passed to the agent as its initial task prompt, so the worktree spins up already working — `toolbox worktree create feat-auth -- 'add an auth module'`. This makes several issues fire-and-forget: kick off one worktree per task without waiting to type the prompt in each. The prompt is shell-quoted, so metacharacters in the task (`$(...)`, backticks, `;`) reach the agent literally and cannot inject commands into the session wrapper. With no `--`, the agent launches bare (unchanged). Only `create` takes a prompt; `open` re-attaches without one.
 
 Git resolves inside the container because the session mounts both the worktree (at its own absolute host path, via the workspace mirror) and the main repo's `<repo-root>/.git` at the same absolute path the worktree's gitdir pointer references — so `status`/`commit`/`push` work unchanged.
 
