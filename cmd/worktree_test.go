@@ -284,6 +284,42 @@ func TestSeedWorktreeFiles(t *testing.T) {
 
 		mustAbsent(t, filepath.Join(wt, ".env.d"))
 	})
+
+	// a symlinked source is recreated as a symlink, not dereferenced into a file
+	t.Run("preserves symlinks", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, ".env\n")
+		external := filepath.Join(t.TempDir(), "real.env")
+		writeFile(t, external, "SECRET=1")
+		if err := os.Symlink(external, filepath.Join(root, ".env")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		seedWorktreeFiles(root, wt, nil)
+
+		fi, err := os.Lstat(filepath.Join(wt, ".env"))
+		if err != nil {
+			t.Fatalf("expected seeded symlink: %v", err)
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("seeded .env is a real file, want symlink (mode %v)", fi.Mode())
+		}
+		if target, _ := os.Readlink(filepath.Join(wt, ".env")); target != external {
+			t.Errorf("symlink target = %q, want %q", target, external)
+		}
+	})
+
+	// when `git check-ignore` itself fails, fall back to the permission allowlist
+	t.Run("git error falls back to allowlist", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir() // NOT a git repo => check-ignore errors
+		writeFile(t, filepath.Join(root, ".claude", "settings.local.json"), body)
+		writeFile(t, filepath.Join(root, ".env"), "SECRET=1")
+
+		seedWorktreeFiles(root, wt, nil)
+
+		mustExist(t, filepath.Join(wt, ".claude", "settings.local.json"), body)
+		mustAbsent(t, filepath.Join(wt, ".env")) // fallback seeds only the allowlist
+	})
 }
 
 func writeFile(t *testing.T, path, content string) {
