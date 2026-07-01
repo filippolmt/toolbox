@@ -262,6 +262,28 @@ func TestSeedWorktreeFiles(t *testing.T) {
 
 		mustAbsent(t, filepath.Join(wt, ".env"))
 	})
+
+	// non-ASCII names survive the `git check-ignore -z` round-trip (no C-quoting)
+	t.Run("seeds non-ascii names", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, ".env.*\n")
+		writeFile(t, filepath.Join(root, ".env.località"), "X=1")
+
+		seedWorktreeFiles(root, wt, nil)
+
+		mustExist(t, filepath.Join(wt, ".env.località"), "X=1")
+	})
+
+	// a .env.* directory is not dotenv state — never walked or seeded
+	t.Run("skips .env.* directories", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, ".env.d/\n")
+		writeFile(t, filepath.Join(root, ".env.d", "inner"), "nope")
+
+		seedWorktreeFiles(root, wt, nil)
+
+		mustAbsent(t, filepath.Join(wt, ".env.d"))
+	})
 }
 
 func writeFile(t *testing.T, path, content string) {

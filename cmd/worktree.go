@@ -252,8 +252,14 @@ func seedWorktreeFiles(root, wtPath string, extra []string) {
 	for _, c := range candidates {
 		src := filepath.Join(root, c)
 		info, err := os.Stat(src)
+		if errors.Is(err, os.ErrNotExist) {
+			continue // no such candidate in the main repo — nothing to seed
+		}
 		if err != nil {
-			continue // missing candidate — nothing to seed
+			// Present-but-unstattable (EACCES on a parent, odd ownership): warn
+			// so a missing seed in the worktree stays diagnosable, not silent.
+			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
+			continue
 		}
 		if !info.IsDir() {
 			rels = append(rels, c)
@@ -285,6 +291,11 @@ func envSeeds(root string) []string {
 	matches, _ := filepath.Glob(filepath.Join(root, ".env.*"))
 	out := make([]string, 0, len(matches))
 	for _, m := range matches {
+		// Only dotenv files — a `.env.d/`-style directory is not env state to
+		// carry, and would otherwise be walked and seeded wholesale.
+		if info, err := os.Stat(m); err != nil || info.IsDir() {
+			continue
+		}
 		out = append(out, filepath.Base(m))
 	}
 	return out
@@ -314,8 +325,11 @@ func dedupeSeeds(lists ...[]string) []string {
 // ignored") is not a failure; any real git error warns and drops every
 // candidate — fail closed, never seed a path we could not confirm is ignored.
 func gitIgnoredSubset(root string, rels []string) []string {
-	cmd := exec.Command("git", "-C", root, "check-ignore", "--stdin")
-	cmd.Stdin = strings.NewReader(strings.Join(rels, "\n") + "\n")
+	// -z: NUL-delimited stdin AND stdout. Without it git C-quotes any path with
+	// non-ASCII or special bytes (e.g. `.env.località`) as `"...\303..."`, which
+	// no longer matches a real file and would silently drop that seed.
+	cmd := exec.Command("git", "-C", root, "check-ignore", "-z", "--stdin")
+	cmd.Stdin = strings.NewReader(strings.Join(rels, "\x00") + "\x00")
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
@@ -326,7 +340,7 @@ func gitIgnoredSubset(root string, rels []string) []string {
 		return nil
 	}
 	var ignored []string
-	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(string(out), "\x00") {
 		if line != "" {
 			ignored = append(ignored, line)
 		}
@@ -336,16 +350,11 @@ func gitIgnoredSubset(root string, rels []string) []string {
 
 // copyFileNoClobber copies src to dst unless dst already exists (preserving a
 // worktree-local edit and never overwriting a tracked file already in the
-// checkout). Parent dirs are created and the source file mode is preserved.
-// Best-effort: every failure warns and returns without blocking the caller.
+// checkout). Parent dirs are created. Best-effort: every failure warns and
+// returns without blocking the caller.
 func copyFileNoClobber(src, dst string) {
 	if _, err := os.Stat(dst); err == nil {
 		return // already present — keep the worktree copy
-	}
-	info, err := os.Stat(src)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
-		return
 	}
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -356,7 +365,10 @@ func copyFileNoClobber(src, dst string) {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 		return
 	}
-	if err := os.WriteFile(dst, data, info.Mode().Perm()); err != nil {
+	// 0o600, not the source mode: seeded files are per-repo dev state, some
+	// auth-adjacent (the permission allowlist, .env secrets). Keep the copy
+	// owner-only rather than inheriting a world-readable source mode.
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 	}
 }
