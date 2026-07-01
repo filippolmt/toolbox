@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -408,5 +409,89 @@ func TestParseWorktreesPorcelain(t *testing.T) {
 	}
 	if infos[2].Branch != "" {
 		t.Errorf("detached entry should have empty branch, got %q", infos[2].Branch)
+	}
+}
+
+func TestSyncPlan(t *testing.T) {
+	tests := []struct {
+		name        string
+		fetch, push bool
+		want        [][]string
+	}{
+		{
+			name:  "default fetch and push",
+			fetch: true, push: true,
+			want: [][]string{{"fetch", "origin", "main"}, {"rebase", "origin/main"}, {"push", "--force-with-lease"}},
+		},
+		{
+			name:  "no-fetch rebases onto the remote-tracking ref without fetching",
+			fetch: false, push: true,
+			want: [][]string{{"rebase", "origin/main"}, {"push", "--force-with-lease"}},
+		},
+		{
+			name:  "no-push skips the push step",
+			fetch: true, push: false,
+			want: [][]string{{"fetch", "origin", "main"}, {"rebase", "origin/main"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := syncPlan("main", tt.fetch, tt.push)
+			if !slices.EqualFunc(got, tt.want, slices.Equal) {
+				t.Errorf("syncPlan = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunSyncStepsStopsOnRebaseConflict(t *testing.T) {
+	steps := syncPlan("main", true, true) // fetch, rebase, push
+	var calls [][]string
+	run := func(args ...string) error {
+		calls = append(calls, args)
+		if slices.Contains(args, "rebase") {
+			return errors.New("conflict")
+		}
+		return nil
+	}
+
+	// rebaseInProgress=true → a real conflict left a rebase mid-flight.
+	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run, func() bool { return true })
+	if err == nil {
+		t.Fatal("expected an error on rebase conflict")
+	}
+	for _, want := range []string{"rebase --continue", "rebase --abort", "no push was performed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err.Error(), want)
+		}
+	}
+	for _, c := range calls {
+		if slices.Contains(c, "push") {
+			t.Errorf("push ran after a rebase conflict: %v", c)
+		}
+	}
+}
+
+// A rebase that bails before starting (dirty worktree, bad base ref) leaves no
+// rebase in progress: the raw git error must surface as-is, not be rewritten
+// into misleading "resolve the conflict" guidance.
+func TestRunSyncStepsSurfacesNonConflictRebaseError(t *testing.T) {
+	steps := syncPlan("main", true, true)
+	run := func(args ...string) error {
+		if slices.Contains(args, "rebase") {
+			return errors.New("cannot rebase: You have unstaged changes")
+		}
+		return nil
+	}
+
+	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run, func() bool { return false })
+	if err == nil {
+		t.Fatal("expected the raw rebase error")
+	}
+	if !strings.Contains(err.Error(), "unstaged changes") {
+		t.Errorf("error %q should surface git's message", err.Error())
+	}
+	if strings.Contains(err.Error(), "rebase --continue") {
+		t.Errorf("error %q must not add conflict guidance when no rebase is in progress", err.Error())
 	}
 }
