@@ -52,6 +52,39 @@ func TestIsToolboxWorktreeFilter(t *testing.T) {
 	}
 }
 
+func TestBranchDeleteArgs(t *testing.T) {
+	// Safe delete (-d refuses an unmerged branch); --force escalates to -D, the
+	// same flag that forced the worktree removal.
+	if got, want := branchDeleteArgs("fix-bug", false), []string{"branch", "-d", "fix-bug"}; !slices.Equal(got, want) {
+		t.Errorf("branchDeleteArgs(safe) = %v, want %v", got, want)
+	}
+	if got, want := branchDeleteArgs("fix-bug", true), []string{"branch", "-D", "fix-bug"}; !slices.Equal(got, want) {
+		t.Errorf("branchDeleteArgs(force) = %v, want %v", got, want)
+	}
+}
+
+func TestShouldDeleteRemote(t *testing.T) {
+	// Remote delete requires all three: the flag, a succeeded local delete, and
+	// an existing origin counterpart. The critical safety case is the second row:
+	// --delete-remote on a branch whose local delete was refused must NOT touch
+	// origin (else `rm --delete-remote` on an unmerged branch destroys remote work).
+	cases := []struct {
+		localDeleted, remoteFlag, hasRemote, want bool
+	}{
+		{true, true, true, true},     // all conditions met
+		{false, true, true, false},   // local refused → never touch remote
+		{true, false, true, false},   // no --delete-remote
+		{true, true, false, false},   // never pushed → no origin branch
+		{false, false, false, false}, // nothing set
+	}
+	for _, c := range cases {
+		if got := shouldDeleteRemote(c.localDeleted, c.remoteFlag, c.hasRemote); got != c.want {
+			t.Errorf("shouldDeleteRemote(%v, %v, %v) = %v, want %v",
+				c.localDeleted, c.remoteFlag, c.hasRemote, got, c.want)
+		}
+	}
+}
+
 func TestShellSingleQuote(t *testing.T) {
 	// $(...), backticks and ; must survive as literal text, never expanded or
 	// treated as a command separator by the session's `-c` wrapper.
