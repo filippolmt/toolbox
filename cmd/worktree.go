@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
@@ -550,7 +551,7 @@ func forgetWorktreeBase(root, branch string) {
 // branchDeleteArgs returns the `git branch` argv for deleting branch: safe `-d`
 // (git refuses a branch not merged into its upstream/HEAD) by default, `-D` when
 // force is set. Pure so the -d/-D choice is unit-tested without a repo; the -C
-// <root> prefix and execution live in deleteBranch.
+// <root> prefix and execution live in deleteLocalBranch.
 func branchDeleteArgs(branch string, force bool) []string {
 	flag := "-d"
 	if force {
@@ -559,21 +560,83 @@ func branchDeleteArgs(branch string, force bool) []string {
 	return []string{"branch", flag, branch}
 }
 
-// deleteBranch best-effort deletes the local branch orphaned by a removed
-// worktree, and — when remote — the origin branch too. Both steps warn but do
-// not fail: the worktree removal has already succeeded, so a refused delete
-// (unmerged branch without force) or a missing remote must not turn a completed
-// cleanup into an error, and in prune must not abort the sweep. Mirrors the
-// best-effort semantics of stopWorktreeContainer. runGit streams git's own
-// stderr (e.g. "not fully merged"), so the warning need not restate it.
-func deleteBranch(root, branch string, force, remote bool) {
+// shouldDeleteRemote reports whether the origin branch should be deleted. Pure
+// so the gating is unit-tested. Three conditions must all hold: --delete-remote
+// was given; the local delete succeeded (never touch the remote for a branch
+// git refused to delete locally — otherwise `rm --delete-remote` on an unmerged
+// branch would destroy origin while keeping the local, the opposite of the
+// safe-by-default contract); and the branch actually has an origin counterpart
+// (skip a no-op push that would warn for a never-pushed branch).
+func shouldDeleteRemote(localDeleted, remoteFlag, hasRemote bool) bool {
+	return remoteFlag && localDeleted && hasRemote
+}
+
+// hasRemoteBranch reports whether branch has an origin counterpart, via the
+// local remote-tracking ref (offline, no network round-trip). A create'd
+// worktree branch gains refs/remotes/origin/<branch> on its first push
+// (push.autoSetupRemote), so a branch never pushed has no such ref.
+func hasRemoteBranch(root, branch string) bool {
+	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/origin/"+branch).Run() == nil
+}
+
+// worktreeDirty reports whether wtPath has uncommitted or untracked changes, so
+// prune --dry-run can predict the no-force `git worktree remove` refusal instead
+// of overstating a removal (and branch delete) that will not happen. A stat/git
+// failure (e.g. the directory was deleted by hand) reads as not-dirty: the real
+// run would then remove the stale registration and delete the branch.
+func worktreeDirty(wtPath string) bool {
+	out, err := gitOutput("-C", wtPath, "status", "--porcelain")
+	return err == nil && out != ""
+}
+
+// deleteLocalBranch best-effort deletes the local branch orphaned by a removed
+// worktree, reporting whether it is now gone. warn-not-fail: the worktree
+// removal has already succeeded, so a refused delete (unmerged branch without
+// force) must not turn a completed cleanup into an error or abort prune's sweep.
+// Mirrors stopWorktreeContainer. runGit streams git's own stderr (e.g. "not
+// fully merged"), so the warning need not restate it.
+func deleteLocalBranch(root, branch string, force bool) bool {
 	if err := runGit(append([]string{"-C", root}, branchDeleteArgs(branch, force)...)...); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not delete branch %s: %v\n", branch, err)
+		return false
 	}
-	if remote {
-		if err := runGit("-C", root, "push", "origin", "--delete", branch); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not delete remote branch %s: %v\n", branch, err)
-		}
+	return true
+}
+
+// remoteDeleteTimeout bounds the origin round-trip so a hung or credential-
+// prompting remote cannot freeze `rm` or block prune's remaining branches.
+const remoteDeleteTimeout = 60 * time.Second
+
+// deleteRemoteBranches best-effort deletes branches on origin in a single push
+// (one round-trip regardless of count, so prune scales to any number of merged
+// branches). warn-not-fail. GIT_TERMINAL_PROMPT=0 makes a missing credential
+// fail fast rather than block on a prompt; the timeout is the backstop. Callers
+// pass only branches that passed shouldDeleteRemote.
+func deleteRemoteBranches(root string, branches []string) {
+	if len(branches) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), remoteDeleteTimeout)
+	defer cancel()
+	args := append([]string{"-C", root, "push", "origin", "--delete"}, branches...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if err := cmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not delete remote branch(es) %s: %v\n",
+			strings.Join(branches, ", "), err)
+	}
+}
+
+// deleteBranch deletes the local branch orphaned by a removed worktree and,
+// gated by shouldDeleteRemote, its origin counterpart. Single-branch path for
+// rm; prune batches the remote deletes itself (deleteRemoteBranches).
+func deleteBranch(root, branch string, force, remote bool) {
+	localDeleted := deleteLocalBranch(root, branch, force)
+	if shouldDeleteRemote(localDeleted, remote, hasRemoteBranch(root, branch)) {
+		deleteRemoteBranches(root, []string{branch})
 	}
 }
 
@@ -913,10 +976,17 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 	defer stop()
 
 	out := cmd.OutOrStdout()
+	var remoteToDelete []string // branches whose origin ref to delete in one push
 	for _, w := range candidates {
 		if wtDryRun {
+			// A dirty worktree fails the no-force `git worktree remove` below, so
+			// its branch is not deleted either — don't overstate the removal.
+			if worktreeDirty(w.Path) {
+				_, _ = fmt.Fprintf(out, "would skip %s (%s): worktree has uncommitted changes\n", w.Branch, w.Path)
+				continue
+			}
 			msg := fmt.Sprintf("would remove %s (%s) and delete local branch %s", w.Branch, w.Path, w.Branch)
-			if wtDeleteRemote {
+			if wtDeleteRemote && hasRemoteBranch(root, w.Branch) {
 				msg += " and remote origin/" + w.Branch
 			}
 			_, _ = fmt.Fprintln(out, msg)
@@ -933,11 +1003,18 @@ func runWorktreePrune(cmd *cobra.Command, _ []string) error {
 			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
 			continue
 		}
-		// Safe -d always: the branch is merged, so it succeeds; a race that left
-		// it unmerged makes -d correctly refuse (best-effort warns, sweep continues).
-		deleteBranch(root, w.Branch, false, wtDeleteRemote)
+		// Force -D: prune already proved the branch merged into origin/<base>,
+		// the authoritative check. Safe -d would instead test merge into the
+		// local HEAD (branches are --no-track, so no upstream), and refuse when
+		// the local default branch lags origin — orphaning a branch that is in
+		// fact merged upstream.
+		localDeleted := deleteLocalBranch(root, w.Branch, true)
+		if shouldDeleteRemote(localDeleted, wtDeleteRemote, hasRemoteBranch(root, w.Branch)) {
+			remoteToDelete = append(remoteToDelete, w.Branch)
+		}
 		forgetWorktreeBase(root, w.Branch)
 	}
+	deleteRemoteBranches(root, remoteToDelete) // one push for the whole sweep
 	if len(candidates) == 0 {
 		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
 	}
