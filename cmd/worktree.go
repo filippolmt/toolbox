@@ -54,15 +54,36 @@ precedence --agent flag > the 'agent' config key > the default "claude".`,
 }
 
 var worktreeCreateCmd = &cobra.Command{
-	Use:   "create <branch>",
+	Use:   "create <branch> [-- <task>...]",
 	Short: "Create a worktree for a new branch and launch its agent session",
 	Long: `Fetch the remote-aligned base branch, add a git worktree branched from
 origin/<base>, launch a path-scoped container, and auto-start the agent.
 
 The base is --from when given, else the repository default branch
-(origin/HEAD). --no-fetch branches from the local base ref for offline work.`,
-	Args: usageArgs(cobra.ExactArgs(1)),
+(origin/HEAD). --no-fetch branches from the local base ref for offline work.
+
+Anything after a '--' separator is passed to the agent as its initial task
+prompt, so the worktree spins up already working (e.g.
+'create feat-auth -- add an auth module'). With no '--', the agent launches
+bare, exactly as before.`,
+	Args: usageArgs(worktreeCreateArgs),
 	RunE: runWorktreeCreate,
+}
+
+// worktreeCreateArgs requires exactly one positional argument — the branch —
+// before any `--` separator. Tokens after `--` are the optional task prompt and
+// are not counted. Without this, MinimumNArgs(1) would silently accept stray
+// tokens typed without `--` (e.g. `create feat-auth typo`) as an agent prompt,
+// contradicting the documented `-- <task>` contract and firing unintended work.
+func worktreeCreateArgs(cmd *cobra.Command, args []string) error {
+	n := len(args)
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		n = dash // count only args before the `--`
+	}
+	if n != 1 {
+		return fmt.Errorf("accepts one branch argument (put the optional task prompt after '--'), received %d", n)
+	}
+	return nil
 }
 
 var worktreeOpenCmd = &cobra.Command{
@@ -143,29 +164,54 @@ func isToolboxWorktree(root, path string) bool {
 		strings.HasPrefix(filepath.Base(path), worktreeDirPrefix)
 }
 
+// shellSingleQuote wraps s in single quotes for safe inclusion in a shell -c
+// string: everything inside single quotes is literal, so command substitution,
+// backticks and semicolons in a user-supplied prompt cannot expand or inject
+// commands into the session wrapper. The only quoting concern is an embedded
+// single quote, escaped the standard way by closing the quote, adding an
+// escaped quote, then reopening.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// agentCommand composes the shell fragment that launches agent, optionally with
+// an initial prompt. An empty prompt launches the agent bare (unchanged
+// behaviour); otherwise the prompt is passed as a single positional argument —
+// the convention both supported agents (claude, codex) follow. An agent needing
+// different ergonomics (e.g. a --task flag) would branch on agent here.
+func agentCommand(agent, prompt string) string {
+	if prompt == "" {
+		return agent
+	}
+	return agent + " " + shellSingleQuote(prompt)
+}
+
 // applyWorktreeSession mutates a planned session into a worktree session: it
 // appends the main repo .git bind (so git resolves the linked worktree's
 // gitdir pointer in-container) and sets ExecCmd to launch the agent in the
 // user's attached session, falling back to an interactive shell when the agent
-// exits. Cmd (the container's main process) is left as the idle shell so the
-// agent does not also run headless in the container's main PID. Pure so tests
-// assert the mutation without Docker.
-func applyWorktreeSession(plan *sessionplan.SessionPlan, root, shell, agent string) {
+// exits. When prompt is non-empty the agent starts already working on it. Cmd
+// (the container's main process) is left as the idle shell so the agent does
+// not also run headless in the container's main PID. Pure so tests assert the
+// mutation without Docker.
+func applyWorktreeSession(plan *sessionplan.SessionPlan, root, shell, agent, prompt string) {
 	gitDir := filepath.Join(root, ".git")
 	plan.Binds = append(plan.Binds, mountplan.Bind{Source: gitDir, Target: gitDir, Mode: "rw"})
-	plan.ExecCmd = []string{"/bin/" + shell, "-i", "-c", agent + "; exec /bin/" + shell + " -i"}
+	plan.ExecCmd = []string{"/bin/" + shell, "-i", "-c", agentCommand(agent, prompt) + "; exec /bin/" + shell + " -i"}
 }
 
 // openSession plans, mutates, and launches a worktree container session
-// scoped to wtPath, auto-starting agent. Shared by create and open.
-func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent string) error {
+// scoped to wtPath, auto-starting agent with an optional initial prompt (empty
+// = bare launch). Shared by create (which may pass a prompt) and open (which
+// never does — re-attach only).
+func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
 	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(cfg, wtPath, nil, false, imageDigest)
 	if err != nil {
 		return err
 	}
 	seedLocalSettings(root, wtPath)
-	applyWorktreeSession(plan, root, cfg.Shell, agent)
+	applyWorktreeSession(plan, root, cfg.Shell, agent, prompt)
 	return container.Shell(ctx, cli, plan)
 }
 
@@ -393,6 +439,13 @@ func containerStatus(ctx context.Context, cli client.APIClient, wtPath string) s
 
 func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	branch := args[0]
+	// Only tokens after the `--` separator are the initial prompt; ArgsLenAtDash
+	// is the count of args before `--` (-1 when absent), so args[dash:] is exactly
+	// the post-`--` tail. worktreeCreateArgs guarantees a lone branch before it.
+	prompt := ""
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		prompt = strings.Join(args[dash:], " ")
+	}
 	agent, err := resolveAgent(wtAgent)
 	if err != nil {
 		return &usageError{err: err}
@@ -439,7 +492,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	// (daemon down, image pull error) the worktree is a valid artifact — point
 	// the user at `open` to re-attach rather than re-`create` (which would
 	// error on the existing branch/directory).
-	if err := openSession(ctx, cli, root, wtPath, agent); err != nil {
+	if err := openSession(ctx, cli, root, wtPath, agent, prompt); err != nil {
 		return fmt.Errorf("%w\nworktree created at %s — re-attach with 'toolbox worktree open %s' once resolved", err, wtPath, branch)
 	}
 	return nil
@@ -473,7 +526,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 	ctx, stop := signalCtx()
 	defer stop()
-	return openSession(ctx, cli, root, wtPath, agent)
+	return openSession(ctx, cli, root, wtPath, agent, "") // no prompt on re-attach
 }
 
 func runWorktreeList(cmd *cobra.Command, _ []string) error {
