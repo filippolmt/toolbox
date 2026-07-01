@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -210,44 +211,226 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent,
 	if err != nil {
 		return err
 	}
-	seedLocalSettings(root, wtPath)
+	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
 	applyWorktreeSession(plan, root, cfg.Shell, agent, prompt)
 	return container.Shell(ctx, cli, plan)
 }
 
-// seedLocalSettings copies the main repo's .claude/settings.local.json into the
-// worktree so the agent inherits the local permission allowlist. That file is
-// per-repo (not per-branch) yet gitignored, so a fresh worktree checkout lacks
-// it and every session would otherwise re-prompt for the same permissions. A
-// copy (not a symlink/bind) is deliberate: the main repo's working tree is not
-// mounted in the worktree container, so a link would dangle; the copy lives in
-// the worktree checkout, which is. Best-effort and non-clobbering — a missing
-// source, an already-seeded worktree, or a write error must never block the
-// session (the agent still runs, just with fewer pre-approved permissions).
-func seedLocalSettings(root, wtPath string) {
-	src := filepath.Join(root, ".claude", "settings.local.json")
-	data, err := os.ReadFile(src)
+// defaultWorktreeSeeds lists the per-repo (not per-branch) working state a
+// fresh `git worktree add` checkout lacks — it materialises tracked files
+// only. Each entry is a repo-relative file or directory (directories seeded
+// recursively). Only entries git actually ignores are copied (seedWorktreeFiles
+// gates every candidate through `git check-ignore`), so a repo that tracks one
+// of these paths is unaffected. `.env.*` variants are discovered by glob.
+// localSettingsRel is the per-repo Claude permission allowlist: the one seed
+// worth a git-independent fallback copy when `git check-ignore` itself fails.
+const localSettingsRel = ".claude/settings.local.json"
+
+var defaultWorktreeSeeds = []string{
+	localSettingsRel, // per-repo Claude permission allowlist
+	".env",           // dotenv secrets (+ .env.* via envSeeds)
+	"openspec",       // OpenSpec working tree (specs + changes)
+	".planning",      // gsd spec-driven planning artifacts
+}
+
+// seedWorktreeFiles copies gitignored per-repo working state from the main
+// repo (root) into a freshly created worktree (wtPath) so the agent session
+// starts with the local specs, planning artifacts, permission allowlist, and
+// dotenv secrets a tracked-files-only checkout would miss. extra is the user's
+// worktree.seed config, unioned with defaultWorktreeSeeds.
+//
+// Only paths git ignores in the main repo are copied: a tracked path already
+// arrives with the checkout, and a non-ignored untracked path is deliberately
+// left alone (the seeding gate is `git check-ignore`, so the built-in defaults
+// self-correct in a repo that tracks one of them). Symlinks are recreated, not
+// dereferenced, so a link whose target lives outside the repo is not
+// materialised as a real file inside the worktree. Best-effort and
+// non-clobbering throughout — a missing source, an already-seeded destination,
+// or an I/O error must never block the session (the agent still runs, just
+// with less inherited state).
+func seedWorktreeFiles(root, wtPath string, extra []string) {
+	candidates := dedupeSeeds(defaultWorktreeSeeds, extra, envSeeds(root))
+
+	seed := func(rel string) { seedEntry(filepath.Join(root, rel), filepath.Join(wtPath, rel)) }
+
+	// gated collects file/symlink leaves that need the per-file check-ignore
+	// gate; a directory ignored wholesale (openspec/, .planning/) is seeded
+	// directly, skipping an O(files) walk + git round-trip.
+	var gated []string
+	collect := func(dir string) {
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || (d.IsDir() && d.Type()&fs.ModeSymlink == 0) {
+				return nil // skip unreadable entries; descend real dirs (link dirs are leaves)
+			}
+			if rel, err := filepath.Rel(root, p); err == nil {
+				gated = append(gated, rel)
+			}
+			return nil
+		})
+	}
+
+	for _, c := range candidates {
+		src := filepath.Join(root, c)
+		info, err := os.Lstat(src) // Lstat: a symlinked dir is a leaf, not a tree to walk
+		if errors.Is(err, os.ErrNotExist) {
+			continue // no such candidate in the main repo — nothing to seed
+		}
+		if err != nil {
+			// Present-but-unstattable (EACCES on a parent, odd ownership): warn
+			// so a missing seed in the worktree stays diagnosable, not silent.
+			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
+			continue
+		}
+		if info.IsDir() {
+			if gitIgnores(root, c) {
+				// Whole directory ignored by one rule — seed the tree wholesale.
+				_ = filepath.WalkDir(src, func(p string, d fs.DirEntry, walkErr error) error {
+					if walkErr != nil || (d.IsDir() && d.Type()&fs.ModeSymlink == 0) {
+						return nil
+					}
+					if rel, err := filepath.Rel(root, p); err == nil {
+						seed(rel)
+					}
+					return nil
+				})
+				continue
+			}
+			collect(src) // partially ignored — gate every file individually
+			continue
+		}
+		gated = append(gated, c) // a file or symlink leaf
+	}
+
+	if len(gated) == 0 {
+		return
+	}
+	ignored, err := gitIgnoredSubset(root, gated)
+	if err != nil {
+		// git itself failed (not the benign "nothing ignored" exit 1): we cannot
+		// confirm what is ignored, so fall back to the one seed that is virtually
+		// always gitignored and always worth carrying — the permission allowlist.
+		fmt.Fprintf(os.Stderr, "toolbox: warning: git check-ignore failed (%v); seeding only the permission allowlist\n", err)
+		seed(localSettingsRel)
+		return
+	}
+	for _, rel := range ignored {
+		seed(rel)
+	}
+}
+
+// envSeeds returns the repo-relative names of .env.* dotenv variants present
+// at the repo root (e.g. .env.local, .env.production). The bare .env is a
+// static default; requiring the trailing dot keeps .envrc (direnv) out.
+func envSeeds(root string) []string {
+	matches, _ := filepath.Glob(filepath.Join(root, ".env.*"))
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		// Only dotenv files — a `.env.d/`-style directory is not env state to
+		// carry, and would otherwise be walked and seeded wholesale.
+		if info, err := os.Stat(m); err != nil || info.IsDir() {
+			continue
+		}
+		out = append(out, filepath.Base(m))
+	}
+	return out
+}
+
+// dedupeSeeds unions the given seed lists into one order-preserving slice,
+// cleaning each entry so ".env" and "./.env" collapse to a single candidate.
+func dedupeSeeds(lists ...[]string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, list := range lists {
+		for _, p := range list {
+			p = filepath.Clean(p)
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// gitIgnores reports whether git ignores a single repo-relative path in root.
+// Used to detect a wholly-ignored directory (openspec/, .planning/) so it can
+// be seeded without enumerating + gating every file. Exit 0 = ignored; any
+// other exit (1 = not ignored, >1 = git error) reports false, so a git failure
+// falls through to the per-file gate, which reports the error to the caller.
+func gitIgnores(root, rel string) bool {
+	return exec.Command("git", "-C", root, "check-ignore", "-q", "--", rel).Run() == nil
+}
+
+// gitIgnoredSubset returns the subset of repo-relative paths that git ignores
+// in root, via a single `git check-ignore --stdin` call. This is the seeding
+// gate: only gitignored state is carried into a worktree. Exit 1 ("nothing
+// ignored") returns an empty set with no error; a real git failure returns the
+// error so the caller can fall back rather than silently seed nothing.
+func gitIgnoredSubset(root string, rels []string) ([]string, error) {
+	// -z: NUL-delimited stdin AND stdout. Without it git C-quotes any path with
+	// non-ASCII or special bytes (e.g. `.env.località`) as `"...\303..."`, which
+	// no longer matches a real file and would silently drop that seed.
+	cmd := exec.Command("git", "-C", root, "check-ignore", "-z", "--stdin")
+	cmd.Stdin = strings.NewReader(strings.Join(rels, "\x00") + "\x00")
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return nil, nil // exit 1: none of the paths are ignored
+		}
+		return nil, err
+	}
+	var ignored []string
+	for line := range strings.SplitSeq(string(out), "\x00") {
+		if line != "" {
+			ignored = append(ignored, line)
+		}
+	}
+	return ignored, nil
+}
+
+// seedEntry seeds one repo path into dst unless dst already exists (preserving
+// a worktree-local edit and never overwriting a file already in the checkout).
+// A symlink is recreated verbatim — never dereferenced, so a link whose target
+// lives outside the repo is not materialised as a real file in the worktree; a
+// regular file is copied. Parent dirs are created. Best-effort: every failure
+// warns and returns without blocking the caller.
+func seedEntry(src, dst string) {
+	if _, err := os.Lstat(dst); err == nil {
+		return // already present (Lstat: a dangling link still counts) — keep it
+	}
+	info, err := os.Lstat(src)
 	if errors.Is(err, os.ErrNotExist) {
-		return // no local settings to seed
+		return
 	}
 	if err != nil {
-		// Present-but-unreadable (EACCES, odd ownership, a directory): warn so a
-		// missing allowlist in the worktree is diagnosable, not silent.
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read symlink %s: %v\n", src, err)
+			return
+		}
+		if err := os.Symlink(target, dst); err != nil {
+			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed symlink %s: %v\n", dst, err)
+		}
+		return
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
 		return
 	}
-	dst := filepath.Join(wtPath, ".claude", "settings.local.json")
-	if info, err := os.Stat(dst); err == nil && !info.IsDir() {
-		return // already present — keep any worktree-local edits
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return
-	}
-	// Plain write, not AtomicWriteFile: the destination is guaranteed absent
-	// (the Stat guard above), so there is no prior content for an atomic rename
-	// to protect — and a rename would leave a non-gitignored .tmp-* orphan if
-	// interrupted. 0o600 to match the repo-wide convention for config files
-	// (this is an auth-adjacent permission allowlist).
+	// 0o600, not the source mode: seeded files are per-repo dev state, some
+	// auth-adjacent (the permission allowlist, .env secrets). Keep the copy
+	// owner-only rather than inheriting a world-readable source mode.
 	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 	}
