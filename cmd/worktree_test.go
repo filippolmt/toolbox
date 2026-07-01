@@ -445,6 +445,135 @@ func TestParseWorktreesPorcelain(t *testing.T) {
 	}
 }
 
+func TestEnsureExcludeLine(t *testing.T) {
+	const entry = ".worktrees/"
+	cases := []struct {
+		name        string
+		body        string
+		wantOut     string
+		wantChanged bool
+	}{
+		{"empty body appends", "", ".worktrees/\n", true},
+		{"missing trailing newline gets one", "node_modules/", "node_modules/\n.worktrees/\n", true},
+		{"already present is a no-op", "node_modules/\n.worktrees/\n", "node_modules/\n.worktrees/\n", false},
+		{"present among other lines", ".worktrees/\ndist/\n", ".worktrees/\ndist/\n", false},
+		// git does not strip a leading space from an exclude pattern, so a padded
+		// line does not actually exclude the dir — it must NOT count as present.
+		{"whitespace-padded line does not match", "  .worktrees/  \n", "  .worktrees/  \n.worktrees/\n", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, changed := ensureExcludeLine(c.body, entry)
+			if out != c.wantOut || changed != c.wantChanged {
+				t.Errorf("ensureExcludeLine(%q) = (%q, %v), want (%q, %v)", c.body, out, changed, c.wantOut, c.wantChanged)
+			}
+		})
+	}
+}
+
+func TestExcludeWorktreesDir(t *testing.T) {
+	excludePath := func(root string) string { return filepath.Join(root, ".git", "info", "exclude") }
+
+	t.Run("records the entry once and leaves gitignore untouched", func(t *testing.T) {
+		root := t.TempDir()
+		gitInitRepo(t, root, "node_modules/\n") // tracked .gitignore body
+
+		excludeWorktreesDir(root)
+		excludeWorktreesDir(root) // second create must not duplicate
+
+		got, err := os.ReadFile(excludePath(root))
+		if err != nil {
+			t.Fatalf("read exclude: %v", err)
+		}
+		if n := strings.Count(string(got), ".worktrees/"); n != 1 {
+			t.Errorf(".git/info/exclude has %d .worktrees/ entries, want 1:\n%s", n, got)
+		}
+
+		// The tracked .gitignore must be untouched — the exclusion is repo-local.
+		gi, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+		if err != nil {
+			t.Fatalf("read .gitignore: %v", err)
+		}
+		if string(gi) != "node_modules/\n" {
+			t.Errorf(".gitignore was modified: %q", gi)
+		}
+	})
+
+	t.Run("outside a git repo warns without panicking", func(t *testing.T) {
+		// Not a git repo: --git-common-dir fails; the call must be a best-effort
+		// no-op, never a crash or a stray file.
+		root := t.TempDir()
+		excludeWorktreesDir(root)
+		if _, err := os.Stat(excludePath(root)); !os.IsNotExist(err) {
+			t.Errorf("expected no exclude file outside a git repo, stat err = %v", err)
+		}
+	})
+}
+
+func TestContinuePlan(t *testing.T) {
+	if got, want := continuePlan(true), [][]string{{"rebase", "--continue"}, {"push", "--force-with-lease"}}; !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("continuePlan(true) = %v, want %v", got, want)
+	}
+	if got, want := continuePlan(false), [][]string{{"rebase", "--continue"}}; !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("continuePlan(false) = %v, want %v", got, want)
+	}
+}
+
+// A resumed rebase (continuePlan) that stops again on a further conflict must
+// reuse the same stop-and-guide handling as the initial rebase: no push, and
+// the continue/abort guidance. The conflict handling keys on step[0]=="rebase",
+// which `rebase --continue` also satisfies.
+func TestRunSyncStepsResumeReconflict(t *testing.T) {
+	steps := continuePlan(true) // rebase --continue, then push
+	var calls [][]string
+	run := func(args ...string) error {
+		calls = append(calls, args)
+		if slices.Contains(args, "rebase") {
+			return errors.New("conflict")
+		}
+		return nil
+	}
+
+	err := runSyncSteps("/repo/.worktrees/tbx-fix", steps, run, func() bool { return true })
+	if err == nil {
+		t.Fatal("expected an error when the resumed rebase re-conflicts")
+	}
+	if !strings.Contains(err.Error(), "no push was performed") {
+		t.Errorf("error %q should say no push happened", err.Error())
+	}
+	for _, c := range calls {
+		if slices.Contains(c, "push") {
+			t.Errorf("push ran after a re-conflict: %v", c)
+		}
+	}
+}
+
+func TestFindToolboxWorktree(t *testing.T) {
+	root := "/repo"
+	infos := []worktreeInfo{
+		{Path: "/repo", Branch: "main"},
+		{Path: "/repo/.worktrees/tbx-feat", Branch: "feat"}, // live branch
+		{Path: "/repo/.worktrees/tbx-rebasing", Branch: ""}, // detached mid-rebase
+		{Path: "/repo/.worktrees/other", Branch: ""},        // not tbx- → ignored
+	}
+
+	// A live branch matches by its exact name.
+	if got, err := findToolboxWorktree(root, "feat", infos); err != nil || got != "/repo/.worktrees/tbx-feat" {
+		t.Errorf("feat: got %q, %v; want /repo/.worktrees/tbx-feat", got, err)
+	}
+
+	// A worktree mid-rebase reports a detached HEAD (empty branch) — it must
+	// still resolve by its tbx- directory so `sync <branch>` can resume it.
+	if got, err := findToolboxWorktree(root, "rebasing", infos); err != nil || got != "/repo/.worktrees/tbx-rebasing" {
+		t.Errorf("rebasing (detached): got %q, %v; want /repo/.worktrees/tbx-rebasing", got, err)
+	}
+
+	// A branch with no matching worktree errors.
+	if _, err := findToolboxWorktree(root, "missing", infos); err == nil {
+		t.Error("expected an error for a branch with no toolbox worktree")
+	}
+}
+
 func TestSyncPlan(t *testing.T) {
 	tests := []struct {
 		name        string
