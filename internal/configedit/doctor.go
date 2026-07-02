@@ -126,7 +126,7 @@ func lintShellPaths(cfg *config.Config) []Finding {
 // targets as warnings (mountplan does not dedupe today; the last bind wins
 // silently at the Docker layer).
 func lintMounts(cfg *config.Config) []Finding {
-	resolved, err := mountplan.Merge(cfg)
+	resolved, err := mountplan.Merge(cfg, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}

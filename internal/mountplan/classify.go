@@ -46,7 +46,7 @@ type ClassifiedMount struct {
 // about mount provenance — the classification that used to be re-derived per
 // cmd handler.
 func Classify(cfg *config.Config) ([]ClassifiedMount, error) {
-	merged, err := Merge(cfg)
+	merged, err := Merge(cfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func Classify(cfg *config.Config) ([]ClassifiedMount, error) {
 func Names(cfg *config.Config) ([]string, error) {
 	// Validate the user list the same way Merge would, so Names never reports a
 	// name that Merge itself would reject.
-	if _, err := Merge(cfg); err != nil {
+	if _, err := Merge(cfg, nil); err != nil {
 		return nil, err
 	}
 	names := []string{}

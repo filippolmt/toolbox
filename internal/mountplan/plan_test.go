@@ -46,7 +46,7 @@ func TestPlanEndToEnd(t *testing.T) {
 		},
 	}
 
-	result, err := Plan(&cfg, workspace)
+	result, err := Plan(&cfg, workspace, nil)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestPlanEndToEnd(t *testing.T) {
 // TestPlanRejectsBadMountsRoot exercises validation at the seam.
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~"}
-	if _, err := Plan(&cfg, "/workspace"); err == nil {
+	if _, err := Plan(&cfg, "/workspace", nil); err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
 }
@@ -156,7 +156,7 @@ func TestPlanRejectsUnknownPatchName(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/x"}},
 	}
-	_, err := Plan(&cfg, "/workspace")
+	_, err := Plan(&cfg, "/workspace", nil)
 	if err == nil {
 		t.Fatal("Plan should fail when mounts: patches an unknown name")
 	}
@@ -171,7 +171,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 	// /home/toolbox/* is reserved → no mirror.
 	workspace := "/home/toolbox/project"
 
-	result, err := Plan(&config.Config{}, workspace)
+	result, err := Plan(&config.Config{}, workspace, nil)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 
 func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	off := false
-	got, err := Merge(&config.Config{Bridge: &off})
+	got, err := Merge(&config.Config{Bridge: &off}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -199,9 +199,50 @@ func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	}
 }
 
+// TestPlanWithProfile drives the full pipeline (not just Merge) with a profile:
+// the claude default binds under ~/.toolbox/profiles/work, while ssh still
+// symlinks to the host ~/.ssh — isolated auth, shared identity, end to end.
+func TestPlanWithProfile(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	hostSSH := filepath.Join(tmpHome, ".ssh")
+	if err := os.Mkdir(hostSSH, 0o700); err != nil {
+		t.Fatalf("setup ssh: %v", err)
+	}
+	workspace := filepath.Join(tmpHome, "proj")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("setup workspace: %v", err)
+	}
+
+	result, err := Plan(&config.Config{}, workspace, &Profile{Name: "work"})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	profileClaude := filepath.Join(tmpHome, ".toolbox", "profiles", "work", ".claude")
+	hostSSHResolved, _ := filepath.EvalSymlinks(hostSSH)
+
+	var gotClaude, gotSSH string
+	for _, b := range result.Binds {
+		switch b.Target {
+		case "/home/toolbox/.claude":
+			gotClaude = b.Source
+		case "/home/toolbox/.ssh":
+			gotSSH = b.Source
+		}
+	}
+	if gotClaude != profileClaude {
+		t.Errorf("claude bind Source = %q, want %q (isolated in profile)", gotClaude, profileClaude)
+	}
+	if gotSSH != hostSSHResolved && gotSSH != hostSSH {
+		t.Errorf("ssh bind Source = %q, want host %q (shared identity)", gotSSH, hostSSHResolved)
+	}
+}
+
 func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
-	got, err := Merge(&config.Config{Bridge: &on})
+	got, err := Merge(&config.Config{Bridge: &on}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}

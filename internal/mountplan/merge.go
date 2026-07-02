@@ -18,7 +18,11 @@ const mountsRootPrefix = "~/.toolbox/"
 // is outside that prefix (e.g. /var/run/docker.sock) are left untouched,
 // as is SymlinkFrom (which references the real host path, not the
 // toolbox-managed mirror). Empty root returns base unchanged.
-func applyMountsRoot(base []config.Mount, root string) []config.Mount {
+//
+// A mount whose Name is covered by the shared skip-set (see shareCovers) is
+// left on its ~/.toolbox/ source even when root is set — the profile-level
+// opt-out that keeps a tool shared with the host (see cmd `--share`).
+func applyMountsRoot(base []config.Mount, root string, shared []string) []config.Mount {
 	if root == "" {
 		return base
 	}
@@ -30,8 +34,93 @@ func applyMountsRoot(base []config.Mount, root string) []config.Mount {
 		if !strings.HasPrefix(out[i].Source, mountsRootPrefix) {
 			continue
 		}
+		if shareCovers(shared, out[i].Name) {
+			continue
+		}
 		rest := strings.TrimPrefix(out[i].Source, mountsRootPrefix)
 		out[i].Source = trimmed + "/" + rest
+	}
+	return out
+}
+
+// matchesShareToken reports whether a --share token covers the mount named
+// name: an exact match, or a "<token>-" prefix so a single token covers a
+// tool's split mounts (e.g. "cf" covers "cf-auth"/"cf-config", "rtk" covers
+// "rtk"/"rtk-data"). The one place the token-matching rule lives.
+func matchesShareToken(token, name string) bool {
+	return token == name || strings.HasPrefix(name, token+"-")
+}
+
+// shareCovers reports whether any --share token keeps the mount named name on
+// the host root.
+func shareCovers(shared []string, name string) bool {
+	for _, s := range shared {
+		if matchesShareToken(s, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateShare rejects --share tokens that match no retargetable mount in
+// base, so a typo (e.g. "ghh") fails loudly instead of silently isolating
+// everything. Only mounts whose Source lives under ~/.toolbox/ and are not
+// SymlinkFrom identity mounts (ssh/gitconfig — always host-shared, not
+// selectable) count as shareable.
+func validateShare(base []config.Mount, shared []string) error {
+	var unknown []string
+	for _, s := range shared {
+		if s == "" {
+			// An empty token would only ever match a mount named "-…"; reject it
+			// explicitly instead of relying on that naming coincidence.
+			unknown = append(unknown, `""`)
+			continue
+		}
+		matched := false
+		for _, m := range base {
+			if m.SymlinkFrom != "" || !strings.HasPrefix(m.Source, mountsRootPrefix) {
+				continue
+			}
+			if matchesShareToken(s, m.Name) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			unknown = append(unknown, s)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Errorf("share references unknown or non-shareable mount name(s): %s", strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
+// profileHostSharedWarnings flags any post-merge mount left on the host
+// ~/.toolbox/ root under an active profile — a user-declared credential mount
+// the profile cannot auto-isolate. Toolbox-managed defaults are already
+// retargeted into the profile root or intentionally shared (--share / bridge /
+// ssh-git symlinks), so they are excluded; only a custom `mounts:` entry with
+// an explicit ~/.toolbox/ source remains, and we surface it rather than
+// silently leaking it or rewriting the user's explicit path.
+func profileHostSharedWarnings(merged []config.Mount, profile *Profile) []string {
+	if profile == nil {
+		return nil
+	}
+	shared := profile.EffectiveShare()
+	var out []string
+	for _, m := range merged {
+		switch {
+		case m.SymlinkFrom != "": // ssh/gitconfig: host identity by design
+		case !strings.HasPrefix(m.Source, mountsRootPrefix): // not under ~/.toolbox/
+		case strings.HasPrefix(m.Source, profile.Root()+"/"): // already isolated
+		case shareCovers(shared, m.Name): // intentionally kept on host (--share / bridge)
+		default:
+			out = append(out, fmt.Sprintf(
+				"mount %q keeps its host source %q under profile %q (custom mounts are not auto-isolated); set a profile-specific source in mounts: if you want it isolated",
+				m.Name, m.Source, profile.Name))
+		}
 	}
 	return out
 }

@@ -304,7 +304,7 @@ func containerStatus(ctx context.Context, cli client.APIClient, wtPath string) s
 	if cli == nil {
 		return "absent"
 	}
-	res, err := cli.ContainerInspect(ctx, sessionplan.ContainerNameFor(wtPath), client.ContainerInspectOptions{})
+	res, err := cli.ContainerInspect(ctx, sessionplan.ContainerNameFor(wtPath, ""), client.ContainerInspectOptions{})
 	if err != nil {
 		return "absent"
 	}

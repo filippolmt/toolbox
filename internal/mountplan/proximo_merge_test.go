@@ -19,7 +19,7 @@ func TestMergeInjectsProximoCAWhenEnabled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
 	wantSource := filepath.Join(dir, ".proximo", "tls", "ca.pem")
 
-	merged, err := Merge(&config.Config{Proximo: new(true)})
+	merged, err := Merge(&config.Config{Proximo: new(true)}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestMergeInjectsProximoCAWhenEnabled(t *testing.T) {
 		t.Error("proximo-ca mount must be read-only")
 	}
 
-	off, err := Merge(&config.Config{Proximo: new(false)})
+	off, err := Merge(&config.Config{Proximo: new(false)}, nil)
 	if err != nil {
 		t.Fatalf("Merge (disabled): %v", err)
 	}

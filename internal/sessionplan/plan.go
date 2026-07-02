@@ -118,6 +118,14 @@ type PlanInput struct {
 	// decision here means cmd never handles the container-name format — it sets
 	// Name by intent and nothing else.
 	Name string
+
+	// Profile is the active `toolbox shell --profile` selection, or nil for a
+	// default (non-profile) session. It drives the mount plan (its own root +
+	// share skip-set, owned by mountplan.Profile) and is folded into the
+	// container name so a profile shell never collides with the default shell
+	// for the same workspace, each keeping its own mount set fixed at
+	// ContainerCreate.
+	Profile *mountplan.Profile
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -125,9 +133,20 @@ type PlanInput struct {
 // named-shell choice lives. Empty name → workspace-derived; non-empty →
 // named form. bridgeLoopback-free and fs-free, so both Plan and Merge share
 // it.
-func containerName(workspace, name string) string {
+func containerName(workspace, name string, profile *mountplan.Profile) string {
 	if name == "" {
-		return ContainerNameFor(workspace)
+		// Workspace sessions fold the full profile discriminator (name + share
+		// set) into the hash, so switching profile OR --share yields a distinct
+		// container — mounts are fixed at ContainerCreate.
+		return ContainerNameFor(workspace, mountplan.ContainerDiscriminator(profile))
+	}
+	// Named shells fold the profile name into the sanitized name so a profile
+	// named-shell keeps a distinct container from the default one. The suffix
+	// carries no -<8hex>, so it stays disjoint from the workspace-hash format.
+	// (A --share change alone reuses the container — refresh with `toolbox stop`,
+	// same as any mount/port flag; see docs/commands.md#profiles.)
+	if pn := mountplan.ProfileName(profile); pn != "" {
+		name = name + "-" + SanitizeShellName(pn)
 	}
 	return NamedContainerNameFromSanitized(name)
 }
@@ -162,7 +181,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(in.Cfg, workspace)
+	mp, err := mountplan.Plan(in.Cfg, workspace, in.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +194,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
-		ContainerName: containerName(workspace, in.Name),
+		ContainerName: containerName(workspace, in.Name, in.Profile),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:    browserBridgeExtraHosts(in.Cfg),
@@ -228,7 +247,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 
 	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
-	merged, err := mountplan.Merge(in.Cfg)
+	merged, err := mountplan.Merge(in.Cfg, in.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +271,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: containerName(workspace, in.Name),
+		ContainerName: containerName(workspace, in.Name, in.Profile),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 	}, nil
@@ -364,9 +383,20 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // so two directories sharing a basename do not collide. Output capped at
 // 63 chars (Docker convention): basename is truncated first so the prefix
 // and hash suffix survive.
-func ContainerNameFor(workspace string) string {
+//
+// A non-empty discriminator (the profile identity, from
+// mountplan.ContainerDiscriminator) is folded into the hash seed (not the
+// visible basename), so a profile shell gets a distinct name from the default
+// shell for the same workspace while the format and length budget are
+// unchanged. The plain workspace hash (sddEnv sentinel) stays discriminator-free
+// — only the container identity varies by profile.
+func ContainerNameFor(workspace, discriminator string) string {
 	abs := normalizeWorkspace(workspace)
-	hash := hashWorkspace(abs)
+	seed := abs
+	if discriminator != "" {
+		seed = abs + "\x00profile=" + discriminator
+	}
+	hash := hashWorkspace(seed)
 
 	base := workspaceSlug(abs)
 

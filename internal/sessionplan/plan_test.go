@@ -196,7 +196,7 @@ func TestPlanComputesContainerName(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	want := sessionplan.ContainerNameFor(workspace)
+	want := sessionplan.ContainerNameFor(workspace, "")
 	if plan.ContainerName != want {
 		t.Errorf("ContainerName = %q, want %q", plan.ContainerName, want)
 	}
@@ -596,7 +596,7 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	want := sessionplan.ContainerNameFor(canonical)
+	want := sessionplan.ContainerNameFor(canonical, "")
 	if plan.ContainerName != want {
 		t.Errorf("ContainerName for dirty path = %q, want canonical %q", plan.ContainerName, want)
 	}

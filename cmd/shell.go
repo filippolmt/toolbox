@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -25,6 +26,8 @@ var shellCreate bool
 var shellPath string
 var shellBridgeLoopback bool
 var shellOAuth []string
+var shellProfile string
+var shellShare []string
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
@@ -71,6 +74,16 @@ func runShell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Resolve --profile / --share into a mountplan.Profile before any fs side
+	// effect or container creation (same fail-fast contract as expandShellOAuth).
+	// An invalid or empty profile name, or a --share without a profile, errors
+	// here, leaving no ~/.toolbox/profiles/<name> dir behind.
+	profile, err := resolveShellProfile(cmd, shellProfile, shellShare)
+	if err != nil {
+		return err
+	}
+	warnIfNewProfile(profile)
 
 	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
 	if err != nil {
@@ -128,6 +141,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		BridgeLoopback: bridgeLoopback,
 		ImageDigest:    imageDigest,
 		Name:           shellName,
+		Profile:        profile,
 	})
 	if err != nil {
 		return err
@@ -167,6 +181,45 @@ func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]str
 	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
 }
 
+// resolveShellProfile validates the --profile / --share flags and builds the
+// mountplan.Profile (nil for a default session). Pure — the profile owns its
+// own root and share skip-set, so nothing here mutates cfg. An explicit
+// `--profile ""` (flag set to empty) is an error, distinct from the flag being
+// absent; --share without --profile is an error; the profile name is rejected
+// before it can become a filesystem path. --share token matching is validated
+// downstream in mountplan.Merge.
+func resolveShellProfile(cmd *cobra.Command, name string, share []string) (*mountplan.Profile, error) {
+	if name == "" {
+		if cmd.Flags().Changed("profile") {
+			return nil, fmt.Errorf("--profile: name must not be empty")
+		}
+		if len(share) > 0 {
+			return nil, fmt.Errorf("--share requires --profile")
+		}
+		return nil, nil
+	}
+	// Name validation (trust boundary) lives in the Profile constructor.
+	return mountplan.NewProfile(name, share)
+}
+
+// warnIfNewProfile prints a one-line stderr notice when a --profile names a
+// directory that does not exist yet, so a typo (`--profile cluade`) surfaces as
+// a visibly new, empty profile instead of a silent logged-out shell. Best
+// effort: an unresolvable home just skips the notice.
+func warnIfNewProfile(p *mountplan.Profile) {
+	if p == nil {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	dir := filepath.Join(home, ".toolbox", "profiles", p.Name)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "toolbox: creating new profile %q (empty credentials — every CLI starts logged out)\n", p.Name)
+	}
+}
+
 // printBridgeTipIfNeeded prints a one-line install hint when the
 // host-side bridge is not yet installed. Build tags select an Agent
 // that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
@@ -197,6 +250,15 @@ func init() {
 		"Forward published ports to container loopback so CLIs that bind 127.0.0.1 "+
 			"are reachable from the host browser (e.g. codex/wrangler OAuth callbacks). "+
 			"Requires at least one -p; see docs/commands.md#loopback-bridge.")
+	shellCmd.Flags().StringVar(&shellProfile, "profile", "",
+		"isolate the whole ~/.toolbox/ credential + state set under ~/.toolbox/profiles/<name>, "+
+			"so every CLI in the shell (claude, codex, gh, gcloud, …) uses that profile's own auth. "+
+			"All-or-nothing (not per-tool); SSH keys and git config stay shared with the host. "+
+			"Overrides a configured mounts_root for this invocation. Runs in its own container.")
+	shellCmd.Flags().StringSliceVar(&shellShare, "share", nil,
+		"under --profile, keep the named tools on the host's ~/.toolbox/ root instead of the profile "+
+			"(repeatable/comma-separated). Names match 'toolbox mounts' identifiers; a prefix like 'cf' or "+
+			"'rtk' covers its split mounts. Requires --profile.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
 	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)

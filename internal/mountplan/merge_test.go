@@ -17,7 +17,7 @@ func TestMergeRetargetsSource(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestMergeUnknownNameErrors(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/tmp/x"}},
 	}
-	_, err := Merge(&cfg)
+	_, err := Merge(&cfg, nil)
 	if err == nil {
 		t.Fatal("Merge should fail when a patch references an unknown name")
 	}
@@ -75,7 +75,7 @@ func TestMergeReplaceByName(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestMergeAppendNewName(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestMergeDisableDefault(t *testing.T) {
 		Mounts: []config.Mount{{Name: "docker-sock", Disabled: true}},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestMergeDisableDefault(t *testing.T) {
 func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 	cfg := config.Config{MountsRoot: "/custom/root"}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 func TestMergeMountsRootHomeRelative(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~/work/toolbox-state"}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestMergeMountsRootCombinedWithPatch(t *testing.T) {
 		Mounts:     []config.Mount{{Name: "gws", Source: "/elsewhere/gws"}},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestMergeMountsRootWithAnonymousAppend(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestMergeMountsRootWithAnonymousAppend(t *testing.T) {
 func TestMergeMountsRootEmptyIsNoop(t *testing.T) {
 	cfg := config.Config{MountsRoot: ""}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestMergeMountsRootEmptyIsNoop(t *testing.T) {
 func TestMergeMountsRootTrailingSlash(t *testing.T) {
 	cfg := config.Config{MountsRoot: "/custom/root/"}
 
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&cfg, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestApplyMountsRootDoesNotMutateBase(t *testing.T) {
 	base := defaults()
 	originalSource := findMount(base, "claude").Source
 
-	out := applyMountsRoot(base, "/custom/root")
+	out := applyMountsRoot(base, "/custom/root", nil)
 
 	if got := findMount(base, "claude").Source; got != originalSource {
 		t.Errorf("base mutated: claude.Source = %q, want %q", got, originalSource)
