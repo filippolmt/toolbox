@@ -135,51 +135,14 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 	if cfg == nil {
 		return errors.New("internal: configuration not loaded")
 	}
-	resolved, err := mountplan.Merge(cfg)
+	classified, err := mountplan.Classify(cfg)
 	if err != nil {
 		return err
 	}
-
-	defaultNames := map[string]struct{}{}
-	for _, m := range defaults {
-		defaultNames[m.Name] = struct{}{}
-	}
-	userNames := map[string]struct{}{}
-	for _, m := range cfg.Mounts {
-		if m.Name != "" {
-			userNames[m.Name] = struct{}{}
-		}
-	}
-
-	resolvedNames := map[string]struct{}{}
-	for _, m := range resolved {
-		if m.Name != "" {
-			resolvedNames[m.Name] = struct{}{}
-		}
-		printMountRow(out, m, classifyMount(m, defaultNames, userNames))
-	}
-
-	// Defaults dropped from the resolved set were disabled (by a user patch
-	// or a feature toggle); surface them so the view stays complete.
-	for _, m := range defaults {
-		if _, ok := resolvedNames[m.Name]; !ok {
-			printMountRow(out, m, "disabled")
-		}
+	for _, m := range classified {
+		printMountRow(out, m.Mount, m.Origin.String())
 	}
 	return nil
-}
-
-func classifyMount(m config.Mount, defaultNames, userNames map[string]struct{}) string {
-	_, isDefault := defaultNames[m.Name]
-	_, isUser := userNames[m.Name]
-	switch {
-	case isDefault && isUser:
-		return "patched"
-	case isDefault:
-		return "default"
-	default:
-		return "user"
-	}
 }
 
 func printMountRow(w io.Writer, m config.Mount, class string) {
@@ -225,10 +188,16 @@ func runMountsAdd(cmd *cobra.Command, args []string) error {
 
 func runMountsDisable(cmd *cobra.Command, args []string) error {
 	name := args[0]
+	if cfg == nil {
+		return errors.New("internal: configuration not loaded")
+	}
 	// A {name, disabled: true} patch referencing a name unknown to the merge
 	// fails the next config load — validate against defaults + user entries
 	// before writing.
-	known := knownMountNames()
+	known, err := mountplan.Names(cfg)
+	if err != nil {
+		return err
+	}
 	if !slices.Contains(known, name) {
 		return &usageError{err: fmt.Errorf("unknown mount %q%s",
 			name, configedit.DidYouMean(name, known))}
@@ -295,24 +264,4 @@ func runMountsRoot(cmd *cobra.Command, args []string) error {
 	}
 	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
 	return nil
-}
-
-// knownMountNames returns every name the merge can resolve: the canonical
-// defaults plus named user entries from the resolved configuration.
-func knownMountNames() []string {
-	names := []string{}
-	for _, m := range mountplan.Defaults() {
-		if m.Name != "" {
-			names = append(names, m.Name)
-		}
-	}
-	if cfg != nil {
-		for _, m := range cfg.Mounts {
-			if m.Name != "" && !slices.Contains(names, m.Name) {
-				names = append(names, m.Name)
-			}
-		}
-	}
-	slices.Sort(names)
-	return names
 }
