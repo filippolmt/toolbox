@@ -150,6 +150,13 @@ Because a profile is a fresh root, each one re-downloads regenerable caches
 of full isolation. Like `mounts_root`, a profile changes only where state
 *binds*; it never moves existing data.
 
+Only the toolbox-managed default mounts are retargeted into a profile. A custom
+entry you add to `mounts:` with an explicit `~/.toolbox/…` source is left on the
+host root (your explicit path is respected, not silently rewritten); toolbox
+prints a warning naming it. Give it a profile-specific source if you want that
+mount isolated too. Switching `--profile`/`--share` on a workspace session opens
+a distinct container, so profiles coexist without a `toolbox stop`.
+
 ## Startup hooks
 
 Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be executed by the entrypoint on every `toolbox shell`, before your zsh prompt. Use this for per-user bootstrap that should not live in the image (installing Claude Code skill packs, `direnv` shims, custom env bootstrap, etc.). Hooks run as the toolbox user, share the mounted credentials, and can write to the per-user npm prefix at `~/.toolbox/npm-global/` without needing root.

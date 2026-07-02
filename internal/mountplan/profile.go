@@ -39,15 +39,24 @@ func NewProfile(name string, share []string) (*Profile, error) {
 }
 
 // Root is the mounts root a profile retargets ~/.toolbox/ sources to. It wins
-// over a config-level mounts_root for the invocation.
-func (p *Profile) Root() string { return profilesRoot + p.Name }
+// over a config-level mounts_root for the invocation. Nil-safe (returns "",
+// i.e. no override) to match ProfileName/ContainerDiscriminator.
+func (p *Profile) Root() string {
+	if p == nil {
+		return ""
+	}
+	return profilesRoot + p.Name
+}
 
 // EffectiveShare is the skip-set applyMountsRoot honours: the user's --share
 // tokens plus "bridge". The bridge daemon dir is host infrastructure, not a
 // per-account credential — retargeting it into the profile would bind empty
 // dirs and break in-container URL/editor/proximo forwarding, so it always
-// stays on the host root.
+// stays on the host root. Nil-safe (returns nil).
 func (p *Profile) EffectiveShare() []string {
+	if p == nil {
+		return nil
+	}
 	return append(append([]string(nil), p.Share...), "bridge")
 }
 

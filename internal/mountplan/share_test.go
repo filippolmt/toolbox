@@ -155,6 +155,31 @@ func TestNewProfile(t *testing.T) {
 	}
 }
 
+// TestProfileHostSharedWarnings: a custom ~/.toolbox/ user mount is not
+// auto-isolated by a profile and is surfaced as a warning; toolbox-managed
+// defaults (retargeted), ssh symlinks, and bridge are not warned about.
+func TestProfileHostSharedWarnings(t *testing.T) {
+	cfg := config.Config{Mounts: []config.Mount{
+		{Name: "custom", Source: "~/.toolbox/custom", Target: "/home/toolbox/.custom"},
+	}}
+	p := &Profile{Name: "work"}
+
+	merged, err := Merge(&cfg, p)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	w := profileHostSharedWarnings(merged, p)
+	if len(w) != 1 || !strings.Contains(w[0], `"custom"`) {
+		t.Fatalf("warnings = %v, want exactly one mentioning custom", w)
+	}
+
+	// nil profile → no warnings.
+	if got := profileHostSharedWarnings(merged, nil); got != nil {
+		t.Errorf("nil profile warnings = %v, want nil", got)
+	}
+}
+
 func TestShareCovers(t *testing.T) {
 	cases := []struct {
 		shared []string

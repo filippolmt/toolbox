@@ -65,6 +65,7 @@ func Plan(cfg *config.Config, workspace string, profile *Profile) (Result, error
 	}
 
 	binds, warnings := resolveAll(merged, home)
+	warnings = append(profileHostSharedWarnings(merged, profile), warnings...)
 
 	binds = append(binds, Bind{Source: workspace, Target: WorkspaceTarget, Mode: "rw"})
 

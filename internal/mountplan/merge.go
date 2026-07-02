@@ -97,6 +97,34 @@ func validateShare(base []config.Mount, shared []string) error {
 	return nil
 }
 
+// profileHostSharedWarnings flags any post-merge mount left on the host
+// ~/.toolbox/ root under an active profile — a user-declared credential mount
+// the profile cannot auto-isolate. Toolbox-managed defaults are already
+// retargeted into the profile root or intentionally shared (--share / bridge /
+// ssh-git symlinks), so they are excluded; only a custom `mounts:` entry with
+// an explicit ~/.toolbox/ source remains, and we surface it rather than
+// silently leaking it or rewriting the user's explicit path.
+func profileHostSharedWarnings(merged []config.Mount, profile *Profile) []string {
+	if profile == nil {
+		return nil
+	}
+	shared := profile.EffectiveShare()
+	var out []string
+	for _, m := range merged {
+		switch {
+		case m.SymlinkFrom != "": // ssh/gitconfig: host identity by design
+		case !strings.HasPrefix(m.Source, mountsRootPrefix): // not under ~/.toolbox/
+		case strings.HasPrefix(m.Source, profile.Root()+"/"): // already isolated
+		case shareCovers(shared, m.Name): // intentionally kept on host (--share / bridge)
+		default:
+			out = append(out, fmt.Sprintf(
+				"mount %q keeps its host source %q under profile %q (custom mounts are not auto-isolated); set a profile-specific source in mounts: if you want it isolated",
+				m.Name, m.Source, profile.Name))
+		}
+	}
+	return out
+}
+
 // mergeMounts combines a base mount set (typically defaults()) with a
 // user-declared list, applying these rules per user entry:
 //
