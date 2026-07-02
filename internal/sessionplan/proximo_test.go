@@ -12,8 +12,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 // TestPlanWiresProximo asserts that proximo: true sets the SessionPlan.Proximo
 // flag (the create-edge discovery signal), emits the CA-trust env, and binds
 // the CA file when present on the host.
@@ -35,7 +33,7 @@ func TestPlanWiresProximo(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: &config.Config{Shell: "zsh", Proximo: boolPtr(true)}, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: &config.Config{Shell: "zsh", Proximo: new(true)}, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

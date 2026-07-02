@@ -10,10 +10,8 @@ import (
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
-func forceOnCfg() *config.Config  { return &config.Config{Proximo: boolPtr(true)} }
-func forceOffCfg() *config.Config { return &config.Config{Proximo: boolPtr(false)} }
+func forceOnCfg() *config.Config  { return &config.Config{Proximo: new(true)} }
+func forceOffCfg() *config.Config { return &config.Config{Proximo: new(false)} }
 func autoCfg() *config.Config     { return &config.Config{} } // Proximo nil → auto-detect
 
 func TestExtraHostsDedupesSortsAndPinsGateway(t *testing.T) {

@@ -7,8 +7,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 // TestMergeInjectsProximoCAWhenEnabled asserts the proximo CA bind is appended
 // (read-only, sourced from ~/.proximo/tls/ca.pem) when proximo is
 // enabled, and absent when force-disabled. The mount is injected in Merge —
@@ -21,7 +19,7 @@ func TestMergeInjectsProximoCAWhenEnabled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
 	wantSource := filepath.Join(dir, ".proximo", "tls", "ca.pem")
 
-	merged, err := Merge(&config.Config{Proximo: boolPtr(true)})
+	merged, err := Merge(&config.Config{Proximo: new(true)})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -36,7 +34,7 @@ func TestMergeInjectsProximoCAWhenEnabled(t *testing.T) {
 		t.Error("proximo-ca mount must be read-only")
 	}
 
-	off, err := Merge(&config.Config{Proximo: boolPtr(false)})
+	off, err := Merge(&config.Config{Proximo: new(false)})
 	if err != nil {
 		t.Fatalf("Merge (disabled): %v", err)
 	}
