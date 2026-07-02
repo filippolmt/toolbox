@@ -83,6 +83,7 @@ type Config struct {
 	// BrowserBridge is the deprecated spelling of Bridge, kept as input-only
 	// compat: fillDefaultsBackstop folds it into Bridge when `bridge:` is
 	// absent. Consumers must read Bridge. Remove in a major release.
+	// The tag string is mirrored by DeprecatedBridgeKey (keep in sync).
 	BrowserBridge *bool `mapstructure:"browser_bridge"`
 	// Proximo controls the proximo (https://github.com/filippolmt/proximo)
 	// local-dev integration. Tri-state:

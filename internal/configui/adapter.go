@@ -43,7 +43,8 @@ func (s Scope) where() configedit.Where {
 }
 
 // deprecatedKey is folded into its live sibling and never shown as its own row.
-const deprecatedKey = "browser_bridge"
+// Sourced from config so this package folds exactly the key config.Merge does.
+const deprecatedKey = config.DeprecatedBridgeKey
 
 // Keys returns the top-level keys the UI presents, in schema order, with the
 // deprecated browser_bridge omitted — its value is surfaced through bridge
@@ -144,8 +145,10 @@ func ScopeStates(path string) (map[string]scopeState, error) {
 }
 
 // scopeNode returns the file node for a key, folding the deprecated
-// browser_bridge into bridge the same way config.Merge does, so a file that
-// only sets browser_bridge still counts as setting bridge in that scope.
+// browser_bridge into bridge the same way config.Merge does (fillDefaultsBackstop),
+// so a file that only sets browser_bridge still counts as setting bridge in that
+// scope. Keep this fold in sync with that canonical one; both key off
+// config.DeprecatedBridgeKey so a rename cannot drift them apart.
 func scopeNode(doc *yaml.Node, key string) *yaml.Node {
 	if n := configio.ChildValue(doc, key); n != nil {
 		return n

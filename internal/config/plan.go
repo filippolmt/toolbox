@@ -242,6 +242,14 @@ var legacyToolsWarnOnce sync.Once
 // browser_bridge key.
 var legacyBrowserBridgeWarnOnce sync.Once
 
+// DeprecatedBridgeKey is the canonical name of the deprecated `browser_bridge`
+// spelling that folds into `bridge` (see fillDefaultsBackstop). It is the single
+// source of truth for the key string so that node-level consumers outside this
+// package (e.g. internal/configui) fold the same key this package does, and any
+// future change to the deprecation is a compile-visible edit here rather than a
+// silent drift between packages. Must match the BrowserBridge mapstructure tag.
+const DeprecatedBridgeKey = "browser_bridge"
+
 // warnLegacyBrowserBridge emits a deprecation warning the first time any
 // input buffer carries a top-level `browser_bridge:` key. The key still
 // works (fillDefaultsBackstop folds it into Bridge) — this is a rename
@@ -251,7 +259,7 @@ func warnLegacyBrowserBridge(buffers ...[]byte) {
 		if len(b) == 0 {
 			continue
 		}
-		if hasTopLevelKey(b, "browser_bridge") {
+		if hasTopLevelKey(b, DeprecatedBridgeKey) {
 			legacyBrowserBridgeWarnOnce.Do(func() {
 				fmt.Fprintln(os.Stderr,
 					"toolbox: warning: 'browser_bridge:' is deprecated — rename the key to 'bridge:'.")
@@ -353,7 +361,7 @@ var fieldValidators = []fieldValidator{
 // coverage guard forces a deliberate classification of every new field.
 var noValidationKeys = map[string]bool{
 	"bridge":             true,
-	"browser_bridge":     true,
+	DeprecatedBridgeKey:  true,
 	"proximo":            true,
 	"managed_statusline": true,
 	"mounts":             true,
