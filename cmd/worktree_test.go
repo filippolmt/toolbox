@@ -657,3 +657,27 @@ func TestRunSyncStepsSurfacesNonConflictRebaseError(t *testing.T) {
 		t.Errorf("error %q must not add conflict guidance when no rebase is in progress", err.Error())
 	}
 }
+
+func TestNoArgSyncBranch(t *testing.T) {
+	wtPath := "/repo/.worktrees/tbx-fix"
+
+	// A real branch passes through unchanged.
+	if got, err := noArgSyncBranch(wtPath, "fix-bug"); err != nil || got != "fix-bug" {
+		t.Errorf("noArgSyncBranch(_, %q) = (%q, %v), want (%q, nil)", "fix-bug", got, err, "fix-bug")
+	}
+
+	// A detached HEAD (literal "HEAD") is refused with actionable guidance rather
+	// than rebasing detached commits — the guard against a no-branch sync.
+	got, err := noArgSyncBranch(wtPath, "HEAD")
+	if err == nil {
+		t.Fatal("expected a detached-HEAD error")
+	}
+	if got != "" {
+		t.Errorf("noArgSyncBranch returned branch %q alongside an error", got)
+	}
+	for _, want := range []string{wtPath, "detached HEAD"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err.Error(), want)
+		}
+	}
+}

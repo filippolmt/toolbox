@@ -954,14 +954,38 @@ func runWorktreeList(cmd *cobra.Command, _ []string) error {
 }
 
 func runWorktreeRm(cmd *cobra.Command, args []string) error {
+	branch := args[0]
 	root, err := repoRoot()
 	if err != nil {
 		return err
 	}
-	wtPath, err := resolveToolboxWorktree(root, args[0])
+	wtPath, err := resolveToolboxWorktree(root, branch)
 	if err != nil {
 		return err
 	}
+
+	// git keeps a worktree registered after its directory is deleted by hand;
+	// `git worktree remove` then fails and would return before the branch/base
+	// cleanup, stranding exactly the orphaned branch rm exists to remove. Clear
+	// the stale registration with `worktree prune` and fall through to cleanup.
+	// (open refuses this case; rm heals it.)
+	if _, statErr := os.Stat(wtPath); statErr != nil {
+		if err := runGit("-C", root, "worktree", "prune"); err != nil {
+			return err
+		}
+		deleteBranch(root, branch, rmFlags.force, rmFlags.deleteRemote)
+		forgetWorktreeBase(root, branch)
+		return nil
+	}
+
+	// Predict the no-force `git worktree remove` refusal on a dirty tree and bail
+	// before stopping the container, so a refused removal cannot leave the
+	// container stopped while the worktree lives on — a half-torn-down state.
+	// --force skips the check (it discards the changes anyway).
+	if !rmFlags.force && worktreeDirty(wtPath) {
+		return fmt.Errorf("worktree %s has uncommitted changes; commit them or pass --force to discard", wtPath)
+	}
+
 	stopWorktreeContainer(wtPath)
 
 	gitArgs := []string{"worktree", "remove"}
@@ -974,8 +998,8 @@ func runWorktreeRm(cmd *cobra.Command, args []string) error {
 	// The worktree is gone; delete its now-orphaned branch (best-effort). --force
 	// already forced the worktree removal, so it also escalates the branch delete
 	// to -D — one flag means "I accept losing unmerged work".
-	deleteBranch(root, args[0], rmFlags.force, rmFlags.deleteRemote)
-	forgetWorktreeBase(root, args[0])
+	deleteBranch(root, branch, rmFlags.force, rmFlags.deleteRemote)
+	forgetWorktreeBase(root, branch)
 	return nil
 }
 
@@ -1142,6 +1166,18 @@ func mergedBranches(base string) (map[string]bool, error) {
 // `--no-track` from `origin/<base>` and has no local `<base>` branch, so
 // rebasing onto `<base>` would fail with "invalid upstream". With --no-fetch
 // the remote-tracking ref is used as last fetched — no network, still valid.
+// noArgSyncBranch returns the branch a no-arg sync should operate on, given the
+// checkout's current ref. A detached HEAD reports the literal "HEAD": there is
+// no branch to rebase or push, so refuse rather than rebasing detached commits.
+// Reached only when no rebase is being resumed (a resume's detached HEAD is
+// legitimate). Pure so the refusal is unit-tested without a repo.
+func noArgSyncBranch(wtPath, current string) (string, error) {
+	if current == "HEAD" {
+		return "", fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
+	}
+	return current, nil
+}
+
 func syncPlan(base string, fetch, push bool) [][]string {
 	var steps [][]string
 	if fetch {
@@ -1251,13 +1287,12 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 
 	// No rebase in progress: for the no-arg case, resolve the current branch now.
 	if len(args) == 0 {
-		if branch, err = gitOutput("rev-parse", "--abbrev-ref", "HEAD"); err != nil {
-			return err
+		current, curErr := gitOutput("rev-parse", "--abbrev-ref", "HEAD")
+		if curErr != nil {
+			return curErr
 		}
-		// A detached HEAD reports the literal "HEAD"; there is no branch to sync
-		// or push, so fail clearly rather than rebasing detached commits.
-		if branch == "HEAD" {
-			return fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
+		if branch, err = noArgSyncBranch(wtPath, current); err != nil {
+			return err
 		}
 	}
 
@@ -1267,6 +1302,14 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 	base := worktreeBase(root, branch, fallback)
 	if base == "" {
 		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
+	}
+	// The rebase targets origin/<base>; if that remote-tracking ref is gone (base
+	// branch deleted or renamed on origin) the rebase would bail with an opaque
+	// "invalid upstream" error. Surface an actionable one instead. Mirrors prune,
+	// which skips a worktree whose base vanished; sync targets a single branch,
+	// so it errors rather than skips.
+	if !hasRemoteBranch(root, base) {
+		return fmt.Errorf("base %q no longer exists on origin (origin/%s is gone); recreate it or re-create the worktree with --from", base, base)
 	}
 
 	return runSyncSteps(wtPath, syncPlan(base, !syncFlags.noFetch, !syncFlags.noPush), runGit,
