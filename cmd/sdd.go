@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -144,43 +143,17 @@ func upsertSDDFlag(path, skillKey string) (bool, error) {
 // path. Each skill owns its own fence pair so `toolbox sdd init <other>`
 // touches only the relevant section.
 func upsertGitignoreFence(path string, skill sdd.Skill) (bool, error) {
-	body := renderGitignoreBlock(skill)
-	start := gitignoreFenceStart(skill.Key)
-	end := gitignoreFenceEnd(skill.Key)
-
 	existing, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return true, configio.AtomicWriteFile(path, []byte(body+"\n"), 0o600)
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	startIdx := bytes.Index(existing, []byte(start))
-	endIdx := bytes.Index(existing, []byte(end))
-	if startIdx < 0 || endIdx <= startIdx {
-		separator := "\n"
-		if len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\n")) {
-			separator = "\n\n"
-		} else if len(existing) == 0 {
-			separator = ""
-		}
-		updated := append([]byte{}, existing...)
-		updated = append(updated, []byte(separator+body+"\n")...)
-		return true, configio.AtomicWriteFile(path, updated, 0o600)
-	}
-
-	tail := endIdx + len(end)
-	if tail < len(existing) && existing[tail] == '\n' {
-		tail++
-	}
-	replaced := append([]byte{}, existing[:startIdx]...)
-	replaced = append(replaced, []byte(body+"\n")...)
-	replaced = append(replaced, existing[tail:]...)
-	if bytes.Equal(replaced, existing) {
+	updated, changed := configio.SpliceFence(existing,
+		gitignoreFenceStart(skill.Key), gitignoreFenceEnd(skill.Key), renderGitignoreBlock(skill))
+	if !changed {
 		return false, nil
 	}
-	return true, configio.AtomicWriteFile(path, replaced, 0o600)
+	return true, configio.AtomicWriteFile(path, updated, 0o600)
 }
 
 func renderGitignoreBlock(skill sdd.Skill) string {
