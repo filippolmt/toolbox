@@ -74,11 +74,11 @@ func runShell(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve --profile / --share into the effective mounts root + share set
-	// before any fs side effect or container creation (same fail-fast contract
-	// as expandShellOAuth). An invalid profile name or a --share without a
-	// profile errors here, leaving no ~/.toolbox/profiles/<name> dir behind.
-	profileShare, err := applyShellProfile(shellProfile, shellShare)
+	// Resolve --profile / --share into a mountplan.Profile before any fs side
+	// effect or container creation (same fail-fast contract as expandShellOAuth).
+	// An invalid or empty profile name, or a --share without a profile, errors
+	// here, leaving no ~/.toolbox/profiles/<name> dir behind.
+	profile, err := resolveShellProfile(cmd, shellProfile, shellShare)
 	if err != nil {
 		return err
 	}
@@ -139,8 +139,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		BridgeLoopback: bridgeLoopback,
 		ImageDigest:    imageDigest,
 		Name:           shellName,
-		Profile:        shellProfile,
-		Share:          profileShare,
+		Profile:        profile,
 	})
 	if err != nil {
 		return err
@@ -180,27 +179,27 @@ func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]str
 	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
 }
 
-// applyShellProfile validates the --profile / --share flags and, for an active
-// profile, points the effective mounts root at ~/.toolbox/profiles/<name> (in
-// memory, never written to config) so the whole ~/.toolbox/ credential + state
-// set is isolated to that profile. Returns the effective share skip-set to hand
-// to the planner: the user's --share tokens plus "bridge" — the bridge daemon's
-// state dir is host infrastructure, not a per-account credential, so it stays
-// on the host root even under a profile (retargeting it would break
-// in-container URL/editor/proximo forwarding). Pure aside from mutating cfg's
-// in-memory MountsRoot; --share matching is validated downstream in mountplan.
-func applyShellProfile(profile string, share []string) ([]string, error) {
-	if profile == "" {
+// resolveShellProfile validates the --profile / --share flags and builds the
+// mountplan.Profile (nil for a default session). Pure — the profile owns its
+// own root and share skip-set, so nothing here mutates cfg. An explicit
+// `--profile ""` (flag set to empty) is an error, distinct from the flag being
+// absent; --share without --profile is an error; the profile name is rejected
+// before it can become a filesystem path. --share token matching is validated
+// downstream in mountplan.Merge.
+func resolveShellProfile(cmd *cobra.Command, name string, share []string) (*mountplan.Profile, error) {
+	if name == "" {
+		if cmd.Flags().Changed("profile") {
+			return nil, fmt.Errorf("--profile: name must not be empty")
+		}
 		if len(share) > 0 {
 			return nil, fmt.Errorf("--share requires --profile")
 		}
 		return nil, nil
 	}
-	if profile == "." || profile == ".." || strings.ContainsAny(profile, `/\`) {
-		return nil, fmt.Errorf("--profile %q: name must not be '.', '..', or contain a path separator", profile)
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return nil, fmt.Errorf("--profile %q: name must not be '.', '..', or contain a path separator", name)
 	}
-	cfg.MountsRoot = "~/.toolbox/profiles/" + profile
-	return append(append([]string(nil), share...), "bridge"), nil
+	return &mountplan.Profile{Name: name, Share: share}, nil
 }
 
 // printBridgeTipIfNeeded prints a one-line install hint when the

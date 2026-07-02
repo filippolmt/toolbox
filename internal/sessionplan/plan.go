@@ -119,18 +119,13 @@ type PlanInput struct {
 	// Name by intent and nothing else.
 	Name string
 
-	// Profile is the active `--profile <name>` selector (empty = none). A
-	// non-empty value is folded into the container name so a profile shell
-	// never collides with the default shell for the same workspace, each
-	// keeping its own mount set fixed at ContainerCreate. The mount retargeting
-	// itself rides on Cfg.MountsRoot (set by cmd to ~/.toolbox/profiles/<name>);
-	// Profile here governs only the container identity.
-	Profile string
-
-	// Share is the set of --share tokens (mount names/prefixes) kept on the
-	// host ~/.toolbox/ root even under a profile. Threaded into the mount plan;
-	// empty for non-profile sessions.
-	Share []string
+	// Profile is the active `toolbox shell --profile` selection, or nil for a
+	// default (non-profile) session. It drives the mount plan (its own root +
+	// share skip-set, owned by mountplan.Profile) and is folded into the
+	// container name so a profile shell never collides with the default shell
+	// for the same workspace, each keeping its own mount set fixed at
+	// ContainerCreate.
+	Profile *mountplan.Profile
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -181,7 +176,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(in.Cfg, workspace, in.Share...)
+	mp, err := mountplan.Plan(in.Cfg, workspace, in.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +189,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
-		ContainerName: containerName(workspace, in.Name, in.Profile),
+		ContainerName: containerName(workspace, in.Name, mountplan.ProfileName(in.Profile)),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:    browserBridgeExtraHosts(in.Cfg),
@@ -247,7 +242,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 
 	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
-	merged, err := mountplan.Merge(in.Cfg, in.Share...)
+	merged, err := mountplan.Merge(in.Cfg, in.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +266,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: containerName(workspace, in.Name, in.Profile),
+		ContainerName: containerName(workspace, in.Name, mountplan.ProfileName(in.Profile)),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 	}, nil

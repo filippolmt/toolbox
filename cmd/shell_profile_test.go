@@ -1,77 +1,83 @@
 package cmd
 
 import (
-	"slices"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/spf13/cobra"
 )
 
-func TestApplyShellProfile(t *testing.T) {
-	t.Run("no profile is a noop", func(t *testing.T) {
-		cfg = &config.Config{}
-		t.Cleanup(func() { cfg = nil })
+// profileCmd builds a throwaway cobra command carrying the --profile flag so
+// resolveShellProfile can distinguish an explicit empty value from an unset
+// one. When set is true the flag is marked Changed (as cobra would for an
+// explicit `--profile ""`).
+func profileCmd(t *testing.T, set bool) *cobra.Command {
+	t.Helper()
+	c := &cobra.Command{}
+	var v string
+	c.Flags().StringVar(&v, "profile", "", "")
+	if set {
+		if err := c.Flags().Set("profile", ""); err != nil {
+			t.Fatalf("Set profile: %v", err)
+		}
+	}
+	return c
+}
 
-		share, err := applyShellProfile("", nil)
+func TestResolveShellProfile(t *testing.T) {
+	t.Run("no profile is a noop", func(t *testing.T) {
+		p, err := resolveShellProfile(profileCmd(t, false), "", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if share != nil {
-			t.Errorf("share = %v, want nil", share)
+		if p != nil {
+			t.Errorf("profile = %+v, want nil", p)
 		}
-		if cfg.MountsRoot != "" {
-			t.Errorf("MountsRoot mutated without profile: %q", cfg.MountsRoot)
+	})
+
+	t.Run("explicit empty profile errors", func(t *testing.T) {
+		if _, err := resolveShellProfile(profileCmd(t, true), "", nil); err == nil {
+			t.Fatal("want error for explicit --profile \"\", got nil")
 		}
 	})
 
 	t.Run("share without profile errors", func(t *testing.T) {
-		cfg = &config.Config{}
-		t.Cleanup(func() { cfg = nil })
-
-		if _, err := applyShellProfile("", []string{"gh"}); err == nil {
+		if _, err := resolveShellProfile(profileCmd(t, false), "", []string{"gh"}); err == nil {
 			t.Fatal("want error for --share without --profile, got nil")
 		}
 	})
 
-	t.Run("path traversal rejected without touching cfg", func(t *testing.T) {
-		cfg = &config.Config{}
-		t.Cleanup(func() { cfg = nil })
-
+	t.Run("path traversal rejected", func(t *testing.T) {
 		for _, bad := range []string{"..", ".", "../escape", "a/b"} {
-			if _, err := applyShellProfile(bad, nil); err == nil {
+			if _, err := resolveShellProfile(profileCmd(t, true), bad, nil); err == nil {
 				t.Errorf("profile %q: want error, got nil", bad)
-			}
-			if cfg.MountsRoot != "" {
-				t.Errorf("profile %q: MountsRoot mutated on error: %q", bad, cfg.MountsRoot)
 			}
 		}
 	})
 
-	t.Run("active profile sets root and auto-shares bridge", func(t *testing.T) {
-		cfg = &config.Config{}
-		t.Cleanup(func() { cfg = nil })
-
-		share, err := applyShellProfile("work", []string{"gh"})
+	t.Run("active profile carries name and share", func(t *testing.T) {
+		p, err := resolveShellProfile(profileCmd(t, true), "work", []string{"gh"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if cfg.MountsRoot != "~/.toolbox/profiles/work" {
-			t.Errorf("MountsRoot = %q, want %q", cfg.MountsRoot, "~/.toolbox/profiles/work")
+		if p == nil || p.Name != "work" {
+			t.Fatalf("profile = %+v, want Name=work", p)
 		}
-		if !slices.Contains(share, "gh") || !slices.Contains(share, "bridge") {
-			t.Errorf("share = %v, want to contain gh and bridge", share)
+		if p.Root() != "~/.toolbox/profiles/work" {
+			t.Errorf("Root() = %q, want %q", p.Root(), "~/.toolbox/profiles/work")
 		}
-	})
-
-	t.Run("profile overrides a configured mounts_root", func(t *testing.T) {
-		cfg = &config.Config{MountsRoot: "~/other-toolbox"}
-		t.Cleanup(func() { cfg = nil })
-
-		if _, err := applyShellProfile("work", nil); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.MountsRoot != "~/.toolbox/profiles/work" {
-			t.Errorf("MountsRoot = %q, want profile root to win over config", cfg.MountsRoot)
+		// EffectiveShare keeps the user's tokens and always adds bridge (infra).
+		got := p.EffectiveShare()
+		if !contains(got, "gh") || !contains(got, "bridge") {
+			t.Errorf("EffectiveShare() = %v, want gh and bridge", got)
 		}
 	})
+}
+
+func contains(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

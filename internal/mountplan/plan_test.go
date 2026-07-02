@@ -46,7 +46,7 @@ func TestPlanEndToEnd(t *testing.T) {
 		},
 	}
 
-	result, err := Plan(&cfg, workspace)
+	result, err := Plan(&cfg, workspace, nil)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestPlanEndToEnd(t *testing.T) {
 // TestPlanRejectsBadMountsRoot exercises validation at the seam.
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~"}
-	if _, err := Plan(&cfg, "/workspace"); err == nil {
+	if _, err := Plan(&cfg, "/workspace", nil); err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
 }
@@ -156,7 +156,7 @@ func TestPlanRejectsUnknownPatchName(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/x"}},
 	}
-	_, err := Plan(&cfg, "/workspace")
+	_, err := Plan(&cfg, "/workspace", nil)
 	if err == nil {
 		t.Fatal("Plan should fail when mounts: patches an unknown name")
 	}
@@ -171,7 +171,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 	// /home/toolbox/* is reserved → no mirror.
 	workspace := "/home/toolbox/project"
 
-	result, err := Plan(&config.Config{}, workspace)
+	result, err := Plan(&config.Config{}, workspace, nil)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 
 func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	off := false
-	got, err := Merge(&config.Config{Bridge: &off})
+	got, err := Merge(&config.Config{Bridge: &off}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 
 func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
-	got, err := Merge(&config.Config{Bridge: &on})
+	got, err := Merge(&config.Config{Bridge: &on}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}

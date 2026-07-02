@@ -53,8 +53,8 @@ type Result struct {
 // name-only patch, anonymous mount with empty source, …). Per-mount issues
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
-func Plan(cfg *config.Config, workspace string, shared ...string) (Result, error) {
-	merged, err := Merge(cfg, shared...)
+func Plan(cfg *config.Config, workspace string, profile *Profile) (Result, error) {
+	merged, err := Merge(cfg, profile)
 	if err != nil {
 		return Result{}, err
 	}
@@ -82,8 +82,16 @@ func Plan(cfg *config.Config, workspace string, shared ...string) (Result, error
 // Pure: no filesystem side-effects, no workspace bind. Used by tests
 // asserting merge contracts and by callers that want to inspect the
 // resolved set without materialising sources.
-func Merge(cfg *config.Config, shared ...string) ([]config.Mount, error) {
-	if err := config.ValidateMountsRoot(cfg.MountsRoot); err != nil {
+func Merge(cfg *config.Config, profile *Profile) ([]config.Mount, error) {
+	// A profile retargets to its own root and wins over a config-level
+	// mounts_root for this invocation; without one, the config value applies.
+	root := cfg.MountsRoot
+	var shared []string
+	if profile != nil {
+		root = profile.Root()
+		shared = profile.EffectiveShare()
+	}
+	if err := config.ValidateMountsRoot(root); err != nil {
 		return nil, err
 	}
 	if err := validateShare(defaults(), shared); err != nil {
@@ -93,7 +101,7 @@ func Merge(cfg *config.Config, shared ...string) ([]config.Mount, error) {
 	// empty, in which case applyInheritHostAuth treats ~/ paths as-is and
 	// os.Stat reports them missing — surfaces the misconfiguration loudly.
 	home, _ := os.UserHomeDir()
-	base := applyMountsRoot(defaults(), cfg.MountsRoot, shared)
+	base := applyMountsRoot(defaults(), root, shared)
 	base, err := applyInheritHostAuth(base, cfg.InheritHostAuth, home)
 	if err != nil {
 		return nil, err

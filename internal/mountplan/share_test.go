@@ -7,13 +7,11 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
-// TestMergeShareKeepsToolOnHostRoot: under a profile root, a --share token
-// keeps that tool's mount on the shared ~/.toolbox/ source while the rest are
+// TestMergeShareKeepsToolOnHostRoot: under a profile, a --share token keeps
+// that tool's mount on the shared ~/.toolbox/ source while the rest are
 // retargeted into the profile.
 func TestMergeShareKeepsToolOnHostRoot(t *testing.T) {
-	cfg := config.Config{MountsRoot: "/custom/root"}
-
-	merged, err := Merge(&cfg, "gh")
+	merged, err := Merge(&config.Config{}, &Profile{Name: "work", Share: []string{"gh"}})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -21,44 +19,40 @@ func TestMergeShareKeepsToolOnHostRoot(t *testing.T) {
 	if got := findMount(merged, "gh").Source; got != "~/.toolbox/gh" {
 		t.Errorf("shared gh Source = %q, want %q (kept on host root)", got, "~/.toolbox/gh")
 	}
-	if got := findMount(merged, "claude").Source; got != "/custom/root/.claude" {
-		t.Errorf("unshared claude Source = %q, want %q (retargeted)", got, "/custom/root/.claude")
+	if got := findMount(merged, "claude").Source; got != "~/.toolbox/profiles/work/.claude" {
+		t.Errorf("unshared claude Source = %q, want %q (retargeted)", got, "~/.toolbox/profiles/work/.claude")
 	}
 }
 
 // TestMergeSharePrefixCoversSplitMounts: a single token covers a tool whose
 // state splits across sibling mounts (cf → cf-auth/cf-config).
 func TestMergeSharePrefixCoversSplitMounts(t *testing.T) {
-	cfg := config.Config{MountsRoot: "/custom/root"}
-
-	merged, err := Merge(&cfg, "cf")
+	merged, err := Merge(&config.Config{}, &Profile{Name: "work", Share: []string{"cf"}})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
 
 	for _, name := range []string{"cf-auth", "cf-config"} {
 		got := findMount(merged, name).Source
-		if !strings.HasPrefix(got, "~/.toolbox/") {
-			t.Errorf("shared %q Source = %q, want kept under ~/.toolbox/", name, got)
+		if !strings.HasPrefix(got, "~/.toolbox/") || strings.Contains(got, "profiles/") {
+			t.Errorf("shared %q Source = %q, want kept on host ~/.toolbox/ root", name, got)
 		}
 	}
 }
 
-// TestMergeShareBridgeKeepsInfraOnHostRoot: "bridge" (added automatically for
-// profiles by cmd) keeps all three bridge mounts on the host root so the
-// daemon token/socket stay reachable.
-func TestMergeShareBridgeKeepsInfraOnHostRoot(t *testing.T) {
-	cfg := config.Config{MountsRoot: "/custom/root"}
-
-	merged, err := Merge(&cfg, "bridge")
+// TestMergeProfileKeepsBridgeOnHostRoot: a profile always keeps the bridge
+// mounts on the host root (EffectiveShare appends "bridge") so the daemon
+// token/socket stay reachable — even with no explicit --share.
+func TestMergeProfileKeepsBridgeOnHostRoot(t *testing.T) {
+	merged, err := Merge(&config.Config{}, &Profile{Name: "work"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
 
 	for _, name := range []string{"bridge", "bridge-legacy", "bridge-run"} {
 		got := findMount(merged, name).Source
-		if !strings.HasPrefix(got, "~/.toolbox/") {
-			t.Errorf("shared %q Source = %q, want kept under ~/.toolbox/", name, got)
+		if strings.Contains(got, "profiles/") {
+			t.Errorf("bridge mount %q Source = %q, want kept on host root", name, got)
 		}
 	}
 }
@@ -66,9 +60,7 @@ func TestMergeShareBridgeKeepsInfraOnHostRoot(t *testing.T) {
 // TestMergeShareUnknownErrors: a --share token matching no shareable mount
 // fails loudly rather than silently isolating everything.
 func TestMergeShareUnknownErrors(t *testing.T) {
-	cfg := config.Config{MountsRoot: "/custom/root"}
-
-	if _, err := Merge(&cfg, "ghh"); err == nil {
+	if _, err := Merge(&config.Config{}, &Profile{Name: "work", Share: []string{"ghh"}}); err == nil {
 		t.Fatal("Merge with unknown --share token: want error, got nil")
 	}
 }
@@ -76,22 +68,18 @@ func TestMergeShareUnknownErrors(t *testing.T) {
 // TestMergeShareSSHNotSelectable: ssh/gitconfig are host-symlinked identity
 // mounts, never selectable via --share.
 func TestMergeShareSSHNotSelectable(t *testing.T) {
-	cfg := config.Config{MountsRoot: "/custom/root"}
-
 	for _, name := range []string{"ssh", "gitconfig"} {
-		if _, err := Merge(&cfg, name); err == nil {
+		if _, err := Merge(&config.Config{}, &Profile{Name: "work", Share: []string{name}}); err == nil {
 			t.Errorf("Merge with --share %q: want error (not shareable), got nil", name)
 		}
 	}
 }
 
-// TestMergeProfileSSHStaysHostSymlink: under a profile root, ssh/gitconfig
-// keep their host SymlinkFrom target even though the source path is retargeted
-// — so git/SSH identity stays shared with the host.
+// TestMergeProfileSSHStaysHostSymlink: under a profile, ssh/gitconfig keep
+// their host SymlinkFrom target even though the source path is retargeted — so
+// git/SSH identity stays shared with the host.
 func TestMergeProfileSSHStaysHostSymlink(t *testing.T) {
-	cfg := config.Config{MountsRoot: "~/.toolbox/profiles/work"}
-
-	merged, err := Merge(&cfg)
+	merged, err := Merge(&config.Config{}, &Profile{Name: "work"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -101,6 +89,21 @@ func TestMergeProfileSSHStaysHostSymlink(t *testing.T) {
 	}
 	if got := findMount(merged, "gitconfig").SymlinkFrom; got != "~/.gitconfig" {
 		t.Errorf("gitconfig SymlinkFrom = %q, want %q (host-shared under profile)", got, "~/.gitconfig")
+	}
+}
+
+// TestMergeProfileOverridesMountsRoot: a profile wins over a config-level
+// mounts_root for the invocation.
+func TestMergeProfileOverridesMountsRoot(t *testing.T) {
+	cfg := config.Config{MountsRoot: "~/other-toolbox"}
+
+	merged, err := Merge(&cfg, &Profile{Name: "work"})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	if got := findMount(merged, "claude").Source; got != "~/.toolbox/profiles/work/.claude" {
+		t.Errorf("claude Source = %q, want profile root to win over config mounts_root", got)
 	}
 }
 

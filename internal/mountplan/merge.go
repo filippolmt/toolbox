@@ -43,13 +43,19 @@ func applyMountsRoot(base []config.Mount, root string, shared []string) []config
 	return out
 }
 
-// shareCovers reports whether a --share token keeps the mount named name on
-// the host root. A token matches a mount name exactly, or as a "<token>-"
-// prefix so a single token covers a tool's split mounts (e.g. "cf" covers
-// "cf-auth"/"cf-config", "rtk" covers "rtk"/"rtk-data").
+// matchesShareToken reports whether a --share token covers the mount named
+// name: an exact match, or a "<token>-" prefix so a single token covers a
+// tool's split mounts (e.g. "cf" covers "cf-auth"/"cf-config", "rtk" covers
+// "rtk"/"rtk-data"). The one place the token-matching rule lives.
+func matchesShareToken(token, name string) bool {
+	return token == name || strings.HasPrefix(name, token+"-")
+}
+
+// shareCovers reports whether any --share token keeps the mount named name on
+// the host root.
 func shareCovers(shared []string, name string) bool {
 	for _, s := range shared {
-		if s == name || strings.HasPrefix(name, s+"-") {
+		if matchesShareToken(s, name) {
 			return true
 		}
 	}
@@ -69,7 +75,7 @@ func validateShare(base []config.Mount, shared []string) error {
 			if m.SymlinkFrom != "" || !strings.HasPrefix(m.Source, mountsRootPrefix) {
 				continue
 			}
-			if s == m.Name || strings.HasPrefix(m.Name, s+"-") {
+			if matchesShareToken(s, m.Name) {
 				matched = true
 				break
 			}
