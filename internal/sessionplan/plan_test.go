@@ -3,6 +3,7 @@ package sessionplan_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -36,7 +37,7 @@ func TestPlanComposesImage(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -45,11 +46,45 @@ func TestPlanComposesImage(t *testing.T) {
 	}
 }
 
+// TestPlanNameDecidesContainerName asserts the container-name decision lives
+// behind the seam: a non-empty PlanInput.Name yields the named form
+// (toolbox-named-<name>), while the same workspace with no Name yields the
+// path-hash form. Everything else in the plan is identical.
+func TestPlanNameDecidesContainerName(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	named, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Name: "web"})
+	if err != nil {
+		t.Fatalf("Plan (named): %v", err)
+	}
+	if want := "toolbox-named-web"; named.ContainerName != want {
+		t.Errorf("ContainerName = %q, want %q", named.ContainerName, want)
+	}
+
+	plain, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	if err != nil {
+		t.Fatalf("Plan (workspace): %v", err)
+	}
+	if named.ContainerName == plain.ContainerName {
+		t.Errorf("named and workspace container names collided: %q", named.ContainerName)
+	}
+	// Only the container name differs; the rest of the plan matches.
+	named.ContainerName = plain.ContainerName
+	if !reflect.DeepEqual(named, plain) {
+		t.Errorf("named plan diverges beyond ContainerName:\n named=%+v\n plain=%+v", named, plain)
+	}
+}
+
 // TestMergeImageSelectionAndPullPolicy asserts registry_mirror relocates the
 // host (path+tag preserved) and the pull policy propagates onto the Image.
 func TestMergeImageSelectionAndPullPolicy(t *testing.T) {
 	cfg := &config.Config{Shell: "zsh", RegistryMirror: "harbor.corp.io/ghcr-proxy", Pull: "never"}
-	merged, err := sessionplan.Merge(cfg, "/tmp/ws", nil, false)
+	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/tmp/ws"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -65,7 +100,7 @@ func TestMergeImageSelectionAndPullPolicy(t *testing.T) {
 // configured registry_mirror.
 func TestMergeFullImageOverrideWins(t *testing.T) {
 	cfg := &config.Config{Shell: "zsh", Image: "ghcr.io/x/y:dev", RegistryMirror: "ignored.example/proxy"}
-	merged, err := sessionplan.Merge(cfg, "/tmp/ws", nil, false)
+	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/tmp/ws"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -84,7 +119,7 @@ func TestPlanComposesMounts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -123,7 +158,7 @@ func TestPlanComposesPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"7171:7171", "8080:8080"}, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"7171:7171", "8080:8080"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -156,7 +191,7 @@ func TestPlanComputesContainerName(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -178,11 +213,11 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	a, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan a: %v", err)
 	}
-	b, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	b, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan b: %v", err)
 	}
@@ -208,7 +243,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -237,7 +272,7 @@ func TestPlanInjectsImageIdentity(t *testing.T) {
 	}
 
 	digest := "sha256:" + strings.Repeat("a", 64)
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, digest)
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, ImageDigest: digest})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -248,7 +283,7 @@ func TestPlanInjectsImageIdentity(t *testing.T) {
 		t.Errorf("Env missing TOOLBOX_CLI_VERSION=%s; got %v", version.Version, plan.Env)
 	}
 
-	bare, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	bare, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan (no digest): %v", err)
 	}
@@ -292,7 +327,7 @@ func TestPlanManagedStatuslineOptOut(t *testing.T) {
 	for _, tc := range cases {
 		cfg := testConfig()
 		cfg.ManagedStatusline = tc.managed
-		plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 		if err != nil {
 			t.Fatalf("%s: Plan: %v", tc.name, err)
 		}
@@ -313,7 +348,7 @@ func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -336,7 +371,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 	cfg := testConfig()
 	cfg.Env = map[string]string{"ZED": "z", "CLAUDE_CODE_WORKFLOWS": "1", "EMPTY": ""}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -361,7 +396,7 @@ func TestMergeUserEnvAppended(t *testing.T) {
 	cfg := testConfig()
 	cfg.Env = map[string]string{"FOO": "bar"}
 
-	merged, err := sessionplan.Merge(cfg, "/workspace", nil, false)
+	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -384,7 +419,7 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gsd": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -430,7 +465,7 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"bmad": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -453,7 +488,7 @@ func TestPlanSDDEnvOpenSpec(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"openspec": {Enabled: true}}
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -477,7 +512,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gds": {Enabled: true}, "gsd": {Enabled: false}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -507,7 +542,7 @@ func TestPlanSDDEnvStepsOverride(t *testing.T) {
 		Steps:   [][]string{{"--claude", "--local"}},
 	}}
 
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -529,7 +564,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := sessionplan.Plan(testConfig(), workspace, []string{"not-a-port"}, false, "")
+	_, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"not-a-port"}})
 	if err == nil {
 		t.Fatal("Plan should reject malformed --publish spec")
 	}
@@ -541,7 +576,7 @@ func TestPlanRejectsBadPort(t *testing.T) {
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Plan(cfg, "/workspace", nil, false, "")
+	_, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
@@ -556,7 +591,7 @@ func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	}
 	dirty := filepath.Join(tmpHome, "foo", "..", "bar")
 
-	plan, err := sessionplan.Plan(testConfig(), dirty, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: dirty})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -586,7 +621,7 @@ func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
 // --- Merge tier (pure data, NO fs side effects) ---
 
 func TestMergeIsPure(t *testing.T) {
-	merged, err := sessionplan.Merge(testConfig(), "/workspace", nil, false)
+	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: testConfig(), Workspace: "/workspace"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -619,14 +654,14 @@ func TestMergeIsPure(t *testing.T) {
 func TestMergeRejectsBadMountsRoot(t *testing.T) {
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Merge(cfg, "/workspace", nil, false)
+	_, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("Merge should reject bare ~ as mounts_root")
 	}
 }
 
 func TestMergeRejectsBadPort(t *testing.T) {
-	_, err := sessionplan.Merge(testConfig(), "/workspace", []string{"not-a-port"}, false)
+	_, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: testConfig(), Workspace: "/workspace", Ports: []string{"not-a-port"}})
 	if err == nil {
 		t.Fatal("Merge should reject malformed --publish spec")
 	}
@@ -700,7 +735,7 @@ func TestPlanComputesCmd(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.Shell = "zsh"
-	plan, err := sessionplan.Plan(cfg, workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -719,7 +754,7 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -731,7 +766,7 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 func TestMergeAlsoComputesCmd(t *testing.T) {
 	cfg := testConfig()
 	cfg.Shell = "zsh"
-	merged, err := sessionplan.Merge(cfg, "/workspace", nil, false)
+	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -750,7 +785,7 @@ func TestPlanLoopbackBridgeOff(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, false, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -770,7 +805,7 @@ func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387"}, true, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -791,7 +826,7 @@ func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "8976:8976"}, true, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "8976:8976"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -809,7 +844,7 @@ func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, []string{"13387:13387", "9999:13387"}, true, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "9999:13387"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -827,7 +862,7 @@ func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(testConfig(), workspace, nil, true, "")
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

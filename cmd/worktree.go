@@ -219,7 +219,11 @@ func applyWorktreeSession(plan *sessionplan.SessionPlan, root, shell, agent, pro
 // in container.Shell, plus resolveImageDigest, shared with the `shell` command.
 func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
 	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
-	plan, err := sessionplan.Plan(cfg, wtPath, nil, false, imageDigest)
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Cfg:         cfg,
+		Workspace:   wtPath,
+		ImageDigest: imageDigest,
+	})
 	if err != nil {
 		return err
 	}
