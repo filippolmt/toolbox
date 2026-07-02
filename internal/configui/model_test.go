@@ -1,12 +1,31 @@
 package configui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/textinput"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configedit"
 )
+
+// TestResetInheritedKeyIsNoOp: pressing reset on a key the selected scope does
+// not set reports "nothing to reset" and never touches a file (guarded before
+// any write path, so an empty cwd/target is safe).
+func TestResetInheritedKeyIsNoOp(t *testing.T) {
+	m := &Model{
+		scope:  ScopeRepo,
+		states: []KeyState{{Key: "pull", Origin: configedit.OriginGlobal, ScopeSet: false}},
+	}
+	m.resetToDefault()
+	if !strings.Contains(m.status, "nothing to reset") {
+		t.Errorf("reset on an inherited key must say nothing to reset, got %q", m.status)
+	}
+	if !strings.Contains(m.status, "global") {
+		t.Errorf("reset status should name the inherited layer, got %q", m.status)
+	}
+}
 
 // The rows reducer is pure state manipulation on m.ed; these drive it directly
 // (no tea key stream) so the row-edit state machine is covered without a TTY.

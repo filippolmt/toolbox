@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
@@ -517,6 +518,102 @@ func TestSaveMountDisabledKeepsRichPatch(t *testing.T) {
 	}
 	if got := readFile(t, target); !strings.Contains(got, "/custom/path") {
 		t.Errorf("rich patch must survive a re-enable, got:\n%s", got)
+	}
+}
+
+// TestScopeStatesPerFile: a file's own view reports only the keys that file
+// sets — the data behind the per-scope "in <scope>" line. A key set in one
+// layer's file is absent from the other layer's ScopeStates.
+func TestScopeStatesPerFile(t *testing.T) {
+	repo := t.TempDir()
+	globalPath := filepath.Join(repo, "global.yaml")
+	repoPath := filepath.Join(repo, ".toolbox.yaml")
+	writeFile(t, globalPath, "pull: never\n")
+	writeFile(t, repoPath, "agent: codex\n")
+
+	global, err := ScopeStates(globalPath)
+	if err != nil {
+		t.Fatalf("ScopeStates global: %v", err)
+	}
+	if !global["pull"].set || global["pull"].display != "never" {
+		t.Errorf("global scope must set pull=never, got %+v", global["pull"])
+	}
+	if global["agent"].set {
+		t.Errorf("global scope must NOT set agent, got %+v", global["agent"])
+	}
+
+	rep, err := ScopeStates(repoPath)
+	if err != nil {
+		t.Fatalf("ScopeStates repo: %v", err)
+	}
+	if !rep["agent"].set || rep["agent"].display != "codex" {
+		t.Errorf("repo scope must set agent=codex, got %+v", rep["agent"])
+	}
+	if rep["pull"].set {
+		t.Errorf("repo scope must NOT set pull, got %+v", rep["pull"])
+	}
+}
+
+// TestScopeStatesMissingFile: a scope whose file does not exist reports every
+// key as unset (all inherited), never an error.
+func TestScopeStatesMissingFile(t *testing.T) {
+	got, err := ScopeStates(filepath.Join(t.TempDir(), "absent.yaml"))
+	if err != nil {
+		t.Fatalf("ScopeStates missing: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("a missing file must yield an all-unset map, got %+v", got)
+	}
+}
+
+// TestScopeStatesCollectionCount: a collection key's per-scope display counts
+// the entries present in that file.
+func TestScopeStatesCollectionCount(t *testing.T) {
+	repo := t.TempDir()
+	path := filepath.Join(repo, ".toolbox.yaml")
+	writeFile(t, path, "env:\n  FOO: bar\n  BAZ: qux\n")
+
+	got, err := ScopeStates(path)
+	if err != nil {
+		t.Fatalf("ScopeStates: %v", err)
+	}
+	if got["env"].display != "2 vars" {
+		t.Errorf("env per-scope display = %q, want %q", got["env"].display, "2 vars")
+	}
+}
+
+// TestScopeStatesBrowserBridgeFold: a file that sets only the deprecated
+// browser_bridge counts as setting bridge in that scope.
+func TestScopeStatesBrowserBridgeFold(t *testing.T) {
+	repo := t.TempDir()
+	path := filepath.Join(repo, ".toolbox.yaml")
+	writeFile(t, path, "browser_bridge: false\n")
+
+	got, err := ScopeStates(path)
+	if err != nil {
+		t.Fatalf("ScopeStates: %v", err)
+	}
+	if !got["bridge"].set {
+		t.Errorf("browser_bridge in a file must count as bridge being set in that scope, got %+v", got["bridge"])
+	}
+}
+
+// TestDisplayValueHintNotDoubled: keys with no default value to echo render a
+// single bare hint, not the doubled "(hint) (default)" the old orDefault made.
+func TestDisplayValueHintNotDoubled(t *testing.T) {
+	empty := &config.Config{}
+	for key, want := range map[string]string{
+		"image":           "(default)",
+		"registry_mirror": "(none)",
+		"mounts_root":     "(~/.toolbox)",
+	} {
+		if got := displayValue(empty, key); got != want {
+			t.Errorf("displayValue(%q) = %q, want %q", key, got, want)
+		}
+	}
+	// pull keeps the "<value> (default)" form.
+	if got := displayValue(empty, "pull"); got != "auto (default)" {
+		t.Errorf("displayValue(pull) = %q, want %q", got, "auto (default)")
 	}
 }
 

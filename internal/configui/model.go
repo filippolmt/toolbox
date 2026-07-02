@@ -47,6 +47,7 @@ type editor struct {
 	key      string
 	kind     editorKind
 	options  []string        // enum / tri / multi option labels
+	current  string          // enum / tri option matching the current effective value
 	cursor   int             // option cursor / row cursor
 	selected map[string]bool // multi-select toggles
 	input    textinput.Model // string / row-field editor
@@ -102,6 +103,20 @@ func (m *Model) reload() {
 	if err != nil {
 		m.loadErr = err
 		return
+	}
+	// Enrich the (scope-agnostic) effective snapshot with the selected scope's
+	// own view of each key, so the detail pane can show "in <scope>" and the tab
+	// visibly changes what it reports.
+	scoped, err := ScopeStates(target)
+	if err != nil {
+		m.loadErr = err
+		return
+	}
+	for i := range states {
+		if s, ok := scoped[states[i].Key]; ok {
+			states[i].ScopeSet = s.set
+			states[i].ScopeDisplay = s.display
+		}
 	}
 	m.loadErr = nil
 	m.cfg = cfg
@@ -192,10 +207,17 @@ func (m *Model) openEditor() {
 		return
 	}
 	key := st.Key
-	m.status = ""
+	// Signal when the edit will fork a value into a scope that does not set it,
+	// so creating an override is a deliberate act, not a surprise.
+	if st.ScopeSet {
+		m.status = ""
+	} else {
+		m.status = fmt.Sprintf("editing creates an override in %s", m.scope)
+	}
 
 	if opts := EnumOptions(key); opts != nil {
-		m.ed = editor{key: key, kind: edEnum, options: opts, cursor: indexOf(opts, StringValue(m.cfg, key))}
+		cur := StringValue(m.cfg, key)
+		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, cursor: indexOf(opts, cur)}
 		m.editing = true
 		return
 	}
@@ -207,7 +229,8 @@ func (m *Model) openEditor() {
 		m.ed = editor{key: key, kind: edString, input: ti}
 		m.editing = true
 	case "bridge", "proximo", "managed_statusline":
-		m.ed = editor{key: key, kind: edTri, options: triChoices, cursor: indexOf(triChoices, triState(BoolValue(m.cfg, key)))}
+		cur := triState(BoolValue(m.cfg, key))
+		m.ed = editor{key: key, kind: edTri, options: triChoices, current: cur, cursor: indexOf(triChoices, cur)}
 		m.editing = true
 	case "inherit_host_auth":
 		opts := HostAuthOptions()
@@ -267,6 +290,10 @@ func (m *Model) resetToDefault() {
 	st := m.states[m.cursor]
 	if st.FromEnv {
 		m.status = fmt.Sprintf("%s is env-sourced; unset TOOLBOX_%s on the host instead", st.Key, strings.ToUpper(st.Key))
+		return
+	}
+	if !st.ScopeSet {
+		m.status = fmt.Sprintf("%s is not set in %s (inherits %s) — nothing to reset", st.Key, m.scope, originLabel(st))
 		return
 	}
 	if err := Unset(m.target, m.cwd, st.Key); err != nil {
@@ -404,18 +431,23 @@ func indexOf(opts []string, v string) int {
 	return 0
 }
 
-// originLabel is a short provenance tag for the key list.
+// originLabel is a short provenance tag for the key list. A collection whose
+// entries span more than one layer is tagged "mixed" — a single label cannot
+// honestly name one winning layer for it. (OriginExplicit is unreachable here:
+// the UI only ever resolves the global/repo layers it can write, never a
+// --config override, so it collapses into the default tag.)
 func originLabel(st KeyState) string {
 	if st.FromEnv {
 		return "env"
+	}
+	if st.Mixed {
+		return "mixed"
 	}
 	switch st.Origin {
 	case configedit.OriginGlobal:
 		return "global"
 	case configedit.OriginProject:
 		return "repo"
-	case configedit.OriginExplicit:
-		return "--config"
 	default:
 		return "default"
 	}
