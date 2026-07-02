@@ -201,6 +201,7 @@ Inspect and scaffold `.toolbox.yaml`. Key semantics live in [configuration](conf
 | `edit` | Open the highest-precedence config file in `$EDITOR`. |
 | `set [--image] [--registry-mirror] [--pull] [--agent] [--where]` | Set the scalar keys (empty value resets the key). |
 | `doctor` | Validate the configuration without modifying it. |
+| `ui` | Interactively view and edit `.toolbox.yaml` across the Global and Repo layers (requires a TTY). |
 
 ### config provenance & doctor
 
@@ -209,6 +210,14 @@ Inspect and scaffold `.toolbox.yaml`. Key semantics live in [configuration](conf
 `toolbox config doctor` is a strict read-only superset of the load path's validation tail (`configedit.Doctor`): it surfaces `Plan`/`Merge` errors, flags unknown top-level keys per layer (key set derived from `Config`'s mapstructure tags, with Levenshtein suggestions), warns on the legacy `tools:` block (→ [tools-removal](internals/image-build.md#tools-removal)), checks `shells.<name>.path` (empty = error, missing dir = warning — it may be created by `--create`), and runs `mountplan.Merge` (failure = error, duplicate resolved targets = warning; mountplan doesn't dedupe, the last bind wins silently at the Docker layer). Exit 1 iff at least one error-severity finding.
 
 `config path` lists the layers in precedence order with found/none markers; `config edit` opens `$EDITOR` (fallback `vi`) on the highest-precedence existing file — explicit `--config` > walked-up project > global — creating `~/.toolbox.yaml` with the documentation header when none exists. Both reuse the `config.LoadLayers` / `config.WalkUpProjectConfig` exports extracted from `Plan` (a pure refactor: `Plan ≡ Merge(LoadLayers(...))`, regression-tested).
+
+### config ui
+
+`toolbox config ui` launches an interactive terminal UI (bubbletea) for browsing and editing configuration across two layers, **Global** (`~/.toolbox.yaml`) and **Repo** (the walked-up `.toolbox.yaml`, created on first save when none exists) — switch with `tab`. It is a thin presentation layer, not a second config engine: every value and its owning layer come from the same `config.Plan` / `configedit.Compute` the CLI already uses, every save is gated by `configedit.Doctor` and written through the comment-preserving `configio` path (`config set`'s writer), so comments and key order survive and an invalid edit is rejected without touching the file.
+
+The key list is provenance-annotated — each key shows its effective value and the layer that supplies it (`default` / `global` / `repo` / `env`), colour-coded. Values coming from a `TOOLBOX_*` env var are shown read-only (writing a file value the env var still overrides would only confuse). Each key gets an editor matched to its type: bounded select for enums (`pull` / `agent` / `shell`), free text for strings (`image` / `registry_mirror` / `mounts_root`), a three-way toggle for the optional bools (`bridge` / `proximo` / `managed_statusline`) where *unset* is persisted by removing the key (distinct from `false` — e.g. `proximo` unset = auto-detect), a catalog-driven multi-select for [`inherit_host_auth`](configuration.md#inherit-host-auth), row editors for the `env` / `shells` maps and the `worktree.seed` list, and a multi-select disable editor for the default [`mounts`](mounts.md#mounts-merge-semantics) plus an enable toggle for [`sdd`](sdd.md) skill packs. A live YAML preview shows the exact fragment a pending edit would write before it is saved; `r` resets the selected key to its default (the same key-removal path as tri-state unset). The deprecated `browser_bridge` is never shown as its own row — its value surfaces through `bridge`.
+
+For the two hardest keys, `mounts` and `sdd`, the structured editors cover the common operations (disable a default mount; enable a skill pack) and `e` opens the target file in `$EDITOR` (fallback `vi`) as an escape hatch for cases the structured editor does not cover — richer `mounts` patch/replace/append entries and custom `sdd.<key>.steps` — re-reading the file on return. The command requires an interactive terminal on both stdin and stdout; run without a TTY (piped or in CI) it exits non-zero with a clear message and changes nothing.
 
 ## toolbox mounts
 

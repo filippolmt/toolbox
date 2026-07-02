@@ -26,7 +26,7 @@ sections.**
 - [toolbox build](commands.md#toolbox-build)
 - [toolbox version](commands.md#toolbox-version)
 - [toolbox init](commands.md#toolbox-init)
-- [toolbox config](commands.md#toolbox-config) — [config provenance & doctor](commands.md#config-provenance--doctor)
+- [toolbox config](commands.md#toolbox-config) — [config provenance & doctor](commands.md#config-provenance--doctor), [config ui](commands.md#config-ui)
 - [toolbox mounts](commands.md#toolbox-mounts)
 - [toolbox shells](commands.md#toolbox-shells)
 - [toolbox bridge](commands.md#toolbox-bridge)
