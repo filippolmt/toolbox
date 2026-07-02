@@ -89,11 +89,11 @@ func SetShellEnv(path, name string, env map[string]string) (bool, error) {
 func RemoveShell(path, name string) (bool, error) {
 	return Upsert(path, func(doc *yaml.Node) {
 		shellsMap := configio.ChildValue(doc, "shells")
-		if !removeMapKey(shellsMap, name) {
+		if !configio.RemoveMapKey(shellsMap, name) {
 			return
 		}
 		if len(shellsMap.Content) == 0 {
-			removeMapKey(doc, "shells")
+			configio.RemoveMapKey(doc, "shells")
 		}
 	})
 }
@@ -108,9 +108,9 @@ func RemoveShell(path, name string) (bool, error) {
 // mergeMounts reads the list. Callers validate the mount before writing.
 func AddMount(path string, m config.Mount) (bool, error) {
 	return Upsert(path, func(doc *yaml.Node) {
-		seq := ensureChildSeq(doc, "mounts")
+		seq := configio.EnsureChildSeq(doc, "mounts")
 		node := mountNode(m)
-		if idx, _ := findSeqEntryByName(seq, m.Name); idx >= 0 {
+		if idx, _ := configio.FindSeqEntryByName(seq, m.Name); idx >= 0 {
 			seq.Content[idx] = node
 			return
 		}
@@ -123,8 +123,8 @@ func AddMount(path string, m config.Mount) (bool, error) {
 // shape mergeMounts reads is appended.
 func DisableMount(path, name string) (bool, error) {
 	return Upsert(path, func(doc *yaml.Node) {
-		seq := ensureChildSeq(doc, "mounts")
-		if _, entry := findSeqEntryByName(seq, name); entry != nil {
+		seq := configio.EnsureChildSeq(doc, "mounts")
+		if _, entry := configio.FindSeqEntryByName(seq, name); entry != nil {
 			configio.SetMapBool(entry, "disabled", true)
 			return
 		}
@@ -145,13 +145,13 @@ func RemoveMount(path, name string) (bool, error) {
 		if seq == nil || seq.Kind != yaml.SequenceNode {
 			return
 		}
-		idx, _ := findSeqEntryByName(seq, name)
+		idx, _ := configio.FindSeqEntryByName(seq, name)
 		if idx < 0 {
 			return
 		}
 		seq.Content = append(seq.Content[:idx], seq.Content[idx+1:]...)
 		if len(seq.Content) == 0 {
-			removeMapKey(doc, "mounts")
+			configio.RemoveMapKey(doc, "mounts")
 		}
 	})
 }
@@ -180,7 +180,7 @@ func SetScalars(path string, edits []ScalarEdit) (bool, error) {
 	return Upsert(path, func(doc *yaml.Node) {
 		for _, e := range edits {
 			if e.Value == "" {
-				removeMapKey(doc, e.Key)
+				configio.RemoveMapKey(doc, e.Key)
 				continue
 			}
 			configio.SetMapValue(doc, e.Key, e.Value)
@@ -245,47 +245,6 @@ func readYAMLFile(path string, out any) error {
 	return nil
 }
 
-// =============================================================================
-// yaml.Node sequence helpers (private until a second consumer justifies
-// graduating them to configio — D7)
-// =============================================================================
-
-// ensureChildSeq looks up key on parent and returns its sequence-node value,
-// creating an empty sequence when the key is absent or its value is not a
-// sequence. Style is reset to block so appending to a flow `[]` placeholder
-// renders multi-line entries readably.
-func ensureChildSeq(parent *yaml.Node, key string) *yaml.Node {
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			v := parent.Content[i+1]
-			if v.Kind != yaml.SequenceNode {
-				*v = yaml.Node{Kind: yaml.SequenceNode}
-			}
-			v.Style = 0
-			return v
-		}
-	}
-	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-	v := &yaml.Node{Kind: yaml.SequenceNode}
-	parent.Content = append(parent.Content, k, v)
-	return v
-}
-
-// findSeqEntryByName scans seq for a mapping item whose name: scalar equals
-// name, returning its index and node, or (-1, nil) when absent.
-func findSeqEntryByName(seq *yaml.Node, name string) (int, *yaml.Node) {
-	for i, item := range seq.Content {
-		if item.Kind != yaml.MappingNode {
-			continue
-		}
-		if v := configio.ChildValue(item, "name"); v != nil && v.Kind == yaml.ScalarNode && v.Value == name {
-			return i, item
-		}
-	}
-	return -1, nil
-}
-
 // mountNode renders a config.Mount as the replace/append mapping shape
 // mergeMounts reads. Zero-valued fields are omitted so the file stays
 // minimal.
@@ -302,20 +261,4 @@ func mountNode(m config.Mount) *yaml.Node {
 		configio.SetMapBool(n, "readonly", true)
 	}
 	return n
-}
-
-// removeMapKey deletes the key/value pair named key from a mapping node,
-// reporting whether anything was removed.
-func removeMapKey(parent *yaml.Node, key string) bool {
-	if parent == nil || parent.Kind != yaml.MappingNode {
-		return false
-	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			parent.Content = append(parent.Content[:i], parent.Content[i+2:]...)
-			return true
-		}
-	}
-	return false
 }

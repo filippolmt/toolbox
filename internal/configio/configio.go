@@ -146,14 +146,8 @@ func EnsureChildMap(parent *yaml.Node, key string) *yaml.Node {
 // deciding whether to mutate it (e.g. cmd/sdd refusing to clobber an
 // object-form sdd.<key> entry with the bool shorthand).
 func ChildValue(parent *yaml.Node, key string) *yaml.Node {
-	if parent == nil || parent.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			return parent.Content[i+1]
-		}
+	if i := mapPairIndex(parent, key); i >= 0 {
+		return parent.Content[i+1]
 	}
 	return nil
 }
@@ -205,13 +199,10 @@ func findOrAppendPair(
 	if len(parent.Content)%2 != 0 {
 		parent.Content = parent.Content[:len(parent.Content)-1]
 	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		k := parent.Content[i]
-		if k.Kind == yaml.ScalarNode && k.Value == key {
-			v := parent.Content[i+1]
-			prepare(v)
-			return v
-		}
+	if i := mapPairIndex(parent, key); i >= 0 {
+		v := parent.Content[i+1]
+		prepare(v)
+		return v
 	}
 	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
 	v := make()
