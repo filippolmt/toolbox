@@ -198,10 +198,8 @@ func resolveShellProfile(cmd *cobra.Command, name string, share []string) (*moun
 		}
 		return nil, nil
 	}
-	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
-		return nil, fmt.Errorf("--profile %q: name must not be '.', '..', or contain a path separator", name)
-	}
-	return &mountplan.Profile{Name: name, Share: share}, nil
+	// Name validation (trust boundary) lives in the Profile constructor.
+	return mountplan.NewProfile(name, share)
 }
 
 // warnIfNewProfile prints a one-line stderr notice when a --profile names a

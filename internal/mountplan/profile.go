@@ -1,6 +1,7 @@
 package mountplan
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -15,13 +16,26 @@ const profilesRoot = "~/.toolbox/profiles/"
 // type keeps the "share only under a profile" invariant in a single place —
 // Share is meaningless without a Name.
 type Profile struct {
-	// Name is validated by the caller before construction: non-empty, no path
-	// separator, not "." / "..". It becomes both the root sub-path and a
-	// container-name discriminator.
+	// Name is the profile identifier — validated by NewProfile (non-empty, no
+	// path separator, not "." / ".."), since it becomes both a host filesystem
+	// sub-path via Root() and a container-name discriminator.
 	Name string
 	// Share holds the --share tokens whose mounts stay on the host root even
 	// under this profile.
 	Share []string
+}
+
+// NewProfile validates name and returns the profile. Name is a trust boundary
+// — it becomes a host path under ~/.toolbox/profiles/ — so path separators and
+// the "." / ".." / empty cases are rejected here rather than trusting callers.
+func NewProfile(name string, share []string) (*Profile, error) {
+	if name == "" {
+		return nil, fmt.Errorf("profile name must not be empty")
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return nil, fmt.Errorf("profile name %q must not be '.', '..', or contain a path separator", name)
+	}
+	return &Profile{Name: name, Share: share}, nil
 }
 
 // Root is the mounts root a profile retargets ~/.toolbox/ sources to. It wins

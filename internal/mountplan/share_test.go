@@ -138,6 +138,23 @@ func TestContainerDiscriminator(t *testing.T) {
 	}
 }
 
+// TestNewProfile: the constructor owns name validation (trust boundary), so a
+// bad name can never reach Root() as a path.
+func TestNewProfile(t *testing.T) {
+	for _, bad := range []string{"", ".", "..", "a/b", `a\b`, "../escape"} {
+		if _, err := NewProfile(bad, nil); err == nil {
+			t.Errorf("NewProfile(%q): want error, got nil", bad)
+		}
+	}
+	p, err := NewProfile("work", []string{"gh"})
+	if err != nil {
+		t.Fatalf("NewProfile(work): %v", err)
+	}
+	if p.Root() != "~/.toolbox/profiles/work" {
+		t.Errorf("Root() = %q, want %q", p.Root(), "~/.toolbox/profiles/work")
+	}
+}
+
 func TestShareCovers(t *testing.T) {
 	cases := []struct {
 		shared []string
