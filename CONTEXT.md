@@ -25,6 +25,35 @@ spread across `internal/config` (defaults + merge + root retarget),
 others; tests stubbed each in isolation and bugs hid in the handoffs.
 The "Mount Plan" name turns one fragmented walk into one deep module.
 
+### Config Schema
+
+The single source of truth for "which config fields exist":
+`config.SchemaKeys()` reflects the `mapstructure` tags of `Config` in
+declaration order. Owned by `internal/config` (`schema.go`).
+
+Every consumer that used to hand-enumerate the field set now derives from
+or is guarded against it: provenance (`configedit.diffLayer`) reflects over
+`Config` generically — scalar/slice/map/pointer/struct fields compared by
+`DeepEqual` keyed by tag, so a new field is attributed with no per-field
+branch (shells + mounts keep per-entry attribution via `perEntryDiffKeys`);
+validation runs the `config.fieldValidators` table, with `noValidationKeys`
+the explicit exemption set; the resolved renderer (`cmd/config.go`) and the
+annotated example (`internal/configexample`) each stay complete via a
+coverage test that reflects `SchemaKeys()` and fails on an unrendered /
+undocumented field. The deprecated `browser_bridge` alias is the one
+documented exception — tracked in provenance but rendered only as the
+canonical `bridge`.
+
+Why the term exists: before this concept was named, the sixteen config
+fields were hand-enumerated across five independent sites (struct, validation
+tail, provenance diff, resolved renderer, annotated example) with no
+cross-reference tie. Adding a field meant editing each by hand, and the drift
+this invited had already shipped — `managed_statusline` reached only the
+struct and its consumer, silently missing provenance, renderer, and example;
+`agent` missed provenance and example. The "Config Schema" name makes the
+reflected tag list the one authority and turns every omission from a silent
+runtime gap into a red coverage test, mirroring the Tool Catalog deepening.
+
 ### Tool Catalog
 
 The canonical declaration of every bundled tool: a single typed table

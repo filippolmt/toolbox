@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 // writeLayeredFixture seeds a global ~/.toolbox.yaml and a project
@@ -47,6 +49,51 @@ func TestComputeLayeredOrigins(t *testing.T) {
 		if got := prov[key]; got != want {
 			t.Errorf("prov[%q] = %v, want %v", key, got, want)
 		}
+	}
+}
+
+// TestDiffLayerCoversSchema is the anti-drift guard for provenance, symmetric
+// to the renderer/example/validation coverage tests: the reflection walk must
+// attribute every config.SchemaKeys() field (agent and managed_statusline were
+// the fields the old hand-written diffLayer silently dropped). shells/mounts
+// are attributed per entry and asserted separately. A new Config field left
+// out of the fully-populated fixture turns this red.
+func TestDiffLayerCoversSchema(t *testing.T) {
+	yes := true
+	full := &config.Config{
+		Shell:             "zsh",
+		Agent:             "codex",
+		Image:             "img",
+		RegistryMirror:    "mirror",
+		Pull:              "always",
+		MountsRoot:        "~/r",
+		Bridge:            &yes,
+		BrowserBridge:     &yes,
+		Proximo:           &yes,
+		ManagedStatusline: &yes,
+		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
+		Env:               map[string]string{"FOO": "bar"},
+		Worktree:          config.WorktreeConfig{Seed: []string{".env"}},
+		InheritHostAuth:   []string{"gh"},
+		Shells:            map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}},
+		Mounts:            []config.Mount{{Name: "extra", Source: "/tmp/x"}},
+	}
+	prov := Provenance{}
+	diffLayer(prov, &config.Config{}, full, OriginProject)
+
+	for _, key := range config.SchemaKeys() {
+		if perEntryDiffKeys[key] {
+			continue // attributed per entry (shells.<name>/mounts.<name>), checked below
+		}
+		if prov[key] != OriginProject {
+			t.Errorf("diffLayer did not attribute key %q — the reflection walk must cover every field", key)
+		}
+	}
+	if prov[ShellKey("infra")] != OriginProject {
+		t.Errorf("per-entry shells attribution lost: shells.infra not attributed")
+	}
+	if prov[MountKey("extra")] != OriginProject {
+		t.Errorf("per-entry mounts attribution lost: mounts.extra not attributed")
 	}
 }
 

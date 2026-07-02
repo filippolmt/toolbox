@@ -106,47 +106,28 @@ func Compute(searchFrom, explicitOverride string) (Provenance, error) {
 	return prov, nil
 }
 
-// diffLayer credits origin to every key whose resolved value in upper
-// differs from lower (the layer below). Shells and mounts are compared per
-// entry name; everything else per top-level container key.
+// perEntryDiffKeys are the collection fields attributed per entry (by name)
+// rather than per top-level key; the generic field walk skips them and the
+// hand-written passes below handle their finer-grained attribution.
+var perEntryDiffKeys = map[string]bool{"shells": true, "mounts": true}
+
+// diffLayer credits origin to every key whose resolved value in upper differs
+// from lower (the layer below). Scalar / slice / map / pointer / struct fields
+// are compared generically by reflecting over Config keyed by the mapstructure
+// tag, so a new field is tracked the moment it is added — no per-field branch
+// to forget (the gap that once dropped agent and managed_statusline). Shells
+// and mounts keep per-entry attribution.
 func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
-	if upper.Shell != lower.Shell {
-		prov["shell"] = origin
-	}
-	if upper.MountsRoot != lower.MountsRoot {
-		prov["mounts_root"] = origin
-	}
-	if upper.Image != lower.Image {
-		prov["image"] = origin
-	}
-	if upper.RegistryMirror != lower.RegistryMirror {
-		prov["registry_mirror"] = origin
-	}
-	if upper.Pull != lower.Pull {
-		prov["pull"] = origin
-	}
-	if !reflect.DeepEqual(upper.InheritHostAuth, lower.InheritHostAuth) {
-		prov["inherit_host_auth"] = origin
-	}
-	if !reflect.DeepEqual(upper.SDD, lower.SDD) {
-		prov["sdd"] = origin
-	}
-	if !boolPtrEqual(upper.Bridge, lower.Bridge) {
-		prov["bridge"] = origin
-	}
-	// Deprecated spelling — still tracked so `config show --origin` explains
-	// where a legacy browser_bridge: came from until the user renames it.
-	if !boolPtrEqual(upper.BrowserBridge, lower.BrowserBridge) {
-		prov["browser_bridge"] = origin
-	}
-	if !boolPtrEqual(upper.Proximo, lower.Proximo) {
-		prov["proximo"] = origin
-	}
-	if !reflect.DeepEqual(upper.Env, lower.Env) {
-		prov["env"] = origin
-	}
-	if !reflect.DeepEqual(upper.Worktree, lower.Worktree) {
-		prov["worktree"] = origin
+	lv := reflect.ValueOf(*lower)
+	uv := reflect.ValueOf(*upper)
+	for f := range reflect.TypeFor[config.Config]().Fields() {
+		tag := f.Tag.Get("mapstructure")
+		if tag == "" || tag == "-" || perEntryDiffKeys[tag] {
+			continue
+		}
+		if !reflect.DeepEqual(uv.FieldByName(f.Name).Interface(), lv.FieldByName(f.Name).Interface()) {
+			prov[tag] = origin
+		}
 	}
 	for name, s := range upper.Shells {
 		if ls, ok := lower.Shells[name]; !ok || !reflect.DeepEqual(s, ls) {
@@ -181,11 +162,4 @@ func diffMounts(prov Provenance, lower, upper []config.Mount, origin Origin) {
 	if !reflect.DeepEqual(upperAnon, lowerAnon) {
 		prov[MountKey("")] = origin
 	}
-}
-
-func boolPtrEqual(a, b *bool) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }
