@@ -127,11 +127,12 @@ across the Global (~/.toolbox.yaml) and Repo (./.toolbox.yaml) layers.
 Each key shows its resolved effective value and the layer that supplies it
 (default / global / repo / env). Edits are validated with the config doctor
 before being written through the comment-preserving writer. Requires an
-interactive terminal.`,
+interactive terminal. Edits the global and repo layers only — the global
+--config override is not an editable layer and does not apply here.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
-		return configui.Run(cwd, cfgFile)
+		return configui.Run(cwd)
 	},
 }
 

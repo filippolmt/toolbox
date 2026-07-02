@@ -27,6 +27,7 @@ const (
 	ScopeRepo
 )
 
+// String renders the scope as the label shown in the UI scope tabs.
 func (s Scope) String() string {
 	if s == ScopeRepo {
 		return "Repo"
@@ -71,7 +72,10 @@ type KeyState struct {
 // reusing config.Plan (resolution) and configedit.Compute (provenance). A key
 // still at its built-in default but overridden by a TOOLBOX_* env var is
 // marked FromEnv (Compute attributes only file layers, so env surfaces as a
-// default-origin key with the matching env var set).
+// default-origin key). env eligibility is delegated to config.EnvVarSet — only
+// config's actual env-bound keys (config.EnvBoundKeys) can be FromEnv, and a
+// key set in a file is credited to that file layer, never to env (env sits
+// below the file layers, so a file value wins and stays editable).
 func Snapshot(cwd, explicitOverride string) (*config.Config, []KeyState, error) {
 	cfg, err := config.Plan(cwd, explicitOverride)
 	if err != nil {
@@ -88,7 +92,7 @@ func Snapshot(cwd, explicitOverride string) (*config.Config, []KeyState, error) 
 			Origin:  originFor(prov, key),
 			Display: displayValue(cfg, key),
 		}
-		if st.Origin == configedit.OriginDefault && envSet(key) {
+		if st.Origin == configedit.OriginDefault && config.EnvVarSet(key) {
 			st.FromEnv = true
 		}
 		states = append(states, st)
@@ -112,12 +116,6 @@ func originFor(prov configedit.Provenance, key string) configedit.Origin {
 		}
 	}
 	return best
-}
-
-// envSet reports whether the TOOLBOX_* env var backing a top-level key is set.
-// Mirrors viper's AutomaticEnv mapping (prefix + upper-cased key).
-func envSet(key string) bool {
-	return os.Getenv("TOOLBOX_"+strings.ToUpper(key)) != ""
 }
 
 // displayValue renders a short, list-friendly summary of a key's effective
@@ -525,10 +523,14 @@ func Unset(target, cwd, key string) error {
 }
 
 // apply mutates target through the comment-preserving writer, then validates
-// the resulting merged configuration with the config doctor. When the result
-// would be invalid it restores the file to its previous contents and returns
-// the validation error, so a rejected edit leaves the file byte-identical and
-// nothing invalid is ever left on disk.
+// with the config doctor scoped so the just-written file is the authoritative
+// (explicit) layer — validating the edited file itself, not merely the merged
+// result. That distinction matters: a lower layer's invalid value can be
+// masked by a higher layer's override in the plain merge, so validating the
+// merge alone would let an invalid value persist unnoticed in the file that was
+// written. On failure it restores the file to its pre-edit state (original
+// bytes, or removal when the edit created it) and returns the validation error,
+// so a rejected edit never leaves invalid config on disk.
 //
 // ponytail: validation is write-then-doctor-then-rollback rather than building
 // the candidate document in memory — it reuses Doctor (which loads from disk)
@@ -543,7 +545,7 @@ func apply(target, cwd string, mutate func(*yaml.Node)) error {
 	if _, err := configedit.Upsert(target, mutate); err != nil {
 		return err
 	}
-	if findings := configedit.Doctor(cwd, ""); configedit.HasErrors(findings) {
+	if findings := configedit.Doctor(cwd, target); configedit.HasErrors(findings) {
 		if rbErr := rollback(target, orig, existed); rbErr != nil {
 			return fmt.Errorf("%w (rollback failed: %v)", firstError(findings), rbErr)
 		}

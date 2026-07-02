@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -97,6 +98,24 @@ func LoadLayers(searchFrom string, explicitOverride string) (global, project, ex
 }
 
 // Merge layers global / project / explicit YAML byte buffers (any of which may
+// EnvBoundKeys are the only config keys resolvable from a TOOLBOX_* environment
+// variable. viper's AutomaticEnv resolves an env var only for a key already in
+// its key set, so a key resolves from env iff it is seeded/bound in Merge (the
+// loop below is driven by this list). Every other key silently ignores its
+// TOOLBOX_* var at Unmarshal, so consumers reasoning about env provenance (e.g.
+// configui's read-only marking) MUST consult this set rather than assuming
+// every key is env-bindable.
+var EnvBoundKeys = []string{"bridge", "image", "registry_mirror", "pull"}
+
+// EnvVarSet reports whether key is env-bindable and its TOOLBOX_* variable is
+// currently set — the single source of truth for "this key's effective value
+// comes from the environment".
+func EnvVarSet(key string) bool {
+	return slices.Contains(EnvBoundKeys, key) && os.Getenv(envVarName(key)) != ""
+}
+
+func envVarName(key string) string { return "TOOLBOX_" + strings.ToUpper(key) }
+
 // be nil) into a fully-validated *Config. Pure: no filesystem side-effects.
 // Each invocation uses a fresh *viper.Viper so callers see no cross-call state.
 func Merge(global, project, explicit []byte) (*Config, error) {
@@ -114,11 +133,16 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	// (the default lives there instead). Same reason browser_bridge itself
 	// is neither seeded nor bound: non-nil must mean "the user wrote it".
 	// Explicit env name: SetEnvPrefix runs later in Merge, and BindEnv with a
-	// single argument captures the prefix at call time.
-	_ = vp.BindEnv("bridge", "TOOLBOX_BRIDGE")
-	vp.SetDefault("image", "")
-	vp.SetDefault("registry_mirror", "")
-	vp.SetDefault("pull", "")
+	// single argument captures the prefix at call time. Derived from
+	// EnvBoundKeys so the env-resolvable set has a single source of truth (the
+	// same set configui consults for env provenance).
+	for _, k := range EnvBoundKeys {
+		if k == "bridge" {
+			_ = vp.BindEnv(k, envVarName(k))
+		} else {
+			vp.SetDefault(k, "")
+		}
+	}
 
 	warnLegacyTools(global, project, explicit)
 	warnLegacyBrowserBridge(global, project, explicit)

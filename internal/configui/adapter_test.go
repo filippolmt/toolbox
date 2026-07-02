@@ -104,19 +104,98 @@ func TestSnapshotDefault(t *testing.T) {
 	}
 }
 
-// TestSnapshotEnv: a TOOLBOX_* override surfaces as a read-only env-sourced key.
+// TestSnapshotEnv: a TOOLBOX_* override of an env-bound key surfaces as a
+// read-only env-sourced key.
 func TestSnapshotEnv(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
-	t.Setenv("TOOLBOX_AGENT", "codex")
+	t.Setenv("TOOLBOX_PULL", "never") // pull is env-bound (config.EnvBoundKeys)
 
 	_, states, err := Snapshot(repo, "")
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	agent := stateFor(t, states, "agent")
-	if !agent.FromEnv {
-		t.Errorf("agent must be marked FromEnv when TOOLBOX_AGENT is set, got %+v", agent)
+	pull := stateFor(t, states, "pull")
+	if !pull.FromEnv {
+		t.Errorf("pull must be marked FromEnv when TOOLBOX_PULL is set, got %+v", pull)
+	}
+}
+
+// TestSnapshotEnvIgnoresUnboundKey: a TOOLBOX_* var for a key config does NOT
+// env-bind must not falsely mark the key read-only (regression: envSet used to
+// over-report every key).
+func TestSnapshotEnvIgnoresUnboundKey(t *testing.T) {
+	isolatedHome(t)
+	repo := t.TempDir()
+	t.Setenv("TOOLBOX_AGENT", "codex") // agent is NOT env-bound
+
+	_, states, err := Snapshot(repo, "")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if agent := stateFor(t, states, "agent"); agent.FromEnv {
+		t.Errorf("agent must NOT be FromEnv (not in config.EnvBoundKeys), got %+v", agent)
+	}
+}
+
+// TestSnapshotBrowserBridgeFold: a file that sets only the deprecated
+// browser_bridge is surfaced through the bridge control (spec: deprecated key
+// handling). false differs from the true default, so it also lands as a repo
+// override rather than collapsing into the default.
+func TestSnapshotBrowserBridgeFold(t *testing.T) {
+	isolatedHome(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, ".toolbox.yaml"), "browser_bridge: false\n")
+
+	_, states, err := Snapshot(repo, "")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	bridge := stateFor(t, states, "bridge")
+	if bridge.Display != "false" {
+		t.Errorf("browser_bridge value must surface through bridge, got Display=%q", bridge.Display)
+	}
+	if bridge.Origin != configedit.OriginProject {
+		t.Errorf("folded browser_bridge must be attributed to the repo layer, got %v", bridge.Origin)
+	}
+}
+
+// TestSnapshotShellsOrigin: a per-entry shells override credits the shells
+// container row to the repo layer (originFor aggregation).
+func TestSnapshotShellsOrigin(t *testing.T) {
+	isolatedHome(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, ".toolbox.yaml"), "shells:\n  infra:\n    path: /repo/infra\n")
+
+	_, states, err := Snapshot(repo, "")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if shells := stateFor(t, states, "shells"); shells.Origin != configedit.OriginProject {
+		t.Errorf("shells row must credit the repo layer via per-entry aggregation, got %v", shells.Origin)
+	}
+}
+
+// TestTargetPath: global resolves under home; a repo scope with no file resolves
+// to ./.toolbox.yaml in the working directory.
+func TestTargetPath(t *testing.T) {
+	home := isolatedHome(t)
+	repo := t.TempDir()
+
+	global, err := TargetPath(ScopeGlobal, repo)
+	if err != nil {
+		t.Fatalf("TargetPath global: %v", err)
+	}
+	if filepath.Dir(global) != home {
+		t.Errorf("global target = %q, want it under home %q", global, home)
+	}
+
+	local, err := TargetPath(ScopeRepo, repo)
+	if err != nil {
+		t.Fatalf("TargetPath repo: %v", err)
+	}
+	if local != filepath.Join(repo, ".toolbox.yaml") {
+		t.Errorf("repo target with no file = %q, want %q", local, filepath.Join(repo, ".toolbox.yaml"))
 	}
 }
 

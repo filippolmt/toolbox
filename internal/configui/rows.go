@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -150,7 +151,10 @@ func (m *Model) saveRows() error {
 	case "worktree":
 		return SaveSeed(m.target, m.cwd, rowsToValues(m.ed.rows))
 	}
-	return nil
+	// Unreachable today (openEditor only assigns edRows to the three keys
+	// above); an explicit error stops a future rows key from reporting a false
+	// "saved" with no write.
+	return fmt.Errorf("no rows writer for key %q", m.ed.key)
 }
 
 func rowsToPairs(rows [][2]string) map[string]string {

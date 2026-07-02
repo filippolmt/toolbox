@@ -62,8 +62,7 @@ type editor struct {
 
 // Model is the bubbletea model for `toolbox config ui`.
 type Model struct {
-	cwd      string
-	explicit string
+	cwd string
 
 	scope  Scope
 	cfg    *config.Config
@@ -83,15 +82,17 @@ type Model struct {
 
 // New builds the initial model, resolving the first snapshot for the Global
 // scope. A resolution error is held on the model and shown in View.
-func New(cwd, explicit string) Model {
-	m := Model{cwd: cwd, explicit: explicit, scope: ScopeGlobal}
+func New(cwd string) Model {
+	m := Model{cwd: cwd, scope: ScopeGlobal}
 	m.reload()
 	return m
 }
 
-// reload re-resolves the snapshot and write target for the current scope.
+// reload re-resolves the snapshot and write target for the current scope. The
+// UI edits the global/repo layers only, so it resolves with no explicit
+// override (empty) — its view matches exactly the layers it can write.
 func (m *Model) reload() {
-	cfg, states, err := Snapshot(m.cwd, m.explicit)
+	cfg, states, err := Snapshot(m.cwd, "")
 	if err != nil {
 		m.loadErr = err
 		return
@@ -177,7 +178,9 @@ func (m *Model) toggleScope() {
 }
 
 // openEditor opens the editor matched to the selected key's type. Env-sourced
-// keys are read-only; keys without a Phase-1 editor report their status.
+// keys are read-only. The default branch is a defensive guard: every current
+// UI key has an explicit editor, but a config key added without a matching
+// branch here surfaces a status message instead of silently doing nothing.
 func (m *Model) openEditor() {
 	if len(m.states) == 0 {
 		return
@@ -249,11 +252,12 @@ func (m Model) openInEditor() (tea.Model, tea.Cmd) {
 		m.status = "open in $EDITOR failed: " + err.Error()
 		return m, nil
 	}
-	name := os.Getenv("EDITOR")
-	if name == "" {
-		name = "vi"
+	// strings.Fields collapses all-whitespace to an empty slice, so guard on the
+	// split result rather than the raw value ($EDITOR="  " passes name != "").
+	parts := strings.Fields(os.Getenv("EDITOR"))
+	if len(parts) == 0 {
+		parts = []string{"vi"}
 	}
-	parts := strings.Fields(name)
 	c := exec.Command(parts[0], append(parts[1:], m.target)...) //nolint:gosec // $EDITOR is the user's own choice
 	return m, tea.ExecProcess(c, func(err error) tea.Msg { return editorClosedMsg{err} })
 }
@@ -335,6 +339,9 @@ func (m Model) updateMulti(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.ed.cursor++
 		}
 	case " ":
+		if m.ed.selected == nil { // guard: a nil-map write would panic
+			m.ed.selected = map[string]bool{}
+		}
 		opt := m.ed.options[m.ed.cursor]
 		m.ed.selected[opt] = !m.ed.selected[opt]
 	case "enter":
