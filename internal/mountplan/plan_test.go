@@ -199,6 +199,47 @@ func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	}
 }
 
+// TestPlanWithProfile drives the full pipeline (not just Merge) with a profile:
+// the claude default binds under ~/.toolbox/profiles/work, while ssh still
+// symlinks to the host ~/.ssh — isolated auth, shared identity, end to end.
+func TestPlanWithProfile(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	hostSSH := filepath.Join(tmpHome, ".ssh")
+	if err := os.Mkdir(hostSSH, 0o700); err != nil {
+		t.Fatalf("setup ssh: %v", err)
+	}
+	workspace := filepath.Join(tmpHome, "proj")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("setup workspace: %v", err)
+	}
+
+	result, err := Plan(&config.Config{}, workspace, &Profile{Name: "work"})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	profileClaude := filepath.Join(tmpHome, ".toolbox", "profiles", "work", ".claude")
+	hostSSHResolved, _ := filepath.EvalSymlinks(hostSSH)
+
+	var gotClaude, gotSSH string
+	for _, b := range result.Binds {
+		switch b.Target {
+		case "/home/toolbox/.claude":
+			gotClaude = b.Source
+		case "/home/toolbox/.ssh":
+			gotSSH = b.Source
+		}
+	}
+	if gotClaude != profileClaude {
+		t.Errorf("claude bind Source = %q, want %q (isolated in profile)", gotClaude, profileClaude)
+	}
+	if gotSSH != hostSSHResolved && gotSSH != hostSSH {
+		t.Errorf("ssh bind Source = %q, want host %q (shared identity)", gotSSH, hostSSHResolved)
+	}
+}
+
 func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
 	got, err := Merge(&config.Config{Bridge: &on}, nil)

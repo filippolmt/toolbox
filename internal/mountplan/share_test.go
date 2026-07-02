@@ -107,6 +107,37 @@ func TestMergeProfileOverridesMountsRoot(t *testing.T) {
 	}
 }
 
+// TestMergeShareEmptyTokenErrors: an empty --share token (e.g. `--share a,,b`)
+// is rejected explicitly, not silently ignored.
+func TestMergeShareEmptyTokenErrors(t *testing.T) {
+	if _, err := Merge(&config.Config{}, &Profile{Name: "work", Share: []string{""}}); err == nil {
+		t.Fatal("Merge with empty --share token: want error, got nil")
+	}
+}
+
+// TestContainerDiscriminator: distinct profiles, and distinct --share sets
+// within a profile, yield distinct discriminators; token order does not matter;
+// nil is empty.
+func TestContainerDiscriminator(t *testing.T) {
+	if got := ContainerDiscriminator(nil); got != "" {
+		t.Errorf("nil discriminator = %q, want empty", got)
+	}
+	work := ContainerDiscriminator(&Profile{Name: "work"})
+	personal := ContainerDiscriminator(&Profile{Name: "personal"})
+	if work == personal {
+		t.Errorf("distinct profiles share a discriminator: %q", work)
+	}
+	shareGH := ContainerDiscriminator(&Profile{Name: "work", Share: []string{"gh"}})
+	if shareGH == work {
+		t.Errorf("--share change did not alter discriminator: %q", shareGH)
+	}
+	a := ContainerDiscriminator(&Profile{Name: "work", Share: []string{"gh", "docker"}})
+	b := ContainerDiscriminator(&Profile{Name: "work", Share: []string{"docker", "gh"}})
+	if a != b {
+		t.Errorf("share order changed discriminator: %q != %q", a, b)
+	}
+}
+
 func TestShareCovers(t *testing.T) {
 	cases := []struct {
 		shared []string

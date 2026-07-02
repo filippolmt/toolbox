@@ -70,6 +70,12 @@ func shareCovers(shared []string, name string) bool {
 func validateShare(base []config.Mount, shared []string) error {
 	var unknown []string
 	for _, s := range shared {
+		if s == "" {
+			// An empty token would only ever match a mount named "-…"; reject it
+			// explicitly instead of relying on that naming coincidence.
+			unknown = append(unknown, `""`)
+			continue
+		}
 		matched := false
 		for _, m := range base {
 			if m.SymlinkFrom != "" || !strings.HasPrefix(m.Source, mountsRootPrefix) {

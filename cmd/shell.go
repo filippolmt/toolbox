@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -82,6 +83,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	warnIfNewProfile(profile)
 
 	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
 	if err != nil {
@@ -200,6 +202,24 @@ func resolveShellProfile(cmd *cobra.Command, name string, share []string) (*moun
 		return nil, fmt.Errorf("--profile %q: name must not be '.', '..', or contain a path separator", name)
 	}
 	return &mountplan.Profile{Name: name, Share: share}, nil
+}
+
+// warnIfNewProfile prints a one-line stderr notice when a --profile names a
+// directory that does not exist yet, so a typo (`--profile cluade`) surfaces as
+// a visibly new, empty profile instead of a silent logged-out shell. Best
+// effort: an unresolvable home just skips the notice.
+func warnIfNewProfile(p *mountplan.Profile) {
+	if p == nil {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	dir := filepath.Join(home, ".toolbox", "profiles", p.Name)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "toolbox: creating new profile %q (empty credentials — every CLI starts logged out)\n", p.Name)
+	}
 }
 
 // printBridgeTipIfNeeded prints a one-line install hint when the

@@ -1,5 +1,10 @@
 package mountplan
 
+import (
+	"sort"
+	"strings"
+)
+
 // profilesRoot is the host parent under which each `toolbox shell --profile
 // <name>` gets its own isolated ~/.toolbox/ mirror.
 const profilesRoot = "~/.toolbox/profiles/"
@@ -32,11 +37,25 @@ func (p *Profile) EffectiveShare() []string {
 	return append(append([]string(nil), p.Share...), "bridge")
 }
 
-// ProfileName returns p.Name, or "" for a nil profile — the container-name
-// discriminator, safe to call without a nil check at the call site.
+// ProfileName returns p.Name, or "" for a nil profile — safe to call without a
+// nil check at the call site.
 func ProfileName(p *Profile) string {
 	if p == nil {
 		return ""
 	}
 	return p.Name
+}
+
+// ContainerDiscriminator returns the string folded into a session's container
+// identity so distinct profiles — and distinct --share sets within one profile
+// — never share a container (mounts are fixed at ContainerCreate). Empty for a
+// nil profile, reproducing the pre-profile container name. The share set is
+// sorted so `--share gh,docker` and `--share docker,gh` map to one container.
+func ContainerDiscriminator(p *Profile) string {
+	if p == nil {
+		return ""
+	}
+	share := p.EffectiveShare()
+	sort.Strings(share)
+	return p.Name + "\x00share=" + strings.Join(share, ",")
 }
