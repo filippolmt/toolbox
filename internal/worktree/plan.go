@@ -229,3 +229,39 @@ func runSyncSteps(wtPath string, steps [][]string, run func(args ...string) erro
 	}
 	return nil
 }
+
+// LocalSettingsRel is the per-repo Claude permission allowlist — the one seed
+// worth a git-independent fallback copy when `git check-ignore` itself fails.
+const LocalSettingsRel = ".claude/settings.local.json"
+
+// DefaultSeeds lists the per-repo (not per-branch) gitignored working state a
+// tracked-files-only checkout misses, carried into a fresh worktree. Extended
+// at the cmd edge by the user's worktree.seed config and discovered .env.*
+// variants. Pure data; the gitignore gating that filters these to what git
+// actually ignores is a filesystem+git walk that stays at the cmd edge.
+var DefaultSeeds = []string{
+	LocalSettingsRel, // per-repo Claude permission allowlist
+	".env",           // dotenv secrets (+ .env.* discovered at the edge)
+	"openspec",       // OpenSpec working tree (specs + changes)
+	".planning",      // gsd spec-driven planning artifacts
+}
+
+// DedupeSeeds unions the given seed lists into one order-preserving slice,
+// cleaning each entry so ".env" and "./.env" collapse to a single candidate.
+// The pure front of seed selection; callers resolve each candidate against the
+// filesystem and git check-ignore afterwards.
+func DedupeSeeds(lists ...[]string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, list := range lists {
+		for _, p := range list {
+			p = filepath.Clean(p)
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			out = append(out, p)
+		}
+	}
+	return out
+}

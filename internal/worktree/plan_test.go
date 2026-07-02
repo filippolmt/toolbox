@@ -329,3 +329,15 @@ func TestNoArgSyncBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestDedupeSeedsUnionsCleansAndPreservesOrder(t *testing.T) {
+	got := DedupeSeeds(
+		[]string{".env", "./.env", "openspec"}, // "./.env" collapses onto ".env"
+		[]string{".env.local", "openspec"},     // duplicate "openspec" dropped
+		nil,                                    // nil list tolerated
+	)
+	want := []string{".env", "openspec", ".env.local"}
+	if !slices.Equal(got, want) {
+		t.Errorf("DedupeSeeds = %v, want %v (order-preserving, cleaned, deduped)", got, want)
+	}
+}
