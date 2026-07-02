@@ -26,6 +26,23 @@ func valuesToRows(vals []string) [][2]string {
 	return rows
 }
 
+// columnZero snapshots the column-0 value of each row — the per-row original
+// name used to carry a renamed shell's env overlay.
+func columnZero(rows [][2]string) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r[0]
+	}
+	return out
+}
+
+// openRowsEditor opens the collection editor for a key, seeding rows and the
+// index-aligned original-name snapshot.
+func (m *Model) openRowsEditor(key string, pair bool, rows [][2]string) {
+	m.ed = editor{key: key, kind: edRows, rowPair: pair, rows: rows, orig: columnZero(rows)}
+	m.editing = true
+}
+
 // updateRows drives the collection editor for env / shells / worktree.seed. It
 // has two sub-modes: navigating the row list, and typing into a field.
 func (m Model) updateRows(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -122,11 +139,12 @@ func (m *Model) writeRow(val string) {
 	}
 	if m.ed.adding {
 		m.ed.rows = append(m.ed.rows, row)
+		m.ed.orig = append(m.ed.orig, "") // added row has no original name
 		m.ed.cursor = len(m.ed.rows) - 1
 		return
 	}
 	if m.ed.cursor < len(m.ed.rows) {
-		m.ed.rows[m.ed.cursor] = row
+		m.ed.rows[m.ed.cursor] = row // orig[cursor] stays: identity survives a rename
 	}
 }
 
@@ -136,6 +154,9 @@ func (m *Model) deleteRow() {
 	}
 	i := m.ed.cursor
 	m.ed.rows = append(m.ed.rows[:i], m.ed.rows[i+1:]...)
+	if i < len(m.ed.orig) { // keep orig index-aligned with rows
+		m.ed.orig = append(m.ed.orig[:i], m.ed.orig[i+1:]...)
+	}
 	if m.ed.cursor >= len(m.ed.rows) && m.ed.cursor > 0 {
 		m.ed.cursor--
 	}
@@ -147,7 +168,7 @@ func (m *Model) saveRows() error {
 	case "env":
 		return SaveMap(m.target, m.cwd, "env", rowsToPairs(m.ed.rows))
 	case "shells":
-		return SaveShells(m.target, m.cwd, rowsToPairs(m.ed.rows))
+		return SaveShells(m.target, m.cwd, m.shellEntries())
 	case "worktree":
 		return SaveSeed(m.target, m.cwd, rowsToValues(m.ed.rows))
 	}
@@ -155,6 +176,30 @@ func (m *Model) saveRows() error {
 	// above); an explicit error stops a future rows key from reporting a false
 	// "saved" with no write.
 	return fmt.Errorf("no rows writer for key %q", m.ed.key)
+}
+
+// shellEntries turns the shells rows into ShellEntry values, carrying each
+// row's original name (for rename detection) and, from the current config, the
+// env overlay of that original shell so a rename doesn't drop it.
+func (m *Model) shellEntries() []ShellEntry {
+	var entries []ShellEntry
+	for i, r := range m.ed.rows {
+		if r[0] == "" {
+			continue
+		}
+		orig := ""
+		if i < len(m.ed.orig) {
+			orig = m.ed.orig[i]
+		}
+		var env map[string]string
+		if orig != "" && m.cfg != nil {
+			if s, ok := m.cfg.Shells[orig]; ok {
+				env = s.Env
+			}
+		}
+		entries = append(entries, ShellEntry{Name: r[0], Path: r[1], OrigName: orig, Env: env})
+	}
+	return entries
 }
 
 func rowsToPairs(rows [][2]string) map[string]string {

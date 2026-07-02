@@ -316,24 +316,45 @@ func SaveMap(target, cwd, key string, pairs map[string]string) error {
 	})
 }
 
-// SaveShells writes shells.<name>.path for every entry in shells and removes any
-// shells.<name> no longer present. Only .path is touched, so a kept shell's env
-// overlay survives. An empty set removes the shells block. Gated by Doctor.
-func SaveShells(target, cwd string, shells map[string]string) error {
+// ShellEntry is one desired shells: entry for SaveShells. OrigName is the name
+// the row carried before editing ("" for a freshly added row); it lets a rename
+// carry the source shell's Env overlay to the new name.
+type ShellEntry struct {
+	Name, Path, OrigName string
+	Env                  map[string]string
+}
+
+// SaveShells reconciles the shells: block to entries: it removes any shell not
+// named by an entry and writes each entry's .path. For an unchanged name the
+// existing env block is left untouched (its formatting/comments survive); for a
+// rename (Name != OrigName) the carried Env overlay is written under the new
+// name so it is not lost. An empty set removes the block. Gated by Doctor.
+func SaveShells(target, cwd string, entries []ShellEntry) error {
 	return apply(target, cwd, func(doc *yaml.Node) {
-		if len(shells) == 0 {
+		if len(entries) == 0 {
 			configio.RemoveMapKey(doc, "shells")
 			return
 		}
 		root := configio.EnsureChildMap(doc, "shells")
+		want := make(map[string]bool, len(entries))
+		for _, e := range entries {
+			want[e.Name] = true
+		}
 		for _, name := range childKeys(root) {
-			if _, keep := shells[name]; !keep {
+			if !want[name] {
 				configio.RemoveMapKey(root, name)
 			}
 		}
-		for _, name := range sortedKeys(shells) {
-			entry := configio.EnsureChildMap(root, name)
-			configio.SetMapValue(entry, "path", shells[name])
+		for _, e := range entries {
+			entry := configio.EnsureChildMap(root, e.Name)
+			configio.SetMapValue(entry, "path", e.Path)
+			if e.Name != e.OrigName && len(e.Env) > 0 {
+				env := configio.EnsureChildMap(entry, "env")
+				env.Content = env.Content[:0]
+				for _, k := range sortedKeys(e.Env) {
+					configio.SetMapValue(env, k, e.Env[k])
+				}
+			}
 		}
 	})
 }

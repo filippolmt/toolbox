@@ -370,7 +370,7 @@ func TestSaveShellsPreservesEnv(t *testing.T) {
 	target := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n  old:\n    path: /repo/old\n")
 
-	if err := SaveShells(target, repo, map[string]string{"infra": "/repo/infra"}); err != nil {
+	if err := SaveShells(target, repo, []ShellEntry{{Name: "infra", Path: "/repo/infra", OrigName: "infra"}}); err != nil {
 		t.Fatalf("SaveShells: %v", err)
 	}
 	got := readFile(t, target)
@@ -379,6 +379,27 @@ func TestSaveShellsPreservesEnv(t *testing.T) {
 	}
 	if strings.Contains(got, "old:") {
 		t.Errorf("removed shell must be gone:\n%s", got)
+	}
+}
+
+// TestSaveShellsRenameCarriesEnv: renaming a shell carries its env overlay to
+// the new name (regression: rename used to drop env).
+func TestSaveShellsRenameCarriesEnv(t *testing.T) {
+	isolatedHome(t)
+	repo := t.TempDir()
+	target := filepath.Join(repo, ".toolbox.yaml")
+	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n")
+
+	entry := ShellEntry{Name: "prod", Path: "/repo/infra", OrigName: "infra", Env: map[string]string{"REGION": "eu"}}
+	if err := SaveShells(target, repo, []ShellEntry{entry}); err != nil {
+		t.Fatalf("SaveShells rename: %v", err)
+	}
+	got := readFile(t, target)
+	if strings.Contains(got, "infra:") {
+		t.Errorf("old shell name must be gone after rename:\n%s", got)
+	}
+	if !strings.Contains(got, "prod:") || !strings.Contains(got, "REGION: eu") {
+		t.Errorf("rename must carry path and env to the new name:\n%s", got)
 	}
 }
 

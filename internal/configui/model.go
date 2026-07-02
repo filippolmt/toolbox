@@ -53,6 +53,7 @@ type editor struct {
 
 	// rows editor (env / shells / worktree.seed)
 	rows     [][2]string // [key, value]; single-column lists use [0]
+	orig     []string    // per-row original column-0 name at open ("" once added); index-aligned with rows, carries a renamed shell's env
 	rowPair  bool        // true = key→value pairs (env, shells)
 	rowEdit  bool        // true = typing into a field, false = navigating rows
 	field    int         // active column while editing (0 or 1)
@@ -217,14 +218,11 @@ func (m *Model) openEditor() {
 		m.ed = editor{key: key, kind: edMulti, options: opts, selected: sel}
 		m.editing = true
 	case "env":
-		m.ed = editor{key: key, kind: edRows, rowPair: true, rows: pairsToRows(m.cfg.Env)}
-		m.editing = true
+		m.openRowsEditor(key, true, pairsToRows(m.cfg.Env))
 	case "shells":
-		m.ed = editor{key: key, kind: edRows, rowPair: true, rows: pairsToRows(ShellPaths(m.cfg))}
-		m.editing = true
+		m.openRowsEditor(key, true, pairsToRows(ShellPaths(m.cfg)))
 	case "worktree":
-		m.ed = editor{key: key, kind: edRows, rowPair: false, rows: valuesToRows(ListValue(m.cfg, key))}
-		m.editing = true
+		m.openRowsEditor(key, false, valuesToRows(ListValue(m.cfg, key)))
 	case "sdd":
 		m.ed = editor{key: key, kind: edMulti, options: SDDOptions(), selected: EnabledSDD(m.cfg)}
 		m.editing = true
