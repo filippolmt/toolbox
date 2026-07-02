@@ -15,6 +15,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/configexample"
 	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/configui"
 )
 
 var configCmd = &cobra.Command{
@@ -117,6 +118,23 @@ passing an empty value resets that key to its default.
 	RunE: runConfigSet,
 }
 
+var configUICmd = &cobra.Command{
+	Use:   "ui",
+	Short: "Interactively view and edit .toolbox.yaml",
+	Long: `Launch an interactive terminal UI to view and edit toolbox configuration
+across the Global (~/.toolbox.yaml) and Repo (./.toolbox.yaml) layers.
+
+Each key shows its resolved effective value and the layer that supplies it
+(default / global / repo / env). Edits are validated with the config doctor
+before being written through the comment-preserving writer. Requires an
+interactive terminal.`,
+	Args: usageArgs(cobra.NoArgs),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := os.Getwd()
+		return configui.Run(cwd, cfgFile)
+	},
+}
+
 var configDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Validate the configuration without modifying it",
@@ -144,6 +162,7 @@ func init() {
 	configCmd.AddCommand(configPathCmd)
 	configCmd.AddCommand(configEditCmd)
 	configCmd.AddCommand(configDoctorCmd)
+	configCmd.AddCommand(configUICmd)
 	rootCmd.AddCommand(configCmd)
 }
 
