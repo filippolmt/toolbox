@@ -262,3 +262,36 @@ iterator the single failure-envelope owner, and the filename `<NN>-`
 prefix the explicit ordering signal — with the manifest-driven shape the
 boot sequence is observable from the Go side without parsing the runtime
 image.
+
+### Worktree
+
+The per-branch worktree subsystem behind `toolbox worktree` (create / open /
+list / rm / prune / sync): one branch → one git worktree under
+`<repo-root>/.worktrees/tbx-<branch>` → one path-scoped toolbox container.
+
+Concretely: `worktree.Service{git}` (owned by `internal/worktree`) owns the git
++ filesystem side of every op. Every git invocation crosses one seam,
+`Git{Output, Run}` (production impl `RealGit`, a fake in tests), and container
+teardown/status use `container.Stop` / `ContainerInspect` through the existing
+`client.APIClient` seam — so `Create` (prepare), `Open` (resolve), `List`,
+`Rm`, `Prune` and `Sync` run in tests with a fake git and a nil client, no real
+repo and no daemon. Pure decisions (sync/prune plans, porcelain parse, seed
+gating, dir/branch naming) live in `internal/worktree/plan.go`. The
+**interactive session launch** for create/open — `resolveImageDigest` +
+`sessionplan.Plan` + `applyWorktreeSession` + `container.Shell` (whose TTY
+attach is not mockable across packages) — deliberately stays at the `cmd`
+Docker edge, shared with the `shell` command, mirroring how Session Plan /
+Docker Identity keep daemon-edge state out of the pure plan. `cmd/worktree.go`
+is then flag parsing + dispatch + that launch; the gitignored-state seeding
+(`seedWorktreeFiles`) stays beside the launch, as both create and open re-seed.
+
+Why the term exists: before this concept was named, the whole subsystem —
+git shell-out (~30 inline sites), container ops, filesystem seeding, and pure
+decisions — interleaved in a single 1334-line `cmd/worktree.go`, the only
+untestable subsystem in a codebase that had otherwise deepened every peer
+(Mount Plan, Session Plan, Run Plan, …). Reading "what does `rm` do?" meant
+bouncing across four concerns in one command file, and the orchestration had no
+seam to fake git, so its edge cases (rm ordering, prune per-base sweep, sync
+resume) were exercised only through real git in temp repos. The "Worktree"
+name turns the git orchestration into one named owner behind the `Git` seam,
+mirroring the Mount Plan / Session Plan deepening pattern.
