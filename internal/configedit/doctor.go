@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -85,7 +84,7 @@ func lintLayerKeys(label string, b []byte) []Finding {
 	if err := yaml.Unmarshal(b, &m); err != nil {
 		return nil
 	}
-	known := knownTopLevelKeys()
+	known := config.SchemaKeys()
 	var findings []Finding
 	for _, k := range slices.Sorted(maps.Keys(m)) {
 		if k == "tools" {
@@ -146,17 +145,4 @@ func lintMounts(cfg *config.Config) []Finding {
 		seen[m.Target] = id
 	}
 	return findings
-}
-
-// knownTopLevelKeys derives the accepted top-level key set from Config's
-// mapstructure tags so doctor never drifts from the schema.
-func knownTopLevelKeys() []string {
-	t := reflect.TypeFor[config.Config]()
-	keys := make([]string, 0, t.NumField())
-	for f := range t.Fields() {
-		if tag := f.Tag.Get("mapstructure"); tag != "" {
-			keys = append(keys, tag)
-		}
-	}
-	return keys
 }
