@@ -13,9 +13,12 @@ Run the three checks in ascending order of cost. Stop on the first failure — d
 
 1. **`make go-lint`** — golangci-lint v2 in a container. Cheapest signal (static analysis, no test run). Catches errcheck / staticcheck / unused before they get masked by a test failure.
 2. **`make go-test`** — `go test ./... -count=1` in a container. Runs the unit suite.
-3. **Smoke test (conditional).** Only if the image already exists locally. Check with `docker image inspect ghcr.io/filippolmt/toolbox:latest >/dev/null 2>&1`:
-   - If present → `internal/build/assets/smoke-test.sh` (default arg targets the same registry tag). This validates every bundled CLI in the runtime image.
-   - If absent → skip. Do **not** trigger `make build` implicitly: it's a multi-minute rebuild and the user hasn't asked for it.
+3. **Smoke test (conditional).** Two gates, both must hold — smoke is the slowest check (it can sync Chromium for Playwright on a version bump, minutes), so run it only when it can actually catch something.
+   - **Relevance gate:** the change must touch the runtime image. The smoke test validates the bundled CLIs *inside* the image; a host-CLI-only change (`cmd/**`, host-side `internal/**`, `Makefile`) cannot alter its outcome, so skip it. Check the diff against `main` for image-relevant paths:
+     `git diff --name-only main... | grep -qE '^(internal/build/assets/|internal/catalog/|Dockerfile)'`
+     No match → **SKIPPED** (report why: "host-CLI-only change, image unaffected"). CI still runs `docker-build` on these changes, but its smoke outcome is invariant under a host-only diff, so green locally still means green on CI.
+   - **Availability gate:** the image must already exist locally — `docker image inspect ghcr.io/filippolmt/toolbox:latest >/dev/null 2>&1`. Absent → **SKIPPED**. Do **not** trigger `make build` implicitly: it's a multi-minute rebuild and the user hasn't asked for it.
+   - Both gates pass → `internal/build/assets/smoke-test.sh` (default arg targets the same registry tag).
 
 ## Reporting
 
