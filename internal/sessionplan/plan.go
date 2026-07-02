@@ -91,62 +91,95 @@ type MergedSessionPlan struct {
 	SecurityOpt   []string
 }
 
-// Plan walks the full session pipeline for cfg + workspace + ports and
-// returns the resolved plan handed to container.Shell. Hard fails when
+// PlanInput is the full set of inputs to Plan and Merge. The two share one
+// struct so the pure-data Merge stays signature-parallel with the fs-touching
+// Plan; Merge ignores ImageDigest (the poller identity is an fs-free-plan
+// non-concern). Bundling the inputs keeps the container-name decision — the
+// one field that varies between a workspace session and a named shell — a
+// single Name input rather than a post-planning override in the caller.
+type PlanInput struct {
+	Cfg            *config.Config
+	Workspace      string
+	Ports          []string
+	BridgeLoopback bool
+
+	// ImageDigest is the running image's resolved repo digest (`sha256:...`),
+	// supplied host-side by the caller (it needs the Docker client, which the
+	// pure planner does not hold). Empty when unresolvable — e.g. a locally
+	// built untagged image; the identity injection then omits the digest entry
+	// so the in-container poller skips the image check rather than treating an
+	// empty value as a stale digest. Ignored by Merge. See update-notification.
+	ImageDigest string
+
+	// Name is the sanitized named-shell name (see SanitizeShellName). Empty for
+	// workspace sessions (no-arg / absolute-path), where the container name
+	// derives from the workspace path hash; non-empty routes the name through
+	// NamedContainerNameFromSanitized (`toolbox-named-<sanitized>`). Keeping the
+	// decision here means cmd never handles the container-name format — it sets
+	// Name by intent and nothing else.
+	Name string
+}
+
+// containerName resolves the container name from the workspace path and the
+// optional named-shell name — the single place the workspace-hash vs
+// named-shell choice lives. Empty name → workspace-derived; non-empty →
+// named form. bridgeLoopback-free and fs-free, so both Plan and Merge share
+// it.
+func containerName(workspace, name string) string {
+	if name == "" {
+		return ContainerNameFor(workspace)
+	}
+	return NamedContainerNameFromSanitized(name)
+}
+
+// Plan walks the full session pipeline for in.Cfg + in.Workspace + in.Ports
+// and returns the resolved plan handed to container.Shell. Hard fails when
 // mount-stage validation rejects the user list, when port specs cannot
 // be parsed, or when the home directory cannot be resolved. Per-mount
 // soft skips surface via SessionPlan.Warnings.
 //
-// bridgeLoopback toggles the in-container loopback bridge (init.d/70):
+// in.BridgeLoopback toggles the in-container loopback bridge (init.d/70):
 // when true and at least one publish spec is present, the resulting env
 // carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
-// socat per published container port — see
-// docs/commands.md#loopback-bridge.
-//
-// imageDigest is the running image's resolved repo digest (`sha256:...`),
-// supplied host-side by the caller (it needs the Docker client, which the
-// pure planner does not hold). Empty when unresolvable — e.g. a locally
-// built untagged image; the identity injection then omits the digest entry
-// so the in-container poller skips the image check rather than treating an
-// empty value as a stale digest. See update-notification.
-func Plan(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool, imageDigest string) (*SessionPlan, error) {
-	workspace = normalizeWorkspace(workspace)
+// socat per published container port — see docs/commands.md#loopback-bridge.
+func Plan(in PlanInput) (*SessionPlan, error) {
+	workspace := normalizeWorkspace(in.Workspace)
 
-	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
+	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(in.Ports)
 	if err != nil {
 		return nil, err
 	}
 
-	ref := build.ResolveImage(cfg.Image, cfg.RegistryMirror)
+	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates
 	// dirs/symlinks under ~/.toolbox; we don't want them on a config error).
-	cmd, err := ResolveShellCmd(cfg)
+	cmd, err := ResolveShellCmd(in.Cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(cfg, workspace)
+	mp, err := mountplan.Plan(in.Cfg, workspace)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SessionPlan{
-		Image:         Image{Ref: ref, PullPolicy: cfg.Pull},
+		Image:         Image{Ref: ref, PullPolicy: in.Cfg.Pull},
 		Binds:         mp.Binds,
 		Warnings:      mp.Warnings,
 		WorkingDir:    mp.WorkingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           composeEnv(workspace, mp.WorkingDir, cfg, bridgeLoopback, uniqContainerPorts, imageDigest, proximo.Env(cfg)),
-		ContainerName: ContainerNameFor(workspace),
+		Env:           composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
+		ContainerName: containerName(workspace, in.Name),
 		Cmd:           cmd,
-		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
-		ExtraHosts:    browserBridgeExtraHosts(cfg),
-		Proximo:       proximo.Enabled(cfg),
+		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
+		ExtraHosts:    browserBridgeExtraHosts(in.Cfg),
+		Proximo:       proximo.Enabled(in.Cfg),
 	}, nil
 }
 
@@ -185,17 +218,17 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // mountplan.Merge (no fs side effects) and exposes Binds as the post-merge
 // config.Mount slice. Tests asserting the contract construct merged plans
 // without t.TempDir / HOME setup.
-func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback bool) (*MergedSessionPlan, error) {
-	workspace = normalizeWorkspace(workspace)
+func Merge(in PlanInput) (*MergedSessionPlan, error) {
+	workspace := normalizeWorkspace(in.Workspace)
 
-	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(ports)
+	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(in.Ports)
 	if err != nil {
 		return nil, err
 	}
 
-	ref := build.ResolveImage(cfg.Image, cfg.RegistryMirror)
+	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
-	merged, err := mountplan.Merge(cfg)
+	merged, err := mountplan.Merge(in.Cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -207,21 +240,21 @@ func Merge(cfg *config.Config, workspace string, ports []string, bridgeLoopback 
 		workingDir = mirror
 	}
 
-	cmd, err := ResolveShellCmd(cfg)
+	cmd, err := ResolveShellCmd(in.Cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MergedSessionPlan{
-		Image:         Image{Ref: ref, PullPolicy: cfg.Pull},
+		Image:         Image{Ref: ref, PullPolicy: in.Cfg.Pull},
 		Binds:         merged,
 		WorkingDir:    workingDir,
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
-		Env:           composeEnv(workspace, workingDir, cfg, bridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: ContainerNameFor(workspace),
+		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
+		ContainerName: containerName(workspace, in.Name),
 		Cmd:           cmd,
-		SecurityOpt:   NestedSandboxSecurityOpt(cfg),
+		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 	}, nil
 }
 

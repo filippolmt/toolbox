@@ -117,13 +117,20 @@ func runShell(cmd *cobra.Command, args []string) error {
 
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
-	// fs side effects under ~/.toolbox and the workspace.
-	plan, err := sessionplan.Plan(cfg, ws, publish, bridgeLoopback, imageDigest)
+	// fs side effects under ~/.toolbox and the workspace. shellName is the
+	// only container-name input cmd supplies — empty for workspace sessions,
+	// the sanitized named-shell name otherwise; the naming rule and format
+	// live entirely behind the sessionplan seam.
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Cfg:            cfg,
+		Workspace:      ws,
+		Ports:          publish,
+		BridgeLoopback: bridgeLoopback,
+		ImageDigest:    imageDigest,
+		Name:           shellName,
+	})
 	if err != nil {
 		return err
-	}
-	if shellName != "" {
-		plan.ContainerName = sessionplan.NamedContainerNameFromSanitized(shellName)
 	}
 
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
