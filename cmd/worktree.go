@@ -954,16 +954,31 @@ func runWorktreeList(cmd *cobra.Command, _ []string) error {
 }
 
 func runWorktreeRm(cmd *cobra.Command, args []string) error {
+	branch := args[0]
 	root, err := repoRoot()
 	if err != nil {
 		return err
 	}
-	wtPath, err := resolveToolboxWorktree(root, args[0])
+	wtPath, err := resolveToolboxWorktree(root, branch)
 	if err != nil {
 		return err
 	}
-	stopWorktreeContainer(wtPath)
 
+	// Friendly upfront refusal for a dirty tree (git's own message is terser).
+	// Best-effort: worktreeDirty reads false when git status can't run, so it is
+	// not the safety net — the ordering below is. --force skips it (discards
+	// changes anyway).
+	if !rmFlags.force && worktreeDirty(wtPath) {
+		return fmt.Errorf("worktree %s has uncommitted changes; commit them or pass --force to discard", wtPath)
+	}
+
+	// Remove before tearing anything else down. `git worktree remove` deregisters
+	// a hand-deleted directory as cleanly as a present one (only a dirty present
+	// tree needs --force), so no orphan special-casing or repo-wide `worktree
+	// prune` — which would also drop a sibling whose mount is merely offline — is
+	// needed. Ordering is the real guard: if git refuses (dirty tree, no --force,
+	// or a dirty state worktreeDirty missed), we return with the container still
+	// up rather than leaving a half-torn-down worktree.
 	gitArgs := []string{"worktree", "remove"}
 	if rmFlags.force {
 		gitArgs = append(gitArgs, "--force")
@@ -971,11 +986,14 @@ func runWorktreeRm(cmd *cobra.Command, args []string) error {
 	if err := runGit(append(gitArgs, wtPath)...); err != nil {
 		return err
 	}
-	// The worktree is gone; delete its now-orphaned branch (best-effort). --force
-	// already forced the worktree removal, so it also escalates the branch delete
-	// to -D — one flag means "I accept losing unmerged work".
-	deleteBranch(root, args[0], rmFlags.force, rmFlags.deleteRemote)
-	forgetWorktreeBase(root, args[0])
+
+	// Removal succeeded: stop the now-orphaned container (path-derived, so it
+	// works after the directory is gone) and delete the orphaned branch + base
+	// (best-effort). --force escalates the branch delete to -D — one flag means
+	// "I accept losing unmerged work".
+	stopWorktreeContainer(wtPath)
+	deleteBranch(root, branch, rmFlags.force, rmFlags.deleteRemote)
+	forgetWorktreeBase(root, branch)
 	return nil
 }
 
@@ -1142,6 +1160,18 @@ func mergedBranches(base string) (map[string]bool, error) {
 // `--no-track` from `origin/<base>` and has no local `<base>` branch, so
 // rebasing onto `<base>` would fail with "invalid upstream". With --no-fetch
 // the remote-tracking ref is used as last fetched — no network, still valid.
+// noArgSyncBranch returns the branch a no-arg sync should operate on, given the
+// checkout's current ref. A detached HEAD reports the literal "HEAD": there is
+// no branch to rebase or push, so refuse rather than rebasing detached commits.
+// Reached only when no rebase is being resumed (a resume's detached HEAD is
+// legitimate). Pure so the refusal is unit-tested without a repo.
+func noArgSyncBranch(wtPath, current string) (string, error) {
+	if current == "HEAD" {
+		return "", fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
+	}
+	return current, nil
+}
+
 func syncPlan(base string, fetch, push bool) [][]string {
 	var steps [][]string
 	if fetch {
@@ -1251,13 +1281,12 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 
 	// No rebase in progress: for the no-arg case, resolve the current branch now.
 	if len(args) == 0 {
-		if branch, err = gitOutput("rev-parse", "--abbrev-ref", "HEAD"); err != nil {
-			return err
+		current, curErr := gitOutput("rev-parse", "--abbrev-ref", "HEAD")
+		if curErr != nil {
+			return curErr
 		}
-		// A detached HEAD reports the literal "HEAD"; there is no branch to sync
-		// or push, so fail clearly rather than rebasing detached commits.
-		if branch == "HEAD" {
-			return fmt.Errorf("%s is on a detached HEAD; check out a branch or pass one", wtPath)
+		if branch, err = noArgSyncBranch(wtPath, current); err != nil {
+			return err
 		}
 	}
 
@@ -1267,6 +1296,16 @@ func runWorktreeSync(cmd *cobra.Command, args []string) error {
 	base := worktreeBase(root, branch, fallback)
 	if base == "" {
 		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
+	}
+	// With --no-fetch the rebase targets the local origin/<base> ref directly, so
+	// if that ref is absent the rebase dies with an opaque "invalid upstream";
+	// surface an actionable error instead. When fetching (the default) we must NOT
+	// pre-check: `git fetch origin <base>` creates the tracking ref for a base not
+	// yet mirrored locally (partial clone, or a worktree made with --no-fetch) and
+	// fails clearly if the base is truly gone, so a pre-check would wrongly abort a
+	// valid first sync.
+	if syncFlags.noFetch && !hasRemoteBranch(root, base) {
+		return fmt.Errorf("base %q is not available locally (origin/%s is missing and --no-fetch skips the fetch); drop --no-fetch or re-create the worktree with --from", base, base)
 	}
 
 	return runSyncSteps(wtPath, syncPlan(base, !syncFlags.noFetch, !syncFlags.noPush), runGit,
