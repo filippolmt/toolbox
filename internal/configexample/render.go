@@ -34,6 +34,11 @@ func Render() string {
 	b.WriteString("# shell: zsh\n")
 	b.WriteString("\n")
 
+	b.WriteString("# agent — default AI agent auto-launched by `toolbox worktree` sessions.\n")
+	b.WriteString("# One of: claude (default) | codex. The --agent flag overrides this per run.\n")
+	b.WriteString("# agent: claude\n")
+	b.WriteString("\n")
+
 	b.WriteString("# Image selection (all opt-in; default = ghcr.io/filippolmt/toolbox:latest).\n")
 	b.WriteString("# image            full ref override, used verbatim (host/path:tag or digest).\n")
 	b.WriteString("#                  Wins over registry_mirror. Note: a local `toolbox build`\n")
@@ -84,6 +89,26 @@ func Render() string {
 	b.WriteString("# Only python-requests needs a nudge: REQUESTS_CA_BUNDLE=$TOOLBOX_PROXIMO_CA.\n")
 	b.WriteString("# Extra-hosts are fixed at container creation — re-run `toolbox shell` for new hosts.\n")
 	b.WriteString("# proximo: false\n")
+	b.WriteString("\n")
+
+	b.WriteString("# bridge — host-side forwarder for xdg-open (browser), code/codium (editor)\n")
+	b.WriteString("# and proximo up|down|status. Tri-state, default AUTO (on): install it with\n")
+	b.WriteString("# `toolbox bridge install`. Set false to skip the bridge mounts entirely.\n")
+	b.WriteString("# (browser_bridge is the deprecated spelling — use bridge.)\n")
+	b.WriteString("# bridge: true\n")
+	b.WriteString("\n")
+
+	b.WriteString("# managed_statusline — image-owned Claude Code statusline force-applied to\n")
+	b.WriteString("# ~/.claude/settings.json on every shell start. Tri-state, default AUTO (on):\n")
+	b.WriteString("# set false to keep your own statusLine untouched.\n")
+	b.WriteString("# managed_statusline: false\n")
+	b.WriteString("\n")
+
+	b.WriteString("# env — arbitrary KEY=VALUE pairs injected into every container shell,\n")
+	b.WriteString("# after the curated TOOLBOX_* / PWD entries. Reserved keys (the TOOLBOX_\n")
+	b.WriteString("# prefix and PWD) are rejected. Per-shell shells.<name>.env overlays this.\n")
+	b.WriteString("# env:\n")
+	b.WriteString("#   CLAUDE_CODE_WORKFLOWS: \"1\"\n")
 	b.WriteString("\n")
 
 	b.WriteString("# shells — reusable named workspaces for `toolbox shell <name>`.\n")

@@ -5,9 +5,30 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/catalog"
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configexample"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
+
+// TestRenderCoversSchema is the anti-drift guard for the annotated example:
+// every config.SchemaKeys() field must be documented, except the deprecated
+// browser_bridge alias (only the canonical bridge is shown). A new Config
+// field the template forgets turns this red.
+func TestRenderCoversSchema(t *testing.T) {
+	got := configexample.Render()
+	const skip = "browser_bridge"
+	for _, key := range config.SchemaKeys() {
+		if key == skip {
+			if strings.Contains(got, key+":") {
+				t.Errorf("deprecated key %q must not be documented in the example", key)
+			}
+			continue
+		}
+		if !strings.Contains(got, key+":") {
+			t.Errorf("annotated example is missing key %q", key)
+		}
+	}
+}
 
 func TestRenderContainsExpectedSections(t *testing.T) {
 	got := configexample.Render()

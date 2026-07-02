@@ -137,9 +137,52 @@ func TestConfigShowDefaultOutputUnchanged(t *testing.T) {
 	if plain.String() != viaOrigin.String() {
 		t.Errorf("nil-prov origin renderer must match plain renderer:\n%q\nvs\n%q", plain.String(), viaOrigin.String())
 	}
-	want := "shell: zsh\nimage: \"\"\nregistry_mirror: \"\"\npull: auto\nmounts_root: \"\"\ninherit_host_auth:\n  - gh\nmounts:\n  - name: extra\n    source: /tmp/x\n    target: /mnt/x\n    readonly: true\n"
+	want := "shell: zsh\nagent: claude\nimage: \"\"\nregistry_mirror: \"\"\npull: auto\nmounts_root: \"\"\nbridge: auto\nproximo: auto\nmanaged_statusline: auto\nsdd: {}\nenv: {}\nworktree:\n  seed: []\ninherit_host_auth:\n  - gh\nshells: {}\nmounts:\n  - name: extra\n    source: /tmp/x\n    target: /mnt/x\n    readonly: true\n"
 	if plain.String() != want {
 		t.Errorf("default output drifted:\n%q\nwant\n%q", plain.String(), want)
+	}
+}
+
+// TestConfigShowCoversSchema is the anti-drift guard for the resolved
+// renderer: every config.SchemaKeys() field must be rendered, except the
+// deprecated browser_bridge alias (only the canonical bridge is shown). A new
+// Config field that the renderer forgets turns this red.
+func TestConfigShowCoversSchema(t *testing.T) {
+	yes := true
+	full := &config.Config{
+		Shell:             "zsh",
+		Agent:             "codex",
+		Image:             "img",
+		RegistryMirror:    "mirror",
+		Pull:              "always",
+		MountsRoot:        "~/r",
+		Bridge:            &yes,
+		Proximo:           &yes,
+		ManagedStatusline: &yes,
+		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
+		Env:               map[string]string{"FOO": "bar"},
+		Worktree:          config.WorktreeConfig{Seed: []string{".env"}},
+		InheritHostAuth:   []string{"gh"},
+		Shells:            map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}},
+		Mounts:            []config.Mount{{Name: "extra", Source: "/tmp/x", Target: "/mnt/x"}},
+	}
+	var buf bytes.Buffer
+	if err := writeResolvedConfig(&buf, full); err != nil {
+		t.Fatalf("writeResolvedConfig: %v", err)
+	}
+	out := buf.String()
+
+	const skip = "browser_bridge" // deprecated alias, rendered only as bridge
+	for _, key := range config.SchemaKeys() {
+		if key == skip {
+			if strings.Contains(out, "\n"+key+":") || strings.HasPrefix(out, key+":") {
+				t.Errorf("deprecated key %q must not be rendered", key)
+			}
+			continue
+		}
+		if !strings.Contains(out, "\n"+key+":") && !strings.HasPrefix(out, key+":") {
+			t.Errorf("config show is missing key %q:\n%s", key, out)
+		}
 	}
 }
 

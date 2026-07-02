@@ -50,6 +50,26 @@ func TestComputeLayeredOrigins(t *testing.T) {
 	}
 }
 
+// TestComputeReflectionCoversAllFields guards the reflection walk: fields that
+// the old hand-written diffLayer dropped (agent, managed_statusline) and the
+// tri-state *bool fields must all be attributed now. A future field added to
+// Config is covered automatically by the same walk.
+func TestComputeReflectionCoversAllFields(t *testing.T) {
+	cwd := writeLayeredFixture(t,
+		"agent: codex\nmanaged_statusline: false\nproximo: true\nbridge: false\nenv:\n  FOO: bar\n",
+		"")
+
+	prov, err := Compute(cwd, "")
+	if err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
+	for _, key := range []string{"agent", "managed_statusline", "proximo", "bridge", "env"} {
+		if got := prov[key]; got != OriginGlobal {
+			t.Errorf("prov[%q] = %v, want OriginGlobal (reflection walk must attribute it)", key, got)
+		}
+	}
+}
+
 func TestComputeProjectOverridesGlobal(t *testing.T) {
 	cwd := writeLayeredFixture(t,
 		"mounts_root: /tmp/from-global\n",

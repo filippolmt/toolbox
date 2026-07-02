@@ -29,9 +29,11 @@ type Config struct {
 	// Agent is the default AI agent auto-launched by `toolbox worktree`
 	// sessions. Resolved with precedence --agent flag > this key > the
 	// DefaultAgent ("claude"); the resolution default lives in cmd so this
-	// key stays empty when unset (and `config show` omits it). Honours the
-	// standard config layering, so it can be set globally (~/.toolbox.yaml)
-	// or per-directory (.toolbox.yaml). Validated to claude|codex.
+	// key stays empty when unset. `config show` renders its resolved effective
+	// value (falling back to DefaultAgent) so the output reflects what will
+	// launch. Honours the standard config layering, so it can be set globally
+	// (~/.toolbox.yaml) or per-directory (.toolbox.yaml). Validated to
+	// claude|codex.
 	Agent string `mapstructure:"agent"`
 	// Image overrides the container image reference verbatim (full host/path:tag
 	// or digest). Empty = the canonical default. Highest-precedence image

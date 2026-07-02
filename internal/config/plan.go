@@ -292,48 +292,63 @@ func hasTopLevelKey(b []byte, key string) bool {
 // Validation
 // =============================================================================
 
-// applyValidationTail runs ValidateMountsRoot, the shell default fallback,
-// ValidateShell, and InheritHostAuth validation.
+// fieldValidator pairs a config key with the validator run over a resolved
+// Config. The set of keys here plus noValidationKeys must equal
+// config.SchemaKeys() — TestValidatorsCoverSchema enforces that, so a new
+// Config field cannot silently ship unvalidated (or un-exempted). Order is the
+// validation order: the first failing validator wins.
+type fieldValidator struct {
+	key string
+	run func(*Config) error
+}
+
+var fieldValidators = []fieldValidator{
+	{"mounts_root", func(c *Config) error { return ValidateMountsRoot(c.MountsRoot) }},
+	{"image", func(c *Config) error { return ValidateImageRef(c.Image) }},
+	{"registry_mirror", func(c *Config) error { return ValidateRegistryMirror(c.RegistryMirror) }},
+	{"pull", func(c *Config) error { return ValidatePull(c.Pull) }},
+	{"shell", func(c *Config) error { return ValidateShell(c.Shell) }},
+	{"agent", func(c *Config) error { return ValidateAgent(c.Agent) }},
+	{"inherit_host_auth", func(c *Config) error { return validateInheritHostAuth(c.InheritHostAuth) }},
+	{"sdd", func(c *Config) error { return ValidateSDD(c.SDD) }},
+	{"worktree", func(c *Config) error { return ValidateWorktreeSeed(c.Worktree.Seed) }},
+	{"env", func(c *Config) error { return ValidateEnv(c.Env) }},
+	{"shells", func(c *Config) error {
+		for name, s := range c.Shells {
+			if err := ValidateEnv(s.Env); err != nil {
+				return fmt.Errorf("shells.%s.%w", name, err)
+			}
+		}
+		return nil
+	}},
+}
+
+// noValidationKeys are the config keys that legitimately have no validator:
+// bare tri-state / bool toggles (no invalid value) and mounts (validated
+// structurally by the mount plan, not here). Listed explicitly so the
+// coverage guard forces a deliberate classification of every new field.
+var noValidationKeys = map[string]bool{
+	"bridge":             true,
+	"browser_bridge":     true,
+	"proximo":            true,
+	"managed_statusline": true,
+	"mounts":             true,
+}
+
+// applyValidationTail defaults the pull/shell scalars, then runs every
+// field validator in fieldValidators order (first failure wins).
 func applyValidationTail(cfg *Config) error {
-	if err := ValidateMountsRoot(cfg.MountsRoot); err != nil {
-		return err
-	}
-	if err := ValidateImageRef(cfg.Image); err != nil {
-		return err
-	}
-	if err := ValidateRegistryMirror(cfg.RegistryMirror); err != nil {
-		return err
-	}
-	if err := ValidatePull(cfg.Pull); err != nil {
-		return err
-	}
+	// Side-effecting defaults stay explicit — they mutate cfg, so they are not
+	// pure validators and don't belong in the fieldValidators table.
 	if cfg.Pull == "" {
 		cfg.Pull = PullAuto
 	}
 	if cfg.Shell == "" {
 		cfg.Shell = "zsh"
 	}
-	if err := ValidateShell(cfg.Shell); err != nil {
-		return err
-	}
-	if err := ValidateAgent(cfg.Agent); err != nil {
-		return err
-	}
-	if err := validateInheritHostAuth(cfg.InheritHostAuth); err != nil {
-		return err
-	}
-	if err := ValidateSDD(cfg.SDD); err != nil {
-		return err
-	}
-	if err := ValidateWorktreeSeed(cfg.Worktree.Seed); err != nil {
-		return err
-	}
-	if err := ValidateEnv(cfg.Env); err != nil {
-		return err
-	}
-	for name, s := range cfg.Shells {
-		if err := ValidateEnv(s.Env); err != nil {
-			return fmt.Errorf("shells.%s.%w", name, err)
+	for _, v := range fieldValidators {
+		if err := v.run(cfg); err != nil {
+			return err
 		}
 	}
 	return nil
