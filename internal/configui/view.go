@@ -15,13 +15,13 @@ import (
 // Palette: one colour per provenance layer so a key's source is legible at a
 // glance, matching the git-config-style origin vocabulary of config show.
 var (
-	colDefault  = lipgloss.Color("#6C6C6C")
-	colGlobal   = lipgloss.Color("#5FAFFF")
-	colProject  = lipgloss.Color("#5FD75F")
-	colExplicit = lipgloss.Color("#D7AF5F")
-	colEnv      = lipgloss.Color("#D75F87")
-	colAccent   = lipgloss.Color("#AF87FF")
-	colErr      = lipgloss.Color("#FF5F5F")
+	colDefault = lipgloss.Color("#6C6C6C")
+	colGlobal  = lipgloss.Color("#5FAFFF")
+	colProject = lipgloss.Color("#5FD75F")
+	colMixed   = lipgloss.Color("#D7AF5F")
+	colEnv     = lipgloss.Color("#D75F87")
+	colAccent  = lipgloss.Color("#AF87FF")
+	colErr     = lipgloss.Color("#FF5F5F")
 
 	styleTitle    = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	styleTabOn    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000000")).Background(colAccent).Padding(0, 1)
@@ -33,16 +33,17 @@ var (
 )
 
 func originColor(st KeyState) color.Color {
-	if st.FromEnv {
+	switch {
+	case st.FromEnv:
 		return colEnv
+	case st.Mixed:
+		return colMixed
 	}
 	switch st.Origin {
 	case configedit.OriginGlobal:
 		return colGlobal
 	case configedit.OriginProject:
 		return colProject
-	case configedit.OriginExplicit:
-		return colExplicit
 	default:
 		return colDefault
 	}
@@ -110,8 +111,16 @@ func (m Model) renderDetail() string {
 
 	var b strings.Builder
 	b.WriteString(styleTitle.Render(st.Key) + "\n\n")
-	b.WriteString("value:  " + st.Display + "\n")
+	b.WriteString("value (effective): " + st.Display + "\n")
 	b.WriteString("source: " + lipgloss.NewStyle().Foreground(originColor(st)).Render(originLabel(st)) + "\n")
+	scopeLine := st.ScopeDisplay
+	if !st.ScopeSet {
+		scopeLine = fmt.Sprintf("(unset — inherits %s)", originLabel(st))
+	}
+	fmt.Fprintf(&b, "in %s: %s\n", m.scope, scopeLine)
+	if items := detailEntries(m.cfg, st.Key); len(items) > 0 {
+		b.WriteString(styleKeybar.Render("entries: "+strings.Join(items, ", ")) + "\n")
+	}
 	switch {
 	case st.FromEnv:
 		b.WriteString("\n" + styleKeybar.Render("read-only — set via TOOLBOX_"+strings.ToUpper(st.Key)))
@@ -133,11 +142,15 @@ func (m Model) renderEditor() string {
 	case edEnum, edTri:
 		for i, opt := range m.ed.options {
 			cursor := "  "
+			label := opt
+			if opt == m.ed.current {
+				label += " (current)"
+			}
 			if i == m.ed.cursor {
 				cursor = "> "
-				opt = styleSelected.Render(opt)
+				label = styleSelected.Render(label)
 			}
-			b.WriteString(cursor + opt + "\n")
+			b.WriteString(cursor + label + "\n")
 		}
 		b.WriteString("\n" + styleKeybar.Render("↑/↓: choose   enter: save   esc: cancel"))
 	case edMulti:

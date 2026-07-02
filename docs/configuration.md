@@ -12,7 +12,7 @@ toolbox config doctor    # validate without modifying
 toolbox config ui        # interactively view/edit keys across the global & repo layers (needs a TTY)
 ```
 
-Prefer not to hand-edit YAML? [`toolbox config ui`](commands.md#config-ui) is an interactive, provenance-first editor for every key below — it shows which layer supplies each value and writes through the same validated, comment-preserving path as `config set`. The full `toolbox config` subcommand tree is documented in [commands](commands.md#toolbox-config).
+Prefer not to hand-edit YAML? [`toolbox config ui`](commands.md#config-ui) is an interactive, provenance-first editor for every key below — it shows both the effective value and what each layer (global / repo) sets, and writes through the same validated, comment-preserving path as `config set`. The full `toolbox config` subcommand tree is documented in [commands](commands.md#toolbox-config).
 
 ## Loading order
 
