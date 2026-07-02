@@ -8,7 +8,7 @@ sections.**
 |-------|------|--------|
 | [commands.md](commands.md) | reference | Every CLI command, flag, and subcommand |
 | [configuration.md](configuration.md) | reference | All `.toolbox.yaml` keys, loading order, `TOOLBOX_*` env |
-| [mounts.md](mounts.md) | reference | Credential isolation, mount merge, `mounts_root`, startup hooks |
+| [mounts.md](mounts.md) | reference | Credential isolation, mount merge, `mounts_root`, profiles, startup hooks |
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
 | [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
@@ -20,7 +20,7 @@ sections.**
 ## commands.md
 
 - [Global flag: `--config`](commands.md#global-flag---config)
-- [toolbox shell](commands.md#toolbox-shell) — [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
+- [toolbox shell](commands.md#toolbox-shell) — [Profiles](commands.md#profiles) · [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
 - [toolbox worktree](commands.md#toolbox-worktree)
 - [toolbox stop](commands.md#toolbox-stop)
 - [toolbox build](commands.md#toolbox-build)
@@ -54,6 +54,7 @@ sections.**
 - [SSH host-key trust (git over SSH)](mounts.md#ssh-host-key-trust-git-over-ssh)
 - [mounts: merge semantics](mounts.md#mounts-merge-semantics) — [Source paths](mounts.md#source-paths)
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
+- [Profiles](mounts.md#profiles)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
 - [mounts CLI](mounts.md#mounts-cli)
 

@@ -53,8 +53,8 @@ type Result struct {
 // name-only patch, anonymous mount with empty source, …). Per-mount issues
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
-func Plan(cfg *config.Config, workspace string) (Result, error) {
-	merged, err := Merge(cfg)
+func Plan(cfg *config.Config, workspace string, shared ...string) (Result, error) {
+	merged, err := Merge(cfg, shared...)
 	if err != nil {
 		return Result{}, err
 	}
@@ -82,15 +82,18 @@ func Plan(cfg *config.Config, workspace string) (Result, error) {
 // Pure: no filesystem side-effects, no workspace bind. Used by tests
 // asserting merge contracts and by callers that want to inspect the
 // resolved set without materialising sources.
-func Merge(cfg *config.Config) ([]config.Mount, error) {
+func Merge(cfg *config.Config, shared ...string) ([]config.Mount, error) {
 	if err := config.ValidateMountsRoot(cfg.MountsRoot); err != nil {
+		return nil, err
+	}
+	if err := validateShare(defaults(), shared); err != nil {
 		return nil, err
 	}
 	// HOME for inherit_host_auth's pre-stat. UserHomeDir failure leaves home
 	// empty, in which case applyInheritHostAuth treats ~/ paths as-is and
 	// os.Stat reports them missing — surfaces the misconfiguration loudly.
 	home, _ := os.UserHomeDir()
-	base := applyMountsRoot(defaults(), cfg.MountsRoot)
+	base := applyMountsRoot(defaults(), cfg.MountsRoot, shared)
 	base, err := applyInheritHostAuth(base, cfg.InheritHostAuth, home)
 	if err != nil {
 		return nil, err

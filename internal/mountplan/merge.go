@@ -18,7 +18,11 @@ const mountsRootPrefix = "~/.toolbox/"
 // is outside that prefix (e.g. /var/run/docker.sock) are left untouched,
 // as is SymlinkFrom (which references the real host path, not the
 // toolbox-managed mirror). Empty root returns base unchanged.
-func applyMountsRoot(base []config.Mount, root string) []config.Mount {
+//
+// A mount whose Name is covered by the shared skip-set (see shareCovers) is
+// left on its ~/.toolbox/ source even when root is set — the profile-level
+// opt-out that keeps a tool shared with the host (see cmd `--share`).
+func applyMountsRoot(base []config.Mount, root string, shared []string) []config.Mount {
 	if root == "" {
 		return base
 	}
@@ -30,10 +34,55 @@ func applyMountsRoot(base []config.Mount, root string) []config.Mount {
 		if !strings.HasPrefix(out[i].Source, mountsRootPrefix) {
 			continue
 		}
+		if shareCovers(shared, out[i].Name) {
+			continue
+		}
 		rest := strings.TrimPrefix(out[i].Source, mountsRootPrefix)
 		out[i].Source = trimmed + "/" + rest
 	}
 	return out
+}
+
+// shareCovers reports whether a --share token keeps the mount named name on
+// the host root. A token matches a mount name exactly, or as a "<token>-"
+// prefix so a single token covers a tool's split mounts (e.g. "cf" covers
+// "cf-auth"/"cf-config", "rtk" covers "rtk"/"rtk-data").
+func shareCovers(shared []string, name string) bool {
+	for _, s := range shared {
+		if s == name || strings.HasPrefix(name, s+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// validateShare rejects --share tokens that match no retargetable mount in
+// base, so a typo (e.g. "ghh") fails loudly instead of silently isolating
+// everything. Only mounts whose Source lives under ~/.toolbox/ and are not
+// SymlinkFrom identity mounts (ssh/gitconfig — always host-shared, not
+// selectable) count as shareable.
+func validateShare(base []config.Mount, shared []string) error {
+	var unknown []string
+	for _, s := range shared {
+		matched := false
+		for _, m := range base {
+			if m.SymlinkFrom != "" || !strings.HasPrefix(m.Source, mountsRootPrefix) {
+				continue
+			}
+			if s == m.Name || strings.HasPrefix(m.Name, s+"-") {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			unknown = append(unknown, s)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return fmt.Errorf("share references unknown or non-shareable mount name(s): %s", strings.Join(unknown, ", "))
+	}
+	return nil
 }
 
 // mergeMounts combines a base mount set (typically defaults()) with a

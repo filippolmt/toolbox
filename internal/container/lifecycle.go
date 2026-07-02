@@ -264,7 +264,7 @@ func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []strin
 
 // Stop stops and removes the toolbox container associated with the workspace.
 func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
-	return teardown.StopOne(ctx, cli, sessionplan.ContainerNameFor(workspace), teardown.DefaultStopGrace)
+	return teardown.StopOne(ctx, cli, sessionplan.ContainerNameFor(workspace, ""), teardown.DefaultStopGrace)
 }
 
 // StopByName stops and removes the toolbox container for a named shell.

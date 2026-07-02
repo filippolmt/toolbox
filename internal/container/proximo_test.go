@@ -19,7 +19,7 @@ func proximoCreatePlan(t *testing.T, proximoOn bool) *sessionplan.SessionPlan {
 	ws := testWorkspace(t)
 	return &sessionplan.SessionPlan{
 		Image:         sessionplan.Image{Ref: "ghcr.io/filippolmt/toolbox:latest"},
-		ContainerName: sessionplan.ContainerNameFor(ws),
+		ContainerName: sessionplan.ContainerNameFor(ws, ""),
 		Cmd:           []string{"zsh"},
 		Proximo:       proximoOn,
 		ExtraHosts:    []string{"host.docker.internal:host-gateway"},

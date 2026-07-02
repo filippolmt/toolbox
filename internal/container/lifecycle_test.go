@@ -304,7 +304,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	want := sessionplan.ContainerNameFor(ws)
+	want := sessionplan.ContainerNameFor(ws, "")
 
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
@@ -365,7 +365,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	defer restore()
 
 	ws := testWorkspace(t)
-	wantName := sessionplan.ContainerNameFor(ws)
+	wantName := sessionplan.ContainerNameFor(ws, "")
 
 	createCalled := false
 	startCalled := false

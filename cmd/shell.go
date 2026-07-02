@@ -25,6 +25,8 @@ var shellCreate bool
 var shellPath string
 var shellBridgeLoopback bool
 var shellOAuth []string
+var shellProfile string
+var shellShare []string
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
@@ -68,6 +70,15 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
 	// fails fast before any fs side effects or container creation.
 	publish, bridgeLoopback, err := expandShellOAuth(shellPublish, shellBridgeLoopback, shellOAuth)
+	if err != nil {
+		return err
+	}
+
+	// Resolve --profile / --share into the effective mounts root + share set
+	// before any fs side effect or container creation (same fail-fast contract
+	// as expandShellOAuth). An invalid profile name or a --share without a
+	// profile errors here, leaving no ~/.toolbox/profiles/<name> dir behind.
+	profileShare, err := applyShellProfile(shellProfile, shellShare)
 	if err != nil {
 		return err
 	}
@@ -128,6 +139,8 @@ func runShell(cmd *cobra.Command, args []string) error {
 		BridgeLoopback: bridgeLoopback,
 		ImageDigest:    imageDigest,
 		Name:           shellName,
+		Profile:        shellProfile,
+		Share:          profileShare,
 	})
 	if err != nil {
 		return err
@@ -167,6 +180,29 @@ func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]str
 	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
 }
 
+// applyShellProfile validates the --profile / --share flags and, for an active
+// profile, points the effective mounts root at ~/.toolbox/profiles/<name> (in
+// memory, never written to config) so the whole ~/.toolbox/ credential + state
+// set is isolated to that profile. Returns the effective share skip-set to hand
+// to the planner: the user's --share tokens plus "bridge" — the bridge daemon's
+// state dir is host infrastructure, not a per-account credential, so it stays
+// on the host root even under a profile (retargeting it would break
+// in-container URL/editor/proximo forwarding). Pure aside from mutating cfg's
+// in-memory MountsRoot; --share matching is validated downstream in mountplan.
+func applyShellProfile(profile string, share []string) ([]string, error) {
+	if profile == "" {
+		if len(share) > 0 {
+			return nil, fmt.Errorf("--share requires --profile")
+		}
+		return nil, nil
+	}
+	if profile == "." || profile == ".." || strings.ContainsAny(profile, `/\`) {
+		return nil, fmt.Errorf("--profile %q: name must not be '.', '..', or contain a path separator", profile)
+	}
+	cfg.MountsRoot = "~/.toolbox/profiles/" + profile
+	return append(append([]string(nil), share...), "bridge"), nil
+}
+
 // printBridgeTipIfNeeded prints a one-line install hint when the
 // host-side bridge is not yet installed. Build tags select an Agent
 // that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
@@ -197,6 +233,15 @@ func init() {
 		"Forward published ports to container loopback so CLIs that bind 127.0.0.1 "+
 			"are reachable from the host browser (e.g. codex/wrangler OAuth callbacks). "+
 			"Requires at least one -p; see docs/commands.md#loopback-bridge.")
+	shellCmd.Flags().StringVar(&shellProfile, "profile", "",
+		"isolate the whole ~/.toolbox/ credential + state set under ~/.toolbox/profiles/<name>, "+
+			"so every CLI in the shell (claude, codex, gh, gcloud, …) uses that profile's own auth. "+
+			"All-or-nothing (not per-tool); SSH keys and git config stay shared with the host. "+
+			"Overrides a configured mounts_root for this invocation. Runs in its own container.")
+	shellCmd.Flags().StringSliceVar(&shellShare, "share", nil,
+		"under --profile, keep the named tools on the host's ~/.toolbox/ root instead of the profile "+
+			"(repeatable/comma-separated). Names match 'toolbox mounts' identifiers; a prefix like 'cf' or "+
+			"'rtk' covers its split mounts. Requires --profile.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
 	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)

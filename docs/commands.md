@@ -15,8 +15,35 @@ Start an interactive shell session in the toolbox container. With no argument it
 | `-p, --publish <spec>` | Publish a host port (repeatable, docker-style syntax — see below). |
 | `-B, --bridge-loopback` | Forward published ports to container loopback (see below). |
 | `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `sonar`, `wrangler`). |
+| `--profile <name>` | Isolate the whole `~/.toolbox/` credential + state set under a named profile (see [Profiles](#profiles)). |
+| `--share <tool,...>` | Under `--profile`, keep the named tools on the host root instead of the profile (repeatable/comma-separated). Requires `--profile`. |
 | `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
 | `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
+
+### Profiles
+
+`--profile <name>` runs the shell against an isolated copy of the whole
+`~/.toolbox/` credential and state set, rooted at `~/.toolbox/profiles/<name>/`.
+Every CLI in the shell (claude, codex, gh, gcloud, …) then reads and writes that
+profile's own auth — the way to keep a second account apart from your default:
+
+```bash
+toolbox shell --profile work     # log in to claude/codex/gh here → stored under the "work" profile
+toolbox shell                    # default identity, untouched by the profile
+```
+
+Isolation is all-or-nothing, not per-tool. To keep specific tools shared with
+the host while isolating the rest, list them with `--share` (repeatable, matches
+`toolbox mounts` names; a prefix like `cf` or `rtk` covers its split mounts):
+
+```bash
+toolbox shell --profile work --share gh,docker   # gh + docker stay host-shared, everything else isolated
+```
+
+A profile shell runs in its own container, so it coexists with the default shell
+for the same directory. SSH keys and git config always stay shared with the
+host, and the host bridge keeps working under a profile. See
+[profiles in mounts](mounts.md#profiles) for what is isolated and why.
 
 ### Publishing ports
 

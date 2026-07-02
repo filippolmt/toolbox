@@ -118,6 +118,19 @@ type PlanInput struct {
 	// decision here means cmd never handles the container-name format — it sets
 	// Name by intent and nothing else.
 	Name string
+
+	// Profile is the active `--profile <name>` selector (empty = none). A
+	// non-empty value is folded into the container name so a profile shell
+	// never collides with the default shell for the same workspace, each
+	// keeping its own mount set fixed at ContainerCreate. The mount retargeting
+	// itself rides on Cfg.MountsRoot (set by cmd to ~/.toolbox/profiles/<name>);
+	// Profile here governs only the container identity.
+	Profile string
+
+	// Share is the set of --share tokens (mount names/prefixes) kept on the
+	// host ~/.toolbox/ root even under a profile. Threaded into the mount plan;
+	// empty for non-profile sessions.
+	Share []string
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -125,9 +138,15 @@ type PlanInput struct {
 // named-shell choice lives. Empty name → workspace-derived; non-empty →
 // named form. bridgeLoopback-free and fs-free, so both Plan and Merge share
 // it.
-func containerName(workspace, name string) string {
+func containerName(workspace, name, profile string) string {
 	if name == "" {
-		return ContainerNameFor(workspace)
+		return ContainerNameFor(workspace, profile)
+	}
+	// Named shells fold the profile into the sanitized name so a profile
+	// named-shell keeps a distinct container from the default one. The suffix
+	// carries no -<8hex>, so it stays disjoint from the workspace-hash format.
+	if profile != "" {
+		name = name + "-" + SanitizeShellName(profile)
 	}
 	return NamedContainerNameFromSanitized(name)
 }
@@ -162,7 +181,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(in.Cfg, workspace)
+	mp, err := mountplan.Plan(in.Cfg, workspace, in.Share...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +194,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
-		ContainerName: containerName(workspace, in.Name),
+		ContainerName: containerName(workspace, in.Name, in.Profile),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:    browserBridgeExtraHosts(in.Cfg),
@@ -228,7 +247,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 
 	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
-	merged, err := mountplan.Merge(in.Cfg)
+	merged, err := mountplan.Merge(in.Cfg, in.Share...)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +271,7 @@ func Merge(in PlanInput) (*MergedSessionPlan, error) {
 		ExposedPorts:  exposed,
 		PortBindings:  bindings,
 		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: containerName(workspace, in.Name),
+		ContainerName: containerName(workspace, in.Name, in.Profile),
 		Cmd:           cmd,
 		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
 	}, nil
@@ -364,9 +383,19 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // so two directories sharing a basename do not collide. Output capped at
 // 63 chars (Docker convention): basename is truncated first so the prefix
 // and hash suffix survive.
-func ContainerNameFor(workspace string) string {
+//
+// A non-empty profile is folded into the hash seed (not the visible basename),
+// so a profile shell gets a distinct name from the default shell for the same
+// workspace while the format and length budget are unchanged. The plain
+// workspace hash (sddEnv sentinel) stays profile-free — only the container
+// identity varies by profile.
+func ContainerNameFor(workspace, profile string) string {
 	abs := normalizeWorkspace(workspace)
-	hash := hashWorkspace(abs)
+	seed := abs
+	if profile != "" {
+		seed = abs + "\x00profile=" + profile
+	}
+	hash := hashWorkspace(seed)
 
 	base := workspaceSlug(abs)
 

@@ -299,7 +299,7 @@ func TestApplyMountsRootDoesNotMutateBase(t *testing.T) {
 	base := defaults()
 	originalSource := findMount(base, "claude").Source
 
-	out := applyMountsRoot(base, "/custom/root")
+	out := applyMountsRoot(base, "/custom/root", nil)
 
 	if got := findMount(base, "claude").Source; got != originalSource {
 		t.Errorf("base mutated: claude.Source = %q, want %q", got, originalSource)

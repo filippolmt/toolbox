@@ -117,6 +117,39 @@ toolbox stop
 mv ~/.toolbox /Volumes/work/toolbox
 ```
 
+## Profiles
+
+`toolbox shell --profile <name>` is a per-invocation `mounts_root` set to
+`~/.toolbox/profiles/<name>` — the same retarget described above, but chosen at
+the command line instead of the config file, and namespaced to its own
+container. Its purpose is switching *identity*: a second Claude subscription, a
+work vs. personal `gh`/`codex`/`gcloud`. Every default mount under `~/.toolbox/`
+moves into the profile root, so all bundled CLIs read that profile's own
+credentials. See [profiles usage](commands.md#profiles) for the command-line
+side.
+
+Two things stay shared with the host regardless of the profile, because they are
+machine identity / infrastructure, not per-account credentials:
+
+- **SSH keys and git config** — `~/.ssh` and `~/.gitconfig` are `SymlinkFrom`
+  mounts pointing at the real host files, so even with the source path
+  retargeted they still resolve to the host. Git commit identity and SSH keys
+  are the same across every profile, and cannot be selected with `--share`.
+- **The host bridge** — the `bridge` mounts carry the bridge daemon's
+  token/socket from `~/.toolbox/toolbox/bridge`; retargeting them would bind
+  empty dirs and break in-container `xdg-open`/editor/proximo forwarding, so a
+  profile always keeps them on the host root.
+
+`--share <tool,...>` opts individual tools back onto the host root while the rest
+stay isolated — the token matches a `toolbox mounts` name, and a prefix like
+`cf` or `rtk` covers that tool's split mounts. A `--share` name matching no
+shareable mount is rejected, so a typo can't silently isolate everything.
+
+Because a profile is a fresh root, each one re-downloads regenerable caches
+(`npm-global`, `bun`, `go`, `playwright`) on first use — expected, and the cost
+of full isolation. Like `mounts_root`, a profile changes only where state
+*binds*; it never moves existing data.
+
 ## Startup hooks
 
 Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be executed by the entrypoint on every `toolbox shell`, before your zsh prompt. Use this for per-user bootstrap that should not live in the image (installing Claude Code skill packs, `direnv` shims, custom env bootstrap, etc.). Hooks run as the toolbox user, share the mounted credentials, and can write to the per-user npm prefix at `~/.toolbox/npm-global/` without needing root.
