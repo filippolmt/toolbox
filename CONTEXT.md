@@ -305,7 +305,12 @@ teardown/status use `container.Stop` / `ContainerInspect` through the existing
 `client.APIClient` seam — so `Create` (prepare), `Open` (resolve), `List`,
 `Rm`, `Prune` and `Sync` run in tests with a fake git and a nil client, no real
 repo and no daemon. Pure decisions (sync/prune plans, porcelain parse, seed
-gating, dir/branch naming) live in `internal/worktree/plan.go`. The
+candidate dedup + defaults via `DedupeSeeds`/`DefaultSeeds`, dir/branch naming)
+live in `internal/worktree/plan.go`. Seed *gating* itself — the dir-wholesale
+vs per-file decision and the `git check-ignore` filter — is a filesystem+git
+walk that deliberately stays at the `cmd` edge (it shells out directly rather
+than through the `Git` seam, since it is a filesystem-shaped git query, not the
+orchestration git the seam abstracts). The
 **interactive session launch** for create/open — `resolveImageDigest` +
 `sessionplan.Plan` + `applyWorktreeSession` + `container.Shell` (whose TTY
 attach is not mockable across packages) — deliberately stays at the `cmd`

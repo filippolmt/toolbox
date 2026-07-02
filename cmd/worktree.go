@@ -232,28 +232,11 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent,
 	return container.Shell(ctx, cli, plan)
 }
 
-// defaultWorktreeSeeds lists the per-repo (not per-branch) working state a
-// fresh `git worktree add` checkout lacks — it materialises tracked files
-// only. Each entry is a repo-relative file or directory (directories seeded
-// recursively). Only entries git actually ignores are copied (seedWorktreeFiles
-// gates every candidate through `git check-ignore`), so a repo that tracks one
-// of these paths is unaffected. `.env.*` variants are discovered by glob.
-// localSettingsRel is the per-repo Claude permission allowlist: the one seed
-// worth a git-independent fallback copy when `git check-ignore` itself fails.
-const localSettingsRel = ".claude/settings.local.json"
-
-var defaultWorktreeSeeds = []string{
-	localSettingsRel, // per-repo Claude permission allowlist
-	".env",           // dotenv secrets (+ .env.* via envSeeds)
-	"openspec",       // OpenSpec working tree (specs + changes)
-	".planning",      // gsd spec-driven planning artifacts
-}
-
 // seedWorktreeFiles copies gitignored per-repo working state from the main
 // repo (root) into a freshly created worktree (wtPath) so the agent session
 // starts with the local specs, planning artifacts, permission allowlist, and
 // dotenv secrets a tracked-files-only checkout would miss. extra is the user's
-// worktree.seed config, unioned with defaultWorktreeSeeds.
+// worktree.seed config, unioned with worktree.DefaultSeeds.
 //
 // Only paths git ignores in the main repo are copied: a tracked path already
 // arrives with the checkout, and a non-ignored untracked path is deliberately
@@ -265,7 +248,7 @@ var defaultWorktreeSeeds = []string{
 // or an I/O error must never block the session (the agent still runs, just
 // with less inherited state).
 func seedWorktreeFiles(root, wtPath string, extra []string) {
-	candidates := dedupeSeeds(defaultWorktreeSeeds, extra, envSeeds(root))
+	candidates := worktree.DedupeSeeds(worktree.DefaultSeeds, extra, envSeeds(root))
 
 	seed := func(rel string) { seedEntry(filepath.Join(root, rel), filepath.Join(wtPath, rel)) }
 
@@ -326,7 +309,7 @@ func seedWorktreeFiles(root, wtPath string, extra []string) {
 		// confirm what is ignored, so fall back to the one seed that is virtually
 		// always gitignored and always worth carrying — the permission allowlist.
 		fmt.Fprintf(os.Stderr, "toolbox: warning: git check-ignore failed (%v); seeding only the permission allowlist\n", err)
-		seed(localSettingsRel)
+		seed(worktree.LocalSettingsRel)
 		return
 	}
 	for _, rel := range ignored {
@@ -347,24 +330,6 @@ func envSeeds(root string) []string {
 			continue
 		}
 		out = append(out, filepath.Base(m))
-	}
-	return out
-}
-
-// dedupeSeeds unions the given seed lists into one order-preserving slice,
-// cleaning each entry so ".env" and "./.env" collapse to a single candidate.
-func dedupeSeeds(lists ...[]string) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, list := range lists {
-		for _, p := range list {
-			p = filepath.Clean(p)
-			if _, ok := seen[p]; ok {
-				continue
-			}
-			seen[p] = struct{}{}
-			out = append(out, p)
-		}
 	}
 	return out
 }
