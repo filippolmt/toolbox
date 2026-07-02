@@ -16,7 +16,16 @@ Concretely: `defaults() → applyMountsRoot → mergeMounts → resolveAll →
 append workspace bind → append host-path mirror (when safe)`. Owned by
 `internal/mountplan`. The single seam runtime callers and tests cross is
 `mountplan.Plan(cfg, workspace)`; pure merge inspection (no filesystem
-side-effects) is exposed as `mountplan.Merge(cfg)`.
+side-effects) is exposed as `mountplan.Merge(cfg)`. Mount provenance is
+part of the same seam: `mountplan.Classify(cfg) []ClassifiedMount` tags each
+merged entry with its `Origin` (default / patched / user / disabled,
+re-including defaults the merge dropped), and `mountplan.Names(cfg)` returns
+the sorted name universe a disable patch may legally reference. Both are
+pure; the `mounts` CLI reads them instead of re-deriving default-vs-user
+set arithmetic per handler (the mirror of the Config Schema provenance
+deepening). `runMountsRemove` stays on `configedit.UserMountNames` — a
+distinct file-scoped question ("what is written in this file") that is not
+the same as merge-set origin.
 
 Why the term exists: before this concept was named, the same logic was
 spread across `internal/config` (defaults + merge + root retarget),
