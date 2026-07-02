@@ -357,6 +357,45 @@ func boolPtrStr(p *bool) string {
 	return "false"
 }
 
+// writeSortedMap renders a string-keyed map as a YAML block with keys sorted
+// for determinism: `key: {}` when empty, else `key:` followed by two-space
+// `k: <val(v)>` entries. ann is the origin annotation appended to the header.
+func writeSortedMap[V any](w io.Writer, key, ann string, m map[string]V, val func(V) string) error {
+	if len(m) == 0 {
+		_, err := fmt.Fprintf(w, "%s: {}%s\n", key, ann)
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "%s:%s\n", key, ann); err != nil {
+		return err
+	}
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		if _, err := fmt.Fprintf(w, "  %s: %s\n", k, val(m[k])); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeYAMLSlice renders a string slice as a YAML block at the given indent
+// depth (0 = top level): `key: []` when empty, else `key:` followed by
+// `- item` entries one level deeper. ann is appended to the header.
+func writeYAMLSlice(w io.Writer, indent int, key, ann string, items []string) error {
+	pad := strings.Repeat("  ", indent)
+	if len(items) == 0 {
+		_, err := fmt.Fprintf(w, "%s%s: []%s\n", pad, key, ann)
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "%s%s:%s\n", pad, key, ann); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, err := fmt.Fprintf(w, "%s  - %s\n", pad, item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // writeResolvedConfigWithOrigin is writeResolvedConfig plus optional
 // per-key origin annotations (git-config --show-origin style). With a nil
 // prov the output is identical to the historical renderer.
@@ -418,67 +457,24 @@ func writeResolvedConfigWithOrigin(w io.Writer, c *config.Config, prov configedi
 		return err
 	}
 
-	if len(c.SDD) == 0 {
-		if _, err := fmt.Fprintf(w, "sdd: {}%s\n", ann("sdd")); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(w, "sdd:%s\n", ann("sdd")); err != nil {
-			return err
-		}
-		for _, k := range slices.Sorted(maps.Keys(c.SDD)) {
-			if _, err := fmt.Fprintf(w, "  %s: %t\n", k, c.SDD[k].Enabled); err != nil {
-				return err
-			}
-		}
+	if err := writeSortedMap(w, "sdd", ann("sdd"), c.SDD, func(s config.SDDSkill) string {
+		return fmt.Sprintf("%t", s.Enabled)
+	}); err != nil {
+		return err
 	}
-
-	if len(c.Env) == 0 {
-		if _, err := fmt.Fprintf(w, "env: {}%s\n", ann("env")); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(w, "env:%s\n", ann("env")); err != nil {
-			return err
-		}
-		for _, k := range slices.Sorted(maps.Keys(c.Env)) {
-			if _, err := fmt.Fprintf(w, "  %s: %s\n", k, c.Env[k]); err != nil {
-				return err
-			}
-		}
+	if err := writeSortedMap(w, "env", ann("env"), c.Env, func(v string) string { return v }); err != nil {
+		return err
 	}
 
 	if _, err := fmt.Fprintf(w, "worktree:%s\n", ann("worktree")); err != nil {
 		return err
 	}
-	if len(c.Worktree.Seed) == 0 {
-		if _, err := fmt.Fprintln(w, "  seed: []"); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintln(w, "  seed:"); err != nil {
-			return err
-		}
-		for _, s := range c.Worktree.Seed {
-			if _, err := fmt.Fprintf(w, "    - %s\n", s); err != nil {
-				return err
-			}
-		}
+	if err := writeYAMLSlice(w, 1, "seed", "", c.Worktree.Seed); err != nil {
+		return err
 	}
 
-	if len(c.InheritHostAuth) == 0 {
-		if _, err := fmt.Fprintf(w, "inherit_host_auth: []%s\n", ann("inherit_host_auth")); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(w, "inherit_host_auth:%s\n", ann("inherit_host_auth")); err != nil {
-			return err
-		}
-		for _, k := range c.InheritHostAuth {
-			if _, err := fmt.Fprintf(w, "  - %s\n", k); err != nil {
-				return err
-			}
-		}
+	if err := writeYAMLSlice(w, 0, "inherit_host_auth", ann("inherit_host_auth"), c.InheritHostAuth); err != nil {
+		return err
 	}
 
 	if len(c.Shells) == 0 {
