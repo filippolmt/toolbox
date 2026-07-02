@@ -133,7 +133,7 @@ func displayValue(cfg *config.Config, key string) string {
 	case "shells":
 		return countLabel(len(cfg.Shells), "shell")
 	case "shell":
-		return orDefault(cfg.Shell, "zsh")
+		return orDefault(cfg.Shell, config.SupportedShells[0])
 	case "agent":
 		return orDefault(cfg.Agent, config.DefaultAgent)
 	case "image":

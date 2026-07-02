@@ -392,6 +392,11 @@ func (m *Model) finishSave(err error) {
 	m.status = fmt.Sprintf("saved %s to %s", key, m.scope)
 }
 
+// indexOf returns the position of v in opts, or 0 when absent. 0-on-miss is an
+// intentional safe default: every caller seeds it with the current effective
+// value, which is always one of the options (enums come from validated config;
+// tri-state maps through triState into triChoices), so a miss is unreachable —
+// and preselecting the first option is the sane fallback if that ever changes.
 func indexOf(opts []string, v string) int {
 	for i, o := range opts {
 		if o == v {
