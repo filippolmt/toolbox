@@ -50,12 +50,12 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 		Env:          shellExecEnv(),
 	})
 	if err != nil {
-		return fmt.Errorf("create exec for container %s: %w", containerID, err)
+		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("create exec for container %s: %w", containerID, err))
 	}
 
 	resp, err := cli.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{TTY: true})
 	if err != nil {
-		return fmt.Errorf("attach exec %s: %w", execResp.ID, err)
+		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("attach exec %s: %w", execResp.ID, err))
 	}
 	defer resp.Close()
 
@@ -148,4 +148,34 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	_, _ = io.Copy(os.Stdout, resp.Reader)
 
 	return nil
+}
+
+// diagnoseExecFailure enriches an exec failure with a startup post-mortem.
+// When the exec fails because the container has already exited — the entrypoint
+// died before the shell could attach — the raw daemon error is an opaque runc
+// "write init-p: broken pipe" that hides the real cause. The most common cause
+// is Docker running out of disk space (the entrypoint can't create its state
+// dirs), so unless the container is confirmed still running we return a message
+// that names that failure mode and the command to confirm it. Only a
+// confirmed-running container means the failure is something else, so origErr is
+// returned unchanged; an inspect error (AutoRemove already reaped it) or a
+// missing/exited state falls through to the diagnostic. origErr is always
+// wrapped so callers can still errors.Is it.
+//
+// This reports the likely cause, not the container's exact log lines: reading
+// ContainerLogs races AutoRemove reaping the dead container. Add a log tail here
+// if the exact entrypoint error is ever needed.
+func diagnoseExecFailure(ctx context.Context, cli client.APIClient, containerID string, origErr error) error {
+	inspect, err := cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err == nil && inspect.Container.State != nil && inspect.Container.State.Running {
+		// Container is up, so the exec failure is something else — leave it be.
+		return origErr
+	}
+	// Otherwise the container is gone (AutoRemove reaped it) or died at startup.
+	detail := ""
+	if err == nil && inspect.Container.State != nil {
+		detail = fmt.Sprintf(" (exit %d)", inspect.Container.State.ExitCode)
+	}
+	return fmt.Errorf("container exited at startup%s before the shell could attach — "+
+		"Docker may be out of disk space; check with `docker system df`: %w", detail, origErr)
 }
