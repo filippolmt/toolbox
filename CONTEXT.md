@@ -301,6 +301,29 @@ prefix the explicit ordering signal — with the manifest-driven shape the
 boot sequence is observable from the Go side without parsing the runtime
 image.
 
+### Bridge Contract
+
+The daemon↔shim wire contract: the container-side paths and state filenames
+the shell shim (`internal/build/assets/bin/bridge-lib.sh`) uses to reach the
+host bridge daemon, and the Go constants the daemon writes them from
+(`internal/bridge/paths.go`: `ContainerDir`, `LegacyContainerDir`,
+`ContainerSocket`, `tokenFile`, `portFile`).
+
+Concretely: the contract is two artifacts in two languages linked by one test.
+`TestBridgeContract_ShimMatchesGo` (`internal/bridge/paths_test.go`) reads the
+shim and asserts each Go literal appears in it verbatim, so a rename on either
+side fails the build. The other half of each path (the mount `Target`) is
+already pinned by `mountplan.defaults`; this seam pins the shim half.
+
+Why the term exists: before this concept was named, the socket path, the state
+dir, the legacy fallback dir, and the `token`/`port` filenames were hardcoded
+independently in Go and in shell, held together only by comments ("Must match
+BRIDGE_SOCK in bridge-lib.sh"). A rename on either side broke the
+container→host transport silently — no failing test, only a user's `xdg-open`
+that stopped reaching the host. The "Bridge Contract" name turns that
+comment-enforced invariant into a red-on-drift bijection test, mirroring the
+Init Sequence `init.d` bijection and the Tool Catalog fan-out collapse.
+
 ### Worktree
 
 The per-branch worktree subsystem behind `toolbox worktree` (create / open /

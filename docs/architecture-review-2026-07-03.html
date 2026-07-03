@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toolbox — Architecture Deepening Review</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  tailwind.config = { theme: { extend: { fontFamily: { mono: ['ui-monospace','SFMono-Regular','Menlo','monospace'] } } } };
+</script>
+<style>
+  body { background:#0b0f17; }
+  .card { background:#111827; border:1px solid #1f2937; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .badge-strong { background:#052e1a; color:#4ade80; border:1px solid #14532d; }
+  .badge-worth  { background:#1e2a3a; color:#7dd3fc; border:1px solid #1e3a5f; }
+  .badge-spec   { background:#2a2333; color:#c4b5fd; border:1px solid #4c1d95; }
+  .shallow { background:#1a1414; border:1px dashed #7f1d1d; color:#fca5a5; }
+  .deep    { background:#0d1a12; border:1px solid #14532d; color:#86efac; }
+  .leak    { color:#fca5a5; }
+  .seam    { color:#7dd3fc; }
+  code.k { background:#1f2937; color:#e5e7eb; padding:1px 5px; border-radius:4px; font-size:.85em; }
+  .mermaid { background:#0d1320; border-radius:8px; padding:10px; }
+  h2 { scroll-margin-top: 1rem; }
+  a.anchor { color:#60a5fa; }
+</style>
+</head>
+<body class="text-gray-200">
+<div class="max-w-6xl mx-auto px-5 py-10">
+
+  <header class="mb-10">
+    <p class="text-sky-400 mono text-sm tracking-wide">TOOLBOX · ARCHITECTURE DEEPENING</p>
+    <h1 class="text-4xl font-bold text-white mt-1">Where is complexity still shallow?</h1>
+    <p class="text-gray-400 mt-3 max-w-3xl">
+      The <span class="mono text-gray-200">internal/</span> pipeline is already deep — 13 named seams in
+      <code class="k">CONTEXT.md</code> (Mount Plan, Session Plan, Run Plan, Config Plan, Image Plan,
+      Docker Identity, Teardown, Init Sequence, Worktree, Tool Catalog…). This review hunts the corners the
+      deepening pattern has <em>not</em> yet reached: the un-glossaried <code class="k">internal/bridge</code>,
+      the new TUI, and logic still trapped in <code class="k">cmd/</code>. Vocabulary is
+      <span class="seam">module · interface · depth · seam · adapter · leverage · locality</span>, and each
+      candidate is put through the <strong>deletion test</strong>: would removing the module concentrate
+      complexity (good) or just move it (shallow)?
+    </p>
+    <div class="mt-4 flex flex-wrap gap-2 text-xs mono">
+      <span class="px-2 py-1 badge-strong rounded">Strong ×2</span>
+      <span class="px-2 py-1 badge-worth rounded">Worth exploring ×3</span>
+      <span class="px-2 py-1 badge-spec rounded">Speculative ×1</span>
+    </div>
+    <nav class="mt-6 text-sm text-gray-400 flex flex-wrap gap-x-5 gap-y-1">
+      <a class="anchor" href="#c1">1 · Bridge Contract</a>
+      <a class="anchor" href="#c2">2 · Config Render</a>
+      <a class="anchor" href="#c3">3 · Output Convention</a>
+      <a class="anchor" href="#c4">4 · Config Key Descriptor</a>
+      <a class="anchor" href="#c5">5 · Docker Edge leak</a>
+      <a class="anchor" href="#c6">6 · Preview/Writer split</a>
+      <a class="anchor" href="#top">★ Top recommendation</a>
+    </nav>
+  </header>
+
+  <!-- ================= C1 ================= -->
+  <section id="c1" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">1 · The Bridge Contract is a comment, not a seam</h2>
+        <p class="text-gray-400 text-sm mono mt-1">internal/bridge/paths.go · internal/build/assets/bin/bridge-lib.sh</p>
+      </div>
+      <span class="px-3 py-1 badge-strong rounded text-xs mono whitespace-nowrap">Strong</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          The container→host request path is one contract split across two languages with <strong>no binding
+          test</strong>. <code class="k">paths.go</code> defines the socket path
+          (<span class="mono">ContainerSocket = ".../run/bridge.sock"</span>) with the comment
+          <em>"Must match BRIDGE_SOCK in bridge-lib.sh"</em>; <code class="k">bridge-lib.sh</code> re-hardcodes
+          the same literal. The legacy fallback path is duplicated the same way. The invariant lives only in a
+          comment — a rename on either side silently breaks the socket-first transport, and nothing fails until
+          a user's <span class="mono">xdg-open</span> stops reaching the host.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm"><strong class="leak">Fails</strong> — this is genuine cross-language
+          coupling that <em>no module boundary contains</em>. That is exactly the signal for a deepening.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          Give the daemon↔shim wire contract a name and one owner. The Go side becomes the single source of the
+          path/port/token/header literals; the shell shim reads them (env-injected at container create, or a
+          generated fragment) instead of re-typing them. A single test asserts the Go constants and the shell
+          shim agree — the same move that turned the <span class="seam">init.d bijection</span> and
+          <span class="seam">Tool Catalog</span> fan-outs into red-on-drift tests.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Leverage:</strong> one edit site for the wire format, not two-in-two-languages.</li>
+          <li><strong>Locality:</strong> "how a request travels" reads from one named module.</li>
+          <li><strong>Tests:</strong> drift becomes a failing Go/smoke test, not a field-reported broken bridge.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-6">
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">BEFORE — mirrored literals, comment-enforced</p>
+        <div class="mermaid">
+flowchart TB
+  subgraph GO["paths.go (Go)"]
+    A["ContainerSocket = &quot;…/run/bridge.sock&quot;<br/>// Must match bridge-lib.sh"]
+  end
+  subgraph SH["bridge-lib.sh (shell)"]
+    B["BRIDGE_SOCK=&quot;…/run/bridge.sock&quot;<br/># hand-copied"]
+  end
+  A -. "comment only<br/>no test" .-> B
+  style A fill:#3b1111,stroke:#7f1d1d,color:#fca5a5
+  style B fill:#3b1111,stroke:#7f1d1d,color:#fca5a5
+        </div>
+      </div>
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">AFTER — one owner, asserted seam</p>
+        <div class="mermaid">
+flowchart TB
+  subgraph OWN["bridge contract (one owner)"]
+    C["path · port · token · headers"]
+  end
+  C --> D["Go daemon/shim consts"]
+  C --> E["shell shim (env / generated)"]
+  T{{"bijection test<br/>Go ≡ shell"}} -.-> D
+  T -.-> E
+  style C fill:#0d1a12,stroke:#14532d,color:#86efac
+  style T fill:#0d1320,stroke:#1e3a5f,color:#7dd3fc
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C2 ================= -->
+  <section id="c2" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">2 · <span class="mono">config show</span> renderer trapped in cmd</h2>
+        <p class="text-gray-400 text-sm mono mt-1">cmd/config.go:353–572 (~220 lines)</p>
+      </div>
+      <span class="px-3 py-1 badge-strong rounded text-xs mono whitespace-nowrap">Strong</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          A hand-rolled YAML serializer (<span class="mono">writeResolvedConfigWithOrigin</span>,
+          <span class="mono">writeSortedMap</span>, <span class="mono">writeYAMLSlice</span>,
+          <span class="mono">quoteIfEmpty</span>, <span class="mono">boolPtrStr</span>) lives in the cobra layer,
+          mirrors the <span class="seam">Config Schema</span> field-by-field, and is keyed off the package var
+          <code class="k">cfg</code>. It is real logic coupled to <code class="k">config</code> internals but
+          sitting a package away from them — testable today only by holding the whole schema-coverage test
+          (<span class="mono">TestConfigShowCoversSchema</span>) in cmd.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm"><strong class="deep">Concentrates</strong> — a
+          <span class="mono">config.Render(w, cfg, prov)</span> module would sit beside the schema it already
+          duplicates, and the coverage test would guard the renderer <em>from inside</em> the package it reflects.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          Move the serializer into <code class="k">internal/config</code> (or a sibling it owns) as one exported
+          rendering seam that takes a writer + resolved config + provenance. <code class="k">cmd</code> shrinks
+          to "load, call Render, print". This is the exact deepening already applied to Config Schema, Config
+          Plan, and the annotated example — a fifth schema consumer joining the reflected-tag authority instead
+          of hand-enumerating beside it.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Locality:</strong> renderer lives next to the schema it must track.</li>
+          <li><strong>Tests:</strong> render becomes a pure table test (input config → golden YAML), no cmd, no cobra, no package var.</li>
+          <li><strong>Leverage:</strong> one more red-on-drift schema consumer; AI-navigable "where is config printed" → one owner.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-6">
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">BEFORE</p>
+        <div class="p-4 shallow rounded-lg text-sm mono">
+          cmd/config.go<br>
+          &nbsp;&nbsp;├─ RunE closure → package var <b>cfg</b><br>
+          &nbsp;&nbsp;├─ writeResolvedConfigWithOrigin<br>
+          &nbsp;&nbsp;├─ writeSortedMap / writeYAMLSlice<br>
+          &nbsp;&nbsp;├─ quoteIfEmpty / boolPtrStr<br>
+          &nbsp;&nbsp;└─ <i>~220 lines mirroring the schema,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;one package away from it</i>
+          <div class="mt-2 text-red-300">interface ≈ implementation → shallow @ cmd</div>
+        </div>
+      </div>
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">AFTER</p>
+        <div class="p-4 deep rounded-lg text-sm mono">
+          internal/config<br>
+          &nbsp;&nbsp;├─ SchemaKeys() ── authority<br>
+          &nbsp;&nbsp;└─ <b>Render(w, cfg, prov)</b> ◀ seam<br>
+          <br>
+          cmd/config.go<br>
+          &nbsp;&nbsp;└─ load → config.Render → done
+          <div class="mt-2 text-green-300">pure golden test · one schema owner</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C3 ================= -->
+  <section id="c3" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">3 · <span class="mono">internal/ui</span> — a seam nobody crosses</h2>
+        <p class="text-gray-400 text-sm mono mt-1">internal/ui/output.go (34 lines) · ~50 raw "toolbox:" call sites in cmd</p>
+      </div>
+      <span class="px-3 py-1 badge-worth rounded text-xs mono whitespace-nowrap">Worth exploring</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          Two competing output conventions coexist. <code class="k">internal/ui</code> wraps
+          <span class="mono">fmt.Fprintln(os.Stderr, …)</span> with an <span class="mono">OK:/WARN:</span> style —
+          but it is called from cmd <strong>once</strong> (<span class="mono">build.go:38</span>). The convention
+          users actually see is copy-pasted raw: ~24 <span class="mono">"toolbox: warning: …"</span> strings and
+          ~26 <span class="mono">fmt.Fprintln(os.Stderr, "toolbox: …")</span> across shell.go, worktree.go,
+          root.go and more. The seam that should own CLI output is dead weight while the real style has no owner.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm">Deleting <code class="k">ui</code> today <strong class="leak">concentrates
+          nothing</strong> (one caller) — proof it is shallow. The deepening is the inverse: make it the
+          <em>actual</em> owner of the <span class="mono">toolbox:</span> convention so it earns its keep.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          Pick one convention (the <span class="mono">toolbox: warning:</span> prefix users already see), express
+          it once in <code class="k">ui</code>, and route every cmd call site through it. The prefix, the stderr
+          target, and the styling become one decision behind one seam instead of ~50 string literals.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Leverage:</strong> change the prefix / add color / add a <span class="mono">--quiet</span> in one place.</li>
+          <li><strong>Tests:</strong> output format asserted once, not per-handler.</li>
+          <li><strong>Consistency:</strong> kills the two-styles drift; every message reads the same.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-6">
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">BEFORE — seam bypassed</p>
+        <div class="mermaid">
+flowchart LR
+  UI["internal/ui<br/>OK:/WARN: style"]
+  B["build.go"] --> UI
+  S["shell.go"] --> R1["raw &quot;toolbox: warning:&quot;"]
+  W["worktree.go"] --> R2["raw &quot;toolbox:&quot;"]
+  RT["root.go"] --> R3["raw &quot;toolbox:&quot;"]
+  style UI fill:#1a1414,stroke:#7f1d1d,color:#fca5a5
+  style R1 fill:#2a2020,color:#fca5a5
+  style R2 fill:#2a2020,color:#fca5a5
+  style R3 fill:#2a2020,color:#fca5a5
+        </div>
+      </div>
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">AFTER — one owner</p>
+        <div class="mermaid">
+flowchart LR
+  B["build.go"] --> UI
+  S["shell.go"] --> UI
+  W["worktree.go"] --> UI
+  RT["root.go"] --> UI
+  UI["internal/ui<br/>toolbox: convention"] --> OUT[("stderr")]
+  style UI fill:#0d1a12,stroke:#14532d,color:#86efac
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C4 ================= -->
+  <section id="c4" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">4 · The config "key" has no home (TUI)</h2>
+        <p class="text-gray-400 text-sm mono mt-1">internal/configui/model.go · adapter.go · rows.go · view.go</p>
+      </div>
+      <span class="px-3 py-1 badge-worth rounded text-xs mono whitespace-nowrap">Worth exploring</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          Adding one config key means editing ~10 parallel <span class="mono">switch key {…}</span> blocks
+          smeared across four files: <span class="mono">openEditor</span>, <span class="mono">saveMulti</span>,
+          <span class="mono">displayValue</span>, <span class="mono">collectionNoun</span>,
+          <span class="mono">detailEntries</span>, <span class="mono">StringValue/BoolValue/ListValue/EnumOptions</span>,
+          <span class="mono">saveRows</span>, <span class="mono">previewDoc</span>, <span class="mono">nodeDisplay</span>.
+          The per-key knowledge is a <em>Repeated Switch</em> over the same type — the classic shallow smell.
+          (The tea Model/Update/View seam itself is clean and terminal-free; this is only the key metadata.)
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm">The switches merely <strong class="leak">move complexity</strong> —
+          each new key re-fans across ten sites. A key <em>descriptor</em> table would concentrate it.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          One typed descriptor per config key (label, kind, editor, enum options, display, noun) in a single
+          table the ten sites read — the same shape <span class="seam">Tool Catalog</span> used to collapse three
+          parallel literals into one declaration. Adding a key becomes one row. Best if it can derive from, or be
+          coverage-tested against, <span class="seam">Config Schema</span> so the TUI can't silently omit a field.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Locality:</strong> everything about a key in one row.</li>
+          <li><strong>Leverage:</strong> ten switches become ten table lookups.</li>
+          <li><strong>Tests:</strong> a schema-coverage test catches an un-described key (kills the dead
+            <span class="mono">OriginExplicit</span> branches too).</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-6">
+      <p class="text-xs mono text-gray-500 mb-1">BEFORE / AFTER — one key across the codebase</p>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="p-4 shallow rounded-lg text-sm mono">
+          add key "foo" ⇒ edit:<br>
+          openEditor · saveMulti · displayValue<br>
+          collectionNoun · detailEntries · saveRows<br>
+          StringValue · ListValue · previewDoc · nodeDisplay<br>
+          <span class="text-red-300">10 switch arms, 4 files</span>
+        </div>
+        <div class="p-4 deep rounded-lg text-sm mono">
+          keyDescriptors["foo"] = { … }<br>
+          <span class="text-gray-400">// 10 sites read the table</span><br>
+          <span class="text-green-300">1 row, 1 file · schema-covered</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C5 ================= -->
+  <section id="c5" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">5 · A second, un-seamed Docker edge in cmd</h2>
+        <p class="text-gray-400 text-sm mono mt-1">cmd/shell.go:164 (resolveImageDigest) · cmd/worktree.go:220,511,528</p>
+      </div>
+      <span class="px-3 py-1 badge-worth rounded text-xs mono whitespace-nowrap">Worth exploring</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          Almost every Docker op goes through the <code class="k">container</code> module, but
+          <span class="mono">resolveImageDigest</span> reaches past it —
+          <span class="mono">cli.ImageInspect(ctx, ref)</span> then unpacks <span class="mono">RepoDigests</span>
+          via the pure <span class="mono">build.RepoDigest</span> — and <span class="mono">client.APIClient</span>
+          is threaded raw through three worktree sites. So the Docker edge is split: <code class="k">container</code>
+          owns most, but a lone <span class="mono">ImageInspect</span> caller lives in cmd, imported straight from
+          <span class="mono">moby/client</span>.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm">The orchestration is genuine, but the SDK call is in the
+          <strong class="leak">wrong module</strong>. Folding <span class="mono">ImageInspect</span> behind
+          <code class="k">container</code> concentrates the daemon edge; leaving it keeps a second un-seamed
+          caller that tests must mock separately.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          Add the digest lookup to the <code class="k">container</code> seam (e.g. a
+          <span class="mono">ResolveDigest(ref)</span> the module owns), so cmd stops importing
+          <span class="mono">moby/client</span> for anything but the shared shell launch. This mirrors how
+          <span class="seam">Docker Identity</span> and <span class="seam">Session Plan</span> keep all
+          daemon-edge state on one side of a single seam.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Locality:</strong> one place answers "who talks to the daemon".</li>
+          <li><strong>Tests:</strong> cmd no longer needs its own Docker mock for digest resolution.</li>
+          <li><strong>Leverage:</strong> future image ops attach to the same seam.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-6">
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">BEFORE — edge split across two modules</p>
+        <div class="mermaid">
+flowchart TB
+  CMD["cmd/shell.go<br/>import moby/client"] -->|ImageInspect| D[("Docker daemon")]
+  CMD --> CT["container.Shell / Stop"]
+  CT --> D
+  style CMD fill:#1a1414,stroke:#7f1d1d,color:#fca5a5
+        </div>
+      </div>
+      <div>
+        <p class="text-xs mono text-gray-500 mb-1">AFTER — one edge</p>
+        <div class="mermaid">
+flowchart TB
+  CMD2["cmd/shell.go"] --> CT2["container seam<br/>Shell · Stop · ResolveDigest"]
+  CT2 --> D2[("Docker daemon")]
+  style CT2 fill:#0d1a12,stroke:#14532d,color:#86efac
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C6 ================= -->
+  <section id="c6" class="card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">6 · TUI preview rebuilds what the writers write</h2>
+        <p class="text-gray-400 text-sm mono mt-1">internal/configui/view.go:230–289 vs adapter.go:453–532</p>
+      </div>
+      <span class="px-3 py-1 badge-spec rounded text-xs mono whitespace-nowrap">Speculative</span>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-5">
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Problem</h3>
+        <p class="text-gray-300 text-sm">
+          <span class="mono">previewDoc</span>/<span class="mono">rowsPreviewDoc</span> rebuild "what will be
+          written" as a <span class="mono">map[string]any</span>, entirely independent of the real
+          <span class="mono">yaml.Node</span> writers <span class="mono">SaveMap</span>/<span class="mono">SaveShells</span>/<span class="mono">SaveSeed</span>.
+          Two representations of the same pending mutation — the preview can silently diverge from what
+          actually lands in the file.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Deletion test</h3>
+        <p class="text-gray-300 text-sm">The preview <strong class="leak">duplicates</strong> the write model
+          rather than deepening it. Why <em>Speculative</em>: the drift risk is real but low-blast (a wrong
+          preview, not a wrong write) and a rework touches the render path.</p>
+      </div>
+      <div>
+        <h3 class="text-sky-300 font-semibold mb-1">Solution (plain English)</h3>
+        <p class="text-gray-300 text-sm">
+          Derive the preview from the same pending-mutation model the writers consume — render the diff the
+          writers will apply, rather than re-deriving it. One description of "the pending change", two views
+          (preview + write) over it.
+        </p>
+        <h3 class="text-sky-300 font-semibold mt-4 mb-1">Benefits</h3>
+        <ul class="text-gray-300 text-sm list-disc pl-5 space-y-1">
+          <li><strong>Locality:</strong> pending change described once.</li>
+          <li><strong>Correctness:</strong> preview cannot lie about the write.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TOP ================= -->
+  <section id="top" class="rounded-xl p-6 mb-6" style="background:#0d1a12;border:1px solid #14532d;">
+    <h2 class="text-2xl font-bold text-white">★ Top recommendation</h2>
+    <p class="text-gray-200 mt-3 max-w-3xl">
+      Tackle <a class="anchor font-semibold" href="#c1">Candidate 1 — the Bridge Contract</a> first. It is the
+      only finding whose deletion test <em>fails outright</em>: the coupling is real, cross-language, and
+      contained by <strong>no</strong> module — it lives in a comment. Every other candidate is a quality/locality
+      improvement over code that already works; this one guards against a <em>silent production break</em> (a
+      path rename that stops <span class="mono">xdg-open</span> reaching the host with no failing test). And the
+      fix is idiomatic here — it is the same bijection-test move the repo already trusts for the
+      <span class="seam">init.d</span> and <span class="seam">Tool Catalog</span> fan-outs.
+    </p>
+    <p class="text-gray-300 mt-3 max-w-3xl text-sm">
+      <strong>Safest first win, if you'd rather bank an easy one:</strong>
+      <a class="anchor" href="#c2">Candidate 2 — config.Render</a>. It is a pure lift-and-shift into a package
+      that already owns the schema, unlocks a golden test, and mechanically extends the established Config Schema
+      deepening. Lowest risk, clear leverage.
+    </p>
+    <p class="text-gray-400 mt-4 text-sm">
+      Note: <code class="k">internal/bridge</code> and the config-UI concepts have no glossary entry yet — whichever
+      we pursue, we should name the deepened module in <code class="k">CONTEXT.md</code> as we go.
+    </p>
+  </section>
+
+  <p class="text-gray-600 text-xs mono">Generated for /improve-codebase-architecture · vocabulary from /codebase-design · domain from CONTEXT.md</p>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose',
+    themeVariables: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '13px' } });
+</script>
+</body>
+</html>
