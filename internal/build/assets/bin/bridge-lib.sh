@@ -1,4 +1,9 @@
-# toolbox bridge shim transport. Sourced (not executed) by the three
+# toolbox bridge shim transport. The state-dir, legacy-dir and socket paths
+# below are the container side of the daemon<->shim contract; they must match
+# the Go constants in internal/bridge/paths.go (ContainerDir, LegacyContainerDir,
+# ContainerSocket, tokenFile, portFile) — enforced by TestBridgeContract_ShimMatchesGo.
+#
+# Sourced (not executed) by the three
 # shims — xdg-open, code/codium, proximo — so the state-dir location, the
 # readiness checks, and the curl POST live in one place. Callers own every
 # user-facing message and exit policy (xdg-open exits 0 so OAuth flows never

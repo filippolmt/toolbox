@@ -36,7 +36,8 @@ const HostRunDir = HostDir + "/" + runDirName
 // run/ mount and the daemon's unix socket inside it (Linux hosts only —
 // Docker Desktop cannot share host unix sockets with containers, so macOS
 // stays on the TCP transport). Must match the bridge-run mount Target in
-// mountplan.defaults and BRIDGE_SOCK in bridge-lib.sh.
+// mountplan.defaults and BRIDGE_SOCK in bridge-lib.sh — the shim side is
+// enforced by TestBridgeContract_ShimMatchesGo.
 const (
 	ContainerRunDir = ContainerDir + "/" + runDirName
 	ContainerSocket = ContainerRunDir + "/" + socketFile
