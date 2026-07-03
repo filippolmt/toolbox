@@ -146,6 +146,30 @@ func TestExecShell_ExitedContainerReaped(t *testing.T) {
 	}
 }
 
+// TestExecShell_NilStateDiagnostic covers the ambiguous case: ContainerInspect
+// succeeds but reports a nil State. That is neither confirmed-running nor a clean
+// exit, so execShell must still surface the disk-space diagnostic (a container
+// that just failed to exec is more likely dead than healthy) and wrap origErr.
+func TestExecShell_NilStateDiagnostic(t *testing.T) {
+	origErr := errors.New("write init-p: broken pipe")
+	cli := &attachMock{
+		createFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{}, origErr
+		},
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, nil
+		},
+	}
+
+	err := execShell(context.Background(), cli, "cid", []string{"/bin/zsh"})
+	if err == nil || !strings.Contains(err.Error(), "disk space") {
+		t.Fatalf("execShell err = %v, want disk-space diagnostic", err)
+	}
+	if !errors.Is(err, origErr) {
+		t.Fatalf("execShell err = %v, want wrapped origErr %v", err, origErr)
+	}
+}
+
 // TestExecShell_NonTTYStdin exercises the happy path when stdin is not a
 // terminal (piped input). execShell must skip term.MakeRaw and return cleanly
 // once the hijacked conn yields EOF.
