@@ -27,12 +27,10 @@ func defaults() []config.Mount {
 		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,
 		// so changes made with `ssh-keygen` / `git config` on the host are
 		// immediately visible inside the container.
-		// ssh stays read-only: the host's private keys are the most sensitive
-		// asset and the container must not be able to rewrite them.
-		// gitconfig is read-write and host-synced both ways, so `git config`
-		// inside the container edits the real host ~/.gitconfig — like editing
-		// on the host. Re-lock it (mounts: {name: gitconfig, readonly: true}) or
-		// drop it (disabled: true) via ~/.toolbox.yaml if you want isolation.
+		// ssh stays read-only: the host's private keys must not be rewritable
+		// from the container. gitconfig is read-write and host-synced both ways,
+		// so `git config` inside the container edits the real host ~/.gitconfig.
+		// See docs/mounts.md for how to re-lock or disable it via ~/.toolbox.yaml.
 		{Name: "ssh", Source: "~/.toolbox/ssh", Target: "/home/toolbox/.ssh", ReadOnly: true, SymlinkFrom: "~/.ssh"},
 		{Name: "gitconfig", Source: "~/.toolbox/gitconfig", Target: "/home/toolbox/.gitconfig", SymlinkFrom: "~/.gitconfig"},
 		// GitHub CLI auth — populated by `gh auth login` inside the container.

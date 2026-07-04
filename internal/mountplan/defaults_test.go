@@ -69,9 +69,11 @@ func TestDefaults(t *testing.T) {
 	// Per-user Go workspace (GOPATH): read-write, create-if-missing (GO-05).
 	assertMount(t, mounts, "~/.toolbox/go", false, true)
 
-	// ssh + git config follow the host via symlinks, not copies.
-	assertSymlink(t, mounts, "~/.toolbox/ssh", "~/.ssh")
-	assertSymlink(t, mounts, "~/.toolbox/gitconfig", "~/.gitconfig")
+	// ssh + git config follow the host via symlinks, not copies. ssh stays
+	// read-only (host private keys); gitconfig is read-write so `git config`
+	// inside the container edits the real host file.
+	assertSymlink(t, mounts, "~/.toolbox/ssh", "~/.ssh", true)
+	assertSymlink(t, mounts, "~/.toolbox/gitconfig", "~/.gitconfig", false)
 }
 
 // TestDefaultsHaveNames guards the Name-based merge contract: every
@@ -123,7 +125,7 @@ func assertMountTarget(t *testing.T, mounts []config.Mount, src, wantTarget stri
 	t.Errorf("mount %s not found in Defaults()", src)
 }
 
-func assertSymlink(t *testing.T, mounts []config.Mount, src, wantLink string) {
+func assertSymlink(t *testing.T, mounts []config.Mount, src, wantLink string, wantRO bool) {
 	t.Helper()
 	for _, m := range mounts {
 		if m.Source != src {
@@ -131,6 +133,9 @@ func assertSymlink(t *testing.T, mounts []config.Mount, src, wantLink string) {
 		}
 		if m.SymlinkFrom != wantLink {
 			t.Errorf("%s: SymlinkFrom = %q, want %q", src, m.SymlinkFrom, wantLink)
+		}
+		if m.ReadOnly != wantRO {
+			t.Errorf("%s: ReadOnly = %v, want %v", src, m.ReadOnly, wantRO)
 		}
 		return
 	}
