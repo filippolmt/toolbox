@@ -161,18 +161,7 @@ func tarEmbeddedContext() (io.Reader, error) {
 		case info.Mode()&0o111 != 0:
 			mode = 0o755
 		}
-		hdr := &tar.Header{
-			Name: rel,
-			Mode: mode,
-			Size: int64(len(data)),
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return fmt.Errorf("tar header %s: %w", rel, err)
-		}
-		if _, err := tw.Write(data); err != nil {
-			return fmt.Errorf("tar write %s: %w", rel, err)
-		}
-		return nil
+		return writeTarFile(tw, rel, mode, data)
 	})
 	if walkErr != nil {
 		return nil, walkErr
@@ -181,4 +170,18 @@ func tarEmbeddedContext() (io.Reader, error) {
 		return nil, fmt.Errorf("tar close: %w", err)
 	}
 	return &buf, nil
+}
+
+// writeTarFile writes a single regular-file entry into tw with wrapped
+// errors. Shared by the embedded-context and single-Dockerfile (overlay) tar
+// builders so the header/write boilerplate lives in one place.
+func writeTarFile(tw *tar.Writer, name string, mode int64, data []byte) error {
+	hdr := &tar.Header{Name: name, Mode: mode, Size: int64(len(data))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("tar header %s: %w", name, err)
+	}
+	if _, err := tw.Write(data); err != nil {
+		return fmt.Errorf("tar write %s: %w", name, err)
+	}
+	return nil
 }

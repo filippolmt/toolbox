@@ -28,6 +28,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -107,9 +108,21 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning("mount skipped: " + w)
 	}
 
-	// Best-effort registry sync. Hard guarantee runs in imageplan.Ensure
-	// inside createAndStart.
+	// Best-effort registry sync of the base image. Hard guarantee runs in
+	// imageplan.Ensure inside createAndStart.
 	imageplan.Refresh(ctx, cli, plan.Image)
+
+	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
+	// `:local` image on top of the freshened base and run the shell from it.
+	// Passthrough (base unchanged) when the file is absent; fail loud on a
+	// build error so the shell never silently starts from the wrong image.
+	// The returned `:local` carries pull policy "never", so the later
+	// Ensure/Refresh for the create path never touch a registry for it.
+	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
+	if overlayErr != nil {
+		return overlayErr
+	}
+	plan.Image = image
 
 	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
 	inspect := inspectResult.Container
