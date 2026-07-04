@@ -59,16 +59,16 @@ func (m Model) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(styleTitle.Render("toolbox config") + "  " + m.renderTabs() + "\n")
-	b.WriteString(styleKeybar.Render("target: "+m.target) + "\n\n")
+	fmt.Fprintf(&b, "%s  %s\n", styleTitle.Render("toolbox config"), m.renderTabs())
+	fmt.Fprintf(&b, "%s\n\n", styleKeybar.Render("target: "+m.target))
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(), "  ", m.renderDetail())
-	b.WriteString(body + "\n")
+	fmt.Fprintf(&b, "%s\n", body)
 
 	if m.status != "" {
-		b.WriteString("\n" + m.renderStatus() + "\n")
+		fmt.Fprintf(&b, "\n%s\n", m.renderStatus())
 	}
-	b.WriteString("\n" + m.renderKeybar())
+	fmt.Fprintf(&b, "\n%s", m.renderKeybar())
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
@@ -110,49 +110,61 @@ func (m Model) renderDetail() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styleTitle.Render(st.Key) + "\n\n")
-	b.WriteString("value (effective): " + st.Display + "\n")
-	b.WriteString("source: " + lipgloss.NewStyle().Foreground(originColor(st)).Render(originLabel(st)) + "\n")
+	fmt.Fprintf(&b, "%s\n", styleTitle.Render(st.Key))
+	if st.Description != "" {
+		fmt.Fprintf(&b, "%s\n", styleKeybar.Render(st.Description))
+	}
+	b.WriteByte('\n')
+	// One provenance mention only: fold the old "source:" line into the
+	// effective value as a badge, so "default"/"built-in" is not restated thrice.
+	badge := lipgloss.NewStyle().Foreground(originColor(st)).Render(originLabel(st))
+	fmt.Fprintf(&b, "effective: %s · %s\n", st.Display, badge)
+	if st.Default != "" {
+		fmt.Fprintf(&b, "default:   %s\n", st.Default)
+	}
 	scopeLine := st.ScopeDisplay
 	if !st.ScopeSet {
 		scopeLine = fmt.Sprintf("(unset — inherits %s)", originLabel(st))
 	}
 	fmt.Fprintf(&b, "in %s: %s\n", m.scope, scopeLine)
 	if items := detailEntries(m.cfg, st.Key); len(items) > 0 {
-		b.WriteString(styleKeybar.Render("entries: "+strings.Join(items, ", ")) + "\n")
+		fmt.Fprintf(&b, "%s\n", styleKeybar.Render("entries: "+strings.Join(items, ", ")))
 	}
 	switch {
 	case st.FromEnv:
-		b.WriteString("\n" + styleKeybar.Render("read-only — set via TOOLBOX_"+strings.ToUpper(st.Key)))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("read-only — set via TOOLBOX_"+strings.ToUpper(st.Key)))
+	case st.ReadOnly:
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("read-only — only one supported value"))
 	case hasEditorEscape(st.Key):
-		b.WriteString("\n" + styleKeybar.Render("enter: edit   e: open in $EDITOR   r: reset"))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("enter: edit   e: open in $EDITOR   r: reset"))
 	default:
-		b.WriteString("\n" + styleKeybar.Render("enter: edit   r: reset to default"))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("enter: edit   r: reset to default"))
 	}
 	return stylePanel.Width(40).Render(b.String())
 }
 
 func (m Model) renderEditor() string {
 	var b strings.Builder
-	b.WriteString(styleTitle.Render("edit "+m.ed.key) + "\n\n")
+	fmt.Fprintf(&b, "%s\n", styleTitle.Render("edit "+m.ed.key))
+	if desc := m.states[m.cursor].Description; desc != "" {
+		fmt.Fprintf(&b, "%s\n", styleKeybar.Render(desc))
+	}
+	b.WriteByte('\n')
 	switch m.ed.kind {
 	case edString:
-		b.WriteString(m.ed.input.View() + "\n\n")
+		fmt.Fprintf(&b, "%s\n\n", m.ed.input.View())
 		b.WriteString(styleKeybar.Render("enter: save   esc: cancel"))
 	case edEnum, edTri:
 		for i, opt := range m.ed.options {
 			cursor := "  "
-			label := opt
-			if opt == m.ed.current {
-				label += " (current)"
-			}
+			label := opt + optionTags(opt, m.ed.current, m.ed.def)
 			if i == m.ed.cursor {
 				cursor = "> "
 				label = styleSelected.Render(label)
 			}
-			b.WriteString(cursor + label + "\n")
+			fmt.Fprintf(&b, "%s%s\n", cursor, label)
 		}
-		b.WriteString("\n" + styleKeybar.Render("↑/↓: choose   enter: save   esc: cancel"))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("↑/↓: choose   enter: save   esc: cancel"))
 	case edMulti:
 		for i, opt := range m.ed.options {
 			cursor := "  "
@@ -167,19 +179,35 @@ func (m Model) renderEditor() string {
 			if i == m.ed.cursor {
 				line = styleSelected.Render(line)
 			}
-			b.WriteString(line + "\n")
+			fmt.Fprintf(&b, "%s\n", line)
 		}
-		b.WriteString("\n" + styleKeybar.Render("space: toggle   enter: save   esc: cancel"))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("space: toggle   enter: save   esc: cancel"))
 	case edRows:
 		b.WriteString(m.renderRows())
 	}
 	return b.String()
 }
 
+// optionTags annotates an editor option with " (current · default)" / " (current)"
+// / " (default)" so the user sees both what is set now and what reset lands on.
+func optionTags(opt, current, def string) string {
+	var tags []string
+	if opt == current {
+		tags = append(tags, "current")
+	}
+	if opt == def {
+		tags = append(tags, "default")
+	}
+	if len(tags) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(tags, " · ") + ")"
+}
+
 func (m Model) renderRows() string {
 	var b strings.Builder
 	if len(m.ed.rows) == 0 {
-		b.WriteString(styleKeybar.Render("(no entries)") + "\n")
+		fmt.Fprintf(&b, "%s\n", styleKeybar.Render("(no entries)"))
 	}
 	for i, r := range m.ed.rows {
 		cursor := "  "
@@ -195,17 +223,17 @@ func (m Model) renderRows() string {
 		if i == m.ed.cursor && !m.ed.rowEdit {
 			line = styleSelected.Render(line)
 		}
-		b.WriteString(line + "\n")
+		fmt.Fprintf(&b, "%s\n", line)
 	}
 	if m.ed.rowEdit {
 		label := "value"
 		if m.ed.rowPair && m.ed.field == 0 {
 			label = "key"
 		}
-		b.WriteString("\n" + label + ": " + m.ed.input.View() + "\n")
-		b.WriteString("\n" + styleKeybar.Render("enter: next/commit   esc: cancel field"))
+		fmt.Fprintf(&b, "\n%s: %s\n", label, m.ed.input.View())
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("enter: next/commit   esc: cancel field"))
 	} else {
-		b.WriteString("\n" + styleKeybar.Render("a: add   enter: edit   d: delete   s: save   esc: cancel"))
+		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("a: add   enter: edit   d: delete   s: save   esc: cancel"))
 	}
 	return b.String()
 }
