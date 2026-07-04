@@ -611,9 +611,11 @@ func TestDisplayValueHintNotDoubled(t *testing.T) {
 			t.Errorf("displayValue(%q) = %q, want %q", key, got, want)
 		}
 	}
-	// pull keeps the "<value> (default)" form.
-	if got := displayValue(empty, "pull"); got != "auto (default)" {
-		t.Errorf("displayValue(pull) = %q, want %q", got, "auto (default)")
+	// pull (and the other enum/scalar keys via orDefault) now echoes the bare
+	// default value — the detail pane carries a dedicated "default:" line, so the
+	// old "<value> (default)" suffix is gone.
+	if got := displayValue(empty, "pull"); got != "auto" {
+		t.Errorf("displayValue(pull) = %q, want %q", got, "auto")
 	}
 }
 
@@ -624,5 +626,63 @@ func TestEnumOptions(t *testing.T) {
 	}
 	if got := EnumOptions("image"); got != nil {
 		t.Errorf("non-enum key must return nil, got %v", got)
+	}
+}
+
+// TestReadOnlyAndEnumDefault: a single-option enum (shell) is read-only, while
+// multi-option enums are editable and expose their unset-resolution default.
+func TestReadOnlyAndEnumDefault(t *testing.T) {
+	if !ReadOnlyKey("shell") {
+		t.Error("shell has one supported value — want ReadOnlyKey true")
+	}
+	for _, k := range []string{"agent", "pull", "image"} {
+		if ReadOnlyKey(k) {
+			t.Errorf("%s must be editable — want ReadOnlyKey false", k)
+		}
+	}
+	if got := EnumDefault("agent"); got != config.DefaultAgent {
+		t.Errorf("EnumDefault(agent) = %q, want %q", got, config.DefaultAgent)
+	}
+	if got := EnumDefault("pull"); got != config.PullAuto {
+		t.Errorf("EnumDefault(pull) = %q, want %q", got, config.PullAuto)
+	}
+	if got := EnumDefault("image"); got != "" {
+		t.Errorf("EnumDefault(non-enum) = %q, want empty", got)
+	}
+}
+
+// TestSnapshotPopulatesDoc: every key carries a description and an explicit
+// default from config.KeyDocs, and single-option keys are flagged read-only.
+func TestSnapshotPopulatesDoc(t *testing.T) {
+	isolatedHome(t)
+	_, states, err := Snapshot(t.TempDir(), "")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	shell := stateFor(t, states, "shell")
+	if shell.Description == "" || shell.Default == "" {
+		t.Errorf("shell missing doc: desc=%q default=%q", shell.Description, shell.Default)
+	}
+	if !shell.ReadOnly {
+		t.Error("shell state must be ReadOnly")
+	}
+	if agent := stateFor(t, states, "agent"); agent.ReadOnly {
+		t.Error("agent state must not be ReadOnly")
+	}
+}
+
+// TestOptionTags: the editor annotates current and default distinctly, and both
+// when they coincide.
+func TestOptionTags(t *testing.T) {
+	cases := []struct{ opt, cur, def, want string }{
+		{"auto", "auto", "auto", " (current · default)"},
+		{"always", "always", "auto", " (current)"},
+		{"auto", "always", "auto", " (default)"},
+		{"never", "always", "auto", ""},
+	}
+	for _, c := range cases {
+		if got := optionTags(c.opt, c.cur, c.def); got != c.want {
+			t.Errorf("optionTags(%q,%q,%q) = %q, want %q", c.opt, c.cur, c.def, got, c.want)
+		}
 	}
 }

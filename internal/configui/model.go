@@ -48,6 +48,7 @@ type editor struct {
 	kind     editorKind
 	options  []string        // enum / tri / multi option labels
 	current  string          // enum / tri option matching the current effective value
+	def      string          // enum / tri option that is the built-in default (marked "(default)")
 	cursor   int             // option cursor / row cursor
 	selected map[string]bool // multi-select toggles
 	input    textinput.Model // string / row-field editor
@@ -206,6 +207,10 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("%s is set via TOOLBOX_%s and is read-only here", st.Key, strings.ToUpper(st.Key))
 		return
 	}
+	if st.ReadOnly {
+		m.status = fmt.Sprintf("%s has a single supported value (%s) — nothing to edit", st.Key, st.Default)
+		return
+	}
 	key := st.Key
 	// Signal when the edit will fork a value into a scope that does not set it,
 	// so creating an override is a deliberate act, not a surprise.
@@ -217,7 +222,7 @@ func (m *Model) openEditor() {
 
 	if opts := EnumOptions(key); opts != nil {
 		cur := StringValue(m.cfg, key)
-		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, cursor: indexOf(opts, cur)}
+		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, def: EnumDefault(key), cursor: indexOf(opts, cur)}
 		m.editing = true
 		return
 	}
@@ -230,7 +235,8 @@ func (m *Model) openEditor() {
 		m.editing = true
 	case "bridge", "proximo", "managed_statusline":
 		cur := triState(BoolValue(m.cfg, key))
-		m.ed = editor{key: key, kind: edTri, options: triChoices, current: cur, cursor: indexOf(triChoices, cur)}
+		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
+		m.ed = editor{key: key, kind: edTri, options: triChoices, current: cur, def: triChoices[0], cursor: indexOf(triChoices, cur)}
 		m.editing = true
 	case "inherit_host_auth":
 		opts := HostAuthOptions()
@@ -449,6 +455,8 @@ func originLabel(st KeyState) string {
 	case configedit.OriginProject:
 		return "repo"
 	default:
-		return "default"
+		// "built-in", not "default": the badge names the *source layer*, and
+		// reusing "default" collided with the key's default *value* shown below.
+		return "built-in"
 	}
 }

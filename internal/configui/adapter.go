@@ -73,6 +73,10 @@ type KeyState struct {
 	FromEnv bool // value comes from a TOOLBOX_* env var, so it is read-only here
 	Display string
 
+	Description string // one-line "what this key does" (config.KeyDocs)
+	Default     string // human-readable built-in default (config.KeyDocs)
+	ReadOnly    bool   // the key admits a single supported value — no editor to open
+
 	ScopeSet     bool   // the currently selected scope's file sets this key
 	ScopeDisplay string // the scope file's own value (empty when ScopeSet is false)
 }
@@ -94,14 +98,18 @@ func Snapshot(cwd, explicitOverride string) (*config.Config, []KeyState, error) 
 	if err != nil {
 		return nil, nil, err
 	}
+	docs := config.KeyDocs()
 	states := make([]KeyState, 0, len(Keys()))
 	for _, key := range Keys() {
 		origin, mixed := originFor(prov, key)
 		st := KeyState{
-			Key:     key,
-			Origin:  origin,
-			Mixed:   mixed,
-			Display: displayValue(cfg, key),
+			Key:         key,
+			Origin:      origin,
+			Mixed:       mixed,
+			Display:     displayValue(cfg, key),
+			Description: docs[key].Summary,
+			Default:     docs[key].Default,
+			ReadOnly:    ReadOnlyKey(key),
 		}
 		if st.Origin == configedit.OriginDefault && config.EnvVarSet(key) {
 			st.FromEnv = true
@@ -272,9 +280,12 @@ func countLabel(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
+// orDefault echoes the built-in default value when v is empty. The detail pane
+// now carries a dedicated "default:" line, so this no longer appends a
+// "(default)" suffix — that duplicated the origin badge and the default line.
 func orDefault(v, def string) string {
 	if v == "" {
-		return def + " (default)"
+		return def
 	}
 	return v
 }
@@ -355,6 +366,25 @@ func EnumOptions(key string) []string {
 		return config.SupportedShells
 	}
 	return nil
+}
+
+// EnumDefault returns the value an enum key resolves to when unset — the option
+// the editor marks "(default)". "" for non-enum keys. The default itself comes
+// from config.KeyDocs (the single source for per-key defaults), so this never
+// re-hardcodes the key→default mapping config already owns.
+func EnumDefault(key string) string {
+	if EnumOptions(key) == nil {
+		return ""
+	}
+	return config.KeyDocs()[key].Default
+}
+
+// ReadOnlyKey reports whether a key admits a single supported value, so the UI
+// shows it read-only rather than opening an editor with one meaningless choice
+// (e.g. shell, whose only value is zsh). Generic: any future single-option enum
+// gets the same treatment.
+func ReadOnlyKey(key string) bool {
+	return len(EnumOptions(key)) == 1
 }
 
 // HostAuthOptions is the option set for the inherit_host_auth multi-select:
