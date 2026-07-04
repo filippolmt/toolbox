@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
-# ┊ cwd ┊ repo:branch[*↑↓] ┊ model ⚡effort ┊ badge ┊ vim ┊ style ┊ ctx ▰▰▱▱▱ [⚠] ┊ tokens ┊ +/- righe ┊ durata ┊ mode ┊ rate-limits
+# ┊ cwd ┊ repo:branch[*↑↓⑂] ┊ model ⚡effort ┊ badge ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [⚠] ┊ tokens ┊ durata ┊ rate-limits
 # Perf: jq singolo, git in cache 5s per session_id (script gira a ogni tick)
 export LC_NUMERIC=C
 
@@ -53,6 +53,7 @@ I_RESET=$''    # refresh
 I_PLAN=$''     # pencil-square
 I_SHIELD=$''   # shield
 I_WARN=$''     # warning
+I_WT=$''  # code-fork (nf-fa-code_fork U+F126) — worktree linkato
 
 # ── Palette (256 colori) ──────────────────────────────────────────────────
 RST=$'\033[0m'
@@ -105,6 +106,11 @@ build_git_seg() {
     (( ahead  > 0 )) && extra+=$'\033[38;5;114m'"↑${ahead}"
     (( behind > 0 )) && extra+=$'\033[38;5;203m'"↓${behind}"
   fi
+  # Worktree linkato: git-dir assoluto vive sotto <repo>/.git/worktrees/<id>.
+  # Match canonico e offline, niente dipendenza da campi JSON non documentati.
+  case "$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null)" in
+    */worktrees/*) extra+=$' \033[38;5;109m'"${I_WT}" ;;
+  esac
   label="$branch"
   [ -n "$repo" ] && label="${repo}${DIM}:${RST}${C_GIT}${branch}"
   printf '%s' "${C_GIT}${I_GIT} ${label}${extra}${RST}"
@@ -159,6 +165,19 @@ if [ -n "$out_style" ] && [ "$out_style" != "default" ]; then
   seg $'\033[38;5;110m'"✎ ${out_style}${RST}"
 fi
 
+# ── Badge modalità comportamentale (ponytail/caveman — auto-gated, niente se inattiva) ─
+emit_mode_badge() {  # $1 = glob; esegue solo il primo script trovato
+  local f out
+  for f in $1; do
+    [ -f "$f" ] || continue
+    out=$(bash "$f" 2>/dev/null)
+    [ -n "$out" ] && seg "$out"
+    return
+  done
+}
+emit_mode_badge "$CFG/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh"
+emit_mode_badge "$CFG/plugins/cache/caveman/caveman/*/src/hooks/caveman-statusline.sh"
+
 # ── Context: barra ▰▰▰▱▱ + % (verde→giallo→rosso), ⚠ oltre 200k ──────────
 if [ -n "$used" ]; then
   pct=$(printf '%.0f' "$used" 2>/dev/null)
@@ -183,11 +202,6 @@ if (( total_tok > 0 )); then
   seg "${C_TOK}${I_TOK} $(fmt_tok "$total_tok")${RST}"
 fi
 
-# ── Righe scritte da Claude nella sessione, non git diff (✎ +verde −rosso) ─
-if (( ${lines_add:-0} > 0 || ${lines_del:-0} > 0 )); then
-  seg "${C_TOK}✎${RST} ${C_ADD}+${lines_add}${RST} ${C_DEL}−${lines_del}${RST}"
-fi
-
 # ── Durata sessione ───────────────────────────────────────────────────────
 if (( ${dur_ms:-0} >= 60000 )); then
   mins=$(( dur_ms / 60000 ))
@@ -198,19 +212,6 @@ if (( ${dur_ms:-0} >= 60000 )); then
   fi
   seg "${C_TOK}${I_CLOCK} ${dur_fmt}${RST}"
 fi
-
-# ── Badge modalità comportamentale (ponytail/caveman — auto-gated, niente se inattiva) ─
-emit_mode_badge() {  # $1 = glob; esegue solo il primo script trovato
-  local f out
-  for f in $1; do
-    [ -f "$f" ] || continue
-    out=$(bash "$f" 2>/dev/null)
-    [ -n "$out" ] && seg "$out"
-    return
-  done
-}
-emit_mode_badge "$CFG/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh"
-emit_mode_badge "$CFG/plugins/cache/caveman/caveman/*/src/hooks/caveman-statusline.sh"
 
 # ── Rate limits (assenti per utenti API key — nascosti se null) ───────────
 rl_out=""
