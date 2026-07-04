@@ -24,7 +24,7 @@ The image ships `/etc/ssh/ssh_config.d/10-toolbox.conf` (baked, system-wide) tha
 - `StrictHostKeyChecking accept-new` — host keys are trusted on first contact without a prompt, while *changed* keys are still rejected (anti-MITM).
 - `UserKnownHostsFile ~/.toolbox-state/known_hosts` — known_hosts lives on the writable, persistent `state` mount instead of the read-only `~/.ssh/known_hosts`, so accepted keys survive `toolbox stop` and never re-prompt on the next session.
 
-The `ssh` and `gitconfig` mounts stay read-only by design — this trust handling deliberately avoids making them writable. Build seam in [image-build internals](internals/image-build.md). The state mount itself is the writable `state` default in `internal/mountplan/defaults.go`.
+The `ssh` mount stays read-only by design — the host's private keys are the most sensitive asset and the container must not be able to rewrite them, so this trust handling deliberately avoids making it writable. Build seam in [image-build internals](internals/image-build.md). The state mount itself is the writable `state` default in `internal/mountplan/defaults.go`. The `gitconfig` mount is read-write (host-synced both ways) so `git config` inside the container edits the real host `~/.gitconfig`; re-lock it with a `readonly: true` patch or drop it with `disabled: true` if you want isolation.
 
 ## `mounts:` merge semantics
 
