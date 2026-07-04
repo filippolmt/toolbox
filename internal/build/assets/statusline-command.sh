@@ -1,7 +1,7 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
-# ┊ cwd ┊ repo:branch[*↑↓⑂] ┊ model ⚡effort ┊ badge ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [⚠] ┊ tokens ┊ durata ┊ rate-limits
-# Perf: jq singolo, git in cache 5s per session_id (script gira a ogni tick)
+# ┊ cwd ┊ repo:branch[*↑↓⑂] ┊ model ⚡effort ┊ badge ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [⚠] ┊ tokens ┊ duration ┊ rate-limits
+# Perf: single jq pass, git cached 5s per session_id (script runs on every tick)
 export LC_NUMERIC=C
 
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
@@ -42,7 +42,7 @@ if [ -z "$effort" ]; then
   effort="${effort:-high}"
 fi
 
-# ── Icone (Nerd Font) ─────────────────────────────────────────────────────
+# ── Icons (Nerd Font) ─────────────────────────────────────────────────────
 I_DIR=$''      # folder-open
 I_GIT=$''      # git-branch
 I_MODEL=$''    # rocket
@@ -53,28 +53,28 @@ I_RESET=$''    # refresh
 I_PLAN=$''     # pencil-square
 I_SHIELD=$''   # shield
 I_WARN=$''     # warning
-I_WT=$''  # code-fork (nf-fa-code_fork U+F126) — worktree linkato
+I_WT=$''  # code-fork (nf-fa-code_fork U+F126) — linked worktree
 
-# ── Palette (256 colori) ──────────────────────────────────────────────────
+# ── Palette (256 colours) ──────────────────────────────────────────────────
 RST=$'\033[0m'
-DIM=$'\033[38;5;240m'      # separatori
-C_DIR=$'\033[38;5;75m'     # azzurro
-C_GIT=$'\033[38;5;179m'    # ambra
-C_MODEL=$'\033[38;5;183m'  # lilla
-C_EFF=$'\033[38;5;86m'     # acquamarina
-C_TOK=$'\033[38;5;245m'    # grigio
-C_RL=$'\033[38;5;176m'     # malva
-C_ADD=$'\033[38;5;114m'    # verde
-C_DEL=$'\033[38;5;203m'    # rosso
+DIM=$'\033[38;5;240m'      # separators
+C_DIR=$'\033[38;5;75m'     # blue
+C_GIT=$'\033[38;5;179m'    # amber
+C_MODEL=$'\033[38;5;183m'  # lilac
+C_EFF=$'\033[38;5;86m'     # aquamarine
+C_TOK=$'\033[38;5;245m'    # grey
+C_RL=$'\033[38;5;176m'     # mauve
+C_ADD=$'\033[38;5;114m'    # green
+C_DEL=$'\033[38;5;203m'    # red
 SEP=" ${DIM}│${RST} "
 
 seg_n=0
-seg() {  # seg <testo già colorato> — antepone separatore dal 2° segmento in poi
+seg() {  # seg <already-coloured text> — prepends the separator from the 2nd segment on
   if (( seg_n++ )); then printf '%s' "$SEP"; else printf ' '; fi
   printf '%s' "$1"
 }
 
-fmt_tok() {  # notazione compatta k/M senza spawn di awk
+fmt_tok() {  # compact k/M notation without spawning awk
   local t=$1
   if   (( t >= 1000000 )); then printf '%d.%dM' $(( t / 1000000 )) $(( (t % 1000000) / 100000 ))
   elif (( t >= 1000 ));    then printf '%d.%dk' $(( t / 1000 ))    $(( (t % 1000) / 100 ))
@@ -106,8 +106,8 @@ build_git_seg() {
     (( ahead  > 0 )) && extra+=$'\033[38;5;114m'"↑${ahead}"
     (( behind > 0 )) && extra+=$'\033[38;5;203m'"↓${behind}"
   fi
-  # Worktree linkato: git-dir assoluto vive sotto <repo>/.git/worktrees/<id>.
-  # Match canonico e offline, niente dipendenza da campi JSON non documentati.
+  # Linked worktree: the absolute git-dir lives under <repo>/.git/worktrees/<id>.
+  # Canonical, offline match — no dependency on undocumented statusLine JSON fields.
   case "$(git -C "$cwd" rev-parse --absolute-git-dir 2>/dev/null)" in
     */worktrees/*) extra+=$' \033[38;5;109m'"${I_WT}" ;;
   esac
@@ -151,22 +151,22 @@ case "$perm_mode" in
   acceptEdits)       seg $'\033[1;38;5;179m'"${I_SHIELD} ACCEPT${RST}" ;;
   bypassPermissions) seg $'\033[1;38;5;203m'"${I_WARN} BYPASS${RST}" ;;
   dontAsk|auto)      seg $'\033[1;38;5;80m'"${I_SHIELD} ${perm_mode^^}${RST}" ;;
-  default|'')        ;;  # modalità normale: nessun badge
+  default|'')        ;;  # normal mode: no badge
   *)                 seg $'\033[38;5;250m'"[$perm_mode]${RST}" ;;
 esac
 
-# ── Vim mode (solo se attivo) ─────────────────────────────────────────────
+# ── Vim mode (only when active) ─────────────────────────────────────────────
 if [ -n "$vim_mode" ]; then
   seg "${DIM}vim:${vim_mode^^}${RST}"
 fi
 
-# ── Output style (solo se non default) ────────────────────────────────────
+# ── Output style (only when non-default) ────────────────────────────────────
 if [ -n "$out_style" ] && [ "$out_style" != "default" ]; then
   seg $'\033[38;5;110m'"✎ ${out_style}${RST}"
 fi
 
-# ── Badge modalità comportamentale (ponytail/caveman — auto-gated, niente se inattiva) ─
-emit_mode_badge() {  # $1 = glob; esegue solo il primo script trovato
+# ── Behavioural mode badge (ponytail/caveman — auto-gated, nothing when inactive) ─
+emit_mode_badge() {  # $1 = glob; runs only the first script found
   local f out
   for f in $1; do
     [ -f "$f" ] || continue
@@ -178,7 +178,7 @@ emit_mode_badge() {  # $1 = glob; esegue solo il primo script trovato
 emit_mode_badge "$CFG/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh"
 emit_mode_badge "$CFG/plugins/cache/caveman/caveman/*/src/hooks/caveman-statusline.sh"
 
-# ── Context: barra ▰▰▰▱▱ + % (verde→giallo→rosso), ⚠ oltre 200k ──────────
+# ── Context: bar ▰▰▰▱▱ + % (green→yellow→red), ⚠ over 200k ──────────
 if [ -n "$used" ]; then
   pct=$(printf '%.0f' "$used" 2>/dev/null)
   if [[ "$pct" =~ ^[0-9]+$ ]]; then
@@ -202,7 +202,7 @@ if (( total_tok > 0 )); then
   seg "${C_TOK}${I_TOK} $(fmt_tok "$total_tok")${RST}"
 fi
 
-# ── Durata sessione ───────────────────────────────────────────────────────
+# ── Session duration ───────────────────────────────────────────────────────
 if (( ${dur_ms:-0} >= 60000 )); then
   mins=$(( dur_ms / 60000 ))
   if (( mins >= 60 )); then
@@ -213,7 +213,7 @@ if (( ${dur_ms:-0} >= 60000 )); then
   seg "${C_TOK}${I_CLOCK} ${dur_fmt}${RST}"
 fi
 
-# ── Rate limits (assenti per utenti API key — nascosti se null) ───────────
+# ── Rate limits (absent for API-key users — hidden when null) ───────────
 rl_out=""
 
 if [ -n "$fh_pct" ] && [ "$fh_pct" != "null" ]; then
@@ -243,6 +243,6 @@ fi
 
 [ -n "$rl_out" ] && seg "${C_RL}${rl_out}${RST}"
 
-# Exit 0 sempre: l'ultimo `[ -n ... ] &&` fallito farebbe uscire 1
-# e Claude Code scarta la statusline su exit code non-zero
+# Always exit 0: a failing final `[ -n ... ] &&` would exit 1
+# and Claude Code discards the statusline on a non-zero exit code
 exit 0
