@@ -59,7 +59,7 @@ The base image can't move to Debian trixie yet because the Microsoft Azure CLI a
 
 Installed via shallow tag clone (`ARG HOMEBREW_VERSION`) at the **default Linux prefix** `/home/linuxbrew/.linuxbrew` — bottles (pre-built binaries) only work there; any other prefix forces source builds, explicitly unsupported upstream ("pick another prefix at your peril"). The official installer script is unusable in a Dockerfile `RUN`: it refuses root and clones unpinned `main`. The layer reproduces the installer's layout manually (repo at `…/Homebrew` + `bin/brew` symlink) and ships the pre-built `_brew` zsh completion from the clone.
 
-Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) because `~/.gitconfig` may be a read-only host mount.
+Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) so the entry stays container-local and out of the user's host-synced `~/.gitconfig`.
 
 Runtime semantics:
 
