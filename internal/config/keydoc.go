@@ -5,10 +5,10 @@ package config
 // TUI (internal/configui) reads it so every key carries a description and an
 // explicit default — the two things `config ui` lacked.
 //
-// ponytail: kept to what the TUI shows. The annotated template
-// (internal/configexample) keeps its own richer prose; unifying the two into a
-// single source is a larger refactor that changes no visible output, so it is
-// deliberately out of scope.
+// Scope note: this is deliberately limited to what the TUI shows. The annotated
+// template (internal/configexample) keeps its own richer prose; unifying the two
+// into a single source is a larger refactor that changes no visible output and is
+// out of scope here.
 type KeyDoc struct {
 	Summary string // one line: what the key does
 	Default string // human-readable built-in default

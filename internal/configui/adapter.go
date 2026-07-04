@@ -369,17 +369,14 @@ func EnumOptions(key string) []string {
 }
 
 // EnumDefault returns the value an enum key resolves to when unset — the option
-// the editor marks "(default)". "" for non-enum keys.
+// the editor marks "(default)". "" for non-enum keys. The default itself comes
+// from config.KeyDocs (the single source for per-key defaults), so this never
+// re-hardcodes the key→default mapping config already owns.
 func EnumDefault(key string) string {
-	switch key {
-	case "pull":
-		return config.PullAuto
-	case "agent":
-		return config.DefaultAgent
-	case "shell":
-		return config.SupportedShells[0]
+	if EnumOptions(key) == nil {
+		return ""
 	}
-	return ""
+	return config.KeyDocs()[key].Default
 }
 
 // ReadOnlyKey reports whether a key admits a single supported value, so the UI
