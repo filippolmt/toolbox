@@ -16,6 +16,8 @@ package mountplan
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -140,3 +142,25 @@ func dropMountByName(base []config.Mount, name string) []config.Mount {
 // can cross-check the Dockerfile against the same source of truth used at
 // runtime; runtime callers should go through Plan instead.
 func Defaults() []config.Mount { return defaults() }
+
+// OverlayDockerfilePath returns the host path of the optional local overlay
+// Dockerfile (default ~/.toolbox/Dockerfile). It honours the same root
+// resolution the mount pipeline uses — a profile root wins over a
+// config-level mounts_root, else the ~/.toolbox default — so the overlay
+// file lives beside the retargeted credential dirs. The file itself is not a
+// mount; the path is resolved here so the root-resolution rule lives in one
+// place.
+func OverlayDockerfilePath(cfg *config.Config, profile *Profile) (string, error) {
+	home, err := fsx.Home()
+	if err != nil {
+		return "", err
+	}
+	root := cfg.MountsRoot
+	if r := profile.Root(); r != "" {
+		root = r
+	}
+	if root == "" {
+		root = mountsRootPrefix // "~/.toolbox/"
+	}
+	return filepath.Join(fsx.ExpandTilde(strings.TrimSuffix(root, "/"), home), "Dockerfile"), nil
+}

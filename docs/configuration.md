@@ -105,6 +105,25 @@ macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keycha
 
 The `pull` policy (`auto` default | `always` | `never`) steers `imageplan.Refresh`: `never` skips the registry round-trip entirely (air-gapped — `Ensure` still hard-requires the image locally), `always` forces a pull bypassing the 1 h TTL cache (`imagepull.ForcePull`), `auto` is the cache-aware default (`imagepull.RefreshIfStale`). Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
 
+### Local overlay Dockerfile
+
+To layer your own tools onto the standard image without a repo change or a per-shell `init.d/` script, drop a `Dockerfile` at `~/.toolbox/Dockerfile` (retargeted with [`mounts_root`](mounts.md#mounts_root-retarget) / a profile root, same as every `~/.toolbox/`-managed path). Its presence is the sole opt-in — **global only**, no per-repo or config-key activation. When present, `toolbox shell` builds a derived image tagged `ghcr.io/filippolmt/toolbox:local` on top of the resolved base and runs from it; when absent, the shell runs from the base image unchanged.
+
+**Append-only, RUN-only contract.** The overlay is a bare fragment — it MUST NOT contain a `FROM` line and builds with an **empty context** (no `COPY`/`ADD` from host files, so nothing under `~/.toolbox/` is ever tarred into the build). Toolbox injects `FROM <resolved base image ID>` ahead of your fragment, so entrypoint, `init.d/`, and host-UID mapping are inherited unchanged. Use it for `RUN sudo apt-get install …` / `RUN pip install …`-style additions:
+
+```dockerfile
+# ~/.toolbox/Dockerfile — no FROM line; RUN only.
+RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+      httpie \
+    && sudo rm -rf /var/lib/apt/lists/*
+```
+
+**Rebuild triggers.** A marker (base image ID + `sha256` of the Dockerfile bytes) is stored under the toolbox state dir (`~/.toolbox/toolbox/state/local-overlay.marker`, mounts_root-aware — alongside the image-pull cache, so toolbox-managed state stays out of your config dir). The build is skipped when the marker matches **and** `:local` is present locally; otherwise it rebuilds. So a rebuild happens when you edit the Dockerfile, when `imageplan.Refresh` updates the base (its image ID changes), or when the `:local` image is missing. Base freshness stays governed by [`pull`](#image-selection); `:local` carries pull policy `never`, so `Refresh`/`Ensure` never reach a registry for it. The first build streams its output and is unavoidably slower; later shells skip via the marker.
+
+**Fail-loud.** A failing overlay build (e.g. a broken `RUN`) aborts the shell and surfaces the build log — Toolbox never silently falls back to the base image.
+
+**Next fresh container.** A rebuilt `:local` takes effect for the next freshly-created container under the existing [`AutoRemove`](internals/container-lifecycle.md#container-teardown) lifecycle. A running/stopped container is reused as-is and adopts the new image only when a fresh container is next created — `toolbox stop` (or exiting the shell) forces that. Rollback: delete `~/.toolbox/Dockerfile` (revert to base) or `docker rmi ghcr.io/filippolmt/toolbox:local`.
+
 ## `browser_bridge` (deprecated)
 
 `browser_bridge:` is the pre-rename spelling of [`bridge:`](bridge.md). When `bridge:` is absent, the loader folds `browser_bridge` into it (`fillDefaultsBackstop` in `internal/config/config.go`); when both are set, `bridge:` wins. Migrate to `bridge:` — the alias survives only for config files written before the rename.

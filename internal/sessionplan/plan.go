@@ -67,6 +67,11 @@ type SessionPlan struct {
 	// Docker (Docker Desktop already provides the mapping; the duplicate
 	// entry is harmless there).
 	ExtraHosts []string
+	// OverlayDockerfile is the resolved host path of the optional local image
+	// overlay (~/.toolbox/Dockerfile, mounts_root-aware). Always set; the
+	// container edge (localimage.Ensure) passes through unchanged when the
+	// file is absent and only builds the derived `:local` image when present.
+	OverlayDockerfile string
 	// Proximo mirrors cfg.Proximo. When true, the container edge augments
 	// ExtraHosts with the proximo-routed hostnames discovered from running
 	// containers (pinned to host-gateway) just before ContainerCreate — that
@@ -186,19 +191,27 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
+	// Resolve the local overlay Dockerfile path (mounts_root-aware). Runs
+	// after mountplan.Plan so the same home-resolution failure surfaces once.
+	overlayDockerfile, err := mountplan.OverlayDockerfilePath(in.Cfg, in.Profile)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SessionPlan{
-		Image:         Image{Ref: ref, PullPolicy: in.Cfg.Pull},
-		Binds:         mp.Binds,
-		Warnings:      mp.Warnings,
-		WorkingDir:    mp.WorkingDir,
-		ExposedPorts:  exposed,
-		PortBindings:  bindings,
-		Env:           composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
-		ContainerName: containerName(workspace, in.Name, in.Profile),
-		Cmd:           cmd,
-		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
-		ExtraHosts:    browserBridgeExtraHosts(in.Cfg),
-		Proximo:       proximo.Enabled(in.Cfg),
+		Image:             Image{Ref: ref, PullPolicy: in.Cfg.Pull},
+		Binds:             mp.Binds,
+		Warnings:          mp.Warnings,
+		WorkingDir:        mp.WorkingDir,
+		ExposedPorts:      exposed,
+		PortBindings:      bindings,
+		Env:               composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
+		ContainerName:     containerName(workspace, in.Name, in.Profile),
+		Cmd:               cmd,
+		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
+		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
+		OverlayDockerfile: overlayDockerfile,
+		Proximo:           proximo.Enabled(in.Cfg),
 	}, nil
 }
 
