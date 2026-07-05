@@ -89,8 +89,8 @@ ARG ZSH_COMPLETIONS_COMMIT=03bae0bf3f9c4ab894f1f11a31ffe7a1e1029879
 ARG FZF_TAB_COMMIT=24105b15714bfec37989ed5c5b6e60f572253019
 ARG ZOXIDE_VERSION=0.10.0
 # zoxide: no upstream sha256sums file. Same T-01-08-class accepted risk as bat.
-ARG ZOXIDE_SHA256_AMD64=4ff057d3c4d957946937274c2b8be7af2a9bbae7f90a1b5e9baaa7cb65a20caa
-ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d93315cb0
+ARG ZOXIDE_SHA256_AMD64=2d93385b99f3e82cf2701609a1bffcad863fbeb75aa3fe7eb6be4d29be68b1ae
+ARG ZOXIDE_SHA256_ARM64=f1f16c5d6298d63dee467eedea1cdcd8490e43e493bea43acd416dc9033ef641
 ARG SHELLCHECK_VERSION=0.11.0
 # shellcheck: no upstream checksum file. Same accepted-risk pattern as bat/fd —
 # pin SHA256 per-arch (.tar.gz; slim base has no xz) + bump in sync (Renovate).
