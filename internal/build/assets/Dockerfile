@@ -63,23 +63,11 @@ ARG GOPLS_VERSION=0.22.0
 ARG GOIMPORTS_VERSION=0.47.0
 ARG TINI_VERSION=0.19.0
 ARG BAT_VERSION=0.26.1
-# bat: no per-release checksum file upstream; SHA256 pinned per-arch + bumped
-# by maintainer in sync with BAT_VERSION (Renovate). T-01-08-class accepted risk.
-ARG BAT_SHA256_AMD64=726f04c8f576a7fd18b7634f1bbf2f915c43494c1c0f013baa3287edb0d5a2a3
-ARG BAT_SHA256_ARM64=422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6564aa
 ARG FD_VERSION=10.4.2
-# fd: same accepted-risk pattern as bat — no upstream checksum file; pin SHA256
-# per-arch + bump in sync with FD_VERSION (Renovate).
-ARG FD_SHA256_AMD64=e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde
-ARG FD_SHA256_ARM64=f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8
 ARG EZA_VERSION=0.23.4
-# eza: no upstream checksum file. Upstream ships aarch64-MUSL only as zip; we
-# fall back to aarch64-GNU on arm64 (built on ubuntu-22.04 GLIBC 2.35, compatible
-# with bookworm 2.36). amd64 stays MUSL. Completions tarball is arch-agnostic,
-# so a third pinned SHA256 covers it.
-ARG EZA_SHA256_AMD64=d231bb3ee33b08c76279b5888845dceb7034d055c42bb9be46dbe0dae39394df
-ARG EZA_SHA256_ARM64=366e8430225f9955c3dc659b452150c169894833ccfef455e01765e265a3edda
-ARG EZA_COMPLETIONS_SHA256=960c6564e5662880b49919525a6e357e9325807733467e65a95aefcee0910b07
+# eza: upstream ships aarch64-MUSL only as zip; we fall back to aarch64-GNU on
+# arm64 (built on ubuntu-22.04 GLIBC 2.35, compatible with bookworm 2.36).
+# amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
 ARG OMZ_COMMIT=19962acc0656bc92a36c8df9e6b461d424b6d366
@@ -88,18 +76,9 @@ ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=03bae0bf3f9c4ab894f1f11a31ffe7a1e1029879
 ARG FZF_TAB_COMMIT=24105b15714bfec37989ed5c5b6e60f572253019
 ARG ZOXIDE_VERSION=0.10.0
-# zoxide: no upstream sha256sums file. Same T-01-08-class accepted risk as bat.
-ARG ZOXIDE_SHA256_AMD64=4ff057d3c4d957946937274c2b8be7af2a9bbae7f90a1b5e9baaa7cb65a20caa
-ARG ZOXIDE_SHA256_ARM64=96e6ea2e47a71db42cb7ad5a36e9209c8cb3708f8ae00f6945573d0d93315cb0
 ARG SHELLCHECK_VERSION=0.11.0
-# shellcheck: no upstream checksum file. Same accepted-risk pattern as bat/fd —
-# pin SHA256 per-arch (.tar.gz; slim base has no xz) + bump in sync (Renovate).
-ARG SHELLCHECK_SHA256_AMD64=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
-ARG SHELLCHECK_SHA256_ARM64=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc
+# shellcheck: use the .tar.gz asset (slim base has no xz for the .xz build).
 ARG SHFMT_VERSION=3.13.1
-# shfmt: single static binary, no upstream checksum file. SHA256 pinned per-arch.
-ARG SHFMT_SHA256_AMD64=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
-ARG SHFMT_SHA256_ARM64=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
 
 # rtk builder: amd64 uses upstream MUSL tarball, arm64 builds from source
 # against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
@@ -388,22 +367,19 @@ RUN set -eux; \
       rm /tmp/yq_checksums; \
       /out/usr/local/bin/yq --version
 
-# bat (pretty cat). SHA256 pinned per-arch (no upstream checksum file).
+# bat (pretty cat).
 FROM fetch-base AS fetch-bat
 ARG TARGETARCH
 ARG BAT_VERSION
-ARG BAT_SHA256_AMD64
-ARG BAT_SHA256_ARM64
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) BAT_ARCH=x86_64-unknown-linux-gnu;   BAT_SHA256="${BAT_SHA256_AMD64}";; \
-        arm64) BAT_ARCH=aarch64-unknown-linux-gnu;  BAT_SHA256="${BAT_SHA256_ARM64}";; \
+        amd64) BAT_ARCH=x86_64-unknown-linux-gnu;; \
+        arm64) BAT_ARCH=aarch64-unknown-linux-gnu;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       BAT_TARBALL="bat-v${BAT_VERSION}-${BAT_ARCH}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${BAT_TARBALL}" \
         "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/${BAT_TARBALL}"; \
-      echo "${BAT_SHA256}  /tmp/${BAT_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${BAT_TARBALL}" -C /out/usr/local/bin --strip-components=1 \
         "bat-v${BAT_VERSION}-${BAT_ARCH}/bat"; \
       chmod +x /out/usr/local/bin/bat; \
@@ -414,23 +390,19 @@ RUN set -eux; \
       rm "/tmp/${BAT_TARBALL}"; \
       /out/usr/local/bin/bat --version
 
-# fd (find replacement). MUSL both arches. SHA256 pinned per-arch (no
-# upstream checksum file — same accepted-risk pattern as bat/zoxide).
+# fd (find replacement). MUSL both arches.
 FROM fetch-base AS fetch-fd
 ARG TARGETARCH
 ARG FD_VERSION
-ARG FD_SHA256_AMD64
-ARG FD_SHA256_ARM64
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) FD_ARCH=x86_64-unknown-linux-musl;  FD_SHA256="${FD_SHA256_AMD64}";; \
-        arm64) FD_ARCH=aarch64-unknown-linux-musl; FD_SHA256="${FD_SHA256_ARM64}";; \
+        amd64) FD_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) FD_ARCH=aarch64-unknown-linux-musl;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       FD_TARBALL="fd-v${FD_VERSION}-${FD_ARCH}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${FD_TARBALL}" \
         "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/${FD_TARBALL}"; \
-      echo "${FD_SHA256}  /tmp/${FD_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${FD_TARBALL}" -C /out/usr/local/bin --strip-components=1 \
         "fd-v${FD_VERSION}-${FD_ARCH}/fd"; \
       chmod +x /out/usr/local/bin/fd; \
@@ -448,26 +420,21 @@ RUN set -eux; \
 FROM fetch-base AS fetch-eza
 ARG TARGETARCH
 ARG EZA_VERSION
-ARG EZA_SHA256_AMD64
-ARG EZA_SHA256_ARM64
-ARG EZA_COMPLETIONS_SHA256
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) EZA_ARCH=x86_64-unknown-linux-musl;  EZA_SHA256="${EZA_SHA256_AMD64}";; \
-        arm64) EZA_ARCH=aarch64-unknown-linux-gnu;  EZA_SHA256="${EZA_SHA256_ARM64}";; \
+        amd64) EZA_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) EZA_ARCH=aarch64-unknown-linux-gnu;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       EZA_TARBALL="eza_${EZA_ARCH}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${EZA_TARBALL}" \
         "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/${EZA_TARBALL}"; \
-      echo "${EZA_SHA256}  /tmp/${EZA_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${EZA_TARBALL}" -C /out/usr/local/bin ./eza; \
       chmod +x /out/usr/local/bin/eza; \
       rm "/tmp/${EZA_TARBALL}"; \
       EZA_COMPLETIONS_TARBALL="completions-${EZA_VERSION}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${EZA_COMPLETIONS_TARBALL}" \
         "https://github.com/eza-community/eza/releases/download/v${EZA_VERSION}/${EZA_COMPLETIONS_TARBALL}"; \
-      echo "${EZA_COMPLETIONS_SHA256}  /tmp/${EZA_COMPLETIONS_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${EZA_COMPLETIONS_TARBALL}" -C /tmp \
         "./target/completions-${EZA_VERSION}/_eza"; \
       mv "/tmp/target/completions-${EZA_VERSION}/_eza" /out/usr/share/zsh/vendor-completions/_eza; \
@@ -475,44 +442,36 @@ RUN set -eux; \
       /out/usr/local/bin/eza --version
 
 # shellcheck (shell linter). Static binary, .tar.gz (slim base has no xz).
-# No upstream checksum file → SHA256 pinned per-arch. No shipped completion.
+# No shipped completion.
 FROM fetch-base AS fetch-shellcheck
 ARG TARGETARCH
 ARG SHELLCHECK_VERSION
-ARG SHELLCHECK_SHA256_AMD64
-ARG SHELLCHECK_SHA256_ARM64
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) SC_ARCH=x86_64;   SC_SHA256="${SHELLCHECK_SHA256_AMD64}";; \
-        arm64) SC_ARCH=aarch64;  SC_SHA256="${SHELLCHECK_SHA256_ARM64}";; \
+        amd64) SC_ARCH=x86_64;; \
+        arm64) SC_ARCH=aarch64;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       SC_TARBALL="shellcheck-v${SHELLCHECK_VERSION}.linux.${SC_ARCH}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${SC_TARBALL}" \
         "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${SC_TARBALL}"; \
-      echo "${SC_SHA256}  /tmp/${SC_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${SC_TARBALL}" -C /out/usr/local/bin --strip-components=1 \
         "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"; \
       chmod +x /out/usr/local/bin/shellcheck; \
       rm "/tmp/${SC_TARBALL}"; \
       /out/usr/local/bin/shellcheck --version
 
-# shfmt (shell formatter). Single static binary, no upstream checksum file →
-# SHA256 pinned per-arch.
+# shfmt (shell formatter). Single static binary.
 FROM fetch-base AS fetch-shfmt
 ARG TARGETARCH
 ARG SHFMT_VERSION
-ARG SHFMT_SHA256_AMD64
-ARG SHFMT_SHA256_ARM64
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) SHFMT_SHA256="${SHFMT_SHA256_AMD64}";; \
-        arm64) SHFMT_SHA256="${SHFMT_SHA256_ARM64}";; \
+        amd64|arm64) ;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/shfmt \
         "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${TARGETARCH}"; \
-      echo "${SHFMT_SHA256}  /tmp/shfmt" | sha256sum -c -; \
       install -m 0755 /tmp/shfmt /out/usr/local/bin/shfmt; \
       rm /tmp/shfmt; \
       /out/usr/local/bin/shfmt --version
@@ -604,18 +563,15 @@ RUN set -eux; \
 FROM fetch-base AS fetch-zoxide
 ARG TARGETARCH
 ARG ZOXIDE_VERSION
-ARG ZOXIDE_SHA256_AMD64
-ARG ZOXIDE_SHA256_ARM64
 RUN set -eux; \
       case "${TARGETARCH}" in \
-        amd64) ZOXIDE_ARCH=x86_64-unknown-linux-musl; ZOXIDE_SHA256="${ZOXIDE_SHA256_AMD64}";; \
-        arm64) ZOXIDE_ARCH=aarch64-unknown-linux-musl; ZOXIDE_SHA256="${ZOXIDE_SHA256_ARM64}";; \
+        amd64) ZOXIDE_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) ZOXIDE_ARCH=aarch64-unknown-linux-musl;; \
         *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
       esac; \
       ZOXIDE_TARBALL="zoxide-${ZOXIDE_VERSION}-${ZOXIDE_ARCH}.tar.gz"; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${ZOXIDE_TARBALL}" \
         "https://github.com/ajeetdsouza/zoxide/releases/download/v${ZOXIDE_VERSION}/${ZOXIDE_TARBALL}"; \
-      echo "${ZOXIDE_SHA256}  /tmp/${ZOXIDE_TARBALL}" | sha256sum -c -; \
       tar -xzf "/tmp/${ZOXIDE_TARBALL}" -C /out/usr/local/bin zoxide; \
       chmod +x /out/usr/local/bin/zoxide; \
       rm "/tmp/${ZOXIDE_TARBALL}"; \

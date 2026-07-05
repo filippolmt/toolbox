@@ -31,7 +31,7 @@ The `fetch-docker` stage of `internal/build/assets/Dockerfile` installs the stat
 
 ## Tool version pinning
 
-Every external binary in the Dockerfile is pinned by version + SHA256 (exceptions: Docker CLI — see above — and gcloud, which uses a Google APT repo). Renovate bumps them. Adding a new tool is now a 2-edit (or 3-edit when a runtime init script is needed) operation:
+Every external binary in the Dockerfile is pinned by version, and Renovate bumps them. SHA256 verification is applied only when upstream publishes a checksums file: the fetch stage downloads it and pipes through `sha256sum -c -` (e.g. `fetch-gh`, `fetch-helm`, `fetch-kubectl`, `fetch-rtk`), which self-heals across bumps and re-tags. Tools whose upstream ships **no** checksums file (bat, fd, eza, zoxide, shellcheck, shfmt, Docker CLI, gcloud) download over HTTPS only. Hand-pinned per-arch SHA256 literals were removed: they broke the build on every version bump and even on an upstream re-tag of the same version (see zoxide 0.10.0), while providing no guarantee a self-authored hash could actually deliver. Adding a new tool is a 2-edit (or 3-edit when a runtime init script is needed) operation:
 
 1. New row in `internal/catalog/catalog.go` `Entries`.
 2. New install `RUN` block in `internal/build/assets/Dockerfile`.

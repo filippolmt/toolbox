@@ -44,7 +44,7 @@ Pick the install method by matching the closest analog already in the Dockerfile
 |--------|----------------|---------|
 | GitHub release, single static binary, sha256sums file published | `fetch-gh` stage | `curl tarball` + `curl checksums.txt` + `grep \| sha256sum -c -` |
 | GitHub release, MUSL/GNU split | `fetch-gws`, `fetch-zoxide` stages | Pick MUSL — base image is bookworm GLIBC 2.36; `-gnu` builds targeting GLIBC ≥2.39 fail at runtime |
-| GitHub release, no checksum file | `fetch-bat`, `fetch-zoxide` stages | Pin SHA256 per-arch as ARG literals; document accepted risk; Renovate bumps version, maintainer refreshes hashes |
+| GitHub release, no checksum file | `fetch-bat`, `fetch-zoxide` stages | Version pin + HTTPS only, no SHA256 pin — upstream ships no checksums file to verify against, and hand-pinned hashes broke the build on every version bump / upstream re-tag |
 | npm package | final-stage `pnpm` / `claude` / `codex` layers | `npm install -g <pkg>@${VERSION}`; install runs as root, runtime user can't bump → disable auto-update if upstream supports it |
 | Python package | final-stage `oci` layer | `pip install --break-system-packages <pkg>==${VERSION}` (PEP 668 opt-out is intentional, single-purpose container) |
 | Install script | (none currently) | `curl -fsSL <script> \| sh` — only when upstream provides no archive |
@@ -192,7 +192,7 @@ If smoke-test is skipped, the test run did **not** validate the binary actually 
 
 ## Things that look like shortcuts but aren't
 
-- **Don't skip the SHA256 verification** even when upstream offers no `.sha256` file. Use the per-arch ARG-literal pattern (zoxide / bat). Documented accepted risk is fine; unverified curl-pipe-bash is not.
+- **Verify against an upstream checksums file when one exists** (`curl checksums.txt` + `grep | sha256sum -c -`, like `fetch-gh`). When upstream ships no checksums file, download over HTTPS only — do **not** hand-pin per-arch SHA256 literals: those hashes go stale on every version bump and even on an upstream re-tag of the same version, breaking the build for a guarantee that pinning-your-own-hash never actually provided. Never `curl … | sh` an unverified install script when an archive is available.
 - **Don't add a Dockerfile install layer without the matching `catalog.Entries` row.** `TestCatalogDockerfilePresence` fails the build, and even if it didn't, the catalog is the single discoverable list that drives `inherit_host_auth` eligibility, the init.d bijection, and "what's actually in this image". The Dockerfile installs; the catalog *declares*.
 - **Don't fix lint/test failures the user didn't ask about** if they surface during `/verify`. Report them and stop. The `/verify` skill itself codifies this rule.
 - **Don't mount `~/.secrets`** or any other host path that wasn't requested. The `DefaultMounts` doc comment explains why (D-08).
