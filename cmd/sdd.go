@@ -1,31 +1,16 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
-	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/sdd"
 )
-
-const (
-	sddYAMLKey       = "sdd"
-	sddFenceTemplate = "sdd-managed/"
-)
-
-func gitignoreFenceStart(skill string) string {
-	return "# >>> " + sddFenceTemplate + skill + " (toolbox)"
-}
-
-func gitignoreFenceEnd(skill string) string {
-	return "# <<< " + sddFenceTemplate + skill + " (toolbox)"
-}
 
 var sddCmd = &cobra.Command{
 	Use:   "sdd",
@@ -82,7 +67,8 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 	}
 
 	yamlPath := filepath.Join(cwd, ".toolbox.yaml")
-	yamlChanged, err := upsertSDDFlag(yamlPath, skill.Key)
+	gitignorePath := filepath.Join(cwd, ".gitignore")
+	res, err := configedit.EnableSDD(yamlPath, gitignorePath, skill)
 	if err != nil {
 		return err
 	}
@@ -96,17 +82,11 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(out, "  %s: %s\n", path, state)
 	}
 	_, _ = fmt.Fprintf(out, "toolbox sdd init %s (pin v%s)\n", skill.Key, skill.Version)
-	report(yamlPath, yamlChanged)
-
-	gitignorePath := filepath.Join(cwd, ".gitignore")
-	if len(skill.GitignoreEntries) == 0 {
+	report(yamlPath, res.YAMLChanged)
+	if res.GitignoreSkipped {
 		_, _ = fmt.Fprintf(out, "  %s: skipped (skill produces user-authored content)\n", gitignorePath)
 	} else {
-		gitignoreChanged, err := upsertGitignoreFence(gitignorePath, skill)
-		if err != nil {
-			return err
-		}
-		report(gitignorePath, gitignoreChanged)
+		report(gitignorePath, res.GitignoreChanged)
 	}
 	_, _ = fmt.Fprintln(out, "Run 'toolbox shell' to bootstrap the integration inside the container.")
 	return nil
@@ -119,53 +99,6 @@ func runSDDList(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintf(out, "  %-10s %s@%s\n", s.Key, s.NpmPackage, s.Version)
 	}
 	return nil
-}
-
-// upsertSDDFlag writes `sdd.<key>: true` to path via configio.UpsertFile so
-// user-authored comments and key order survive. Returns (changed, error)
-// where changed reflects whether the rendered byte stream differs from
-// what is on disk (idempotent re-runs report unchanged).
-//
-// An existing object-form entry (`sdd.<key>: {steps: [...]}`) is left
-// untouched: it already means enabled, and SetMapBool would clobber the
-// user's steps override with the bool shorthand.
-func upsertSDDFlag(path, skillKey string) (bool, error) {
-	return configio.UpsertFile(path, func(doc *yaml.Node) {
-		sddMap := configio.EnsureChildMap(doc, sddYAMLKey)
-		if v := configio.ChildValue(sddMap, skillKey); v != nil && v.Kind == yaml.MappingNode {
-			return
-		}
-		configio.SetMapBool(sddMap, skillKey, true)
-	})
-}
-
-// upsertGitignoreFence appends or replaces the per-skill fenced block in
-// path. Each skill owns its own fence pair so `toolbox sdd init <other>`
-// touches only the relevant section.
-func upsertGitignoreFence(path string, skill sdd.Skill) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("read %s: %w", path, err)
-	}
-
-	updated, changed := configio.SpliceFence(existing,
-		gitignoreFenceStart(skill.Key), gitignoreFenceEnd(skill.Key), renderGitignoreBlock(skill))
-	if !changed {
-		return false, nil
-	}
-	return true, configio.AtomicWriteFile(path, updated, 0o600)
-}
-
-func renderGitignoreBlock(skill sdd.Skill) string {
-	var b strings.Builder
-	b.WriteString(gitignoreFenceStart(skill.Key))
-	b.WriteString("\n")
-	for _, e := range skill.GitignoreEntries {
-		b.WriteString(e)
-		b.WriteString("\n")
-	}
-	b.WriteString(gitignoreFenceEnd(skill.Key))
-	return b.String()
 }
 
 func init() {

@@ -3,6 +3,7 @@ package configui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -613,31 +614,24 @@ func EnabledSDD(cfg *config.Config) map[string]bool {
 	return out
 }
 
-// SaveSDD enables the selected SDD skills (as the `sdd.<key>: true` shorthand)
-// and removes the rest. A key already carrying an explicit steps override is
-// left untouched when it stays enabled, so custom steps survive a toggle. An
-// empty selection removes the sdd block. Gated by Doctor.
+// SaveSDD reconciles the SDD skill set through the configedit seam so the TUI
+// produces the same .toolbox.yaml + .gitignore state as `toolbox sdd init`.
+// The yaml reconcile stays transactional and Doctor-gated (enable selected,
+// remove the rest, in a single write; a key carrying a custom steps override
+// is left untouched when it stays enabled; an emptied sdd block is dropped).
+// Only after the yaml commit succeeds does it write the .gitignore fence for
+// each enabled skill and remove it for each disabled one — fences are outside
+// Doctor's contract, so a rejected yaml reconcile rolls back before any fence
+// is touched.
 func SaveSDD(target, cwd string, enabled map[string]bool) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		root := configio.EnsureChildMap(doc, "sdd")
+	if err := apply(target, cwd, func(doc *yaml.Node) {
 		for _, key := range SDDOptions() {
-			switch {
-			case !enabled[key]:
-				configio.RemoveMapKey(root, key)
-			case isObjectForm(configio.ChildValue(root, key)):
-				// already enabled with a custom steps override — leave it.
-			default:
-				configio.SetMapBool(root, key, true)
-			}
+			configedit.SetSDDEnabled(doc, key, enabled[key])
 		}
-		if len(root.Content) == 0 {
-			configio.RemoveMapKey(doc, "sdd")
-		}
-	})
-}
-
-func isObjectForm(v *yaml.Node) bool {
-	return v != nil && v.Kind == yaml.MappingNode
+	}); err != nil {
+		return err
+	}
+	return configedit.ReconcileSDDGitignore(filepath.Join(cwd, ".gitignore"), enabled)
 }
 
 // DefaultMountNames returns the names of the built-in default mounts — the

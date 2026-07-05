@@ -101,3 +101,30 @@ func SpliceFence(existing []byte, start, end, body string) ([]byte, bool) {
 	}
 	return updated, !bytes.Equal(updated, existing)
 }
+
+// RemoveFence deletes the block delimited by the start and end markers
+// (inclusive, plus its trailing newline) from existing — the delete
+// counterpart to SpliceFence. It also swallows the single blank-line
+// separator SpliceFence inserts before an appended block, so write-then-remove
+// round-trips back to the original bytes. Returns the new bytes and whether
+// they differ; absent or malformed markers are a no-op (changed=false). Pure
+// text transform: callers wrap it with read/write at their own edge.
+func RemoveFence(existing []byte, start, end string) ([]byte, bool) {
+	startIdx := bytes.Index(existing, []byte(start))
+	endIdx := bytes.Index(existing, []byte(end))
+	if startIdx < 0 || endIdx <= startIdx {
+		return existing, false
+	}
+	head := startIdx
+	if head >= 2 && existing[head-1] == '\n' && existing[head-2] == '\n' {
+		head-- // drop the blank-line separator, keep the prior content's newline
+	}
+	tail := endIdx + len(end)
+	if tail < len(existing) && existing[tail] == '\n' {
+		tail++
+	}
+	updated := make([]byte, 0, len(existing)-(tail-head))
+	updated = append(updated, existing[:head]...)
+	updated = append(updated, existing[tail:]...)
+	return updated, !bytes.Equal(updated, existing)
+}

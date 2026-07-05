@@ -442,13 +442,14 @@ func TestRowsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSaveSDD: enabling writes the bool shorthand; disabling removes it; an
-// object-form entry with custom steps survives a re-enable.
+// TestSaveSDD: enabling writes the bool shorthand and the .gitignore fence;
+// disabling removes both, converging the TUI path with `toolbox sdd init`.
 func TestSaveSDD(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
-	skill := SDDOptions()[0]
+	gitignore := filepath.Join(repo, ".gitignore")
+	const skill = "gsd" // a skill that declares gitignore entries
 
 	if err := SaveSDD(target, repo, map[string]bool{skill: true}); err != nil {
 		t.Fatalf("SaveSDD enable: %v", err)
@@ -456,12 +457,38 @@ func TestSaveSDD(t *testing.T) {
 	if got := readFile(t, target); !strings.Contains(got, skill+": true") {
 		t.Errorf("want %s: true, got:\n%s", skill, got)
 	}
+	if got := readFile(t, gitignore); !strings.Contains(got, configedit.GitignoreFenceStart(skill)) {
+		t.Errorf("enable must write the gitignore fence:\n%s", got)
+	}
 
 	if err := SaveSDD(target, repo, nil); err != nil {
 		t.Fatalf("SaveSDD disable: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "sdd:") {
 		t.Errorf("empty selection must remove the sdd block:\n%s", got)
+	}
+	if got := readFile(t, gitignore); strings.Contains(got, configedit.GitignoreFenceStart(skill)) {
+		t.Errorf("disable must remove the gitignore fence:\n%s", got)
+	}
+}
+
+// TestSaveSDDDoctorRollbackSkipsFence: a reconcile that fails Doctor rolls the
+// yaml back to its pre-edit bytes and writes no .gitignore fence.
+func TestSaveSDDDoctorRollbackSkipsFence(t *testing.T) {
+	isolatedHome(t)
+	repo := t.TempDir()
+	target := filepath.Join(repo, ".toolbox.yaml")
+	before := "shell: bash\n" // bash is unsupported — Doctor rejects it
+	writeFile(t, target, before)
+
+	if err := SaveSDD(target, repo, map[string]bool{"gsd": true}); err == nil {
+		t.Fatal("expected SaveSDD to be blocked by Doctor")
+	}
+	if got := readFile(t, target); got != before {
+		t.Errorf("yaml must roll back to pre-edit bytes, got:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf("a blocked reconcile must not write a fence (stat err=%v)", err)
 	}
 }
 
