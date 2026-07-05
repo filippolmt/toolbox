@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
@@ -50,8 +51,8 @@ func TestSDDInitGSDWritesGitignoreFence(t *testing.T) {
 		t.Fatalf("read .gitignore: %v", err)
 	}
 	for _, want := range []string{
-		gitignoreFenceStart("gsd"),
-		gitignoreFenceEnd("gsd"),
+		configedit.GitignoreFenceStart("gsd"),
+		configedit.GitignoreFenceEnd("gsd"),
 		".claude/agents/gsd-*",
 		".claude/get-shit-done/",
 		".claude/skills/gsd-*/",
@@ -118,8 +119,8 @@ func TestSDDInitFixtureSkillCreatesYAMLAndGitignore(t *testing.T) {
 		t.Fatalf("read .gitignore: %v", err)
 	}
 	for _, want := range []string{
-		gitignoreFenceStart("fixture"),
-		gitignoreFenceEnd("fixture"),
+		configedit.GitignoreFenceStart("fixture"),
+		configedit.GitignoreFenceEnd("fixture"),
 		".fixture/output/",
 		".fixture/cache.json",
 	} {
@@ -185,8 +186,8 @@ func TestSDDInitOpenSpecWritesGitignoreFence(t *testing.T) {
 		t.Fatalf("read .gitignore: %v", err)
 	}
 	for _, want := range []string{
-		gitignoreFenceStart("openspec"),
-		gitignoreFenceEnd("openspec"),
+		configedit.GitignoreFenceStart("openspec"),
+		configedit.GitignoreFenceEnd("openspec"),
 		".claude/skills/openspec-*/",
 		".claude/commands/opsx/",
 		".codex/skills/openspec-*/",
@@ -347,9 +348,9 @@ func TestSDDInitPreservesExistingGitignoreEntries(t *testing.T) {
 	got := string(body)
 	for _, want := range []string{
 		"dist/", "node_modules/",
-		gitignoreFenceStart("fixture"),
+		configedit.GitignoreFenceStart("fixture"),
 		".fixture/output/",
-		gitignoreFenceEnd("fixture"),
+		configedit.GitignoreFenceEnd("fixture"),
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf(".gitignore missing %q:\n%s", want, got)
