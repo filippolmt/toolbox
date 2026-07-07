@@ -113,6 +113,114 @@ if [ -f "$_proximo_ca" ]; then
 fi
 unset _proximo_ca
 
+# Global CA trust (docs/mounts.md#ca-certificate-trust). Any cert file dropped
+# into ~/.toolbox/certs (RO-mounted at /etc/toolbox/certs) is trusted at each
+# shell start across all four surfaces, mirroring the proximo block:
+#   - system bundle (curl / git / wget / python-ssl): stage each cert under
+#     /usr/local/share/ca-certificates/ + a single update-ca-certificates
+#   - NSS db (Chromium / Firefox / Playwright): certutil into $HOME/.pki/nssdb
+#   - Node + python-requests: NODE_EXTRA_CA_CERTS / REQUESTS_CA_BUNDLE repointed
+#     at the full system bundle (a superset of proximo's single-file value)
+# PEM passes through; DER is converted via the python3 stdlib (no openssl CLI in
+# the image). Multi-cert PEM files are split so each cert becomes one staged
+# .crt. Self-gated on a non-empty folder, idempotent (cmp -s + nickname checks),
+# every step best-effort so a malformed file never aborts boot.
+_certs_dir="/etc/toolbox/certs"
+if [ -d "$_certs_dir" ] && [ -n "$(ls -A "$_certs_dir" 2>/dev/null)" ]; then
+    _certs_present=0 # a valid cert was trusted this shell (gates the env export)
+    _certs_changed=0 # a cert was newly copied (gates update-ca-certificates)
+    _certs_nss="$HOME/.pki/nssdb"
+    _certs_have_nss=0
+    if command -v certutil >/dev/null 2>&1; then
+        mkdir -p "$_certs_nss"
+        [ -f "$_certs_nss/cert9.db" ] || certutil -d "sql:$_certs_nss" -N --empty-password >/dev/null 2>&1 || true
+        _certs_have_nss=1
+    fi
+    _certs_tmp=$(mktemp -d)
+
+    # Stage one single-cert PEM into the system store (cmp -s gated) and NSS
+    # (existence-gated), mirroring the proximo block. $1 = sanitized name.
+    _stage_cert() {
+        local _nm="$1" _pf="$2"
+        # Skip-guard, not a conversion — a real PEM is still staged as-is. It
+        # rejects non-certificates: ssl.DER_cert_to_PEM_cert base64-wraps any
+        # bytes without validating, and a bogus BEGIN/END wrapper passes the
+        # grep detector, so an unchecked malformed file would land a junk .crt.
+        # load_verify_locations parses the block (stdlib, no openssl CLI) and
+        # raises on anything that is not a real cert. Only vet when python3 can:
+        # if it is unavailable we stage best-effort rather than drop a possibly
+        # valid cert, and a rejection is logged so it is never silent.
+        if command -v python3 >/dev/null 2>&1 \
+           && ! python3 -c 'import ssl,sys; ssl.create_default_context().load_verify_locations(sys.argv[1])' "$_pf" 2>/dev/null; then
+            echo "toolbox: skipping ${_nm} from /etc/toolbox/certs (not a valid certificate)" >&2
+            return 0
+        fi
+        local _dst="/usr/local/share/ca-certificates/toolbox-cert-${_nm}.crt"
+        if [ ! -f "$_dst" ] || ! cmp -s "$_pf" "$_dst"; then
+            if sudo cp "$_pf" "$_dst" 2>/dev/null; then _certs_changed=1; _certs_present=1; fi
+        else
+            _certs_present=1
+        fi
+        if [ "$_certs_have_nss" = "1" ]; then
+            certutil -d "sql:$_certs_nss" -L -n "toolbox-${_nm}" >/dev/null 2>&1 \
+              || certutil -d "sql:$_certs_nss" -A -t C,, -n "toolbox-${_nm}" -i "$_pf" >/dev/null 2>&1 || true
+        fi
+    }
+
+    for _cert_src in "$_certs_dir"/*.pem "$_certs_dir"/*.crt "$_certs_dir"/*.cer "$_certs_dir"/*.der; do
+        [ -f "$_cert_src" ] || continue # skip unmatched literal globs (no nullglob)
+        # Normalize to PEM: a file carrying a PEM block passes through; anything
+        # else is tried as DER via the python3 stdlib.
+        _cert_pem="$_certs_tmp/norm.pem"
+        if grep -q 'BEGIN CERTIFICATE' "$_cert_src" 2>/dev/null; then
+            cat "$_cert_src" > "$_cert_pem" 2>/dev/null || continue
+        elif command -v python3 >/dev/null 2>&1; then
+            python3 -c 'import ssl,sys; sys.stdout.write(ssl.DER_cert_to_PEM_cert(open(sys.argv[1],"rb").read()))' \
+                "$_cert_src" > "$_cert_pem" 2>/dev/null || continue
+        else
+            continue
+        fi
+        [ -s "$_cert_pem" ] || continue
+        # Deterministic store name / NSS nickname from the sanitized basename.
+        _cert_base=$(basename "$_cert_src")
+        _cert_base=$(printf '%s' "${_cert_base%.*}" | tr -c '[:alnum:]' '-')
+        # Split multi-cert PEM into one file per cert (Debian's
+        # update-ca-certificates is most reliable one-cert-per-file).
+        rm -f "$_certs_tmp"/split-*.pem
+        awk -v d="$_certs_tmp" '/BEGIN CERTIFICATE/{n++} n>0{print > (d "/split-" n ".pem")}' "$_cert_pem" 2>/dev/null || true
+        _cert_total=$(grep -c 'BEGIN CERTIFICATE' "$_cert_pem" 2>/dev/null || echo 0)
+        for _cert_block in "$_certs_tmp"/split-*.pem; do
+            [ -f "$_cert_block" ] || continue
+            _cert_i="$(basename "$_cert_block" .pem)"
+            _cert_i="${_cert_i#split-}"
+            if [ "$_cert_total" -le 1 ]; then
+                _stage_cert "$_cert_base" "$_cert_block"
+            else
+                _stage_cert "${_cert_base}-${_cert_i}" "$_cert_block"
+            fi
+        done
+    done
+
+    # Refresh the bundle only when a cert was actually copied (update-ca-
+    # certificates is not free; on an unchanged folder re-shell it is skipped).
+    # The env re-export is gated on presence, not change: a fresh AutoRemove
+    # container has an empty process env every shell, so it must run whenever a
+    # cert is trusted — repointing Node + python-requests at the full bundle so
+    # the shell inherits the superset (overriding proximo's single-file value).
+    if [ "$_certs_changed" = "1" ]; then
+        sudo update-ca-certificates >/dev/null 2>&1 || true
+    fi
+    if [ "$_certs_present" = "1" ]; then
+        export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+        export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    fi
+    rm -rf "$_certs_tmp"
+    unset -f _stage_cert
+    unset _certs_present _certs_changed _certs_nss _certs_have_nss _certs_tmp \
+        _cert_src _cert_pem _cert_base _cert_total _cert_block _cert_i
+fi
+unset _certs_dir
+
 # Git credential helper via the bridge. The container can't reach the host
 # credential store (macOS Keychain / Linux secret-service), so a plain
 # `git clone https://…` for a self-hosted host (Forgejo, Gitea, …) — anything

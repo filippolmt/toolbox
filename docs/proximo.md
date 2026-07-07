@@ -30,6 +30,8 @@ If you use [proximo](https://github.com/filippolmt/proximo) to reach your local-
 | Node / Playwright (node API) | `NODE_EXTRA_CA_CERTS` | additive, set by `proximo.Env` |
 | python-requests | — | uses certifi, not the system store; set `REQUESTS_CA_BUNDLE="$TOOLBOX_PROXIMO_CA"` (this is the one non-seamless client) |
 
+The generic [CA-certificate folder](mounts.md#ca-certificate-trust) (`~/.toolbox/certs/`) shares this same system bundle: when any cert is dropped there, its entrypoint block re-points `NODE_EXTRA_CA_CERTS` / `REQUESTS_CA_BUNDLE` at the full `/etc/ssl/certs/ca-certificates.crt` — a superset that still contains proximo's CA, so proximo trust is unaffected. Reach for that folder for any non-proximo CA (corporate proxy, internal runtime); proximo's CA is wired automatically and needs nothing dropped there.
+
 ## Lifecycle from inside the container (bridge shim)
 
 `proximo up|down|status` works inside `toolbox shell` via the [bridge](bridge.md): the image ships `/usr/local/bin/proximo` (`internal/build/assets/bin/proximo`, sibling of the editor shims) which POSTs `{"command": "<sub>"}` to the daemon's `/proximo` endpoint; the daemon execs the **host** proximo binary and returns `{"exit": N, "output": "…"}`, which the shim prints and propagates. Running the real binary in-container cannot work: proximo materializes its compose stack under `~/.proximo` and bind-mounts those paths, which the host Docker daemon would resolve host-side where they don't exist.

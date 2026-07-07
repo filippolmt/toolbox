@@ -37,7 +37,7 @@ User-declared mounts in `.toolbox.yaml` patch / replace / append / disable defau
 | `name` not a default (or omitted) | **Append**: added after the default set. |
 | `name` matches a default, `disabled: true` | **Remove**: the default is dropped from the resolved set. |
 
-Default mount names: `claude`, `codex`, `state`, `ssh`, `gitconfig`, `gh`, `glab`, `gcloud`, `gws`, `azure`, `oci`, `kube`, `playwright-cache`, `startup.d`, `npm-global`, `go`, `docker-sock`. A patch referencing an unknown name fails `Plan()` loudly at startup so typos surface immediately.
+Default mount names: `claude`, `codex`, `state`, `ssh`, `gitconfig`, `gh`, `glab`, `gcloud`, `gws`, `azure`, `oci`, `kube`, `playwright-cache`, `startup.d`, `certs`, `npm-global`, `go`, `docker-sock`. A patch referencing an unknown name fails `Plan()` loudly at startup so typos surface immediately.
 
 Examples:
 
@@ -176,6 +176,22 @@ mounts:
 Then drop hook scripts into `./startup.d/*.sh` at the repo root. The patch retargets the `startup.d` mount by name, so the default `create_if_missing: true` and read-only flags are kept; only the host source changes. Because the source is CWD-relative, it resolves to the repo root when you run `toolbox shell` there, and the hooks only fire for that project. Run `toolbox stop` once after editing `.toolbox.yaml` so the new mount source takes effect ([bindings are fixed at container creation](commands.md#publishing-ports)).
 
 Trade-off vs. the global directory: per-repo hooks let a repo's `.toolbox.yaml` (and any contributor with push access) run code inside your container with your mounted credentials — treat them like any other repo-shipped automation. Commit the `startup.d/` directory if the hooks should be shared, or add it to `.gitignore` for per-user setup.
+
+## CA certificate trust
+
+Drop any CA certificate into `~/.toolbox/certs/` on the host and it is trusted inside the container on the next `toolbox shell` — no flag, no config key. The folder is created empty (mode 0700) when missing and RO-mounted at `/etc/toolbox/certs`; the container can never rewrite your certs. This is the generic complement to [proximo's](proximo.md) tool-specific CA handling: any internal, corporate-proxy, or private-runtime CA belongs here.
+
+At each shell start the entrypoint iterates every top-level file and establishes trust across the four HTTPS client surfaces, mirroring proximo:
+
+1. **System bundle** (curl / git / wget / python-ssl) — each cert is staged under `/usr/local/share/ca-certificates/` and `sudo update-ca-certificates` refreshes `/etc/ssl/certs/ca-certificates.crt`.
+2. **NSS database** (Chromium / Firefox / Playwright) — added to `$HOME/.pki/nssdb` via `certutil`.
+3. **Node** and 4. **python-requests / certifi** — `NODE_EXTRA_CA_CERTS` and `REQUESTS_CA_BUNDLE` are repointed at the full system bundle, so they trust the public CAs, your CAs, and proximo's CA together.
+
+Details:
+
+- **Formats.** Accepted extensions are `.pem`, `.crt`, `.cer`, `.der` (flat folder, top-level only). PEM passes through; DER is converted automatically via the `python3` standard library — no pre-conversion, no extra image dependency. A file containing multiple concatenated certificates is split so each one is trusted individually.
+- **Zero-config and idempotent.** An empty folder is a no-op. Re-shelling never duplicates store entries, and a malformed file is skipped best-effort without aborting boot.
+- **Coexists with proximo.** Both proximo's CA and the folder's CAs land in the same system bundle that `NODE_EXTRA_CA_CERTS` / `REQUESTS_CA_BUNDLE` reference.
 
 ## mounts CLI
 
