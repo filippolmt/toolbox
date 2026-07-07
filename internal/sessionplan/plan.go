@@ -374,6 +374,15 @@ func MissingPublishPorts(wanted network.PortMap, inspect container.InspectRespon
 // host's full container list without taking a SessionPlan input.
 const ContainerNamePrefix = "toolbox-"
 
+// IsToolboxContainerName reports whether a container name belongs to a
+// toolbox-managed container: the "toolbox-" prefix (workspace-hash and
+// named-shell formats) or the legacy singleton name "toolbox". Shared by
+// internal/container StopAll (bulk teardown) and List (host inventory) so the
+// definition of "a toolbox container" lives in one place.
+func IsToolboxContainerName(name string) bool {
+	return name == "toolbox" || strings.HasPrefix(name, ContainerNamePrefix)
+}
+
 // MaxContainerNameLen is the documented Docker convention cap for
 // container names. Exposed so cmd/ validators can budget the user-supplied
 // portion (workspace basename or named-shell name) without rederiving it.

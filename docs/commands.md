@@ -165,6 +165,18 @@ Because `git worktree remove` never deletes the branch itself, `rm` and `prune` 
 
 `create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
 
+## toolbox list
+
+List every toolbox container on the host (alias: `toolbox ls`), across all directories, with the workspace path bound at `/workspace` and its status:
+
+```
+NAME                  WORKSPACE      STATUS
+toolbox-api-1a2b3c4d  /home/u/api    Up 2 hours
+toolbox-named-infra   /home/u/infra  Up 10 minutes
+```
+
+Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
+
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.

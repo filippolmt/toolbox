@@ -29,6 +29,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/localimage"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -290,23 +291,15 @@ func StopByName(ctx context.Context, cli client.APIClient, name string) error {
 // Failures on a single container don't short-circuit the rest — partial
 // cleanup beats fail-fast when `--all` is meant to be a bulk sweep.
 func StopAll(ctx context.Context, cli client.APIClient) error {
-	args := make(client.Filters).Add("name", "toolbox")
-	list, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: args})
+	items, err := toolboxContainers(ctx, cli)
 	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
+		return err
 	}
 
 	found := 0
 	var errs []error
-	for _, c := range list.Items {
-		if len(c.Names) == 0 {
-			continue
-		}
-		name := strings.TrimPrefix(c.Names[0], "/")
-		if name != "toolbox" && !strings.HasPrefix(name, sessionplan.ContainerNamePrefix) {
-			continue
-		}
-		if err := teardown.StopOne(ctx, cli, name, teardown.DefaultStopGrace); err != nil {
+	for _, c := range items {
+		if err := teardown.StopOne(ctx, cli, containerName(c), teardown.DefaultStopGrace); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -319,4 +312,77 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+// toolboxContainers lists every toolbox-managed container on the host (all
+// states). It centralizes the daemon-side name pre-filter, the nameless-entry
+// guard, and the authoritative IsToolboxContainerName test so StopAll and List
+// agree on the container set at the query level — not just the name predicate.
+func toolboxContainers(ctx context.Context, cli client.APIClient) ([]container.Summary, error) {
+	args := make(client.Filters).Add("name", "toolbox")
+	list, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: args})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var out []container.Summary
+	for _, c := range list.Items {
+		if len(c.Names) == 0 {
+			continue
+		}
+		if !sessionplan.IsToolboxContainerName(containerName(c)) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// containerName returns the container's primary name without Docker's leading
+// "/". Only called on summaries from toolboxContainers, which guarantees Names
+// is non-empty.
+func containerName(c container.Summary) string {
+	return strings.TrimPrefix(c.Names[0], "/")
+}
+
+// Item is one row of the host's toolbox-container inventory. Workspace is the
+// host path bind-mounted at /workspace, or "-" when no such bind exists
+// (e.g. a legacy container). Status is the Docker human status string
+// ("Up 2 hours", "Exited (0) 3 minutes ago").
+type Item struct {
+	Name      string
+	Workspace string
+	Status    string
+}
+
+// List returns every toolbox-managed container on the host (all states),
+// sorted by name. It reuses the same name predicate as StopAll so the two
+// agree on what counts as a toolbox container.
+func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
+	summaries, err := toolboxContainers(ctx, cli)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]Item, 0, len(summaries))
+	for _, c := range summaries {
+		items = append(items, Item{
+			Name:      containerName(c),
+			Workspace: workspaceOf(c),
+			Status:    c.Status,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items, nil
+}
+
+// workspaceOf extracts the host path bound at /workspace from a container
+// summary, or "-" when no such bind is present.
+func workspaceOf(c container.Summary) string {
+	for _, m := range c.Mounts {
+		if m.Destination == mountplan.WorkspaceTarget {
+			return m.Source
+		}
+	}
+	return "-"
 }
