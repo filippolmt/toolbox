@@ -238,6 +238,10 @@ check_required "proximo-hosts" sh -c "test -x /usr/local/bin/proximo-hosts && gr
 # entrypoint auto-starts the watcher (background, gated on the proximo CA mount)
 # so the /etc/hosts sync is automatic — assert the wiring is present.
 check_required "proximo-hosts watcher wired" sh -c "grep -q proximo-hosts.--watch /usr/local/bin/entrypoint && echo present"
+# entrypoint carries the generic CA-trust block (gated on /etc/toolbox/certs,
+# beside the proximo block) — assert the wiring is present. No init.d bijection
+# or completion count edit: it ties to no catalog tool.
+check_required "global CA trust wired" sh -c "grep -q /etc/toolbox/certs /usr/local/bin/entrypoint && echo present"
 # git-credential-toolbox is the bridge credential helper (bridge-lib marker) —
 # forwards the git credential protocol to the host store; a dropped COPY fails
 # here too.

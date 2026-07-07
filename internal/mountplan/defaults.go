@@ -120,6 +120,14 @@ func defaults() []config.Mount {
 		// entrypoint before handing control to the shell — read-only to prevent
 		// in-container tampering; edits happen on the host.
 		{Name: "startup.d", Source: "~/.toolbox/startup.d", Target: "/home/toolbox/.toolbox-startup.d", ReadOnly: true, CreateIfMissing: true},
+		// Host-provided CA certificates. Any *.pem/.crt/.cer/.der file dropped
+		// here is trusted at each shell start across the system bundle, NSS db,
+		// Node and python-requests (entrypoint.sh, beside the proximo block).
+		// Zero-config, no flag. RO so the container can't rewrite user certs;
+		// CreateIfMissing materialises the empty folder so it is auto-discoverable.
+		// Target /etc/toolbox/certs is a read-source (like proximo's CA), NOT a
+		// drop-in trust path — trust is established from it, not by mounting there.
+		{Name: "certs", Source: "~/.toolbox/certs", Target: "/etc/toolbox/certs", ReadOnly: true, CreateIfMissing: true},
 		// Per-user npm global prefix. Keeps runtime `npm install -g` writable
 		// without root and persistent across container recreations. The prefix
 		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.

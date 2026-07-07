@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 30 {
-		t.Fatalf("expected 30 default mounts, got %d", len(mounts))
+	if len(mounts) != 31 {
+		t.Fatalf("expected 31 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -62,6 +62,10 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/playwright-config", false, true)
 	// User-defined hooks dir: read-only, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/startup.d", true, true)
+	// Host-provided CA certs dir: read-only (container must not rewrite user
+	// certs), create-if-missing (empty folder auto-discoverable).
+	assertMount(t, mounts, "~/.toolbox/certs", true, true)
+	assertMountTarget(t, mounts, "~/.toolbox/certs", "/etc/toolbox/certs")
 	// Per-user npm prefix: read-write, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/npm-global", false, true)
 	// bun state (install cache + global packages): read-write, create-if-missing.
