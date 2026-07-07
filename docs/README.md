@@ -143,6 +143,7 @@ host-CLI primitives.
 ### [internals/shell-start.md](internals/shell-start.md)
 
 - [Prompt glyph width](internals/shell-start.md#prompt-glyph-width)
+- [Prompt module toggles](internals/shell-start.md#prompt-module-toggles)
 - [UTF-8 locale](internals/shell-start.md#utf-8-locale)
 - [Managed statusline](internals/shell-start.md#managed-statusline)
 - [MCP plugin auto-build](internals/shell-start.md#mcp-plugin-auto-build)

@@ -136,6 +136,7 @@ Arbitrary env vars injected into the in-container shell via an `env:` map in `.t
 env:                              # top-level — applies to every toolbox shell
   CLAUDE_CODE_WORKFLOWS: "1"
   CLAUDE_CODE_EFFORT_LEVEL: medium
+  PROMPT_HIDE_KUBE: "1"           # hide the starship kubernetes segment
 
 shells:
   infra:
@@ -143,6 +144,8 @@ shells:
     env:                          # per-shell — overlays the top-level map
       AWS_PROFILE: prod
 ```
+
+The `kubernetes` and `gcloud` prompt segments are opt-out via `PROMPT_HIDE_KUBE` / `PROMPT_HIDE_GCLOUD` (set to any value to hide). Details and why `terraform`/`docker_context` aren't env-toggleable: [prompt module toggles](internals/shell-start.md#prompt-module-toggles).
 
 Contract:
 

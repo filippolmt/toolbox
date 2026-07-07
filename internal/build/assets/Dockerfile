@@ -1248,11 +1248,18 @@ ENV DISABLE_AUTOUPDATER=1 \
 # tzdata apt dep above). Default to Europe/Rome so timestamps (statusline
 # rate-limit resets, `date`, `ls`) render in local time; overridable per
 # session via the `env:` passthrough (e.g. env: { TZ: America/New_York }).
+# STARSHIP_LOG=error silences starship's warn-level noise on the prompt — the
+# recurring `[WARN] - (starship::modules::kubernetes): Invalid KUBECONFIG` from
+# a dangling current-context, plus residual git bind-mount timeout warnings.
+# NB it only mutes the log line; the kube segment still renders the stale
+# context name — hide the segment with PROMPT_HIDE_KUBE. Override for debugging
+# via `env: { STARSHIP_LOG: warn }`. Why: docs/internals/shell-start.md#prompt-module-toggles
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
     EDITOR=vi \
     KUBE_EDITOR=vi \
     STARSHIP_CONFIG=/etc/toolbox/starship.toml \
+    STARSHIP_LOG=error \
     LANG=C.UTF-8 \
     TZ=Europe/Rome
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
