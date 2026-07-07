@@ -29,6 +29,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/localimage"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -303,7 +304,7 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
-		if name != "toolbox" && !strings.HasPrefix(name, sessionplan.ContainerNamePrefix) {
+		if !sessionplan.IsToolboxContainerName(name) {
 			continue
 		}
 		if err := teardown.StopOne(ctx, cli, name, teardown.DefaultStopGrace); err != nil {
@@ -319,4 +320,54 @@ func StopAll(ctx context.Context, cli client.APIClient) error {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+// Item is one row of the host's toolbox-container inventory. Workspace is the
+// host path bind-mounted at /workspace, or "-" when no such bind exists
+// (e.g. a legacy container). Status is the Docker human status string
+// ("Up 2 hours", "Exited (0) 3 minutes ago").
+type Item struct {
+	Name      string
+	Workspace string
+	Status    string
+}
+
+// List returns every toolbox-managed container on the host (all states),
+// sorted by name. It reuses the same name predicate as StopAll so the two
+// agree on what counts as a toolbox container.
+func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
+	args := make(client.Filters).Add("name", "toolbox")
+	list, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: args})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var items []Item
+	for _, c := range list.Items {
+		if len(c.Names) == 0 {
+			continue
+		}
+		name := strings.TrimPrefix(c.Names[0], "/")
+		if !sessionplan.IsToolboxContainerName(name) {
+			continue
+		}
+		items = append(items, Item{
+			Name:      name,
+			Workspace: workspaceOf(c),
+			Status:    c.Status,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items, nil
+}
+
+// workspaceOf extracts the host path bound at /workspace from a container
+// summary, or "-" when no such bind is present.
+func workspaceOf(c container.Summary) string {
+	for _, m := range c.Mounts {
+		if m.Destination == mountplan.WorkspaceTarget {
+			return m.Source
+		}
+	}
+	return "-"
 }
