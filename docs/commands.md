@@ -170,9 +170,9 @@ Because `git worktree remove` never deletes the branch itself, `rm` and `prune` 
 List every toolbox container on the host (alias: `toolbox ls`), across all directories, with the workspace path bound at `/workspace` and its status:
 
 ```
-NAME                    WORKSPACE            STATUS
-toolbox-api-1a2b3c4d     /home/u/api          Up 2 hours
-toolbox-named-infra      /home/u/infra        Up 10 minutes
+NAME                  WORKSPACE      STATUS
+toolbox-api-1a2b3c4d  /home/u/api    Up 2 hours
+toolbox-named-infra   /home/u/infra  Up 10 minutes
 ```
 
 Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
