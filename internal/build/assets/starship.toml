@@ -18,6 +18,13 @@
 # STARSHIP_CONFIG env baked into the Dockerfile). Per-user override still
 # possible via `STARSHIP_CONFIG=$HOME/.toolbox-state/starship.toml` in a
 # ~/.toolbox-startup.d/ hook — no edits to this file needed.
+#
+# Per-module opt-out toggles: set PROMPT_HIDE_KUBE / PROMPT_HIDE_GCLOUD (via
+# `env:` in .toolbox.yaml, then `toolbox stop`) to hide those segments. Only
+# kubernetes/gcloud are env-toggleable — terraform/docker_context are
+# directory-scoped, and the veto below can't override a scan match. Full
+# mechanism + the STARSHIP_LOG dangling-context story live in one place:
+# docs/internals/shell-start.md#prompt-module-toggles
 
 # Upstream default is 500ms, which trips on macOS bind-mounted repos where
 # `git` status calls cross the host/container filesystem boundary and emit
@@ -81,18 +88,21 @@ style    = "yellow"
 # Nerd Font PUA glyphs: width-1 under both libc wcwidth() and Ghostty's
 # grapheme-cluster width (mode 2027), so ZLE line redraw can never drift
 # (drift = ghost characters on Backspace). Per-symbol codepoints inline;
-# backstory + diagnostic heuristic: docs/runtime-notes.md#prompt-glyph-width
+# backstory + diagnostic heuristic: docs/internals/shell-start.md#prompt-glyph-width
 
 # Upstream default: disabled. We enable because kubectl is bundled and a
 # misclick on the wrong context is a recurring footgun. Detection reads
-# ~/.kube/config (single file stat, no live API). With no `detect_*` keys
-# the module is active in every directory once a context is set — exactly
-# what we want.
+# ~/.kube/config (single file stat, no live API). No `detect_files/folders/
+# extensions` so the module is active in every directory once a context is set.
+# detect_env_vars = ["!PROMPT_HIDE_KUBE"] makes it opt-out (a `!`-veto, works
+# here only because there's no scan config to short-circuit it).
+# Mechanism: docs/internals/shell-start.md#prompt-module-toggles
 [kubernetes]
-disabled = false
-symbol   = "󱃾 "  # nf-md-kubernetes U+F10FE (replaces ☸ U+2638)
-format   = '[$symbol$context( \($namespace\))]($style) '
-style    = "blue bold"
+disabled        = false
+detect_env_vars = ["!PROMPT_HIDE_KUBE"]
+symbol          = "󱃾 "  # nf-md-kubernetes U+F10FE (replaces ☸ U+2638)
+format          = '[$symbol$context( \($namespace\))]($style) '
+style           = "blue bold"
 
 [terraform]
 symbol = "󱁢 "  # nf-md-terraform U+F1062 (replaces 💠 U+1F4A0)
@@ -105,10 +115,14 @@ style  = "bold purple"
 # just `$project` because the project is the field we routinely act on, and
 # account/region only matter when switching configs (which itself updates
 # active_config and shows up next prompt).
+#
+# Opt-out toggle (same veto mechanism as [kubernetes] — no scan config here
+# either, so the negated env var decides): set PROMPT_HIDE_GCLOUD to hide.
 [gcloud]
-symbol = "󰅟 "  # nf-md-cloud U+F015F (replaces ☁️ U+2601+FE0F)
-format = 'on [$symbol$project]($style) '
-style  = "bold blue"
+detect_env_vars = ["!PROMPT_HIDE_GCLOUD"]
+symbol          = "󰅟 "  # nf-md-cloud U+F015F (replaces ☁️ U+2601+FE0F)
+format          = 'on [$symbol$project]($style) '
+style           = "bold blue"
 
 # docker_context inherits upstream defaults except `symbol` (see PUA note
 # above) — module appears only inside dirs whose `detect_files` glob matches
