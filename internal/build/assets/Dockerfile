@@ -1319,6 +1319,13 @@ COPY --link --chmod=0755 bin/code /usr/local/bin/code
 # /proximo endpoint and propagates output + exit code. install/uninstall need
 # interactive sudo and are rejected with a run-on-host hint.
 COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
+# Bridge git credential helper. The container can't reach the host credential
+# store (macOS Keychain / Linux secret-service); this forwards the git
+# credential protocol to the daemon's /credential endpoint, where host `git
+# credential` delegates to the host's configured helper. Registered in the
+# system gitconfig by entrypoint.sh when the bridge is installed; exits 0 when
+# absent so git falls back to prompting.
+COPY --link --chmod=0755 bin/git-credential-toolbox /usr/local/bin/git-credential-toolbox
 # Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
 # invoked as `git prune-dead`: deletes local branches with a gone upstream
 # (squash-merged PRs) + merged worktree-agent-* leftovers, then prunes stale
@@ -1341,7 +1348,19 @@ RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/x-www-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/www-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/open; \
-    ln -sf /usr/local/bin/code /usr/local/bin/codium
+    ln -sf /usr/local/bin/code /usr/local/bin/codium; \
+    # Credential-helper stubs: when the host ~/.gitconfig names a keychain
+    # helper (osxkeychain/manager/libsecret), that binary is absent in the
+    # image and git would print `'credential-<x>' is not a git command` before
+    # falling through to our registered helper. Aliasing those names to the
+    # bridge shim (it reads $1=op, ignores $0) makes the host config resolve
+    # cleanly with zero warning. Only host-only helpers absent from the image —
+    # NEVER the built-in `store`/`cache`, which ship with git and must keep
+    # their real behaviour.
+    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-osxkeychain; \
+    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-manager; \
+    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-manager-core; \
+    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-libsecret
 ENV BROWSER=xdg-open
 
 USER toolbox

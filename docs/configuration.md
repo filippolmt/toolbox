@@ -147,6 +147,8 @@ shells:
 
 The `kubernetes` and `gcloud` prompt segments are opt-out via `PROMPT_HIDE_KUBE` / `PROMPT_HIDE_GCLOUD` (set to any value to hide). Details and why `terraform`/`docker_context` aren't env-toggleable: [prompt module toggles](internals/shell-start.md#prompt-module-toggles).
 
+`GIT_CREDENTIAL_BRIDGE=0` disables the [bridge git credential helper](bridge.md#git-credentials) without uninstalling the bridge (default on when the bridge is installed). It is un-prefixed by necessity — the `TOOLBOX_` prefix is reserved (see below), so this is the supported way to gate it.
+
 Contract:
 
 - **Scope.** Resolved by the normal config load order (`--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults), so the top-level `env:` is set globally (`~/.toolbox.yaml`) or per-project (`.toolbox.yaml`). The per-shell `shells.<name>.env` overlays it for that named shell only — per-shell keys win on collision (`config.Config.EffectiveEnv`, keyed by the *raw* `shells:` name, not the sanitized container suffix).

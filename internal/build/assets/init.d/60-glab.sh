@@ -7,7 +7,8 @@ set -euo pipefail
 #      the Init Sequence.
 #   2. git credential helper — when glab is authenticated, register
 #      `!glab auth git-credential` in the SYSTEM gitconfig for every host in
-#      glab's config (host ~/.gitconfig is a RO mount — must not be edited).
+#      glab's config (host ~/.gitconfig is a RW host-synced mount — must not be
+#      polluted, so writes go to the container-local SYSTEM gitconfig).
 #      Covers private GitLab HTTPS clones, e.g. `brew tap` of a private tap.
 #      Non-fatal: on failure SSH remotes keep working via the RO ~/.ssh mount.
 #   3. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.

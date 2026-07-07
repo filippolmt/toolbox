@@ -36,6 +36,7 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 			`WORKSPACE="` + mountplan.WorkspaceTarget + `"`,
 		}},
 		{"bin/proximo", []string{sourceLib}},
+		{"bin/git-credential-toolbox", []string{sourceLib}},
 	}
 	for _, tc := range cases {
 		body, err := fs.ReadFile(Assets, AssetDir+"/"+tc.shim)
