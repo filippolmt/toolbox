@@ -113,6 +113,32 @@ if [ -f "$_proximo_ca" ]; then
 fi
 unset _proximo_ca
 
+# Git credential helper via the bridge. The container can't reach the host
+# credential store (macOS Keychain / Linux secret-service), so a plain
+# `git clone https://…` for a self-hosted host (Forgejo, Gitea, …) — anything
+# glab/gh don't cover — prompts on every clone. When the bridge is installed,
+# register our forwarding helper in the SYSTEM gitconfig so git consults the
+# host's configured helper through the daemon's /credential endpoint instead.
+# System scope only: the host ~/.gitconfig is a RW mount and must not be
+# polluted; /etc/gitconfig is container-local and dies with the AutoRemove
+# container (same discipline as init.d/60-glab.sh). Absolute helper path —
+# `brew tap` and other callers may run git under a scrubbed PATH without
+# /usr/local/bin (see 60-glab.sh). Opt out per-repo with env:
+# GIT_CREDENTIAL_BRIDGE=0 (un-prefixed: config ValidateEnv reserves TOOLBOX_*,
+# so it couldn't travel through env: otherwise). Self-gated on the bridge token
+# (new + legacy paths); non-fatal so a failure never aborts boot.
+_bridge_token="${HOME}/.toolbox/bridge/token"
+[ -r "$_bridge_token" ] || _bridge_token="${HOME}/.toolbox/browser/token"
+case "${GIT_CREDENTIAL_BRIDGE:-}" in
+0 | false | no | off) _bridge_token="" ;;
+esac
+if [ -n "$_bridge_token" ] && [ -r "$_bridge_token" ]; then
+    sudo flock /tmp/toolbox-gitconfig.lock \
+        git config --system credential.helper '!/usr/local/bin/git-credential-toolbox' 2>/dev/null \
+      || echo "toolbox: git credential bridge helper registration failed (non-fatal — git will prompt for HTTPS credentials)"
+fi
+unset _bridge_token
+
 # Repo-local SDD (Spec-Driven Development) bootstrap. Opt-in per skill via
 # `sdd.<key>: true` in the workspace's .toolbox.yaml. sessionplan emits one
 # env var per field (TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}) on

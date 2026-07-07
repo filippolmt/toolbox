@@ -36,6 +36,15 @@ const rateLimit = 10
 // rateBurst is the token bucket burst capacity layered on top of rateLimit.
 const rateBurst = 5
 
+// credRateLimit / credRateBurst give /credential its own, more generous token
+// bucket separate from the /open+/edit+/proximo one. A single `git clone` with
+// many HTTPS submodules fires a rapid burst of credential lookups (each
+// submodule is a separate git process → get + store); sharing the 5-burst
+// bucket would 429 them and break the clone. Still bounded so a runaway loop
+// can't hammer the host credential store unchecked.
+const credRateLimit = 30
+const credRateBurst = 15
+
 // DaemonOptions tunes a Run call. Zero values are valid for the production
 // path; tests override Listener to inject a pre-bound listener.
 type DaemonOptions struct {
@@ -56,6 +65,10 @@ type DaemonOptions struct {
 	// Proximo executes an allowlisted proximo subcommand on the host. Tests
 	// override; production callers leave it nil to use launchProximo.
 	Proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
+	// Credential forwards an allowlisted git credential operation to the host
+	// git. Tests override; production callers leave it nil to use
+	// runHostCredential.
+	Credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
 }
 
 // Run starts the bridge HTTP server in the foreground. It returns
@@ -133,7 +146,7 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	if now == nil {
 		now = time.Now
 	}
-	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo}
+	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential}
 	if fns.open == nil {
 		fns.open = hostOpenCommand
 	}
@@ -142,6 +155,9 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	}
 	if fns.proximo == nil {
 		fns.proximo = launchProximo
+	}
+	if fns.credential == nil {
+		fns.credential = runHostCredential
 	}
 
 	handler := newHandler(token, fns, logger, now)
@@ -186,32 +202,36 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 // positional parameter on newHandler (and lets tests override only the
 // field they exercise).
 type handlerFns struct {
-	open    func(ctx context.Context, url string) error
-	edit    func(ctx context.Context, editor, path string) error
-	proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
+	open       func(ctx context.Context, url string) error
+	edit       func(ctx context.Context, editor, path string) error
+	proximo    func(ctx context.Context, command string) (output []byte, exit int, err error)
+	credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
 }
 
 // handler is the single HTTP handler the daemon mounts its endpoints on.
 // Extracted so tests can drive it through net/http/httptest without
 // re-binding a real socket on every case.
 type handler struct {
-	token   string
-	fns     handlerFns
-	logger  *log.Logger
-	limiter *rateLimiter
+	token       string
+	fns         handlerFns
+	logger      *log.Logger
+	limiter     *rateLimiter
+	credLimiter *rateLimiter
 }
 
 func newHandler(token string, fns handlerFns, logger *log.Logger, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 	h := &handler{
-		token:   token,
-		fns:     fns,
-		logger:  logger,
-		limiter: newRateLimiter(rateLimit, rateBurst, now),
+		token:       token,
+		fns:         fns,
+		logger:      logger,
+		limiter:     newRateLimiter(rateLimit, rateBurst, now),
+		credLimiter: newRateLimiter(credRateLimit, credRateBurst, now),
 	}
 	mux.HandleFunc("/open", h.handleOpen)
 	mux.HandleFunc("/edit", h.handleEdit)
 	mux.HandleFunc("/proximo", h.handleProximo)
+	mux.HandleFunc("/credential", h.handleCredential)
 	mux.HandleFunc("/healthz", h.handleHealth)
 	return mux
 }
@@ -243,9 +263,15 @@ func (h *handler) decodeJSON(w http.ResponseWriter, r *http.Request, limit int64
 }
 
 // gate applies the shared request gates (POST only, bearer token, rate
-// limit) for /open and /edit. Returns false after writing the error
-// response; verb labels the audit-log lines.
+// limit) for /open, /edit and /proximo against the shared bucket. Returns
+// false after writing the error response; verb labels the audit-log lines.
 func (h *handler) gate(verb string, w http.ResponseWriter, r *http.Request) bool {
+	return h.gateLimited(verb, h.limiter, w, r)
+}
+
+// gateLimited is gate parameterised by the token bucket, so /credential can
+// gate against its own (more generous) limiter instead of the shared one.
+func (h *handler) gateLimited(verb string, limiter *rateLimiter, w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return false
@@ -255,7 +281,7 @@ func (h *handler) gate(verb string, w http.ResponseWriter, r *http.Request) bool
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
-	if !h.limiter.Allow() {
+	if !limiter.Allow() {
 		h.logger.Printf("%s: rejected (rate limited) from %s", verb, r.RemoteAddr)
 		http.Error(w, "rate limited", http.StatusTooManyRequests)
 		return false
@@ -372,6 +398,63 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(proximoResponse{Exit: exit, Output: string(out)})
+}
+
+// credentialTimeout bounds a /credential execution. Above the shared 5s
+// requestTimeout because a first-time `store` can raise a macOS Keychain (or
+// Linux secret-service) authorization dialog the user must click; a `get`
+// against an already-authorized item returns in milliseconds.
+const credentialTimeout = 60 * time.Second
+
+// maxCredentialBody caps the /credential request body. A git credential
+// exchange is a handful of short key=value lines; 64 KiB is generous headroom.
+const maxCredentialBody = 64 << 10
+
+// credentialRequest is the body shape the git-credential-toolbox shim POSTs to
+// /credential. Op is the git helper operation (get|store|erase); Input is the
+// raw credential protocol text git wrote on the shim's stdin.
+type credentialRequest struct {
+	Op    string `json:"op"`
+	Input string `json:"input"`
+}
+
+// credentialResponse carries git's stdout and exit code back to the shim,
+// which writes the output to git and propagates the exit.
+type credentialResponse struct {
+	Exit   int    `json:"exit"`
+	Output string `json:"output"`
+}
+
+func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
+	if !h.gateLimited("credential", h.credLimiter, w, r) {
+		return
+	}
+	var req credentialRequest
+	if !h.decodeJSON(w, r, maxCredentialBody, &req) {
+		return
+	}
+	if _, ok := credentialSubcommand[req.Op]; !ok {
+		h.logger.Printf("credential: rejected (op not allowed) op=%q", truncate(req.Op, 64))
+		http.Error(w, "op not allowed — only get, store, erase are bridged", http.StatusBadRequest)
+		return
+	}
+	// A first-time `store` may block on a host keychain authorization dialog,
+	// past the server's WriteTimeout — push the write deadline for this
+	// response only, mirroring /proximo.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(credentialTimeout + 10*time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), credentialTimeout)
+	defer cancel()
+	out, exit, err := h.fns.credential(ctx, req.Op, []byte(req.Input))
+	if err != nil {
+		h.logger.Printf("credential: handler failed: %v op=%q", err, req.Op)
+		http.Error(w, "credential handler failed", http.StatusBadGateway)
+		return
+	}
+	// Never log the exchange body — it carries secrets. Op + exit only.
+	h.logger.Printf("credential: ok op=%q exit=%d", req.Op, exit)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(credentialResponse{Exit: exit, Output: string(out)})
 }
 
 func (h *handler) authOK(r *http.Request) bool {

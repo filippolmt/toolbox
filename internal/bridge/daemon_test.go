@@ -27,6 +27,9 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 	if fns.proximo == nil {
 		fns.proximo = func(_ context.Context, _ string) ([]byte, int, error) { return nil, 0, nil }
 	}
+	if fns.credential == nil {
+		fns.credential = func(_ context.Context, _ string, _ []byte) ([]byte, int, error) { return nil, 0, nil }
+	}
 	var logBuf strings.Builder
 	logger := log.New(&logBuf, "", 0)
 	now := func() time.Time { return time.Unix(0, 0) }
@@ -330,6 +333,141 @@ func TestHandler_ProximoSharesRateLimit(t *testing.T) {
 	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("status"))
 	if rr.Code != http.StatusTooManyRequests {
 		t.Errorf("post-burst code = %d, want 429 (shared limiter)", rr.Code)
+	}
+}
+
+// newCredentialTestHandler builds a handler whose /credential executor is the
+// given fake; open/edit/proximo are inert.
+func newCredentialTestHandler(t *testing.T, fn func(ctx context.Context, op string, input []byte) ([]byte, int, error)) http.Handler {
+	t.Helper()
+	return buildTestHandler(t, handlerFns{credential: fn})
+}
+
+func credentialBody(op, input string) string {
+	b, _ := json.Marshal(map[string]string{"op": op, "input": input})
+	return string(b)
+}
+
+func TestHandler_CredentialOK(t *testing.T) {
+	var gotOp string
+	var gotInput []byte
+	h := newCredentialTestHandler(t, func(_ context.Context, op string, input []byte) ([]byte, int, error) {
+		gotOp = op
+		gotInput = input
+		return []byte("username=me\npassword=secret\n"), 0, nil
+	})
+	rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "protocol=https\nhost=forgejo.example\n\n"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, body=%q", rr.Code, rr.Body.String())
+	}
+	if gotOp != "get" {
+		t.Errorf("op = %q", gotOp)
+	}
+	if string(gotInput) != "protocol=https\nhost=forgejo.example\n\n" {
+		t.Errorf("input = %q", gotInput)
+	}
+	var resp credentialResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v body=%q", err, rr.Body.String())
+	}
+	if resp.Exit != 0 || resp.Output != "username=me\npassword=secret\n" {
+		t.Errorf("resp = %+v", resp)
+	}
+}
+
+func TestHandler_CredentialPropagatesExit(t *testing.T) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		return nil, 1, nil
+	})
+	rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", ""))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d", rr.Code)
+	}
+	var resp credentialResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Exit != 1 {
+		t.Errorf("exit = %d, want 1", resp.Exit)
+	}
+}
+
+func TestHandler_CredentialRejectUnknownOp(t *testing.T) {
+	for _, op := range []string{"fill", "approve", "delete", "up", ""} {
+		called := false
+		h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+			called = true
+			return nil, 0, nil
+		})
+		rr := doPostTo(t, h, "/credential", "tok", credentialBody(op, ""))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("op %q: code = %d, want 400", op, rr.Code)
+		}
+		if called {
+			t.Errorf("op %q: executor must not run", op)
+		}
+	}
+}
+
+func TestHandler_CredentialRejectBadToken(t *testing.T) {
+	called := false
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		called = true
+		return nil, 0, nil
+	})
+	for _, token := range []string{"", "wrong"} {
+		rr := doPostTo(t, h, "/credential", token, credentialBody("get", ""))
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("token=%q code = %d", token, rr.Code)
+		}
+	}
+	if called {
+		t.Error("executor must not run on bad token")
+	}
+}
+
+func TestHandler_CredentialExecErrorIs502(t *testing.T) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		return nil, 0, io.EOF
+	})
+	rr := doPostTo(t, h, "/credential", "tok", credentialBody("store", ""))
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("code = %d, want 502", rr.Code)
+	}
+}
+
+func TestHandler_CredentialSeparateRateLimit(t *testing.T) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		return nil, 0, nil
+	})
+	// Exhaust the shared /open bucket (burst 5); the 6th /open is throttled.
+	for range 5 {
+		if rr := doPost(t, h, "tok", `{"url":"https://example.com"}`); rr.Code != http.StatusNoContent {
+			t.Fatalf("open burst code = %d", rr.Code)
+		}
+	}
+	if rr := doPost(t, h, "tok", `{"url":"https://example.com"}`); rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("shared bucket not exhausted: code = %d", rr.Code)
+	}
+	// /credential rides its own bucket, so it is unaffected — a clone must not
+	// 429 because URL opens happened first.
+	if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
+		t.Errorf("credential throttled by shared bucket: code = %d", rr.Code)
+	}
+}
+
+func TestHandler_CredentialRateLimited(t *testing.T) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		return nil, 0, nil
+	})
+	// Own burst is 15 (fixed test clock → no refill); the 16th is throttled.
+	for i := range 15 {
+		if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
+			t.Fatalf("credential burst[%d] code = %d", i, rr.Code)
+		}
+	}
+	if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusTooManyRequests {
+		t.Errorf("post-burst credential code = %d, want 429", rr.Code)
 	}
 }
 

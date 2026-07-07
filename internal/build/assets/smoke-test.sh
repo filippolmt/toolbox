@@ -238,6 +238,18 @@ check_required "proximo-hosts" sh -c "test -x /usr/local/bin/proximo-hosts && gr
 # entrypoint auto-starts the watcher (background, gated on the proximo CA mount)
 # so the /etc/hosts sync is automatic — assert the wiring is present.
 check_required "proximo-hosts watcher wired" sh -c "grep -q proximo-hosts.--watch /usr/local/bin/entrypoint && echo present"
+# git-credential-toolbox is the bridge credential helper (bridge-lib marker) —
+# forwards the git credential protocol to the host store; a dropped COPY fails
+# here too.
+check_required "git-credential-toolbox shim" sh -c "test -x /usr/local/bin/git-credential-toolbox && grep -q bridge-lib.sh /usr/local/bin/git-credential-toolbox && echo present"
+# entrypoint registers the credential helper in the system gitconfig when the
+# bridge is installed — assert the wiring is present.
+check_required "git credential helper wired" sh -c "grep -q 'credential.helper' /usr/local/bin/entrypoint && grep -q git-credential-toolbox /usr/local/bin/entrypoint && echo present"
+# Host-only credential-helper names alias to the bridge shim so a host
+# ~/.gitconfig naming osxkeychain/manager/libsecret resolves with no warning.
+# Must be symlinks to git-credential-toolbox — NEVER shadow the built-in
+# store/cache helpers, so those two are deliberately absent here.
+check_required "git credential helper stubs" sh -c "for h in osxkeychain manager manager-core libsecret; do test -L /usr/local/bin/git-credential-\$h && test \"\$(readlink /usr/local/bin/git-credential-\$h)\" = /usr/local/bin/git-credential-toolbox || exit 1; done; ! test -L /usr/local/bin/git-credential-store && ! test -L /usr/local/bin/git-credential-cache && echo present"
 # git-prune-dead is a `git prune-dead` subcommand helper; assert it ships
 # executable on PATH (no flag invocation — running it would prune branches).
 check_required "git-prune-dead" sh -c "test -x /usr/local/bin/git-prune-dead && command -v git-prune-dead >/dev/null && echo present"
