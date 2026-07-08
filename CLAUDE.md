@@ -15,6 +15,7 @@ Guidance for Claude Code on this repo.
 | `make go-test` | `go test ./... -count=1` |
 | `make go-test-verbose` | `go test -v -race ./...` (opt-in; CGO on) |
 | `make go-lint` | `golangci-lint run ./...` (CI-matched) |
+| `make go-check` | `go-test` + `go-lint` in one pass (local mirror of the CI jobs) |
 | `make go-run` | Build CLI + open `toolbox shell` |
 | `make go-run-clean` | Like `go-run` + stop existing container (env/mounts are fixed at ContainerCreate) |
 | `make build` / `make test` | Build runtime image (tag: `ghcr.io/filippolmt/toolbox:latest`) / build + smoke-test |
