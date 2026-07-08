@@ -43,6 +43,9 @@ var bridgeInstallCmd = &cobra.Command{
 			return err
 		}
 		fmt.Println("bridge: installed and running")
+		if ok, advice := bridge.CheckHostCredentialHelper(); !ok {
+			fmt.Fprintln(os.Stderr, "warning: "+advice)
+		}
 		return nil
 	},
 }
