@@ -72,7 +72,7 @@ jobs:
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: golangci-lint cache (per-branch, daily)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/golangci-lint
           # head_ref on PRs (the source branch), ref_name on push — both give the
