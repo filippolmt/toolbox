@@ -40,11 +40,19 @@ func evaluateCredentialHelpers(helpers []string, goos string, lookPath func(stri
 		return false, "no git credential.helper configured on the host; HTTPS git credentials won't persist and toolbox will keep prompting. " + configureHint(goos)
 	}
 	for _, h := range helpers {
-		if strings.HasPrefix(h, "!") || strings.HasPrefix(h, "/") || builtinHelpers[h] {
+		// git treats a helper value that is neither a shell command (`!…`) nor
+		// an absolute path as `git-credential-<first-word>`, so a plain helper
+		// may carry arguments (e.g. `store --file=~/x`). Classify and look up
+		// on the first whitespace-delimited token, not the whole string.
+		name := h
+		if i := strings.IndexAny(h, " \t"); i >= 0 {
+			name = h[:i]
+		}
+		if strings.HasPrefix(name, "!") || strings.HasPrefix(name, "/") || builtinHelpers[name] {
 			continue
 		}
-		if _, err := lookPath("git-credential-" + h); err != nil {
-			return false, fmt.Sprintf("git credential.helper %q is configured but git-credential-%s is not on PATH; install it so credentials persist (see docs/bridge.md).", h, h)
+		if _, err := lookPath("git-credential-" + name); err != nil {
+			return false, fmt.Sprintf("git credential.helper %q is configured but git-credential-%s is not on PATH; install it so credentials persist (see docs/bridge.md).", h, name)
 		}
 	}
 	return true, ""

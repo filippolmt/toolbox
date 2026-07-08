@@ -37,6 +37,9 @@ func TestEvaluateCredentialHelpers(t *testing.T) {
 		{"builtin-store-ok", []string{"store"}, "linux", notFound("store"), true, ""},
 		{"custom-shell-ignored", []string{"!/opt/foo/helper get"}, "linux", notFound(), true, ""},
 		{"absolute-path-ignored", []string{"/opt/foo/git-credential-x"}, "linux", notFound(), true, ""},
+		{"builtin-with-args", []string{"store --file=/tmp/x"}, "linux", notFound("store"), true, ""},
+		{"plain-with-args-present", []string{"osxkeychain --foo"}, "darwin", notFound(), true, ""},
+		{"plain-with-args-missing", []string{"libsecret --timeout 5"}, "linux", notFound("libsecret"), false, "git-credential-libsecret"},
 		{"chain-one-missing", []string{"osxkeychain", "libsecret"}, "darwin", notFound("libsecret"), false, "libsecret"},
 	}
 

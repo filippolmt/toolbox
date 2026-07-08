@@ -105,7 +105,7 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 go-lint: ## Run golangci-lint inside a container
 	docker run --rm $(GO_MOUNT) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
 
-go-check: go-test go-lint ## Local pre-push gate: run the Go test suite then the linter (mirrors the CI test + lint jobs)
+go-check: go-test go-lint ## Quick Go gate: run the test suite then the linter (CI test + lint jobs only; NOT a /verify substitute — no image smoke-test)
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash
