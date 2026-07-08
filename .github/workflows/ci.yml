@@ -57,10 +57,33 @@ jobs:
         id: gola
         run: echo "version=$(awk -F'[[:space:]:=]+' '/^GOLANGCI_VERSION/{print $2}' Makefile)" >> "$GITHUB_OUTPUT"
 
+      # golangci-lint's analysis cache (staticcheck facts, ~/.cache/golangci-lint)
+      # is what poisons: a stale SA5011 nil-deref false positive on t.Fatal-guarded
+      # tests that a cold run — and every local `make go-lint` — passes. The
+      # action's built-in cache is shared across branches (main's entry is
+      # restorable by every PR) and long-lived, so one poisoning infected every
+      # branch until a manual `gh cache delete`. Instead: disable the action's own
+      # cache (skip-cache) and manage the dir ourselves with a key scoped per
+      # branch AND per day, with NO restore-keys — a branch never falls back to
+      # another branch's or a previous day's cache, so a poisoning is contained to
+      # one branch for at most a day and then self-heals.
+      - name: Daily cache bucket
+        id: bucket
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: golangci-lint cache (per-branch, daily)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/golangci-lint
+          # head_ref on PRs (the source branch), ref_name on push — both give the
+          # branch name, never a shared '<pr>/merge' ref. No restore-keys on purpose.
+          key: golangci-${{ runner.os }}-${{ steps.gola.outputs.version }}-${{ github.head_ref || github.ref_name }}-${{ steps.bucket.outputs.day }}
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ steps.gola.outputs.version }}
+          skip-cache: true
 
   renovate-validate:
     # Validates renovate.json with the official validator so that future edits
