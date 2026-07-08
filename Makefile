@@ -39,7 +39,7 @@ GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false"
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-shell go-clean-cache go-run go-run-clean check-links update-skills
+.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -98,8 +98,14 @@ go-test: ## Run Go tests inside a golang container
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./...
 
+# Absolute path, not bare `golangci-lint`: GO_MOUNT binds the shared GOPATH
+# volume over /go, and the image PATH lists /go/bin before /usr/bin, so a stray
+# golangci-lint left in the volume's /go/bin would shadow the image's own binary
+# (and can be a wrong-arch build → `exec: no such file`).
 go-lint: ## Run golangci-lint inside a container
-	docker run --rm $(GO_MOUNT) $(GOLANGCI_IMAGE) golangci-lint run ./...
+	docker run --rm $(GO_MOUNT) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
+
+go-check: go-test go-lint ## Quick Go gate: run the test suite then the linter (CI test + lint jobs only; NOT a /verify substitute — no image smoke-test)
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash

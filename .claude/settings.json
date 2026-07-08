@@ -13,6 +13,9 @@
       "mcp__codegraph__*"
     ]
   },
+  "enabledMcpjsonServers": [
+    "codegraph"
+  ],
   "hooks": {
     "Stop": [
       {
@@ -58,9 +61,7 @@
   "enabledPlugins": {
     "gopls-lsp@claude-plugins-official": true,
     "cli-developer@filippo-skills": true,
-    "golang-pro@filippo-skills": true
-  },
-  "enabledMcpjsonServers": [
-    "codegraph"
-  ]
+    "golang-pro@filippo-skills": true,
+    "diagnosing-bugs@filippo-skills": true
+  }
 }

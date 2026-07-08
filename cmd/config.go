@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/configexample"
@@ -311,6 +312,9 @@ func resolveEditTarget() (path string, created bool, err error) {
 func runConfigDoctor(cmd *cobra.Command, _ []string) error {
 	cwd, _ := os.Getwd()
 	findings := configedit.Doctor(cwd, cfgFile)
+	if ok, advice := bridge.CheckHostCredentialHelper(); !ok {
+		findings = append(findings, configedit.Finding{Severity: configedit.SeverityWarning, Message: advice})
+	}
 	out := cmd.OutOrStdout()
 
 	if len(findings) == 0 {

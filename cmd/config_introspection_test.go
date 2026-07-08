@@ -75,6 +75,16 @@ func TestConfigDoctorExitCodes(t *testing.T) {
 	t.Setenv("HOME", home)
 	cwd := chdirTemp(t)
 
+	// Neutralize the host git credential-helper probe (runConfigDoctor calls
+	// bridge.CheckHostCredentialHelper): a builtin `store` helper reports OK so
+	// this config-focused test stays deterministic regardless of the ambient
+	// git environment (an empty helper would otherwise add a warning finding).
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"),
+		[]byte("[credential]\n\thelper = store\n"), 0o600); err != nil {
+		t.Fatalf("write gitconfig: %v", err)
+	}
+
 	out := &bytes.Buffer{}
 	configDoctorCmd.SetOut(out)
 	if err := runConfigDoctor(configDoctorCmd, nil); err != nil {
