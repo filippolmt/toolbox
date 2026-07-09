@@ -23,7 +23,6 @@ The image sets:
 - `USE_BUILTIN_RIPGREP=0` — use the apt-pinned system `rg` (base layer) instead of the npm-bundled binary.
 - `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1` — return to the project dir after every Bash call; prevents cd-drift across tool invocations.
 - `BASH_DEFAULT_TIMEOUT_MS=300000`, `BASH_MAX_TIMEOUT_MS=1200000` — 5m default / 20m ceiling (upstream 2m/10m); in-container image builds and test suites routinely exceed the upstream default.
-- `CLAUDE_CODE_ENABLE_TASKS=1` — structured cross-session task tools; state persists in the `~/.claude` bind.
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — opt into agent teams (experimental upstream; in-process mode needs no tmux).
 
 Host-side (not baked — set per-shell by `sessionplan.shellEnv`): `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=<workspace basename>`. The upstream default is the machine hostname, which inside the container is the Docker container ID — every Remote Control session on claude.ai web/mobile would be named hex gibberish.

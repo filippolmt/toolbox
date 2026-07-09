@@ -24,19 +24,19 @@ A containerized development environment (Debian slim) bundling all the tools you
 | kubectx + kubens (kubectl context/namespace switchers) | 0.11.x |
 | Helm | 4.2.x |
 | OpenTofu | 1.12.x |
-| GitHub CLI (gh) | 2.93.x |
-| GitLab CLI (glab) | 1.100.x |
+| GitHub CLI (gh) | 2.96.x |
+| GitLab CLI (glab) | 1.107.x |
 | Google Workspace CLI (`gws`) | 0.22.x |
-| atuin (SQLite-backed shell history; Ctrl-R fuzzy search) | 18.16.x |
-| Docker CLI | 29.5.x |
-| Docker Compose | 5.1.x |
-| Google Cloud SDK (gcloud) | 570.x |
-| Azure CLI (az) | 2.86.x |
-| Oracle OCI CLI | 3.84.x |
-| SonarQube CLI (`sonar`) | 0.14.x |
-| graphify (per-repo knowledge-graph builder, PyPI `graphifyy`) | 0.8.x |
-| codegraph (per-repo code-symbol graph: MCP server + CLI, npm `@colbymchenry/codegraph`) | 1.0.x |
-| Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.0.x |
+| atuin (SQLite-backed shell history; Ctrl-R fuzzy search) | 18.17.x |
+| Docker CLI | 29.6.x |
+| Docker Compose | 5.3.x |
+| Google Cloud SDK (gcloud) | 575.x |
+| Azure CLI (az) | 2.88.x |
+| Oracle OCI CLI | 3.89.x |
+| SonarQube CLI (`sonar`) | 1.3.x |
+| graphify (per-repo knowledge-graph builder, PyPI `graphifyy`) | 0.9.x |
+| codegraph (per-repo code-symbol graph: MCP server + CLI, npm `@colbymchenry/codegraph`) | 1.3.x |
+| Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.1.x |
 | Cloudflare Wrangler CLI (`wrangler`) | 4.95.x |
 | Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
 | fd (user-friendly `find` replacement) | 10.4.x |
@@ -102,6 +102,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, `--profile` isolates a second account, named shells via [`shells:`](docs/shells.md)) |
 | [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`, `sync`; alias `wt`) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
+| [`toolbox list`](docs/commands.md#toolbox-list) | List toolbox containers running on the host (alias `ls`) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
 | [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
 | [`toolbox init`](docs/commands.md#toolbox-init) | Write an annotated `.toolbox.yaml` in the current directory |
