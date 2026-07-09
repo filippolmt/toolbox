@@ -85,6 +85,45 @@ func TestValidationTailRejectsPerShellReservedEnv(t *testing.T) {
 	}
 }
 
+// TestMergePreservesEnvKeyCase guards the viper key-lowercasing fix: env: and
+// shells.<name>.env hold case-sensitive variable names, so Merge must keep their
+// original case (viper lowercases every unmarshalled key).
+func TestMergePreservesEnvKeyCase(t *testing.T) {
+	y := []byte("shell: zsh\n" +
+		"env:\n  CLAUDE_CODE_WORKFLOWS: \"1\"\n  MixedCase: v\n" +
+		"shells:\n  infra:\n    path: /tmp/infra\n    env:\n      PER_SHELL_VAR: s\n")
+	cfg, err := Merge(y, nil, nil)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if cfg.Env["CLAUDE_CODE_WORKFLOWS"] != "1" || cfg.Env["MixedCase"] != "v" {
+		t.Errorf("top-level env keys lowercased: %v", cfg.Env)
+	}
+	if got := cfg.Shells["infra"].Env["PER_SHELL_VAR"]; got != "s" {
+		t.Errorf("per-shell env key lowercased: %v", cfg.Shells["infra"].Env)
+	}
+}
+
+// TestMergeEnvKeyCaseHonoursLayerPrecedence locks the per-key project-over-global
+// overlay in the case-restoring re-parse (same precedence viper merges layers).
+func TestMergeEnvKeyCaseHonoursLayerPrecedence(t *testing.T) {
+	global := []byte("env:\n  GLOBAL_ONLY: g\n  SHARED: fromglobal\n")
+	project := []byte("env:\n  SHARED: fromproject\n  ProjKey: p\n")
+	cfg, err := Merge(global, project, nil)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	want := map[string]string{"GLOBAL_ONLY": "g", "SHARED": "fromproject", "ProjKey": "p"}
+	if len(cfg.Env) != len(want) {
+		t.Fatalf("Merge env = %v, want %v", cfg.Env, want)
+	}
+	for k, v := range want {
+		if cfg.Env[k] != v {
+			t.Errorf("env[%q] = %q, want %q", k, cfg.Env[k], v)
+		}
+	}
+}
+
 // TestEffectiveEnvDoesNotAliasConfig guards against returning the underlying
 // cfg.Env map — a mutation by the caller must not leak back into config state.
 func TestEffectiveEnvDoesNotAliasConfig(t *testing.T) {

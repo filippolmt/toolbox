@@ -182,6 +182,11 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 		return nil, err
 	}
 
+	// viper lowercases every key it unmarshals, silently corrupting
+	// case-sensitive environment-variable names (env: {FOO: bar} -> foo=bar).
+	// Re-read the env maps from the raw layers with their original case.
+	restoreEnvKeyCase(cfg, global, project, explicit)
+
 	fillDefaultsBackstop(cfg)
 
 	// Validation tail.
@@ -318,6 +323,65 @@ func hasTopLevelKey(b []byte, key string) bool {
 	}
 	_, ok := m[key]
 	return ok
+}
+
+// rawCaseLayer captures only the maps whose keys are case-sensitive domain data
+// (environment-variable names). viper lowercases every unmarshalled key, so
+// these are re-read from the raw YAML to recover the original case.
+type rawCaseLayer struct {
+	Env    map[string]string `yaml:"env"`
+	Shells map[string]struct {
+		Env map[string]string `yaml:"env"`
+	} `yaml:"shells"`
+}
+
+// restoreEnvKeyCase overwrites cfg's env maps — the top-level env: and each
+// shells.<name>.env — with case-correct keys parsed straight from the raw
+// layers, in the precedence viper merged them (explicit alone; else project
+// over global, per-key). Without it viper's key-lowercasing would inject
+// `foo=bar` for `env: {FOO: bar}`, breaking case-sensitive variable names. Only
+// keys were affected; values already survived viper intact. Broken layers are
+// skipped silently here — LoadLayers already surfaced the parse error upstream.
+func restoreEnvKeyCase(cfg *Config, global, project, explicit []byte) {
+	layers := [][]byte{global, project}
+	if len(explicit) > 0 {
+		layers = [][]byte{explicit}
+	}
+
+	topEnv := map[string]string{}
+	shellEnv := map[string]map[string]string{}
+	for _, b := range layers {
+		if len(b) == 0 {
+			continue
+		}
+		var raw rawCaseLayer
+		if yaml.Unmarshal(b, &raw) != nil {
+			continue
+		}
+		maps.Copy(topEnv, raw.Env)
+		for name, sh := range raw.Shells {
+			if len(sh.Env) == 0 {
+				continue
+			}
+			if shellEnv[name] == nil {
+				shellEnv[name] = map[string]string{}
+			}
+			maps.Copy(shellEnv[name], sh.Env)
+		}
+	}
+
+	if len(topEnv) > 0 {
+		cfg.Env = topEnv
+	}
+	// cfg.Shells is keyed by viper's lowercased shell name; match raw names by
+	// the same lowering so the case-correct env replaces the corrupted one.
+	for rawName, env := range shellEnv {
+		key := strings.ToLower(rawName)
+		if sh, ok := cfg.Shells[key]; ok {
+			sh.Env = env
+			cfg.Shells[key] = sh
+		}
+	}
 }
 
 // =============================================================================

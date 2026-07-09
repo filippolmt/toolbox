@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"maps"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +13,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/configexample"
 	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/configrender"
 	"github.com/filippolmt/toolbox/internal/configui"
 )
 
@@ -43,14 +41,14 @@ Mounts are attributed per entry name; other keys at container granularity.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !configShowOrigin {
-			return writeResolvedConfig(cmd.OutOrStdout(), cfg)
+			return configrender.Resolved(cmd.OutOrStdout(), cfg)
 		}
 		cwd, _ := os.Getwd()
 		prov, err := configedit.Compute(cwd, cfgFile)
 		if err != nil {
 			return err
 		}
-		return writeResolvedConfigWithOrigin(cmd.OutOrStdout(), cfg, prov, cfgFile)
+		return configrender.ResolvedWithOrigin(cmd.OutOrStdout(), cfg, prov, cfgFile)
 	},
 }
 
@@ -344,233 +342,6 @@ func runConfigDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("config doctor: %d error finding(s)", len(errs))
-	}
-	return nil
-}
-
-// writeResolvedConfig renders cfg as a deterministic YAML document covering
-// every config.SchemaKeys() field (TestConfigShowCoversSchema guards that a
-// new field can't silently go unrendered). Hand-rolled to avoid promoting the
-// yaml v3 module to a direct dependency. Users pipe this output: it stays
-// deterministic (map keys sorted), so origin annotations live behind the
-// --origin flag (nil prov = none).
-func writeResolvedConfig(w io.Writer, c *config.Config) error {
-	return writeResolvedConfigWithOrigin(w, c, nil, "")
-}
-
-// quoteIfEmpty renders an empty scalar as the explicit `""` token (matching
-// the mounts_root convention) so an unset key reads as deliberately blank
-// rather than a dangling `key:`.
-func quoteIfEmpty(s string) string {
-	if s == "" {
-		return `""`
-	}
-	return s
-}
-
-// boolPtrStr renders a tri-state *bool config toggle: nil (unset) reads as
-// `auto`, otherwise the literal bool. `config show` shows the declared state,
-// not a host-derived resolution the renderer can't compute.
-func boolPtrStr(p *bool) string {
-	if p == nil {
-		return "auto"
-	}
-	if *p {
-		return "true"
-	}
-	return "false"
-}
-
-// writeSortedMap renders a string-keyed map as a YAML block with keys sorted
-// for determinism: `key: {}` when empty, else `key:` followed by two-space
-// `k: <val(v)>` entries. ann is the origin annotation appended to the header.
-func writeSortedMap[V any](w io.Writer, key, ann string, m map[string]V, val func(V) string) error {
-	if len(m) == 0 {
-		_, err := fmt.Fprintf(w, "%s: {}%s\n", key, ann)
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "%s:%s\n", key, ann); err != nil {
-		return err
-	}
-	for _, k := range slices.Sorted(maps.Keys(m)) {
-		if _, err := fmt.Fprintf(w, "  %s: %s\n", k, val(m[k])); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// writeYAMLSlice renders a string slice as a YAML block at the given indent
-// depth (0 = top level): `key: []` when empty, else `key:` followed by
-// `- item` entries one level deeper. ann is appended to the header.
-func writeYAMLSlice(w io.Writer, indent int, key, ann string, items []string) error {
-	pad := strings.Repeat("  ", indent)
-	if len(items) == 0 {
-		_, err := fmt.Fprintf(w, "%s%s: []%s\n", pad, key, ann)
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "%s%s:%s\n", pad, key, ann); err != nil {
-		return err
-	}
-	for _, item := range items {
-		if _, err := fmt.Fprintf(w, "%s  - %s\n", pad, item); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// writeResolvedConfigWithOrigin is writeResolvedConfig plus optional
-// per-key origin annotations (git-config --show-origin style). With a nil
-// prov the output is identical to the historical renderer.
-func writeResolvedConfigWithOrigin(w io.Writer, c *config.Config, prov configedit.Provenance, explicitPath string) error {
-	if c == nil {
-		return fmt.Errorf("config not initialised")
-	}
-	ann := func(key string) string {
-		if prov == nil {
-			return ""
-		}
-		return " " + prov[key].LabelWithPath(explicitPath)
-	}
-
-	if _, err := fmt.Fprintf(w, "shell: %s%s\n", c.Shell, ann("shell")); err != nil {
-		return err
-	}
-
-	// agent renders its resolved effective value: an unset key falls back to
-	// config.DefaultAgent (the same constant cmd resolves against), so
-	// `config show` tells the truth about what a worktree session will launch.
-	agent := c.Agent
-	if agent == "" {
-		agent = config.DefaultAgent
-	}
-	if _, err := fmt.Fprintf(w, "agent: %s%s\n", agent, ann("agent")); err != nil {
-		return err
-	}
-
-	if _, err := fmt.Fprintf(w, "image: %s%s\n", quoteIfEmpty(c.Image), ann("image")); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "registry_mirror: %s%s\n", quoteIfEmpty(c.RegistryMirror), ann("registry_mirror")); err != nil {
-		return err
-	}
-	pull := c.Pull
-	if pull == "" {
-		pull = config.PullAuto
-	}
-	if _, err := fmt.Fprintf(w, "pull: %s%s\n", pull, ann("pull")); err != nil {
-		return err
-	}
-
-	if _, err := fmt.Fprintf(w, "mounts_root: %s%s\n", quoteIfEmpty(c.MountsRoot), ann("mounts_root")); err != nil {
-		return err
-	}
-
-	// Tri-state toggles: nil renders as `auto` (the resolved effective value is
-	// host-derived and can't be computed from *Config alone). The deprecated
-	// browser_bridge alias is intentionally not rendered — only the canonical
-	// bridge key is shown (browser_bridge is still tracked in provenance).
-	if _, err := fmt.Fprintf(w, "bridge: %s%s\n", boolPtrStr(c.Bridge), ann("bridge")); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "proximo: %s%s\n", boolPtrStr(c.Proximo), ann("proximo")); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "managed_statusline: %s%s\n", boolPtrStr(c.ManagedStatusline), ann("managed_statusline")); err != nil {
-		return err
-	}
-
-	if err := writeSortedMap(w, "sdd", ann("sdd"), c.SDD, func(s config.SDDSkill) string {
-		return fmt.Sprintf("%t", s.Enabled)
-	}); err != nil {
-		return err
-	}
-	if err := writeSortedMap(w, "env", ann("env"), c.Env, func(v string) string { return v }); err != nil {
-		return err
-	}
-
-	if _, err := fmt.Fprintf(w, "worktree:%s\n", ann("worktree")); err != nil {
-		return err
-	}
-	if err := writeYAMLSlice(w, 1, "seed", "", c.Worktree.Seed); err != nil {
-		return err
-	}
-
-	if err := writeYAMLSlice(w, 0, "inherit_host_auth", ann("inherit_host_auth"), c.InheritHostAuth); err != nil {
-		return err
-	}
-
-	if len(c.Shells) == 0 {
-		if _, err := fmt.Fprintf(w, "shells: {}%s\n", ann("shells")); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(w, "shells:%s\n", ann("shells")); err != nil {
-			return err
-		}
-		for _, name := range slices.Sorted(maps.Keys(c.Shells)) {
-			s := c.Shells[name]
-			if _, err := fmt.Fprintf(w, "  %s:%s\n", name, ann(configedit.ShellKey(name))); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(w, "    path: %s\n", s.Path); err != nil {
-				return err
-			}
-			if len(s.Env) > 0 {
-				if _, err := fmt.Fprintln(w, "    env:"); err != nil {
-					return err
-				}
-				for _, k := range slices.Sorted(maps.Keys(s.Env)) {
-					if _, err := fmt.Fprintf(w, "      %s: %s\n", k, s.Env[k]); err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-
-	if len(c.Mounts) == 0 {
-		_, err := fmt.Fprintf(w, "mounts: []%s\n", ann("mounts"))
-		return err
-	}
-	if _, err := fmt.Fprintln(w, "mounts:"); err != nil {
-		return err
-	}
-	for _, m := range c.Mounts {
-		if _, err := fmt.Fprintf(w, "  - name: %s%s\n", m.Name, ann(configedit.MountKey(m.Name))); err != nil {
-			return err
-		}
-		if m.Source != "" {
-			if _, err := fmt.Fprintf(w, "    source: %s\n", m.Source); err != nil {
-				return err
-			}
-		}
-		if m.Target != "" {
-			if _, err := fmt.Fprintf(w, "    target: %s\n", m.Target); err != nil {
-				return err
-			}
-		}
-		if m.ReadOnly {
-			if _, err := fmt.Fprintln(w, "    readonly: true"); err != nil {
-				return err
-			}
-		}
-		if m.CreateIfMissing {
-			if _, err := fmt.Fprintln(w, "    create_if_missing: true"); err != nil {
-				return err
-			}
-		}
-		if m.SymlinkFrom != "" {
-			if _, err := fmt.Fprintf(w, "    symlink_from: %s\n", m.SymlinkFrom); err != nil {
-				return err
-			}
-		}
-		if m.Disabled {
-			if _, err := fmt.Fprintln(w, "    disabled: true"); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
