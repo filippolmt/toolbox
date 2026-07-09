@@ -64,7 +64,7 @@ ARG GOIMPORTS_VERSION=0.48.0
 ARG TINI_VERSION=0.19.0
 ARG BAT_VERSION=0.26.1
 ARG FD_VERSION=10.4.2
-ARG EZA_VERSION=0.23.4
+ARG EZA_VERSION=0.23.5
 # eza: upstream ships aarch64-MUSL only as zip; we fall back to aarch64-GNU on
 # arm64 (built on ubuntu-22.04 GLIBC 2.35, compatible with bookworm 2.36).
 # amd64 stays MUSL.
