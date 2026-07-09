@@ -1,21 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "permissions": {
-    "allow": [
-      "mcp__codegraph__codegraph_explore",
-      "mcp__codegraph__codegraph_search",
-      "mcp__codegraph__codegraph_node",
-      "mcp__codegraph__codegraph_callers",
-      "mcp__codegraph__codegraph_callees",
-      "mcp__codegraph__codegraph_impact",
-      "mcp__codegraph__codegraph_files",
-      "mcp__codegraph__codegraph_status",
-      "mcp__codegraph__*"
-    ]
-  },
-  "enabledMcpjsonServers": [
-    "codegraph"
-  ],
   "hooks": {
     "Stop": [
       {
@@ -23,36 +7,6 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/gofmt-changed.sh\""
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/graphify hook-guard search"
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/graphify hook-guard read"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "codegraph prompt-hook"
           }
         ]
       }
