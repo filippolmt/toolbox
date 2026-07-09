@@ -156,9 +156,13 @@ func OnShellExit(cli client.APIClient, name string) error {
 // on the remove. PID 1 is `sleep infinity` with all state on bind mounts, so
 // there is nothing to flush — SIGKILL is safe and skips the SIGTERM grace.
 // The daemon's auto-remove worker deletes the container afterwards. NotFound
-// means it is already gone (a race with a prior teardown), which is success.
+// means it is already gone (a race with a prior teardown); Conflict is the
+// daemon's "container is not running" — the container died on its own (e.g. the
+// disk filled and the entrypoint crashed) and AutoRemove reaps it regardless.
+// Both are success: without this the noisy "failed to kill container … is not
+// running" would mask the real (disk-exhaustion) failure the user needs to see.
 func killAutoRemove(ctx context.Context, cli client.APIClient, name string) error {
-	if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "KILL"}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "KILL"}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
 		return fmt.Errorf("failed to kill container %s: %w", name, err)
 	}
 	ui.Success("Container " + name + " stopped (removing in background)")

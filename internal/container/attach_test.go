@@ -234,6 +234,70 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 	}
 }
 
+// TestExecShell_StreamFailureSurfacesDisk covers the reported bug: ExecCreate
+// and ExecAttach both succeed, then the container dies mid-attach (disk full)
+// and the daemon writes "cannot exec in a stopped container" into the stream.
+// io.Copy returns without error, so the old code returned nil and the real
+// cause was masked; execShell must now inspect the dead container and surface a
+// disk-space diagnostic instead.
+func TestExecShell_StreamFailureSurfacesDisk(t *testing.T) {
+	origStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	_ = w.Close()
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = origStdin
+		_ = r.Close()
+	})
+
+	origStdout := os.Stdout
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open /dev/null: %v", err)
+	}
+	os.Stdout = devNull
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		_ = devNull.Close()
+	})
+
+	serverConn, clientConn := net.Pipe()
+	go func() {
+		_, _ = serverConn.Write([]byte("OCI runtime exec failed: exec failed: cannot exec in a stopped container\r\n"))
+		_ = serverConn.Close()
+	}()
+	t.Cleanup(func() { _ = clientConn.Close() })
+
+	cli := &attachMock{
+		createFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{ID: "exec-y"}, nil
+		},
+		attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
+			return client.NewHijackedResponse(clientConn, ""), nil
+		},
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{State: &container.State{Running: false, ExitCode: 137}}, nil
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- execShell(context.Background(), cli, "cid", []string{"/bin/zsh"})
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "disk space") {
+			t.Fatalf("execShell err = %v, want disk-space diagnostic", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("execShell did not return within 2s after stream close")
+	}
+}
+
 func TestShellExecEnv(t *testing.T) {
 	cases := []struct {
 		name    string
