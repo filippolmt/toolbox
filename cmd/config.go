@@ -23,7 +23,9 @@ var configCmd = &cobra.Command{
 	Long: `Inspect the resolved configuration or print an annotated .toolbox.yaml template.
 
 The Plan resolution honours the same precedence as toolbox shell:
-  --config flag > project .toolbox.yaml (walk-up) > ~/.toolbox.yaml > TOOLBOX_* env > defaults.`,
+  --config flag > project .toolbox.yaml (walk-up) > ~/.toolbox.yaml > defaults.
+For image / registry_mirror / pull / bridge, a TOOLBOX_* env var overrides all
+file layers.`,
 	Args: usageArgs(cobra.NoArgs),
 }
 

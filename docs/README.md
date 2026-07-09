@@ -22,6 +22,7 @@ sections.**
 - [Global flag: `--config`](commands.md#global-flag---config)
 - [toolbox shell](commands.md#toolbox-shell) — [Profiles](commands.md#profiles) · [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
 - [toolbox worktree](commands.md#toolbox-worktree)
+- [toolbox list](commands.md#toolbox-list)
 - [toolbox stop](commands.md#toolbox-stop)
 - [toolbox build](commands.md#toolbox-build)
 - [toolbox version](commands.md#toolbox-version)
@@ -41,6 +42,7 @@ sections.**
 - [Key reference](configuration.md#key-reference)
 - [shell](configuration.md#shell)
 - [agent](configuration.md#agent)
+- [managed_statusline](configuration.md#managed_statusline)
 - [inherit-host-auth](configuration.md#inherit-host-auth)
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)
@@ -56,6 +58,7 @@ sections.**
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
 - [Profiles](mounts.md#profiles)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
+- [CA certificate trust](mounts.md#ca-certificate-trust)
 - [mounts CLI](mounts.md#mounts-cli)
 
 ## shells.md

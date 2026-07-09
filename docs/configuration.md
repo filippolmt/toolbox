@@ -18,10 +18,10 @@ Prefer not to hand-edit YAML? [`toolbox config ui`](commands.md#config-ui) is an
 
 Configuration is loaded from (highest priority first):
 
-1. `--config` flag
-2. The nearest `.toolbox.yaml` walking up from the current working directory (search stops at `$HOME` or the filesystem root) — running `toolbox shell` from any subdirectory of a workspace still picks up that workspace's project config
-3. `~/.toolbox.yaml` (global)
-4. `TOOLBOX_*` environment variables
+1. `TOOLBOX_*` environment variables — **only** the four env-bound keys (`image`, `registry_mirror`, `pull`, `bridge`); for those they override every file layer below. Every other `TOOLBOX_*` var is ignored (viper's `AutomaticEnv` binds only these keys).
+2. `--config` flag
+3. The nearest `.toolbox.yaml` walking up from the current working directory (search stops at `$HOME` or the filesystem root) — running `toolbox shell` from any subdirectory of a workspace still picks up that workspace's project config
+4. `~/.toolbox.yaml` (global)
 5. Built-in defaults
 
 ## Key reference
@@ -53,7 +53,7 @@ Login shell inside the container. Only `zsh` is supported (the default); `bash` 
 
 Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree) sessions. Accepts `claude` or `codex` — the two agents baked into the canonical image (`config.ValidateAgent`). Resolved with precedence `--agent` flag > this key > the default `claude`, so the flag is optional once a default is set. Honouring the standard [loading order](#loading-order), it can be set globally (`~/.toolbox.yaml`) for a per-user default or per-directory (`.toolbox.yaml`) to pin a project to one agent.
 
-Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-targeting) selects global vs local). The key has no default written to disk: when unset it resolves to `claude` at launch and `config show` omits it. A non-canonical `image:` lacking the chosen agent fails at launch, not at validation.
+Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-targeting) selects global vs local). The key has no default written to disk: when unset it resolves to `claude` at launch, and `config show` renders that resolved value (`agent: claude`). A non-canonical `image:` lacking the chosen agent fails at launch, not at validation.
 
 ## `managed_statusline`
 
@@ -153,7 +153,7 @@ Contract:
 
 - **Scope.** Resolved by the normal config load order (`--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults), so the top-level `env:` is set globally (`~/.toolbox.yaml`) or per-project (`.toolbox.yaml`). The per-shell `shells.<name>.env` overlays it for that named shell only — per-shell keys win on collision (`config.Config.EffectiveEnv`, keyed by the *raw* `shells:` name, not the sanitized container suffix).
 - **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD`/SDD entries first, then the loopback-bridge markers, then the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
-- **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`).
+- **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`). Keys are injected verbatim: environment-variable names are case-sensitive, so `FOO` and `foo` are distinct vars (both the top-level and per-shell maps preserve the case you write).
 - **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
 
 ## worktree
@@ -184,4 +184,4 @@ Viper is configured with `SetEnvPrefix("TOOLBOX")` + `AutomaticEnv`, with the im
 | `TOOLBOX_PULL` | `pull` |
 | `TOOLBOX_BRIDGE` | `bridge` |
 
-Env vars sit between the global file and built-in defaults in the [loading order](#loading-order): any file that sets the key wins over the env var.
+For these four keys the `TOOLBOX_*` env var sits at the top of the [loading order](#loading-order): it overrides every file layer (`--config`, project, global), and only the built-in default is below it.

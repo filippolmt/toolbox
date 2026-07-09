@@ -8,7 +8,7 @@ Every credential path the container sees lives under `~/.toolbox/` on the host (
 
 So by default the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly — `gh auth login` inside the container writes to `~/.toolbox/gh/` on the host, not to the host's `~/.config/gh/`. To opt individual CLIs into the host's real credential path instead, see [inherit-host-auth](configuration.md#inherit-host-auth).
 
-rtk and cf are the two tools whose state spans two binds because upstream splits config across non-XDG paths and exposes no env override:
+rtk and cf each spread state across two binds: cf splits config across non-XDG paths with no env override, and rtk follows XDG (config in `~/.config/rtk`, data in `~/.local/share/rtk`) with only a partial `RTK_DB_PATH` redirect:
 
 - rtk: `~/.config/rtk` (config) + `~/.local/share/rtk` (analytics/tee dumps).
 - cf: `~/.config/.cf/auth.jsonc` (OAuth tokens) + `~/.config/cf/config.json` (context defaults, completion marker).
@@ -37,7 +37,7 @@ User-declared mounts in `.toolbox.yaml` patch / replace / append / disable defau
 | `name` not a default (or omitted) | **Append**: added after the default set. |
 | `name` matches a default, `disabled: true` | **Remove**: the default is dropped from the resolved set. |
 
-Default mount names: `claude`, `codex`, `state`, `ssh`, `gitconfig`, `gh`, `glab`, `gcloud`, `gws`, `azure`, `oci`, `kube`, `playwright-cache`, `startup.d`, `certs`, `npm-global`, `go`, `docker-sock`. A patch referencing an unknown name fails `Plan()` loudly at startup so typos surface immediately.
+Default mount names come from `mountplan.Defaults()` — run `toolbox mounts list --defaults-only` for the full canonical set. A patch referencing an unknown name fails `Plan()` loudly at startup so typos surface immediately.
 
 Examples:
 
