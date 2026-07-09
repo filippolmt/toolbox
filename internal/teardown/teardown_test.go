@@ -289,6 +289,28 @@ func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 	}
 }
 
+// TestOnShellExitKillSwallowsConflict covers the disk-full death: the
+// container crashed on its own, so ContainerKill returns Conflict ("container
+// is not running"). killAutoRemove must treat it as success — the daemon reaps
+// the stopped AutoRemove container regardless — so the noisy kill error never
+// masks the real (disk) failure the shell surfaces.
+func TestOnShellExitKillSwallowsConflict(t *testing.T) {
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return autoRemoveInspect(), nil
+		},
+		execInspectFn: func(_ context.Context, _ string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
+		},
+		killFn: func(_ context.Context, _ string, _ string) error {
+			return &conflictErr{msg: "cannot kill container: toolbox-x is not running"}
+		},
+	}
+	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+		t.Fatalf("kill Conflict must be swallowed, got: %v", err)
+	}
+}
+
 func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
 	mock := &mockClient{
 		removeFn: func(_ context.Context, _ string, _ client.ContainerRemoveOptions) error {

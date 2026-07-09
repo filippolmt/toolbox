@@ -9,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"golang.org/x/term"
 
@@ -144,11 +146,38 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	// Bidirectional I/O; the stdout copy drives lifecycle. The stdin
 	// goroutine leaks until process exit (portable stdin interruption
 	// isn't available on Linux/macOS), which is fine for a CLI.
+	//
+	// Tee the daemon's output through a bounded tail buffer: when the exec
+	// dies inside the stream (e.g. runc "cannot exec in a stopped container"
+	// because the container ran out of disk), the failure reason arrives here,
+	// not as an ExecCreate/ExecAttach error, so capturing the closing bytes is
+	// the only way to recognize the cause after the copy returns.
+	tail := newTailBuffer(4096)
 	go func() { _, _ = io.Copy(resp.Conn, os.Stdin) }()
-	_, _ = io.Copy(os.Stdout, resp.Reader)
+	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
-	return nil
+	return diagnoseSessionExit(ctx, cli, containerID, tail.String())
 }
+
+// tailBuffer is an io.Writer that retains only the last max bytes written. It
+// captures the end of the exec stream (where the daemon writes its failure
+// reason) without buffering an entire interactive session in memory.
+type tailBuffer struct {
+	max int
+	buf []byte
+}
+
+func newTailBuffer(max int) *tailBuffer { return &tailBuffer{max: max} }
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string { return string(t.buf) }
 
 // diagnoseExecFailure enriches an exec failure with a startup post-mortem.
 // When the exec fails because the container has already exited — the entrypoint
@@ -172,10 +201,38 @@ func diagnoseExecFailure(ctx context.Context, cli client.APIClient, containerID 
 		return origErr
 	}
 	// Otherwise the container is gone (AutoRemove reaped it) or died at startup.
-	detail := ""
-	if err == nil && inspect.Container.State != nil {
-		detail = fmt.Sprintf(" (exit %d)", inspect.Container.State.ExitCode)
+	// classifyStartupFailure names disk exhaustion outright when origErr carries
+	// a known signature, else reports the exit with disk as the likely cause.
+	var state *container.State
+	if err == nil {
+		state = inspect.Container.State
 	}
-	return fmt.Errorf("container exited at startup%s before the shell could attach — "+
-		"Docker may be out of disk space; check with `docker system df`: %w", detail, origErr)
+	return fmt.Errorf("%s: %w", classifyStartupFailure(state, origErr.Error()), origErr)
+}
+
+// diagnoseSessionExit inspects the container after the exec stream closes.
+// A still-running container means the shell exited normally — PID 1 is
+// `sleep infinity`, so the container outlives any shell exit code — and yields
+// nil. A gone or exited container means the session died with it, most often
+// because the daemon ran out of disk mid-session; streamTail carries the last
+// bytes the daemon wrote so a disk signature is recognized even once AutoRemove
+// has reaped the container.
+//
+// A NotFound inspect means the dead container was already reaped — still a
+// diagnostic, driven off the captured stream tail. Any other inspect error is
+// a transient daemon hiccup on an otherwise-fine session: return nil rather
+// than cry wolf, since the shell had already attached and streamed.
+func diagnoseSessionExit(ctx context.Context, cli client.APIClient, containerID, streamTail string) error {
+	inspect, err := cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	switch {
+	case err == nil:
+		if inspect.Container.State != nil && inspect.Container.State.Running {
+			return nil
+		}
+		return fmt.Errorf("shell session ended: %s", classifyStartupFailure(inspect.Container.State, streamTail))
+	case cerrdefs.IsNotFound(err):
+		return fmt.Errorf("shell session ended: %s", classifyStartupFailure(nil, streamTail))
+	default:
+		return nil
+	}
 }

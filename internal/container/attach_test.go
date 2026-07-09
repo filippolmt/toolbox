@@ -12,6 +12,8 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
 
 // attachMock is a minimal Docker SDK mock for the exec + inspect methods used
@@ -231,6 +233,131 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("execShell did not return within 2s on EOF")
+	}
+}
+
+// TestExecShell_StreamFailureSurfacesDisk covers the reported bug: ExecCreate
+// and ExecAttach both succeed, then the container dies mid-attach (disk full)
+// and the daemon writes "cannot exec in a stopped container" into the stream.
+// io.Copy returns without error, so the old code returned nil and the real
+// cause was masked; execShell must now inspect the dead container and surface a
+// disk-space diagnostic instead.
+func TestExecShell_StreamFailureSurfacesDisk(t *testing.T) {
+	origStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	_ = w.Close()
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = origStdin
+		_ = r.Close()
+	})
+
+	origStdout := os.Stdout
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open /dev/null: %v", err)
+	}
+	os.Stdout = devNull
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		_ = devNull.Close()
+	})
+
+	serverConn, clientConn := net.Pipe()
+	go func() {
+		_, _ = serverConn.Write([]byte("OCI runtime exec failed: exec failed: cannot exec in a stopped container\r\n"))
+		_ = serverConn.Close()
+	}()
+	t.Cleanup(func() { _ = clientConn.Close() })
+
+	cli := &attachMock{
+		createFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{ID: "exec-y"}, nil
+		},
+		attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
+			return client.NewHijackedResponse(clientConn, ""), nil
+		},
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{State: &container.State{Running: false, ExitCode: 137}}, nil
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- execShell(context.Background(), cli, "cid", []string{"/bin/zsh"})
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "disk space") {
+			t.Fatalf("execShell err = %v, want disk-space diagnostic", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("execShell did not return within 2s after stream close")
+	}
+}
+
+// TestDiagnoseSessionExit exercises the post-io.Copy inspect branches directly:
+// a live container is a normal shell exit (nil); a dead or reaped container is a
+// diagnostic driven off the stream tail; a transient (non-NotFound) inspect
+// error must not cry wolf on an otherwise-fine session.
+func TestDiagnoseSessionExit(t *testing.T) {
+	cases := []struct {
+		name         string
+		inspectFn    func(context.Context, string) (container.InspectResponse, error)
+		tail         string
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name: "running container is a normal exit",
+			inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{State: &container.State{Running: true}}, nil
+			},
+		},
+		{
+			name: "exited container yields disk diagnostic from tail",
+			inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{State: &container.State{Running: false, ExitCode: 137}}, nil
+			},
+			tail:         "runc: no space left on device",
+			wantErr:      true,
+			wantContains: "out of disk space",
+		},
+		{
+			name: "reaped container (NotFound) still diagnoses from tail",
+			inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+			},
+			tail:         "no space left on device",
+			wantErr:      true,
+			wantContains: "out of disk space",
+		},
+		{
+			name: "transient inspect error does not cry wolf",
+			inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{}, errors.New("daemon hiccup")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := &attachMock{inspectFn: tc.inspectFn}
+			err := diagnoseSessionExit(context.Background(), cli, "cid", tc.tail)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), tc.wantContains) {
+					t.Fatalf("diagnoseSessionExit err = %v, want contains %q", err, tc.wantContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("diagnoseSessionExit err = %v, want nil", err)
+			}
+		})
 	}
 }
 
