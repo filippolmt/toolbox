@@ -4,47 +4,18 @@ A containerized development environment (Debian slim) bundling all the tools you
 
 ## What's inside
 
-| Tool | Version |
-|------|---------|
-| Node.js | 24 LTS |
-| pnpm | 11.4.x |
-| bun (JavaScript runtime + package manager + bundler) | 1.3.x |
-| Claude Code | 2.1.x |
-| OpenAI Codex CLI | 0.135.x |
-| Pyright language server (`pyright-langserver`) | 1.1.x |
-| TypeScript language server (`typescript-language-server`) | 5.3.x |
-| TypeScript (`tsc`) | 6.0.x |
-| rtk (LLM token-saving CLI proxy) | 0.42.x |
-| Playwright CLI | 1.60.x |
-| Playwright CLI with SKILLS (`playwright-cli`) | 0.1.x |
-| Python 3 | 3.11 |
-| uv | 0.11.x |
-| Go toolchain + gopls + goimports | 1.26.x |
-| kubectl | 1.36.x |
-| kubectx + kubens (kubectl context/namespace switchers) | 0.11.x |
-| Helm | 4.2.x |
-| OpenTofu | 1.12.x |
-| GitHub CLI (gh) | 2.96.x |
-| GitLab CLI (glab) | 1.107.x |
-| Google Workspace CLI (`gws`) | 0.22.x |
-| atuin (SQLite-backed shell history; Ctrl-R fuzzy search) | 18.17.x |
-| Docker CLI | 29.6.x |
-| Docker Compose | 5.3.x |
-| Google Cloud SDK (gcloud) | 575.x |
-| Azure CLI (az) | 2.88.x |
-| Oracle OCI CLI | 3.89.x |
-| SonarQube CLI (`sonar`) | 1.3.x |
-| graphify (per-repo knowledge-graph builder, PyPI `graphifyy`) | 0.9.x |
-| codegraph (per-repo code-symbol graph: MCP server + CLI, npm `@colbymchenry/codegraph`) | 1.3.x |
-| Cloudflare CLI (`cf`, Wrangler vNext preview) | 0.1.x |
-| Cloudflare Wrangler CLI (`wrangler`) | 4.95.x |
-| Zsh shell bundle (Oh-My-Zsh + fzf + zoxide) | bundled |
-| fd (user-friendly `find` replacement) | 10.4.x |
-| eza (modern `ls` replacement) | 0.23.x |
-| shellcheck (shell linter) | 0.11.x |
-| shfmt (shell formatter) | 3.13.x |
-| Homebrew (Linuxbrew, `brew install` anything else at runtime) | 5.1.x |
-| jq, yq, starship, bat, git | latest stable |
+Exact pinned versions live in [`internal/build/assets/Dockerfile`](internal/build/assets/Dockerfile) (Renovate-bumped; Go in `go.mod`, `golangci-lint` in the `Makefile`). The baked-in tooling:
+
+- **Runtimes / package managers** — Node.js (24 LTS), pnpm, bun (JS runtime + package manager + bundler), Python 3, uv, Go toolchain (+ gopls, goimports)
+- **AI agents / proxies** — Claude Code, OpenAI Codex CLI, rtk (LLM token-saving CLI proxy)
+- **Language servers / formatters** — Pyright (`pyright-langserver`), TypeScript language server, TypeScript (`tsc`), shellcheck, shfmt
+- **Browser automation** — Playwright CLI (+ `playwright-cli` SKILLS build)
+- **Kubernetes / infra** — kubectl, kubectx + kubens, Helm, OpenTofu
+- **Cloud CLIs** — Google Cloud SDK (gcloud), Azure CLI (az), Oracle OCI CLI, Google Workspace CLI (`gws`), Cloudflare CLI (`cf`, Wrangler vNext preview) + Wrangler (`wrangler`)
+- **Git / forge** — GitHub CLI (gh), GitLab CLI (glab), Docker CLI + Docker Compose
+- **Code intelligence** — graphify (PyPI `graphifyy`), codegraph (npm `@colbymchenry/codegraph`), SonarQube CLI (`sonar`)
+- **Shell / CLI ergonomics** — Zsh bundle (Oh-My-Zsh + fzf + zoxide), atuin (SQLite shell history, Ctrl-R fuzzy search), fd, eza, jq, yq, starship, bat, git
+- **Runtime package sources** — Homebrew (Linuxbrew — `brew install` anything else at runtime)
 
 Every tool ships unconditionally — there is no per-tool opt-out. Need something that isn't baked in? `brew install <tool>` or `sudo apt install <tool>` inside the shell; both are ephemeral and vanish when the container exits.
 
