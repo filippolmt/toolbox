@@ -29,7 +29,8 @@ var diskSignatures = []string{
 // state may be nil (AutoRemove already reaped the container); extraSignals may
 // be empty (the exec failed before any bytes streamed).
 func classifyStartupFailure(state *container.State, extraSignals ...string) string {
-	signals := extraSignals
+	signals := make([]string, 0, len(extraSignals)+1)
+	signals = append(signals, extraSignals...)
 	detail := ""
 	if state != nil {
 		if state.Error != "" {

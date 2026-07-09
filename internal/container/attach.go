@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"golang.org/x/term"
@@ -216,14 +217,22 @@ func diagnoseExecFailure(ctx context.Context, cli client.APIClient, containerID 
 // because the daemon ran out of disk mid-session; streamTail carries the last
 // bytes the daemon wrote so a disk signature is recognized even once AutoRemove
 // has reaped the container.
+//
+// A NotFound inspect means the dead container was already reaped — still a
+// diagnostic, driven off the captured stream tail. Any other inspect error is
+// a transient daemon hiccup on an otherwise-fine session: return nil rather
+// than cry wolf, since the shell had already attached and streamed.
 func diagnoseSessionExit(ctx context.Context, cli client.APIClient, containerID, streamTail string) error {
 	inspect, err := cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
-	if err == nil && inspect.Container.State != nil && inspect.Container.State.Running {
+	switch {
+	case err == nil:
+		if inspect.Container.State != nil && inspect.Container.State.Running {
+			return nil
+		}
+		return fmt.Errorf("shell session ended: %s", classifyStartupFailure(inspect.Container.State, streamTail))
+	case cerrdefs.IsNotFound(err):
+		return fmt.Errorf("shell session ended: %s", classifyStartupFailure(nil, streamTail))
+	default:
 		return nil
 	}
-	var state *container.State
-	if err == nil {
-		state = inspect.Container.State
-	}
-	return fmt.Errorf("shell session ended: %s", classifyStartupFailure(state, streamTail))
 }
