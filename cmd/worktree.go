@@ -164,10 +164,9 @@ never auto-resolves or pushes, and prints how to continue or abort.`,
 func resolveAgent(flag string) (string, error) {
 	agent := flag
 	if agent == "" {
-		agent = cfg.Agent
-	}
-	if agent == "" {
-		agent = config.DefaultAgent
+		// cfg.Agent or, when unset, config.DefaultAgent — the one seam that
+		// owns the agent fallback (shared with config show and the config UI).
+		agent, _ = config.EffectiveValue(cfg, "agent")
 	}
 	if err := config.ValidateAgent(agent); err != nil {
 		return "", err

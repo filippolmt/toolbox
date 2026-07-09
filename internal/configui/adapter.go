@@ -225,16 +225,15 @@ func displayValue(cfg *config.Config, key string) string {
 		return strings.Join(cfg.InheritHostAuth, ", ")
 	case "shells":
 		return countLabel(len(cfg.Shells), collectionNoun(key))
-	case "shell":
-		return orDefault(cfg.Shell, config.SupportedShells[0])
-	case "agent":
-		return orDefault(cfg.Agent, config.DefaultAgent)
+	case "shell", "agent", "pull":
+		// Fallback-bearing scalars derive from the one config.EffectiveValue
+		// seam so the TUI can't drift from `config show` on effective values.
+		v, _ := config.EffectiveValue(cfg, key)
+		return v
 	case "image":
 		return orHint(cfg.Image, "(default)")
 	case "registry_mirror":
 		return orHint(cfg.RegistryMirror, "(none)")
-	case "pull":
-		return orDefault(cfg.Pull, config.PullAuto)
 	case "mounts_root":
 		return orHint(cfg.MountsRoot, "(~/.toolbox)")
 	case "sdd":
@@ -281,19 +280,10 @@ func countLabel(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// orDefault echoes the built-in default value when v is empty. The detail pane
-// now carries a dedicated "default:" line, so this no longer appends a
-// "(default)" suffix — that duplicated the origin badge and the default line.
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-// orHint is orDefault's sibling for keys with no meaningful default value to
-// echo (image / registry_mirror / mounts_root): it shows the value, or a bare
-// parenthetical hint when empty — never the doubled "(hint) (default)".
+// orHint shows a key's value, or a bare parenthetical hint when empty, for the
+// keys with no meaningful default to echo (image / registry_mirror /
+// mounts_root) — never the doubled "(hint) (default)". Fallback-bearing scalars
+// go through config.EffectiveValue instead.
 func orHint(v, hint string) string {
 	if v == "" {
 		return hint
