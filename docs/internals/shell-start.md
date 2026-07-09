@@ -28,7 +28,7 @@ Both are registered as system init scripts (`systemInitScripts` in `internal/cat
 
 ## MCP plugin auto-build
 
-`internal/build/assets/init.d/50-mcp-plugins.sh` scans `~/.claude/plugins/cache/**` and runs `npm install && npm run build` for any plugin missing a `dist/`. First shell after a plugin install is therefore slower; subsequent shells cached via `.toolbox-built` marker. On failure stderr is captured to `.toolbox-build-error.log` next to the marker (in the same bind-mounted plugin dir, so it survives container restarts) and the last 5 lines are printed inline; failure stays non-fatal.
+`internal/build/assets/init.d/50-mcp-plugins.sh` scans the `~/.claude/plugins/cache/*/*/*/mcp` dirs and runs `npm install && npm run build` for any that has a `package.json`, declares a `build` script, and is not yet built (no `.toolbox-built` marker). First shell after a plugin install is therefore slower; subsequent shells cached via `.toolbox-built` marker. On failure stderr is captured to `.toolbox-build-error.log` next to the marker (in the same bind-mounted plugin dir, so it survives container restarts) and the last 5 lines are printed inline; failure stays non-fatal.
 
 ## Playwright browser cache sync
 
