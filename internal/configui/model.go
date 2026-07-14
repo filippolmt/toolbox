@@ -369,7 +369,7 @@ func (m Model) updateMulti(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.ed.cursor < len(m.ed.options)-1 {
 			m.ed.cursor++
 		}
-	case " ":
+	case " ", "space": // bubbletea v2 stringifies the spacebar as "space", not " "
 		if m.ed.selected == nil { // guard: a nil-map write would panic
 			m.ed.selected = map[string]bool{}
 		}
