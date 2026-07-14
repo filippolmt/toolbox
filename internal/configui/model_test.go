@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
@@ -102,6 +103,24 @@ func TestCommitRowFieldEmptyKeyAborts(t *testing.T) {
 	}
 	if len(m.ed.rows) != 0 {
 		t.Errorf("no row must be written on abort, got %v", m.ed.rows)
+	}
+}
+
+// TestMultiSelectSpaceTogglesSelection guards the checkbox toggle shared by
+// every multi-select editor (sdd / mounts / inherit_host_auth). Under
+// bubbletea v2 a spacebar press stringifies to "space", not " ", so matching
+// only " " left the toggle dead — no SDD skill could be selected. Driving the
+// real space KeyPressMsg keeps the binding honest across future bubbletea bumps.
+func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
+	space := tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	if got := space.String(); got != "space" {
+		t.Fatalf("bubbletea space key stringifies to %q; test premise stale", got)
+	}
+	opts := SDDOptions()
+	sel := map[string]bool{}
+	m := Model{editing: true, ed: editor{key: "sdd", kind: edMulti, options: opts, selected: sel, cursor: indexOf(opts, "openspec")}}
+	if _, _ = m.updateEditing(space); !sel["openspec"] {
+		t.Fatalf("space must toggle openspec on, got selected = %v", sel)
 	}
 }
 
