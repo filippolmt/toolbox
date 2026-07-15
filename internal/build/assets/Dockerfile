@@ -1077,7 +1077,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
 # graphify (knowledge-graph builder, Claude Code skill). PyPI name is
-# `graphifyy` (double y); binary stays `graphify`.
+# `graphifyy` (double y); binary stays `graphify`. The `[sql]` extra pulls the
+# SQL tree-sitter grammar so `.sql` files land in the graph; `tree-sitter-sql`
+# ships manylinux wheels (x86_64 + aarch64) so it needs no build.
 # `tree-sitter-dm` (transitive dep) ships only a win_amd64 wheel on PyPI, so
 # pip builds it from sdist on Linux — gcc + python3-dev installed transiently
 # and purged after to keep the final image lean.
@@ -1089,10 +1091,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       apt-get install -y --no-install-recommends gcc python3-dev; \
       pip install --break-system-packages \
         --timeout 300 --retries 5 \
-        "graphifyy==${GRAPHIFY_VERSION}"; \
+        "graphifyy[sql]==${GRAPHIFY_VERSION}"; \
       apt-get purge -y --auto-remove gcc python3-dev; \
       # No `--version` subcommand; `--help` is the smoke check.
       graphify --help >/dev/null; \
+      # Fail-fast that the [sql] extra resolved (grammar importable).
+      python3 -c "import tree_sitter_sql"; \
       pip show graphifyy | grep ^Version:; \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
