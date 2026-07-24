@@ -64,6 +64,14 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+HERDR_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "ogulcancelik/herdr",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+KUBECTL_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "kubernetes/kubernetes"

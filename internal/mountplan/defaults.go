@@ -145,6 +145,23 @@ func defaults() []config.Mount {
 		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
 		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
 		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
+		// herdr (agent multiplexer TUI) follows XDG and splits durable state across
+		// ~/.config/herdr and ~/.local/state/herdr, so both bind sources nest
+		// under a single ~/.toolbox/herdr/ root on the host (flat layout, rtk
+		// pattern) while the container keeps the XDG-compliant split. Without
+		// these binds every detachable session, installed/enabled plugin, and
+		// config wipes on `toolbox stop` — herdr's whole value is persistence.
+		//
+		// "herdr" — config dir: config, plugins, and session state all live
+		// here (session data_dir() is derived from config_dir(), i.e.
+		// ~/.config/herdr/sessions/<name>). The unix sockets herdr drops in
+		// here are recreated by the server on start, so a stale socket file
+		// surviving a restart is harmless.
+		{Name: "herdr", Source: "~/.toolbox/herdr/config", Target: "/home/toolbox/.config/herdr", ReadOnly: false, CreateIfMissing: true},
+		// "herdr-state" — XDG state dir: per-plugin runtime state written via
+		// plugin_state_dir(). Kept so plugin state survives alongside the
+		// now-user-global plugin registry.
+		{Name: "herdr-state", Source: "~/.toolbox/herdr/state", Target: "/home/toolbox/.local/state/herdr", ReadOnly: false, CreateIfMissing: true},
 		// Bridge state: token + port + log + pid written by `toolbox bridge
 		// daemon` on the host. RO inside the container because the shims only
 		// read. CreateIfMissing keeps the mount resolvable even before the

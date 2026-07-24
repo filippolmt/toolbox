@@ -27,6 +27,7 @@ ARG GH_VERSION=2.96.0
 ARG GLAB_VERSION=1.109.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.17.1
+ARG HERDR_VERSION=0.7.5
 ARG KUBECTL_VERSION=v1.36.3
 ARG KUBECTX_VERSION=0.11.0
 ARG HELM_VERSION=v4.2.3
@@ -577,6 +578,24 @@ RUN set -eux; \
       rm "/tmp/${ZOXIDE_TARBALL}"; \
       /out/usr/local/bin/zoxide --version
 
+# herdr (agent multiplexer TUI — detachable panes running AI agents).
+# Single static Rust binary; upstream publishes no checksum file, so this
+# follows the docker-CLI accepted-risk pattern (T-01-08): version pin + HTTPS
+# only. Arch tokens are x86_64 / aarch64 (not amd64 / arm64).
+FROM fetch-base AS fetch-herdr
+ARG TARGETARCH
+ARG HERDR_VERSION
+RUN set -eux; \
+      case "${TARGETARCH}" in \
+        amd64) HERDR_ARCH=x86_64;; \
+        arm64) HERDR_ARCH=aarch64;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /out/usr/local/bin/herdr \
+        "https://github.com/ogulcancelik/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-${HERDR_ARCH}"; \
+      chmod +x /out/usr/local/bin/herdr; \
+      /out/usr/local/bin/herdr --version
+
 # tini PID-1. CMD is `sleep infinity` (not a shell) — interactive shells
 # ignore SIGTERM when owning the TTY, blocking `docker stop` until SIGKILL.
 # tini -g forwards signals to the whole process group.
@@ -851,6 +870,7 @@ COPY --link --from=fetch-bun      /out/ /
 COPY --link --from=fetch-uv       /out/ /
 COPY --link --from=fetch-sonar    /out/ /
 COPY --link --from=fetch-zoxide   /out/ /
+COPY --link --from=fetch-herdr    /out/ /
 COPY --link --from=fetch-tini     /out/ /
 COPY --link --from=fetch-go       /out/ /
 COPY --link --from=fetch-gcloud   /out/ /
@@ -1175,6 +1195,7 @@ RUN set -eux; \
       /home/toolbox/.cache \
       /home/toolbox/.config \
       /home/toolbox/.local/share \
+      /home/toolbox/.local/state \
       /home/toolbox/.toolbox/bridge; \
     chmod -R a+rwX /home/toolbox; \
     chmod 0666 /etc/passwd /etc/group; \

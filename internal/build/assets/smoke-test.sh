@@ -285,6 +285,7 @@ check_optional  "kubectl"   kubectl  kubectl version --client
 check_optional  "kubectx"   kubectx  kubectx --version
 check_optional  "kubens"    kubens   kubens --version
 check_optional  "helm"      helm     helm version --short
+check_optional  "herdr"     herdr    herdr --version
 check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
