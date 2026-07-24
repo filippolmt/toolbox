@@ -70,6 +70,7 @@ var Entries = []Entry{
 	{Key: "graphify", InitScript: "30-graphify.sh"},
 	{Key: "gws"},
 	{Key: "helm"},
+	{Key: "herdr"},
 	{Key: "jq"},
 	{Key: "kubectl"},
 	{Key: "oci", InitScript: "08-oci-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.oci", ContainerPath: "/home/toolbox/.oci"}},

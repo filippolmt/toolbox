@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 31 {
-		t.Fatalf("expected 31 default mounts, got %d", len(mounts))
+	if len(mounts) != 33 {
+		t.Fatalf("expected 33 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -72,6 +72,9 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/bun", false, true)
 	// Per-user Go workspace (GOPATH): read-write, create-if-missing (GO-05).
 	assertMount(t, mounts, "~/.toolbox/go", false, true)
+	// herdr config + state (sessions, plugins): read-write, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/herdr/config", false, true)
+	assertMount(t, mounts, "~/.toolbox/herdr/state", false, true)
 
 	// ssh + git config follow the host via symlinks, not copies. ssh stays
 	// read-only (host private keys); gitconfig is read-write so `git config`
