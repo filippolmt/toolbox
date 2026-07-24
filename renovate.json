@@ -26,6 +26,12 @@
       "matchFileNames": ["internal/build/assets/Dockerfile"],
       "groupName": "dockerfile image",
       "groupSlug": "dockerfile"
+    },
+    {
+      "description": "Best-effort hardening: pin the public Go proxy for the moby monorepo submodules (github.com/moby/moby/client + /api). These modules resolve correctly on proxy.golang.org; the dashboard 'no-result' is a transient gomod lookup flake, and forcing the known-good proxy makes lookups more deterministic. Not a guaranteed fix.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/moby/moby/client", "github.com/moby/moby/api"],
+      "registryUrls": ["https://proxy.golang.org"]
     }
   ],
   "customManagers": [
