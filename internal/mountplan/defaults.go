@@ -145,7 +145,7 @@ func defaults() []config.Mount {
 		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
 		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
 		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
-		// herdr (agent multiplexer) follows XDG and splits durable state across
+		// herdr (agent multiplexer TUI) follows XDG and splits durable state across
 		// ~/.config/herdr and ~/.local/state/herdr, so both bind sources nest
 		// under a single ~/.toolbox/herdr/ root on the host (flat layout, rtk
 		// pattern) while the container keeps the XDG-compliant split. Without

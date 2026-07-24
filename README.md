@@ -7,7 +7,7 @@ A containerized development environment (Debian slim) bundling all the tools you
 Exact pinned versions live in [`internal/build/assets/Dockerfile`](internal/build/assets/Dockerfile) (Renovate-bumped; Go in `go.mod`, `golangci-lint` in the `Makefile`). The baked-in tooling:
 
 - **Runtimes / package managers** — Node.js (24 LTS), pnpm, bun (JS runtime + package manager + bundler), Python 3, uv, Go toolchain (+ gopls, goimports)
-- **AI agents / proxies** — Claude Code, OpenAI Codex CLI, rtk (LLM token-saving CLI proxy), herdr (terminal multiplexer for AI agents)
+- **AI agents / proxies** — Claude Code, OpenAI Codex CLI, rtk (LLM token-saving CLI proxy), herdr (agent multiplexer TUI — detachable panes running AI agents)
 - **Language servers / formatters** — Pyright (`pyright-langserver`), TypeScript language server, TypeScript (`tsc`), shellcheck, shfmt
 - **Browser automation** — Playwright CLI (+ `playwright-cli` SKILLS build)
 - **Kubernetes / infra** — kubectl, kubectx + kubens, Helm, OpenTofu
