@@ -154,9 +154,12 @@ func defaults() []config.Mount {
 		//
 		// "herdr" — config dir: config, plugins, and session state all live
 		// here (session data_dir() is derived from config_dir(), i.e.
-		// ~/.config/herdr/sessions/<name>). The unix sockets herdr drops in
-		// here are recreated by the server on start, so a stale socket file
-		// surviving a restart is harmless.
+		// ~/.config/herdr/sessions/<name>). herdr would also drop its unix
+		// sockets here by default, but this bind is a Docker-Desktop fakeowner
+		// fs that rejects chmod() on sockets (EINVAL) — fatal for the server —
+		// so the Dockerfile ENV relocates them to a container-local path
+		// (HERDR_SOCKET_PATH / HERDR_CLIENT_SOCKET_PATH). Sockets are ephemeral
+		// and no longer live under this mount.
 		{Name: "herdr", Source: "~/.toolbox/herdr/config", Target: "/home/toolbox/.config/herdr", ReadOnly: false, CreateIfMissing: true},
 		// "herdr-state" — XDG state dir: per-plugin runtime state written via
 		// plugin_state_dir(). Kept so plugin state survives alongside the

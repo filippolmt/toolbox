@@ -902,7 +902,18 @@ COPY --link --chmod=0755 --from=rtk-builder /out/bin/rtk /usr/local/bin/rtk
 #     file backend (src/lib/keychain.ts) lands the token (plaintext JSON)
 #     inside the ~/.sonar bind-mount so `sonar auth login` survives
 #     `toolbox stop`.
+#   HERDR_SOCKET_PATH / HERDR_CLIENT_SOCKET_PATH: herdr derives its unix
+#     socket paths from config_dir (~/.config/herdr) and ignores
+#     XDG_RUNTIME_DIR. That dir is a Docker-Desktop bind mount (fakeowner
+#     fs), which rejects chmod() on non-regular files — the server binds the
+#     socket fine, then fatally EINVALs on `chmod 0600` and exits, so it
+#     never becomes ready ("server did not become ready within 15s"). Point
+#     the sockets at a container-local (non-mounted) path; herdr auto-creates
+#     the parent. Sockets are ephemeral, so nothing needs to persist here —
+#     config/plugins/sessions stay on the ~/.config/herdr bind mount.
 ENV CHECKPOINT_DISABLE=1 \
+    HERDR_SOCKET_PATH=/tmp/herdr/herdr.sock \
+    HERDR_CLIENT_SOCKET_PATH=/tmp/herdr/herdr-client.sock \
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
     SONARQUBE_CLI_KEYCHAIN_FILE=/home/toolbox/.sonar/sonarqube-cli/keychain.json \
     ATUIN_CONFIG_DIR=/home/toolbox/.local/share/atuin/config \
