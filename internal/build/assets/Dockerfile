@@ -1153,6 +1153,7 @@ RUN set -eux; \
       pnpm completion zsh     > /usr/share/zsh/vendor-completions/_pnpm; \
       starship completions zsh > /usr/share/zsh/vendor-completions/_starship; \
       codex completion zsh    > /usr/share/zsh/vendor-completions/_codex; \
+      herdr completion zsh    > /usr/share/zsh/vendor-completions/_herdr; \
       # cf 0.0.6 dropped the `completions <shell>` subcommand. No replacement
       # yet (yargs default `completion` is not registered either); revisit on
       # the next Renovate bump and reinstate _cf when upstream restores it.
@@ -1197,10 +1198,15 @@ RUN set -eux; \
 # entry (OpenShift pattern; safe — ephemeral, no secrets).
 # `usermod -d -m` relocates /home/node (incl. the fetch-omz clone) and
 # refuses if /home/toolbox already exists.
+# `usermod -s /bin/zsh`: the inherited node image entry pointed at /bin/bash,
+# which bash then fabricates as $SHELL from getpwuid() when the variable is
+# unset. zsh is the only supported interactive shell — keep the baked UID-1000
+# entry agreeing with the runtime entry entrypoint.sh writes and with ENV SHELL.
 RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
     usermod -d /home/toolbox -m toolbox; \
+    usermod -s /bin/zsh toolbox; \
     mkdir -p \
       /home/toolbox/.npm-global \
       /home/toolbox/.toolbox-startup.d \
@@ -1291,6 +1297,10 @@ ENV DISABLE_AUTOUPDATER=1 \
 # NB it only mutes the log line; the kube segment still renders the stale
 # context name — hide the segment with PROMPT_HIDE_KUBE. Override for debugging
 # via `env: { STARSHIP_LOG: warn }`. Why: docs/internals/shell-start.md#prompt-module-toggles
+# SHELL: nothing else sets it in the container (zsh keeps it non-exported), so
+# tools resolving their shell from $SHELL alone — herdr panes, tmux — fall back
+# to dash and lose line editing. Value matches the passwd shell the entrypoint
+# writes for the host UID. Why: docs/internals/shell-start.md#shell-in-the-image-env
 ENV HOME=/home/toolbox \
     NPM_CONFIG_PREFIX=/home/toolbox/.npm-global \
     EDITOR=vi \
@@ -1298,7 +1308,8 @@ ENV HOME=/home/toolbox \
     STARSHIP_CONFIG=/etc/toolbox/starship.toml \
     STARSHIP_LOG=error \
     LANG=C.UTF-8 \
-    TZ=Europe/Rome
+    TZ=Europe/Rome \
+    SHELL=/bin/zsh
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
 # additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
