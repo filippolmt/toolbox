@@ -148,6 +148,7 @@ host-CLI primitives.
 - [Prompt glyph width](internals/shell-start.md#prompt-glyph-width)
 - [Prompt module toggles](internals/shell-start.md#prompt-module-toggles)
 - [UTF-8 locale](internals/shell-start.md#utf-8-locale)
+- [SHELL in the image env](internals/shell-start.md#shell-in-the-image-env)
 - [Managed statusline](internals/shell-start.md#managed-statusline)
 - [MCP plugin auto-build](internals/shell-start.md#mcp-plugin-auto-build)
 - [Playwright browser cache sync](internals/shell-start.md#playwright-browser-cache-sync)

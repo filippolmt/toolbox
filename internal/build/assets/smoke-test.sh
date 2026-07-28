@@ -137,13 +137,15 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 16 files on default build:
+    # l. vendor-completions populated (expect >= 20 files on default build:
     # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat, codex,
-    # kubectx, kubens, fd, eza, brew). cf was here until 0.0.6 removed the
+    # herdr, kubectx, kubens, fd, eza, brew, bwrap, curl, rg). The last three
+    # ride their apt packages (bubblewrap, curl, ripgrep) rather than the
+    # precompute layer or a fetch stage. cf was here until 0.0.6 removed the
     # `completions <shell>` subcommand — reinstate when upstream restores it.
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 16 ]
+        [ "$count" -ge 20 ]
     }
 
     # m. image locale is UTF-8 (ENV LANG=C.UTF-8 in the Dockerfile) — under
@@ -157,6 +159,18 @@ check_zsh() {
     # the CET/CEST DST swing without pinning the abbreviation.
     _zsh_tz_check() {
         [ -f /usr/share/zoneinfo/Europe/Rome ] && [ "$(date +%Z 2>/dev/null)" != "UTC" ]
+    }
+
+    # o. SHELL is in the image env (ENV SHELL=/bin/zsh in the Dockerfile).
+    # Assert the environ of PID 1 (tini), not $SHELL: this body runs under
+    # bash -c and bash fabricates SHELL from /etc/passwd when unset, which would
+    # green a dropped ENV. Without it, tools that resolve their shell from
+    # $SHELL alone (herdr panes, tmux) fall back to /bin/sh. No apostrophes or
+    # single quotes here — this body lives inside a single-quoted bash -c.
+    _zsh_shell_env_check() {
+        # -z: /proc/*/environ is NUL-separated, so -z makes one entry one line
+        # and -x anchors the match to the whole entry.
+        grep -qzx "SHELL=/bin/zsh" /proc/1/environ 2>/dev/null
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -175,9 +189,10 @@ check_zsh() {
     _zsh_assert "18 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
-    _zsh_assert "vendor-completions >= 16"     _zsh_vendor_completions_check
+    _zsh_assert "vendor-completions >= 20"     _zsh_vendor_completions_check
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
+    _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli
