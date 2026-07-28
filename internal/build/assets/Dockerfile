@@ -834,6 +834,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       ripgrep \
       socat \
       sudo \
+      tmux \
       tree \
       tzdata \
       unzip \
