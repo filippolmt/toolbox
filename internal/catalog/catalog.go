@@ -83,6 +83,7 @@ var Entries = []Entry{
 	{Key: "shfmt"},
 	{Key: "sonar"},
 	{Key: "starship"},
+	{Key: "tmux"},
 	{Key: "tofu"},
 	{Key: "typescript"},
 	{Key: "typescript_language_server"},

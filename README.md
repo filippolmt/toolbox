@@ -14,7 +14,7 @@ Exact pinned versions live in [`internal/build/assets/Dockerfile`](internal/buil
 - **Cloud CLIs** — Google Cloud SDK (gcloud), Azure CLI (az), Oracle OCI CLI, Google Workspace CLI (`gws`), Cloudflare CLI (`cf`, Wrangler vNext preview) + Wrangler (`wrangler`)
 - **Git / forge** — GitHub CLI (gh), GitLab CLI (glab), Docker CLI + Docker Compose
 - **Code intelligence** — graphify (PyPI `graphifyy`), codegraph (npm `@colbymchenry/codegraph`), SonarQube CLI (`sonar`)
-- **Shell / CLI ergonomics** — Zsh bundle (Oh-My-Zsh + fzf + zoxide), atuin (SQLite shell history, Ctrl-R fuzzy search), fd, eza, jq, yq, starship, bat, git
+- **Shell / CLI ergonomics** — Zsh bundle (Oh-My-Zsh + fzf + zoxide), atuin (SQLite shell history, Ctrl-R fuzzy search), tmux, fd, eza, jq, yq, starship, bat, git
 - **Runtime package sources** — Homebrew (Linuxbrew — `brew install` anything else at runtime)
 
 Every tool ships unconditionally — there is no per-tool opt-out. Need something that isn't baked in? `brew install <tool>` or `sudo apt install <tool>` inside the shell; both are ephemeral and vanish when the container exits.

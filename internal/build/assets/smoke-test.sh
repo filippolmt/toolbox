@@ -314,6 +314,7 @@ check_optional  "eza"       eza      eza --version
 check_optional  "shellcheck" shellcheck shellcheck --version
 check_optional  "shfmt"     shfmt    shfmt --version
 check_optional  "rtk"       rtk      rtk --version
+check_optional  "tmux"      tmux     tmux -V
 
 check_zsh
 
