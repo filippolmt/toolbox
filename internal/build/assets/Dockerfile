@@ -23,7 +23,7 @@
 # Version pins. Renovate-bumped; declared once here (global), re-declared bare
 # (no value) inside the stage that consumes them.
 ARG RTK_VERSION=0.44.1
-ARG GH_VERSION=2.96.0
+ARG GH_VERSION=2.97.0
 ARG GLAB_VERSION=1.111.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.18.1
