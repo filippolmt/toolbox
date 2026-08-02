@@ -71,7 +71,7 @@ ARG EZA_VERSION=0.23.5
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=c5ba74cf02cce4c342153f79089100194f30940f
+ARG OMZ_COMMIT=6adfef3a8b25ca5ccf429bb87e10547ed444eaa1
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04
 ARG ZSH_COMPLETIONS_COMMIT=6ea4709fbc64f813ffa013fdd062fa0f0d9a0dab
