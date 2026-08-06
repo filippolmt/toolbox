@@ -32,7 +32,7 @@ ARG KUBECTL_VERSION=v1.36.3
 ARG KUBECTX_VERSION=0.11.0
 ARG HELM_VERSION=v4.2.3
 ARG TOFU_VERSION=1.12.5
-ARG DOCKER_CLI_VERSION=29.7.1
+ARG DOCKER_CLI_VERSION=29.7.2
 ARG JQ_VERSION=1.8.2
 ARG YQ_VERSION=4.53.3
 ARG STARSHIP_VERSION=1.26.0
@@ -1043,21 +1043,30 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -prune -exec rm -rf {} +;
 # playwright-cli (agent companion). Binary name has `-cli` suffix. The skill is
 # installed per-repo at runtime on opt-in (see init.d/40-playwright-cli.sh) by
-# copying the templates bundled in the package — `skills/playwright-cli/` and
-# the `playwright-core` `cli-client/skill/` copy. Those template trees are
+# copying the templates bundled in the package. Those template trees are
 # .md-only, so the generic `*.md` weight prune below MUST spare them (the
-# leading `-path … -prune -o`); without that exclusion the prune empties the
+# leading `-name … -prune -o`); without that exclusion the prune empties the
 # skill source and `playwright-cli install --skills` produces an empty skill.
+#
+# The exclusion matches directories *by name* (`skills` / `skill`) rather than
+# by path on purpose: `@playwright/cli` pins its own version but pulls
+# `playwright-core` on a floating range, and playwright-core 1.63.0-alpha moved
+# the trees from `lib/tools/cli-client/skill/` to `lib/tools/skills/<name>/`,
+# which the old `-path '*/cli-client/skill'` exclusion no longer matched. A
+# name match survives that relocation; the `test -s` below still pins the exact
+# file `cli-client/program.js` resolves via `libPath("tools", "skills",
+# "playwright-cli", "SKILL.md")`, so another upstream move fails the build
+# loudly instead of shipping an empty skill.
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "@playwright/cli@${PLAYWRIGHT_CLI_VERSION}"; \
       playwright-cli --version; \
       find /usr/local/lib/node_modules/@playwright \
-        -type d \( -path '*/cli/skills' -o -path '*/cli-client/skill' \) -prune -o \
+        -type d \( -name skills -o -name skill \) -prune -o \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +; \
-      test -s /usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/lib/tools/cli-client/skill/SKILL.md;
+      test -s /usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md;
 # OpenAI Codex CLI. bubblewrap required for its in-tool sandbox.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
