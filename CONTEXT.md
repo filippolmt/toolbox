@@ -66,27 +66,42 @@ runtime gap into a red coverage test, mirroring the Tool Catalog deepening.
 ### Tool Catalog
 
 The canonical declaration of every bundled tool: a single typed table
-whose entries describe each tool's key, default state, Dockerfile
-`INSTALL_*` ARG name, and (for later phases) description, init script,
-and smoke-test hook.
+whose rows name each tool and, where it has one, its runtime init
+script and its inheritable host credential path.
 
-Concretely: `Entries → Keys / BuildArg / Defaults / IsDefault /
-WriteCanonical`. Owned by `internal/catalog`. Consumers are
-`internal/build/tag.go` (build args + canonical-encoded image hash via
-`WriteCanonical`) and `internal/config` (thin shims over `Defaults` and
-`IsDefault`); the future Phase 10 init manifest reads the optional
-`Description` / `InitScript` / `SmokeTest` fields. Optional fields are
-excluded from the canonical hash encoding so populating them is
-hash-neutral for users.
+Concretely: `Entries → Keys / Find / HostAuthEligibleKeys`. Owned by
+`internal/catalog`. An `Entry` carries exactly three fields: `Key`,
+`InitScript` (relative path under `internal/build/assets/init.d/`, or
+`""` when the tool needs no boot step) and `HostAuthMount` (non-nil iff
+the tool's host credentials may be inherited via `inherit_host_auth:`).
+Fields once parked as "reserved for a future phase" (`Description`,
+`SmokeTest`) were deleted — they concentrated nothing and existed only
+to be asserted zero-valued.
+
+Consumers ask the table two questions. *Which tools may inherit host
+auth* — `internal/config/plan.go` (validation),
+`internal/mountplan/inherit_host_auth.go` (the RW credential binds),
+`internal/configui/adapter.go` (the multi-select options) and
+`internal/configexample/render.go` (the annotated template).
+*Which tools ship a boot script* —
+the Init Sequence, held to disk by `TestCatalogInitDBijection` and to
+the smoke-test literals by `TestSmokeTestInitDCountLiteral`. A third
+test, `TestCatalogDockerfilePresence`, requires every `Key` to appear as
+a token in the embedded Dockerfile, so a catalog row without an install
+layer fails `make go-test`.
 
 Why the term exists: before this concept was named, three parallel
-hand-maintained literals described the same 30 tools — a `KnownTools`
+hand-maintained literals described the same tools — a `KnownTools`
 slice and a `ToolBuildArg` map in `internal/config/tools.go`, with the
-upcoming Phase 10 init manifest poised to be the third. Adding a tool
-meant editing three files plus the Dockerfile install layer; missing
-one site silently broke either the build args, the image hash, or
-(eventually) the boot init. The "Tool Catalog" name turns three
-fan-outs into one declaration with typed accessors.
+init manifest poised to be the third. Adding a tool meant editing three
+files plus the Dockerfile install layer; missing one site silently
+broke either the build args, the image hash, or (eventually) the boot
+init. The "Tool Catalog" name turned three fan-outs into one
+declaration with typed accessors. Build args and the catalog-driven
+image hash have since been retired along with per-tool opt-out (see
+`docs/internals/image-build.md`, "Tools removal"); what survives is the
+declaration the bijection tests hold the Dockerfile and `init.d/`
+against.
 
 ### Config Plan
 
@@ -94,12 +109,14 @@ The full pipeline that turns the cobra `--config` flag plus the host's
 `.toolbox.yaml` files into a fully-resolved, fully-validated `*Config`
 handed to subcommands.
 
-Concretely: `viper-defaults (per-call viper.New) → walk-up search from
-CWD for the nearest .toolbox.yaml → file-load (global ~/.toolbox.yaml +
-project + explicit --config when set) → tool-defaults from
-catalog.Keys() → mount-defaults (no-op on *Config; mountplan.Plan owns
-the actual mount-defaults) → validate (ValidateMountsRoot +
-ValidateShell)`. Owned by `internal/config`. The single seam runtime
+Concretely: `viper-defaults (per-call viper.New; only the EnvBoundKeys
+seeding AutomaticEnv needs — per-tool defaults are gone) → walk-up
+search from CWD for the nearest .toolbox.yaml → file-load (global
+~/.toolbox.yaml + project, or explicit --config which short-circuits
+both) → TOOLBOX_* env overlay → unmarshal (+ env key-case restore) →
+defaults backstop → validation tail (applyValidationTail)`. Mount
+defaults are not part of it — `mountplan.Plan` owns those. Owned by
+`internal/config`. The single seam runtime
 callers and tests cross is `config.Plan(searchFrom, explicitOverride)`;
 pure merge inspection (no filesystem, byte-input only) is exposed as
 `config.Merge(global, project, explicit []byte)`. Each invocation uses
@@ -182,17 +199,18 @@ The two-phase decision tree that guarantees the image referenced by a
 `SessionPlan.Image` is ready before `ContainerCreate`.
 
 Concretely: `imageplan.Refresh(ctx, cli, image)` runs at the top of
-`container.Shell` and best-effort syncs registry images against their
-remote (delegated to `imagepull.RefreshIfStale`, TTL-cached, errors
-swallowed); no-op for local hash-tagged images. `imageplan.Ensure(ctx,
-cli, image, buildArgs)` runs inside the `ActionCreate` branch and is a
-hard guarantee: present locally → done; registry tag missing → fatal
-(pull already had its chance); local hash tag missing → auto-build via
-`build.BuildImage` using the SessionPlan's `BuildArgs`. Owned by
-`internal/imageplan`. `Ensure` is exposed as a package-level `var` so
-lifecycle tests can swap it without redeclaring the closure at every
-call site; the inner `buildImageFn` seam lets imageplan's own tests
-assert the build call without touching the embedded Dockerfile context.
+`container.Shell` and best-effort syncs the image against its registry,
+steered by the Image's pull policy — `never` skips the round-trip,
+`always` forces `imagepull.ForcePull`, `auto` (default) goes through
+the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed.
+`imageplan.Ensure(ctx, cli, image)` runs inside the `ActionCreate`
+branch and is a hard guarantee: present in the local store → done;
+otherwise fatal, because the pull already had its chance. **`Ensure`
+never builds** — `toolbox build` is the explicit user-driven path for a
+local rebuild (the auto-build branch died with the local-hash image
+tag). Owned by `internal/imageplan`. `Ensure` is exposed as a
+package-level `var` so lifecycle tests can swap it without redeclaring
+the closure at every call site.
 
 Why the term exists: before this concept was named, the policy was
 split — `imagepull.RefreshIfStale` ran inline at the top of
@@ -203,7 +221,7 @@ rebuild?" lived only in the closure; "when do we refresh?" lived only
 in the inline call). Tests of code that exercised the not-found branch
 redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
-auto-build seam into a single var inside `imageplan`.
+create-branch guarantee into a single var inside `imageplan`.
 
 ### Docker Identity
 

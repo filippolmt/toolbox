@@ -91,10 +91,10 @@ Append a row to `Entries`, alphabetical by `Key`. Keep it sorted for readability
 {Key: "<tool>"},
 ```
 
-`Entry` has three fields you may populate (the trailing `Description` / `SmokeTest` fields are reserved — leave them unset):
+`Entry` has exactly three fields:
 
 - **`Key`** — the tool key, also the `inherit_host_auth` value. Must match the token used in the Dockerfile layer/ARG.
-- **`InitScript`** — set only when the tool ships a runtime `init.d/<NN>-<tool>.sh` script (see the init.d gotcha in CLAUDE.md for the synced edits that requires); leave `""` otherwise.
+- **`InitScript`** — set only when the tool ships a runtime `init.d/<NN>-<tool>.sh` script (see the init.d gotcha in `.claude/rules/image-build.md` for the synced edits that requires); leave `""` otherwise.
 - **`HostAuthMount`** — set only when the tool should be eligible for `inherit_host_auth` (reading the host's real credential path, read-only). Most tools leave it nil. Shape: `&HostAuthMount{HostPath: "~/.config/<tool>", ContainerPath: "/home/toolbox/.config/<tool>"}`.
 
 Two Go tests enforce the catalog↔image bijection, so a missing or misspelled entry fails `make go-test` (not just the slow image build):
@@ -106,7 +106,9 @@ Two Go tests enforce the catalog↔image bijection, so a missing or misspelled e
 
 Add a `check_optional` line in the same alphabetical-ish block (look around the other tool checks). Format: `check_optional "<key>" <binary> <version-command>`. The `<binary>` is what `command -v` checks; the version command confirms the binary is functional. Skip this only if the tool literally has no version flag.
 
-If you also added an `init.d/<NN>-<tool>.sh` script, bump the hand-maintained `count -ne N` literal in the smoke-test's init.d bijection block. `TestCatalogInitDBijection` (Go) catches the catalog↔disk direction, but that smoke-test count is a separate literal that drifts silently — count by hand.
+If you also added an `init.d/<NN>-<tool>.sh` script, bump the `count -ne N` gate **and** the `N (M catalog InitScripts + K system …)` message in the smoke-test's init.d bijection block. Don't count by hand: `TestSmokeTestInitDCountLiteral` derives all three numbers from the catalog + the embedded `init.d/`, so `make go-test` tells you what they should be.
+
+If the tool also ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the `-ge N` floor in `_zsh_vendor_completions_check` the same way — `TestSmokeTestVendorCompletionsFloor` derives N from the Dockerfile write sites. See the completion gotcha in `.claude/rules/image-build.md` for the two edits and the declared-exception list.
 
 ### 5. `renovate.json`
 

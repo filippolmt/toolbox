@@ -30,7 +30,7 @@ Repo-local SDD: `./toolbox sdd list` / `./toolbox sdd init <name>` — see [docs
 
 ## Architecture
 
-Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `sessionplan` → `container` (Docker SDK). Runtime image baked from `internal/build/assets/` (Dockerfile + entrypoint + smoke-test + init.d/), embedded so `toolbox build` runs anywhere. Tool catalog (`internal/catalog`) drives Dockerfile build args + init.d bijection.
+Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `sessionplan` → `container` (Docker SDK). Runtime image baked from `internal/build/assets/` (Dockerfile + entrypoint + smoke-test + init.d/), embedded so `toolbox build` runs anywhere. Tool catalog (`internal/catalog`) declares every bundled CLI — it drives the init.d bijection, the smoke-test count literals and `inherit_host_auth` eligibility (no build args: per-tool opt-out is gone).
 
 Adding a CLI to the image: use the `add-cli` skill — it covers all required edits (Dockerfile layer + ARG + `internal/catalog` `Entries` row + smoke bijection + Renovate + optional `~/.toolbox/<tool>` mount) and finishes with `/verify`. No per-tool opt-out (see `.claude/rules/image-build.md`).
 

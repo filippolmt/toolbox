@@ -31,11 +31,14 @@ The `fetch-docker` stage of `internal/build/assets/Dockerfile` installs the stat
 
 ## Tool version pinning
 
-Every external binary in the Dockerfile is pinned by version, and Renovate bumps them. SHA256 verification is applied only when upstream publishes a checksums file: the fetch stage downloads it and pipes through `sha256sum -c -` (e.g. `fetch-gh`, `fetch-helm`, `fetch-kubectl`, `fetch-rtk`), which self-heals across bumps and re-tags. Tools whose upstream ships **no** checksums file (bat, fd, eza, zoxide, shellcheck, shfmt, Docker CLI, gcloud) download over HTTPS only. Hand-pinned per-arch SHA256 literals were removed: they broke the build on every version bump and even on an upstream re-tag of the same version (see zoxide 0.10.0), while providing no guarantee a self-authored hash could actually deliver. Adding a new tool is a 2-edit (or 3-edit when a runtime init script is needed) operation:
+Every external binary in the Dockerfile is pinned by version, and Renovate bumps them. SHA256 verification is applied only when upstream publishes a checksums file: the fetch stage downloads it and pipes through `sha256sum -c -` (e.g. `fetch-gh`, `fetch-helm`, `fetch-kubectl`, `fetch-rtk`), which self-heals across bumps and re-tags. Tools whose upstream ships **no** checksums file (bat, fd, eza, zoxide, shellcheck, shfmt, Docker CLI, gcloud) download over HTTPS only. Hand-pinned per-arch SHA256 literals were removed: they broke the build on every version bump and even on an upstream re-tag of the same version (see zoxide 0.10.0), while providing no guarantee a self-authored hash could actually deliver. Adding a new tool touches four files, plus one or two more when it needs a boot script or persists state — the `add-cli` skill drives the whole sequence:
 
-1. New row in `internal/catalog/catalog.go` `Entries`.
-2. New install `RUN` block in `internal/build/assets/Dockerfile`.
-3. (optional) New `init.d/<NN>-<tool>.sh` if `InitScript` is set on the catalog row.
+1. Install layer + pinned `ARG <TOOL>_VERSION` in `internal/build/assets/Dockerfile` (own `fetch-<tool>` stage for a static binary, final-stage `RUN` for apt/npm/pip).
+2. New row in `internal/catalog/catalog.go` `Entries` — `TestCatalogDockerfilePresence` requires the `Key` to appear as a token in the Dockerfile.
+3. `check_optional` line in `internal/build/assets/smoke-test.sh`, plus the derived count literals when the tool adds an `init.d` script or a vendor completion.
+4. `customManagers` entry in `renovate.json`, or the pin silently freezes.
+5. (optional) `init.d/<NN>-<tool>.sh` matching the row's `InitScript`, when the tool needs a boot step.
+6. (optional) A `~/.toolbox/<tool>` bind in `internal/mountplan/defaults.go`, when the CLI stores credentials or state that must survive `toolbox stop`.
 
 There is no per-tool opt-out: every CLI is installed unconditionally. The `ARG INSTALL_<TOOL>` build-arg pattern was removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Use `inherit_host_auth:` in `.toolbox.yaml` to share host credentials with the container — see [inherit-host-auth](../configuration.md#inherit-host-auth).
 

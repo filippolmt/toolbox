@@ -1,22 +1,25 @@
-// Drift guards for the hand-maintained integer literals in
-// assets/smoke-test.sh. TestCatalogInitDBijection proves catalog↔disk SET
-// equality; the smoke test additionally hardcodes *counts* that no Go test
-// touched until now — CLAUDE.md flags both as "drifts silently — count by
-// hand". These tests pin each literal to its derivable source of truth so a
-// forgotten bump fails `make go-test` instead of slipping into the image.
+// Drift guards for the integer literals in assets/smoke-test.sh.
+// TestCatalogInitDBijection proves catalog↔disk SET equality; the smoke test
+// additionally hardcodes *counts*, which no runtime check can bump for you.
+// These tests pin each literal to its derivable source of truth — the catalog
+// and the embedded assets — so a forgotten bump fails `make go-test` instead
+// of slipping into the image.
 //
 // smoke-test.sh is read from disk (it is deliberately NOT embedded — embed.go
 // ships only the Docker build context; the smoke test runs from a checkout in
 // CI). Go runs tests with the package directory as CWD, so the relative path
-// is stable.
+// is stable. The Dockerfile, being part of that build context, is read from
+// build.Assets instead.
 
 package catalog_test
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,12 +83,25 @@ func TestSmokeTestInitDCountLiteral(t *testing.T) {
 	}
 }
 
-// TestSmokeTestVendorCompletionsFloor keeps the vendor-completions floor in
-// smoke-test.sh internally consistent: the `-ge N` runtime gate, the
-// "expect >= N files" comment, and the inventory of tool names the comment
-// lists must all agree. The runtime check validates the real file count in
-// CI; this guards the literal against drift from its own documented inventory
-// (e.g. adding a tool to the list but forgetting to bump the floor).
+// vendorCompletionsUnparseable lists the completions no Dockerfile parse can
+// see. kubectx/kubens are fetched inside `for tool in kubectx kubens` with
+// `-o ".../_${tool}"`, so their write site is a shell variable, not a literal
+// path. bwrap/curl/rg have no Dockerfile write site at all — their completions
+// ride the apt packages bubblewrap, curl and ripgrep. Anything added here is a
+// claim the runtime gate cannot verify per-name; keep it short.
+var vendorCompletionsUnparseable = []string{"kubectx", "kubens", "bwrap", "curl", "rg"}
+
+// TestSmokeTestVendorCompletionsFloor pins the vendor-completions `-ge N`
+// literal in smoke-test.sh to the number of completions the image is expected
+// to ship: every statically parseable `_<tool>` write site in the Dockerfile
+// plus the declared unparseable set above.
+//
+// The gate stays a floor, not set-equality: both Dockerfile write paths run
+// under `set -eux`, so a generator that breaks (the cf 0.0.6 regression) fails
+// the build long before the smoke test. What the floor adds is a net-drop
+// alarm — e.g. a base-image bump that stops shipping bwrap/curl/rg
+// completions. Deriving N here means adding a completion and forgetting the
+// literal fails `make go-test` instead of passing silently.
 func TestSmokeTestVendorCompletionsFloor(t *testing.T) {
 	src := readSmokeTest(t)
 
@@ -93,40 +109,37 @@ func TestSmokeTestVendorCompletionsFloor(t *testing.T) {
 	if gate == nil {
 		t.Fatal(`vendor-completions ` + "`-ge N`" + ` gate not found in smoke-test.sh`)
 	}
-	gateN := mustAtoi(t, gate[1])
 
-	comment := regexp.MustCompile(`>=\s*(\d+)\s+files`).FindStringSubmatch(src)
-	if comment == nil {
-		t.Fatal(`vendor-completions "expect >= N files" comment not found in smoke-test.sh`)
+	want := dockerfileVendorCompletionPaths(t)
+	for _, name := range vendorCompletionsUnparseable {
+		want[name] = struct{}{}
 	}
-	if commentN := mustAtoi(t, comment[1]); commentN != gateN {
-		t.Errorf("vendor-completions comment floor = %d but `-ge` gate = %d; keep them in sync", commentN, gateN)
-	}
+	names := slices.Sorted(maps.Keys(want))
 
-	inv := vendorCompletionInventory(t, src)
-	if len(inv) != gateN {
-		t.Errorf("vendor-completions inventory lists %d tools %v but floor is %d; bump the `-ge`/comment literals or fix the list", len(inv), inv, gateN)
+	if got := mustAtoi(t, gate[1]); got != len(names) {
+		t.Errorf("smoke-test.sh vendor-completions `-ge` gate = %d, want %d; expected completions: %v",
+			got, len(names), names)
 	}
 }
 
-// vendorCompletionInventory extracts the comma-separated tool names the
-// "default build:" comment enumerates, up to the closing paren. Comment `#`
-// markers and surrounding whitespace are stripped; empty fragments (e.g. a
-// trailing comma) are dropped.
-func vendorCompletionInventory(t *testing.T, src string) []string {
+// dockerfileVendorCompletionPaths returns every tool name appearing in a
+// literal `vendor-completions/_<tool>` path in the embedded Dockerfile: the
+// final-stage precompute redirects plus the fetch-stage mv/cp/-o targets.
+// Today every such path is a write site; the parse does not distinguish, so a
+// future `rm`/`test -f` on one of them would inflate the count — visibly, in
+// the failure message. Keeping it dumb is the point: `_${tool}` does not
+// match either, which is why the loop-written pair is declared in
+// vendorCompletionsUnparseable instead of parsed.
+func dockerfileVendorCompletionPaths(t *testing.T) map[string]struct{} {
 	t.Helper()
-	m := regexp.MustCompile(`(?s)default build:(.*?)\)`).FindStringSubmatch(src)
-	if m == nil {
-		t.Fatal(`vendor-completions inventory ("default build: …)") not found in smoke-test.sh`)
+	out := map[string]struct{}{}
+	for _, m := range regexp.MustCompile(`vendor-completions/_([a-zA-Z0-9_-]+)`).FindAllStringSubmatch(readDockerfile(t), -1) {
+		out[m[1]] = struct{}{}
 	}
-	var names []string
-	for raw := range strings.SplitSeq(m[1], ",") {
-		name := strings.TrimSpace(strings.ReplaceAll(raw, "#", ""))
-		if name != "" {
-			names = append(names, name)
-		}
+	if len(out) == 0 {
+		t.Fatal("no vendor-completions/_<tool> write sites found in the Dockerfile; the parse is broken")
 	}
-	return names
+	return out
 }
 
 func countInitDFiles(t *testing.T) int {

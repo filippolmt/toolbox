@@ -25,15 +25,10 @@ import "sort"
 // location that users may opt into inheriting via `inherit_host_auth:`. A
 // nil pointer means the CLI is not eligible for host inheritance — config
 // validation rejects ineligible keys.
-//
-// Description and SmokeTest are reserved for future use and must stay
-// zero-valued (TestCatalogShape locks this).
 type Entry struct {
 	Key           string         // tool key, also the inherit_host_auth value
 	InitScript    string         // relative path under init.d/, or "" if none
 	HostAuthMount *HostAuthMount // non-nil iff eligible for inherit_host_auth
-	Description   string         // reserved
-	SmokeTest     string         // reserved
 }
 
 // HostAuthMount declares the host → container credential path mapping used

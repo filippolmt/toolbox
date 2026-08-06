@@ -10,8 +10,7 @@ import (
 )
 
 // TestCatalogShape asserts every Entry has a non-empty Key. InitScript may
-// be populated; when set it must end in ".sh". Description and SmokeTest are
-// reserved for future use and must stay zero-valued.
+// be populated; when set it must end in ".sh".
 func TestCatalogShape(t *testing.T) {
 	if len(catalog.Entries) == 0 {
 		t.Fatal("catalog.Entries must not be empty")
@@ -19,10 +18,6 @@ func TestCatalogShape(t *testing.T) {
 	for i, e := range catalog.Entries {
 		if e.Key == "" {
 			t.Errorf("entry[%d]: Key must be non-empty (got %+v)", i, e)
-		}
-		if e.Description != "" || e.SmokeTest != "" {
-			t.Errorf("entry[%d] %q: Description and SmokeTest must be zero; got Description=%q SmokeTest=%q",
-				i, e.Key, e.Description, e.SmokeTest)
 		}
 		if e.InitScript != "" && !strings.HasSuffix(e.InitScript, ".sh") {
 			t.Errorf("entry[%d] %q: InitScript must end in \".sh\" when populated; got %q",
