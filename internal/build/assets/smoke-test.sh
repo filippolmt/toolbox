@@ -137,15 +137,23 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
-    # l. vendor-completions populated (expect >= 20 files on default build:
-    # kubectl, helm, gh, glab, yq, docker, uv, pnpm, starship, bat, codex,
-    # herdr, kubectx, kubens, fd, eza, brew, bwrap, curl, rg). The last three
-    # ride their apt packages (bubblewrap, curl, ripgrep) rather than the
-    # precompute layer or a fetch stage. cf was here until 0.0.6 removed the
-    # `completions <shell>` subcommand — reinstate when upstream restores it.
+    # l. vendor-completions populated. Three sources feed the directory: the
+    # final-stage precompute layer (<tool> completion zsh > _<tool>), fetch
+    # stages that extract a prebuilt _<tool> from a release tarball or repo,
+    # and apt packages that ship their own. Both Dockerfile sources run under
+    # `set -eux`, so a broken generator fails the build — this floor only
+    # catches net drops. The literal below is derived from the Dockerfile by
+    # TestSmokeTestVendorCompletionsFloor; let that test tell you the number.
     _zsh_vendor_completions_check() {
         count=$(ls /usr/share/zsh/vendor-completions 2>/dev/null | wc -l)
-        [ "$count" -ge 20 ]
+        if [ "$count" -ge 20 ]; then
+            echo "${count} files"
+            return 0
+        fi
+        # Name the survivors on failure: a bare count cannot tell you which
+        # generator stopped shipping.
+        echo "only ${count} files: $(ls /usr/share/zsh/vendor-completions 2>/dev/null | tr "\n" " ")"
+        return 1
     }
 
     # m. image locale is UTF-8 (ENV LANG=C.UTF-8 in the Dockerfile) — under
@@ -189,7 +197,7 @@ check_zsh() {
     _zsh_assert "18 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
-    _zsh_assert "vendor-completions >= 20"     _zsh_vendor_completions_check
+    _zsh_assert "vendor-completions floor"     _zsh_vendor_completions_check
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
     _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check

@@ -11,6 +11,18 @@ import (
 	"github.com/filippolmt/toolbox/internal/catalog"
 )
 
+// readDockerfile returns the embedded Dockerfile source. Sibling of
+// readSmokeTest (smoke_test_literals_test.go) — the smoke test is read from
+// disk, the Dockerfile from the embedded build context.
+func readDockerfile(t *testing.T) string {
+	t.Helper()
+	data, err := fs.ReadFile(build.Assets, build.AssetDir+"/Dockerfile")
+	if err != nil {
+		t.Fatalf("read embedded Dockerfile: %v", err)
+	}
+	return string(data)
+}
+
 // keyTokenRE matches a catalog key as a whole word. `\b` anchors apply to
 // both alternation branches so the underscore key `playwright_cli` only
 // matches the exact tokens `playwright_cli` or `playwright-cli`, never a
@@ -35,11 +47,7 @@ func keyTokenRE(key string) *regexp.Regexp {
 // in the Dockerfile MUST be declared in catalog.Entries. Reviewers and the
 // add-cli skill enforce this socially.
 func TestCatalogDockerfilePresence(t *testing.T) {
-	data, err := fs.ReadFile(build.Assets, build.AssetDir+"/Dockerfile")
-	if err != nil {
-		t.Fatalf("read embedded Dockerfile: %v", err)
-	}
-	dockerfile := string(data)
+	dockerfile := readDockerfile(t)
 
 	var missing []string
 	for _, e := range catalog.Entries {
@@ -61,11 +69,7 @@ func TestCatalogDockerfilePresence(t *testing.T) {
 // full local rebuild. Same drift class the init.d bijection test covers.
 // fetch-base itself is the shared parent and is exempt.
 func TestFetchStageCopyBijection(t *testing.T) {
-	data, err := fs.ReadFile(build.Assets, build.AssetDir+"/Dockerfile")
-	if err != nil {
-		t.Fatalf("read embedded Dockerfile: %v", err)
-	}
-	dockerfile := string(data)
+	dockerfile := readDockerfile(t)
 
 	stageRE := regexp.MustCompile(`(?im)^FROM\s+\S+\s+AS\s+(fetch-[a-z0-9-]+)\s*$`)
 	copyRE := regexp.MustCompile(`(?im)^COPY\s+(?:--\S+\s+)*--from=(fetch-[a-z0-9-]+)\s`)

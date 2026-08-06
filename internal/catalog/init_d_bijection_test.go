@@ -1,6 +1,7 @@
 // Bijection test: catalog.Entry.InitScript ↔ assets/init.d/*.sh.
-// External test package (catalog_test) keeps the production import graph
-// acyclic — internal/build depends on internal/catalog for WriteCanonical.
+// External test package (catalog_test) so the test may import internal/build
+// for the embedded assets without inverting the production import direction
+// (internal/catalog is a leaf and must stay one).
 
 package catalog_test
 
