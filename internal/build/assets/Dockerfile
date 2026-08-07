@@ -38,7 +38,7 @@ ARG YQ_VERSION=4.53.3
 ARG STARSHIP_VERSION=1.26.0
 ARG PNPM_VERSION=11.20.0
 ARG BUN_VERSION=1.3.14
-ARG UV_VERSION=0.12.2
+ARG UV_VERSION=0.12.3
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
 ARG SONARQUBE_CLI_VERSION=1.5.0.4158
