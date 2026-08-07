@@ -59,7 +59,16 @@ Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-t
 
 The runtime image ships a curated Claude Code statusline and applies it to every container by force-setting `~/.claude/settings.json` `statusLine` on each shell start (only that key is rewritten — everything else in your settings is preserved). It is image-owned policy: a local edit to the statusline is overwritten on the next shell, so **change it via a PR to this repo**, not in the container.
 
-![The managed statusline rendered in a toolbox shell: cwd, repo:branch, model + effort, context bar, token count, lines changed, session duration, and behavioral-mode badge.](img/statusline.png)
+Every segment is conditional except the working directory — the line shows only what applies right now:
+
+```
+ …/github/toolbox │  toolbox:main*  feat-xyz │  #1234 │  Opus 5 high FAST │  ACCEPT
+   │ @reviewer │ vim:NORMAL │ ▰▱▱▱▱ 22% │  1h15m │ 5h 24% 17:00 · 7d 41% 06/02 17:00
+```
+
+Left to right: working directory, `repo:branch` with dirty/ahead/behind markers and the linked-worktree name, the open PR for the branch (clickable, coloured by review state), model with reasoning effort and fast mode, permission-mode badge, custom agent, vim mode, output style, behavioural-mode badge, context-window bar, session duration, and 5-hour / 7-day rate-limit usage with reset times.
+
+![The managed statusline rendered in a toolbox shell, in colour with Nerd Font glyphs.](img/statusline.png)
 
 Set `managed_statusline: false` to opt out — the boot hook then leaves your own `statusLine` untouched. Default (omitted or `true`) is managed-on. Mechanics in [shell-start internals](internals/shell-start.md#managed-statusline).
 

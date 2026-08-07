@@ -36,11 +36,16 @@ mkdir -p "$(dirname "$_claude_lock")"
     # 0 with no output on empty input, which would otherwise leave _tmp empty and
     # silently skip the patch). Only replace the live file when jq produced
     # non-empty output, so a parse failure never truncates a valid settings.json.
+    # refreshInterval: event-driven ticks go quiet while the session is idle, so
+    # the duration and rate-limit reset clocks would freeze. hideVimModeIndicator:
+    # statusline-command.sh renders vim.mode itself — without this the mode shows
+    # twice (our segment + the built-in `-- INSERT --` line).
+    _patch='.statusLine = {type: "command", command: $cmd, refreshInterval: 30, hideVimModeIndicator: true}'
     if [ -s "$_settings" ] && jq --arg cmd "bash '$_statusline'" \
-            '.statusLine = {type: "command", command: $cmd}' \
+            "$_patch" \
             "$_settings" >"$_tmp" 2>/dev/null \
         || printf '{}' | jq --arg cmd "bash '$_statusline'" \
-            '.statusLine = {type: "command", command: $cmd}' >"$_tmp" 2>/dev/null; then
+            "$_patch" >"$_tmp" 2>/dev/null; then
         if [ -s "$_tmp" ]; then mv -f "$_tmp" "$_settings"; else rm -f "$_tmp"; fi
     else
         rm -f "$_tmp"
