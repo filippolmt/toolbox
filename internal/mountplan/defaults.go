@@ -69,6 +69,11 @@ func defaults() []config.Mount {
 		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
 		// on the host (flat layout) while the container keeps the upstream split.
 		//
+		// The two names read inverted against the upstream dirs (cf-auth backs
+		// "cloudflare", cf-config backs ".cf") deliberately: they are named after
+		// what they hold, and they stay put because mount names are user-visible
+		// in `mounts:` patches and `--share cf`.
+		//
 		// "cf-auth" — since cf 0.5 the credential store lives under
 		// ~/.config/cloudflare/ (xdgAppPaths appName "cloudflare", no leading
 		// dot): config/default.json holds the OAuth tokens and

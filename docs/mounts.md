@@ -8,12 +8,12 @@ Every credential path the container sees lives under `~/.toolbox/` on the host (
 
 So by default the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. directly — `gh auth login` inside the container writes to `~/.toolbox/gh/` on the host, not to the host's `~/.config/gh/`. To opt individual CLIs into the host's real credential path instead, see [inherit-host-auth](configuration.md#inherit-host-auth).
 
-rtk and cf each spread state across two binds: cf splits config across non-XDG paths with no env override, and rtk follows XDG (config in `~/.config/rtk`, data in `~/.local/share/rtk`) with only a partial `RTK_DB_PATH` redirect:
+rtk and cf each spread state across two binds: cf keeps its credentials and its user config under two unrelated app dirs (hard-coded, no env override), and rtk follows XDG (config in `~/.config/rtk`, data in `~/.local/share/rtk`) with only a partial `RTK_DB_PATH` redirect:
 
 - rtk: `~/.config/rtk` (config) + `~/.local/share/rtk` (analytics/tee dumps).
 - cf: `~/.config/cloudflare/` (OAuth tokens in `config/default.json`, named profiles in `profiles/`) + `~/.config/.cf/config.json` (context defaults, completion marker).
 
-In both cases the bind sources are nested under a single `~/.toolbox/<tool>/` root so the host layout stays flat.
+In both cases the bind sources are nested under a single `~/.toolbox/<tool>/` root so the host layout stays flat. The cf mount names read inverted against those app dirs on purpose: `cf-auth` backs the credential dir (`cloudflare`) and `cf-config` the preferences dir (`.cf`), named after what they hold rather than after the upstream directory, and kept stable because the names are user-visible in `mounts:` patches and `--share cf`.
 
 ## SSH host-key trust (git over SSH)
 
