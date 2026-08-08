@@ -48,11 +48,13 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/docker", false, true)
 	assertMount(t, mounts, "~/.toolbox/cf/auth", false, true)
 	assertMount(t, mounts, "~/.toolbox/cf/config", false, true)
-	// Regression guard: cf 0.1.0 (Wrangler vNext) stores OAuth tokens in
-	// ~/.config/.cf/auth.jsonc, not the legacy ~/.cf/config.toml. The cf-auth
-	// mount must target the new path or `cf auth login` wipes on `toolbox stop`.
-	assertMountTarget(t, mounts, "~/.toolbox/cf/auth", "/home/toolbox/.config/.cf")
-	assertMountTarget(t, mounts, "~/.toolbox/cf/config", "/home/toolbox/.config/cf")
+	// Regression guard: cf keeps its credential store under
+	// ~/.config/cloudflare/ (config/default.json + profiles/), not the retired
+	// ~/.config/.cf/auth.jsonc or ~/.cf/config.toml. The cf-auth mount must
+	// target the current path or `cf auth login` wipes on `toolbox stop` and
+	// never reaches the other toolboxes.
+	assertMountTarget(t, mounts, "~/.toolbox/cf/auth", "/home/toolbox/.config/cloudflare")
+	assertMountTarget(t, mounts, "~/.toolbox/cf/config", "/home/toolbox/.config/.cf")
 	assertMount(t, mounts, "~/.toolbox/wrangler", false, true)
 	assertMount(t, mounts, "~/.toolbox/rtk/config", false, true)
 	assertMount(t, mounts, "~/.toolbox/rtk/data", false, true)

@@ -1009,9 +1009,10 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
         "oci-cli==${OCI_VERSION}"; \
       oci --version; \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
-# Cloudflare `cf` (Wrangler vNext preview). State split: ~/.config/.cf/auth.jsonc
-# (OAuth tokens) + ~/.config/cf/config.json (context defaults) — both bound under
-# ~/.toolbox/cf/ via mountplan defaults.
+# Cloudflare `cf` (Wrangler vNext preview). Its state splits across two upstream
+# paths (credential store + user config), both bound under ~/.toolbox/cf/ — the
+# canonical targets live in the cf-auth/cf-config entries of
+# internal/mountplan/defaults.go, not restated here (they move upstream).
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "cf@${CF_CLI_VERSION}"; \
