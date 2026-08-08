@@ -69,16 +69,19 @@ func defaults() []config.Mount {
 		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
 		// on the host (flat layout) while the container keeps the upstream split.
 		//
-		// "cf-auth" — cf (Wrangler vNext) stores its OAuth tokens in
-		// ~/.config/.cf/auth.jsonc (access_token + refresh_token), the same
-		// ~/.config/.<tool> layout wrangler uses. Written by `cf auth login`;
-		// without this bind the auth wipes on every `toolbox stop`. Pre-0.1.0 cf
-		// used ~/.cf/config.toml — no longer read, so we mount the new path only.
-		{Name: "cf-auth", Source: "~/.toolbox/cf/auth", Target: "/home/toolbox/.config/.cf", ReadOnly: false, CreateIfMissing: true},
-		// "cf-config" — ~/.config/cf/config.json stores context defaults
+		// "cf-auth" — since cf 0.5 the credential store lives under
+		// ~/.config/cloudflare/ (xdgAppPaths appName "cloudflare", no leading
+		// dot): config/default.json holds the OAuth tokens and
+		// profiles/directory-bindings.json the named profiles. Written by
+		// `cf auth login`; without this bind the auth wipes on every
+		// `toolbox stop` AND stays invisible to every other running toolbox.
+		// Earlier layouts (~/.config/.cf/auth.jsonc, ~/.cf/config.toml) are no
+		// longer read, so we mount the current path only.
+		{Name: "cf-auth", Source: "~/.toolbox/cf/auth", Target: "/home/toolbox/.config/cloudflare", ReadOnly: false, CreateIfMissing: true},
+		// "cf-config" — ~/.config/.cf/config.json stores context defaults
 		// (`cf context set …`), the shell-completion install marker, and other
 		// UI prefs. Lighter than the auth file but still useful to persist.
-		{Name: "cf-config", Source: "~/.toolbox/cf/config", Target: "/home/toolbox/.config/cf", ReadOnly: false, CreateIfMissing: true},
+		{Name: "cf-config", Source: "~/.toolbox/cf/config", Target: "/home/toolbox/.config/.cf", ReadOnly: false, CreateIfMissing: true},
 		// Cloudflare Wrangler CLI auth + config — populated by `wrangler login`
 		// inside the container. Wrangler uses xdg-app-paths(".wrangler") which
 		// on Linux resolves to ~/.config/.wrangler/; OAuth credentials land at

@@ -11,7 +11,7 @@ So by default the container never sees the real `~/.ssh`, `~/.gitconfig`, `~/.cl
 rtk and cf each spread state across two binds: cf splits config across non-XDG paths with no env override, and rtk follows XDG (config in `~/.config/rtk`, data in `~/.local/share/rtk`) with only a partial `RTK_DB_PATH` redirect:
 
 - rtk: `~/.config/rtk` (config) + `~/.local/share/rtk` (analytics/tee dumps).
-- cf: `~/.config/.cf/auth.jsonc` (OAuth tokens) + `~/.config/cf/config.json` (context defaults, completion marker).
+- cf: `~/.config/cloudflare/` (OAuth tokens in `config/default.json`, named profiles in `profiles/`) + `~/.config/.cf/config.json` (context defaults, completion marker).
 
 In both cases the bind sources are nested under a single `~/.toolbox/<tool>/` root so the host layout stays flat.
 

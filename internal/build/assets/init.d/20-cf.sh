@@ -31,7 +31,7 @@ Full list: `cf agent-context --list`.
 ## Authentication
 
 - Preferred: `CLOUDFLARE_API_TOKEN` env var
-- Alternative: `cf auth login` (OAuth tokens persist in `~/.config/.cf/auth.jsonc`; context defaults and completion marker live in `~/.config/cf/config.json`. Both bind-mounted from `~/.toolbox/cf/{auth,config}` so they survive `toolbox stop`.)
+- Alternative: `cf auth login` (OAuth tokens persist in `~/.config/cloudflare/config/default.json`; context defaults and completion marker live in `~/.config/.cf/config.json`. Both bind-mounted from `~/.toolbox/cf/{auth,config}` so they survive `toolbox stop` and are shared by every toolbox.)
 - Verify: `cf auth whoami`
 
 ## Output discipline
