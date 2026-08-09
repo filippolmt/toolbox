@@ -149,7 +149,10 @@ inspection (no filesystem side-effects) is exposed as
 `sessionplan.Merge(cfg, workspace, ports, cliVersion)`. Port-mismatch
 detection is a separate pure function `sessionplan.MissingPublishPorts(plan,
 inspect)`; `internal/container` formats and emits the warning so the
-UI-conventions concern stays at the Docker edge. SessionPlan does NOT
+UI-conventions concern stays at the Docker edge. Host-port conflict
+detection follows the same split — `sessionplan.ConflictingPublishPorts(plan,
+occupied)` decides, `internal/container` reads the occupied set off the
+daemon and words the pre-flight error. SessionPlan does NOT
 encode host-process identity (UID/GID) or daemon-fs state (sock GID);
 those are read at the Docker edge by lifecycle.
 

@@ -369,6 +369,55 @@ func MissingPublishPorts(wanted network.PortMap, inspect container.InspectRespon
 	return missing
 }
 
+// PortConflict is one wanted publish port whose host side is already bound
+// by another container. Port is the host port plus protocol ("8877/tcp");
+// Holder is the container name reported by the daemon.
+type PortConflict struct {
+	Port   string
+	Holder string
+}
+
+// ConflictingPublishPorts returns the wanted publish ports whose host side is
+// already taken, sorted by port so messages are stable. occupied maps
+// "<hostPort>/<proto>" to the name of the container holding it; anything
+// absent counts as free.
+//
+// The host side is what matters: Docker binds wanted[containerPort].HostPort
+// on the host, so a shifted mapping (host 9877 -> container 8877) does not
+// clash with a holder of 8877. The host IP is deliberately ignored — the
+// kernel refuses 127.0.0.1:p over a wildcard bind of p and vice versa, so
+// comparing IPs would miss the common 0.0.0.0 holder.
+//
+// Best-effort by construction: a caller that can only see Docker containers
+// passes a Docker-only occupied set, and a non-Docker host process holding
+// the port still surfaces as the daemon's own create-time error.
+func ConflictingPublishPorts(wanted network.PortMap, occupied map[string]string) []PortConflict {
+	if len(occupied) == 0 {
+		return nil
+	}
+	seen := make(map[string]string, len(wanted))
+	for port, bindings := range wanted {
+		// Protocol comes from the wanted port, the number from the host side
+		// of its binding: the key must describe what gets bound on the host.
+		proto := string(port.Proto())
+		for _, b := range bindings {
+			key := b.HostPort + "/" + proto
+			if holder, taken := occupied[key]; taken {
+				seen[key] = holder
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	conflicts := make([]PortConflict, 0, len(seen))
+	for key, holder := range seen {
+		conflicts = append(conflicts, PortConflict{Port: key, Holder: holder})
+	}
+	sort.Slice(conflicts, func(i, j int) bool { return conflicts[i].Port < conflicts[j].Port })
+	return conflicts
+}
+
 // ContainerNamePrefix is the prefix that identifies toolbox-managed
 // containers. Exported so internal/container.StopAll can filter the
 // host's full container list without taking a SessionPlan input.

@@ -1,6 +1,7 @@
 package sessionplan_test
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -718,6 +719,89 @@ func TestMissingPublishPortsTable(t *testing.T) {
 			sort.Strings(want)
 			if !slices.Equal(got, want) {
 				t.Errorf("MissingPublishPorts = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// --- ConflictingPublishPorts ---
+
+// hostBinding builds the wanted-side PortMap entry for "<container>/<proto>"
+// published on host port hostPort, mirroring what parsePublishSpecs emits.
+func hostBinding(containerPort, hostPort string) (network.Port, []network.PortBinding) {
+	return network.MustParsePort(containerPort),
+		[]network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort}}
+}
+
+func TestConflictingPublishPortsTable(t *testing.T) {
+	wantedCF, bindingsCF := hostBinding("8877/tcp", "8877")
+	wantedShift, bindingsShift := hostBinding("8877/tcp", "9877")
+	wantedUDP, bindingsUDP := hostBinding("53/udp", "53")
+
+	cases := []struct {
+		name     string
+		wanted   network.PortMap
+		occupied map[string]string
+		want     []sessionplan.PortConflict
+	}{
+		{
+			name:     "free_port_no_conflict",
+			wanted:   network.PortMap{wantedCF: bindingsCF},
+			occupied: map[string]string{"9000/tcp": "other"},
+			want:     nil,
+		},
+		{
+			name:     "held_port_names_holder",
+			wanted:   network.PortMap{wantedCF: bindingsCF},
+			occupied: map[string]string{"8877/tcp": "toolbox-other-1234abcd"},
+			want:     []sessionplan.PortConflict{{Port: "8877/tcp", Holder: "toolbox-other-1234abcd"}},
+		},
+		{
+			// The host side is what has to be free: a shifted mapping
+			// (host 9877 -> container 8877) must not match a holder of 8877.
+			name:     "shifted_mapping_matches_host_side_only",
+			wanted:   network.PortMap{wantedShift: bindingsShift},
+			occupied: map[string]string{"8877/tcp": "other"},
+			want:     nil,
+		},
+		{
+			// Protocol is part of the identity: a UDP holder never blocks TCP.
+			name:     "protocol_is_part_of_the_key",
+			wanted:   network.PortMap{wantedCF: bindingsCF},
+			occupied: map[string]string{"8877/udp": "other"},
+			want:     nil,
+		},
+		{
+			name:     "udp_conflict_reported",
+			wanted:   network.PortMap{wantedUDP: bindingsUDP},
+			occupied: map[string]string{"53/udp": "resolver"},
+			want:     []sessionplan.PortConflict{{Port: "53/udp", Holder: "resolver"}},
+		},
+		{
+			name: "multiple_conflicts_sorted_by_port",
+			wanted: network.PortMap{
+				network.MustParsePort("8878/tcp"): {{HostPort: "8878"}},
+				network.MustParsePort("8877/tcp"): {{HostPort: "8877"}},
+			},
+			occupied: map[string]string{"8877/tcp": "a", "8878/tcp": "b"},
+			want: []sessionplan.PortConflict{
+				{Port: "8877/tcp", Holder: "a"},
+				{Port: "8878/tcp", Holder: "b"},
+			},
+		},
+		{
+			name:     "no_occupancy_known_no_conflict",
+			wanted:   network.PortMap{wantedCF: bindingsCF},
+			occupied: nil,
+			want:     nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sessionplan.ConflictingPublishPorts(tc.wanted, tc.occupied)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("ConflictingPublishPorts = %v, want %v", got, tc.want)
 			}
 		})
 	}

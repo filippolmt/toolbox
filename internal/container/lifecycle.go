@@ -76,6 +76,76 @@ func formatPublishMismatch(plan *sessionplan.SessionPlan, inspect container.Insp
 	)
 }
 
+// preflightPortConflicts fails the create path when a wanted host port is
+// already published by another container. Port bindings are fixed at
+// ContainerCreate, so the alternative is the daemon's own opaque "Bind for
+// 127.0.0.1:8877 failed: port is already allocated" — which names neither the
+// port set nor the holder. Reading the occupied set is the Docker-edge half of
+// the split; sessionplan.ConflictingPublishPorts stays pure.
+//
+// Best-effort by design: a listing failure, or a port held by a non-Docker
+// host process, waves the create through to the daemon's error rather than
+// blocking a shell on a check that cannot see everything.
+func preflightPortConflicts(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+	list, err := cli.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return nil
+	}
+
+	occupied := map[string]string{}
+	workspaces := map[string]string{}
+	for _, c := range list.Items {
+		if len(c.Names) == 0 {
+			continue
+		}
+		name := containerName(c)
+		workspaces[name] = workspaceOf(c)
+		for _, p := range c.Ports {
+			if p.PublicPort == 0 {
+				continue
+			}
+			occupied[fmt.Sprintf("%d/%s", p.PublicPort, p.Type)] = name
+		}
+	}
+
+	conflicts := sessionplan.ConflictingPublishPorts(plan.PortBindings, occupied)
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return errors.New(formatPortConflict(conflicts, workspaces))
+}
+
+// formatPortConflict renders the pre-flight failure, grouped by holder so a
+// published range collapses to one line per container. A toolbox holder earns
+// the extra suggestion: credentials live on shared ~/.toolbox bind mounts, so
+// the login can simply be finished inside that session — deliberately not
+// offering `toolbox stop` there, which would kill someone else's shell.
+// workspaces maps holder name to workspaceOf's output ("-" when unknown).
+func formatPortConflict(conflicts []sessionplan.PortConflict, workspaces map[string]string) string {
+	byHolder := map[string][]string{}
+	holders := []string{}
+	for _, c := range conflicts {
+		if _, seen := byHolder[c.Holder]; !seen {
+			holders = append(holders, c.Holder)
+		}
+		byHolder[c.Holder] = append(byHolder[c.Holder], c.Port)
+	}
+	sort.Strings(holders)
+
+	var b strings.Builder
+	b.WriteString("cannot publish ports already bound on this host (bindings are fixed at container creation):")
+	for _, holder := range holders {
+		fmt.Fprintf(&b, "\n  %s held by container %q", strings.Join(byHolder[holder], ", "), holder)
+		if ws := workspaces[holder]; ws != "-" {
+			fmt.Fprintf(&b, " (workspace %s)", ws)
+		}
+		if sessionplan.IsToolboxContainerName(holder) {
+			b.WriteString("\n    that is another toolbox: run the login inside it — credentials are shared through the ~/.toolbox mounts")
+		}
+	}
+	return b.String()
+}
+
 // --- Lifecycle ---
 
 // NewClient returns a Docker client configured from the environment.
@@ -109,6 +179,29 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning("mount skipped: " + w)
 	}
 
+	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
+	inspect := inspectResult.Container
+	op, opErr := runplan.Compute(inspect, inspectErr)
+	if opErr != nil {
+		return fmt.Errorf("failed to inspect container: %w", opErr)
+	}
+
+	// Publish ports are only ever bound by a create: connecting to a live
+	// container publishes nothing new, it can only be short of what was asked
+	// for. Hence the split — conflicts are a pre-flight error on the create
+	// path, a mismatch is a warning everywhere else. Both run before the image
+	// work below: neither depends on the image, and a known-fatal port conflict
+	// should not cost the user a registry pull or an overlay build first.
+	if len(plan.PortBindings) > 0 {
+		if op.Action == runplan.ActionCreate {
+			if conflictErr := preflightPortConflicts(ctx, cli, plan); conflictErr != nil {
+				return conflictErr
+			}
+		} else if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
+			ui.Warning(formatPublishMismatch(plan, inspect, missing))
+		}
+	}
+
 	// Best-effort registry sync of the base image. Hard guarantee runs in
 	// imageplan.Ensure inside createAndStart.
 	imageplan.Refresh(ctx, cli, plan.Image)
@@ -124,19 +217,6 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return overlayErr
 	}
 	plan.Image = image
-
-	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
-	inspect := inspectResult.Container
-	op, opErr := runplan.Compute(inspect, inspectErr)
-	if opErr != nil {
-		return fmt.Errorf("failed to inspect container: %w", opErr)
-	}
-
-	if op.Action != runplan.ActionCreate && len(plan.PortBindings) > 0 {
-		if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
-			ui.Warning(formatPublishMismatch(plan, inspect, missing))
-		}
-	}
 
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
 	if dispatchErr != nil {
@@ -339,8 +419,9 @@ func toolboxContainers(ctx context.Context, cli client.APIClient) ([]container.S
 }
 
 // containerName returns the container's primary name without Docker's leading
-// "/". Only called on summaries from toolboxContainers, which guarantees Names
-// is non-empty.
+// "/". Callers must guarantee Names is non-empty: toolboxContainers filters
+// nameless entries out for List/StopAll, preflightPortConflicts guards its own
+// raw ContainerList the same way.
 func containerName(c container.Summary) string {
 	return strings.TrimPrefix(c.Names[0], "/")
 }

@@ -900,6 +900,159 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 	}
 }
 
+// holderSummary is the container-list entry of a container publishing
+// hostPort/tcp with a workspace bind, i.e. what the pre-flight reads to build
+// its occupied set.
+func holderSummary(name string, hostPort uint16) container.Summary {
+	return container.Summary{
+		Names: []string{name},
+		Ports: []container.PortSummary{{PublicPort: hostPort, Type: "tcp"}},
+		Mounts: []container.MountPoint{
+			{Destination: mountplan.WorkspaceTarget, Source: "/home/u/other"},
+		},
+	}
+}
+
+// TestShellPortConflictFailsBeforeCreate covers the pre-flight conflict
+// check on the create path: port bindings are fixed at ContainerCreate, so a
+// host port already held by another container can only produce the daemon's
+// opaque "port is already allocated" failure. Shell must fail first, naming
+// the holder — and, when the holder is another toolbox, pointing at it as the
+// place to finish the login (credentials are shared through ~/.toolbox)
+// without ever suggesting the user stop someone else's session.
+//
+// The table also pins the pass-through half of the contract: a list failure,
+// an unpublished port, and a host-port-less publish spec must all let the
+// create reach the daemon rather than blocking the shell on a check that
+// cannot see everything.
+func TestShellPortConflictFailsBeforeCreate(t *testing.T) {
+	cases := []struct {
+		name        string
+		specs       []string
+		summaries   []container.Summary
+		listErr     error
+		wantCreate  bool
+		wantSnippet []string
+		wantAbsent  []string
+	}{
+		{
+			name:        "toolbox holder points at the shared session",
+			specs:       []string{"8877:8877"},
+			summaries:   []container.Summary{holderSummary("/toolbox-other-a1b2c3d4", 8877)},
+			wantSnippet: []string{"8877/tcp", "toolbox-other-a1b2c3d4", "/home/u/other", "run the login inside it"},
+			wantAbsent:  []string{"toolbox stop"},
+		},
+		{
+			name:        "foreign holder gets no toolbox suggestion",
+			specs:       []string{"8877:8877"},
+			summaries:   []container.Summary{holderSummary("/nginx-proxy", 8877)},
+			wantSnippet: []string{"8877/tcp", "nginx-proxy"},
+			wantAbsent:  []string{"another toolbox"},
+		},
+		{
+			// PublicPort 0 = exposed but not published: nothing is bound on the
+			// host, so it must not register as occupancy.
+			name:  "exposed-but-unpublished port is not occupancy",
+			specs: []string{"8877:8877"},
+			summaries: []container.Summary{{
+				Names: []string{"/sibling"},
+				Ports: []container.PortSummary{{PrivatePort: 8877, Type: "tcp"}},
+			}},
+			wantCreate: true,
+		},
+		{
+			// `-p 8877` leaves the host side to the daemon (HostPort ""), so
+			// there is no host port to compare and nothing to pre-flight.
+			name:       "publish with no host port never conflicts",
+			specs:      []string{"8877"},
+			summaries:  []container.Summary{holderSummary("/nginx-proxy", 8877)},
+			wantCreate: true,
+		},
+		{
+			name:       "list failure waves the create through",
+			specs:      []string{"8877:8877"},
+			listErr:    errors.New("daemon unreachable"),
+			wantCreate: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+
+			created := false
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
+				},
+				listFn: func(_ context.Context, _ client.ContainerListOptions) ([]container.Summary, error) {
+					return tc.summaries, tc.listErr
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					created = true
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+
+			err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs))
+			if tc.wantCreate {
+				if err != nil {
+					t.Fatalf("Shell() error: %v", err)
+				}
+				if !created {
+					t.Error("ContainerCreate must still run when no conflict is known")
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("Shell must fail when a wanted host port is already bound")
+			}
+			for _, want := range tc.wantSnippet {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q missing %q", err, want)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(err.Error(), absent) {
+					t.Errorf("error %q must not mention %q", err, absent)
+				}
+			}
+			if created {
+				t.Error("ContainerCreate must not run once a conflict is known")
+			}
+		})
+	}
+}
+
+// TestFormatPortConflictGroupsByHolder pins the wording contract the Shell
+// table only samples: one line per holder (holders sorted, ports in the
+// conflict order ConflictingPublishPorts already sorted them into), the
+// workspace suffix omitted for an unknown workspace, and the toolbox hint
+// attached to the toolbox holder alone.
+func TestFormatPortConflictGroupsByHolder(t *testing.T) {
+	got := formatPortConflict(
+		[]sessionplan.PortConflict{
+			{Port: "8877/tcp", Holder: "toolbox-b-22222222"},
+			{Port: "8878/tcp", Holder: "toolbox-b-22222222"},
+			{Port: "9000/tcp", Holder: "nginx"},
+		},
+		map[string]string{"toolbox-b-22222222": "/home/u/b", "nginx": "-"},
+	)
+
+	want := "cannot publish ports already bound on this host (bindings are fixed at container creation):" +
+		"\n  9000/tcp held by container \"nginx\"" +
+		"\n  8877/tcp, 8878/tcp held by container \"toolbox-b-22222222\" (workspace /home/u/b)" +
+		"\n    that is another toolbox: run the login inside it — credentials are shared through the ~/.toolbox mounts"
+	if got != want {
+		t.Errorf("formatPortConflict() =\n%s\nwant\n%s", got, want)
+	}
+}
+
 // TestShellPublishEmptyYieldsNoBindings verifies the empty-publish path:
 // nil specs yield zero ExposedPorts and zero PortBindings on the
 // container config handed to Docker. The error cases (bogus / not-a-port)
