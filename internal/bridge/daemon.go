@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -482,13 +483,20 @@ func hostOpenCommand(ctx context.Context, url string) error {
 }
 
 // runQuiet execs name with args detached from stdio — shared launch plumbing
-// for the URL handler and the editor launchers. Direct exec, no shell.
+// for the URL handler and the editor launchers. Direct exec, no shell. stderr
+// is captured rather than discarded: a bare "exit status 1" from
+// /usr/bin/open hides the only useful part ("Unable to find application named
+// …"), which the audit log is the sole place to read.
 func runQuiet(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if reason := strings.TrimSpace(stderr.String()); reason != "" {
+			return fmt.Errorf("run %s: %w: %s", cmd.Path, err, reason)
+		}
 		return fmt.Errorf("run %s: %w", cmd.Path, err)
 	}
 	return nil

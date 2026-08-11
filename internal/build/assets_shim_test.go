@@ -34,6 +34,11 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 		{"bin/code", []string{
 			sourceLib,
 			`WORKSPACE="` + mountplan.WorkspaceTarget + `"`,
+			// The shell's WorkingDir is the host-path mirror whenever
+			// mountplan.WorkspaceMirrorPath allows one, so paths reaching the
+			// shim are usually host paths already — the mirror branch is what
+			// keeps `code .` working there.
+			`"${TOOLBOX_HOST_WORKSPACE}" | "${TOOLBOX_HOST_WORKSPACE}"/*)`,
 		}},
 		{"bin/proximo", []string{sourceLib}},
 		{"bin/git-credential-toolbox", []string{sourceLib}},

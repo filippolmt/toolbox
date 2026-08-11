@@ -1,8 +1,9 @@
 #!/bin/sh
 # toolbox bridge editor shim. Shadows `code`/`codium` inside the
-# container (editor inferred from basename): resolves each path argument,
-# translates the /workspace prefix to the host path from
-# TOOLBOX_HOST_WORKSPACE, and POSTs it to the host daemon's /edit endpoint
+# container (editor inferred from basename): resolves each path argument to a
+# host path — either by swapping the /workspace prefix for
+# TOOLBOX_HOST_WORKSPACE, or as-is when it already sits under the host-path
+# mirror of the workspace — and POSTs it to the host daemon's /edit endpoint
 # so the host editor opens it. Unlike xdg-open (exit 0 so OAuth flows never
 # block), this is an interactive command — failures exit non-zero.
 
@@ -43,13 +44,21 @@ for ARG in "$@"; do
     esac
     ABS="$(realpath -m -- "${ARG}")"
     case "${ABS}" in
-    "${WORKSPACE}" | "${WORKSPACE}"/*) ;;
+    # Canonical mount target: swap the prefix for the host path.
+    "${WORKSPACE}" | "${WORKSPACE}"/*)
+        HOST_ARG="${TOOLBOX_HOST_WORKSPACE}${ABS#"${WORKSPACE}"}"
+        ;;
+    # Host-path mirror (the shell's WorkingDir whenever mountplan mirrors the
+    # workspace at its own host path) — already a host path, pass it through.
+    "${TOOLBOX_HOST_WORKSPACE}" | "${TOOLBOX_HOST_WORKSPACE}"/*)
+        HOST_ARG="${ABS}"
+        ;;
     *)
-        echo "${EDITOR_NAME}: ${ARG} is outside ${WORKSPACE} — host cannot see it" >&2
+        echo "${EDITOR_NAME}: ${ARG} is outside ${WORKSPACE} (or ${TOOLBOX_HOST_WORKSPACE}) — host cannot see it" >&2
         exit 1
         ;;
     esac
-    set -- "$@" "${TOOLBOX_HOST_WORKSPACE}${ABS#"${WORKSPACE}"}"
+    set -- "$@" "${HOST_ARG}"
 done
 shift "${NARGS}"
 
