@@ -76,6 +76,15 @@ type Model struct {
 	editing bool
 	ed      editor
 
+	// previewBase is the target document as it stood when the editor opened —
+	// the "before" side the preview diffs against. Read once per editor session:
+	// the panel repaints on every keystroke, so re-reading there would put file
+	// I/O on the render path. It goes stale only against an edit made to the
+	// file from outside while the editor is open, and the save's own Doctor pass
+	// still validates the real result.
+	previewBase    []byte
+	previewBaseErr error
+
 	status   string
 	loadErr  error
 	quitting bool
@@ -212,6 +221,9 @@ func (m *Model) openEditor() {
 		return
 	}
 	key := st.Key
+	// Baseline for the preview diff, taken once for the whole editor session
+	// (see Model.previewBase).
+	m.previewBase, _, m.previewBaseErr = readMaybe(m.target)
 	// Signal when the edit will fork a value into a scope that does not set it,
 	// so creating an override is a deliberate act, not a surprise.
 	if st.ScopeSet {
@@ -334,6 +346,7 @@ func (m Model) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) closeEditor() {
 	m.editing = false
 	m.ed = editor{}
+	m.previewBase, m.previewBaseErr = nil, nil
 }
 
 func (m Model) updateChoice(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -347,14 +360,7 @@ func (m Model) updateChoice(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.ed.cursor++
 		}
 	case "enter":
-		choice := m.ed.options[m.ed.cursor]
-		var err error
-		if m.ed.kind == edTri {
-			err = SaveBool(m.target, m.cwd, m.ed.key, triValue(choice))
-		} else {
-			err = SaveScalar(m.target, m.cwd, m.ed.key, choice)
-		}
-		m.finishSave(err)
+		m.finishSave(m.saveEdit())
 	}
 	return m, nil
 }
@@ -376,32 +382,76 @@ func (m Model) updateMulti(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		opt := m.ed.options[m.ed.cursor]
 		m.ed.selected[opt] = !m.ed.selected[opt]
 	case "enter":
-		m.finishSave(m.saveMulti())
+		m.finishSave(m.saveEdit())
 	}
 	return m, nil
 }
 
-// saveMulti persists a multi-select editor via the writer matching its key.
-func (m *Model) saveMulti() error {
+// pendingMutator is the editor's current pending edit as a single value: the
+// one mutation both the preview and the save use, so the panel cannot describe
+// a change the writer would not make. A nil return means the key has no
+// mutation (no editor is open, or a key was given an editor without a writer).
+//
+// Keys whose mutation is more than "write the value" are matched by key first;
+// everything else falls through to its editor kind.
+func (m Model) pendingMutator() configedit.Mutator {
 	switch m.ed.key {
 	case "sdd":
-		return SaveSDD(m.target, m.cwd, m.ed.selected)
+		return configedit.SDDEnabled(m.ed.selected)
 	case "mounts":
-		return SaveMountDisabled(m.target, m.cwd, m.ed.selected)
-	default:
-		var vals []string
-		for _, opt := range m.ed.options {
-			if m.ed.selected[opt] {
-				vals = append(vals, opt)
-			}
-		}
-		return SaveStringList(m.target, m.cwd, m.ed.key, vals)
+		// The checkboxes name the defaults to *disable*, not to keep.
+		return configedit.MountsDisabled(m.ed.selected)
+	case "shells":
+		return configedit.Shells(m.shellEntries())
+	case "env":
+		return configedit.StringMap("env", rowsToPairs(m.ed.rows))
+	case "worktree":
+		return configedit.WorktreeSeed(rowsToValues(m.ed.rows))
 	}
+	switch m.ed.kind {
+	case edEnum:
+		return configedit.Scalar(m.ed.key, m.ed.options[m.ed.cursor])
+	case edString:
+		return configedit.Scalar(m.ed.key, strings.TrimSpace(m.ed.input.Value()))
+	case edTri:
+		return configedit.Bool(m.ed.key, triValue(m.ed.options[m.ed.cursor]))
+	case edMulti:
+		return configedit.StringList(m.ed.key, m.selectedOptions())
+	}
+	return nil
+}
+
+// selectedOptions lists the checked multi-select options in option order.
+func (m Model) selectedOptions() []string {
+	var vals []string
+	for _, opt := range m.ed.options {
+		if m.ed.selected[opt] {
+			vals = append(vals, opt)
+		}
+	}
+	return vals
+}
+
+// saveEdit commits the editor's pending mutation — the same value the preview
+// renders. sdd goes through SaveSDD because its edit carries a post-commit
+// .gitignore fence reconcile on top of the yaml mutation.
+func (m Model) saveEdit() error {
+	if m.ed.key == "sdd" {
+		return SaveSDD(m.target, m.cwd, m.ed.selected)
+	}
+	mut := m.pendingMutator()
+	if mut == nil {
+		// Unreachable today (openEditor only opens keys pendingMutator covers);
+		// an explicit error stops a future key from reporting a false "saved"
+		// with no write behind it.
+		return fmt.Errorf("no writer for key %q", m.ed.key)
+	}
+	return apply(m.target, m.cwd, mut)
 }
 
 func (m Model) updateString(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "enter" {
-		m.finishSave(SaveScalar(m.target, m.cwd, m.ed.key, strings.TrimSpace(m.ed.input.Value())))
+		m.finishSave(m.saveEdit())
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -417,8 +467,7 @@ func (m *Model) finishSave(err error) {
 		return
 	}
 	key := m.ed.key
-	m.editing = false
-	m.ed = editor{}
+	m.closeEditor()
 	m.reload()
 	m.status = fmt.Sprintf("saved %s to %s", key, m.scope)
 }

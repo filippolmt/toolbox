@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	yaml "gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
@@ -30,6 +29,12 @@ var (
 	styleSelected = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	styleErr      = lipgloss.NewStyle().Foreground(colErr)
 	stylePanel    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+
+	// Diff sides in the pending-change panel. Reusing the project/error hues
+	// keeps added/removed reading as the familiar green/red without a second
+	// palette to keep in sync.
+	stylePreviewAdd = lipgloss.NewStyle().Foreground(colProject)
+	stylePreviewDel = lipgloss.NewStyle().Foreground(colErr)
 )
 
 func originColor(st KeyState) color.Color {
@@ -238,110 +243,48 @@ func (m Model) renderRows() string {
 	return b.String()
 }
 
-// renderPreview shows the YAML that would be written for the pending edit, so
-// the change is visible before it is saved.
+// renderPreview shows the change the pending edit would make to the target
+// document: the editor's own Mutator applied to the document as it stood when
+// the editor opened, diffed against it. Rendering the real mutation is what
+// keeps the panel from claiming a shape the writer does not produce.
 func (m Model) renderPreview() string {
-	doc := m.previewDoc()
-	title := styleTitle.Render("pending YAML") + "\n\n"
-	if doc == nil {
-		return stylePanel.Width(38).Render(title + styleKeybar.Render("# "+m.ed.key+": (unset — key removed)"))
-	}
-	out, err := yaml.Marshal(doc)
+	title := styleTitle.Render("pending change") + "\n\n"
+	body, err := m.previewBody()
 	if err != nil {
-		return stylePanel.Width(38).Render(title + styleErr.Render("preview unavailable"))
+		return stylePanel.Width(38).Render(title + styleErr.Render("preview unavailable: "+err.Error()))
 	}
-	return stylePanel.Width(38).Render(title + strings.TrimRight(string(out), "\n"))
+	return stylePanel.Width(38).Render(title + body)
 }
 
-// previewDoc builds the marshalable document fragment for the editor's current
-// pending value. A nil return means the edit removes the key.
-func (m Model) previewDoc() any {
-	key := m.ed.key
-	switch m.ed.kind {
-	case edEnum:
-		return map[string]any{key: m.ed.options[m.ed.cursor]}
-	case edString:
-		v := strings.TrimSpace(m.ed.input.Value())
-		if v == "" {
-			return nil
-		}
-		return map[string]any{key: v}
-	case edTri:
-		b := triValue(m.ed.options[m.ed.cursor])
-		if b == nil {
-			return nil
-		}
-		return map[string]any{key: *b}
-	case edMulti:
-		if key == "mounts" {
-			return mountsPreviewDoc(m.ed.options, m.ed.selected)
-		}
-		var vals []string
-		for _, opt := range m.ed.options {
-			if m.ed.selected[opt] {
-				vals = append(vals, opt)
-			}
-		}
-		if len(vals) == 0 {
-			return nil
-		}
-		return map[string]any{key: vals}
-	case edRows:
-		return m.rowsPreviewDoc()
+func (m Model) previewBody() (string, error) {
+	if m.previewBaseErr != nil {
+		return "", m.previewBaseErr
 	}
-	return nil
-}
-
-// mountsPreviewDocEntry is the `{name, disabled}` patch shape SaveMountDisabled
-// writes; a struct (not a map) so the two keys marshal in the writer's order.
-type mountsPreviewDocEntry struct {
-	Name     string `yaml:"name"`
-	Disabled bool   `yaml:"disabled"`
-}
-
-// mountsPreviewDoc renders the mounts editor's selection the way the writer
-// records it. The checkboxes name the default mounts to *disable*, so a bare
-// `mounts:` list would claim the inverse — that the checked mounts are the only
-// ones kept.
-func mountsPreviewDoc(options []string, selected map[string]bool) any {
-	var patches []mountsPreviewDocEntry
-	for _, opt := range options {
-		if selected[opt] {
-			patches = append(patches, mountsPreviewDocEntry{Name: opt, Disabled: true})
-		}
+	mut := m.pendingMutator()
+	if mut == nil {
+		return "", fmt.Errorf("no pending change for %s", m.ed.key)
 	}
-	if len(patches) == 0 {
-		return nil
+	lines, err := previewDiff(m.target, m.previewBase, mut)
+	if err != nil {
+		return "", err
 	}
-	return map[string]any{"mounts": patches}
-}
-
-func (m Model) rowsPreviewDoc() any {
-	switch m.ed.key {
-	case "env":
-		pairs := rowsToPairs(m.ed.rows)
-		if len(pairs) == 0 {
-			return nil
-		}
-		return map[string]any{"env": pairs}
-	case "shells":
-		pairs := rowsToPairs(m.ed.rows)
-		if len(pairs) == 0 {
-			return nil
-		}
-		inner := map[string]any{}
-		for name, path := range pairs {
-			inner[name] = map[string]any{"path": path}
-		}
-		return map[string]any{"shells": inner}
-	case "worktree":
-		vals := rowsToValues(m.ed.rows)
-		if len(vals) == 0 {
-			return nil
-		}
-		return map[string]any{"worktree": map[string]any{"seed": vals}}
+	// An unchanged fragment would imply a pending change exists; say plainly
+	// that re-selecting the active value writes nothing.
+	if len(lines) == 0 {
+		return styleKeybar.Render("no change"), nil
 	}
-	return nil
+	var b strings.Builder
+	for i, l := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if l.Added {
+			b.WriteString(stylePreviewAdd.Render("+ " + l.Text))
+			continue
+		}
+		b.WriteString(stylePreviewDel.Render("- " + l.Text))
+	}
+	return b.String(), nil
 }
 
 func (m Model) renderStatus() string {

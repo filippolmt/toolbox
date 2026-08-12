@@ -13,8 +13,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/configio"
-	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // Scope selects which config layer every read and write targets.
@@ -427,129 +425,49 @@ func ListValue(cfg *config.Config, key string) []string {
 	return nil
 }
 
+// The savers below are Doctor-gated writes of one configedit Mutator each. The
+// mutation itself lives in configedit (the package that owns config domain
+// knowledge); what this layer adds is the validate-and-roll-back envelope of
+// apply. The config UI's preview renders the very same Mutator, which is what
+// keeps what it shows and what gets written from drifting apart.
+
 // SaveScalar writes a scalar key (empty value removes it — the clean
 // reset-to-default), gated by Doctor validation.
 func SaveScalar(target, cwd, key, value string) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if value == "" {
-			configio.RemoveMapKey(doc, key)
-			return
-		}
-		configio.SetMapValue(doc, key, value)
-	})
+	return apply(target, cwd, configedit.Scalar(key, value))
 }
 
-// SaveBool writes a tri-state bool key. A nil value removes the key so "unset"
-// never persists as an explicit false (unset carries distinct meaning — e.g.
-// proximo unset = auto-detect).
+// SaveBool writes a tri-state bool key; a nil value removes it.
 func SaveBool(target, cwd, key string, v *bool) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if v == nil {
-			configio.RemoveMapKey(doc, key)
-			return
-		}
-		configio.SetMapBool(doc, key, *v)
-	})
+	return apply(target, cwd, configedit.Bool(key, v))
 }
 
 // SaveStringList replaces a top-level string sequence (empty removes the key),
 // gated by Doctor validation.
 func SaveStringList(target, cwd, key string, values []string) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if len(values) == 0 {
-			configio.RemoveMapKey(doc, key)
-			return
-		}
-		seq := configio.EnsureChildSeq(doc, key)
-		seq.Content = seq.Content[:0]
-		for _, v := range values {
-			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
-		}
-	})
+	return apply(target, cwd, configedit.StringList(key, values))
 }
 
-// SaveMap replaces a top-level string→string mapping (env), written in sorted
-// key order for a deterministic file; an empty map removes the key. Gated by
-// Doctor validation.
+// SaveMap replaces a top-level string→string mapping (env), gated by Doctor
+// validation.
 func SaveMap(target, cwd, key string, pairs map[string]string) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if len(pairs) == 0 {
-			configio.RemoveMapKey(doc, key)
-			return
-		}
-		node := configio.EnsureChildMap(doc, key)
-		node.Content = node.Content[:0]
-		for _, k := range sortedKeys(pairs) {
-			node.Content = append(node.Content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k},
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: pairs[k]})
-		}
-	})
+	return apply(target, cwd, configedit.StringMap(key, pairs))
 }
 
-// ShellEntry is one desired shells: entry for SaveShells. OrigName is the name
-// the row carried before editing ("" for a freshly added row); it lets a rename
-// carry the source shell's Env overlay to the new name.
-type ShellEntry struct {
-	Name, Path, OrigName string
-	Env                  map[string]string
-}
+// ShellEntry is one desired shells: entry for SaveShells — the rows editor's
+// output shape, aliased so the UI does not have to name the configedit package
+// to build one.
+type ShellEntry = configedit.ShellEntry
 
-// SaveShells reconciles the shells: block to entries: it removes any shell not
-// named by an entry and writes each entry's .path. For an unchanged name the
-// existing env block is left untouched (its formatting/comments survive); for a
-// rename (Name != OrigName) the carried Env overlay is written under the new
-// name so it is not lost. An empty set removes the block. Gated by Doctor.
+// SaveShells reconciles the shells: block to entries (an empty set removes the
+// block), gated by Doctor validation.
 func SaveShells(target, cwd string, entries []ShellEntry) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if len(entries) == 0 {
-			configio.RemoveMapKey(doc, "shells")
-			return
-		}
-		root := configio.EnsureChildMap(doc, "shells")
-		want := make(map[string]bool, len(entries))
-		for _, e := range entries {
-			want[e.Name] = true
-		}
-		for _, name := range childKeys(root) {
-			if !want[name] {
-				configio.RemoveMapKey(root, name)
-			}
-		}
-		for _, e := range entries {
-			entry := configio.EnsureChildMap(root, e.Name)
-			configio.SetMapValue(entry, "path", e.Path)
-			if e.Name != e.OrigName && len(e.Env) > 0 {
-				env := configio.EnsureChildMap(entry, "env")
-				env.Content = env.Content[:0]
-				for _, k := range sortedKeys(e.Env) {
-					configio.SetMapValue(env, k, e.Env[k])
-				}
-			}
-		}
-	})
+	return apply(target, cwd, configedit.Shells(entries))
 }
 
-// SaveSeed writes worktree.seed (nested), creating/removing the worktree block
-// as needed; an empty list removes the seed key. Gated by Doctor.
+// SaveSeed writes worktree.seed (an empty list removes it), gated by Doctor.
 func SaveSeed(target, cwd string, seed []string) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		if len(seed) == 0 {
-			if wt := configio.ChildValue(doc, "worktree"); wt != nil && wt.Kind == yaml.MappingNode {
-				configio.RemoveMapKey(wt, "seed")
-				if len(wt.Content) == 0 {
-					configio.RemoveMapKey(doc, "worktree")
-				}
-			}
-			return
-		}
-		wt := configio.EnsureChildMap(doc, "worktree")
-		seq := configio.EnsureChildSeq(wt, "seed")
-		seq.Content = seq.Content[:0]
-		for _, v := range seed {
-			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
-		}
-	})
+	return apply(target, cwd, configedit.WorktreeSeed(seed))
 }
 
 // ShellPaths flattens the effective shells map to name→path for the structured
@@ -558,17 +476,6 @@ func ShellPaths(cfg *config.Config) map[string]string {
 	out := make(map[string]string, len(cfg.Shells))
 	for name, s := range cfg.Shells {
 		out[name] = s.Path
-	}
-	return out
-}
-
-// childKeys returns the mapping keys of a mapping node in document order.
-func childKeys(node *yaml.Node) []string {
-	var out []string
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if k := node.Content[i]; k.Kind == yaml.ScalarNode {
-			out = append(out, k.Value)
-		}
 	}
 	return out
 }
@@ -583,15 +490,9 @@ func sortedKeys(m map[string]string) []string {
 }
 
 // SDDOptions returns the known SDD skill keys, sorted — the option set for the
-// structured sdd editor, sourced from the sdd registry so it can't drift.
-func SDDOptions() []string {
-	out := make([]string, 0, len(sdd.Skills))
-	for _, s := range sdd.Skills {
-		out = append(out, s.Key)
-	}
-	sort.Strings(out)
-	return out
-}
+// structured sdd editor. It is the same set configedit.SDDEnabled reconciles,
+// so the checkboxes offered and the keys written cannot drift.
+func SDDOptions() []string { return configedit.SDDKeys() }
 
 // EnabledSDD reports which SDD skills are currently enabled.
 func EnabledSDD(cfg *config.Config) map[string]bool {
@@ -605,37 +506,22 @@ func EnabledSDD(cfg *config.Config) map[string]bool {
 }
 
 // SaveSDD reconciles the SDD skill set through the configedit seam so the TUI
-// produces the same .toolbox.yaml + .gitignore state as `toolbox sdd init`.
-// The yaml reconcile stays transactional and Doctor-gated (enable selected,
-// remove the rest, in a single write; a key carrying a custom steps override
-// is left untouched when it stays enabled; an emptied sdd block is dropped).
-// Only after the yaml commit succeeds does it write the .gitignore fence for
-// each enabled skill and remove it for each disabled one — fences are outside
-// Doctor's contract, so a rejected yaml reconcile rolls back before any fence
-// is touched.
+// produces the same .toolbox.yaml + .gitignore state as `toolbox sdd init`. The
+// yaml reconcile stays transactional and Doctor-gated; only after that commit
+// succeeds does it write the .gitignore fence for each enabled skill and remove
+// it for each disabled one — fences are outside Doctor's contract, so a
+// rejected yaml reconcile rolls back before any fence is touched.
 func SaveSDD(target, cwd string, enabled map[string]bool) error {
-	if err := apply(target, cwd, func(doc *yaml.Node) {
-		for _, key := range SDDOptions() {
-			configedit.SetSDDEnabled(doc, key, enabled[key])
-		}
-	}); err != nil {
+	if err := apply(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
 		return err
 	}
 	return configedit.ReconcileSDDGitignore(filepath.Join(cwd, ".gitignore"), enabled)
 }
 
 // DefaultMountNames returns the names of the built-in default mounts — the
-// candidate set for the structured mounts (disable) editor.
-func DefaultMountNames() []string {
-	var out []string
-	for _, m := range mountplan.Defaults() {
-		if m.Name != "" {
-			out = append(out, m.Name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+// candidate set for the structured mounts (disable) editor, and the same set
+// configedit.MountsDisabled reconciles.
+func DefaultMountNames() []string { return configedit.DefaultMountNames() }
 
 // DisabledMounts reports which default mounts the config currently disables.
 func DisabledMounts(cfg *config.Config) map[string]bool {
@@ -648,48 +534,11 @@ func DisabledMounts(cfg *config.Config) map[string]bool {
 	return out
 }
 
-// SaveMountDisabled reconciles per-default-mount disable state: it adds a
-// `{name, disabled: true}` patch for each disabled default and drops the patch
-// when re-enabled. Only pure disable patches are removed, so a user's richer
-// patch/replace entry (edit those via the $EDITOR escape) is never clobbered.
-// An emptied mounts list is dropped. Gated by Doctor.
+// SaveMountDisabled reconciles per-default-mount disable state (a user's richer
+// patch/replace entry is never clobbered — edit those via the $EDITOR escape),
+// gated by Doctor validation.
 func SaveMountDisabled(target, cwd string, disabled map[string]bool) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		seq := configio.EnsureChildSeq(doc, "mounts")
-		for _, name := range DefaultMountNames() {
-			idx, entry := configio.FindSeqEntryByName(seq, name)
-			switch {
-			case disabled[name]:
-				if entry != nil {
-					configio.SetMapBool(entry, "disabled", true)
-				} else {
-					patch := &yaml.Node{Kind: yaml.MappingNode}
-					configio.SetMapValue(patch, "name", name)
-					configio.SetMapBool(patch, "disabled", true)
-					seq.Content = append(seq.Content, patch)
-				}
-			case idx >= 0 && isPureDisable(entry):
-				seq.Content = append(seq.Content[:idx], seq.Content[idx+1:]...)
-			}
-		}
-		if len(seq.Content) == 0 {
-			configio.RemoveMapKey(doc, "mounts")
-		}
-	})
-}
-
-// isPureDisable reports whether a mounts entry is only a disable patch (name +
-// disabled), so re-enabling can safely drop it without discarding real overrides.
-func isPureDisable(entry *yaml.Node) bool {
-	if entry == nil || entry.Kind != yaml.MappingNode {
-		return false
-	}
-	for _, k := range childKeys(entry) {
-		if k != "name" && k != "disabled" {
-			return false
-		}
-	}
-	return true
+	return apply(target, cwd, configedit.MountsDisabled(disabled))
 }
 
 // EnsureTargetFile creates the target config file (with the docs header) when it
@@ -702,9 +551,7 @@ func EnsureTargetFile(target string) error {
 // Unset removes a key from the target file — the shared path behind tri-state
 // "unset" and "reset to default".
 func Unset(target, cwd, key string) error {
-	return apply(target, cwd, func(doc *yaml.Node) {
-		configio.RemoveMapKey(doc, key)
-	})
+	return apply(target, cwd, configedit.Remove(key))
 }
 
 // apply mutates target through the comment-preserving writer, then validates
@@ -722,7 +569,7 @@ func Unset(target, cwd, key string) error {
 // with zero new validation logic, at the cost of a transient write a
 // concurrent reader could observe. Fine for an interactive single-user TUI;
 // revisit if config editing ever runs concurrently.
-func apply(target, cwd string, mutate func(*yaml.Node)) error {
+func apply(target, cwd string, mutate configedit.Mutator) error {
 	orig, existed, err := readMaybe(target)
 	if err != nil {
 		return err
