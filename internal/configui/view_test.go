@@ -7,19 +7,26 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
-// previewText renders the pending edit's diff as plain text, marker included —
+// previewLines renders the pending edit's diff against an existing document —
 // the assertion surface for what the preview panel claims.
-func previewText(t *testing.T, m Model, base []byte) string {
+func previewLines(t *testing.T, m Model, base []byte) []previewLine {
 	t.Helper()
-	lines, err := previewDiff("preview.yaml", base, m.pendingMutator())
+	lines, err := previewDiff("preview.yaml", base, true, m.pendingMutator())
 	if err != nil {
 		t.Fatalf("previewDiff: %v", err)
 	}
+	return lines
+}
+
+// previewText flattens previewLines into `- `/`+ ` marked text.
+func previewText(t *testing.T, m Model, base []byte) string {
+	t.Helper()
 	var b strings.Builder
-	for _, l := range lines {
+	for _, l := range previewLines(t, m, base) {
 		marker := "- "
 		if l.Added {
 			marker = "+ "
@@ -29,25 +36,37 @@ func previewText(t *testing.T, m Model, base []byte) string {
 	return b.String()
 }
 
+// mountsEditor is the editor state reached by checking `claude` in the mounts
+// multi-select.
+func mountsEditor() Model {
+	return Model{ed: editor{
+		key:      "mounts",
+		kind:     edMulti,
+		options:  []string{"claude", "gh"},
+		selected: map[string]bool{"claude": true},
+	}}
+}
+
 // The mounts editor's checkboxes select the default mounts to *disable*
 // (openEditor seeds them from DisabledMounts), and the writer records that as a
 // `{name, disabled: true}` patch. A preview that rendered the selection as a
 // bare `mounts:` list claimed the inverse of the pending edit — that the checked
 // mount was the only one kept.
 func TestPreviewMountsShowsDisablePatch(t *testing.T) {
-	m := Model{ed: editor{
-		key:      "mounts",
-		kind:     edMulti,
-		options:  []string{"claude", "gh"},
-		selected: map[string]bool{"claude": true},
-	}}
+	m := mountsEditor()
+	lines := previewLines(t, m, []byte("pull: never\n"))
 
-	got := previewText(t, m, nil)
+	got := previewText(t, m, []byte("pull: never\n"))
 	if !strings.Contains(got, "name: claude") || !strings.Contains(got, "disabled: true") {
 		t.Errorf("preview does not show the disable patch the writer produces:\n%s", got)
 	}
-	if strings.Contains(got, "+ - claude") {
-		t.Errorf("preview lists claude as a kept mount, inverting the edit:\n%s", got)
+	// A bare sequence item is the inverting shape. Compare on the trimmed line
+	// rather than a marked substring: the item's own indentation depends on the
+	// encoder, and baking it into the needle is how this assertion goes inert.
+	for _, l := range lines {
+		if l.Added && strings.TrimSpace(l.Text) == "- claude" {
+			t.Errorf("preview lists claude as a kept mount, inverting the edit:\n%s", got)
+		}
 	}
 }
 
@@ -83,13 +102,41 @@ func TestPreviewReportsNoChangeForAnIdenticalEdit(t *testing.T) {
 	}
 }
 
+// A target that does not exist yet is created carrying the docs header, so the
+// preview has to account for it two ways: rendering the mutation alone
+// under-reports the write by exactly those header lines, and rendering an empty
+// document as the "before" side puts a `{}` removal in the panel that no file
+// ever held.
+func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
+	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+
+	lines, err := previewDiff("new.yaml", nil, false, m.pendingMutator())
+	if err != nil {
+		t.Fatalf("previewDiff: %v", err)
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		if !l.Added {
+			t.Errorf("an absent target has no before side, got removal %q", l.Text)
+		}
+		b.WriteString(l.Text + "\n")
+	}
+	got := b.String()
+	if !strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("preview must include the docs header the create writes:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("preview must include the edit itself:\n%s", got)
+	}
+}
+
 // previewCase is one editable key: the editor state a user would reach, and the
 // pending value it carries.
 type previewCase struct {
 	key  string
 	open func(m *Model)
-	// save performs the same edit through the key's exported writer, named and
-	// argued by hand. It is the independent oracle: the preview comes from the
+	// save performs the same edit through apply, naming the mutator and its
+	// arguments by hand. It is the independent oracle: the preview comes from the
 	// model's own dispatch, so comparing the two catches a dispatch that reaches
 	// for the wrong mutation — the defect class behind the inverted mounts
 	// preview.
@@ -113,8 +160,8 @@ func requireHostAuthPath(t *testing.T, home, key string) {
 
 // TestPreviewMatchesWriterForEveryEditableKey is the permanent net over the
 // defect class: for every key with an editor, what the preview says will be
-// written must be exactly what its writer puts on disk, and the model's own save
-// path must land on the same bytes. The preview and the writers used to be
+// written must be exactly what the key's own mutator puts on disk, and the
+// model's own save path must land on the same bytes. The preview and the writers used to be
 // independent models of the same mutation, indexed on different axes (editor
 // kind vs key), and they diverged wherever those axes failed to coincide —
 // mounts inverted the edit, sdd showed a list where a map is written, shells
@@ -127,48 +174,52 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 		{
 			key:  "agent",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "codex") },
-			save: func(m Model) error { return SaveScalar(m.target, m.cwd, "agent", "codex") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("agent", "codex")) },
 		},
 		{
 			key:  "pull",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") },
-			save: func(m Model) error { return SaveScalar(m.target, m.cwd, "pull", "never") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("pull", "never")) },
 		},
 		{
 			key:  "image",
 			open: func(m *Model) { m.ed.input.SetValue("ghcr.io/acme/box:v1") },
-			save: func(m Model) error { return SaveScalar(m.target, m.cwd, "image", "ghcr.io/acme/box:v1") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("image", "ghcr.io/acme/box:v1")) },
 		},
 		{
 			key:  "registry_mirror",
 			open: func(m *Model) { m.ed.input.SetValue("mirror.example.com") },
-			save: func(m Model) error { return SaveScalar(m.target, m.cwd, "registry_mirror", "mirror.example.com") },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Scalar("registry_mirror", "mirror.example.com"))
+			},
 		},
 		{
 			key:  "mounts_root",
 			open: func(m *Model) { m.ed.input.SetValue("/tmp/roots") },
-			save: func(m Model) error { return SaveScalar(m.target, m.cwd, "mounts_root", "/tmp/roots") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("mounts_root", "/tmp/roots")) },
 		},
 		{
 			key:  "bridge",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
-			save: func(m Model) error { return SaveBool(m.target, m.cwd, "bridge", boolPtr(false)) },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },
 		},
 		{
 			key:  "proximo",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
-			save: func(m Model) error { return SaveBool(m.target, m.cwd, "proximo", boolPtr(true)) },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("proximo", boolPtr(true))) },
 		},
 		{
 			key:  "managed_statusline",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
-			save: func(m Model) error { return SaveBool(m.target, m.cwd, "managed_statusline", boolPtr(false)) },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Bool("managed_statusline", boolPtr(false)))
+			},
 		},
 		{
 			key:  "inherit_host_auth",
 			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
 			save: func(m Model) error {
-				return SaveStringList(m.target, m.cwd, "inherit_host_auth", []string{HostAuthOptions()[0]})
+				return apply(m.target, m.cwd, configedit.StringList("inherit_host_auth", []string{HostAuthOptions()[0]}))
 			},
 			prepare: func(t *testing.T, home string) { requireHostAuthPath(t, home, HostAuthOptions()[0]) },
 		},
@@ -181,25 +232,27 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			key:  "mounts",
 			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
 			save: func(m Model) error {
-				return SaveMountDisabled(m.target, m.cwd, map[string]bool{DefaultMountNames()[0]: true})
+				return apply(m.target, m.cwd, configedit.MountsDisabled(map[string]bool{DefaultMountNames()[0]: true}))
 			},
 		},
 		{
 			key:  "env",
 			open: func(m *Model) { m.ed.rows = [][2]string{{"REGION", "eu"}} },
-			save: func(m Model) error { return SaveMap(m.target, m.cwd, "env", map[string]string{"REGION": "eu"}) },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.StringMap("env", map[string]string{"REGION": "eu"}))
+			},
 		},
 		{
 			key:  "worktree",
 			open: func(m *Model) { m.ed.rows = [][2]string{{".env.local", ""}} },
-			save: func(m Model) error { return SaveSeed(m.target, m.cwd, []string{".env.local"}) },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.WorktreeSeed([]string{".env.local"})) },
 		},
 		{
 			key:   "shells",
 			open:  func(m *Model) { m.ed.rows = [][2]string{{"prod", "/repo/prod"}} },
 			inCfg: func(cfg *config.Config) { cfg.Shells = map[string]config.NamedShell{"prod": {Path: "/repo/old"}} },
 			save: func(m Model) error {
-				return SaveShells(m.target, m.cwd, []ShellEntry{{Name: "prod", Path: "/repo/prod", OrigName: "prod"}})
+				return apply(m.target, m.cwd, configedit.Shells([]ShellEntry{{Name: "prod", Path: "/repo/prod", OrigName: "prod"}}))
 			},
 		},
 	}
@@ -217,45 +270,55 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 		t.Errorf("key %q has an editor but no preview case", key)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.key, func(t *testing.T) {
-			m, target := openedEditor(t, tc)
-			base, _, err := readMaybe(target)
-			if err != nil {
-				t.Fatalf("read baseline: %v", err)
-			}
-			claimed, err := previewAfter(target, base, m.pendingMutator())
-			if err != nil {
-				t.Fatalf("render preview: %v", err)
-			}
+	// Both target states, because they take different write paths: an absent
+	// .toolbox.yaml is created carrying the docs header, so it is the one case
+	// where the preview could under-report the write by whole lines.
+	for _, targetExists := range []bool{true, false} {
+		state := "existing-target"
+		if !targetExists {
+			state = "fresh-target"
+		}
+		for _, tc := range cases {
+			t.Run(tc.key+"/"+state, func(t *testing.T) {
+				m, target := openedEditor(t, tc, targetExists)
+				base, exists, err := readMaybe(target)
+				if err != nil {
+					t.Fatalf("read baseline: %v", err)
+				}
+				claimed, err := configedit.Render(target, base, exists, m.pendingMutator())
+				if err != nil {
+					t.Fatalf("render preview: %v", err)
+				}
 
-			// What the key's own writer produces, driven with hand-written
-			// arguments rather than the model's dispatch.
-			if err := tc.save(m); err != nil {
-				t.Fatalf("writer: %v", err)
-			}
-			if got := readFile(t, target); got != string(claimed) {
-				t.Errorf("preview does not describe what the writer writes.\npreview:\n%s\nwriter:\n%s", claimed, got)
-			}
+				// What the key's own mutation produces, driven with hand-written
+				// arguments rather than the model's dispatch.
+				if err := tc.save(m); err != nil {
+					t.Fatalf("writer: %v", err)
+				}
+				if got := readFile(t, target); got != string(claimed) {
+					t.Errorf("preview does not describe what the writer writes.\npreview:\n%s\nwriter:\n%s", claimed, got)
+				}
 
-			// And the model's own save path must land on those same bytes.
-			m2, target2 := openedEditor(t, tc)
-			if err := m2.saveEdit(); err != nil {
-				t.Fatalf("saveEdit: %v", err)
-			}
-			if got := readFile(t, target2); got != string(claimed) {
-				t.Errorf("saveEdit does not write what the preview shows.\npreview:\n%s\nsaveEdit:\n%s", claimed, got)
-			}
-		})
+				// And the model's own save path must land on those same bytes.
+				m2, target2 := openedEditor(t, tc, targetExists)
+				if err := m2.saveEdit(); err != nil {
+					t.Fatalf("saveEdit: %v", err)
+				}
+				if got := readFile(t, target2); got != string(claimed) {
+					t.Errorf("saveEdit does not write what the preview shows.\npreview:\n%s\nsaveEdit:\n%s", claimed, got)
+				}
+			})
+		}
 	}
 }
 
 func boolPtr(v bool) *bool { return &v }
 
-// openedEditor builds a Model over an isolated repo whose .toolbox.yaml already
-// exists (so the header a fresh file would gain is not mistaken for a
-// divergence), opens tc.key's editor and applies the pending value.
-func openedEditor(t *testing.T, tc previewCase) (Model, string) {
+// openedEditor builds a Model over an isolated repo, opens tc.key's editor and
+// applies the pending value. targetExists selects whether the repo already has a
+// .toolbox.yaml — a fresh target is created with the docs header, which the
+// preview has to account for.
+func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, string) {
 	t.Helper()
 	home := isolatedHome(t)
 	if tc.prepare != nil {
@@ -263,7 +326,9 @@ func openedEditor(t *testing.T, tc previewCase) (Model, string) {
 	}
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, target, "# existing config\nagent: claude\n")
+	if targetExists {
+		writeFile(t, target, "# existing config\nagent: claude\n")
+	}
 
 	cfg, _, err := Snapshot(repo, "")
 	if err != nil {

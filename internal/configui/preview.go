@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/filippolmt/toolbox/internal/configedit"
-	"github.com/filippolmt/toolbox/internal/configio"
 )
 
 // The preview's pure half: what the pending edit would do to the real document.
@@ -28,26 +27,32 @@ type previewLine struct {
 // previewDiff renders mut against base and returns the lines that differ. An
 // empty result means the mutation would change nothing — the caller says so
 // rather than showing an unchanged fragment, which would imply a pending change
-// that does not exist. name only labels parse/encode errors.
-func previewDiff(name string, base []byte, mut configedit.Mutator) ([]previewLine, error) {
-	// The "before" side is base re-rendered by the same encoder rather than base
-	// itself, so the diff shows the mutation's effect and not the difference
-	// between the file's formatting and the encoder's.
-	before, err := configio.RenderDocument(name, base, nil)
+// that does not exist. exists reports whether the target file is already there,
+// which decides both sides of the diff (see below). name only labels
+// parse/encode errors.
+func previewDiff(name string, base []byte, exists bool, mut configedit.Mutator) ([]previewLine, error) {
+	// A target that does not exist yet has no "before" at all. Rendering its
+	// empty document would put a `{}` line on the removed side that no file ever
+	// held — and the edit's real effect is the whole file, header included.
+	var beforeLines []string
+	if exists {
+		// base re-rendered by the same encoder rather than base itself, so the
+		// diff shows the mutation's effect and not the difference between the
+		// file's formatting and the encoder's.
+		before, err := configedit.Render(name, base, true, nil)
+		if err != nil {
+			return nil, err
+		}
+		beforeLines = documentLines(before)
+	}
+	// configedit.Render, not configio.RenderDocument: creating the file also
+	// writes the docs header, and a preview that omitted it would under-report
+	// the write by exactly those lines.
+	after, err := configedit.Render(name, base, exists, mut)
 	if err != nil {
 		return nil, err
 	}
-	after, err := previewAfter(name, base, mut)
-	if err != nil {
-		return nil, err
-	}
-	return diffLines(documentLines(before), documentLines(after)), nil
-}
-
-// previewAfter returns the bytes the target file would hold once mut is applied
-// to base — byte-for-byte what the writer would put there.
-func previewAfter(name string, base []byte, mut configedit.Mutator) ([]byte, error) {
-	return configio.RenderDocument(name, base, mut)
+	return diffLines(beforeLines, documentLines(after)), nil
 }
 
 // documentLines splits rendered document bytes into lines, dropping the

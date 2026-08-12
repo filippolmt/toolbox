@@ -109,17 +109,25 @@ One config edit, captured as a value before it happens:
 `configedit.Mutator` — `func(*yaml.Node)` — built by a constructor that
 closes over its arguments (`configedit.Scalar`, `Bool`, `StringList`,
 `StringMap`, `Shells`, `WorktreeSeed`, `SDDEnabled`, `MountsDisabled`,
-`Remove`). Owned by `internal/configedit/mutate.go`.
+`Remove`). Owned by `internal/configedit` (`mutate.go`).
 
 Concretely: it is the callback shape `configedit.Upsert`,
 `configio.UpsertFile` and `configio.RenderDocument` all accept, so the
-same value can be written to disk or rendered in memory. That is the
-point of the term — a caller that must both *show* an edit and *perform*
-it holds one object instead of describing the edit twice. `configui`'s
-savers are the write side (a Mutator inside apply's Doctor-and-roll-back
-envelope); `configui.previewDiff` is the read side (the same Mutator
-rendered against the document as it stood when the editor opened, diffed
-against it). `Model.pendingMutator` is the single dispatch producing it.
+same value can be written to disk or rendered in memory. `configedit`
+exposes the pair a truthful preview needs — `Upsert(path, m)` writes,
+`Render(name, src, exists, m)` returns the bytes that write would produce
+— and both go through one header policy (`headerAware`), so the rendering
+is not a look-alike of the write but the same computation. Every
+constructor copies the collection it is handed, so the mutation is a
+snapshot and cannot change meaning under a caller still editing its own
+state. That is the point of the term — a caller that must both *show* an
+edit and *perform* it holds one object instead of describing the edit
+twice. In `config ui`, `configui.apply` is the write side (the Mutator
+inside a Doctor-and-roll-back envelope) and `configui.previewDiff` is the
+read side (the same Mutator rendered against the document as it stood
+when the editor opened, diffed against it). `Model.pendingMutator` is the
+single dispatch producing it, so there is one place that decides what a
+pending edit *is*.
 
 Why the term exists: `config ui` used to hold two independent models of
 the same edit. `previewDoc` built a `map[string]any` keyed on the

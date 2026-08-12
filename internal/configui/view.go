@@ -264,7 +264,7 @@ func (m Model) previewBody() (string, error) {
 	if mut == nil {
 		return "", fmt.Errorf("no pending change for %s", m.ed.key)
 	}
-	lines, err := previewDiff(m.target, m.previewBase, mut)
+	lines, err := previewDiff(m.target, m.previewBase, m.previewBaseExists, mut)
 	if err != nil {
 		return "", err
 	}

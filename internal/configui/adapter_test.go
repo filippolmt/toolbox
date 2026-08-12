@@ -208,7 +208,7 @@ func TestSaveScalarCommentPreserved(t *testing.T) {
 	target := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, target, "# keep me\npull: always\n")
 
-	if err := SaveScalar(target, repo, "agent", "codex"); err != nil {
+	if err := apply(target, repo, configedit.Scalar("agent", "codex")); err != nil {
 		t.Fatalf("SaveScalar: %v", err)
 	}
 	got := readFile(t, target)
@@ -232,7 +232,7 @@ func TestSaveScalarDoctorBlocked(t *testing.T) {
 	before := "pull: always\n"
 	writeFile(t, target, before)
 
-	err := SaveScalar(target, repo, "shell", "bash") // bash is unsupported
+	err := apply(target, repo, configedit.Scalar("shell", "bash")) // bash is unsupported
 	if err == nil {
 		t.Fatal("expected SaveScalar to reject shell: bash")
 	}
@@ -248,7 +248,7 @@ func TestSaveScalarBlockedOnNewFileRemovesIt(t *testing.T) {
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 
-	if err := SaveScalar(target, repo, "shell", "bash"); err == nil {
+	if err := apply(target, repo, configedit.Scalar("shell", "bash")); err == nil {
 		t.Fatal("expected rejection")
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -282,14 +282,14 @@ func TestSaveBoolTriState(t *testing.T) {
 	target := filepath.Join(repo, ".toolbox.yaml")
 
 	no := false
-	if err := SaveBool(target, repo, "bridge", &no); err != nil {
+	if err := apply(target, repo, configedit.Bool("bridge", &no)); err != nil {
 		t.Fatalf("SaveBool false: %v", err)
 	}
 	if got := readFile(t, target); !strings.Contains(got, "bridge: false") {
 		t.Errorf("want bridge: false, got:\n%s", got)
 	}
 
-	if err := SaveBool(target, repo, "bridge", nil); err != nil {
+	if err := apply(target, repo, configedit.Bool("bridge", nil)); err != nil {
 		t.Fatalf("SaveBool nil: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "bridge:") {
@@ -307,7 +307,7 @@ func TestSaveStringList(t *testing.T) {
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 
-	if err := SaveStringList(target, repo, "inherit_host_auth", []string{"claude", "gh"}); err != nil {
+	if err := apply(target, repo, configedit.StringList("inherit_host_auth", []string{"claude", "gh"})); err != nil {
 		t.Fatalf("SaveStringList: %v", err)
 	}
 	got := readFile(t, target)
@@ -315,7 +315,7 @@ func TestSaveStringList(t *testing.T) {
 		t.Errorf("list entries missing:\n%s", got)
 	}
 
-	if err := SaveStringList(target, repo, "inherit_host_auth", nil); err != nil {
+	if err := apply(target, repo, configedit.StringList("inherit_host_auth", nil)); err != nil {
 		t.Fatalf("SaveStringList empty: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "inherit_host_auth") {
@@ -344,7 +344,7 @@ func TestSaveMap(t *testing.T) {
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 
-	if err := SaveMap(target, repo, "env", map[string]string{"FOO": "bar", "BAZ": "qux"}); err != nil {
+	if err := apply(target, repo, configedit.StringMap("env", map[string]string{"FOO": "bar", "BAZ": "qux"})); err != nil {
 		t.Fatalf("SaveMap: %v", err)
 	}
 	got := readFile(t, target)
@@ -355,7 +355,7 @@ func TestSaveMap(t *testing.T) {
 		t.Errorf("env keys must be sorted:\n%s", got)
 	}
 
-	if err := SaveMap(target, repo, "env", nil); err != nil {
+	if err := apply(target, repo, configedit.StringMap("env", nil)); err != nil {
 		t.Fatalf("SaveMap empty: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "env:") {
@@ -371,7 +371,7 @@ func TestSaveShellsPreservesEnv(t *testing.T) {
 	target := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n  old:\n    path: /repo/old\n")
 
-	if err := SaveShells(target, repo, []ShellEntry{{Name: "infra", Path: "/repo/infra", OrigName: "infra"}}); err != nil {
+	if err := apply(target, repo, configedit.Shells([]ShellEntry{{Name: "infra", Path: "/repo/infra", OrigName: "infra"}})); err != nil {
 		t.Fatalf("SaveShells: %v", err)
 	}
 	got := readFile(t, target)
@@ -392,7 +392,7 @@ func TestSaveShellsRenameCarriesEnv(t *testing.T) {
 	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n")
 
 	entry := ShellEntry{Name: "prod", Path: "/repo/infra", OrigName: "infra", Env: map[string]string{"REGION": "eu"}}
-	if err := SaveShells(target, repo, []ShellEntry{entry}); err != nil {
+	if err := apply(target, repo, configedit.Shells([]ShellEntry{entry})); err != nil {
 		t.Fatalf("SaveShells rename: %v", err)
 	}
 	got := readFile(t, target)
@@ -411,7 +411,7 @@ func TestSaveSeed(t *testing.T) {
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 
-	if err := SaveSeed(target, repo, []string{".env", "openspec"}); err != nil {
+	if err := apply(target, repo, configedit.WorktreeSeed([]string{".env", "openspec"})); err != nil {
 		t.Fatalf("SaveSeed: %v", err)
 	}
 	got := readFile(t, target)
@@ -422,7 +422,7 @@ func TestSaveSeed(t *testing.T) {
 		t.Errorf("seed entries missing:\n%s", got)
 	}
 
-	if err := SaveSeed(target, repo, nil); err != nil {
+	if err := apply(target, repo, configedit.WorktreeSeed(nil)); err != nil {
 		t.Fatalf("SaveSeed empty: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "worktree") {
@@ -515,7 +515,7 @@ func TestSaveMountDisabled(t *testing.T) {
 	target := filepath.Join(repo, ".toolbox.yaml")
 	name := DefaultMountNames()[0]
 
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: true}); err != nil {
+	if err := apply(target, repo, configedit.MountsDisabled(map[string]bool{name: true})); err != nil {
 		t.Fatalf("SaveMountDisabled on: %v", err)
 	}
 	got := readFile(t, target)
@@ -523,7 +523,7 @@ func TestSaveMountDisabled(t *testing.T) {
 		t.Errorf("want a disable patch for %s, got:\n%s", name, got)
 	}
 
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: false}); err != nil {
+	if err := apply(target, repo, configedit.MountsDisabled(map[string]bool{name: false})); err != nil {
 		t.Fatalf("SaveMountDisabled off: %v", err)
 	}
 	if got := readFile(t, target); strings.Contains(got, "disabled: true") {
@@ -540,7 +540,7 @@ func TestSaveMountDisabledKeepsRichPatch(t *testing.T) {
 	name := DefaultMountNames()[0]
 	writeFile(t, target, "mounts:\n  - name: "+name+"\n    source: /custom/path\n")
 
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: false}); err != nil {
+	if err := apply(target, repo, configedit.MountsDisabled(map[string]bool{name: false})); err != nil {
 		t.Fatalf("SaveMountDisabled: %v", err)
 	}
 	if got := readFile(t, target); !strings.Contains(got, "/custom/path") {

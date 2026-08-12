@@ -25,6 +25,10 @@ import (
 // Mutator edits the top-level document mapping of a config file in place. It is
 // the callback shape Upsert, configio.UpsertFile and configio.RenderDocument
 // all accept, so one value can be written to disk or rendered in memory.
+//
+// A Mutator is a snapshot: every constructor copies the collection it is handed,
+// so the mutation cannot change meaning under a caller that keeps editing its
+// own state (the config UI hands over live editor state on every repaint).
 type Mutator func(doc *yaml.Node)
 
 // Remove deletes a top-level key.
@@ -57,12 +61,9 @@ func StringList(key string, values []string) Mutator {
 	if len(values) == 0 {
 		return Remove(key)
 	}
+	values = slices.Clone(values)
 	return func(doc *yaml.Node) {
-		seq := configio.EnsureChildSeq(doc, key)
-		seq.Content = seq.Content[:0]
-		for _, v := range values {
-			seq.Content = append(seq.Content, scalarNode(v))
-		}
+		replaceSeq(configio.EnsureChildSeq(doc, key), values)
 	}
 }
 
@@ -72,6 +73,7 @@ func StringMap(key string, pairs map[string]string) Mutator {
 	if len(pairs) == 0 {
 		return Remove(key)
 	}
+	pairs = maps.Clone(pairs)
 	return func(doc *yaml.Node) {
 		node := configio.EnsureChildMap(doc, key)
 		node.Content = node.Content[:0]
@@ -97,6 +99,12 @@ type ShellEntry struct {
 func Shells(entries []ShellEntry) Mutator {
 	if len(entries) == 0 {
 		return Remove("shells")
+	}
+	// Snapshot down to each entry's env overlay, so the mutation is fixed at the
+	// moment it is described.
+	entries = slices.Clone(entries)
+	for i := range entries {
+		entries[i].Env = maps.Clone(entries[i].Env)
 	}
 	return func(doc *yaml.Node) {
 		root := configio.EnsureChildMap(doc, "shells")
@@ -138,13 +146,10 @@ func WorktreeSeed(seed []string) Mutator {
 			}
 		}
 	}
+	seed = slices.Clone(seed)
 	return func(doc *yaml.Node) {
 		wt := configio.EnsureChildMap(doc, "worktree")
-		seq := configio.EnsureChildSeq(wt, "seed")
-		seq.Content = seq.Content[:0]
-		for _, v := range seed {
-			seq.Content = append(seq.Content, scalarNode(v))
-		}
+		replaceSeq(configio.EnsureChildSeq(wt, "seed"), seed)
 	}
 }
 
@@ -168,6 +173,7 @@ func SDDKeys() []string {
 // Doctor's contract and belong after the yaml commit survives validation — see
 // ReconcileSDDGitignore.
 func SDDEnabled(enabled map[string]bool) Mutator {
+	enabled = maps.Clone(enabled)
 	return func(doc *yaml.Node) {
 		for _, key := range SDDKeys() {
 			SetSDDEnabled(doc, key, enabled[key])
@@ -195,6 +201,7 @@ func DefaultMountNames() []string {
 // are removed, so a user's richer patch/replace entry is never clobbered. An
 // emptied mounts list is dropped.
 func MountsDisabled(disabled map[string]bool) Mutator {
+	disabled = maps.Clone(disabled)
 	return func(doc *yaml.Node) {
 		seq := configio.EnsureChildSeq(doc, "mounts")
 		for _, name := range DefaultMountNames() {
@@ -242,6 +249,15 @@ func childKeys(node *yaml.Node) []string {
 		}
 	}
 	return out
+}
+
+// replaceSeq rewrites a sequence node to exactly values, reusing the node so an
+// existing key keeps its position and comments.
+func replaceSeq(seq *yaml.Node, values []string) {
+	seq.Content = seq.Content[:0]
+	for _, v := range values {
+		seq.Content = append(seq.Content, scalarNode(v))
+	}
 }
 
 func scalarNode(value string) *yaml.Node {

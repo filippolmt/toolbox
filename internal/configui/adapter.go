@@ -425,50 +425,10 @@ func ListValue(cfg *config.Config, key string) []string {
 	return nil
 }
 
-// The savers below are Doctor-gated writes of one configedit Mutator each. The
-// mutation itself lives in configedit (the package that owns config domain
-// knowledge); what this layer adds is the validate-and-roll-back envelope of
-// apply. The config UI's preview renders the very same Mutator, which is what
-// keeps what it shows and what gets written from drifting apart.
-
-// SaveScalar writes a scalar key (empty value removes it — the clean
-// reset-to-default), gated by Doctor validation.
-func SaveScalar(target, cwd, key, value string) error {
-	return apply(target, cwd, configedit.Scalar(key, value))
-}
-
-// SaveBool writes a tri-state bool key; a nil value removes it.
-func SaveBool(target, cwd, key string, v *bool) error {
-	return apply(target, cwd, configedit.Bool(key, v))
-}
-
-// SaveStringList replaces a top-level string sequence (empty removes the key),
-// gated by Doctor validation.
-func SaveStringList(target, cwd, key string, values []string) error {
-	return apply(target, cwd, configedit.StringList(key, values))
-}
-
-// SaveMap replaces a top-level string→string mapping (env), gated by Doctor
-// validation.
-func SaveMap(target, cwd, key string, pairs map[string]string) error {
-	return apply(target, cwd, configedit.StringMap(key, pairs))
-}
-
-// ShellEntry is one desired shells: entry for SaveShells — the rows editor's
-// output shape, aliased so the UI does not have to name the configedit package
-// to build one.
+// ShellEntry is one desired shells: entry for configedit.Shells — the rows
+// editor's output shape, aliased so the UI does not have to name the configedit
+// package to build one.
 type ShellEntry = configedit.ShellEntry
-
-// SaveShells reconciles the shells: block to entries (an empty set removes the
-// block), gated by Doctor validation.
-func SaveShells(target, cwd string, entries []ShellEntry) error {
-	return apply(target, cwd, configedit.Shells(entries))
-}
-
-// SaveSeed writes worktree.seed (an empty list removes it), gated by Doctor.
-func SaveSeed(target, cwd string, seed []string) error {
-	return apply(target, cwd, configedit.WorktreeSeed(seed))
-}
 
 // ShellPaths flattens the effective shells map to name→path for the structured
 // editor (per-shell env overlays are preserved on save, not edited here).
@@ -532,13 +492,6 @@ func DisabledMounts(cfg *config.Config) map[string]bool {
 		}
 	}
 	return out
-}
-
-// SaveMountDisabled reconciles per-default-mount disable state (a user's richer
-// patch/replace entry is never clobbered — edit those via the $EDITOR escape),
-// gated by Doctor validation.
-func SaveMountDisabled(target, cwd string, disabled map[string]bool) error {
-	return apply(target, cwd, configedit.MountsDisabled(disabled))
 }
 
 // EnsureTargetFile creates the target config file (with the docs header) when it
