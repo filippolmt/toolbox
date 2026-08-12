@@ -273,6 +273,9 @@ func (m Model) previewDoc() any {
 		}
 		return map[string]any{key: *b}
 	case edMulti:
+		if key == "mounts" {
+			return mountsPreviewDoc(m.ed.options, m.ed.selected)
+		}
 		var vals []string
 		for _, opt := range m.ed.options {
 			if m.ed.selected[opt] {
@@ -287,6 +290,30 @@ func (m Model) previewDoc() any {
 		return m.rowsPreviewDoc()
 	}
 	return nil
+}
+
+// mountsPreviewDocEntry is the `{name, disabled}` patch shape SaveMountDisabled
+// writes; a struct (not a map) so the two keys marshal in the writer's order.
+type mountsPreviewDocEntry struct {
+	Name     string `yaml:"name"`
+	Disabled bool   `yaml:"disabled"`
+}
+
+// mountsPreviewDoc renders the mounts editor's selection the way the writer
+// records it. The checkboxes name the default mounts to *disable*, so a bare
+// `mounts:` list would claim the inverse — that the checked mounts are the only
+// ones kept.
+func mountsPreviewDoc(options []string, selected map[string]bool) any {
+	var patches []mountsPreviewDocEntry
+	for _, opt := range options {
+		if selected[opt] {
+			patches = append(patches, mountsPreviewDocEntry{Name: opt, Disabled: true})
+		}
+	}
+	if len(patches) == 0 {
+		return nil
+	}
+	return map[string]any{"mounts": patches}
 }
 
 func (m Model) rowsPreviewDoc() any {
