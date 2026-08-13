@@ -165,6 +165,100 @@ func TestShellsSetUnknownNameSuggests(t *testing.T) {
 	}
 }
 
+// TestShellsWriteCanonicalKey: a mixed-case or padded name writes the
+// canonical (trimmed, lowercased) key — the one the loader will look the shell
+// up under — instead of a second key that only collapses onto it at load time.
+func TestShellsWriteCanonicalKey(t *testing.T) {
+	for _, name := range []string{"Infra", " infra ", "INFRA"} {
+		t.Run(name, func(t *testing.T) {
+			resetShellsFlags(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			workdir := t.TempDir()
+
+			shellsAddPath = workdir
+			shellsAddEnv = []string{"FOO=bar"}
+			shellsAddCmd.SetOut(&bytes.Buffer{})
+			if err := runShellsAdd(shellsAddCmd, []string{name}); err != nil {
+				t.Fatalf("runShellsAdd(%q): %v", name, err)
+			}
+
+			body, err := os.ReadFile(filepath.Join(home, ".toolbox.yaml"))
+			if err != nil {
+				t.Fatalf("read global: %v", err)
+			}
+			if !strings.Contains(string(body), "shells:\n  infra:\n") {
+				t.Errorf("want the canonical key shells.infra:\n%s", body)
+			}
+		})
+	}
+}
+
+// TestShellsEditExistingKeySpelling: an entry the file spells differently is
+// edited in place. Writing the canonical key here would leave two shells:
+// entries that collapse into one when viper loads the file.
+func TestShellsEditExistingKeySpelling(t *testing.T) {
+	resetShellsFlags(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfgPath := filepath.Join(home, ".toolbox.yaml")
+	if err := os.WriteFile(cfgPath, []byte("shells:\n  Infra:\n    path: /tmp/infra\n"), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	withCfg(t, &config.Config{Shells: map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}}})
+
+	shellsSetEnv = []string{"FOO=bar"}
+	shellsSetCmd.SetOut(&bytes.Buffer{})
+	if err := runShellsSet(shellsSetCmd, []string{"infra"}); err != nil {
+		t.Fatalf("runShellsSet: %v", err)
+	}
+
+	body, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read global: %v", err)
+	}
+	if strings.Contains(string(body), "\n  infra:") {
+		t.Errorf("edit added a second key beside the existing Infra::\n%s", body)
+	}
+	if !strings.Contains(string(body), "env:\n      FOO: bar") {
+		t.Errorf("env not written under the existing entry:\n%s", body)
+	}
+}
+
+// TestShellsReadAndRemoveNormalizeName: the read and delete paths accept any
+// spelling of a configured shell, like `toolbox shell <name>` does.
+func TestShellsReadAndRemoveNormalizeName(t *testing.T) {
+	resetShellsFlags(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"),
+		[]byte("shells:\n  infra:\n    path: /tmp/infra\n"), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	withCfg(t, &config.Config{Shells: map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}}})
+
+	out := &bytes.Buffer{}
+	shellsGetCmd.SetOut(out)
+	if err := runShellsGet(shellsGetCmd, []string{" Infra "}); err != nil {
+		t.Fatalf("runShellsGet: %v", err)
+	}
+	if !strings.Contains(out.String(), "path: /tmp/infra") {
+		t.Errorf("get did not resolve the shell, got: %s", out.String())
+	}
+
+	shellsRemoveCmd.SetOut(&bytes.Buffer{})
+	if err := runShellsRemove(shellsRemoveCmd, []string{"INFRA"}); err != nil {
+		t.Fatalf("runShellsRemove: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(home, ".toolbox.yaml"))
+	if err != nil {
+		t.Fatalf("read global: %v", err)
+	}
+	if strings.Contains(string(body), "infra") {
+		t.Errorf("entry must be removed:\n%s", body)
+	}
+}
+
 func TestShellsRemovePurgeDir(t *testing.T) {
 	resetShellsFlags(t)
 	home := t.TempDir()

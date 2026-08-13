@@ -143,6 +143,30 @@ func TestResolveShellWorkspaceCreateWritesConfigAndCreatesDirectory(t *testing.T
 	}
 }
 
+// TestResolveShellWorkspaceCreateWritesCanonicalKey: bootstrapping a
+// mixed-case name must write the key the loader will look it up under,
+// otherwise the very next `toolbox shell QA` re-bootstraps instead of finding
+// the entry it just wrote.
+func TestResolveShellWorkspaceCreateWritesCanonicalKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	target := filepath.Join(t.TempDir(), "qa")
+
+	setEmptyCfg(t)
+
+	if _, _, err := resolveShellWorkspace([]string{"QA"}, true, target); err != nil {
+		t.Fatalf("resolveShellWorkspace: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(home, ".toolbox.yaml"))
+	if err != nil {
+		t.Fatalf("read ~/.toolbox.yaml: %v", err)
+	}
+	if !strings.Contains(string(raw), "\n  qa:\n") {
+		t.Errorf("want the canonical key shells.qa:\n%s", raw)
+	}
+}
+
 // TestResolveShellWorkspaceRejectsHashShapedName guards against named
 // shells whose sanitized form (`[a-f0-9]{8}`) would be indistinguishable
 // from the trailing hash component of a workspace container name

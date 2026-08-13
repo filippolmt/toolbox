@@ -300,7 +300,9 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 // upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml via
 // configio.UpsertFile, preserving existing keys/comments. home is resolved
 // once by the caller and threaded in so the --create path does not pay for
-// repeated os.UserHomeDir() lookups.
+// repeated os.UserHomeDir() lookups. The key is resolved through shellFileKey,
+// so bootstrapping `toolbox shell Infra --create` writes the same canonical
+// key the loader will look the shell up under.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
 		h, err := configio.GlobalConfigDir()
@@ -311,8 +313,13 @@ func upsertShellInUserConfig(home, name, path string) error {
 	}
 	cfgPath := filepath.Join(home, ".toolbox.yaml")
 
-	_, err := configio.UpsertFile(cfgPath, func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+	key, err := shellFileKey(cfgPath, name)
+	if err != nil {
+		return err
+	}
+
+	_, err = configio.UpsertFile(cfgPath, func(doc *yaml.Node) {
+		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), key)
 		configio.SetMapValue(entry, "path", path)
 	})
 	return err

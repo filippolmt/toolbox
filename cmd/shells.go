@@ -136,12 +136,32 @@ func runShellsList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
+// shellFileKey returns the key the write commands must edit under shells: in
+// the file at target. The canonical form of a new entry is the normalized name
+// (config.NormalizeShellKey), because that is the key the loaded config will
+// have; an entry the file already spells differently — a hand-written
+// `Infra:` — is edited in place instead, so an edit never leaves two keys
+// behind that collapse into one at load time.
+func shellFileKey(target, name string) (string, error) {
+	key := config.NormalizeShellKey(name)
+	fileShells, err := configedit.UserShells(target)
+	if err != nil {
+		return "", err
+	}
+	for existing := range fileShells {
+		if config.NormalizeShellKey(existing) == key {
+			return existing, nil
+		}
+	}
+	return key, nil
+}
+
 func runShellsGet(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
 		return errors.New("internal: configuration not loaded")
 	}
 	name := args[0]
-	s, ok := cfg.Shells[name]
+	s, ok := cfg.Shells[config.NormalizeShellKey(name)]
 	if !ok {
 		return &usageError{err: fmt.Errorf("unknown shell %q%s",
 			name, configedit.DidYouMean(name, slices.Sorted(maps.Keys(cfg.Shells))))}
@@ -183,13 +203,17 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	key, err := shellFileKey(target, name)
+	if err != nil {
+		return err
+	}
 	existed := fileExists(target)
-	changed, err := configedit.SetShell(target, name, path)
+	changed, err := configedit.SetShell(target, key, path)
 	if err != nil {
 		return err
 	}
 	if len(env) > 0 {
-		envChanged, err := configedit.SetShellEnv(target, name, env)
+		envChanged, err := configedit.SetShellEnv(target, key, env)
 		if err != nil {
 			return err
 		}
@@ -211,7 +235,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
 		return errors.New("internal: configuration not loaded")
 	}
-	if _, ok := cfg.Shells[name]; !ok {
+	if _, ok := cfg.Shells[config.NormalizeShellKey(name)]; !ok {
 		return &usageError{err: fmt.Errorf("unknown shell %q%s",
 			name, configedit.DidYouMean(name, slices.Sorted(maps.Keys(cfg.Shells))))}
 	}
@@ -220,8 +244,12 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	key, err := shellFileKey(target, name)
+	if err != nil {
+		return err
+	}
 	existed := fileExists(target)
-	changed, err := configedit.SetShellEnv(target, name, env)
+	changed, err := configedit.SetShellEnv(target, key, env)
 	if err != nil {
 		return err
 	}
@@ -240,13 +268,17 @@ func runShellsRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	entry, ok := fileShells[name]
+	key, err := shellFileKey(target, name)
+	if err != nil {
+		return err
+	}
+	entry, ok := fileShells[key]
 	if !ok {
 		return &usageError{err: fmt.Errorf("shell %q not found in %s%s",
 			name, target, configedit.DidYouMean(name, slices.Sorted(maps.Keys(fileShells))))}
 	}
 
-	changed, err := configedit.RemoveShell(target, name)
+	changed, err := configedit.RemoveShell(target, key)
 	if err != nil {
 		return err
 	}

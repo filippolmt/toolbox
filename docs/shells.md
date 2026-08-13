@@ -42,6 +42,8 @@ The per-shell `env:` map overlays the top-level [`env:` passthrough](configurati
 
 All writers accept [`--where global|local`](commands.md#--where-targeting) (default `global` — named shells are naturally per-user) and preserve comments in the touched YAML file.
 
+Shell names are matched the way `toolbox shell <name>` matches them: case-insensitively and space-trimmed. A new entry is written under the canonical (lowercase) key, and an entry your file already spells differently is edited in place — so an edit never leaves two `shells:` keys that collapse into one when the config loads.
+
 ## Bootstrap shorthand: `shell --create`
 
 `toolbox shell <name> --create` auto-bootstraps a missing named shell in `~/.toolbox.yaml`: it writes the entry and opens it in one step. `--path <dir>` picks the directory; the default is `$HOME/toolbox-shells/<name>` (or `/tmp/<name>` if the home directory is unresolvable).
