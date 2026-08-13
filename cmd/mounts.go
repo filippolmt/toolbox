@@ -249,7 +249,7 @@ func runMountsRemove(cmd *cobra.Command, args []string) error {
 
 func runMountsRoot(cmd *cobra.Command, args []string) error {
 	root := args[0]
-	if err := config.ValidateMountsRoot(root); err != nil {
+	if err := config.ValidateKey("mounts_root", root); err != nil {
 		return &usageError{err: err}
 	}
 

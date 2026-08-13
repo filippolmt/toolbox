@@ -274,3 +274,31 @@ func TestApplyCheckedIgnoresAnotherLayersFinding(t *testing.T) {
 		t.Errorf("entry must be removed:\n%s", got)
 	}
 }
+
+// TestApplyCheckedCatchesAFaultAHigherLayerMasks is the case the card exists
+// for: a value that is wrong in the file being written but harmless in today's
+// merge, because a higher-precedence layer happens to override it. Judging the
+// merged result alone would bless it, and the fault would surface the day the
+// overriding layer goes away. The global file is written with an unsupported
+// shell while the project file overrides `shell:` with a valid one.
+func TestApplyCheckedCatchesAFaultAHigherLayerMasks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	globalPath := filepath.Join(home, ".toolbox.yaml")
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, ".toolbox.yaml"),
+		[]byte("shell: zsh\n"), 0o600); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	changed, err := ApplyChecked(globalPath, repo, Scalar("shell", "bash"))
+	if err == nil {
+		t.Fatal("a value invalid on its own must be rejected even when a higher layer overrides it")
+	}
+	if changed {
+		t.Error("a rejected candidate must report changed=false")
+	}
+	if _, statErr := os.Stat(globalPath); !os.IsNotExist(statErr) {
+		t.Errorf("rejected creation must leave no file behind (err=%v)", statErr)
+	}
+}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -281,7 +282,20 @@ func runConfigEdit(cmd *cobra.Command, _ []string) error {
 	editCmd.Stdin = os.Stdin
 	editCmd.Stdout = os.Stdout
 	editCmd.Stderr = os.Stderr
-	return editCmd.Run()
+	if err := editCmd.Run(); err != nil {
+		return err
+	}
+
+	// $EDITOR is the one write path no seam can gate — the user types straight
+	// into the file. So the check happens after, and it only reports: reverting
+	// hand-written work would be hostile, and unlike a writer command there is
+	// no machine-made candidate to fall back to. Same findings `config doctor`
+	// would print, on stderr so a redirected stdout stays clean.
+	cwd, _ := os.Getwd()
+	if errCount := reportFindings(cmd.ErrOrStderr(), configedit.Doctor(cwd, cfgFile)); errCount > 0 {
+		return fmt.Errorf("%s: %d error finding(s) — the file was left as you saved it", path, errCount)
+	}
+	return nil
 }
 
 // resolveEditTarget returns the highest-precedence existing config file
@@ -320,7 +334,19 @@ func runConfigDoctor(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintln(out, "no findings")
 		return nil
 	}
+	if errCount := reportFindings(out, findings); errCount > 0 {
+		return fmt.Errorf("config doctor: %d error finding(s)", errCount)
+	}
+	return nil
+}
 
+// reportFindings prints findings grouped by severity and returns how many were
+// errors — the exit-code predicate for both surfaces that surface them
+// (`config doctor` reads a file the user asked about, `config edit` checks what
+// the editor left). One formatter so the two never drift into different shapes
+// for the same diagnostic. Nothing is printed for an empty list; the "no
+// findings" line belongs to the command that was asked for a verdict.
+func reportFindings(out io.Writer, findings []configedit.Finding) (errCount int) {
 	var errs, warns []configedit.Finding
 	for _, f := range findings {
 		if f.Severity == configedit.SeverityError {
@@ -329,20 +355,17 @@ func runConfigDoctor(cmd *cobra.Command, _ []string) error {
 			warns = append(warns, f)
 		}
 	}
-	if len(errs) > 0 {
-		_, _ = fmt.Fprintln(out, "errors:")
-		for _, f := range errs {
+	for _, group := range []struct {
+		label string
+		items []configedit.Finding
+	}{{"errors", errs}, {"warnings", warns}} {
+		if len(group.items) == 0 {
+			continue
+		}
+		_, _ = fmt.Fprintln(out, group.label+":")
+		for _, f := range group.items {
 			_, _ = fmt.Fprintf(out, "  - %s\n", f.Message)
 		}
 	}
-	if len(warns) > 0 {
-		_, _ = fmt.Fprintln(out, "warnings:")
-		for _, f := range warns {
-			_, _ = fmt.Fprintf(out, "  - %s\n", f.Message)
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("config doctor: %d error finding(s)", len(errs))
-	}
-	return nil
+	return len(errs)
 }

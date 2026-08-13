@@ -58,76 +58,84 @@ func ApplyChecked(target, cwd string, mutate Mutator) (changed bool, err error) 
 // question it answers is deliberately narrow: not "is the resulting
 // configuration flawless" but "does *this file* introduce a fault".
 //
-// That is the intersection of two views, because each one alone is wrong in a
-// direction that makes the CLI unusable:
+// Two moves make a finding attributable to one file:
 //
-//   - The candidate on its own catches a fault a higher layer would mask — the
-//     reason to validate the written file at all — but flags every value it
-//     legitimately inherits. `shells set <n> --env … --where local` writes an
-//     env overlay for a shell whose path lives in the global file, and a
-//     project-only view of that file sees shells.<n>.path as empty.
-//   - The resolved configuration (candidate substituted into its own layer)
-//     knows what is inherited, but carries every *other* layer's faults. A
-//     doctor error in a project file would block `config set --where global` —
-//     a file the user cannot fix from there, and one plain `toolbox shell` runs
-//     on fine.
+//   - The candidate is judged as the top of the stack, over whichever layer it
+//     is not. On top, because a value this file gets wrong must be reported
+//     even when a higher-precedence layer overrides it today — that masking is
+//     what lets the fault survive unnoticed until the overriding layer goes
+//     away, and catching it is the whole reason to validate the written file
+//     rather than the merged result. Over the other layer, because a file may
+//     legitimately declare only part of an entity: `shells set <n> --env …
+//     --where local` writes an env overlay for a shell whose path lives in the
+//     global file, and that file read alone shows shells.<n>.path as empty.
+//   - Whatever the other layer already says on its own is subtracted. Those
+//     faults belong to a file this write does not touch and the user cannot fix
+//     them from here — a doctor error in a project file must not make `config
+//     set --where global` impossible, especially as plain `toolbox shell` runs
+//     on that configuration fine.
 //
-// A finding present in both is the candidate's own, and it is real. Findings
-// only in the first are inherited values; findings only in the second belong to
-// a file this write does not touch. The common case (candidate clean on its
-// own) short-circuits before the second view is computed.
+// What is left is a fault the candidate carries. A pre-existing fault in the
+// file being written still counts: the write need not have introduced it, only
+// be putting it back.
 //
-// Layer placement: global when target is ~/.toolbox.yaml, project otherwise (a
-// walked-up project file, or the ./.toolbox.yaml a writer is about to create —
-// Resolve produces no other target, and when GlobalConfigPath fails there is no
-// resolvable home, so --where global could not have produced a target either).
-// The explicit `--config` layer is deliberately excluded: writers only ever
-// target the global or project file, and those must stay valid for an ordinary
-// `toolbox shell`, not for one overridden invocation.
+// The target's own file is dropped from the stack — the candidate replaces it,
+// so leaving its current bytes in would judge the edit against the content it
+// overwrites. Which one to drop: the global layer when target is
+// ~/.toolbox.yaml, the project layer otherwise (a walked-up project file, or
+// the ./.toolbox.yaml a writer is about to create — Resolve produces no other
+// target, and when GlobalConfigPath fails there is no resolvable home, so
+// --where global could not have produced a target either). The explicit
+// `--config` layer is excluded on purpose: writers only ever target the global
+// or project file, and those must stay valid for an ordinary `toolbox shell`,
+// not for one overridden invocation.
 //
 // Only error-severity findings matter — they are what gates the write — and
 // every lintLayerKeys finding is a warning, so the unknown-key lint stays where
 // it can be acted on: `toolbox config doctor`.
 func doctorCandidate(cwd, target string, candidate []byte) []Finding {
-	alone := lintLayers(nil, candidate)
-	if !HasErrors(alone) {
-		return nil
-	}
 	global, project, _, _, err := config.LoadLayers(cwd, "")
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}
-	globalPath, pathErr := configio.GlobalConfigPath()
-	if pathErr == nil && filepath.Clean(target) == filepath.Clean(globalPath) {
-		global = candidate
-	} else {
-		project = candidate
+	other := global
+	if globalPath, pathErr := configio.GlobalConfigPath(); pathErr == nil &&
+		filepath.Clean(target) == filepath.Clean(globalPath) {
+		other = project
 	}
-	return intersectFindings(alone, lintLayers(global, project))
+	return subtractFindings(lintStack(other, candidate), lintStack(other, nil))
 }
 
-// lintLayers resolves two config layers and returns what the doctor's
-// Config-level lints make of the result. A merge failure is itself the finding:
-// nothing downstream is resolvable.
-func lintLayers(global, project []byte) []Finding {
-	cfg, err := config.Merge(global, project, nil)
+// lintStack resolves two config layers — lower, then higher — and returns what
+// the doctor's Config-level lints make of the result. A merge failure is itself
+// the finding: nothing downstream is resolvable.
+//
+// The two arguments are precedence positions, not provenance: Merge reads them
+// in order and nothing downstream of it asks which file a value came from. That
+// is what lets a caller ask "how does this document read with nothing
+// overriding it" by putting it second, whichever layer it really belongs to.
+// The explicit slot cannot serve here — Merge documents it as short-circuiting
+// the other two, so it would discard the stack instead of sitting above it.
+func lintStack(lower, higher []byte) []Finding {
+	cfg, err := config.Merge(lower, higher, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}
 	return append(lintShellPaths(cfg), lintMounts(cfg)...)
 }
 
-// intersectFindings returns the findings of a that also appear in b, compared by
-// message — the doctor's findings are plain strings naming what is wrong, so an
-// identical message from both views is the same fault seen twice.
-func intersectFindings(a, b []Finding) []Finding {
+// subtractFindings returns the findings of a that do not appear in b, compared
+// by message — the doctor's findings are plain strings naming what is wrong, so
+// the same message from both stacks is the same fault, and it is not the
+// candidate's.
+func subtractFindings(a, b []Finding) []Finding {
 	inB := make(map[string]bool, len(b))
 	for _, f := range b {
 		inB[f.Message] = true
 	}
 	var out []Finding
 	for _, f := range a {
-		if inB[f.Message] {
+		if !inB[f.Message] {
 			out = append(out, f)
 		}
 	}
