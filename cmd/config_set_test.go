@@ -97,3 +97,36 @@ func TestConfigSetEmptyImageRemovesKey(t *testing.T) {
 		t.Errorf("sibling keys must survive, got:\n%s", body)
 	}
 }
+
+// TestConfigSetIsNotBlockedByAnotherLayersFinding: the write gate answers for
+// the file being written, not for the resulting configuration as a whole. A
+// doctor error living in the project file must not make `config set --where
+// global` unusable — the user cannot fix it from there, and plain `toolbox
+// shell` runs on that config fine.
+func TestConfigSetIsNotBlockedByAnotherLayersFinding(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := chdirTemp(t)
+	if err := os.WriteFile(filepath.Join(repo, ".toolbox.yaml"),
+		[]byte("shells:\n  broken:\n    env:\n      A: \"1\"\n"), 0o600); err != nil {
+		t.Fatalf("seed project config: %v", err)
+	}
+	setConfigSetFlag(t, "image", "ghcr.io/acme/box:v1")
+
+	configSetCmd.SetOut(&bytes.Buffer{})
+	if err := runConfigSet(configSetCmd, nil); err != nil {
+		t.Fatalf("a finding in the project file must not block a global write: %v", err)
+	}
+	if got := readGlobalConfig(t, home); !strings.Contains(got, "image: ghcr.io/acme/box:v1") {
+		t.Errorf("global write did not land:\n%s", got)
+	}
+}
+
+func readGlobalConfig(t *testing.T, home string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(home, ".toolbox.yaml"))
+	if err != nil {
+		t.Fatalf("read global config: %v", err)
+	}
+	return string(b)
+}

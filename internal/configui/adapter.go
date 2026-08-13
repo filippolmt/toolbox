@@ -2,7 +2,6 @@ package configui
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -130,7 +129,7 @@ type scopeState struct {
 // TUI's per-scope "in <scope>" line. A missing file yields an all-unset map, so
 // switching to a scope with no file cleanly shows every key as inherited.
 func ScopeStates(path string) (map[string]scopeState, error) {
-	b, existed, err := readMaybe(path)
+	b, existed, err := configio.ReadMaybe(path)
 	if err != nil {
 		return nil, err
 	}
@@ -470,9 +469,9 @@ func EnabledSDD(cfg *config.Config) map[string]bool {
 // yaml reconcile stays transactional and Doctor-gated; only after that commit
 // succeeds does it write the .gitignore fence for each enabled skill and remove
 // it for each disabled one — fences are outside Doctor's contract, so a
-// rejected yaml reconcile rolls back before any fence is touched.
+// rejected yaml reconcile leaves every fence untouched.
 func SaveSDD(target, cwd string, enabled map[string]bool) error {
-	if err := apply(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
+	if _, err := configedit.ApplyChecked(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
 		return err
 	}
 	return configedit.ReconcileSDDGitignore(filepath.Join(cwd, ".gitignore"), enabled)
@@ -499,71 +498,4 @@ func DisabledMounts(cfg *config.Config) map[string]bool {
 // blank buffer at a path the editor may refuse to create.
 func EnsureTargetFile(target string) error {
 	return configedit.EnsureFileWithHeader(target)
-}
-
-// apply mutates target through the comment-preserving writer, then validates
-// with the config doctor scoped so the just-written file is the authoritative
-// (explicit) layer — validating the edited file itself, not merely the merged
-// result. That distinction matters: a lower layer's invalid value can be
-// masked by a higher layer's override in the plain merge, so validating the
-// merge alone would let an invalid value persist unnoticed in the file that was
-// written. On failure it restores the file to its pre-edit state (original
-// bytes, or removal when the edit created it) and returns the validation error,
-// so a rejected edit never leaves invalid config on disk.
-//
-// ponytail: validation is write-then-doctor-then-rollback rather than building
-// the candidate document in memory — it reuses Doctor (which loads from disk)
-// with zero new validation logic, at the cost of a transient write a
-// concurrent reader could observe. Fine for an interactive single-user TUI;
-// revisit if config editing ever runs concurrently.
-func apply(target, cwd string, mutate configedit.Mutator) error {
-	orig, existed, err := readMaybe(target)
-	if err != nil {
-		return err
-	}
-	if _, err := configedit.Upsert(target, mutate); err != nil {
-		return err
-	}
-	if findings := configedit.Doctor(cwd, target); configedit.HasErrors(findings) {
-		if rbErr := rollback(target, orig, existed); rbErr != nil {
-			return fmt.Errorf("%w (rollback failed: %v)", firstError(findings), rbErr)
-		}
-		return firstError(findings)
-	}
-	return nil
-}
-
-// readMaybe returns a file's bytes and whether it existed; a missing file is
-// not an error (existed=false).
-func readMaybe(path string) (data []byte, existed bool, err error) {
-	b, err := os.ReadFile(path) //nolint:gosec // path is a resolved config file
-	if os.IsNotExist(err) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	return b, true, nil
-}
-
-// rollback restores target to its pre-edit state: the original bytes when it
-// existed, or removal when the edit created it.
-func rollback(target string, orig []byte, existed bool) error {
-	if existed {
-		return configio.AtomicWriteFile(target, orig, 0o600)
-	}
-	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-// firstError returns the first error-severity finding as an error.
-func firstError(findings []configedit.Finding) error {
-	for _, f := range findings {
-		if f.Severity == configedit.SeverityError {
-			return fmt.Errorf("%s", f.Message)
-		}
-	}
-	return fmt.Errorf("configuration invalid")
 }

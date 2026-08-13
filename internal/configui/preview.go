@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/filippolmt/toolbox/internal/configedit"
+	"github.com/filippolmt/toolbox/internal/configio"
 )
 
 // The preview's pure half: what the pending edit would do to the real document.
@@ -36,7 +37,7 @@ type baseDoc struct {
 
 // readBaseDoc snapshots target for an editor session.
 func readBaseDoc(target string) baseDoc {
-	b, exists, err := readMaybe(target)
+	b, exists, err := configio.ReadMaybe(target)
 	return baseDoc{bytes: b, exists: exists, err: err}
 }
 

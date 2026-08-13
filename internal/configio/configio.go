@@ -8,9 +8,10 @@
 //     user's comments and key order (EnsureDocumentMap / EnsureChildMap /
 //     SetMapValue).
 //
-// internal/config owns the *read* pipeline (Plan + Merge). configio is the
-// complementary *write* pipeline used by cmd/* whenever a subcommand has to
-// edit the user's YAML in place (e.g. `toolbox shell <name> --create`).
+// internal/config owns the *read* pipeline (Plan + Merge). configio supplies
+// the primitives a write is built from — it deliberately owns no write path of
+// its own: config files are only ever written through
+// configedit.ApplyChecked, which is what makes the doctor gate unbypassable.
 package configio
 
 import (
@@ -55,43 +56,25 @@ func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
 	return fsx.AtomicWriteFile(dest, data, mode)
 }
 
-// UpsertFile is the comment-preserving YAML upsert pipeline shared by every
-// cmd/* subcommand that edits a user YAML file in place. It reads path
-// (missing or whitespace-only file bootstraps an empty document), hands the
-// top-level document mapping to mutate, re-encodes with 2-space indent, and
-// atomically rewrites the file with mode 0o600 — preserving user comments
-// and key order. When the rendered bytes equal what is on disk it returns
-// (false, nil) without touching the file.
-//
-// The node tree passed to mutate is invalid after UpsertFile returns;
-// callers must not retain doc outside the callback.
-func UpsertFile(path string, mutate func(doc *yaml.Node)) (changed bool, err error) {
-	existing, readErr := os.ReadFile(path)
-	switch {
-	case readErr == nil:
-	case errors.Is(readErr, os.ErrNotExist):
-		existing = nil
-	default:
-		return false, fmt.Errorf("read %s: %w", path, readErr)
+// ReadMaybe returns a config file's bytes and whether it existed — the read
+// counterpart of AtomicWriteFile, for callers that render a candidate document
+// before deciding to write it. A missing file is not an error (existed=false),
+// which is how an absent config layer reads as an empty document.
+func ReadMaybe(path string) (data []byte, existed bool, err error) {
+	b, err := os.ReadFile(path) //nolint:gosec // path is a resolved config file
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
 	}
-
-	out, err := RenderDocument(path, existing, mutate)
 	if err != nil {
-		return false, err
+		return nil, false, fmt.Errorf("read %s: %w", path, err)
 	}
-	if bytes.Equal(out, existing) {
-		return false, nil
-	}
-	if err := AtomicWriteFile(path, out, 0o600); err != nil {
-		return false, err
-	}
-	return true, nil
+	return b, true, nil
 }
 
-// RenderDocument is the in-memory half of UpsertFile: it parses src
+// RenderDocument is the in-memory half of a config write: it parses src
 // (missing/whitespace-only bootstraps an empty document), hands the top-level
 // document mapping to mutate, and returns the re-encoded bytes — the exact
-// bytes UpsertFile would write for the same input. name only labels errors.
+// bytes a write would put on disk for the same input. name only labels errors.
 //
 // A nil mutate renders src unchanged, which is how a caller obtains the
 // encoder's own rendering of the input: the baseline to compare a mutated

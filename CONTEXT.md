@@ -117,21 +117,21 @@ closes over its arguments (`configedit.Scalar`, `Bool`, `StringList`,
 The point of the term: a caller that must both *show* an edit and
 *perform* it holds one object instead of describing the edit twice.
 
-Concretely: it is the callback shape `configedit.Upsert`,
-`configio.UpsertFile` and `configio.RenderDocument` all accept, so the
-same value can be written to disk or rendered in memory. `configedit`
-exposes the pair a truthful preview needs — `Upsert(path, m)` writes,
+Concretely: it is the callback shape `configedit.ApplyChecked`, `Render`
+and `configio.RenderDocument` all accept, so the same value can be
+written to disk or rendered in memory. `configedit` exposes the pair a
+truthful preview needs — `ApplyChecked(target, cwd, m)` writes,
 `Render(name, src, exists, m)` returns the bytes that write would produce
 — and both go through one header policy (`headerAware`), so the rendering
 is not a look-alike of the write but the same computation. Every
 constructor copies the collection it is handed, so the mutation is a
 snapshot and cannot change meaning under a caller still editing its own
-state. In `config ui`, `configui.apply` is the write side (the Mutator
-inside a Doctor-and-roll-back envelope) and `configui.previewDiff` is the
-read side (the same Mutator rendered against the document as it stood
-when the editor opened, diffed against it). `Model.pendingMutator` is the
-single dispatch producing it, so there is one place that decides what a
-pending edit *is*.
+state. In `config ui`, `ApplyChecked` is the write side (the Mutator
+validated against the doctor before anything reaches disk) and
+`configui.previewDiff` is the read side (the same Mutator rendered
+against the document as it stood when the editor opened, diffed against
+it). `Model.pendingMutator` is the single dispatch producing it, so there
+is one place that decides what a pending edit *is*.
 
 The mutators' own semantics are pinned in
 `internal/configedit/mutate_test.go`, on bytes alone — they are pure node

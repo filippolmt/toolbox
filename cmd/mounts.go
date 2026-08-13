@@ -168,12 +168,12 @@ func runMountsAdd(cmd *cobra.Command, args []string) error {
 		return &usageError{err: errors.New("--source and --target must not be empty")}
 	}
 
-	targetPath, err := resolveWriteTarget(mountsAddWhere)
+	targetPath, cwd, err := resolveWriteTarget(mountsAddWhere)
 	if err != nil {
 		return err
 	}
 	existed := fileExists(targetPath)
-	changed, err := configedit.AddMount(targetPath, config.Mount{
+	changed, err := configedit.AddMount(targetPath, cwd, config.Mount{
 		Name:     name,
 		Source:   source,
 		Target:   target,
@@ -203,12 +203,12 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 			name, configedit.DidYouMean(name, known))}
 	}
 
-	targetPath, err := resolveWriteTarget(mountsDisableWhere)
+	targetPath, cwd, err := resolveWriteTarget(mountsDisableWhere)
 	if err != nil {
 		return err
 	}
 	existed := fileExists(targetPath)
-	changed, err := configedit.DisableMount(targetPath, name)
+	changed, err := configedit.DisableMount(targetPath, cwd, name)
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 
 func runMountsRemove(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	targetPath, err := resolveWriteTarget(mountsRemoveWhere)
+	targetPath, cwd, err := resolveWriteTarget(mountsRemoveWhere)
 	if err != nil {
 		return err
 	}
@@ -239,7 +239,7 @@ func runMountsRemove(cmd *cobra.Command, args []string) error {
 			name, targetPath, configedit.DidYouMean(name, userNames))}
 	}
 
-	changed, err := configedit.RemoveMount(targetPath, name)
+	changed, err := configedit.RemoveMount(targetPath, cwd, name)
 	if err != nil {
 		return err
 	}
@@ -249,16 +249,16 @@ func runMountsRemove(cmd *cobra.Command, args []string) error {
 
 func runMountsRoot(cmd *cobra.Command, args []string) error {
 	root := args[0]
-	if err := config.ValidateMountsRoot(root); err != nil {
+	if err := config.ValidateKey("mounts_root", root); err != nil {
 		return &usageError{err: err}
 	}
 
-	targetPath, err := resolveWriteTarget(mountsRootWhere)
+	targetPath, cwd, err := resolveWriteTarget(mountsRootWhere)
 	if err != nil {
 		return err
 	}
 	existed := fileExists(targetPath)
-	changed, err := configedit.SetMountsRoot(targetPath, root)
+	changed, err := configedit.SetMountsRoot(targetPath, cwd, root)
 	if err != nil {
 		return err
 	}

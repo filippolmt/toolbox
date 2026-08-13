@@ -22,7 +22,7 @@
       "automergeType": "pr"
     },
     {
-      "description": "Runtime image (Dockerfile) deps get their own PR, split out of the catch-all group above (later rule wins on groupName). Schedule/automerge are inherited from the catch-all. The Go version is NOT here — it lives in go.mod's toolchain directive (single source of truth) and the image derives it via a GO_VERSION build-arg.",
+      "description": "Runtime image (Dockerfile) deps get their own PR, split out of the catch-all group above (later rule wins on groupName). Schedule/automerge are inherited from the catch-all. The Go version is NOT here — it lives in go.mod's toolchain directive and reaches the image as a GO_VERSION build-arg naming a go.dev tarball. The golang *Docker image* used by the Makefile's test container is pinned separately (GO_IMAGE_VERSION), because Docker Hub publishes that tag later than the release.",
       "matchFileNames": ["internal/build/assets/Dockerfile"],
       "groupName": "dockerfile image",
       "groupSlug": "dockerfile"
@@ -441,6 +441,14 @@
       "datasourceTemplate": "npm",
       "depNameTemplate": "@fission-ai/openspec",
       "packageNameTemplate": "@fission-ai/openspec"
+    },
+    {
+      "description": "The golang image tag for the containerised Go test/lint/build targets. Kept on the docker datasource, NOT derived from go.mod's toolchain directive: Docker Hub publishes golang:<patch> days after the Go release reaches the index, so a derived tag lets an automergeable gomod bump land a tag that does not exist yet.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": ["GO_IMAGE_VERSION\\s*:?=\\s*(?<currentValue>\\S+)"],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "golang"
     },
     {
       "customType": "regex",

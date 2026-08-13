@@ -190,7 +190,7 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	target, err := resolveWriteTarget(shellsAddWhere)
+	target, cwd, err := resolveWriteTarget(shellsAddWhere)
 	if err != nil {
 		return err
 	}
@@ -199,16 +199,9 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	existed := fileExists(target)
-	changed, err := configedit.SetShell(target, key, path)
+	changed, err := configedit.SetShell(target, cwd, key, path, env)
 	if err != nil {
 		return err
-	}
-	if len(env) > 0 {
-		envChanged, err := configedit.SetShellEnv(target, key, env)
-		if err != nil {
-			return err
-		}
-		changed = changed || envChanged
 	}
 	reportWrite(cmd.OutOrStdout(), target, existed, changed)
 	return nil
@@ -231,7 +224,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 			name, configedit.DidYouMean(name, slices.Sorted(maps.Keys(cfg.Shells))))}
 	}
 
-	target, err := resolveWriteTarget(shellsSetWhere)
+	target, cwd, err := resolveWriteTarget(shellsSetWhere)
 	if err != nil {
 		return err
 	}
@@ -240,7 +233,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	existed := fileExists(target)
-	changed, err := configedit.SetShellEnv(target, key, env)
+	changed, err := configedit.SetShellEnv(target, cwd, key, env)
 	if err != nil {
 		return err
 	}
@@ -250,7 +243,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 
 func runShellsRemove(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	target, err := resolveWriteTarget(shellsRemoveWhere)
+	target, cwd, err := resolveWriteTarget(shellsRemoveWhere)
 	if err != nil {
 		return err
 	}
@@ -269,7 +262,7 @@ func runShellsRemove(cmd *cobra.Command, args []string) error {
 			name, target, configedit.DidYouMean(name, slices.Sorted(maps.Keys(fileShells))))}
 	}
 
-	changed, err := configedit.RemoveShell(target, key)
+	changed, err := configedit.RemoveShell(target, cwd, key)
 	if err != nil {
 		return err
 	}
@@ -313,17 +306,20 @@ func purgeShellDir(out io.Writer, path string) error {
 }
 
 // resolveWriteTarget maps a --where flag value onto the config file path a
-// writer should patch. Shared by the shells and mounts groups.
-func resolveWriteTarget(where string) (string, error) {
+// writer should patch, and returns the cwd it was resolved from — the writers
+// need that same cwd to validate the candidate document against the layers a
+// load would see. Shared by the shells and mounts groups.
+func resolveWriteTarget(where string) (target, cwd string, err error) {
 	w, err := configedit.ParseWhere(where)
 	if err != nil {
-		return "", &usageError{err: err}
+		return "", "", &usageError{err: err}
 	}
-	cwd, err := os.Getwd()
+	cwd, err = os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("resolve cwd: %w", err)
+		return "", "", fmt.Errorf("resolve cwd: %w", err)
 	}
-	return configedit.Resolve(w, cwd)
+	target, err = configedit.Resolve(w, cwd)
+	return target, cwd, err
 }
 
 // parseEnvPairs parses repeated --env K=V flags into a validated map.

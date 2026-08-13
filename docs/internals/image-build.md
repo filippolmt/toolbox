@@ -91,10 +91,16 @@ Known cost: children spawned by claude's Bash tool inherit the stripped environm
 Unlike the two Docker streams, the Go version is deliberately **aligned everywhere from one anchor**: the `toolchain` directive in `go.mod` (e.g. `toolchain go1.26.4`). Renovate bumps `toolchain` by default (the `go` directive stays the lower compat floor and is not auto-bumped). Everything else derives:
 
 - **CI test/lint/release** — `actions/setup-go` with `go-version-file: go.mod` reads the `toolchain` directive (precedence over `go`).
-- **Build/test container** — `Makefile` computes `GO_VERSION` from `go.mod` (`awk` on the toolchain line, falling back to the `go` directive) and sets `GO_IMAGE := golang:$(GO_VERSION)`.
+- **Build/test container** — the one exception, see below: `GO_IMAGE_VERSION` in the `Makefile` pins the `golang:` tag independently, under Renovate's `docker` datasource.
 - **Runtime image** — the Dockerfile's `ARG GO_VERSION` is a fallback only; every real build path injects the go.mod value: `make build` passes `--build-arg GO_VERSION=$(GO_VERSION)`, `toolbox build` injects it from `runtime.Version()` (the toolchain that compiled the CLI — see `mergeBuildArgs` in `internal/build/build.go`), and the image-build workflows read go.mod and pass it as a build arg.
 
-So don't re-pin the Go version in the Dockerfile or add a Renovate manager for `GO_VERSION` / `GO_IMAGE` — bump `toolchain` in go.mod and it flows everywhere. Because the image's Go is derived from go.mod (not from a Dockerfile literal), `docker-ci.yml` also triggers on `go.mod` and includes it in the arm64 `arch_coverage` filter — a toolchain bump pulls a per-arch Go tarball (`go${GO_VERSION}.linux-${TARGETARCH}.tar.gz`), so both arches are smoke-tested in the PR.
+### The one exception: the `golang:` Docker tag
+
+Everything above derives from go.mod because every consumer resolves the version against a source that exists the instant the release does: the Go release index (`setup-go`) or a `go.dev` tarball (the runtime image). Docker Hub is not such a source — it publishes `golang:<patch>` days later.
+
+Deriving the tag from go.mod therefore coupled an automergeable dependency bump to an artifact Renovate had not checked: #681 bumped `toolchain` to `go1.26.6`, CI was green (setup-go and the tarball both had it), the PR auto-merged, and `make go-test` / `make build` broke on `main` with `golang:1.26.6: not found`. So `GO_IMAGE_VERSION` is pinned in the `Makefile` with its own `docker`-datasource Renovate manager: Renovate can only open that bump once the image is real. A gap between the two literals is harmless — `GOTOOLCHAIN` fetches the newer toolchain inside the container.
+
+The rule that survives: don't re-pin the Go version in the Dockerfile, and don't add a Renovate manager for `GO_VERSION` — bump `toolchain` in go.mod and it flows everywhere except that one tag. Because the image's Go is derived from go.mod (not from a Dockerfile literal), `docker-ci.yml` also triggers on `go.mod` and includes it in the arm64 `arch_coverage` filter — a toolchain bump pulls a per-arch Go tarball (`go${GO_VERSION}.linux-${TARGETARCH}.tar.gz`), so both arches are smoke-tested in the PR.
 
 `golangci-lint` follows the same one-literal rule: `GOLANGCI_VERSION` in the `Makefile` is the source (Renovate-bumped); the lint CI job reads it from the Makefile instead of carrying its own literal.
 

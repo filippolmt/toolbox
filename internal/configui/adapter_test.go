@@ -200,60 +200,12 @@ func TestTargetPath(t *testing.T) {
 	}
 }
 
-// TestApplyPreservesCommentsAndSiblings: a save updates only the edited key and keeps
-// comments and untouched keys.
-func TestApplyPreservesCommentsAndSiblings(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, target, "# keep me\npull: always\n")
-
-	if err := apply(target, repo, configedit.Scalar("agent", "codex")); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "# keep me") {
-		t.Errorf("comment lost:\n%s", got)
-	}
-	if !strings.Contains(got, "pull: always") {
-		t.Errorf("untouched key lost:\n%s", got)
-	}
-	if !strings.Contains(got, "agent: codex") {
-		t.Errorf("edited key missing:\n%s", got)
-	}
-}
-
-// TestApplyRejectedByDoctorLeavesFileUnchanged: an invalid edit is rejected and the file is left
-// byte-identical (no partial write survives).
-func TestApplyRejectedByDoctorLeavesFileUnchanged(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	before := "pull: always\n"
-	writeFile(t, target, before)
-
-	err := apply(target, repo, configedit.Scalar("shell", "bash")) // bash is unsupported
-	if err == nil {
-		t.Fatal("expected the doctor gate to reject shell: bash")
-	}
-	if got := readFile(t, target); got != before {
-		t.Errorf("file must be unchanged after a blocked save, got:\n%s", got)
-	}
-}
-
-// TestApplyRejectedOnNewFileRemovesIt: a blocked save that would have
-// created the file leaves nothing behind.
-func TestApplyRejectedOnNewFileRemovesIt(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-
-	if err := apply(target, repo, configedit.Scalar("shell", "bash")); err == nil {
-		t.Fatal("expected rejection")
-	}
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Errorf("blocked save must not leave a created file behind (stat err=%v)", err)
-	}
+// apply is the save path the model takes, with ApplyChecked's changed flag
+// dropped — the TUI has no per-file report line to print, so its tests only ever
+// care whether the write was accepted.
+func apply(target, cwd string, mutate configedit.Mutator) error {
+	_, err := configedit.ApplyChecked(target, cwd, mutate)
+	return err
 }
 
 // TestApplyRemoveDropsOnlyTheNamedKey: the reset-to-default path leaves the rest
@@ -334,9 +286,10 @@ func TestSaveSDD(t *testing.T) {
 	}
 }
 
-// TestSaveSDDDoctorRollbackSkipsFence: a reconcile that fails Doctor rolls the
-// yaml back to its pre-edit bytes and writes no .gitignore fence.
-func TestSaveSDDDoctorRollbackSkipsFence(t *testing.T) {
+// TestSaveSDDBlockedYamlSkipsFence: a reconcile the doctor rejects leaves the
+// yaml at its pre-edit bytes and writes no .gitignore fence. The fence loop runs
+// only after the yaml commits, so a rejected reconcile can never half-apply.
+func TestSaveSDDBlockedYamlSkipsFence(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
@@ -347,7 +300,7 @@ func TestSaveSDDDoctorRollbackSkipsFence(t *testing.T) {
 		t.Fatal("expected SaveSDD to be blocked by Doctor")
 	}
 	if got := readFile(t, target); got != before {
-		t.Errorf("yaml must roll back to pre-edit bytes, got:\n%s", got)
+		t.Errorf("yaml must be left at its pre-edit bytes, got:\n%s", got)
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".gitignore")); !os.IsNotExist(err) {
 		t.Errorf("a blocked reconcile must not write a fence (stat err=%v)", err)

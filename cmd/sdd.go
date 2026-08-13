@@ -68,7 +68,7 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 
 	yamlPath := filepath.Join(cwd, ".toolbox.yaml")
 	gitignorePath := filepath.Join(cwd, ".gitignore")
-	res, err := configedit.EnableSDD(yamlPath, gitignorePath, skill)
+	res, err := configedit.EnableSDD(yamlPath, gitignorePath, cwd, skill)
 	if err != nil {
 		return err
 	}

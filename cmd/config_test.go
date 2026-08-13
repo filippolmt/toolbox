@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -179,5 +181,37 @@ func TestInitConfigAppliesDefaults(t *testing.T) {
 	}
 	if len(cfg.InheritHostAuth) != 0 {
 		t.Errorf("InheritHostAuth = %v, want empty default", cfg.InheritHostAuth)
+	}
+}
+
+// TestConfigEditReportsFindingsAndFails: `config edit` hands the file to
+// $EDITOR, which can write anything — the one write path no seam can gate. So
+// it checks afterwards: findings are reported and the exit is non-zero, but the
+// file is left exactly as the user saved it. Reverting hand-written work would
+// be hostile, which is why this is a report and not the ApplyChecked gate.
+func TestConfigEditReportsFindingsAndFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	chdirTemp(t)
+	t.Setenv("EDITOR", "true") // stand-in for the user saving the file below
+	cfgPath := filepath.Join(home, ".toolbox.yaml")
+	saved := "shells:\n  broken:\n    env:\n      A: \"1\"\n"
+	if err := os.WriteFile(cfgPath, []byte(saved), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	out := &bytes.Buffer{}
+	configEditCmd.SetOut(out)
+	configEditCmd.SetErr(out)
+
+	err := runConfigEdit(configEditCmd, nil)
+	if err == nil {
+		t.Fatal("an invalid file left by the editor must exit non-zero")
+	}
+	if !strings.Contains(out.String(), "shells.broken.path is empty") {
+		t.Errorf("findings must be reported, got: %s", out.String())
+	}
+	if got, readErr := os.ReadFile(cfgPath); readErr != nil || string(got) != saved {
+		t.Errorf("the user's own edit must survive verbatim, got %q (err=%v)", got, readErr)
 	}
 }
