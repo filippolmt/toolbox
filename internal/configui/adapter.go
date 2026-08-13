@@ -41,17 +41,14 @@ func (s Scope) where() configedit.Where {
 	return configedit.WhereGlobal
 }
 
-// deprecatedKey is folded into its live sibling and never shown as its own row.
-// Sourced from config so this package folds exactly the key config.Merge does.
-const deprecatedKey = config.DeprecatedBridgeKey
-
-// Keys returns the top-level keys the UI presents, in schema order, with the
-// deprecated browser_bridge omitted — its value is surfaced through bridge
-// (config.Merge already folds it into Config.Bridge).
+// Keys returns the top-level keys the UI presents, in schema order, with every
+// deprecated alias omitted — an alias is surfaced through the live key it folds
+// into (config.Merge already performs that fold), never as a row of its own.
 func Keys() []string {
+	aliases := config.DeprecatedAliases()
 	var out []string
 	for _, k := range config.SchemaKeys() {
-		if k == deprecatedKey {
+		if _, deprecated := aliases[k]; deprecated {
 			continue
 		}
 		out = append(out, k)
@@ -151,17 +148,22 @@ func ScopeStates(path string) (map[string]scopeState, error) {
 	return out, nil
 }
 
-// scopeNode returns the file node for a key, folding the deprecated
-// browser_bridge into bridge the same way config.Merge does (fillDefaultsBackstop),
-// so a file that only sets browser_bridge still counts as setting bridge in that
-// scope. Keep this fold in sync with that canonical one; both key off
-// config.DeprecatedBridgeKey so a rename cannot drift them apart.
+// scopeNode returns the file node for a key, folding a deprecated alias into
+// its live key the same way config.Merge does (fillDefaultsBackstop), so a file
+// that only sets browser_bridge still counts as setting bridge in that scope.
+// The alias→live pairs come from config.DeprecatedAliases, so neither the pair
+// nor a future one can drift away from the canonical fold.
 func scopeNode(doc *yaml.Node, key string) *yaml.Node {
 	if n := configio.ChildValue(doc, key); n != nil {
 		return n
 	}
-	if key == "bridge" {
-		return configio.ChildValue(doc, deprecatedKey)
+	for alias, live := range config.DeprecatedAliases() {
+		if live != key {
+			continue
+		}
+		if n := configio.ChildValue(doc, alias); n != nil {
+			return n
+		}
 	}
 	return nil
 }
@@ -178,12 +180,13 @@ func nodeDisplay(node *yaml.Node, key string) string {
 }
 
 // originFor returns the provenance origin for a top-level key and whether it is
-// mixed. shells and mounts are attributed per entry (shells.<name> /
-// mounts.<name>), so their container row credits the highest origin among the
-// matching entries and reports mixed=true when those entries span more than one
-// non-default layer (a single badge colour cannot represent that honestly).
+// mixed. Which keys are attributed per entry (shells.<name> / mounts.<name>) is
+// configedit's own fact, asked rather than restated: their container row credits
+// the highest origin among the matching entries and reports mixed=true when
+// those entries span more than one non-default layer (a single badge colour
+// cannot represent that honestly).
 func originFor(prov configedit.Provenance, key string) (origin configedit.Origin, mixed bool) {
-	if key != "shells" && key != "mounts" {
+	if !configedit.PerEntryKey(key) {
 		return prov[key], false
 	}
 	best := configedit.OriginDefault
@@ -255,10 +258,10 @@ func TargetPath(scope Scope, cwd string) (string, error) {
 	return configedit.Resolve(scope.where(), cwd)
 }
 
-// EnumOptions returns the bounded valid values for an enum key, or nil when the
+// enumOptions returns the bounded valid values for an enum key, or nil when the
 // key is not an enum. The option sets themselves stay in config — the descriptor
 // only records which key offers which one.
-func EnumOptions(key string) []string {
+func enumOptions(key string) []string {
 	if d := keyDescriptors[key]; d.kind == edEnum {
 		return d.options()
 	}
@@ -270,7 +273,7 @@ func EnumOptions(key string) []string {
 // from config.KeyDocs (the single source for per-key defaults), so this never
 // re-hardcodes the key→default mapping config already owns.
 func EnumDefault(key string) string {
-	if EnumOptions(key) == nil {
+	if enumOptions(key) == nil {
 		return ""
 	}
 	return config.KeyDocs()[key].Default
@@ -281,7 +284,7 @@ func EnumDefault(key string) string {
 // (e.g. shell, whose only value is zsh). Generic: any future single-option enum
 // gets the same treatment.
 func ReadOnlyKey(key string) bool {
-	return len(EnumOptions(key)) == 1
+	return len(enumOptions(key)) == 1
 }
 
 // HostAuthOptions is the option set for the inherit_host_auth multi-select:

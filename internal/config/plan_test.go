@@ -488,3 +488,33 @@ func TestPlan_BridgeNewKeyWinsOverLegacy(t *testing.T) {
 		t.Errorf("Bridge = false, want true — explicit bridge: must outrank legacy browser_bridge:")
 	}
 }
+
+// TestDeprecatedAliasesAreFoldedByTheLoadPath: the alias table is only worth
+// reading if every pair it declares is the fold Merge actually performs. A file
+// setting nothing but the alias must leave its live key set after the load.
+func TestDeprecatedAliasesAreFoldedByTheLoadPath(t *testing.T) {
+	for alias, live := range DeprecatedAliases() {
+		cfg, err := Merge(nil, []byte(alias+": false\n"), nil)
+		if err != nil {
+			t.Fatalf("Merge(%s): %v", alias, err)
+		}
+		field, ok := fieldByTag(cfg, live)
+		if !ok {
+			t.Fatalf("alias %q names live key %q, which is not a schema key", alias, live)
+		}
+		if field.IsZero() {
+			t.Errorf("a file setting only %q left %q unset — the fold is gone", alias, live)
+		}
+	}
+}
+
+// fieldByTag returns the Config field carrying the given mapstructure tag.
+func fieldByTag(cfg *Config, tag string) (reflect.Value, bool) {
+	v := reflect.ValueOf(*cfg)
+	for f := range reflect.TypeFor[Config]().Fields() {
+		if f.Tag.Get("mapstructure") == tag {
+			return v.FieldByName(f.Name), true
+		}
+	}
+	return reflect.Value{}, false
+}

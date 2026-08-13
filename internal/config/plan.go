@@ -255,6 +255,15 @@ var legacyBrowserBridgeWarnOnce sync.Once
 // silent drift between packages. Must match the BrowserBridge mapstructure tag.
 const DeprecatedBridgeKey = "browser_bridge"
 
+// DeprecatedAliases maps each deprecated config key to the live key it folds
+// into. fillDefaultsBackstop performs the fold on load, so a file that sets
+// only the alias resolves as if it had set the live key — consumers that must
+// mirror that fold (config ui's per-scope view) read the relation here rather
+// than hard-coding the pair a second time.
+func DeprecatedAliases() map[string]string {
+	return map[string]string{DeprecatedBridgeKey: "bridge"}
+}
+
 // warnLegacyBrowserBridge emits a deprecation warning the first time any
 // input buffer carries a top-level `browser_bridge:` key. The key still
 // works (fillDefaultsBackstop folds it into Bridge) — this is a rename

@@ -25,6 +25,50 @@ func TestKeyDescriptorsCoverEveryKey(t *testing.T) {
 	}
 }
 
+// TestEveryDescriptorRowIsCompleteForItsKind: a row's editor kind and the
+// accessors openEditor reads for that kind are separate fields, so a row can
+// claim a kind while carrying none of what seeds it — which panics the TUI on
+// enter rather than opening anything. This names the incomplete row instead,
+// and does it for every row (the behavioural guards skip read-only keys).
+func TestEveryDescriptorRowIsCompleteForItsKind(t *testing.T) {
+	for key, d := range keyDescriptors {
+		var missing string
+		switch d.kind {
+		case edEnum:
+			if d.options == nil || d.str == nil {
+				missing = "options + str"
+			}
+		case edString:
+			if d.str == nil {
+				missing = "str"
+			}
+		case edTri:
+			if d.tri == nil {
+				missing = "tri"
+			}
+		case edMulti:
+			if d.options == nil || d.selected == nil {
+				missing = "options + selected"
+			}
+		case edRows:
+			if d.pairs == nil && d.list == nil {
+				missing = "pairs or list"
+			}
+		default:
+			missing = "an editor kind"
+		}
+		if missing != "" {
+			t.Errorf("descriptor %q opens editor kind %d but carries no %s", key, d.kind, missing)
+		}
+		if d.mutator == nil {
+			t.Errorf("descriptor %q has an editor with no writer behind it", key)
+		}
+		if d.noun != "" && d.nodeCount == nil {
+			t.Errorf("descriptor %q counts %ss but cannot count them in a scope file", key, d.noun)
+		}
+	}
+}
+
 // TestEveryCountedKeyCountsItsScopeEntries: a key rendered as a count of
 // entries must count them in a scope file too — a countable key whose descriptor
 // forgets how to count a yaml node would show the raw (empty) node value in the

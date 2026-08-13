@@ -398,37 +398,14 @@ func (m Model) pendingMutator() configedit.Mutator {
 	if d.mutator == nil {
 		return nil
 	}
-	return d.mutator(&m)
-}
-
-// The mutation shapes shared by every key whose edit is just "write the value";
-// the keys whose write is more than that name their own constructor in the table.
-
-// scalarFromChoice writes the highlighted option of a bounded list.
-func scalarFromChoice(m *Model) configedit.Mutator {
-	return configedit.Scalar(m.ed.key, m.ed.options[m.ed.cursor])
-}
-
-// scalarFromInput writes the trimmed contents of a free-text editor.
-func scalarFromInput(m *Model) configedit.Mutator {
-	return configedit.Scalar(m.ed.key, strings.TrimSpace(m.ed.input.Value()))
-}
-
-// boolFromChoice writes the tri-state choice (unset removes the key).
-func boolFromChoice(m *Model) configedit.Mutator {
-	return configedit.Bool(m.ed.key, triValue(m.ed.options[m.ed.cursor]))
-}
-
-// listFromSelection writes the checked options of a multi-select, in option order.
-func listFromSelection(m *Model) configedit.Mutator {
-	return configedit.StringList(m.ed.key, m.selectedOptions())
+	return d.mutator(&m.ed, m.cfg)
 }
 
 // selectedOptions lists the checked multi-select options in option order.
-func (m Model) selectedOptions() []string {
+func (e *editor) selectedOptions() []string {
 	var vals []string
-	for _, opt := range m.ed.options {
-		if m.ed.selected[opt] {
+	for _, opt := range e.options {
+		if e.selected[opt] {
 			vals = append(vals, opt)
 		}
 	}

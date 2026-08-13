@@ -54,13 +54,20 @@ func stateFor(t *testing.T, states []KeyState, key string) KeyState {
 	return KeyState{}
 }
 
-// TestKeysOmitsDeprecated verifies browser_bridge is never a UI row.
+// TestKeysOmitsDeprecated verifies no deprecated alias is ever a UI row, while
+// the live key it folds into always is.
 func TestKeysOmitsDeprecated(t *testing.T) {
-	if slices.Contains(Keys(), deprecatedKey) {
-		t.Errorf("Keys() must not include the deprecated %q key", deprecatedKey)
+	aliases := config.DeprecatedAliases()
+	if len(aliases) == 0 {
+		t.Fatal("no deprecated alias to check — fixture premise stale")
 	}
-	if !slices.Contains(Keys(), "bridge") {
-		t.Error("Keys() must include bridge")
+	for alias, live := range aliases {
+		if slices.Contains(Keys(), alias) {
+			t.Errorf("Keys() must not include the deprecated %q key", alias)
+		}
+		if !slices.Contains(Keys(), live) {
+			t.Errorf("Keys() must include %q, the live key %q folds into", live, alias)
+		}
 	}
 }
 
@@ -422,10 +429,10 @@ func TestDisplayValueHintNotDoubled(t *testing.T) {
 
 // TestEnumOptions: bounded enums resolve to their canonical value sets.
 func TestEnumOptions(t *testing.T) {
-	if got := EnumOptions("pull"); !slices.Equal(got, []string{"auto", "always", "never"}) {
+	if got := enumOptions("pull"); !slices.Equal(got, []string{"auto", "always", "never"}) {
 		t.Errorf("pull enum = %v", got)
 	}
-	if got := EnumOptions("image"); got != nil {
+	if got := enumOptions("image"); got != nil {
 		t.Errorf("non-enum key must return nil, got %v", got)
 	}
 }

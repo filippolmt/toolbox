@@ -43,9 +43,10 @@ type keyDescriptor struct {
 	// the UI also offers the "open in $EDITOR" hatch.
 	escape bool
 
-	// mutator builds the pending mutation from the open editor — the one value
-	// the preview renders and the save writes.
-	mutator func(*Model) configedit.Mutator
+	// mutator builds the pending mutation from the open editor (and the resolved
+	// config, which only a rename-aware writer needs) — the one value the
+	// preview renders and the save writes.
+	mutator func(*editor, *config.Config) configedit.Mutator
 
 	// noun is the singular noun a collection's entries are counted with, shared
 	// by the effective display and the per-scope display so the two cannot
@@ -76,7 +77,7 @@ var keyDescriptors = map[string]keyDescriptor{
 		options:  DefaultMountNames,
 		selected: DisabledMounts,
 		escape:   true,
-		mutator:  func(m *Model) configedit.Mutator { return configedit.MountsDisabled(m.ed.selected) },
+		mutator:  func(e *editor, _ *config.Config) configedit.Mutator { return configedit.MountsDisabled(e.selected) },
 
 		noun: "override",
 		// Counted from the config, not from the names below: an unnamed override
@@ -106,7 +107,7 @@ var keyDescriptors = map[string]keyDescriptor{
 	"shells": {
 		kind:    edRows,
 		pairs:   ShellPaths,
-		mutator: func(m *Model) configedit.Mutator { return configedit.Shells(m.shellEntries()) },
+		mutator: func(e *editor, cfg *config.Config) configedit.Mutator { return configedit.Shells(e.shellEntries(cfg)) },
 
 		noun:      "shell",
 		entries:   func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Shells)) },
@@ -159,7 +160,7 @@ var keyDescriptors = map[string]keyDescriptor{
 		options:  SDDOptions,
 		selected: EnabledSDD,
 		escape:   true,
-		mutator:  func(m *Model) configedit.Mutator { return configedit.SDDEnabled(m.ed.selected) },
+		mutator:  func(e *editor, _ *config.Config) configedit.Mutator { return configedit.SDDEnabled(e.selected) },
 
 		noun: "pack",
 		// Every declared pack, enabled or not — the flag lives on the entry.
@@ -182,22 +183,51 @@ var keyDescriptors = map[string]keyDescriptor{
 		mutator: boolFromChoice,
 	},
 	"env": {
-		kind:    edRows,
-		pairs:   func(c *config.Config) map[string]string { return c.Env },
-		mutator: func(m *Model) configedit.Mutator { return configedit.StringMap(m.ed.key, rowsToPairs(m.ed.rows)) },
+		kind:  edRows,
+		pairs: func(c *config.Config) map[string]string { return c.Env },
+		mutator: func(e *editor, _ *config.Config) configedit.Mutator {
+			return configedit.StringMap(e.key, rowsToPairs(e.rows))
+		},
 
 		noun:      "var",
 		entries:   func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Env)) },
 		nodeCount: mapEntries,
 	},
 	"worktree": {
-		kind:    edRows,
-		list:    func(c *config.Config) []string { return c.Worktree.Seed },
-		mutator: func(m *Model) configedit.Mutator { return configedit.WorktreeSeed(rowsToValues(m.ed.rows)) },
+		kind: edRows,
+		list: func(c *config.Config) []string { return c.Worktree.Seed },
+		mutator: func(e *editor, _ *config.Config) configedit.Mutator {
+			return configedit.WorktreeSeed(rowsToValues(e.rows))
+		},
 
 		noun:      "seed path",
 		nodeCount: seedEntries,
 	},
+}
+
+// The mutation shapes shared by every key whose edit is just "write the value";
+// a key whose write is more than that names its own constructor in the table.
+// They read the open editor only — the config parameter is there for the one
+// writer (shells) that must look up what it is renaming.
+
+// scalarFromChoice writes the highlighted option of a bounded list.
+func scalarFromChoice(e *editor, _ *config.Config) configedit.Mutator {
+	return configedit.Scalar(e.key, e.options[e.cursor])
+}
+
+// scalarFromInput writes the trimmed contents of a free-text editor.
+func scalarFromInput(e *editor, _ *config.Config) configedit.Mutator {
+	return configedit.Scalar(e.key, strings.TrimSpace(e.input.Value()))
+}
+
+// boolFromChoice writes the tri-state choice (unset removes the key).
+func boolFromChoice(e *editor, _ *config.Config) configedit.Mutator {
+	return configedit.Bool(e.key, triValue(e.options[e.cursor]))
+}
+
+// listFromSelection writes the checked options of a multi-select, in option order.
+func listFromSelection(e *editor, _ *config.Config) configedit.Mutator {
+	return configedit.StringList(e.key, e.selectedOptions())
 }
 
 // displayOf renders a key's effective value: an explicit override first, then

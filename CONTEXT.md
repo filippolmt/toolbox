@@ -162,10 +162,14 @@ hint). Owned by `internal/configui` (`descriptor.go`), keyed by Config
 Schema key.
 
 Concretely: `displayValue`, `nodeDisplay`, `detailEntries`,
-`EnumOptions`, `hasEditorEscape`, `Model.openEditor` and
+`enumOptions`, `hasEditorEscape`, `Model.openEditor` and
 `Model.pendingMutator` read the row rather than switching on the key
 themselves, so the editor a key opens and the mutation it writes are the
-same declaration. `TestKeyDescriptorsCoverEveryKey` demands a row per
+same declaration. The two per-key facts that are *not* presentation stay
+where they belong and are asked, not restated: which keys are attributed
+per entry (`configedit.PerEntryKey`, read by `originFor`) and which
+deprecated alias folds into which live key (`config.DeprecatedAliases`,
+read by `Keys` and `scopeNode`). `TestKeyDescriptorsCoverEveryKey` demands a row per
 `Keys()` entry, and three behavioural guards ride on it: every key
 displays something, every editable key opens a seeded editor, and every
 open editor has a Pending Mutation behind it.
