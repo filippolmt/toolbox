@@ -431,6 +431,36 @@ var noValidationKeys = map[string]bool{
 	"mounts":             true,
 }
 
+// ValidateKey validates one config key's raw scalar value — the per-key half of
+// the validation tail, for a surface holding a single key/value pair before any
+// Config exists (the `config set` flags today). Keeping it here rather than in
+// cmd/ is what stops a presentation layer from owning its own copy of the
+// flag→validator mapping and drifting from the load path.
+//
+// A key whose validator cannot judge a lone string returns nil: a bool toggle
+// has no invalid value, and the structural keys (mounts, shells, env, sdd,
+// worktree, inherit_host_auth) are validated over the whole resolved Config by
+// the tail — which every write goes through anyway, via
+// configedit.ApplyChecked. So does an unknown key: this is a fail-fast
+// convenience, not the authority on what a config may contain.
+func ValidateKey(key, value string) error {
+	switch key {
+	case "mounts_root":
+		return ValidateMountsRoot(value)
+	case "image":
+		return ValidateImageRef(value)
+	case "registry_mirror":
+		return ValidateRegistryMirror(value)
+	case "pull":
+		return ValidatePull(value)
+	case "shell":
+		return ValidateShell(value)
+	case "agent":
+		return ValidateAgent(value)
+	}
+	return nil
+}
+
 // applyValidationTail defaults the pull/shell scalars, then runs every
 // field validator in fieldValidators order (first failure wins).
 func applyValidationTail(cfg *Config) error {

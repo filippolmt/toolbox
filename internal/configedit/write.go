@@ -21,29 +21,21 @@ const headerComment = `.toolbox.yaml — toolbox configuration.
 Run 'toolbox config example' for an annotated template covering every field.
 Docs: https://github.com/filippolmt/toolbox`
 
-// Upsert is the header-aware wrapper every configedit writer goes through:
-// when path does not exist yet, the new file starts with headerComment;
-// otherwise it delegates straight to configio.UpsertFile (comment-preserving,
-// atomic, idempotent — changed=false when the rendered bytes match disk).
-func Upsert(path string, mutate func(doc *yaml.Node)) (changed bool, err error) {
-	_, statErr := os.Stat(path)
-	creating := errors.Is(statErr, os.ErrNotExist)
-	return configio.UpsertFile(path, headerAware(creating, mutate))
-}
-
-// Render returns the bytes Upsert would write for a file whose current content
-// is src, without touching any file — the seam a preview needs to show a pending
-// edit truthfully. exists must report whether the target file is already there,
-// because that is what decides the header: a file being created carries
-// headerComment, and a preview rendering src alone would under-report the write
-// by exactly those lines. A nil mutate renders src as-is.
+// Render returns the bytes ApplyChecked would write for a file whose current
+// content is src, without touching any file — the seam both a preview and
+// ApplyChecked's own validation need to see a pending edit truthfully. exists
+// must report whether the target file is already there, because that is what
+// decides the header: a file being created carries headerComment, and a preview
+// rendering src alone would under-report the write by exactly those lines. A nil
+// mutate renders src as-is.
 func Render(name string, src []byte, exists bool, mutate Mutator) ([]byte, error) {
 	return configio.RenderDocument(name, src, headerAware(!exists, mutate))
 }
 
-// headerAware is the shared header policy behind Upsert and Render: a document
-// being created gains headerComment, an existing one is left alone. Keeping it
-// in one place is what lets a preview render the same bytes the write produces.
+// headerAware is the shared header policy behind Render, and so behind every
+// write (they all render through it): a document being created gains
+// headerComment, an existing one is left alone. Keeping it in one place is what
+// lets a preview render the same bytes the write produces.
 func headerAware(creating bool, mutate func(doc *yaml.Node)) func(doc *yaml.Node) {
 	return func(doc *yaml.Node) {
 		if creating && doc.HeadComment == "" {
@@ -77,13 +69,19 @@ func EnsureFileWithHeader(path string) error {
 }
 
 // =============================================================================
-// Shells writers
+// Typed writers
 // =============================================================================
+//
+// Every writer below is a thin naming of one Pending Mutation over
+// ApplyChecked, so they all share its contract: cwd is the directory the config
+// layers are resolved from (the doctor needs it to place the candidate in the
+// right layer), and an error always means nothing was written — callers must
+// not report a write.
 
 // SetShell upserts shells.<name>.path on the file at path, preserving any
 // sibling keys (env overlays survive a path change).
-func SetShell(path, name, shellPath string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func SetShell(path, cwd, name, shellPath string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
 		configio.SetMapValue(entry, "path", shellPath)
 	})
@@ -92,8 +90,8 @@ func SetShell(path, name, shellPath string) (bool, error) {
 // SetShellEnv upserts shells.<name>.env.<K>=<V> for every pair in env,
 // applied in sorted key order so repeated runs render identically. Callers
 // validate keys (config.ValidateEnv) before writing.
-func SetShellEnv(path, name string, env map[string]string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func SetShellEnv(path, cwd, name string, env map[string]string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
 		envMap := configio.EnsureChildMap(entry, "env")
 		for _, k := range slices.Sorted(maps.Keys(env)) {
@@ -105,8 +103,8 @@ func SetShellEnv(path, name string, env map[string]string) (bool, error) {
 // RemoveShell deletes the shells.<name> entry from the file at path. A
 // shells: map left empty by the removal is dropped entirely. changed=false
 // means the entry was not present.
-func RemoveShell(path, name string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func RemoveShell(path, cwd, name string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		shellsMap := configio.ChildValue(doc, "shells")
 		if !configio.RemoveMapKey(shellsMap, name) {
 			return
@@ -125,8 +123,8 @@ func RemoveShell(path, name string) (bool, error) {
 // readonly) to the mounts: sequence: an existing entry with the same name is
 // replaced in place, otherwise the entry is appended — mirroring how
 // mergeMounts reads the list. Callers validate the mount before writing.
-func AddMount(path string, m config.Mount) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func AddMount(path, cwd string, m config.Mount) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		seq := configio.EnsureChildSeq(doc, "mounts")
 		node := mountNode(m)
 		if idx, _ := configio.FindSeqEntryByName(seq, m.Name); idx >= 0 {
@@ -140,8 +138,8 @@ func AddMount(path string, m config.Mount) (bool, error) {
 // DisableMount marks name as disabled: an existing file entry gains
 // disabled: true in place; otherwise the `{name, disabled: true}` patch
 // shape mergeMounts reads is appended.
-func DisableMount(path, name string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func DisableMount(path, cwd, name string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		seq := configio.EnsureChildSeq(doc, "mounts")
 		if _, entry := configio.FindSeqEntryByName(seq, name); entry != nil {
 			configio.SetMapBool(entry, "disabled", true)
@@ -158,8 +156,8 @@ func DisableMount(path, name string) (bool, error) {
 // sequence. Defaults are not represented in the file, so this can only ever
 // touch user entries; a mounts: list left empty is dropped entirely.
 // changed=false means no entry with that name was present.
-func RemoveMount(path, name string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func RemoveMount(path, cwd, name string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		seq := configio.ChildValue(doc, "mounts")
 		if seq == nil || seq.Kind != yaml.SequenceNode {
 			return
@@ -177,8 +175,8 @@ func RemoveMount(path, name string) (bool, error) {
 
 // SetMountsRoot upserts the top-level mounts_root: key. Callers pre-validate
 // with config.ValidateMountsRoot so an invalid root never reaches the file.
-func SetMountsRoot(path, root string) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func SetMountsRoot(path, cwd, root string) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		configio.SetMapValue(doc, "mounts_root", root)
 	})
 }
@@ -195,8 +193,8 @@ type ScalarEdit struct{ Key, Value string }
 // several keys at once costs a single read-parse-write cycle. Callers
 // pre-validate each value (config.ValidateImageRef / ValidateRegistryMirror /
 // ValidatePull).
-func SetScalars(path string, edits []ScalarEdit) (bool, error) {
-	return Upsert(path, func(doc *yaml.Node) {
+func SetScalars(path, cwd string, edits []ScalarEdit) (bool, error) {
+	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		for _, e := range edits {
 			if e.Value == "" {
 				configio.RemoveMapKey(doc, e.Key)

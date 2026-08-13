@@ -24,7 +24,7 @@ import (
 // indexed on the key, and the two disagreed wherever those axes failed to meet.
 
 // Mutator edits the top-level document mapping of a config file in place. It is
-// the callback shape Upsert, configio.UpsertFile and configio.RenderDocument
+// the callback shape ApplyChecked, Render and configio.RenderDocument
 // all accept, so one value can be written to disk or rendered in memory.
 //
 // A Mutator is a snapshot: every constructor copies the collection it is handed,

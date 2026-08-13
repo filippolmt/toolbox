@@ -203,4 +203,4 @@ Details:
 - `remove <name>` — deletes a **user-list entry only**. Defaults are not stored in the file, so a default-only name gets an explanatory error pointing at `disable` instead.
 - `root <path>` — pre-validates with `config.ValidateMountsRoot`, then writes `mounts_root:`.
 
-All writers go through the comment-preserving `configio.UpsertFile` pipeline (via `internal/configedit`) and accept `--where global|local` (see [--where targeting](commands.md#--where-targeting)). Unknown names get Levenshtein "did you mean" suggestions.
+All writers go through the comment-preserving, doctor-gated `configedit.ApplyChecked` pipeline and accept `--where global|local` (see [--where targeting](commands.md#--where-targeting)). Unknown names get Levenshtein "did you mean" suggestions.

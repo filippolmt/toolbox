@@ -259,7 +259,7 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 // UI's preview rests on. The header is the part that is easy to get wrong: it
 // comes from the file's absence, not from its content, so an empty or
 // comment-only file must NOT gain one.
-func TestRenderReturnsTheBytesUpsertWrites(t *testing.T) {
+func TestRenderReturnsTheBytesApplyCheckedWrites(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		content string
@@ -286,15 +286,15 @@ func TestRenderReturnsTheBytesUpsertWrites(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
-			if _, err := Upsert(path, Scalar("agent", "codex")); err != nil {
-				t.Fatalf("Upsert: %v", err)
+			if _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+				t.Fatalf("ApplyChecked: %v", err)
 			}
 			got, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read back: %v", err)
 			}
 			if string(got) != string(want) {
-				t.Errorf("Render and Upsert disagree.\nRender:\n%s\nUpsert:\n%s", want, got)
+				t.Errorf("Render and ApplyChecked disagree.\nRender:\n%s\nApplyChecked:\n%s", want, got)
 			}
 			if hasHeader := strings.Contains(string(got), "Run 'toolbox config example'"); hasHeader != tc.absent {
 				t.Errorf("header present = %v, want %v (only a created file gains one):\n%s", hasHeader, tc.absent, got)

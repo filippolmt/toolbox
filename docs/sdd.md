@@ -23,7 +23,7 @@ toolbox sdd init <name>   # wire the current repo for <name>
 
 `toolbox sdd init <name>` is host-side and idempotent. It edits up to two files in the current repo:
 
-1. `.toolbox.yaml` — sets `sdd.<name>: true` (creating the file if missing, preserving comments and key order via the `configio.UpsertFile` pipeline; re-run behaviour under [SDD install steps](#sdd-install-steps)).
+1. `.toolbox.yaml` — sets `sdd.<name>: true` (creating the file if missing, preserving comments and key order via the `configedit.ApplyChecked` pipeline; re-run behaviour under [SDD install steps](#sdd-install-steps)).
 2. `.gitignore` — upserts the fenced block below (skipped when the skill's `GitignoreEntries` is nil).
 
 The actual install runs inside the container on the next `toolbox shell`, driven by the skill's `InstallSteps`.

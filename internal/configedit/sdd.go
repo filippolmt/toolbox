@@ -142,13 +142,14 @@ type SDDResult struct {
 }
 
 // EnableSDD is the CLI convenience composing the yaml flag write and the
-// gitignore fence write for a single skill. yamlPath and gitignorePath are
-// explicit (callers join from cwd) so it is testable with temp dirs. The two
-// files are written non-atomically (yaml then fence), matching the prior CLI
-// ordering; re-running converges.
-func EnableSDD(yamlPath, gitignorePath string, skill sdd.Skill) (SDDResult, error) {
+// gitignore fence write for a single skill. yamlPath, gitignorePath and cwd are
+// explicit (callers join the first two from cwd) so it is testable with temp
+// dirs. The two files are written non-atomically (yaml then fence), matching the
+// prior CLI ordering; re-running converges. A rejected yaml write leaves the
+// fence untouched — ApplyChecked returns before either file changes.
+func EnableSDD(yamlPath, gitignorePath, cwd string, skill sdd.Skill) (SDDResult, error) {
 	var res SDDResult
-	yamlChanged, err := Upsert(yamlPath, func(doc *yaml.Node) {
+	yamlChanged, err := ApplyChecked(yamlPath, cwd, func(doc *yaml.Node) {
 		SetSDDEnabled(doc, skill.Key, true)
 	})
 	if err != nil {

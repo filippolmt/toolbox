@@ -115,6 +115,44 @@ func TestShellsAddRejectsRelativePath(t *testing.T) {
 	}
 }
 
+// TestShellsAddRejectsInvalidFile: a CLI write no longer commits into a file
+// the doctor rejects — the transactional guarantee `config ui` has always had,
+// now shared by every write surface. The seeded shells.broken entry has no
+// path, which lintShellPaths reports as an error.
+func TestShellsAddRejectsInvalidFile(t *testing.T) {
+	resetShellsFlags(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	chdirTemp(t)
+	cfgPath := filepath.Join(home, ".toolbox.yaml")
+	seed := "shells:\n  broken:\n    env:\n      A: \"1\"\n"
+	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	shellsAddPath = t.TempDir()
+	out := &bytes.Buffer{}
+	shellsAddCmd.SetOut(out)
+
+	err := runShellsAdd(shellsAddCmd, []string{"infra"})
+	if err == nil {
+		t.Fatal("a write into a doctor-rejected file must fail")
+	}
+	if !strings.Contains(err.Error(), "shells.broken.path is empty") {
+		t.Errorf("error must name the finding, got: %v", err)
+	}
+	body, readErr := os.ReadFile(cfgPath)
+	if readErr != nil {
+		t.Fatalf("read %s: %v", cfgPath, readErr)
+	}
+	if string(body) != seed {
+		t.Errorf("a rejected edit must leave the file byte-identical:\n%s", body)
+	}
+	if out.String() != "" {
+		t.Errorf("a rejected edit must print no write report, got: %q", out.String())
+	}
+}
+
 func TestShellsSetRejectsReservedEnvKey(t *testing.T) {
 	resetShellsFlags(t)
 	t.Setenv("HOME", t.TempDir())
@@ -136,6 +174,14 @@ func TestShellsSetWritesEnv(t *testing.T) {
 	resetShellsFlags(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	chdirTemp(t)
+	// The file backing the resolved shell, not just the in-memory cfg: an env
+	// overlay for a shell no layer gives a path to is invalid config, and the
+	// write gate now says so.
+	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"),
+		[]byte("shells:\n  infra:\n    path: /tmp/infra\n"), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
 	withCfg(t, &config.Config{Shells: map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}}})
 
 	shellsSetEnv = []string{"FOO=bar"}

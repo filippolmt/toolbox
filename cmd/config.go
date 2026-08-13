@@ -224,25 +224,24 @@ func runConfigPath(cmd *cobra.Command, _ []string) error {
 
 func runConfigSet(cmd *cobra.Command, _ []string) error {
 	flags := cmd.Flags()
-	// Each candidate maps a --flag to its config key + validator; only flags
-	// the user actually passed are collected (Changed), validated up front,
-	// then written together so a partial write never lands behind a later
-	// rejection — and all keys share one read-parse-write cycle.
-	candidates := []struct {
-		flag, key, value string
-		validate         func(string) error
-	}{
-		{"image", "image", configSetImage, config.ValidateImageRef},
-		{"registry-mirror", "registry_mirror", configSetRegistryMirror, config.ValidateRegistryMirror},
-		{"pull", "pull", configSetPull, config.ValidatePull},
-		{"agent", "agent", configSetAgent, config.ValidateAgent},
+	// Each candidate maps a --flag to its config key; only flags the user
+	// actually passed are collected (Changed), validated up front through the
+	// one per-key rule in config, then written together so a partial write never
+	// lands behind a later rejection — and all keys share one read-parse-write
+	// cycle. The up-front pass is purely for the usage-error exit code: an
+	// invalid value would be rejected by the write gate regardless.
+	candidates := []struct{ flag, key, value string }{
+		{"image", "image", configSetImage},
+		{"registry-mirror", "registry_mirror", configSetRegistryMirror},
+		{"pull", "pull", configSetPull},
+		{"agent", "agent", configSetAgent},
 	}
 	var edits []configedit.ScalarEdit
 	for _, c := range candidates {
 		if !flags.Changed(c.flag) {
 			continue
 		}
-		if err := c.validate(c.value); err != nil {
+		if err := config.ValidateKey(c.key, c.value); err != nil {
 			return &usageError{err: err}
 		}
 		edits = append(edits, configedit.ScalarEdit{Key: c.key, Value: c.value})
@@ -251,12 +250,12 @@ func runConfigSet(cmd *cobra.Command, _ []string) error {
 		return &usageError{err: fmt.Errorf("set requires at least one of --image, --registry-mirror, --pull, --agent")}
 	}
 
-	target, err := resolveWriteTarget(configSetWhere)
+	target, cwd, err := resolveWriteTarget(configSetWhere)
 	if err != nil {
 		return err
 	}
 	existed := fileExists(target)
-	changed, err := configedit.SetScalars(target, edits)
+	changed, err := configedit.SetScalars(target, cwd, edits)
 	if err != nil {
 		return err
 	}

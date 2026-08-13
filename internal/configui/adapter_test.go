@@ -200,6 +200,14 @@ func TestTargetPath(t *testing.T) {
 	}
 }
 
+// apply is the save path the model takes, with ApplyChecked's changed flag
+// dropped — the TUI has no per-file report line to print, so its tests only ever
+// care whether the write was accepted.
+func apply(target, cwd string, mutate configedit.Mutator) error {
+	_, err := configedit.ApplyChecked(target, cwd, mutate)
+	return err
+}
+
 // TestApplyPreservesCommentsAndSiblings: a save updates only the edited key and keeps
 // comments and untouched keys.
 func TestApplyPreservesCommentsAndSiblings(t *testing.T) {

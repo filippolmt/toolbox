@@ -9,10 +9,20 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
+// tmpConfigPath returns an isolated project config path for a writer test.
+// HOME is redirected to a separate temp dir so ApplyChecked's validation sees no
+// global layer under the test's feet, and the returned path's directory is the
+// cwd every writer call must be given (see cwdOf).
 func tmpConfigPath(t *testing.T) string {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 	return filepath.Join(t.TempDir(), ".toolbox.yaml")
 }
+
+// cwdOf is the layer-resolution directory for a temp config file: every writer
+// test keeps its file at <tmpdir>/.toolbox.yaml, so <tmpdir> is the cwd whose
+// walk-up finds exactly that file as the project layer.
+func cwdOf(path string) string { return filepath.Dir(path) }
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
@@ -26,7 +36,7 @@ func readFile(t *testing.T, path string) string {
 func TestUpsertHeaderOnCreate(t *testing.T) {
 	path := tmpConfigPath(t)
 
-	changed, err := SetShell(path, "infra", "/tmp/infra")
+	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra")
 	if err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
@@ -50,7 +60,7 @@ func TestSetScalarsWritesAllKeysAndIsIdempotent(t *testing.T) {
 		{"pull", "never"},
 	}
 
-	changed, err := SetScalars(path, edits)
+	changed, err := SetScalars(path, cwdOf(path), edits)
 	if err != nil {
 		t.Fatalf("SetScalars: %v", err)
 	}
@@ -65,7 +75,7 @@ func TestSetScalarsWritesAllKeysAndIsIdempotent(t *testing.T) {
 	}
 
 	// Idempotent: an identical re-write reports unchanged.
-	changed, err = SetScalars(path, edits)
+	changed, err = SetScalars(path, cwdOf(path), edits)
 	if err != nil {
 		t.Fatalf("rewrite: %v", err)
 	}
@@ -76,10 +86,10 @@ func TestSetScalarsWritesAllKeysAndIsIdempotent(t *testing.T) {
 
 func TestSetScalarsEmptyValueRemovesKey(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetScalars(path, []ScalarEdit{{"image", "ghcr.io/x/y:1"}}); err != nil {
+	if _, err := SetScalars(path, cwdOf(path), []ScalarEdit{{"image", "ghcr.io/x/y:1"}}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	changed, err := SetScalars(path, []ScalarEdit{{"image", ""}})
+	changed, err := SetScalars(path, cwdOf(path), []ScalarEdit{{"image", ""}})
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
@@ -97,7 +107,7 @@ func TestUpsertNoHeaderOnExistingFile(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 	if got := readFile(t, path); strings.Contains(got, "# .toolbox.yaml") {
@@ -107,11 +117,11 @@ func TestUpsertNoHeaderOnExistingFile(t *testing.T) {
 
 func TestUpsertIdempotent(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("first SetShell: %v", err)
 	}
 
-	changed, err := SetShell(path, "infra", "/tmp/infra")
+	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra")
 	if err != nil {
 		t.Fatalf("second SetShell: %v", err)
 	}
@@ -127,7 +137,7 @@ func TestUpsertPreservesComments(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 	got := readFile(t, path)
@@ -140,7 +150,7 @@ func TestUpsertPreservesComments(t *testing.T) {
 
 func TestSetShellNodeShape(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 
@@ -152,11 +162,11 @@ func TestSetShellNodeShape(t *testing.T) {
 
 func TestSetShellEnvSortedAndShaped(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 
-	if _, err := SetShellEnv(path, "infra", map[string]string{"ZED": "z", "ALPHA": "a"}); err != nil {
+	if _, err := SetShellEnv(path, cwdOf(path), "infra", map[string]string{"ZED": "z", "ALPHA": "a"}); err != nil {
 		t.Fatalf("SetShellEnv: %v", err)
 	}
 	got := readFile(t, path)
@@ -170,14 +180,14 @@ func TestSetShellEnvSortedAndShaped(t *testing.T) {
 
 func TestRemoveShell(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
-	if _, err := SetShell(path, "qa", "/tmp/qa"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "qa", "/tmp/qa"); err != nil {
 		t.Fatalf("SetShell qa: %v", err)
 	}
 
-	changed, err := RemoveShell(path, "infra")
+	changed, err := RemoveShell(path, cwdOf(path), "infra")
 	if err != nil {
 		t.Fatalf("RemoveShell: %v", err)
 	}
@@ -193,7 +203,7 @@ func TestRemoveShell(t *testing.T) {
 	}
 
 	// Removing the last entry drops the shells: key entirely.
-	if _, err := RemoveShell(path, "qa"); err != nil {
+	if _, err := RemoveShell(path, cwdOf(path), "qa"); err != nil {
 		t.Fatalf("RemoveShell qa: %v", err)
 	}
 	if got := readFile(t, path); strings.Contains(got, "shells") {
@@ -201,7 +211,7 @@ func TestRemoveShell(t *testing.T) {
 	}
 
 	// Unknown name is a no-op.
-	changed, err = RemoveShell(path, "nope")
+	changed, err = RemoveShell(path, cwdOf(path), "nope")
 	if err != nil {
 		t.Fatalf("RemoveShell nope: %v", err)
 	}
@@ -213,7 +223,7 @@ func TestRemoveShell(t *testing.T) {
 func TestAddMountAppendAndReplace(t *testing.T) {
 	path := tmpConfigPath(t)
 
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/scratch", Target: "/scratch", ReadOnly: true}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/scratch", Target: "/scratch", ReadOnly: true}); err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
 	got := readFile(t, path)
@@ -222,7 +232,7 @@ func TestAddMountAppendAndReplace(t *testing.T) {
 	}
 
 	// Same name replaces in place (no duplicate entry).
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/other", Target: "/scratch"}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/other", Target: "/scratch"}); err != nil {
 		t.Fatalf("AddMount replace: %v", err)
 	}
 	got = readFile(t, path)
@@ -240,7 +250,7 @@ func TestAddMountIntoFlowEmptyList(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
 	if got := readFile(t, path); !strings.Contains(got, "mounts:\n  - name: scratch") {
@@ -252,7 +262,7 @@ func TestDisableMount(t *testing.T) {
 	path := tmpConfigPath(t)
 
 	// Absent entry → `{name, disabled: true}` patch is appended.
-	if _, err := DisableMount(path, "gh"); err != nil {
+	if _, err := DisableMount(path, cwdOf(path), "gh"); err != nil {
 		t.Fatalf("DisableMount: %v", err)
 	}
 	got := readFile(t, path)
@@ -261,10 +271,10 @@ func TestDisableMount(t *testing.T) {
 	}
 
 	// Existing entry gains disabled: true in place.
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
-	if _, err := DisableMount(path, "scratch"); err != nil {
+	if _, err := DisableMount(path, cwdOf(path), "scratch"); err != nil {
 		t.Fatalf("DisableMount scratch: %v", err)
 	}
 	got = readFile(t, path)
@@ -278,11 +288,11 @@ func TestDisableMount(t *testing.T) {
 
 func TestRemoveMount(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
 
-	changed, err := RemoveMount(path, "scratch")
+	changed, err := RemoveMount(path, cwdOf(path), "scratch")
 	if err != nil {
 		t.Fatalf("RemoveMount: %v", err)
 	}
@@ -293,7 +303,7 @@ func TestRemoveMount(t *testing.T) {
 		t.Errorf("empty mounts list must be dropped, got:\n%s", got)
 	}
 
-	changed, err = RemoveMount(path, "scratch")
+	changed, err = RemoveMount(path, cwdOf(path), "scratch")
 	if err != nil {
 		t.Fatalf("RemoveMount again: %v", err)
 	}
@@ -304,7 +314,7 @@ func TestRemoveMount(t *testing.T) {
 
 func TestSetMountsRoot(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetMountsRoot(path, "~/encrypted/toolbox"); err != nil {
+	if _, err := SetMountsRoot(path, cwdOf(path), "~/encrypted/toolbox"); err != nil {
 		t.Fatalf("SetMountsRoot: %v", err)
 	}
 	if got := readFile(t, path); !strings.Contains(got, "mounts_root: ~/encrypted/toolbox") {
@@ -323,7 +333,7 @@ func TestUserShells(t *testing.T) {
 		t.Errorf("missing file must yield no shells, got %v", shells)
 	}
 
-	if _, err := SetShell(path, "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 	shells, err = UserShells(path)
@@ -346,10 +356,10 @@ func TestUserMountNames(t *testing.T) {
 		t.Errorf("missing file must yield no names, got %v", names)
 	}
 
-	if _, err := AddMount(path, config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
+	if _, err := AddMount(path, cwdOf(path), config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}); err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
-	if _, err := DisableMount(path, "gh"); err != nil {
+	if _, err := DisableMount(path, cwdOf(path), "gh"); err != nil {
 		t.Fatalf("DisableMount: %v", err)
 	}
 

@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
@@ -307,12 +307,14 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 	}
 }
 
-// upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml via
-// configio.UpsertFile, preserving existing keys/comments. home is resolved
-// once by the caller and threaded in so the --create path does not pay for
-// repeated os.UserHomeDir() lookups. The key is resolved through shellFileKey,
-// so bootstrapping `toolbox shell Infra --create` writes the same canonical
-// key the loader will look the shell up under.
+// upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml through
+// configedit.SetShell — the same writer `toolbox shells add` uses, so the
+// --create bootstrap inherits the docs header on file creation and the doctor
+// gate, instead of open-coding the node edit. home is resolved once by the
+// caller and threaded in so the --create path does not pay for repeated
+// os.UserHomeDir() lookups. The key is resolved through shellFileKey, so
+// bootstrapping `toolbox shell Infra --create` writes the same canonical key
+// the loader will look the shell up under.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
 		h, err := configio.GlobalConfigDir()
@@ -327,10 +329,10 @@ func upsertShellInUserConfig(home, name, path string) error {
 	if err != nil {
 		return err
 	}
-
-	_, err = configio.UpsertFile(cfgPath, func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), key)
-		configio.SetMapValue(entry, "path", path)
-	})
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve cwd: %w", err)
+	}
+	_, err = configedit.SetShell(cfgPath, cwd, key, path)
 	return err
 }

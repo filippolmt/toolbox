@@ -28,10 +28,11 @@ var bareSkill = sdd.Skill{
 // writes the yaml flag and the fenced block, reporting both changed.
 func TestEnableSDDWritesFlagAndFence(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	yamlPath := filepath.Join(dir, ".toolbox.yaml")
 	gitignorePath := filepath.Join(dir, ".gitignore")
 
-	res, err := EnableSDD(yamlPath, gitignorePath, fenceSkill)
+	res, err := EnableSDD(yamlPath, gitignorePath, dir, fenceSkill)
 	if err != nil {
 		t.Fatalf("EnableSDD: %v", err)
 	}
@@ -52,13 +53,14 @@ func TestEnableSDDWritesFlagAndFence(t *testing.T) {
 // TestEnableSDDIdempotent: a re-enable reports no change on either file.
 func TestEnableSDDIdempotent(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	yamlPath := filepath.Join(dir, ".toolbox.yaml")
 	gitignorePath := filepath.Join(dir, ".gitignore")
 
-	if _, err := EnableSDD(yamlPath, gitignorePath, fenceSkill); err != nil {
+	if _, err := EnableSDD(yamlPath, gitignorePath, dir, fenceSkill); err != nil {
 		t.Fatalf("EnableSDD first: %v", err)
 	}
-	res, err := EnableSDD(yamlPath, gitignorePath, fenceSkill)
+	res, err := EnableSDD(yamlPath, gitignorePath, dir, fenceSkill)
 	if err != nil {
 		t.Fatalf("EnableSDD second: %v", err)
 	}
@@ -71,10 +73,11 @@ func TestEnableSDDIdempotent(t *testing.T) {
 // writes the flag but leaves .gitignore untouched, reporting GitignoreSkipped.
 func TestEnableSDDEmptyEntriesSkipsFence(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	yamlPath := filepath.Join(dir, ".toolbox.yaml")
 	gitignorePath := filepath.Join(dir, ".gitignore")
 
-	res, err := EnableSDD(yamlPath, gitignorePath, bareSkill)
+	res, err := EnableSDD(yamlPath, gitignorePath, dir, bareSkill)
 	if err != nil {
 		t.Fatalf("EnableSDD: %v", err)
 	}
@@ -90,12 +93,13 @@ func TestEnableSDDEmptyEntriesSkipsFence(t *testing.T) {
 // untouched when the same key is enabled via the bool shorthand.
 func TestSetSDDEnabledPreservesObjectForm(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	yamlPath := filepath.Join(dir, ".toolbox.yaml")
 	if err := os.WriteFile(yamlPath, []byte("sdd:\n  fixture:\n    steps:\n      - [\"--flag\"]\n"), 0o600); err != nil {
 		t.Fatalf("seed yaml: %v", err)
 	}
 
-	if _, err := EnableSDD(yamlPath, filepath.Join(dir, ".gitignore"), fenceSkill); err != nil {
+	if _, err := EnableSDD(yamlPath, filepath.Join(dir, ".gitignore"), dir, fenceSkill); err != nil {
 		t.Fatalf("EnableSDD: %v", err)
 	}
 	if got := readFile(t, yamlPath); !strings.Contains(got, "steps:") {
@@ -107,6 +111,7 @@ func TestSetSDDEnabledPreservesObjectForm(t *testing.T) {
 // the fence is absent.
 func TestRemoveSDDGitignore(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	gitignorePath := filepath.Join(dir, ".gitignore")
 
 	if _, err := WriteSDDGitignore(gitignorePath, fenceSkill); err != nil {
