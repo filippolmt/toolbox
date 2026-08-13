@@ -15,8 +15,9 @@ import (
 // typed helpers in write.go, EnableSDD, and the config ui's Pending Mutation —
 // goes through it, so no surface can put a configuration the doctor rejects on
 // disk. The guarantee is structural rather than conventional: the only other
-// exported write in this package is EnsureFileWithHeader, which writes a
-// comment-only file and so cannot introduce a finding.
+// exported write that touches a *config file* is EnsureFileWithHeader, whose
+// comment-only output cannot introduce a finding. (The exported SDD writers in
+// sdd.go write .gitignore, which the doctor has no opinion about.)
 //
 // Render-then-validate, not write-then-doctor-then-rollback: the candidate
 // never reaches disk before it is known good, so a concurrent `toolbox shell`

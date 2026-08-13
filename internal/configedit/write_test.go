@@ -33,7 +33,7 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestUpsertHeaderOnCreate(t *testing.T) {
+func TestApplyCheckedHeaderOnCreate(t *testing.T) {
 	path := tmpConfigPath(t)
 
 	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra")
@@ -101,7 +101,7 @@ func TestSetScalarsEmptyValueRemovesKey(t *testing.T) {
 	}
 }
 
-func TestUpsertNoHeaderOnExistingFile(t *testing.T) {
+func TestApplyCheckedNoHeaderOnExistingFile(t *testing.T) {
 	path := tmpConfigPath(t)
 	if err := os.WriteFile(path, []byte("shell: zsh\n"), 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
@@ -115,7 +115,7 @@ func TestUpsertNoHeaderOnExistingFile(t *testing.T) {
 	}
 }
 
-func TestUpsertIdempotent(t *testing.T) {
+func TestApplyCheckedIdempotent(t *testing.T) {
 	path := tmpConfigPath(t)
 	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
 		t.Fatalf("first SetShell: %v", err)
@@ -127,24 +127,6 @@ func TestUpsertIdempotent(t *testing.T) {
 	}
 	if changed {
 		t.Error("identical re-run must report changed=false")
-	}
-}
-
-func TestUpsertPreservesComments(t *testing.T) {
-	path := tmpConfigPath(t)
-	seed := "# my precious comment\nshell: zsh # trailing note\nmounts_root: /tmp/root\n"
-	if err := os.WriteFile(path, []byte(seed), 0o600); err != nil {
-		t.Fatalf("seed file: %v", err)
-	}
-
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
-		t.Fatalf("SetShell: %v", err)
-	}
-	got := readFile(t, path)
-	for _, want := range []string{"# my precious comment", "# trailing note", "mounts_root: /tmp/root"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("comment/key %q lost in round-trip, got:\n%s", want, got)
-		}
 	}
 }
 

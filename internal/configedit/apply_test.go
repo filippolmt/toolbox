@@ -166,21 +166,35 @@ func TestApplyCheckedRejectsWithoutWriting(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	changed, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), "infra")
-		configio.SetMapValue(entry, "path", "")
-	})
-	if err == nil {
-		t.Fatal("a candidate with an empty shell path must be rejected")
+	// Both gates: a doctor lint (lintShellPaths) and the schema/validation tail
+	// inside Merge. They reach ApplyChecked by different routes and both must
+	// stop the write.
+	cases := []struct {
+		name, want string
+		mutate     Mutator
+	}{
+		{"doctor lint", "shells.infra.path is empty", func(doc *yaml.Node) {
+			entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), "infra")
+			configio.SetMapValue(entry, "path", "")
+		}},
+		{"validation tail", "shell", Scalar("shell", "bash")}, // bash is unsupported
 	}
-	if !strings.Contains(err.Error(), "shells.infra.path is empty") {
-		t.Errorf("error must name the finding, got: %v", err)
-	}
-	if changed {
-		t.Error("a rejected candidate must report changed=false")
-	}
-	if got := readFile(t, path); got != src {
-		t.Errorf("a rejected candidate must leave the file byte-identical:\n%s", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			changed, err := ApplyChecked(path, cwdOf(path), tc.mutate)
+			if err == nil {
+				t.Fatal("an invalid candidate must be rejected")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error must name the finding, got: %v", err)
+			}
+			if changed {
+				t.Error("a rejected candidate must report changed=false")
+			}
+			if got := readFile(t, path); got != src {
+				t.Errorf("a rejected candidate must leave the file byte-identical:\n%s", got)
+			}
+		})
 	}
 }
 

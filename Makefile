@@ -31,7 +31,9 @@ GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$
 # it here puts the tag under Renovate's *docker* datasource, which can only
 # open the bump once the image actually exists. A gap between the two is
 # harmless: GOTOOLCHAIN fetches the newer toolchain inside the container.
-# renovate: datasource=docker depName=golang
+# Bumped by the GO_IMAGE_VERSION customManager in renovate.json (docker
+# datasource, package golang) — that manager is what does the work; do not add
+# an inline `# renovate:` directive here, it would be a second, dead mechanism.
 GO_IMAGE_VERSION := 1.26.5
 GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
 GOLANGCI_VERSION := v2.12.2
