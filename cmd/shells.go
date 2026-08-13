@@ -199,16 +199,9 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	existed := fileExists(target)
-	changed, err := configedit.SetShell(target, cwd, key, path)
+	changed, err := configedit.SetShell(target, cwd, key, path, env)
 	if err != nil {
 		return err
-	}
-	if len(env) > 0 {
-		envChanged, err := configedit.SetShellEnv(target, cwd, key, env)
-		if err != nil {
-			return err
-		}
-		changed = changed || envChanged
 	}
 	reportWrite(cmd.OutOrStdout(), target, existed, changed)
 	return nil

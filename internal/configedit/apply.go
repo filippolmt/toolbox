@@ -103,7 +103,14 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 		filepath.Clean(target) == filepath.Clean(globalPath) {
 		other = project
 	}
-	return subtractFindings(lintStack(other, candidate), lintStack(other, nil))
+	withCandidate := lintStack(other, candidate)
+	if !HasErrors(withCandidate) {
+		// Nothing to attribute, and subtraction only ever removes — so the
+		// baseline stack (a second full merge + lint) is not worth resolving.
+		// This is the path every accepted write takes.
+		return nil
+	}
+	return subtractFindings(withCandidate, lintStack(other, nil))
 }
 
 // lintStack resolves two config layers — lower, then higher — and returns what

@@ -333,6 +333,6 @@ func upsertShellInUserConfig(home, name, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve cwd: %w", err)
 	}
-	_, err = configedit.SetShell(cfgPath, cwd, key, path)
+	_, err = configedit.SetShell(cfgPath, cwd, key, path, nil)
 	return err
 }

@@ -79,11 +79,15 @@ func EnsureFileWithHeader(path string) error {
 // not report a write.
 
 // SetShell upserts shells.<name>.path on the file at path, preserving any
-// sibling keys (env overlays survive a path change).
-func SetShell(path, cwd, name, shellPath string) (bool, error) {
+// sibling keys (env overlays survive a path change). A non-empty env is written
+// in the same document, so `shells add --env` commits both halves of one
+// command or neither — two writes would validate, and could fail, separately.
+// Callers validate env keys (config.ValidateEnv) beforehand.
+func SetShell(path, cwd, name, shellPath string, env map[string]string) (bool, error) {
 	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
 		configio.SetMapValue(entry, "path", shellPath)
+		writeShellEnv(entry, env)
 	})
 }
 
@@ -92,12 +96,21 @@ func SetShell(path, cwd, name, shellPath string) (bool, error) {
 // validate keys (config.ValidateEnv) before writing.
 func SetShellEnv(path, cwd, name string, env map[string]string) (bool, error) {
 	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
-		envMap := configio.EnsureChildMap(entry, "env")
-		for _, k := range slices.Sorted(maps.Keys(env)) {
-			configio.SetMapValue(envMap, k, env[k])
-		}
+		writeShellEnv(configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name), env)
 	})
+}
+
+// writeShellEnv upserts env under one shells.<name> entry, in sorted key order
+// so repeated runs render identically. Empty env leaves the entry untouched —
+// which is what lets SetShell take the same argument optionally.
+func writeShellEnv(entry *yaml.Node, env map[string]string) {
+	if len(env) == 0 {
+		return
+	}
+	envMap := configio.EnsureChildMap(entry, "env")
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		configio.SetMapValue(envMap, k, env[k])
+	}
 }
 
 // RemoveShell deletes the shells.<name> entry from the file at path. A
@@ -174,7 +187,8 @@ func RemoveMount(path, cwd, name string) (bool, error) {
 }
 
 // SetMountsRoot upserts the top-level mounts_root: key. Callers pre-validate
-// with config.ValidateMountsRoot so an invalid root never reaches the file.
+// with config.ValidateKey so a bad flag value fails as a usage error rather
+// than as a rejected write.
 func SetMountsRoot(path, cwd, root string) (bool, error) {
 	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		configio.SetMapValue(doc, "mounts_root", root)
@@ -189,10 +203,10 @@ func SetMountsRoot(path, cwd, root string) (bool, error) {
 // — the clean "reset to default" path that leaves no dangling key behind.
 type ScalarEdit struct{ Key, Value string }
 
-// SetScalars applies every edit in one comment-preserving Upsert, so writing
-// several keys at once costs a single read-parse-write cycle. Callers
-// pre-validate each value (config.ValidateImageRef / ValidateRegistryMirror /
-// ValidatePull).
+// SetScalars applies every edit in one comment-preserving pass, so writing
+// several keys at once costs a single read-parse-write-validate cycle. Callers
+// pre-validate each value with config.ValidateKey so a bad flag value fails as
+// a usage error rather than as a rejected write.
 func SetScalars(path, cwd string, edits []ScalarEdit) (bool, error) {
 	return ApplyChecked(path, cwd, func(doc *yaml.Node) {
 		for _, e := range edits {

@@ -36,7 +36,7 @@ func readFile(t *testing.T, path string) string {
 func TestApplyCheckedHeaderOnCreate(t *testing.T) {
 	path := tmpConfigPath(t)
 
-	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra")
+	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil)
 	if err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestApplyCheckedNoHeaderOnExistingFile(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 	if got := readFile(t, path); strings.Contains(got, "# .toolbox.yaml") {
@@ -117,11 +117,11 @@ func TestApplyCheckedNoHeaderOnExistingFile(t *testing.T) {
 
 func TestApplyCheckedIdempotent(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("first SetShell: %v", err)
 	}
 
-	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra")
+	changed, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil)
 	if err != nil {
 		t.Fatalf("second SetShell: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestApplyCheckedIdempotent(t *testing.T) {
 
 func TestSetShellNodeShape(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestSetShellNodeShape(t *testing.T) {
 
 func TestSetShellEnvSortedAndShaped(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 
@@ -162,10 +162,10 @@ func TestSetShellEnvSortedAndShaped(t *testing.T) {
 
 func TestRemoveShell(t *testing.T) {
 	path := tmpConfigPath(t)
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
-	if _, err := SetShell(path, cwdOf(path), "qa", "/tmp/qa"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "qa", "/tmp/qa", nil); err != nil {
 		t.Fatalf("SetShell qa: %v", err)
 	}
 
@@ -315,7 +315,7 @@ func TestUserShells(t *testing.T) {
 		t.Errorf("missing file must yield no shells, got %v", shells)
 	}
 
-	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra"); err != nil {
+	if _, err := SetShell(path, cwdOf(path), "infra", "/tmp/infra", nil); err != nil {
 		t.Fatalf("SetShell: %v", err)
 	}
 	shells, err = UserShells(path)
