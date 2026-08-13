@@ -137,23 +137,14 @@ func runShellsList(cmd *cobra.Command, _ []string) error {
 }
 
 // shellFileKey returns the key the write commands must edit under shells: in
-// the file at target. The canonical form of a new entry is the normalized name
-// (config.NormalizeShellKey), because that is the key the loaded config will
-// have; an entry the file already spells differently — a hand-written
-// `Infra:` — is edited in place instead, so an edit never leaves two keys
-// behind that collapse into one at load time.
+// the file at target — configedit.ShellKeyIn's rule applied to the keys that
+// file currently carries.
 func shellFileKey(target, name string) (string, error) {
-	key := config.NormalizeShellKey(name)
 	fileShells, err := configedit.UserShells(target)
 	if err != nil {
 		return "", err
 	}
-	for existing := range fileShells {
-		if config.NormalizeShellKey(existing) == key {
-			return existing, nil
-		}
-	}
-	return key, nil
+	return configedit.ShellKeyIn(slices.Sorted(maps.Keys(fileShells)), name), nil
 }
 
 func runShellsGet(cmd *cobra.Command, args []string) error {

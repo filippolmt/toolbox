@@ -114,6 +114,49 @@ func TestShellsRenameCarriesEnvToTheNewName(t *testing.T) {
 	}
 }
 
+// The loaded config is keyed by viper's lowercased name, so an entry a file
+// spells `Infra:` reaches the caller as `infra` and comes back as an entry
+// under that name. Matching the two literally dropped the file's entry as
+// "unwanted" and re-created it — silently taking its env overlay with it.
+func TestShellsEditsAnExistingKeySpellingInPlace(t *testing.T) {
+	src := "shells:\n  Infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n"
+	got := render(t, src, Shells([]ShellEntry{{Name: "infra", Path: "/repo/infra", OrigName: "infra"}}))
+
+	if !strings.Contains(got, "REGION: eu") {
+		t.Errorf("the env overlay of the entry being edited must survive:\n%s", got)
+	}
+	if strings.Contains(got, "\n  infra:") {
+		t.Errorf("a second key must not appear beside Infra::\n%s", got)
+	}
+	if !strings.Contains(got, "Infra:") {
+		t.Errorf("the file's own spelling must be kept:\n%s", got)
+	}
+}
+
+// A new entry is written under the canonical key: the one the loader will look
+// it up under, so `config ui` cannot create a shell its own next read misses.
+func TestShellsWritesNewEntryUnderTheCanonicalKey(t *testing.T) {
+	got := render(t, "", Shells([]ShellEntry{{Name: " Infra ", Path: "/repo/infra"}}))
+	if !strings.Contains(got, "shells:\n  infra:\n") {
+		t.Errorf("want the canonical key shells.infra:\n%s", got)
+	}
+}
+
+func TestShellKeyIn(t *testing.T) {
+	existing := []string{"Infra", "qa"}
+	cases := []struct{ name, want string }{
+		{"infra", "Infra"},   // existing spelling wins
+		{" INFRA ", "Infra"}, // …however the caller typed it
+		{"qa", "qa"},
+		{"New Name", "new name"}, // unknown: canonical form
+	}
+	for _, c := range cases {
+		if got := ShellKeyIn(existing, c.name); got != c.want {
+			t.Errorf("ShellKeyIn(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestMountsDisabledPatchesAndReEnablesCleanly(t *testing.T) {
 	name := DefaultMountNames()[0]
 	got := render(t, "", MountsDisabled(map[string]bool{name: true}))

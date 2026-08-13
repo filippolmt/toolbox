@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sdd"
@@ -91,11 +92,33 @@ type ShellEntry struct {
 	Env                  map[string]string
 }
 
+// ShellKeyIn returns the key to write for name given the shell keys a file
+// already carries: the existing spelling whenever one normalizes to the same
+// key, otherwise the canonical form (config.NormalizeShellKey).
+//
+// Sole owner of the "which key does a shells: writer touch" rule, shared by
+// this package's Shells mutator and cmd's file-at-a-time writers. Both halves
+// matter: writing the canonical key keeps a new entry findable by the loader
+// (which sees viper's lowercased key), and reusing an existing spelling stops
+// an edit from adding a second key that collapses onto the first at load time.
+func ShellKeyIn(existing []string, name string) string {
+	key := config.NormalizeShellKey(name)
+	for _, e := range existing {
+		if config.NormalizeShellKey(e) == key {
+			return e
+		}
+	}
+	return key
+}
+
 // Shells reconciles the shells: block to entries: it removes any shell not
-// named by an entry and writes each entry's .path. For an unchanged name the
-// existing env block is left untouched (its formatting and comments survive);
-// for a rename (Name != OrigName) the carried Env overlay is written under the
-// new name so it is not lost. An empty set removes the block.
+// named by an entry and writes each entry's .path. Names are matched by their
+// normalized key (see ShellKeyIn), so an entry the file spells differently is
+// edited in place rather than dropped and re-created — which would take its
+// env block with it. For an unchanged name the existing env block is left
+// untouched (its formatting and comments survive); for a rename the carried Env
+// overlay is written under the new name so it is not lost. An empty set removes
+// the block.
 func Shells(entries []ShellEntry) Mutator {
 	if len(entries) == 0 {
 		return Remove("shells")
@@ -110,17 +133,19 @@ func Shells(entries []ShellEntry) Mutator {
 		root := configio.EnsureChildMap(doc, "shells")
 		want := make(map[string]bool, len(entries))
 		for _, e := range entries {
-			want[e.Name] = true
+			want[config.NormalizeShellKey(e.Name)] = true
 		}
-		for _, name := range childKeys(root) {
-			if !want[name] {
+		spelled := childKeys(root)
+		for _, name := range spelled {
+			if !want[config.NormalizeShellKey(name)] {
 				configio.RemoveMapKey(root, name)
 			}
 		}
 		for _, e := range entries {
-			entry := configio.EnsureChildMap(root, e.Name)
+			entry := configio.EnsureChildMap(root, ShellKeyIn(spelled, e.Name))
 			configio.SetMapValue(entry, "path", e.Path)
-			if e.Name != e.OrigName && len(e.Env) > 0 {
+			renamed := config.NormalizeShellKey(e.Name) != config.NormalizeShellKey(e.OrigName)
+			if renamed && len(e.Env) > 0 {
 				env := configio.EnsureChildMap(entry, "env")
 				env.Content = env.Content[:0]
 				for _, k := range slices.Sorted(maps.Keys(e.Env)) {
