@@ -25,6 +25,20 @@ func testConfig() *config.Config {
 	return &config.Config{Shell: "zsh"}
 }
 
+// planWorkspace installs a temp HOME plus an existing workspace directory —
+// the fixture the mount stage's filesystem side effects need — and returns
+// the workspace path.
+func planWorkspace(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	ws := filepath.Join(home, "ws")
+	if err := mkdirAll(t, ws); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	return ws
+}
+
 // --- Plan tier (fs side effects) ---
 
 // TestPlanComposesImage asserts every config resolves to the canonical
@@ -81,32 +95,34 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	}
 }
 
-// TestMergeImageSelectionAndPullPolicy asserts registry_mirror relocates the
+// TestPlanImageSelectionAndPullPolicy asserts registry_mirror relocates the
 // host (path+tag preserved) and the pull policy propagates onto the Image.
-func TestMergeImageSelectionAndPullPolicy(t *testing.T) {
+func TestPlanImageSelectionAndPullPolicy(t *testing.T) {
+	workspace := planWorkspace(t)
 	cfg := &config.Config{Shell: "zsh", RegistryMirror: "harbor.corp.io/ghcr-proxy", Pull: "never"}
-	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/tmp/ws"})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
-		t.Fatalf("Merge: %v", err)
+		t.Fatalf("Plan: %v", err)
 	}
-	if merged.Image.Ref != "harbor.corp.io/ghcr-proxy/filippolmt/toolbox:latest" {
-		t.Errorf("Image.Ref = %q, want mirror-swapped ref", merged.Image.Ref)
+	if plan.Image.Ref != "harbor.corp.io/ghcr-proxy/filippolmt/toolbox:latest" {
+		t.Errorf("Image.Ref = %q, want mirror-swapped ref", plan.Image.Ref)
 	}
-	if merged.Image.PullPolicy != "never" {
-		t.Errorf("PullPolicy = %q, want never", merged.Image.PullPolicy)
+	if plan.Image.PullPolicy != "never" {
+		t.Errorf("PullPolicy = %q, want never", plan.Image.PullPolicy)
 	}
 }
 
-// TestMergeFullImageOverrideWins asserts an explicit image: ref beats a
+// TestPlanFullImageOverrideWins asserts an explicit image: ref beats a
 // configured registry_mirror.
-func TestMergeFullImageOverrideWins(t *testing.T) {
+func TestPlanFullImageOverrideWins(t *testing.T) {
+	workspace := planWorkspace(t)
 	cfg := &config.Config{Shell: "zsh", Image: "ghcr.io/x/y:dev", RegistryMirror: "ignored.example/proxy"}
-	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/tmp/ws"})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
 	if err != nil {
-		t.Fatalf("Merge: %v", err)
+		t.Fatalf("Plan: %v", err)
 	}
-	if merged.Image.Ref != "ghcr.io/x/y:dev" {
-		t.Errorf("Image.Ref = %q, want full override to win", merged.Image.Ref)
+	if plan.Image.Ref != "ghcr.io/x/y:dev" {
+		t.Errorf("Image.Ref = %q, want full override to win", plan.Image.Ref)
 	}
 }
 
@@ -391,21 +407,6 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 	}
 }
 
-// TestMergeUserEnvAppended mirrors the fs-free Merge path: user env survives
-// the pure-data plan shape too.
-func TestMergeUserEnvAppended(t *testing.T) {
-	cfg := testConfig()
-	cfg.Env = map[string]string{"FOO": "bar"}
-
-	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
-	if err != nil {
-		t.Fatalf("Merge: %v", err)
-	}
-	if got := indexEnv(merged.Env)["FOO"]; got != "bar" {
-		t.Errorf("Env[FOO] = %q, want %q (full: %v)", got, "bar", merged.Env)
-	}
-}
-
 // TestPlanSDDEnvAppendedWhenEnabled asserts the field-per-env-var contract:
 // each enabled skill emits a TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}
 // quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH.
@@ -619,55 +620,6 @@ func TestNamedContainerNameDisjointFromHashFormat(t *testing.T) {
 	}
 }
 
-// --- Merge tier (pure data, NO fs side effects) ---
-
-func TestMergeIsPure(t *testing.T) {
-	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: testConfig(), Workspace: "/workspace"})
-	if err != nil {
-		t.Fatalf("Merge: %v", err)
-	}
-	if merged.Image.Ref == "" {
-		t.Error("Merge.Image.Ref empty; expected ResolveImage output")
-	}
-	if merged.ContainerName == "" {
-		t.Error("Merge.ContainerName empty; expected ContainerNameFor output")
-	}
-	if len(merged.Binds) == 0 {
-		t.Error("Merge.Binds empty; expected post-merge defaults")
-	}
-	_ = []config.Mount(merged.Binds)
-
-	if merged.WorkingDir != mountplan.WorkspaceTarget {
-		t.Errorf("Merge.WorkingDir = %q, want %q", merged.WorkingDir, mountplan.WorkspaceTarget)
-	}
-
-	wantEnv := []string{
-		"TOOLBOX_HOST_WORKSPACE=/workspace",
-		"PWD=" + mountplan.WorkspaceTarget,
-		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=workspace",
-		"TOOLBOX_CLI_VERSION=" + version.Version,
-	}
-	if !slices.Equal(merged.Env, wantEnv) {
-		t.Errorf("Merge.Env = %v, want %v", merged.Env, wantEnv)
-	}
-}
-
-func TestMergeRejectsBadMountsRoot(t *testing.T) {
-	cfg := testConfig()
-	cfg.MountsRoot = "~"
-	_, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
-	if err == nil {
-		t.Fatal("Merge should reject bare ~ as mounts_root")
-	}
-}
-
-func TestMergeRejectsBadPort(t *testing.T) {
-	_, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: testConfig(), Workspace: "/workspace", Ports: []string{"not-a-port"}})
-	if err == nil {
-		t.Fatal("Merge should reject malformed --publish spec")
-	}
-}
-
 // --- MissingPublishPorts ---
 
 func TestMissingPublishPortsTable(t *testing.T) {
@@ -844,18 +796,6 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 	}
 	if !slices.Equal(plan.SecurityOpt, []string{"seccomp=unconfined"}) {
 		t.Errorf("SecurityOpt = %v, want [seccomp=unconfined]", plan.SecurityOpt)
-	}
-}
-
-func TestMergeAlsoComputesCmd(t *testing.T) {
-	cfg := testConfig()
-	cfg.Shell = "zsh"
-	merged, err := sessionplan.Merge(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
-	if err != nil {
-		t.Fatalf("Merge: %v", err)
-	}
-	if !slices.Equal(merged.Cmd, []string{"/bin/zsh"}) {
-		t.Errorf("Merge.Cmd = %v, want [/bin/zsh]", merged.Cmd)
 	}
 }
 

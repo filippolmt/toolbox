@@ -8,20 +8,21 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-// TestPlanProfileThreadsToContainerName: a non-nil Profile on PlanInput reaches
-// the resolved ContainerName through sessionplan.Merge (fs-free), and a
-// different --share set for the same profile+workspace yields a different
-// container — mounts are fixed at ContainerCreate.
-func TestMergeProfileContainerNaming(t *testing.T) {
+// TestPlanProfileContainerNaming: a non-nil Profile on PlanInput reaches the
+// resolved ContainerName, and a different --share set for the same
+// profile+workspace yields a different container — mounts are fixed at
+// ContainerCreate.
+func TestPlanProfileContainerNaming(t *testing.T) {
+	workspace := planWorkspace(t)
 	base := func(name string, p *mountplan.Profile) string {
 		t.Helper()
-		merged, err := sessionplan.Merge(sessionplan.PlanInput{
-			Cfg: testConfig(), Workspace: "/home/u/proj", Name: name, Profile: p,
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{
+			Cfg: testConfig(), Workspace: workspace, Name: name, Profile: p,
 		})
 		if err != nil {
-			t.Fatalf("Merge: %v", err)
+			t.Fatalf("Plan: %v", err)
 		}
-		return merged.ContainerName
+		return plan.ContainerName
 	}
 
 	plain := base("", nil)

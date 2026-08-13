@@ -186,12 +186,11 @@ env, working dir, container name, container command, and security
 options.
 
 Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
-(or mountplan.Merge for pure inspection) → ContainerNameFor → shellEnv
-→ ResolveShellCmd → NestedSandboxSecurityOpt`. Owned
-by `internal/sessionplan`. The single seam runtime callers and tests
-cross is `sessionplan.Plan(cfg, workspace, ports, cliVersion)`; pure
-inspection (no filesystem side-effects) is exposed as
-`sessionplan.Merge(cfg, workspace, ports, cliVersion)`. Port-mismatch
+→ ContainerNameFor → shellEnv → ResolveShellCmd →
+NestedSandboxSecurityOpt`. Owned by `internal/sessionplan`. The single
+seam runtime callers and tests cross is `sessionplan.Plan(PlanInput)`;
+there is no fs-free twin — a test that needs one asserts against `Plan`
+with a `t.TempDir()` HOME (`planWorkspace`). Port-mismatch
 detection is a separate pure function `sessionplan.MissingPublishPorts(plan,
 inspect)`; `internal/container` formats and emits the warning so the
 UI-conventions concern stays at the Docker edge. Host-port conflict

@@ -2,8 +2,7 @@
 // workspace path, and --publish specs into the typed plan handed to
 // internal/container.Shell: image reference, bind set, publish specs, env,
 // working dir, container name, container Cmd, security opts. Plan is the
-// external seam with filesystem side effects; Merge is the pure-data twin
-// used by tests.
+// single seam; it owns the filesystem side effects of the mount stage.
 package sessionplan
 
 import (
@@ -81,27 +80,10 @@ type SessionPlan struct {
 	Proximo bool
 }
 
-// MergedSessionPlan is the pure-data shape returned by Merge. Binds are
-// the post-merge config.Mount slice (no filesystem side-effects). Tests
-// assert merge decisions at this layer without invoking mountplan.Plan.
-type MergedSessionPlan struct {
-	Image         Image
-	Binds         []config.Mount
-	WorkingDir    string
-	ExposedPorts  network.PortSet
-	PortBindings  network.PortMap
-	Env           []string
-	ContainerName string
-	Cmd           []string
-	SecurityOpt   []string
-}
-
-// PlanInput is the full set of inputs to Plan and Merge. The two share one
-// struct so the pure-data Merge stays signature-parallel with the fs-touching
-// Plan; Merge ignores ImageDigest (the poller identity is an fs-free-plan
-// non-concern). Bundling the inputs keeps the container-name decision — the
-// one field that varies between a workspace session and a named shell — a
-// single Name input rather than a post-planning override in the caller.
+// PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
+// container-name decision — the one field that varies between a workspace
+// session and a named shell — a single Name input rather than a post-planning
+// override in the caller.
 type PlanInput struct {
 	Cfg            *config.Config
 	Workspace      string
@@ -113,7 +95,7 @@ type PlanInput struct {
 	// pure planner does not hold). Empty when unresolvable — e.g. a locally
 	// built untagged image; the identity injection then omits the digest entry
 	// so the in-container poller skips the image check rather than treating an
-	// empty value as a stale digest. Ignored by Merge. See update-notification.
+	// empty value as a stale digest. See update-notification.
 	ImageDigest string
 
 	// Name is the sanitized named-shell name (see SanitizeShellName). Empty for
@@ -136,8 +118,7 @@ type PlanInput struct {
 // containerName resolves the container name from the workspace path and the
 // optional named-shell name — the single place the workspace-hash vs
 // named-shell choice lives. Empty name → workspace-derived; non-empty →
-// named form. bridgeLoopback-free and fs-free, so both Plan and Merge share
-// it.
+// named form. bridgeLoopback-free and fs-free.
 func containerName(workspace, name string, profile *mountplan.Profile) string {
 	if name == "" {
 		// Workspace sessions fold the full profile discriminator (name + share
@@ -246,57 +227,12 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 	return []string{"TOOLBOX_LOOPBACK_BRIDGE_PORTS=" + strings.Join(uniqContainerPorts, ",")}
 }
 
-// Merge returns the pure-data plan shape: identical to Plan but composes
-// mountplan.Merge (no fs side effects) and exposes Binds as the post-merge
-// config.Mount slice. Tests asserting the contract construct merged plans
-// without t.TempDir / HOME setup.
-func Merge(in PlanInput) (*MergedSessionPlan, error) {
-	workspace := normalizeWorkspace(in.Workspace)
-
-	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(in.Ports)
-	if err != nil {
-		return nil, err
-	}
-
-	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
-
-	merged, err := mountplan.Merge(in.Cfg, in.Profile)
-	if err != nil {
-		return nil, err
-	}
-
-	// Pure WorkingDir: mountplan.WorkspaceMirrorPath is fs-free, so Merge
-	// can match Plan's mirror-or-target choice without touching disk.
-	workingDir := mountplan.WorkspaceTarget
-	if mirror, ok := mountplan.WorkspaceMirrorPath(workspace); ok {
-		workingDir = mirror
-	}
-
-	cmd, err := ResolveShellCmd(in.Cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &MergedSessionPlan{
-		Image:         Image{Ref: ref, PullPolicy: in.Cfg.Pull},
-		Binds:         merged,
-		WorkingDir:    workingDir,
-		ExposedPorts:  exposed,
-		PortBindings:  bindings,
-		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: containerName(workspace, in.Name, in.Profile),
-		Cmd:           cmd,
-		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
-	}, nil
-}
-
 // composeEnv assembles the full ordered env slice for a session: the curated
 // workspace + SDD entries first, then the loopback-bridge markers, then the
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then any caller-supplied
-// curated extras (Plan passes proximo.Env, which stats the host CA —
-// fs-touching, so the pure-data Merge passes nil), then the user-supplied
-// env: map. Reserved-key collisions are already rejected by config.ValidateEnv,
+// curated extras (Plan passes proximo.Env, which stats the host CA), then
+// the user-supplied env: map. Reserved-key collisions are already rejected by config.ValidateEnv,
 // so userEnv can append unconditionally.
 func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, imageDigest string, extra []string) []string {
 	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
