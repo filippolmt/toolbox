@@ -81,12 +81,8 @@ type Model struct {
 	// the panel repaints on every keystroke, so re-reading there would put file
 	// I/O on the render path. It goes stale only against an edit made to the
 	// file from outside while the editor is open, and the save's own Doctor pass
-	// still validates the real result. previewBaseExists is kept alongside it
-	// because an absent target is written with the docs header, so the preview
-	// needs the same distinction the writer makes.
-	previewBase       []byte
-	previewBaseExists bool
-	previewBaseErr    error
+	// still validates the real result.
+	previewBase baseDoc
 
 	status   string
 	loadErr  error
@@ -226,7 +222,7 @@ func (m *Model) openEditor() {
 	key := st.Key
 	// Baseline for the preview diff, taken once for the whole editor session
 	// (see Model.previewBase).
-	m.previewBase, m.previewBaseExists, m.previewBaseErr = readMaybe(m.target)
+	m.previewBase = readBaseDoc(m.target)
 	// Signal when the edit will fork a value into a scope that does not set it,
 	// so creating an override is a deliberate act, not a surprise.
 	if st.ScopeSet {
@@ -317,7 +313,9 @@ func (m *Model) resetToDefault() {
 		m.status = fmt.Sprintf("%s is not set in %s (inherits %s) — nothing to reset", st.Key, m.scope, originLabel(st))
 		return
 	}
-	if err := Unset(m.target, m.cwd, st.Key); err != nil {
+	// Removing the key is the same path as a tri-state "unset": the file simply
+	// stops setting it, so the next load inherits the lower layer's value.
+	if err := apply(m.target, m.cwd, configedit.Remove(st.Key)); err != nil {
 		m.status = "reset failed: " + err.Error()
 		return
 	}
@@ -349,7 +347,7 @@ func (m Model) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) closeEditor() {
 	m.editing = false
 	m.ed = editor{}
-	m.previewBase, m.previewBaseExists, m.previewBaseErr = nil, false, nil
+	m.previewBase = baseDoc{}
 }
 
 func (m Model) updateChoice(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

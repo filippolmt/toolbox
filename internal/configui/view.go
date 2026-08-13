@@ -257,14 +257,14 @@ func (m Model) renderPreview() string {
 }
 
 func (m Model) previewBody() (string, error) {
-	if m.previewBaseErr != nil {
-		return "", m.previewBaseErr
+	if m.previewBase.err != nil {
+		return "", m.previewBase.err
 	}
 	mut := m.pendingMutator()
 	if mut == nil {
 		return "", fmt.Errorf("no pending change for %s", m.ed.key)
 	}
-	lines, err := previewDiff(m.target, m.previewBase, m.previewBaseExists, mut)
+	lines, err := previewDiff(m.target, m.previewBase, mut)
 	if err != nil {
 		return "", err
 	}

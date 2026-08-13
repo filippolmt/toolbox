@@ -15,18 +15,22 @@ import (
 // the assertion surface for what the preview panel claims.
 func previewLines(t *testing.T, m Model, base []byte) []previewLine {
 	t.Helper()
-	lines, err := previewDiff("preview.yaml", base, true, m.pendingMutator())
+	lines, err := previewDiff("preview.yaml", baseDoc{bytes: base, exists: true}, m.pendingMutator())
 	if err != nil {
 		t.Fatalf("previewDiff: %v", err)
 	}
 	return lines
 }
 
-// previewText flattens previewLines into `- `/`+ ` marked text.
+// previewText is previewLines flattened into `- `/`+ ` marked text.
 func previewText(t *testing.T, m Model, base []byte) string {
 	t.Helper()
+	return markedText(previewLines(t, m, base))
+}
+
+func markedText(lines []previewLine) string {
 	var b strings.Builder
-	for _, l := range previewLines(t, m, base) {
+	for _, l := range lines {
 		marker := "- "
 		if l.Added {
 			marker = "+ "
@@ -53,10 +57,9 @@ func mountsEditor() Model {
 // bare `mounts:` list claimed the inverse of the pending edit — that the checked
 // mount was the only one kept.
 func TestPreviewMountsShowsDisablePatch(t *testing.T) {
-	m := mountsEditor()
-	lines := previewLines(t, m, []byte("pull: never\n"))
+	lines := previewLines(t, mountsEditor(), []byte("pull: never\n"))
 
-	got := previewText(t, m, []byte("pull: never\n"))
+	got := markedText(lines)
 	if !strings.Contains(got, "name: claude") || !strings.Contains(got, "disabled: true") {
 		t.Errorf("preview does not show the disable patch the writer produces:\n%s", got)
 	}
@@ -75,14 +78,8 @@ func TestPreviewMountsShowsDisablePatch(t *testing.T) {
 // holds, so the preview has to render the mutation against the real document.
 func TestPreviewMountsKeepsRicherUserEntry(t *testing.T) {
 	base := []byte("mounts:\n  - name: claude\n    source: /host/claude\n    target: /home/toolbox/.claude\n")
-	m := Model{ed: editor{
-		key:      "mounts",
-		kind:     edMulti,
-		options:  []string{"claude", "gh"},
-		selected: map[string]bool{"claude": true},
-	}}
 
-	got := previewText(t, m, base)
+	got := previewText(t, mountsEditor(), base)
 	if strings.Contains(got, "- source: /host/claude") {
 		t.Errorf("preview claims the user's source override is dropped:\n%s", got)
 	}
@@ -110,7 +107,7 @@ func TestPreviewReportsNoChangeForAnIdenticalEdit(t *testing.T) {
 func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
 	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
 
-	lines, err := previewDiff("new.yaml", nil, false, m.pendingMutator())
+	lines, err := previewDiff("new.yaml", baseDoc{}, m.pendingMutator())
 	if err != nil {
 		t.Fatalf("previewDiff: %v", err)
 	}
@@ -127,6 +124,89 @@ func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
 	}
 	if !strings.Contains(got, "pull: never") {
 		t.Errorf("preview must include the edit itself:\n%s", got)
+	}
+}
+
+// A file holding only comments parses to a document with no keys, so the write
+// drops those comments. The panel has to name the lines it actually removes: a
+// re-rendered before side reported them as `- {}`, a token no file ever held,
+// while silently omitting that the user's comments go away. This shape is
+// production-reachable — EnsureTargetFile leaves exactly it behind when the
+// $EDITOR escape creates the target.
+func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
+	base := []byte("# hand-written notes\n# second line\n")
+	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+
+	got := previewText(t, m, base)
+	if strings.Contains(got, "{}") {
+		t.Errorf("preview must not describe a keyless document as {}:\n%s", got)
+	}
+	if !strings.Contains(got, "- # hand-written notes") {
+		t.Errorf("preview must report the comment lines the write drops:\n%s", got)
+	}
+}
+
+// The write replaces the file with the encoder's output wholesale, so
+// normalisation is part of the edit: a blank line between blocks does not
+// survive it. The panel has to report that. Re-rendering the before side would
+// cancel it out and hide a change the user is about to get — which is the reason
+// the before side is the file's own bytes.
+func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
+	base := []byte("# global\npull: always\n\nagent: claude\n")
+	m := Model{ed: editor{key: "image", kind: edString, input: fieldInput("ghcr.io/acme/box:v1")}}
+
+	lines := previewLines(t, m, base)
+	blankRemoved := false
+	for _, l := range lines {
+		if !l.Added && l.Text == "" {
+			blankRemoved = true
+		}
+	}
+	if !blankRemoved {
+		t.Errorf("preview must report the blank line the write drops:\n%s", markedText(lines))
+	}
+	if !strings.Contains(markedText(lines), "+ image: ghcr.io/acme/box:v1") {
+		t.Errorf("preview must show the edit itself:\n%s", markedText(lines))
+	}
+}
+
+// previewBody is the panel's own seam, and the link every other preview test
+// skips: it is what carries openEditor's reading of the target into the diff.
+// With the tests all calling previewDiff directly and passing exists themselves,
+// that link could be broken — or hardcoded — and the fresh-target header
+// regression would come back on the only surface a user sees.
+func TestPreviewBodyCarriesTheTargetStateFromOpenEditor(t *testing.T) {
+	tc := previewCase{key: "pull", open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") }}
+	m, _ := openedEditor(t, tc, false)
+
+	if m.previewBase.exists {
+		t.Error("openEditor must report an absent target as not existing")
+	}
+	got, err := m.previewBody()
+	if err != nil {
+		t.Fatalf("previewBody: %v", err)
+	}
+	if !strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("panel must show the docs header a create writes:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("panel must show the edit itself:\n%s", got)
+	}
+}
+
+// The panel's no-change branch. An editor opens with its cursor already on the
+// current effective value, so saving straight away writes nothing — and the
+// panel must say so rather than show an unchanged fragment.
+func TestPreviewBodyReportsNoChangeForAnUntouchedEditor(t *testing.T) {
+	// The fixture sets agent: claude, so the freshly opened cursor sits on it.
+	m, _ := openedEditor(t, previewCase{key: "agent", open: func(*Model) {}}, true)
+
+	got, err := m.previewBody()
+	if err != nil {
+		t.Fatalf("previewBody: %v", err)
+	}
+	if !strings.Contains(got, "no change") {
+		t.Errorf("an untouched editor must report no change, got:\n%s", got)
 	}
 }
 
@@ -161,11 +241,11 @@ func requireHostAuthPath(t *testing.T, home, key string) {
 // TestPreviewMatchesWriterForEveryEditableKey is the permanent net over the
 // defect class: for every key with an editor, what the preview says will be
 // written must be exactly what the key's own mutator puts on disk, and the
-// model's own save path must land on the same bytes. The preview and the writers used to be
-// independent models of the same mutation, indexed on different axes (editor
-// kind vs key), and they diverged wherever those axes failed to coincide —
-// mounts inverted the edit, sdd showed a list where a map is written, shells
-// under-reported the env block the writer preserves.
+// model's own save path must land on the same bytes. The preview and the writers
+// used to be independent models of the same mutation, indexed on different axes
+// (editor kind vs key), and they diverged wherever those axes failed to
+// coincide — mounts inverted the edit, sdd showed a list where a map is written,
+// shells under-reported the env block the writer preserves.
 //
 // The read-only `shell` key is excluded: openEditor refuses it, so it has no
 // pending mutation to preview.
@@ -273,19 +353,17 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 	// Both target states, because they take different write paths: an absent
 	// .toolbox.yaml is created carrying the docs header, so it is the one case
 	// where the preview could under-report the write by whole lines.
-	for _, targetExists := range []bool{true, false} {
-		state := "existing-target"
-		if !targetExists {
-			state = "fresh-target"
-		}
+	for _, state := range []struct {
+		name   string
+		exists bool
+	}{
+		{name: "existing-target", exists: true},
+		{name: "fresh-target", exists: false},
+	} {
 		for _, tc := range cases {
-			t.Run(tc.key+"/"+state, func(t *testing.T) {
-				m, target := openedEditor(t, tc, targetExists)
-				base, exists, err := readMaybe(target)
-				if err != nil {
-					t.Fatalf("read baseline: %v", err)
-				}
-				claimed, err := configedit.Render(target, base, exists, m.pendingMutator())
+			t.Run(tc.key+"/"+state.name, func(t *testing.T) {
+				m, target := openedEditor(t, tc, state.exists)
+				claimed, err := configedit.Render(target, m.previewBase.bytes, m.previewBase.exists, m.pendingMutator())
 				if err != nil {
 					t.Fatalf("render preview: %v", err)
 				}
@@ -293,14 +371,14 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 				// What the key's own mutation produces, driven with hand-written
 				// arguments rather than the model's dispatch.
 				if err := tc.save(m); err != nil {
-					t.Fatalf("writer: %v", err)
+					t.Fatalf("oracle mutation: %v", err)
 				}
 				if got := readFile(t, target); got != string(claimed) {
-					t.Errorf("preview does not describe what the writer writes.\npreview:\n%s\nwriter:\n%s", claimed, got)
+					t.Errorf("preview does not describe what the mutation writes.\npreview:\n%s\nwritten:\n%s", claimed, got)
 				}
 
 				// And the model's own save path must land on those same bytes.
-				m2, target2 := openedEditor(t, tc, targetExists)
+				m2, target2 := openedEditor(t, tc, state.exists)
 				if err := m2.saveEdit(); err != nil {
 					t.Fatalf("saveEdit: %v", err)
 				}

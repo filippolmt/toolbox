@@ -501,12 +501,6 @@ func EnsureTargetFile(target string) error {
 	return configedit.EnsureFileWithHeader(target)
 }
 
-// Unset removes a key from the target file — the shared path behind tri-state
-// "unset" and "reset to default".
-func Unset(target, cwd, key string) error {
-	return apply(target, cwd, configedit.Remove(key))
-}
-
 // apply mutates target through the comment-preserving writer, then validates
 // with the config doctor scoped so the just-written file is the authoritative
 // (explicit) layer — validating the edited file itself, not merely the merged

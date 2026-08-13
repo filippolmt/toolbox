@@ -24,39 +24,49 @@ type previewLine struct {
 	Text  string
 }
 
+// baseDoc is the target document as the editor found it. The three fields are
+// readMaybe's own return triple and are useless apart: the preview needs the
+// bytes to diff against, exists because an absent target is created carrying the
+// docs header, and err to say why it can show nothing at all.
+type baseDoc struct {
+	bytes  []byte
+	exists bool
+	err    error
+}
+
+// readBaseDoc snapshots target for an editor session.
+func readBaseDoc(target string) baseDoc {
+	b, exists, err := readMaybe(target)
+	return baseDoc{bytes: b, exists: exists, err: err}
+}
+
 // previewDiff renders mut against base and returns the lines that differ. An
 // empty result means the mutation would change nothing — the caller says so
 // rather than showing an unchanged fragment, which would imply a pending change
-// that does not exist. exists reports whether the target file is already there,
-// which decides both sides of the diff (see below). name only labels
-// parse/encode errors.
-func previewDiff(name string, base []byte, exists bool, mut configedit.Mutator) ([]previewLine, error) {
-	// A target that does not exist yet has no "before" at all. Rendering its
-	// empty document would put a `{}` line on the removed side that no file ever
-	// held — and the edit's real effect is the whole file, header included.
-	var beforeLines []string
-	if exists {
-		// base re-rendered by the same encoder rather than base itself, so the
-		// diff shows the mutation's effect and not the difference between the
-		// file's formatting and the encoder's.
-		before, err := configedit.Render(name, base, true, nil)
-		if err != nil {
-			return nil, err
-		}
-		beforeLines = documentLines(before)
+// that does not exist. name only labels parse/encode errors.
+func previewDiff(name string, base baseDoc, mut configedit.Mutator) ([]previewLine, error) {
+	if base.err != nil {
+		return nil, base.err
 	}
 	// configedit.Render, not configio.RenderDocument: creating the file also
 	// writes the docs header, and a preview that omitted it would under-report
 	// the write by exactly those lines.
-	after, err := configedit.Render(name, base, exists, mut)
+	after, err := configedit.Render(name, base.bytes, base.exists, mut)
 	if err != nil {
 		return nil, err
 	}
-	return diffLines(beforeLines, documentLines(after)), nil
+	// The "before" side is the file's own bytes, NOT a re-render of them. The
+	// write replaces the file with the encoder's output wholesale, so every line
+	// the encoder normalises really does change — re-indentation, dropped blank
+	// lines, comments lost from a document with no keys. Cancelling that out by
+	// rendering both sides would hide part of the edit rather than remove noise,
+	// and it described a keyless document as `{}`, a token no file ever holds. An
+	// absent target simply has no lines, so a create diffs as pure addition.
+	return diffLines(documentLines(base.bytes), documentLines(after)), nil
 }
 
-// documentLines splits rendered document bytes into lines, dropping the
-// trailing newline so an empty document yields no lines at all.
+// documentLines splits document bytes into lines, dropping the trailing newline
+// so an empty document yields no lines at all.
 func documentLines(doc []byte) []string {
 	s := strings.TrimSuffix(string(doc), "\n")
 	if s == "" {
@@ -69,11 +79,13 @@ func documentLines(doc []byte) []string {
 // their common prefix and suffix trimmed away: the removals first, then the
 // additions. An empty result means the two are identical.
 //
-// ponytail: prefix/suffix trimming, not an LCS diff — a single config edit
-// touches one contiguous region, so the band is tight in practice. Two edits at
-// opposite ends of a long document widen it to everything in between (still
-// truthful, just less tight); reach for a real LCS diff only if that becomes
-// the common case.
+// ponytail: prefix/suffix trimming, not an LCS diff. The band is tight when the
+// file is already in the encoder's own shape, which is the case for any file
+// toolbox wrote. It widens whenever the write also normalises the document —
+// re-indenting a hand-written block, dropping blank lines between blocks — since
+// those lines differ too and can sit far apart. That output is still truthful
+// (the write really does change them), just less tight than a real LCS diff
+// would render it; reach for one if the widening becomes the common case.
 func diffLines(before, after []string) []previewLine {
 	head := 0
 	for head < len(before) && head < len(after) && before[head] == after[head] {
