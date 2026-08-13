@@ -131,7 +131,7 @@ func TestShellEntriesCarriesEnvFromOrig(t *testing.T) {
 		}},
 		ed: editor{key: "shells", rows: [][2]string{{"prod", "/repo/infra"}}, orig: []string{"infra"}},
 	}
-	entries := m.shellEntries()
+	entries := m.ed.shellEntries(m.cfg)
 	if len(entries) != 1 {
 		t.Fatalf("entries = %v, want 1", entries)
 	}

@@ -111,6 +111,12 @@ func Compute(searchFrom, explicitOverride string) (Provenance, error) {
 // hand-written passes below handle their finer-grained attribution.
 var perEntryDiffKeys = map[string]bool{"shells": true, "mounts": true}
 
+// PerEntryKey reports whether a key's provenance is attributed per entry
+// (shells.<name> / mounts.<name>) rather than to the bare top-level key. A
+// consumer reading a Provenance for a container row must aggregate the entries
+// itself, and asking here keeps it from re-listing which keys those are.
+func PerEntryKey(key string) bool { return perEntryDiffKeys[key] }
+
 // diffLayer credits origin to every key whose resolved value in upper differs
 // from lower (the layer below). Scalar / slice / map / pointer / struct fields
 // are compared generically by reflecting over Config keyed by the mapstructure

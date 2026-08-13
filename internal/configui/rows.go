@@ -5,6 +5,8 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 // pairsToRows flattens a map into sorted [key, value] rows for the editor.
@@ -162,21 +164,21 @@ func (m *Model) deleteRow() {
 }
 
 // shellEntries turns the shells rows into ShellEntry values, carrying each
-// row's original name (for rename detection) and, from the current config, the
+// row's original name (for rename detection) and, from the given config, the
 // env overlay of that original shell so a rename doesn't drop it.
-func (m *Model) shellEntries() []ShellEntry {
+func (e *editor) shellEntries(cfg *config.Config) []ShellEntry {
 	var entries []ShellEntry
-	for i, r := range m.ed.rows {
+	for i, r := range e.rows {
 		if r[0] == "" {
 			continue
 		}
 		orig := ""
-		if i < len(m.ed.orig) {
-			orig = m.ed.orig[i]
+		if i < len(e.orig) {
+			orig = e.orig[i]
 		}
 		var env map[string]string
-		if orig != "" && m.cfg != nil {
-			if s, ok := m.cfg.Shells[orig]; ok {
+		if orig != "" && cfg != nil {
+			if s, ok := cfg.Shells[orig]; ok {
 				env = s.Env
 			}
 		}
