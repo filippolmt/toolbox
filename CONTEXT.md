@@ -103,6 +103,51 @@ image hash have since been retired along with per-tool opt-out (see
 declaration the bijection tests hold the Dockerfile and `init.d/`
 against.
 
+### Pending Mutation
+
+One config edit, captured as a value before it happens:
+`configedit.Mutator` — `func(*yaml.Node)` — built by a constructor that
+closes over its arguments (`configedit.Scalar`, `Bool`, `StringList`,
+`StringMap`, `Shells`, `WorktreeSeed`, `SDDEnabled`, `MountsDisabled`,
+`Remove`). Owned by `internal/configedit` (`mutate.go`).
+
+The point of the term: a caller that must both *show* an edit and
+*perform* it holds one object instead of describing the edit twice.
+
+Concretely: it is the callback shape `configedit.Upsert`,
+`configio.UpsertFile` and `configio.RenderDocument` all accept, so the
+same value can be written to disk or rendered in memory. `configedit`
+exposes the pair a truthful preview needs — `Upsert(path, m)` writes,
+`Render(name, src, exists, m)` returns the bytes that write would produce
+— and both go through one header policy (`headerAware`), so the rendering
+is not a look-alike of the write but the same computation. Every
+constructor copies the collection it is handed, so the mutation is a
+snapshot and cannot change meaning under a caller still editing its own
+state. In `config ui`, `configui.apply` is the write side (the Mutator
+inside a Doctor-and-roll-back envelope) and `configui.previewDiff` is the
+read side (the same Mutator rendered against the document as it stood
+when the editor opened, diffed against it). `Model.pendingMutator` is the
+single dispatch producing it, so there is one place that decides what a
+pending edit *is*.
+
+The mutators' own semantics are pinned in
+`internal/configedit/mutate_test.go`, on bytes alone — they are pure node
+edits, so testing them through the UI's Doctor-gated write path only buys
+fixtures (host credential directories, a real repo, rollback in the loop)
+that the assertions do not need.
+
+Why the term exists: `config ui` used to hold two independent models of
+the same edit. `previewDoc` built a `map[string]any` keyed on the
+*editor kind* while the writers mutated a `yaml.Node` keyed on the
+*config key*, and they disagreed wherever those axes failed to coincide:
+`sdd` previewed a list where a map is written, `shells` under-reported
+the `env:` block the writer preserves, and `mounts` — whose checkboxes
+select what to *disable* — rendered the exact inverse of the pending
+edit. Naming the pending mutation, and making it a value the two sides
+share, is what makes the preview structurally unable to lie about the
+write. A preview that re-derives the mutation is the defect, not a
+convenience.
+
 ### Config Plan
 
 The full pipeline that turns the cobra `--config` flag plus the host's

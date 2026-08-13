@@ -66,40 +66,61 @@ func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
 // The node tree passed to mutate is invalid after UpsertFile returns;
 // callers must not retain doc outside the callback.
 func UpsertFile(path string, mutate func(doc *yaml.Node)) (changed bool, err error) {
-	var root yaml.Node
 	existing, readErr := os.ReadFile(path)
 	switch {
 	case readErr == nil:
-		if len(bytes.TrimSpace(existing)) > 0 {
-			if err := yaml.Unmarshal(existing, &root); err != nil {
-				return false, fmt.Errorf("parse %s: %w", path, err)
-			}
-		}
 	case errors.Is(readErr, os.ErrNotExist):
 		existing = nil
 	default:
 		return false, fmt.Errorf("read %s: %w", path, readErr)
 	}
 
-	mutate(EnsureDocumentMap(&root))
+	out, err := RenderDocument(path, existing, mutate)
+	if err != nil {
+		return false, err
+	}
+	if bytes.Equal(out, existing) {
+		return false, nil
+	}
+	if err := AtomicWriteFile(path, out, 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RenderDocument is the in-memory half of UpsertFile: it parses src
+// (missing/whitespace-only bootstraps an empty document), hands the top-level
+// document mapping to mutate, and returns the re-encoded bytes — the exact
+// bytes UpsertFile would write for the same input. name only labels errors.
+//
+// A nil mutate renders src unchanged, which is how a caller obtains the
+// encoder's own rendering of the input: the baseline to compare a mutated
+// rendering against, with no formatting noise from the encoder itself.
+//
+// Each call parses src afresh, so the returned bytes never alias a node tree
+// the write path owns.
+func RenderDocument(name string, src []byte, mutate func(doc *yaml.Node)) ([]byte, error) {
+	var root yaml.Node
+	if len(bytes.TrimSpace(src)) > 0 {
+		if err := yaml.Unmarshal(src, &root); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", name, err)
+		}
+	}
+	doc := EnsureDocumentMap(&root)
+	if mutate != nil {
+		mutate(doc)
+	}
 
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
 	enc.SetIndent(2)
 	if err := enc.Encode(&root); err != nil {
-		return false, fmt.Errorf("encode %s: %w", path, err)
+		return nil, fmt.Errorf("encode %s: %w", name, err)
 	}
 	if err := enc.Close(); err != nil {
-		return false, fmt.Errorf("encode %s: %w", path, err)
+		return nil, fmt.Errorf("encode %s: %w", name, err)
 	}
-
-	if bytes.Equal(out.Bytes(), existing) {
-		return false, nil
-	}
-	if err := AtomicWriteFile(path, out.Bytes(), 0o600); err != nil {
-		return false, err
-	}
-	return true, nil
+	return out.Bytes(), nil
 }
 
 // EnsureDocumentMap returns the mapping node that holds the top-level

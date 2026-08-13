@@ -1,0 +1,427 @@
+package configui
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/filippolmt/toolbox/internal/catalog"
+	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configedit"
+	"github.com/filippolmt/toolbox/internal/fsx"
+)
+
+// previewLines renders the pending edit's diff against an existing document —
+// the assertion surface for what the preview panel claims.
+func previewLines(t *testing.T, m Model, base []byte) []previewLine {
+	t.Helper()
+	lines, err := previewDiff("preview.yaml", baseDoc{bytes: base, exists: true}, m.pendingMutator())
+	if err != nil {
+		t.Fatalf("previewDiff: %v", err)
+	}
+	return lines
+}
+
+// previewText is previewLines flattened into `- `/`+ ` marked text.
+func previewText(t *testing.T, m Model, base []byte) string {
+	t.Helper()
+	return markedText(previewLines(t, m, base))
+}
+
+func markedText(lines []previewLine) string {
+	var b strings.Builder
+	for _, l := range lines {
+		marker := "- "
+		if l.Added {
+			marker = "+ "
+		}
+		b.WriteString(marker + l.Text + "\n")
+	}
+	return b.String()
+}
+
+// mountsEditor is the editor state reached by checking `claude` in the mounts
+// multi-select.
+func mountsEditor() Model {
+	return Model{ed: editor{
+		key:      "mounts",
+		kind:     edMulti,
+		options:  []string{"claude", "gh"},
+		selected: map[string]bool{"claude": true},
+	}}
+}
+
+// The mounts editor's checkboxes select the default mounts to *disable*
+// (openEditor seeds them from DisabledMounts), and the writer records that as a
+// `{name, disabled: true}` patch. A preview that rendered the selection as a
+// bare `mounts:` list claimed the inverse of the pending edit — that the checked
+// mount was the only one kept.
+func TestPreviewMountsShowsDisablePatch(t *testing.T) {
+	lines := previewLines(t, mountsEditor(), []byte("pull: never\n"))
+
+	got := markedText(lines)
+	if !strings.Contains(got, "name: claude") || !strings.Contains(got, "disabled: true") {
+		t.Errorf("preview does not show the disable patch the writer produces:\n%s", got)
+	}
+	// A bare sequence item is the inverting shape. Compare on the trimmed line
+	// rather than a marked substring: the item's own indentation depends on the
+	// encoder, and baking it into the needle is how this assertion goes inert.
+	for _, l := range lines {
+		if l.Added && strings.TrimSpace(l.Text) == "- claude" {
+			t.Errorf("preview lists claude as a kept mount, inverting the edit:\n%s", got)
+		}
+	}
+}
+
+// A disable patch merged into a richer user entry is the case a hand-built
+// fragment could never describe: the result depends on what the file already
+// holds, so the preview has to render the mutation against the real document.
+func TestPreviewMountsKeepsRicherUserEntry(t *testing.T) {
+	base := []byte("mounts:\n  - name: claude\n    source: /host/claude\n    target: /home/toolbox/.claude\n")
+
+	got := previewText(t, mountsEditor(), base)
+	if strings.Contains(got, "- source: /host/claude") {
+		t.Errorf("preview claims the user's source override is dropped:\n%s", got)
+	}
+	if !strings.Contains(got, "disabled: true") {
+		t.Errorf("preview must show disabled: true added to the existing entry:\n%s", got)
+	}
+}
+
+// Re-selecting the value already on disk writes nothing, and the panel has to
+// say so: an unchanged fragment would imply a pending change that does not exist.
+func TestPreviewReportsNoChangeForAnIdenticalEdit(t *testing.T) {
+	base := []byte("pull: never\n")
+	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+
+	if got := previewText(t, m, base); got != "" {
+		t.Errorf("re-selecting the active value must diff to nothing, got:\n%s", got)
+	}
+}
+
+// A target that does not exist yet is created carrying the docs header, so the
+// preview has to account for it two ways: rendering the mutation alone
+// under-reports the write by exactly those header lines, and rendering an empty
+// document as the "before" side puts a `{}` removal in the panel that no file
+// ever held.
+func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
+	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+
+	lines, err := previewDiff("new.yaml", baseDoc{}, m.pendingMutator())
+	if err != nil {
+		t.Fatalf("previewDiff: %v", err)
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		if !l.Added {
+			t.Errorf("an absent target has no before side, got removal %q", l.Text)
+		}
+		b.WriteString(l.Text + "\n")
+	}
+	got := b.String()
+	if !strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("preview must include the docs header the create writes:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("preview must include the edit itself:\n%s", got)
+	}
+}
+
+// A file holding only comments parses to a document with no keys, so the write
+// drops those comments. The panel has to name the lines it actually removes: a
+// re-rendered before side reported them as `- {}`, a token no file ever held,
+// while silently omitting that the user's comments go away. This shape is
+// production-reachable — EnsureTargetFile leaves exactly it behind when the
+// $EDITOR escape creates the target.
+func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
+	base := []byte("# hand-written notes\n# second line\n")
+	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+
+	got := previewText(t, m, base)
+	if strings.Contains(got, "{}") {
+		t.Errorf("preview must not describe a keyless document as {}:\n%s", got)
+	}
+	if !strings.Contains(got, "- # hand-written notes") {
+		t.Errorf("preview must report the comment lines the write drops:\n%s", got)
+	}
+}
+
+// The write replaces the file with the encoder's output wholesale, so
+// normalisation is part of the edit: a blank line between blocks does not
+// survive it. The panel has to report that. Re-rendering the before side would
+// cancel it out and hide a change the user is about to get — which is the reason
+// the before side is the file's own bytes.
+func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
+	base := []byte("# global\npull: always\n\nagent: claude\n")
+	m := Model{ed: editor{key: "image", kind: edString, input: fieldInput("ghcr.io/acme/box:v1")}}
+
+	lines := previewLines(t, m, base)
+	blankRemoved := false
+	for _, l := range lines {
+		if !l.Added && l.Text == "" {
+			blankRemoved = true
+		}
+	}
+	if !blankRemoved {
+		t.Errorf("preview must report the blank line the write drops:\n%s", markedText(lines))
+	}
+	if !strings.Contains(markedText(lines), "+ image: ghcr.io/acme/box:v1") {
+		t.Errorf("preview must show the edit itself:\n%s", markedText(lines))
+	}
+}
+
+// previewBody is the panel's own seam, and the link every other preview test
+// skips: it is what carries openEditor's reading of the target into the diff.
+// With the tests all calling previewDiff directly and passing exists themselves,
+// that link could be broken — or hardcoded — and the fresh-target header
+// regression would come back on the only surface a user sees.
+func TestPreviewBodyCarriesTheTargetStateFromOpenEditor(t *testing.T) {
+	tc := previewCase{key: "pull", open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") }}
+	m, _ := openedEditor(t, tc, false)
+
+	if m.previewBase.exists {
+		t.Error("openEditor must report an absent target as not existing")
+	}
+	got, err := m.previewBody()
+	if err != nil {
+		t.Fatalf("previewBody: %v", err)
+	}
+	if !strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("panel must show the docs header a create writes:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("panel must show the edit itself:\n%s", got)
+	}
+}
+
+// The panel's no-change branch. An editor opens with its cursor already on the
+// current effective value, so saving straight away writes nothing — and the
+// panel must say so rather than show an unchanged fragment.
+func TestPreviewBodyReportsNoChangeForAnUntouchedEditor(t *testing.T) {
+	// The fixture sets agent: claude, so the freshly opened cursor sits on it.
+	m, _ := openedEditor(t, previewCase{key: "agent", open: func(*Model) {}}, true)
+
+	got, err := m.previewBody()
+	if err != nil {
+		t.Fatalf("previewBody: %v", err)
+	}
+	if !strings.Contains(got, "no change") {
+		t.Errorf("an untouched editor must report no change, got:\n%s", got)
+	}
+}
+
+// previewCase is one editable key: the editor state a user would reach, and the
+// pending value it carries.
+type previewCase struct {
+	key  string
+	open func(m *Model)
+	// save performs the same edit through apply, naming the mutator and its
+	// arguments by hand. It is the independent oracle: the preview comes from the
+	// model's own dispatch, so comparing the two catches a dispatch that reaches
+	// for the wrong mutation — the defect class behind the inverted mounts
+	// preview.
+	save    func(m Model) error
+	inCfg   func(cfg *config.Config)        // seeds the effective config the editor reads
+	prepare func(t *testing.T, home string) // host state Doctor requires for the value
+}
+
+// requireHostAuthPath creates the host credential directory of an
+// inherit_host_auth key, which Doctor requires to exist before the key may name
+// it. The path comes from the catalog so the fixture cannot drift from the
+// whitelist it is validated against.
+func requireHostAuthPath(t *testing.T, home, key string) {
+	t.Helper()
+	entry, ok := catalog.Find(key)
+	if !ok || entry.HostAuthMount == nil {
+		t.Fatalf("catalog has no host-auth mount for %q", key)
+	}
+	mkdirAll(t, fsx.ExpandTilde(entry.HostAuthMount.HostPath, home))
+}
+
+// TestPreviewMatchesWriterForEveryEditableKey is the permanent net over the
+// defect class: for every key with an editor, what the preview says will be
+// written must be exactly what the key's own mutator puts on disk, and the
+// model's own save path must land on the same bytes. The preview and the writers
+// used to be independent models of the same mutation, indexed on different axes
+// (editor kind vs key), and they diverged wherever those axes failed to
+// coincide — mounts inverted the edit, sdd showed a list where a map is written,
+// shells under-reported the env block the writer preserves.
+//
+// The read-only `shell` key is excluded: openEditor refuses it, so it has no
+// pending mutation to preview.
+func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
+	cases := []previewCase{
+		{
+			key:  "agent",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "codex") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("agent", "codex")) },
+		},
+		{
+			key:  "pull",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("pull", "never")) },
+		},
+		{
+			key:  "image",
+			open: func(m *Model) { m.ed.input.SetValue("ghcr.io/acme/box:v1") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("image", "ghcr.io/acme/box:v1")) },
+		},
+		{
+			key:  "registry_mirror",
+			open: func(m *Model) { m.ed.input.SetValue("mirror.example.com") },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Scalar("registry_mirror", "mirror.example.com"))
+			},
+		},
+		{
+			key:  "mounts_root",
+			open: func(m *Model) { m.ed.input.SetValue("/tmp/roots") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("mounts_root", "/tmp/roots")) },
+		},
+		{
+			key:  "bridge",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },
+		},
+		{
+			key:  "proximo",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("proximo", boolPtr(true))) },
+		},
+		{
+			key:  "managed_statusline",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Bool("managed_statusline", boolPtr(false)))
+			},
+		},
+		{
+			key:  "inherit_host_auth",
+			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.StringList("inherit_host_auth", []string{HostAuthOptions()[0]}))
+			},
+			prepare: func(t *testing.T, home string) { requireHostAuthPath(t, home, HostAuthOptions()[0]) },
+		},
+		{
+			key:  "sdd",
+			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			save: func(m Model) error { return SaveSDD(m.target, m.cwd, map[string]bool{SDDOptions()[0]: true}) },
+		},
+		{
+			key:  "mounts",
+			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.MountsDisabled(map[string]bool{DefaultMountNames()[0]: true}))
+			},
+		},
+		{
+			key:  "env",
+			open: func(m *Model) { m.ed.rows = [][2]string{{"REGION", "eu"}} },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.StringMap("env", map[string]string{"REGION": "eu"}))
+			},
+		},
+		{
+			key:  "worktree",
+			open: func(m *Model) { m.ed.rows = [][2]string{{".env.local", ""}} },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.WorktreeSeed([]string{".env.local"})) },
+		},
+		{
+			key:   "shells",
+			open:  func(m *Model) { m.ed.rows = [][2]string{{"prod", "/repo/prod"}} },
+			inCfg: func(cfg *config.Config) { cfg.Shells = map[string]config.NamedShell{"prod": {Path: "/repo/old"}} },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Shells([]ShellEntry{{Name: "prod", Path: "/repo/prod", OrigName: "prod"}}))
+			},
+		},
+	}
+
+	// Every editable key must be exercised, so a key that gains an editor
+	// without a preview case is caught here rather than shipping unguarded.
+	covered := map[string]bool{}
+	for _, tc := range cases {
+		covered[tc.key] = true
+	}
+	for _, key := range Keys() {
+		if ReadOnlyKey(key) || covered[key] {
+			continue
+		}
+		t.Errorf("key %q has an editor but no preview case", key)
+	}
+
+	// Both target states, because they take different write paths: an absent
+	// .toolbox.yaml is created carrying the docs header, so it is the one case
+	// where the preview could under-report the write by whole lines.
+	for _, state := range []struct {
+		name   string
+		exists bool
+	}{
+		{name: "existing-target", exists: true},
+		{name: "fresh-target", exists: false},
+	} {
+		for _, tc := range cases {
+			t.Run(tc.key+"/"+state.name, func(t *testing.T) {
+				m, target := openedEditor(t, tc, state.exists)
+				claimed, err := configedit.Render(target, m.previewBase.bytes, m.previewBase.exists, m.pendingMutator())
+				if err != nil {
+					t.Fatalf("render preview: %v", err)
+				}
+
+				// What the key's own mutation produces, driven with hand-written
+				// arguments rather than the model's dispatch.
+				if err := tc.save(m); err != nil {
+					t.Fatalf("oracle mutation: %v", err)
+				}
+				if got := readFile(t, target); got != string(claimed) {
+					t.Errorf("preview does not describe what the mutation writes.\npreview:\n%s\nwritten:\n%s", claimed, got)
+				}
+
+				// And the model's own save path must land on those same bytes.
+				m2, target2 := openedEditor(t, tc, state.exists)
+				if err := m2.saveEdit(); err != nil {
+					t.Fatalf("saveEdit: %v", err)
+				}
+				if got := readFile(t, target2); got != string(claimed) {
+					t.Errorf("saveEdit does not write what the preview shows.\npreview:\n%s\nsaveEdit:\n%s", claimed, got)
+				}
+			})
+		}
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+// openedEditor builds a Model over an isolated repo, opens tc.key's editor and
+// applies the pending value. targetExists selects whether the repo already has a
+// .toolbox.yaml — a fresh target is created with the docs header, which the
+// preview has to account for.
+func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, string) {
+	t.Helper()
+	home := isolatedHome(t)
+	if tc.prepare != nil {
+		tc.prepare(t, home)
+	}
+	repo := t.TempDir()
+	target := filepath.Join(repo, ".toolbox.yaml")
+	if targetExists {
+		writeFile(t, target, "# existing config\nagent: claude\n")
+	}
+
+	cfg, _, err := Snapshot(repo, "")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if tc.inCfg != nil {
+		tc.inCfg(cfg)
+	}
+
+	m := Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
+		states: []KeyState{{Key: tc.key, ScopeSet: true}}}
+	m.openEditor()
+	if !m.editing {
+		t.Fatalf("openEditor did not open an editor for %q (status: %s)", tc.key, m.status)
+	}
+	tc.open(&m)
+	return m, target
+}

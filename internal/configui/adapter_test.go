@@ -200,16 +200,16 @@ func TestTargetPath(t *testing.T) {
 	}
 }
 
-// TestSaveScalarCommentPreserved: a save updates only the edited key and keeps
+// TestApplyPreservesCommentsAndSiblings: a save updates only the edited key and keeps
 // comments and untouched keys.
-func TestSaveScalarCommentPreserved(t *testing.T) {
+func TestApplyPreservesCommentsAndSiblings(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, target, "# keep me\npull: always\n")
 
-	if err := SaveScalar(target, repo, "agent", "codex"); err != nil {
-		t.Fatalf("SaveScalar: %v", err)
+	if err := apply(target, repo, configedit.Scalar("agent", "codex")); err != nil {
+		t.Fatalf("apply: %v", err)
 	}
 	got := readFile(t, target)
 	if !strings.Contains(got, "# keep me") {
@@ -223,32 +223,32 @@ func TestSaveScalarCommentPreserved(t *testing.T) {
 	}
 }
 
-// TestSaveScalarDoctorBlocked: an invalid edit is rejected and the file is left
+// TestApplyRejectedByDoctorLeavesFileUnchanged: an invalid edit is rejected and the file is left
 // byte-identical (no partial write survives).
-func TestSaveScalarDoctorBlocked(t *testing.T) {
+func TestApplyRejectedByDoctorLeavesFileUnchanged(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 	before := "pull: always\n"
 	writeFile(t, target, before)
 
-	err := SaveScalar(target, repo, "shell", "bash") // bash is unsupported
+	err := apply(target, repo, configedit.Scalar("shell", "bash")) // bash is unsupported
 	if err == nil {
-		t.Fatal("expected SaveScalar to reject shell: bash")
+		t.Fatal("expected the doctor gate to reject shell: bash")
 	}
 	if got := readFile(t, target); got != before {
 		t.Errorf("file must be unchanged after a blocked save, got:\n%s", got)
 	}
 }
 
-// TestSaveScalarBlockedOnNewFileRemovesIt: a blocked save that would have
+// TestApplyRejectedOnNewFileRemovesIt: a blocked save that would have
 // created the file leaves nothing behind.
-func TestSaveScalarBlockedOnNewFileRemovesIt(t *testing.T) {
+func TestApplyRejectedOnNewFileRemovesIt(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 
-	if err := SaveScalar(target, repo, "shell", "bash"); err == nil {
+	if err := apply(target, repo, configedit.Scalar("shell", "bash")); err == nil {
 		t.Fatal("expected rejection")
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -256,15 +256,17 @@ func TestSaveScalarBlockedOnNewFileRemovesIt(t *testing.T) {
 	}
 }
 
-// TestUnsetRemovesKey: unset deletes the key from the file.
-func TestUnsetRemovesKey(t *testing.T) {
+// TestApplyRemoveDropsOnlyTheNamedKey: the reset-to-default path leaves the rest
+// of the file standing, and the removal still has to clear the Doctor gate — a
+// key whose absence makes the file invalid must not be removable.
+func TestApplyRemoveDropsOnlyTheNamedKey(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, target, "pull: always\nagent: codex\n")
 
-	if err := Unset(target, repo, "pull"); err != nil {
-		t.Fatalf("Unset: %v", err)
+	if err := apply(target, repo, configedit.Remove("pull")); err != nil {
+		t.Fatalf("apply: %v", err)
 	}
 	got := readFile(t, target)
 	if strings.Contains(got, "pull:") {
@@ -272,54 +274,6 @@ func TestUnsetRemovesKey(t *testing.T) {
 	}
 	if !strings.Contains(got, "agent: codex") {
 		t.Errorf("sibling key must survive:\n%s", got)
-	}
-}
-
-// TestSaveBoolTriState: explicit false persists; nil removes the key.
-func TestSaveBoolTriState(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-
-	no := false
-	if err := SaveBool(target, repo, "bridge", &no); err != nil {
-		t.Fatalf("SaveBool false: %v", err)
-	}
-	if got := readFile(t, target); !strings.Contains(got, "bridge: false") {
-		t.Errorf("want bridge: false, got:\n%s", got)
-	}
-
-	if err := SaveBool(target, repo, "bridge", nil); err != nil {
-		t.Fatalf("SaveBool nil: %v", err)
-	}
-	if got := readFile(t, target); strings.Contains(got, "bridge:") {
-		t.Errorf("unset must remove the key, got:\n%s", got)
-	}
-}
-
-// TestSaveStringList: writes a sequence; empty removes the key.
-func TestSaveStringList(t *testing.T) {
-	home := isolatedHome(t)
-	// inherit_host_auth entries are doctor-validated against their host
-	// credential paths, so materialise the ones this test enables.
-	mkdirAll(t, filepath.Join(home, ".claude"))
-	mkdirAll(t, filepath.Join(home, ".config", "gh"))
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-
-	if err := SaveStringList(target, repo, "inherit_host_auth", []string{"claude", "gh"}); err != nil {
-		t.Fatalf("SaveStringList: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "claude") || !strings.Contains(got, "gh") {
-		t.Errorf("list entries missing:\n%s", got)
-	}
-
-	if err := SaveStringList(target, repo, "inherit_host_auth", nil); err != nil {
-		t.Fatalf("SaveStringList empty: %v", err)
-	}
-	if got := readFile(t, target); strings.Contains(got, "inherit_host_auth") {
-		t.Errorf("empty list must remove the key:\n%s", got)
 	}
 }
 
@@ -335,98 +289,6 @@ func TestHostAuthOptions(t *testing.T) {
 	}
 	if !slices.IsSorted(opts) {
 		t.Errorf("host-auth options must be sorted, got %v", opts)
-	}
-}
-
-// TestSaveMap: env pairs are written (sorted) and an empty map removes the key.
-func TestSaveMap(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-
-	if err := SaveMap(target, repo, "env", map[string]string{"FOO": "bar", "BAZ": "qux"}); err != nil {
-		t.Fatalf("SaveMap: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "FOO: bar") || !strings.Contains(got, "BAZ: qux") {
-		t.Errorf("env pairs missing:\n%s", got)
-	}
-	if strings.Index(got, "BAZ") > strings.Index(got, "FOO") {
-		t.Errorf("env keys must be sorted:\n%s", got)
-	}
-
-	if err := SaveMap(target, repo, "env", nil); err != nil {
-		t.Fatalf("SaveMap empty: %v", err)
-	}
-	if got := readFile(t, target); strings.Contains(got, "env:") {
-		t.Errorf("empty map must remove the key:\n%s", got)
-	}
-}
-
-// TestSaveShellsPreservesEnv: saving a shell's path keeps a kept shell's env
-// overlay and drops a removed shell entirely.
-func TestSaveShellsPreservesEnv(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n  old:\n    path: /repo/old\n")
-
-	if err := SaveShells(target, repo, []ShellEntry{{Name: "infra", Path: "/repo/infra", OrigName: "infra"}}); err != nil {
-		t.Fatalf("SaveShells: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "REGION: eu") {
-		t.Errorf("kept shell's env overlay must survive:\n%s", got)
-	}
-	if strings.Contains(got, "old:") {
-		t.Errorf("removed shell must be gone:\n%s", got)
-	}
-}
-
-// TestSaveShellsRenameCarriesEnv: renaming a shell carries its env overlay to
-// the new name (regression: rename used to drop env).
-func TestSaveShellsRenameCarriesEnv(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n")
-
-	entry := ShellEntry{Name: "prod", Path: "/repo/infra", OrigName: "infra", Env: map[string]string{"REGION": "eu"}}
-	if err := SaveShells(target, repo, []ShellEntry{entry}); err != nil {
-		t.Fatalf("SaveShells rename: %v", err)
-	}
-	got := readFile(t, target)
-	if strings.Contains(got, "infra:") {
-		t.Errorf("old shell name must be gone after rename:\n%s", got)
-	}
-	if !strings.Contains(got, "prod:") || !strings.Contains(got, "REGION: eu") {
-		t.Errorf("rename must carry path and env to the new name:\n%s", got)
-	}
-}
-
-// TestSaveSeed: worktree.seed is written nested and an empty list removes the
-// whole worktree block.
-func TestSaveSeed(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-
-	if err := SaveSeed(target, repo, []string{".env", "openspec"}); err != nil {
-		t.Fatalf("SaveSeed: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "worktree:") || !strings.Contains(got, "seed:") {
-		t.Errorf("worktree.seed missing:\n%s", got)
-	}
-	if !strings.Contains(got, ".env") || !strings.Contains(got, "openspec") {
-		t.Errorf("seed entries missing:\n%s", got)
-	}
-
-	if err := SaveSeed(target, repo, nil); err != nil {
-		t.Fatalf("SaveSeed empty: %v", err)
-	}
-	if got := readFile(t, target); strings.Contains(got, "worktree") {
-		t.Errorf("empty seed must remove the worktree block:\n%s", got)
 	}
 }
 
@@ -504,47 +366,6 @@ func TestSaveSDDPreservesCustomSteps(t *testing.T) {
 	}
 	if got := readFile(t, target); !strings.Contains(got, "steps:") {
 		t.Errorf("custom steps must survive a re-enable:\n%s", got)
-	}
-}
-
-// TestSaveMountDisabled: disabling a default writes a disable patch; re-enabling
-// drops the pure patch.
-func TestSaveMountDisabled(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	name := DefaultMountNames()[0]
-
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: true}); err != nil {
-		t.Fatalf("SaveMountDisabled on: %v", err)
-	}
-	got := readFile(t, target)
-	if !strings.Contains(got, "name: "+name) || !strings.Contains(got, "disabled: true") {
-		t.Errorf("want a disable patch for %s, got:\n%s", name, got)
-	}
-
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: false}); err != nil {
-		t.Fatalf("SaveMountDisabled off: %v", err)
-	}
-	if got := readFile(t, target); strings.Contains(got, "disabled: true") {
-		t.Errorf("re-enable must drop the pure disable patch:\n%s", got)
-	}
-}
-
-// TestSaveMountDisabledKeepsRichPatch: a user's source override is not clobbered
-// when the mount is toggled off.
-func TestSaveMountDisabledKeepsRichPatch(t *testing.T) {
-	isolatedHome(t)
-	repo := t.TempDir()
-	target := filepath.Join(repo, ".toolbox.yaml")
-	name := DefaultMountNames()[0]
-	writeFile(t, target, "mounts:\n  - name: "+name+"\n    source: /custom/path\n")
-
-	if err := SaveMountDisabled(target, repo, map[string]bool{name: false}); err != nil {
-		t.Fatalf("SaveMountDisabled: %v", err)
-	}
-	if got := readFile(t, target); !strings.Contains(got, "/custom/path") {
-		t.Errorf("rich patch must survive a re-enable, got:\n%s", got)
 	}
 }
 

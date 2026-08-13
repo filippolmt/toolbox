@@ -28,12 +28,31 @@ Docs: https://github.com/filippolmt/toolbox`
 func Upsert(path string, mutate func(doc *yaml.Node)) (changed bool, err error) {
 	_, statErr := os.Stat(path)
 	creating := errors.Is(statErr, os.ErrNotExist)
-	return configio.UpsertFile(path, func(doc *yaml.Node) {
+	return configio.UpsertFile(path, headerAware(creating, mutate))
+}
+
+// Render returns the bytes Upsert would write for a file whose current content
+// is src, without touching any file — the seam a preview needs to show a pending
+// edit truthfully. exists must report whether the target file is already there,
+// because that is what decides the header: a file being created carries
+// headerComment, and a preview rendering src alone would under-report the write
+// by exactly those lines. A nil mutate renders src as-is.
+func Render(name string, src []byte, exists bool, mutate Mutator) ([]byte, error) {
+	return configio.RenderDocument(name, src, headerAware(!exists, mutate))
+}
+
+// headerAware is the shared header policy behind Upsert and Render: a document
+// being created gains headerComment, an existing one is left alone. Keeping it
+// in one place is what lets a preview render the same bytes the write produces.
+func headerAware(creating bool, mutate func(doc *yaml.Node)) func(doc *yaml.Node) {
+	return func(doc *yaml.Node) {
 		if creating && doc.HeadComment == "" {
 			doc.HeadComment = headerComment
 		}
-		mutate(doc)
-	})
+		if mutate != nil {
+			mutate(doc)
+		}
+	}
 }
 
 // EnsureFileWithHeader creates path containing only the documentation

@@ -1,7 +1,6 @@
 package configui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -69,7 +68,7 @@ func (m Model) updateRows(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "d", "x":
 		m.deleteRow()
 	case "s":
-		m.finishSave(m.saveRows())
+		m.finishSave(m.saveEdit())
 	}
 	return m, nil
 }
@@ -160,22 +159,6 @@ func (m *Model) deleteRow() {
 	if m.ed.cursor >= len(m.ed.rows) && m.ed.cursor > 0 {
 		m.ed.cursor--
 	}
-}
-
-// saveRows persists the editor's rows via the matching adapter writer.
-func (m *Model) saveRows() error {
-	switch m.ed.key {
-	case "env":
-		return SaveMap(m.target, m.cwd, "env", rowsToPairs(m.ed.rows))
-	case "shells":
-		return SaveShells(m.target, m.cwd, m.shellEntries())
-	case "worktree":
-		return SaveSeed(m.target, m.cwd, rowsToValues(m.ed.rows))
-	}
-	// Unreachable today (openEditor only assigns edRows to the three keys
-	// above); an explicit error stops a future rows key from reporting a false
-	// "saved" with no write.
-	return fmt.Errorf("no rows writer for key %q", m.ed.key)
 }
 
 // shellEntries turns the shells rows into ShellEntry values, carrying each
