@@ -17,13 +17,23 @@ CACHE_REF := $(IMAGE):buildcache-main
 # Go toolchain runs inside a container so Go is not required on the host.
 # A named Docker volume caches the module + build cache across runs.
 #
-# GO_VERSION is the single source of truth for the Go version across the repo:
-# the `toolchain` directive in go.mod (Renovate-bumped by default). Falls back
-# to the `go` directive when no toolchain line is present. Both the build/test
-# container (GO_IMAGE) and the runtime image (build target, --build-arg) derive
-# from it, so a single Renovate bump aligns everything.
+# GO_VERSION is the Go toolchain the *runtime image* is built with: the
+# `toolchain` directive in go.mod (Renovate-bumped by default), falling back to
+# the `go` directive when no toolchain line is present. It reaches the image as
+# a --build-arg naming a tarball on go.dev, which exists the moment the release
+# does — same for CI's setup-go, which resolves go.mod against the Go release
+# index. So this stays derived.
 GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$2} END{print (v?v:g)}' go.mod)
-GO_IMAGE        := golang:$(GO_VERSION)
+# GO_IMAGE is deliberately NOT derived from GO_VERSION. Docker Hub publishes a
+# golang:<patch> tag days after the Go release lands in the index, so deriving
+# the tag turned a green Renovate go.mod bump into a broken `make go-test` on
+# main (`golang:1.26.6: not found` while go.mod already said go1.26.6). Pinning
+# it here puts the tag under Renovate's *docker* datasource, which can only
+# open the bump once the image actually exists. A gap between the two is
+# harmless: GOTOOLCHAIN fetches the newer toolchain inside the container.
+# renovate: datasource=docker depName=golang
+GO_IMAGE_VERSION := 1.26.5
+GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
 GOLANGCI_VERSION := v2.12.2
 GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
 GO_MOD_VOL      := toolbox-gomod
