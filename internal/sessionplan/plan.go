@@ -54,11 +54,11 @@ type SessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	// ExecCmd overrides the command run in the attached interactive exec
-	// session. When nil the exec reuses Cmd (the normal shell). Callers that
-	// must keep the container's main process an idle shell while running a
-	// different command in the user's attached session (e.g. toolbox worktree
-	// auto-launching an agent) set this so the agent does not also run headless
-	// in the container's main PID. Lifecycle.Shell reads it at the exec edge.
+	// session. When nil the exec reuses Cmd (the normal shell). Set by Plan
+	// for a worktree session (PlanInput.Worktree), which keeps the container's
+	// main process an idle shell while the agent runs in the user's attached
+	// session — so the agent does not also run headless in the container's
+	// main PID. Lifecycle.Shell reads it at the exec edge.
 	ExecCmd     []string
 	SecurityOpt []string
 	// ExtraHosts is the docker --add-host list. Populated when the browser
@@ -114,6 +114,33 @@ type PlanInput struct {
 	// for the same workspace, each keeping its own mount set fixed at
 	// ContainerCreate.
 	Profile *mountplan.Profile
+
+	// Worktree, when non-nil, plans a `toolbox worktree` session: the main
+	// repo's .git enters the mount plan and ExecCmd launches the agent in the
+	// user's attached session. Nil for every other session.
+	Worktree *WorktreeSession
+}
+
+// WorktreeSession carries the inputs a `toolbox worktree` session adds to a
+// plain one. Both derivations from it stay behind this seam: RepoRoot becomes
+// the .git bind, and Agent + Prompt become the ExecCmd wrapper.
+type WorktreeSession struct {
+	// RepoRoot is the main repository root (not the worktree path, which is
+	// the session's Workspace). A linked worktree's .git points into it.
+	RepoRoot string
+	// Agent is the resolved AI agent binary to auto-launch (claude | codex).
+	Agent string
+	// Prompt is the initial task handed to the agent, empty for a bare launch.
+	Prompt string
+}
+
+// gitDir returns the main repo's .git directory for a worktree session, or ""
+// when this is not one.
+func (in PlanInput) gitDir() string {
+	if in.Worktree == nil {
+		return ""
+	}
+	return filepath.Join(in.Worktree.RepoRoot, ".git")
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -171,7 +198,12 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(in.Cfg, workspace, in.Profile)
+	mp, err := mountplan.Plan(mountplan.PlanInput{
+		Cfg:       in.Cfg,
+		Workspace: workspace,
+		Profile:   in.Profile,
+		GitDir:    in.gitDir(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +225,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, proximo.Env(in.Cfg)),
 		ContainerName:     containerName(workspace, in.Name, in.Profile),
 		Cmd:               cmd,
+		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,

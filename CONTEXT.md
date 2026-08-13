@@ -15,8 +15,11 @@ typed bind set handed to `ContainerCreate`, plus the shell `WorkingDir`.
 Concretely: `defaults() → applyMountsRoot → mergeMounts → resolveAll →
 append workspace bind → append host-path mirror (when safe)`. Owned by
 `internal/mountplan`. The single seam runtime callers and tests cross is
-`mountplan.Plan(cfg, workspace)`; pure merge inspection (no filesystem
-side-effects) is exposed as `mountplan.Merge(cfg)`. Mount provenance is
+`mountplan.Plan(PlanInput{Cfg, Workspace, Profile, GitDir})`; pure merge
+inspection (no filesystem side-effects) is exposed as `mountplan.Merge(cfg)`.
+Session-shaped extras enter as `PlanInput` fields, never as a bind appended
+to a finished plan — `GitDir` (the worktree's main-repo `.git`) joins the
+merged list and goes through `resolveAll` with everything else. Mount provenance is
 part of the same seam: `mountplan.Classify(cfg) []ClassifiedMount` tags each
 merged entry with its `Origin` (default / patched / user / disabled,
 re-including defaults the merge dropped), and `mountplan.Names(cfg)` returns
@@ -190,6 +193,12 @@ behind the seam: `SanitizeShellName` for the container suffix, and
 `config.NormalizeShellKey` + `EffectiveEnv` for the `shells.<name>.env`
 overlay on the top-level `env:`. `cmd` therefore hands the config over
 untouched — it no longer pre-mixes the env layers into `cfg.Env`.
+
+`PlanInput.Worktree` is the other optional branch: non-nil plans a
+[Worktree](#worktree) session, adding the main repo's `.git` to
+`mountplan.PlanInput.GitDir` and the agent launch to `ExecCmd`. Nothing
+downstream of the seam is mutated by the caller — `cmd` no longer patches a
+finished plan.
 
 Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
 → ContainerNameFor → shellEnv → ResolveShellCmd →
@@ -415,11 +424,15 @@ walk that deliberately stays at the `cmd` edge (it shells out directly rather
 than through the `Git` seam, since it is a filesystem-shaped git query, not the
 orchestration git the seam abstracts). The
 **interactive session launch** for create/open — `resolveImageDigest` +
-`sessionplan.Plan` + `applyWorktreeSession` + `container.Shell` (whose TTY
-attach is not mockable across packages) — deliberately stays at the `cmd`
-Docker edge, shared with the `shell` command, mirroring how Session Plan /
-Docker Identity keep daemon-edge state out of the pure plan. `cmd/worktree.go`
-is then flag parsing + dispatch + that launch; the gitignored-state seeding
+`sessionplan.Plan` + `container.Shell` (whose TTY attach is not mockable across
+packages) — deliberately stays at the `cmd` Docker edge, shared with the
+`shell` command, mirroring how Session Plan / Docker Identity keep daemon-edge
+state out of the pure plan. What a worktree session *is*, though, is not a
+`cmd` decision: `PlanInput.Worktree{RepoRoot, Agent, Prompt}` carries it, and
+Session Plan derives both halves — the main repo's `.git` bind (through Mount
+Plan, so a missing source is a soft skip like any other mount) and the `ExecCmd`
+that launches the agent over the resolved shell. `cmd/worktree.go` is then flag
+parsing + dispatch + that launch; the gitignored-state seeding
 (`seedWorktreeFiles`) stays beside the launch, as both create and open re-seed.
 
 Why the term exists: before this concept was named, the whole subsystem —
