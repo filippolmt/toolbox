@@ -44,7 +44,8 @@ func TestResolveShellWorkspaceUsesConfiguredNamedShell(t *testing.T) {
 // TestResolveShellWorkspaceNormalizesNamedShellKey pins the lookup to the
 // same key rule as config.Merge (viper lowercases the YAML key): a name typed
 // with different case or surrounding blanks must resolve to the configured
-// shell instead of falling through to the missing-shell bootstrap.
+// shell instead of falling through to the missing-shell bootstrap. The name
+// travels back raw — sessionplan owns every derivation from it.
 func TestResolveShellWorkspaceNormalizesNamedShellKey(t *testing.T) {
 	for _, arg := range []string{"Infra", " infra", "  INFRA  "} {
 		t.Run(arg, func(t *testing.T) {
@@ -61,8 +62,8 @@ func TestResolveShellWorkspaceNormalizesNamedShellKey(t *testing.T) {
 			if ws != dir {
 				t.Errorf("workspace = %q, want %q", ws, dir)
 			}
-			if name != "infra" {
-				t.Errorf("name = %q, want infra", name)
+			if name != arg {
+				t.Errorf("name = %q, want the raw %q", name, arg)
 			}
 		})
 	}
@@ -197,7 +198,7 @@ func TestEnsureNamedShellPathRejectsSymlink(t *testing.T) {
 		t.Skipf("symlink unsupported on this platform: %v", err)
 	}
 
-	_, _, err := ensureNamedShellPath("infra", link, false)
+	_, err := ensureNamedShellPath("infra", link, false)
 	if err == nil {
 		t.Fatal("expected symlink rejection")
 	}

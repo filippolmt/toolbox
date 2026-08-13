@@ -110,17 +110,6 @@ func runShell(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	// Overlay the active named shell's env onto the top-level env before
-	// planning. resolveShellWorkspace returns a non-empty sanitized name
-	// only for the named-shell branch, where the user-typed name is args[0];
-	// EffectiveEnv normalizes it into the cfg.Shells key itself. Abs-path /
-	// no-arg sessions pass "" and fall back to the top-level env.
-	rawShellName := ""
-	if shellName != "" && len(args) > 0 {
-		rawShellName = args[0]
-	}
-	cfg.Env = cfg.EffectiveEnv(rawShellName)
-
 	// Resolve the running image's repo digest host-side and thread it to the
 	// planner so the in-container update poller can compare it against GHCR's
 	// :latest. Best-effort: an unresolvable digest (locally built image,
@@ -131,9 +120,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
 	// fs side effects under ~/.toolbox and the workspace. shellName is the
-	// only container-name input cmd supplies — empty for workspace sessions,
-	// the sanitized named-shell name otherwise; the naming rule and format
-	// live entirely behind the sessionplan seam.
+	// user-typed named shell — empty for workspace sessions; both the
+	// container-name format and the per-shell env: overlay are derived from
+	// it behind the sessionplan seam.
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Cfg:            cfg,
 		Workspace:      ws,

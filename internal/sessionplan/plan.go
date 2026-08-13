@@ -98,12 +98,13 @@ type PlanInput struct {
 	// empty value as a stale digest. See update-notification.
 	ImageDigest string
 
-	// Name is the sanitized named-shell name (see SanitizeShellName). Empty for
-	// workspace sessions (no-arg / absolute-path), where the container name
-	// derives from the workspace path hash; non-empty routes the name through
-	// NamedContainerNameFromSanitized (`toolbox-named-<sanitized>`). Keeping the
-	// decision here means cmd never handles the container-name format — it sets
-	// Name by intent and nothing else.
+	// Name is the named shell exactly as the user typed it, empty for workspace
+	// sessions (no-arg / absolute-path). Both derivations live behind this seam:
+	// SanitizeShellName yields the container suffix (`toolbox-named-<sanitized>`;
+	// empty falls back to the workspace path hash), and config.NormalizeShellKey
+	// yields the cfg.Shells key whose per-shell env: overlays the top-level one.
+	// Keeping the raw name here means cmd sets Name by intent and decides
+	// neither the container-name format nor the env overlay.
 	Name string
 
 	// Profile is the active `toolbox shell --profile` selection, or nil for a
@@ -116,11 +117,14 @@ type PlanInput struct {
 }
 
 // containerName resolves the container name from the workspace path and the
-// optional named-shell name — the single place the workspace-hash vs
-// named-shell choice lives. Empty name → workspace-derived; non-empty →
-// named form. bridgeLoopback-free and fs-free.
+// raw named-shell name — the single place the workspace-hash vs named-shell
+// choice lives. A name that sanitizes to nothing (empty, blanks-only) →
+// workspace-derived; otherwise the named form. bridgeLoopback-free and fs-free.
 func containerName(workspace, name string, profile *mountplan.Profile) string {
-	if name == "" {
+	// SanitizeShellName trims before it lowercases and folds the charset, so
+	// `toolbox shell " Infra"` lands on the same container as `infra`.
+	sanitized := SanitizeShellName(name)
+	if sanitized == "" {
 		// Workspace sessions fold the full profile discriminator (name + share
 		// set) into the hash, so switching profile OR --share yields a distinct
 		// container — mounts are fixed at ContainerCreate.
@@ -132,9 +136,9 @@ func containerName(workspace, name string, profile *mountplan.Profile) string {
 	// (A --share change alone reuses the container — refresh with `toolbox stop`,
 	// same as any mount/port flag; see docs/commands.md#profiles.)
 	if pn := mountplan.ProfileName(profile); pn != "" {
-		name = name + "-" + SanitizeShellName(pn)
+		sanitized = sanitized + "-" + SanitizeShellName(pn)
 	}
-	return NamedContainerNameFromSanitized(name)
+	return namedContainerNameFromSanitized(sanitized)
 }
 
 // Plan walks the full session pipeline for in.Cfg + in.Workspace + in.Ports
@@ -186,7 +190,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        mp.WorkingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
+		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, proximo.Env(in.Cfg)),
 		ContainerName:     containerName(workspace, in.Name, in.Profile),
 		Cmd:               cmd,
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
@@ -232,14 +236,20 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then any caller-supplied
 // curated extras (Plan passes proximo.Env, which stats the host CA), then
-// the user-supplied env: map. Reserved-key collisions are already rejected by config.ValidateEnv,
-// so userEnv can append unconditionally.
-func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, imageDigest string, extra []string) []string {
-	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
-	env = append(env, identityEnv(imageDigest)...)
-	env = append(env, managedStatuslineEnv(cfg.ManagedStatusline)...)
+// the user-supplied env: map.
+//
+// The user layer is EffectiveEnv(in.Name), not cfg.Env: the active named
+// shell's `shells.<name>.env` overlays the top-level `env:` here, at the seam,
+// so no caller has to pre-mix the two into the config it hands over. An empty
+// Name resolves to a copy of the top-level map — one path, no branch.
+// Reserved-key collisions are already rejected by config.ValidateEnv, so
+// userEnv can append unconditionally.
+func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, extra []string) []string {
+	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
+	env = append(env, identityEnv(in.ImageDigest)...)
+	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
-	return append(env, userEnv(cfg.Env)...)
+	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
 }
 
 // identityEnv emits the self-identification env that lets the in-container
@@ -452,14 +462,14 @@ func SanitizeShellName(name string) string {
 // additionally refuses sanitized names that match the 8-hex hash pattern so
 // a named shell cannot impersonate a workspace container.
 func NamedContainerName(name string) string {
-	return NamedContainerNameFromSanitized(SanitizeShellName(name))
+	return namedContainerNameFromSanitized(SanitizeShellName(name))
 }
 
-// NamedContainerNameFromSanitized is the post-sanitization sibling of
-// NamedContainerName. cmd/ already runs SanitizeShellName during input
-// validation, so threading the sanitized form back through this entry
-// avoids a redundant regex+lower+trim pass on every `toolbox shell <name>`.
-func NamedContainerNameFromSanitized(sanitized string) string {
+// namedContainerNameFromSanitized is the post-sanitization sibling of
+// NamedContainerName, for the callers inside this package that already hold
+// the sanitized form (containerName folds the profile name into it before
+// composing the final name).
+func namedContainerNameFromSanitized(sanitized string) string {
 	if sanitized == "" {
 		sanitized = "shell"
 	}

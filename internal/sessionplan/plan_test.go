@@ -95,6 +95,67 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	}
 }
 
+// TestPlanNameIsRawAndSanitizedHere asserts PlanInput.Name is the name as the
+// user typed it and the sanitization happens behind the seam: case and
+// surrounding blanks reach the same container as the canonical spelling, and a
+// blanks-only name falls back to the workspace-hash form.
+func TestPlanNameIsRawAndSanitizedHere(t *testing.T) {
+	workspace := planWorkspace(t)
+	name := func(n string) string {
+		t.Helper()
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Name: n})
+		if err != nil {
+			t.Fatalf("Plan(%q): %v", n, err)
+		}
+		return plan.ContainerName
+	}
+
+	for _, raw := range []string{"Infra", " infra ", "INFRA"} {
+		if got := name(raw); got != "toolbox-named-infra" {
+			t.Errorf("ContainerName for %q = %q, want toolbox-named-infra", raw, got)
+		}
+	}
+	if got, want := name("   "), name(""); got != want {
+		t.Errorf("blanks-only name = %q, want the workspace form %q", got, want)
+	}
+}
+
+// TestPlanOverlaysNamedShellEnv asserts the per-shell env: enters through the
+// seam — Plan resolves it from the raw Name — and that resolving it leaves the
+// caller's Config untouched (the top-level env: used to be overwritten in cmd).
+func TestPlanOverlaysNamedShellEnv(t *testing.T) {
+	workspace := planWorkspace(t)
+	cfg := testConfig()
+	cfg.Env = map[string]string{"SHARED": "global", "GLOBAL_ONLY": "g"}
+	cfg.Shells = map[string]config.NamedShell{
+		"infra": {Path: "/tmp/infra", Env: map[string]string{"SHARED": "shell", "SHELL_ONLY": "s"}},
+	}
+
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace, Name: "Infra"})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	env := indexEnv(plan.Env)
+	for k, want := range map[string]string{"SHARED": "shell", "GLOBAL_ONLY": "g", "SHELL_ONLY": "s"} {
+		if env[k] != want {
+			t.Errorf("Env[%q] = %q, want %q (full: %v)", k, env[k], want, plan.Env)
+		}
+	}
+
+	if cfg.Env["SHARED"] != "global" || len(cfg.Env) != 2 {
+		t.Errorf("cfg.Env mutated by planning: %v", cfg.Env)
+	}
+
+	// A workspace session sees the top-level layer only.
+	plain, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	if err != nil {
+		t.Fatalf("Plan (workspace): %v", err)
+	}
+	if got := indexEnv(plain.Env); got["SHARED"] != "global" || got["SHELL_ONLY"] != "" {
+		t.Errorf("workspace session env = %v, want the top-level layer only", plain.Env)
+	}
+}
+
 // TestPlanImageSelectionAndPullPolicy asserts registry_mirror relocates the
 // host (path+tag preserved) and the pull policy propagates onto the Image.
 func TestPlanImageSelectionAndPullPolicy(t *testing.T) {

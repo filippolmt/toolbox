@@ -180,10 +180,16 @@ the Mount Plan + Tool Catalog deepening pattern, and the per-call
 ### Session Plan
 
 The full pipeline that turns a resolved `*Config`, a workspace path,
-`--publish` specs, and the host CLI version into the typed plan handed
-to `internal/container.Shell`: image reference, bind set, publish specs,
-env, working dir, container name, container command, and security
-options.
+`--publish` specs, the host CLI version, and the named shell as the user
+typed it into the typed plan handed to `internal/container.Shell`: image
+reference, bind set, publish specs, env, working dir, container name,
+container command, and security options.
+
+`PlanInput.Name` carries the raw name and both derivations from it stay
+behind the seam: `SanitizeShellName` for the container suffix, and
+`config.NormalizeShellKey` + `EffectiveEnv` for the `shells.<name>.env`
+overlay on the top-level `env:`. `cmd` therefore hands the config over
+untouched — it no longer pre-mixes the env layers into `cfg.Env`.
 
 Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
 → ContainerNameFor → shellEnv → ResolveShellCmd →
