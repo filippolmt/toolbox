@@ -130,8 +130,9 @@ state. In `config ui`, `ApplyChecked` is the write side (the Mutator
 validated against the doctor before anything reaches disk) and
 `configui.previewDiff` is the read side (the same Mutator rendered
 against the document as it stood when the editor opened, diffed against
-it). `Model.pendingMutator` is the single dispatch producing it, so there
-is one place that decides what a pending edit *is*.
+it). `Model.pendingMutator` reads it off the edited key's Key Descriptor
+row, so there is one place that decides what a pending edit *is* — and
+that place is keyed on the config key, the axis the writers use.
 
 The mutators' own semantics are pinned in
 `internal/configedit/mutate_test.go`, on bytes alone — they are pure node
@@ -150,6 +151,33 @@ edit. Naming the pending mutation, and making it a value the two sides
 share, is what makes the preview structurally unable to lie about the
 write. A preview that re-derives the mutation is the defect, not a
 convenience.
+
+### Key Descriptor
+
+Everything `config ui` knows about one config key, as a single row:
+`configui.keyDescriptors[key]` — the editor kind with the typed
+accessors that seed it, the Pending Mutation constructor, and the
+display facts (collection noun, entry names, scope-node count, scalar
+hint). Owned by `internal/configui` (`descriptor.go`), keyed by Config
+Schema key.
+
+Concretely: `displayValue`, `nodeDisplay`, `detailEntries`,
+`EnumOptions`, `hasEditorEscape`, `Model.openEditor` and
+`Model.pendingMutator` read the row rather than switching on the key
+themselves, so the editor a key opens and the mutation it writes are the
+same declaration. `TestKeyDescriptorsCoverEveryKey` demands a row per
+`Keys()` entry, and three behavioural guards ride on it: every key
+displays something, every editable key opens a seeded editor, and every
+open editor has a Pending Mutation behind it.
+
+Why the term exists: `configui` was the last Config Schema consumer
+whose omissions surfaced as a runtime status message instead of a red
+test. The same key list was re-derived by ten switches across two files,
+so a key missing from one of them rendered a blank row, listed no
+entries, or reported "no interactive editor yet" — with a green suite.
+Naming the per-key row turns "add a config key" into one row plus its
+`TestPreviewMatchesWriterForEveryEditableKey` case, and turns every
+omission into a failing test, mirroring the Tool Catalog deepening.
 
 ### Config Plan
 

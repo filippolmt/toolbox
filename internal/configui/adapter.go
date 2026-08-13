@@ -3,6 +3,7 @@ package configui
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -166,22 +167,14 @@ func scopeNode(doc *yaml.Node, key string) *yaml.Node {
 }
 
 // nodeDisplay renders a scope file's own value for a key: collections show a
-// count of their entries in that file; everything else shows the scalar value.
+// count of their entries in that file (counted by the key's descriptor, with
+// the same noun the effective display uses, so the two cannot drift);
+// everything else shows the scalar value.
 func nodeDisplay(node *yaml.Node, key string) string {
-	switch key {
-	case "env", "shells", "sdd":
-		return countLabel(len(node.Content)/2, collectionNoun(key)) // mapping: key,value pairs
-	case "mounts", "inherit_host_auth":
-		return countLabel(len(node.Content), collectionNoun(key)) // sequence
-	case "worktree":
-		n := 0
-		if seed := configio.ChildValue(node, "seed"); seed != nil {
-			n = len(seed.Content)
-		}
-		return countLabel(n, collectionNoun(key))
-	default:
-		return node.Value
+	if d := keyDescriptors[key]; d.nodeCount != nil {
+		return countLabel(d.nodeCount(node), d.noun)
 	}
+	return node.Value
 }
 
 // originFor returns the provenance origin for a top-level key and whether it is
@@ -210,64 +203,11 @@ func originFor(prov configedit.Provenance, key string) (origin configedit.Origin
 
 // displayValue renders a short, list-friendly summary of a key's effective
 // value. Collections show a count; scalars show the value (or a parenthesised
-// default hint when empty); tri-state bools show unset/true/false.
+// default hint when empty); tri-state bools show unset/true/false. The shape
+// comes from the key's descriptor, so a key with no row renders empty — which
+// TestKeyDescriptorsCoverEveryKey forbids.
 func displayValue(cfg *config.Config, key string) string {
-	switch key {
-	case "mounts":
-		return countLabel(len(cfg.Mounts), collectionNoun(key))
-	case "inherit_host_auth":
-		if len(cfg.InheritHostAuth) == 0 {
-			return "(none)"
-		}
-		return strings.Join(cfg.InheritHostAuth, ", ")
-	case "shells":
-		return countLabel(len(cfg.Shells), collectionNoun(key))
-	case "shell", "agent", "pull":
-		// Fallback-bearing scalars derive from the one config.EffectiveValue
-		// seam so the TUI can't drift from `config show` on effective values.
-		v, _ := config.EffectiveValue(cfg, key)
-		return v
-	case "image":
-		return orHint(cfg.Image, "(default)")
-	case "registry_mirror":
-		return orHint(cfg.RegistryMirror, "(none)")
-	case "mounts_root":
-		return orHint(cfg.MountsRoot, "(~/.toolbox)")
-	case "sdd":
-		return countLabel(len(cfg.SDD), collectionNoun(key))
-	case "bridge":
-		return triState(cfg.Bridge)
-	case "proximo":
-		return triState(cfg.Proximo)
-	case "managed_statusline":
-		return triState(cfg.ManagedStatusline)
-	case "env":
-		return countLabel(len(cfg.Env), collectionNoun(key))
-	case "worktree":
-		return countLabel(len(cfg.Worktree.Seed), collectionNoun(key))
-	}
-	return ""
-}
-
-// collectionNoun is the singular noun a collection key's count is rendered with,
-// shared by the effective display (displayValue) and the per-scope display
-// (nodeDisplay) so the two never drift.
-func collectionNoun(key string) string {
-	switch key {
-	case "mounts":
-		return "override"
-	case "shells":
-		return "shell"
-	case "sdd":
-		return "pack"
-	case "env":
-		return "var"
-	case "worktree":
-		return "seed path"
-	case "inherit_host_auth":
-		return "auth entry"
-	}
-	return "entry"
+	return keyDescriptors[key].displayOf(cfg, key)
 }
 
 func countLabel(n int, noun string) string {
@@ -289,38 +229,11 @@ func orHint(v, hint string) string {
 }
 
 // detailEntries lists a collection key's effective entry names for the detail
-// pane, so the actual contents are visible without opening the editor. Returns
-// "" for non-collection keys or an empty collection.
+// pane, so the actual contents are visible without opening the editor. Sorted
+// here (on a copy) so a descriptor row can hand back the config's own slice.
+// Returns nil for non-collection keys or an empty collection.
 func detailEntries(cfg *config.Config, key string) []string {
-	var items []string
-	switch key {
-	case "env":
-		for k := range cfg.Env {
-			items = append(items, k)
-		}
-	case "shells":
-		for k := range cfg.Shells {
-			items = append(items, k)
-		}
-	case "sdd":
-		for k := range cfg.SDD {
-			items = append(items, k)
-		}
-	case "inherit_host_auth":
-		items = append(items, cfg.InheritHostAuth...)
-	case "worktree":
-		items = append(items, cfg.Worktree.Seed...)
-	case "mounts":
-		for _, m := range cfg.Mounts {
-			if m.Name != "" {
-				items = append(items, m.Name)
-			}
-		}
-	default:
-		return nil
-	}
-	sort.Strings(items)
-	return items
+	return slices.Sorted(slices.Values(keyDescriptors[key].entriesOf(cfg)))
 }
 
 // triState renders an optional bool as its three distinct states.
@@ -343,15 +256,11 @@ func TargetPath(scope Scope, cwd string) (string, error) {
 }
 
 // EnumOptions returns the bounded valid values for an enum key, or nil when the
-// key is not an enum.
+// key is not an enum. The option sets themselves stay in config — the descriptor
+// only records which key offers which one.
 func EnumOptions(key string) []string {
-	switch key {
-	case "pull":
-		return config.SupportedPullPolicies
-	case "agent":
-		return config.SupportedAgents
-	case "shell":
-		return config.SupportedShells
+	if d := keyDescriptors[key]; d.kind == edEnum {
+		return d.options()
 	}
 	return nil
 }
@@ -379,50 +288,6 @@ func ReadOnlyKey(key string) bool {
 // exactly the catalog CLIs eligible for host-auth inheritance, so the UI can
 // never drift from what the CLI supports.
 func HostAuthOptions() []string { return catalog.HostAuthEligibleKeys() }
-
-// StringValue returns the current effective value of a scalar key, for
-// prefilling its editor.
-func StringValue(cfg *config.Config, key string) string {
-	switch key {
-	case "image":
-		return cfg.Image
-	case "registry_mirror":
-		return cfg.RegistryMirror
-	case "mounts_root":
-		return cfg.MountsRoot
-	case "pull":
-		return cfg.Pull
-	case "agent":
-		return cfg.Agent
-	case "shell":
-		return cfg.Shell
-	}
-	return ""
-}
-
-// BoolValue returns the current effective value of a tri-state bool key.
-func BoolValue(cfg *config.Config, key string) *bool {
-	switch key {
-	case "bridge":
-		return cfg.Bridge
-	case "proximo":
-		return cfg.Proximo
-	case "managed_statusline":
-		return cfg.ManagedStatusline
-	}
-	return nil
-}
-
-// ListValue returns the current effective value of a string-list key.
-func ListValue(cfg *config.Config, key string) []string {
-	switch key {
-	case "inherit_host_auth":
-		return cfg.InheritHostAuth
-	case "worktree":
-		return cfg.Worktree.Seed
-	}
-	return nil
-}
 
 // ShellEntry is one desired shells: entry for configedit.Shells — the rows
 // editor's output shape, aliased so the UI does not have to name the configedit

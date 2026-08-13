@@ -202,10 +202,10 @@ func (m *Model) toggleScope() {
 	m.reload()
 }
 
-// openEditor opens the editor matched to the selected key's type. Env-sourced
-// keys are read-only. The default branch is a defensive guard: every current
-// UI key has an explicit editor, but a config key added without a matching
-// branch here surfaces a status message instead of silently doing nothing.
+// openEditor opens the editor the selected key's descriptor names, seeded from
+// that row's typed accessor. Env-sourced and single-value keys open none. The
+// editor a key gets is no longer a branch to remember: it is the row's kind,
+// which TestEveryEditableKeyOpensAnEditor demands for every key the UI lists.
 func (m *Model) openEditor() {
 	if len(m.states) == 0 {
 		return
@@ -231,45 +231,43 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("editing creates an override in %s", m.scope)
 	}
 
-	if opts := EnumOptions(key); opts != nil {
-		cur := StringValue(m.cfg, key)
-		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, def: EnumDefault(key), cursor: indexOf(opts, cur)}
-		m.editing = true
+	d, ok := keyDescriptors[key]
+	if !ok || d.kind == edNone {
+		// Defensive: TestEveryEditableKeyOpensAnEditor forbids a UI key without an
+		// editor, so this only fires for a key that never reached the table.
+		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
 		return
 	}
-	switch key {
-	case "image", "registry_mirror", "mounts_root":
+	switch d.kind {
+	case edEnum:
+		opts := d.options()
+		cur := d.str(m.cfg)
+		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, def: EnumDefault(key), cursor: indexOf(opts, cur)}
+		m.editing = true
+	case edString:
 		ti := textinput.New()
-		ti.SetValue(StringValue(m.cfg, key))
+		ti.SetValue(d.str(m.cfg))
 		ti.Focus()
 		m.ed = editor{key: key, kind: edString, input: ti}
 		m.editing = true
-	case "bridge", "proximo", "managed_statusline":
-		cur := triState(BoolValue(m.cfg, key))
+	case edTri:
+		cur := triState(d.tri(m.cfg))
 		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
 		m.ed = editor{key: key, kind: edTri, options: triChoices, current: cur, def: triChoices[0], cursor: indexOf(triChoices, cur)}
 		m.editing = true
-	case "inherit_host_auth":
-		opts := HostAuthOptions()
-		sel := map[string]bool{}
-		for _, v := range ListValue(m.cfg, key) {
-			sel[v] = true
+	case edMulti:
+		m.ed = editor{key: key, kind: edMulti, options: d.options(), selected: d.selected(m.cfg)}
+		m.editing = true
+	case edRows:
+		// Pair editors carry key→value rows; the rest are single-column lists.
+		if d.pairs != nil {
+			m.openRowsEditor(key, true, pairsToRows(d.pairs(m.cfg)))
+		} else {
+			m.openRowsEditor(key, false, valuesToRows(d.list(m.cfg)))
 		}
-		m.ed = editor{key: key, kind: edMulti, options: opts, selected: sel}
-		m.editing = true
-	case "env":
-		m.openRowsEditor(key, true, pairsToRows(m.cfg.Env))
-	case "shells":
-		m.openRowsEditor(key, true, pairsToRows(ShellPaths(m.cfg)))
-	case "worktree":
-		m.openRowsEditor(key, false, valuesToRows(ListValue(m.cfg, key)))
-	case "sdd":
-		m.ed = editor{key: key, kind: edMulti, options: SDDOptions(), selected: EnabledSDD(m.cfg)}
-		m.editing = true
-	case "mounts":
-		m.ed = editor{key: key, kind: edMulti, options: DefaultMountNames(), selected: DisabledMounts(m.cfg)}
-		m.editing = true
 	default:
+		// A new editor kind that forgot its branch here: say so rather than
+		// leaving the pane open on the previous key's editor state.
 		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
 	}
 }
@@ -277,7 +275,7 @@ func (m *Model) openEditor() {
 // hasEditorEscape reports whether a key offers the "open in $EDITOR" hatch —
 // the complex keys whose structured editor does not cover every case.
 func hasEditorEscape(key string) bool {
-	return key == "mounts" || key == "sdd"
+	return keyDescriptors[key].escape
 }
 
 // editorClosedMsg is delivered when the $EDITOR subprocess returns.
@@ -390,36 +388,40 @@ func (m Model) updateMulti(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // pendingMutator is the editor's current pending edit as a single value: the
 // one mutation both the preview and the save use, so the panel cannot describe
-// a change the writer would not make. A nil return means the key has no
-// mutation (no editor is open, or a key was given an editor without a writer).
-//
-// Keys whose mutation is more than "write the value" are matched by key first;
-// everything else falls through to its editor kind.
+// a change the writer would not make. The mutation comes from the key's own
+// descriptor row, so the preview and the writer are keyed on the same axis —
+// keying them differently is what once made the mounts panel render the inverse
+// of the edit. A nil return means the key has no mutation (no editor is open, or
+// a key reached the table without a writer).
 func (m Model) pendingMutator() configedit.Mutator {
-	switch m.ed.key {
-	case "sdd":
-		return configedit.SDDEnabled(m.ed.selected)
-	case "mounts":
-		// The checkboxes name the defaults to *disable*, not to keep.
-		return configedit.MountsDisabled(m.ed.selected)
-	case "shells":
-		return configedit.Shells(m.shellEntries())
-	case "env":
-		return configedit.StringMap("env", rowsToPairs(m.ed.rows))
-	case "worktree":
-		return configedit.WorktreeSeed(rowsToValues(m.ed.rows))
+	d := keyDescriptors[m.ed.key]
+	if d.mutator == nil {
+		return nil
 	}
-	switch m.ed.kind {
-	case edEnum:
-		return configedit.Scalar(m.ed.key, m.ed.options[m.ed.cursor])
-	case edString:
-		return configedit.Scalar(m.ed.key, strings.TrimSpace(m.ed.input.Value()))
-	case edTri:
-		return configedit.Bool(m.ed.key, triValue(m.ed.options[m.ed.cursor]))
-	case edMulti:
-		return configedit.StringList(m.ed.key, m.selectedOptions())
-	}
-	return nil
+	return d.mutator(&m)
+}
+
+// The mutation shapes shared by every key whose edit is just "write the value";
+// the keys whose write is more than that name their own constructor in the table.
+
+// scalarFromChoice writes the highlighted option of a bounded list.
+func scalarFromChoice(m *Model) configedit.Mutator {
+	return configedit.Scalar(m.ed.key, m.ed.options[m.ed.cursor])
+}
+
+// scalarFromInput writes the trimmed contents of a free-text editor.
+func scalarFromInput(m *Model) configedit.Mutator {
+	return configedit.Scalar(m.ed.key, strings.TrimSpace(m.ed.input.Value()))
+}
+
+// boolFromChoice writes the tri-state choice (unset removes the key).
+func boolFromChoice(m *Model) configedit.Mutator {
+	return configedit.Bool(m.ed.key, triValue(m.ed.options[m.ed.cursor]))
+}
+
+// listFromSelection writes the checked options of a multi-select, in option order.
+func listFromSelection(m *Model) configedit.Mutator {
+	return configedit.StringList(m.ed.key, m.selectedOptions())
 }
 
 // selectedOptions lists the checked multi-select options in option order.
