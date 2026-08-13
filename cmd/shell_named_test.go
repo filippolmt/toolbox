@@ -167,6 +167,32 @@ func TestResolveShellWorkspaceCreateWritesCanonicalKey(t *testing.T) {
 	}
 }
 
+// TestBootstrapNamesPathAndHintByTheCanonicalKey: the default path and the
+// copy-pasteable hint are derived from the config key, not from the spelling
+// typed at the prompt — otherwise two spellings of one shell bootstrap to two
+// different directories, and following the hint by hand writes an entry the
+// CLI would have spelled differently.
+func TestBootstrapNamesPathAndHintByTheCanonicalKey(t *testing.T) {
+	const home = "/home/u"
+	if got, want := defaultShellPath(home, " Infra "), filepath.Join(home, "toolbox-shells", "infra"); got != want {
+		t.Errorf("defaultShellPath = %q, want %q", got, want)
+	}
+	if got, want := defaultShellPath("", "Infra"), filepath.Join("/tmp", "infra"); got != want {
+		t.Errorf("defaultShellPath (no home) = %q, want %q", got, want)
+	}
+
+	hint := missingShellHint(home, "Infra")
+	if !strings.Contains(hint, `shell "Infra" not configured`) {
+		t.Errorf("the first line must echo the name as typed:\n%s", hint)
+	}
+	if !strings.Contains(hint, "    infra:\n") {
+		t.Errorf("the YAML block must use the canonical key:\n%s", hint)
+	}
+	if !strings.Contains(hint, "toolbox shell infra --create") {
+		t.Errorf("the --create command must use the canonical key:\n%s", hint)
+	}
+}
+
 // TestResolveShellWorkspaceRejectsHashShapedName guards against named
 // shells whose sanitized form (`[a-f0-9]{8}`) would be indistinguishable
 // from the trailing hash component of a workspace container name

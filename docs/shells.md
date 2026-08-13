@@ -46,4 +46,4 @@ Shell names are matched the way `toolbox shell <name>` matches them: case-insens
 
 ## Bootstrap shorthand: `shell --create`
 
-`toolbox shell <name> --create` auto-bootstraps a missing named shell in `~/.toolbox.yaml`: it writes the entry and opens it in one step. `--path <dir>` picks the directory; the default is `$HOME/toolbox-shells/<name>` (or `/tmp/<name>` if the home directory is unresolvable).
+`toolbox shell <name> --create` auto-bootstraps a missing named shell in `~/.toolbox.yaml`: it writes the entry and opens it in one step. `--path <dir>` picks the directory; the default is `$HOME/toolbox-shells/<name>` (or `/tmp/<name>` if the home directory is unresolvable), where `<name>` is the canonical key — so two spellings of one shell bootstrap to the same directory.
