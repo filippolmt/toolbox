@@ -220,14 +220,24 @@ func ensureNamedShellPath(sanitized, path string, createDir bool) (string, error
 // shell. Prefers $HOME/toolbox-shells/<name> for persistence across reboots
 // and to avoid the world-writable / tmpfs semantics of /tmp; falls back to
 // /tmp/<name> only when home cannot be resolved.
+//
+// The directory is named after the canonical key, not the spelling typed at the
+// prompt, so `toolbox shell Infra --create` and `toolbox shell infra --create`
+// cannot bootstrap the one config entry they share to two different paths.
 func defaultShellPath(home, name string) string {
+	name = config.NormalizeShellKey(name)
 	if home == "" {
 		return filepath.Join("/tmp", name)
 	}
 	return filepath.Join(home, "toolbox-shells", name)
 }
 
+// missingShellHint is the copy-pasteable block printed when a named shell is
+// absent from the config. The first line echoes the name as typed; the YAML and
+// the --create command use the canonical key, so following the hint by hand
+// produces the same entry the bootstrap would have written.
 func missingShellHint(home, name string) string {
+	key := config.NormalizeShellKey(name)
 	path := defaultShellPath(home, name)
 	return fmt.Sprintf(`shell %q not configured
 
@@ -237,7 +247,7 @@ Add to ~/.toolbox.yaml:
     %s:
       path: %s
 
-%s`, name, name, path, createHint(name, path))
+%s`, name, key, path, createHint(key, path))
 }
 
 func missingPathHint(name, path string) string {
