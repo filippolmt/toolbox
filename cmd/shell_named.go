@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
@@ -115,7 +116,7 @@ func shellPathFor(name string) (string, bool, error) {
 	if cfg.Shells == nil {
 		return "", false, nil
 	}
-	s, ok := cfg.Shells[name]
+	s, ok := cfg.Shells[config.NormalizeShellKey(name)]
 	if !ok {
 		return "", false, nil
 	}

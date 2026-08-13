@@ -112,9 +112,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 
 	// Overlay the active named shell's env onto the top-level env before
 	// planning. resolveShellWorkspace returns a non-empty sanitized name
-	// only for the named-shell branch, where the raw config key is args[0]
-	// (cfg.Shells is keyed by the raw name). Abs-path / no-arg sessions pass
-	// "" and fall back to the top-level env.
+	// only for the named-shell branch, where the user-typed name is args[0];
+	// EffectiveEnv normalizes it into the cfg.Shells key itself. Abs-path /
+	// no-arg sessions pass "" and fall back to the top-level env.
 	rawShellName := ""
 	if shellName != "" && len(args) > 0 {
 		rawShellName = args[0]

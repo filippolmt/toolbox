@@ -41,6 +41,33 @@ func TestResolveShellWorkspaceUsesConfiguredNamedShell(t *testing.T) {
 	}
 }
 
+// TestResolveShellWorkspaceNormalizesNamedShellKey pins the lookup to the
+// same key rule as config.Merge (viper lowercases the YAML key): a name typed
+// with different case or surrounding blanks must resolve to the configured
+// shell instead of falling through to the missing-shell bootstrap.
+func TestResolveShellWorkspaceNormalizesNamedShellKey(t *testing.T) {
+	for _, arg := range []string{"Infra", " infra", "  INFRA  "} {
+		t.Run(arg, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg = &config.Config{
+				Shells: map[string]config.NamedShell{"infra": {Path: dir}},
+			}
+			t.Cleanup(func() { cfg = nil })
+
+			ws, name, err := resolveShellWorkspace([]string{arg}, false, "")
+			if err != nil {
+				t.Fatalf("resolveShellWorkspace(%q): %v", arg, err)
+			}
+			if ws != dir {
+				t.Errorf("workspace = %q, want %q", ws, dir)
+			}
+			if name != "infra" {
+				t.Errorf("name = %q, want infra", name)
+			}
+		})
+	}
+}
+
 func TestResolveShellWorkspaceMissingNameNonInteractiveShowsHint(t *testing.T) {
 	setEmptyCfg(t)
 
