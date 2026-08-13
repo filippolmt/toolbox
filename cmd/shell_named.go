@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
@@ -28,9 +29,11 @@ var shellHashLikeRe = regexp.MustCompile(
 )
 
 // resolveShellWorkspace returns the workspace path and (for named shells)
-// the sanitized shell name. The sanitized form is threaded back to the
-// caller so sessionplan.NamedContainerNameFromSanitized can skip a redundant
-// re-sanitize when building the container name.
+// the shell name as the user typed it. The raw form is what travels on to
+// sessionplan.PlanInput.Name, which owns both derivations — the sanitized
+// container suffix and the normalized cfg.Shells key. The sanitized form
+// stays local: validateShellName needs it for the collision and length
+// checks, and ensureNamedShellPath for its error strings.
 //
 // The positional argument is interpreted as:
 //   - absent           -> workspace.Resolve() (current working directory)
@@ -68,7 +71,11 @@ func resolveShellWorkspace(args []string, create bool, createPath string) (strin
 		return "", "", fmt.Errorf("shell %q has empty path", name)
 	}
 
-	return ensureNamedShellPath(sanitized, path, create)
+	ws, err := ensureNamedShellPath(sanitized, path, create)
+	if err != nil {
+		return "", "", err
+	}
+	return ws, name, nil
 }
 
 // resolveDirectWorkspace validates an absolute path supplied as the shell
@@ -115,7 +122,7 @@ func shellPathFor(name string) (string, bool, error) {
 	if cfg.Shells == nil {
 		return "", false, nil
 	}
-	s, ok := cfg.Shells[name]
+	s, ok := cfg.Shells[config.NormalizeShellKey(name)]
 	if !ok {
 		return "", false, nil
 	}
@@ -133,7 +140,11 @@ func bootstrapMissingNamedShell(name, sanitized string, create bool, createPath 
 		if err := upsertShellInUserConfig(home, name, path); err != nil {
 			return "", "", err
 		}
-		return ensureNamedShellPath(sanitized, path, true)
+		ws, err := ensureNamedShellPath(sanitized, path, true)
+		if err != nil {
+			return "", "", err
+		}
+		return ws, name, nil
 	}
 
 	if !shellStdinIsTerminal(int(os.Stdin.Fd())) {
@@ -160,12 +171,19 @@ func bootstrapMissingNamedShell(name, sanitized string, create bool, createPath 
 			return "", "", err
 		}
 	}
-	return ensureNamedShellPath(sanitized, chosenPath, createDir)
+	ws, err := ensureNamedShellPath(sanitized, chosenPath, createDir)
+	if err != nil {
+		return "", "", err
+	}
+	return ws, name, nil
 }
 
-func ensureNamedShellPath(sanitized, path string, createDir bool) (string, string, error) {
+// ensureNamedShellPath validates (and optionally creates) the configured
+// directory and returns it as the workspace. sanitized is only what the error
+// strings name the shell by; the caller owns the name it hands back.
+func ensureNamedShellPath(sanitized, path string, createDir bool) (string, error) {
 	if err := workspace.ValidateAbsolute(path); err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	info, err := os.Lstat(path)
@@ -173,29 +191,29 @@ func ensureNamedShellPath(sanitized, path string, createDir bool) (string, strin
 	case err == nil:
 	case os.IsNotExist(err):
 		if !createDir {
-			return "", "", errors.New(missingPathHint(sanitized, path))
+			return "", errors.New(missingPathHint(sanitized, path))
 		}
 		if mkErr := os.MkdirAll(path, 0o755); mkErr != nil {
-			return "", "", fmt.Errorf("create %s: %w", path, mkErr)
+			return "", fmt.Errorf("create %s: %w", path, mkErr)
 		}
 		info, err = os.Lstat(path)
 		if err != nil {
-			return "", "", fmt.Errorf("stat %s: %w", path, err)
+			return "", fmt.Errorf("stat %s: %w", path, err)
 		}
 	default:
-		return "", "", fmt.Errorf("stat %s: %w", path, err)
+		return "", fmt.Errorf("stat %s: %w", path, err)
 	}
 
 	// A symlink at the final element is refused: a TOCTOU swap between
 	// this check and the Docker bind-mount stage would redirect the
 	// container's mount source to an attacker-controlled target.
 	if info.Mode()&os.ModeSymlink != 0 {
-		return "", "", fmt.Errorf("shell %q path %s is a symlink; point shells.%s.path at the resolved target directly", sanitized, path, sanitized)
+		return "", fmt.Errorf("shell %q path %s is a symlink; point shells.%s.path at the resolved target directly", sanitized, path, sanitized)
 	}
 	if !info.IsDir() {
-		return "", "", fmt.Errorf("shell %q path %s is not a directory", sanitized, path)
+		return "", fmt.Errorf("shell %q path %s is not a directory", sanitized, path)
 	}
-	return path, sanitized, nil
+	return path, nil
 }
 
 // defaultShellPath returns the auto-bootstrap path for a missing named

@@ -2,8 +2,7 @@
 // workspace path, and --publish specs into the typed plan handed to
 // internal/container.Shell: image reference, bind set, publish specs, env,
 // working dir, container name, container Cmd, security opts. Plan is the
-// external seam with filesystem side effects; Merge is the pure-data twin
-// used by tests.
+// single seam; it owns the filesystem side effects of the mount stage.
 package sessionplan
 
 import (
@@ -55,11 +54,11 @@ type SessionPlan struct {
 	ContainerName string
 	Cmd           []string
 	// ExecCmd overrides the command run in the attached interactive exec
-	// session. When nil the exec reuses Cmd (the normal shell). Callers that
-	// must keep the container's main process an idle shell while running a
-	// different command in the user's attached session (e.g. toolbox worktree
-	// auto-launching an agent) set this so the agent does not also run headless
-	// in the container's main PID. Lifecycle.Shell reads it at the exec edge.
+	// session. When nil the exec reuses Cmd (the normal shell). Set by Plan
+	// for a worktree session (PlanInput.Worktree), which keeps the container's
+	// main process an idle shell while the agent runs in the user's attached
+	// session — so the agent does not also run headless in the container's
+	// main PID. Lifecycle.Shell reads it at the exec edge.
 	ExecCmd     []string
 	SecurityOpt []string
 	// ExtraHosts is the docker --add-host list. Populated when the browser
@@ -81,27 +80,10 @@ type SessionPlan struct {
 	Proximo bool
 }
 
-// MergedSessionPlan is the pure-data shape returned by Merge. Binds are
-// the post-merge config.Mount slice (no filesystem side-effects). Tests
-// assert merge decisions at this layer without invoking mountplan.Plan.
-type MergedSessionPlan struct {
-	Image         Image
-	Binds         []config.Mount
-	WorkingDir    string
-	ExposedPorts  network.PortSet
-	PortBindings  network.PortMap
-	Env           []string
-	ContainerName string
-	Cmd           []string
-	SecurityOpt   []string
-}
-
-// PlanInput is the full set of inputs to Plan and Merge. The two share one
-// struct so the pure-data Merge stays signature-parallel with the fs-touching
-// Plan; Merge ignores ImageDigest (the poller identity is an fs-free-plan
-// non-concern). Bundling the inputs keeps the container-name decision — the
-// one field that varies between a workspace session and a named shell — a
-// single Name input rather than a post-planning override in the caller.
+// PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
+// container-name decision — the one field that varies between a workspace
+// session and a named shell — a single Name input rather than a post-planning
+// override in the caller.
 type PlanInput struct {
 	Cfg            *config.Config
 	Workspace      string
@@ -113,15 +95,16 @@ type PlanInput struct {
 	// pure planner does not hold). Empty when unresolvable — e.g. a locally
 	// built untagged image; the identity injection then omits the digest entry
 	// so the in-container poller skips the image check rather than treating an
-	// empty value as a stale digest. Ignored by Merge. See update-notification.
+	// empty value as a stale digest. See update-notification.
 	ImageDigest string
 
-	// Name is the sanitized named-shell name (see SanitizeShellName). Empty for
-	// workspace sessions (no-arg / absolute-path), where the container name
-	// derives from the workspace path hash; non-empty routes the name through
-	// NamedContainerNameFromSanitized (`toolbox-named-<sanitized>`). Keeping the
-	// decision here means cmd never handles the container-name format — it sets
-	// Name by intent and nothing else.
+	// Name is the named shell exactly as the user typed it, empty for workspace
+	// sessions (no-arg / absolute-path). Both derivations live behind this seam:
+	// SanitizeShellName yields the container suffix (`toolbox-named-<sanitized>`;
+	// empty falls back to the workspace path hash), and config.NormalizeShellKey
+	// yields the cfg.Shells key whose per-shell env: overlays the top-level one.
+	// Keeping the raw name here means cmd sets Name by intent and decides
+	// neither the container-name format nor the env overlay.
 	Name string
 
 	// Profile is the active `toolbox shell --profile` selection, or nil for a
@@ -131,15 +114,44 @@ type PlanInput struct {
 	// for the same workspace, each keeping its own mount set fixed at
 	// ContainerCreate.
 	Profile *mountplan.Profile
+
+	// Worktree, when non-nil, plans a `toolbox worktree` session: the main
+	// repo's .git enters the mount plan and ExecCmd launches the agent in the
+	// user's attached session. Nil for every other session.
+	Worktree *WorktreeSession
+}
+
+// WorktreeSession carries the inputs a `toolbox worktree` session adds to a
+// plain one. Both derivations from it stay behind this seam: RepoRoot becomes
+// the .git bind, and Agent + Prompt become the ExecCmd wrapper.
+type WorktreeSession struct {
+	// RepoRoot is the main repository root (not the worktree path, which is
+	// the session's Workspace). A linked worktree's .git points into it.
+	RepoRoot string
+	// Agent is the resolved AI agent binary to auto-launch (claude | codex).
+	Agent string
+	// Prompt is the initial task handed to the agent, empty for a bare launch.
+	Prompt string
+}
+
+// gitDir returns the main repo's .git directory for a worktree session, or ""
+// when this is not one.
+func (in PlanInput) gitDir() string {
+	if in.Worktree == nil {
+		return ""
+	}
+	return filepath.Join(in.Worktree.RepoRoot, ".git")
 }
 
 // containerName resolves the container name from the workspace path and the
-// optional named-shell name — the single place the workspace-hash vs
-// named-shell choice lives. Empty name → workspace-derived; non-empty →
-// named form. bridgeLoopback-free and fs-free, so both Plan and Merge share
-// it.
+// raw named-shell name — the single place the workspace-hash vs named-shell
+// choice lives. A name that sanitizes to nothing (empty, blanks-only) →
+// workspace-derived; otherwise the named form. bridgeLoopback-free and fs-free.
 func containerName(workspace, name string, profile *mountplan.Profile) string {
-	if name == "" {
+	// SanitizeShellName trims before it lowercases and folds the charset, so
+	// `toolbox shell " Infra"` lands on the same container as `infra`.
+	sanitized := SanitizeShellName(name)
+	if sanitized == "" {
 		// Workspace sessions fold the full profile discriminator (name + share
 		// set) into the hash, so switching profile OR --share yields a distinct
 		// container — mounts are fixed at ContainerCreate.
@@ -151,9 +163,9 @@ func containerName(workspace, name string, profile *mountplan.Profile) string {
 	// (A --share change alone reuses the container — refresh with `toolbox stop`,
 	// same as any mount/port flag; see docs/commands.md#profiles.)
 	if pn := mountplan.ProfileName(profile); pn != "" {
-		name = name + "-" + SanitizeShellName(pn)
+		sanitized = sanitized + "-" + SanitizeShellName(pn)
 	}
-	return NamedContainerNameFromSanitized(name)
+	return namedContainerNameFromSanitized(sanitized)
 }
 
 // Plan walks the full session pipeline for in.Cfg + in.Workspace + in.Ports
@@ -186,7 +198,12 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
-	mp, err := mountplan.Plan(in.Cfg, workspace, in.Profile)
+	mp, err := mountplan.Plan(mountplan.PlanInput{
+		Cfg:       in.Cfg,
+		Workspace: workspace,
+		Profile:   in.Profile,
+		GitDir:    in.gitDir(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -205,9 +222,10 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        mp.WorkingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(workspace, mp.WorkingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, in.ImageDigest, proximo.Env(in.Cfg)),
+		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, proximo.Env(in.Cfg)),
 		ContainerName:     containerName(workspace, in.Name, in.Profile),
 		Cmd:               cmd,
+		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
@@ -246,64 +264,25 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 	return []string{"TOOLBOX_LOOPBACK_BRIDGE_PORTS=" + strings.Join(uniqContainerPorts, ",")}
 }
 
-// Merge returns the pure-data plan shape: identical to Plan but composes
-// mountplan.Merge (no fs side effects) and exposes Binds as the post-merge
-// config.Mount slice. Tests asserting the contract construct merged plans
-// without t.TempDir / HOME setup.
-func Merge(in PlanInput) (*MergedSessionPlan, error) {
-	workspace := normalizeWorkspace(in.Workspace)
-
-	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(in.Ports)
-	if err != nil {
-		return nil, err
-	}
-
-	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
-
-	merged, err := mountplan.Merge(in.Cfg, in.Profile)
-	if err != nil {
-		return nil, err
-	}
-
-	// Pure WorkingDir: mountplan.WorkspaceMirrorPath is fs-free, so Merge
-	// can match Plan's mirror-or-target choice without touching disk.
-	workingDir := mountplan.WorkspaceTarget
-	if mirror, ok := mountplan.WorkspaceMirrorPath(workspace); ok {
-		workingDir = mirror
-	}
-
-	cmd, err := ResolveShellCmd(in.Cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &MergedSessionPlan{
-		Image:         Image{Ref: ref, PullPolicy: in.Cfg.Pull},
-		Binds:         merged,
-		WorkingDir:    workingDir,
-		ExposedPorts:  exposed,
-		PortBindings:  bindings,
-		Env:           composeEnv(workspace, workingDir, in.Cfg, in.BridgeLoopback, uniqContainerPorts, "", nil),
-		ContainerName: containerName(workspace, in.Name, in.Profile),
-		Cmd:           cmd,
-		SecurityOpt:   NestedSandboxSecurityOpt(in.Cfg),
-	}, nil
-}
-
 // composeEnv assembles the full ordered env slice for a session: the curated
 // workspace + SDD entries first, then the loopback-bridge markers, then the
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then any caller-supplied
-// curated extras (Plan passes proximo.Env, which stats the host CA —
-// fs-touching, so the pure-data Merge passes nil), then the user-supplied
-// env: map. Reserved-key collisions are already rejected by config.ValidateEnv,
-// so userEnv can append unconditionally.
-func composeEnv(workspace, workingDir string, cfg *config.Config, bridgeLoopback bool, uniqContainerPorts []string, imageDigest string, extra []string) []string {
-	env := append(shellEnv(workspace, workingDir, cfg.SDD), loopbackBridgeEnv(bridgeLoopback, uniqContainerPorts)...)
-	env = append(env, identityEnv(imageDigest)...)
-	env = append(env, managedStatuslineEnv(cfg.ManagedStatusline)...)
+// curated extras (Plan passes proximo.Env, which stats the host CA), then
+// the user-supplied env: map.
+//
+// The user layer is EffectiveEnv(in.Name), not cfg.Env: the active named
+// shell's `shells.<name>.env` overlays the top-level `env:` here, at the seam,
+// so no caller has to pre-mix the two into the config it hands over. An empty
+// Name resolves to a copy of the top-level map — one path, no branch.
+// Reserved-key collisions are already rejected by config.ValidateEnv, so
+// userEnv can append unconditionally.
+func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, extra []string) []string {
+	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
+	env = append(env, identityEnv(in.ImageDigest)...)
+	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
-	return append(env, userEnv(cfg.Env)...)
+	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
 }
 
 // identityEnv emits the self-identification env that lets the in-container
@@ -516,14 +495,14 @@ func SanitizeShellName(name string) string {
 // additionally refuses sanitized names that match the 8-hex hash pattern so
 // a named shell cannot impersonate a workspace container.
 func NamedContainerName(name string) string {
-	return NamedContainerNameFromSanitized(SanitizeShellName(name))
+	return namedContainerNameFromSanitized(SanitizeShellName(name))
 }
 
-// NamedContainerNameFromSanitized is the post-sanitization sibling of
-// NamedContainerName. cmd/ already runs SanitizeShellName during input
-// validation, so threading the sanitized form back through this entry
-// avoids a redundant regex+lower+trim pass on every `toolbox shell <name>`.
-func NamedContainerNameFromSanitized(sanitized string) string {
+// namedContainerNameFromSanitized is the post-sanitization sibling of
+// NamedContainerName, for the callers inside this package that already hold
+// the sanitized form (containerName folds the profile name into it before
+// composing the final name).
+func namedContainerNameFromSanitized(sanitized string) string {
 	if sanitized == "" {
 		sanitized = "shell"
 	}

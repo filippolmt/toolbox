@@ -28,7 +28,7 @@ shells:
 
 ## Env overlays
 
-The per-shell `env:` map overlays the top-level [`env:` passthrough](configuration.md#env-passthrough): the top-level map is the base, per-shell keys win on collision (`config.Config.EffectiveEnv`, keyed by the raw `shells:` name). Reserved-key rules and emission order live with the `env:` contract in configuration.md.
+The per-shell `env:` map overlays the top-level [`env:` passthrough](configuration.md#env-passthrough): the top-level map is the base, per-shell keys win on collision (`config.Config.EffectiveEnv`; the `shells:` name is matched case-insensitively and space-trimmed, via `config.NormalizeShellKey`). Reserved-key rules and emission order live with the `env:` contract in configuration.md.
 
 ## Managing entries: `toolbox shells`
 

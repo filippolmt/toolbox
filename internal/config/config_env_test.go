@@ -59,6 +59,23 @@ func TestEffectiveEnvMergesPerShellOverTopLevel(t *testing.T) {
 	}
 }
 
+// TestEffectiveEnvNormalizesShellName locks the cfg.Shells key rule: viper
+// stores the lowercased YAML key, so a name typed with different case or
+// surrounding blanks must still find its per-shell env.
+func TestEffectiveEnvNormalizesShellName(t *testing.T) {
+	c := &Config{
+		Env: map[string]string{"GLOBAL_ONLY": "g"},
+		Shells: map[string]NamedShell{
+			"infra": {Path: "/tmp/infra", Env: map[string]string{"SHELL_ONLY": "s"}},
+		},
+	}
+	for _, name := range []string{"Infra", " infra", "  INFRA  "} {
+		if got := c.EffectiveEnv(name); got["SHELL_ONLY"] != "s" {
+			t.Errorf("EffectiveEnv(%q) = %v, want the infra override", name, got)
+		}
+	}
+}
+
 func TestEffectiveEnvUnknownShellFallsBackToTopLevel(t *testing.T) {
 	c := &Config{Env: map[string]string{"FOO": "bar"}}
 	if got := c.EffectiveEnv("nope"); got["FOO"] != "bar" || len(got) != 1 {

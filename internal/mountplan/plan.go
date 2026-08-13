@@ -46,7 +46,29 @@ type Result struct {
 	WorkingDir string
 }
 
-// Plan walks the full mount pipeline for cfg and returns the bind set + the
+// WorktreeGitDirMountName is the Name carried by the bind that PlanInput.GitDir
+// produces. Named like every other mount so warnings and `toolbox mounts`
+// output can tell the reader where the entry came from.
+const WorktreeGitDirMountName = "worktree-gitdir"
+
+// PlanInput is the full set of inputs to Plan. A struct rather than a
+// positional list: the session-shaped inputs (which workspace, whose profile,
+// which extra host path) only grow, and at four arguments the call site stops
+// saying which is which.
+type PlanInput struct {
+	Cfg       *config.Config
+	Workspace string
+	Profile   *Profile
+	// GitDir is the main repository's .git directory for a `toolbox worktree`
+	// session, empty for every other session. A linked worktree's .git is a
+	// pointer file into the main repo, so git only resolves in-container when
+	// that directory is bound at its host path. It joins the merged mount list
+	// and goes through resolveAll like every other mount, so a missing source
+	// is a soft skip with a warning instead of a bind ContainerCreate rejects.
+	GitDir string
+}
+
+// Plan walks the full mount pipeline for in.Cfg and returns the bind set + the
 // shell WorkingDir for ContainerCreate.
 //
 // Hard fails when the user's home directory cannot be resolved (every
@@ -55,8 +77,8 @@ type Result struct {
 // name-only patch, anonymous mount with empty source, …). Per-mount issues
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
-func Plan(cfg *config.Config, workspace string, profile *Profile) (Result, error) {
-	merged, err := Merge(cfg, profile)
+func Plan(in PlanInput) (Result, error) {
+	merged, err := Merge(in.Cfg, in.Profile)
 	if err != nil {
 		return Result{}, err
 	}
@@ -66,14 +88,24 @@ func Plan(cfg *config.Config, workspace string, profile *Profile) (Result, error
 		return Result{}, err
 	}
 
-	binds, warnings := resolveAll(merged, home)
-	warnings = append(profileHostSharedWarnings(merged, profile), warnings...)
+	// Appended post-Merge: it is a session input, not a configurable mount —
+	// no `mounts:` patch should be able to retarget or disable it.
+	if in.GitDir != "" {
+		merged = append(merged, config.Mount{
+			Name:   WorktreeGitDirMountName,
+			Source: in.GitDir,
+			Target: in.GitDir,
+		})
+	}
 
-	binds = append(binds, Bind{Source: workspace, Target: WorkspaceTarget, Mode: "rw"})
+	binds, warnings := resolveAll(merged, home)
+	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
+
+	binds = append(binds, Bind{Source: in.Workspace, Target: WorkspaceTarget, Mode: "rw"})
 
 	workingDir := WorkspaceTarget
-	if mirror, ok := WorkspaceMirrorPath(workspace); ok {
-		binds = append(binds, Bind{Source: workspace, Target: mirror, Mode: "rw"})
+	if mirror, ok := WorkspaceMirrorPath(in.Workspace); ok {
+		binds = append(binds, Bind{Source: in.Workspace, Target: mirror, Mode: "rw"})
 		workingDir = mirror
 	}
 

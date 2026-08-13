@@ -5,52 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
-
-func TestShellSingleQuote(t *testing.T) {
-	// $(...), backticks and ; must survive as literal text, never expanded or
-	// treated as a command separator by the session's `-c` wrapper.
-	cases := []struct{ in, want string }{
-		{"add auth", `'add auth'`},
-		{"$(rm -rf /)", `'$(rm -rf /)'`},
-		{"`whoami`", "'`whoami`'"},
-		{"a; b", `'a; b'`},
-		{"it's a trap", `'it'\''s a trap'`},
-		{"'leading", `''\''leading'`},
-		{"", `''`},
-	}
-	for _, c := range cases {
-		if got := shellSingleQuote(c.in); got != c.want {
-			t.Errorf("shellSingleQuote(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestAgentCommand(t *testing.T) {
-	cases := []struct {
-		agent, prompt, want string
-	}{
-		{"claude", "add auth", `claude 'add auth'`},
-		{"codex", "fix pagination", `codex 'fix pagination'`},
-		{"claude", "", "claude"},
-		{"codex", "", "codex"},
-		{"claude", "$(rm -rf /)", `claude '$(rm -rf /)'`},
-	}
-	for _, c := range cases {
-		if got := agentCommand(c.agent, c.prompt); got != c.want {
-			t.Errorf("agentCommand(%q, %q) = %q, want %q", c.agent, c.prompt, got, c.want)
-		}
-	}
-}
 
 func TestWorktreeCreateArgs(t *testing.T) {
 	// ArgsLenAtDash is only populated by cobra's own arg parsing, so exercise
@@ -81,55 +41,6 @@ func TestWorktreeCreateArgs(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestApplyWorktreeSessionMutatesPlan(t *testing.T) {
-	assertGitBind := func(t *testing.T, plan *sessionplan.SessionPlan) {
-		t.Helper()
-		want := mountplan.Bind{Source: "/repo/.git", Target: "/repo/.git", Mode: "rw"}
-		if !slices.Contains(plan.Binds, want) {
-			t.Errorf("plan.Binds missing .git bind %+v, got %+v", want, plan.Binds)
-		}
-	}
-
-	t.Run("bare launch", func(t *testing.T) {
-		plan := &sessionplan.SessionPlan{Cmd: []string{"/bin/zsh", "-i"}}
-		applyWorktreeSession(plan, "/repo", "zsh", "codex", "")
-		assertGitBind(t, plan)
-
-		// The agent launches in the attached exec session (ExecCmd), not the
-		// container's main process (Cmd) — otherwise the agent runs twice.
-		joined := strings.Join(plan.ExecCmd, " ")
-		if !strings.Contains(joined, "codex") {
-			t.Errorf("plan.ExecCmd should invoke the agent, got %q", joined)
-		}
-		if !strings.Contains(joined, "/bin/zsh") {
-			t.Errorf("plan.ExecCmd should use the configured shell, got %q", joined)
-		}
-		if !strings.Contains(joined, "exec /bin/zsh -i") {
-			t.Errorf("plan.ExecCmd should keep the interactive-shell fallback, got %q", joined)
-		}
-		if strings.Join(plan.Cmd, " ") != "/bin/zsh -i" {
-			t.Errorf("plan.Cmd (container main process) must stay the idle shell, got %q", plan.Cmd)
-		}
-	})
-
-	t.Run("with initial prompt", func(t *testing.T) {
-		plan := &sessionplan.SessionPlan{Cmd: []string{"/bin/zsh", "-i"}}
-		applyWorktreeSession(plan, "/repo", "zsh", "claude", "add auth")
-		assertGitBind(t, plan)
-
-		joined := strings.Join(plan.ExecCmd, " ")
-		if !strings.Contains(joined, `claude 'add auth'`) {
-			t.Errorf("plan.ExecCmd should launch the agent with the quoted prompt, got %q", joined)
-		}
-		if !strings.Contains(joined, "exec /bin/zsh -i") {
-			t.Errorf("plan.ExecCmd should keep the interactive-shell fallback, got %q", joined)
-		}
-		if strings.Join(plan.Cmd, " ") != "/bin/zsh -i" {
-			t.Errorf("plan.Cmd (container main process) must stay the idle shell, got %q", plan.Cmd)
-		}
-	})
 }
 
 // gitInitRepo initialises a git repo at root with the given .gitignore body so

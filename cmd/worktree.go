@@ -16,7 +16,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
-	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/worktree"
 )
@@ -174,60 +173,26 @@ func resolveAgent(flag string) (string, error) {
 	return agent, nil
 }
 
-// shellSingleQuote wraps s in single quotes for safe inclusion in a shell -c
-// string: everything inside single quotes is literal, so command substitution,
-// backticks and semicolons in a user-supplied prompt cannot expand or inject
-// commands into the session wrapper. The only quoting concern is an embedded
-// single quote, escaped the standard way by closing the quote, adding an
-// escaped quote, then reopening.
-func shellSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// agentCommand composes the shell fragment that launches agent, optionally with
-// an initial prompt. An empty prompt launches the agent bare (unchanged
-// behaviour); otherwise the prompt is passed as a single positional argument —
-// the convention both supported agents (claude, codex) follow. An agent needing
-// different ergonomics (e.g. a --task flag) would branch on agent here.
-func agentCommand(agent, prompt string) string {
-	if prompt == "" {
-		return agent
-	}
-	return agent + " " + shellSingleQuote(prompt)
-}
-
-// applyWorktreeSession mutates a planned session into a worktree session: it
-// appends the main repo .git bind (so git resolves the linked worktree's
-// gitdir pointer in-container) and sets ExecCmd to launch the agent in the
-// user's attached session, falling back to an interactive shell when the agent
-// exits. When prompt is non-empty the agent starts already working on it. Cmd
-// (the container's main process) is left as the idle shell so the agent does
-// not also run headless in the container's main PID. Pure so tests assert the
-// mutation without Docker.
-func applyWorktreeSession(plan *sessionplan.SessionPlan, root, shell, agent, prompt string) {
-	gitDir := filepath.Join(root, ".git")
-	plan.Binds = append(plan.Binds, mountplan.Bind{Source: gitDir, Target: gitDir, Mode: "rw"})
-	plan.ExecCmd = []string{"/bin/" + shell, "-i", "-c", agentCommand(agent, prompt) + "; exec /bin/" + shell + " -i"}
-}
-
-// openSession plans, mutates, and launches a worktree container session
-// scoped to wtPath, auto-starting agent with an optional initial prompt (empty
-// = bare launch). Shared by create (which may pass a prompt) and open (which
-// never does — re-attach only). This is the interactive Docker edge that stays
-// in cmd (see the Worktree entry in CONTEXT.md): sessionplan + the TTY attach
-// in container.Shell, plus resolveImageDigest, shared with the `shell` command.
+// openSession plans and launches a worktree container session scoped to
+// wtPath, auto-starting agent with an optional initial prompt (empty = bare
+// launch). Shared by create (which may pass a prompt) and open (which never
+// does — re-attach only). This is the interactive Docker edge that stays in
+// cmd (see the Worktree entry in CONTEXT.md): the seed gating, the sessionplan
+// call, and the TTY attach in container.Shell, plus resolveImageDigest, shared
+// with the `shell` command. What a worktree session *is* — the .git bind and
+// the agent launch — lives behind PlanInput.Worktree.
 func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
 	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Cfg:         cfg,
 		Workspace:   wtPath,
 		ImageDigest: imageDigest,
+		Worktree:    &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
 	})
 	if err != nil {
 		return err
 	}
 	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	applyWorktreeSession(plan, root, cfg.Shell, agent, prompt)
 	return container.Shell(ctx, cli, plan)
 }
 

@@ -46,7 +46,7 @@ func TestPlanEndToEnd(t *testing.T) {
 		},
 	}
 
-	result, err := Plan(&cfg, workspace, nil)
+	result, err := Plan(PlanInput{Cfg: &cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestPlanEndToEnd(t *testing.T) {
 // TestPlanRejectsBadMountsRoot exercises validation at the seam.
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~"}
-	if _, err := Plan(&cfg, "/workspace", nil); err == nil {
+	if _, err := Plan(PlanInput{Cfg: &cfg, Workspace: "/workspace"}); err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
 }
@@ -156,7 +156,7 @@ func TestPlanRejectsUnknownPatchName(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/x"}},
 	}
-	_, err := Plan(&cfg, "/workspace", nil)
+	_, err := Plan(PlanInput{Cfg: &cfg, Workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("Plan should fail when mounts: patches an unknown name")
 	}
@@ -171,7 +171,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 	// /home/toolbox/* is reserved → no mirror.
 	workspace := "/home/toolbox/project"
 
-	result, err := Plan(&config.Config{}, workspace, nil)
+	result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestPlanWithProfile(t *testing.T) {
 		t.Fatalf("setup workspace: %v", err)
 	}
 
-	result, err := Plan(&config.Config{}, workspace, &Profile{Name: "work"})
+	result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: workspace, Profile: &Profile{Name: "work"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

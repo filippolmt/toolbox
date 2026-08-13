@@ -440,16 +440,25 @@ func ValidateWorktreeSeed(paths []string) error {
 	return nil
 }
 
+// NormalizeShellKey maps a user-supplied shell name to the key it has in
+// cfg.Shells: viper lowercases every unmarshalled key (see Merge), and the
+// CLI trims the positional argument before validating it. Sole owner of that
+// rule — never index cfg.Shells with a name straight from the command line.
+func NormalizeShellKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 // EffectiveEnv returns the env map injected into a session: the top-level Env
 // overlaid with the named shell's Env, where per-shell keys win on collision.
-// shellName is the raw shells: config key (cfg.Shells is keyed by the raw
-// name, not the sanitized container suffix); "" or an unknown key yields the
-// top-level Env. The result is always a fresh map — or nil when both layers
-// are empty — so callers never alias cfg state.
+// shellName is the shell name as typed by the user, normalized through
+// NormalizeShellKey before the lookup (cfg.Shells is keyed by viper's
+// lowercased key, not by the sanitized container suffix); "" or an unknown key
+// yields the top-level Env. The result is always a fresh map — or nil when
+// both layers are empty — so callers never alias cfg state.
 func (c *Config) EffectiveEnv(shellName string) map[string]string {
 	var override map[string]string
-	if shellName != "" {
-		if s, ok := c.Shells[shellName]; ok {
+	if key := NormalizeShellKey(shellName); key != "" {
+		if s, ok := c.Shells[key]; ok {
 			override = s.Env
 		}
 	}
