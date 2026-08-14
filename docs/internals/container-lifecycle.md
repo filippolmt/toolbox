@@ -24,4 +24,6 @@ Fix: containers are created with `HostConfig.AutoRemove: true` (`container.creat
 
 Consequence: a stopped container is auto-removed, so the `runplan.ActionStart` "reuse a stopped container" path effectively never fires for new containers — every `toolbox shell` recreates from the canonical image plus the mounted state. The latency moves off the blocking exit and onto a startup the user already expects to do work.
 
+A container whose `ContainerStart` *failed* is no exception, even though `container.Shell` removes nothing on that path (it returns the wrapped error before the teardown defer is registered). The daemon force-removes an AutoRemove container when its start fails, so the record does not linger in state `created` — verified against both a failing entrypoint and a port conflict, the two shapes toolbox actually hits. `ActionStart` therefore survives only for containers created before AutoRemove was adopted (and for a daemon-side auto-remove that itself fails). Don't "fix" the failed-start path into leaving a container behind for reuse: the daemon overrules it.
+
 Rejected alternatives: a detached client-side `docker rm -f` (orphan process, no error feedback, races a fast re-`shell`); a single synchronous `ContainerRemove(Force)` (still blocks the client on the unmount). AutoRemove lets the daemon serialise the teardown correctly.

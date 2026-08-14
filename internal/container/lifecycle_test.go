@@ -360,6 +360,47 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 	}
 }
 
+// A ContainerStart the daemon refuses aborts the shell: Shell returns the
+// wrapped reason and never execs, rather than attaching to a container that is
+// not running. Cleanup is the daemon's — AutoRemove force-removes a container
+// whose start failed — so Shell itself removes nothing.
+func TestShellAbortsWhenStartFails(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	startCalled := false
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "created123"}, nil
+		},
+		startFn: func(_ context.Context, _ string, _ client.ContainerStartOptions) error {
+			startCalled = true
+			return errors.New("daemon refused")
+		},
+	}
+
+	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
+	if err == nil {
+		t.Fatal("Shell() should fail when ContainerStart fails")
+	}
+	if !startCalled {
+		t.Fatal("ContainerStart was not called")
+	}
+	if !strings.Contains(err.Error(), "failed to start container:") {
+		t.Errorf("Shell() error = %q, want it to wrap %q", err, "failed to start container:")
+	}
+	if *called {
+		t.Error("execShellFn was called after a failed start: the container is not running")
+	}
+}
+
 func TestShellCreatesNewContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
