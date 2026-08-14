@@ -1385,9 +1385,11 @@ COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 # absent so git falls back to prompting.
 COPY --link --chmod=0755 bin/git-credential-toolbox /usr/local/bin/git-credential-toolbox
 # Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
-# invoked as `git prune-dead`: deletes local branches with a gone upstream
-# (squash-merged PRs) + merged worktree-agent-* leftovers, then prunes stale
-# worktree entries. Never touches the current or default branch.
+# invoked as `git prune-dead`: deletes local branches whose PR/MR the forge
+# reports as merged (gh or glab, whichever is logged in to origin's host) +
+# merged worktree-agent-* leftovers, then prunes stale worktree entries. A gone
+# upstream alone is never enough — it looks the same for an abandoned branch.
+# Never touches the current or default branch.
 COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
 # proximo /etc/hosts sync. Re-discovers the proximo.hosts labels from the host
 # daemon (mounted docker.sock) and rewrites a managed /etc/hosts block pinning

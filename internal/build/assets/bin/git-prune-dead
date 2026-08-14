@@ -1,14 +1,25 @@
 #!/bin/sh
-# git-prune-dead — delete local branches whose work is finished:
-#   * upstream gone        — the remote branch was deleted (e.g. after a
-#                            squash-merged PR), so the local tracking branch is
-#                            dead weight.
-#   * worktree-agent-*     — throwaway branches left behind by agent worktrees,
-#                            once merged into the default branch.
-# Then prune stale `git worktree` administrative entries.
+# git-prune-dead — delete local branches whose work is finished, and only
+# those.
 #
-# Never deletes the current branch or the repository's default branch. Invoke
-# as `git prune-dead` — git resolves any `git-*` on PATH as a subcommand.
+# "Finished" means the forge says the branch's PR/MR was merged. It cannot mean
+# "the upstream is gone": a squash merge never makes the branch's commits
+# reachable from the default branch, so locally an abandoned branch and a
+# squash-merged one look identical — both simply lose their remote. Deleting on
+# a gone upstream alone therefore throws away the only copy of unmerged work,
+# which is why every deletion below needs positive proof of a merge.
+#
+# The forge CLI is picked by asking which one is authenticated for origin's
+# host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
+# all resolve without special-casing any domain. No authenticated CLI, an
+# unreachable forge, or a PR that was closed without merging → the branch is
+# kept and the reason printed. Never deleted either: the current branch and the
+# repository's default branch.
+#
+# The one local proof is still honoured: worktree-agent-* leftovers actually
+# merged into the default branch are deleted without asking the forge.
+#
+# Invoke as `git prune-dead` — git resolves any `git-*` on PATH as a subcommand.
 set -u
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
@@ -33,6 +44,41 @@ if [ -z "$default" ]; then
 fi
 [ -n "$default" ] || default=$current
 
+# Host of origin, from either URL form: scheme://[user@]host/path or the scp
+# shorthand [user@]host:path.
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+host=$(printf '%s\n' "$origin_url" |
+	sed -e 's#^[a-z+]*://##' -e 's#^[^/@]*@##' -e 's#[:/].*$##')
+
+# The forge CLI is whichever one holds a session for that host — the question
+# "which forge is this?" and "can I ask it anything?" have the same answer, so
+# they are resolved together, once, rather than per branch.
+forge=
+if [ -n "$host" ]; then
+	for cli in gh glab; do
+		if command -v "$cli" >/dev/null 2>&1 &&
+			"$cli" auth status --hostname "$host" >/dev/null 2>&1; then
+			forge=$cli
+			break
+		fi
+	done
+fi
+
+# merged <branch> — 0 merged, 1 no merged PR, 2 could not tell. Both CLIs
+# answer with a JSON array, so "[]" is the one shape that means "no match";
+# anything else, including a failure, must never be read as "not merged".
+merged() {
+	case "$forge" in
+	gh) out=$(gh pr list --head "$1" --state merged --json number 2>/dev/null) || return 2 ;;
+	glab) out=$(glab mr list --source-branch "$1" --merged --output json 2>/dev/null) || return 2 ;;
+	*) return 2 ;;
+	esac
+	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
+	"" | "[]") return 1 ;;
+	esac
+	return 0
+}
+
 delete_branch() {
 	# Skip the default and current branches; tolerate a refusal (e.g. the
 	# branch is checked out in another worktree) without aborting the run.
@@ -45,15 +91,31 @@ delete_branch() {
 
 if [ -n "$(git remote)" ]; then
 	echo "git-prune-dead: fetching + pruning remote refs..."
-	git fetch --prune --quiet
+	git fetch --prune --quiet 2>/dev/null ||
+		echo "git-prune-dead: fetch failed — working from the refs already local"
 else
 	echo "git-prune-dead: no remote configured — skipping fetch"
 fi
 
-echo "git-prune-dead: removing branches with a gone upstream..."
+if [ -n "$forge" ]; then
+	echo "git-prune-dead: removing branches merged according to $forge on $host..."
+else
+	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
+	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
+	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
+fi
+
 git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 	while read -r name track; do
-		[ "$track" = "[gone]" ] && delete_branch "$name"
+		[ "$track" = "[gone]" ] || continue
+		[ "$name" = "$default" ] && continue
+		[ "$name" = "$current" ] && continue
+		merged "$name"
+		case $? in
+		0) delete_branch "$name" ;;
+		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
+		*) [ -n "$forge" ] && echo "  kept $name (could not read its state from $forge)" ;;
+		esac
 	done
 
 # Only meaningful when a default branch could be resolved; skip otherwise so
