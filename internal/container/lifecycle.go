@@ -271,11 +271,17 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		return "", ensureErr
 	}
 
+	// One pass, two slices: the daemon wants flattened specs (HostConfig.Binds
+	// below), dockeridentity wants the in-container targets it keys group-add
+	// on. Reading b.Target here rather than re-parsing the spec keeps that
+	// decision on the typed field.
 	binds := make([]string, len(plan.Binds))
+	bindTargets := make([]string, len(plan.Binds))
 	for i, b := range plan.Binds {
 		binds[i] = b.String()
+		bindTargets[i] = b.Target
 	}
-	identity := dockeridentity.Resolve(binds)
+	identity := dockeridentity.Resolve(bindTargets)
 
 	// proximo: pin the host-routed `.test` names at the host-gateway so they
 	// resolve to the host where Traefik publishes :443 instead of the

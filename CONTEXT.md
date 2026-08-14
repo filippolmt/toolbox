@@ -324,7 +324,7 @@ the `"<uid>:<gid>"` user spec passed to `ContainerCreate` and the
 supplementary group IDs needed for the runtime user to talk to a
 bind-mounted `/var/run/docker.sock`.
 
-Concretely: `dockeridentity.Resolve(binds) → Identity{UserSpec, GroupAdd}`.
+Concretely: `dockeridentity.Resolve(bindTargets) → Identity{UserSpec, GroupAdd}`.
 Owned by `internal/dockeridentity`. The single seam `container.Shell`
 calls before `ContainerCreate`. `Identity.UserSpec` is built from
 `os.Getuid` / `os.Getgid`; `Identity.GroupAdd` is nil unless
@@ -332,7 +332,14 @@ calls before `ContainerCreate`. `Identity.UserSpec` is built from
 (Docker Desktop reprojects the socket as root:root) plus the host
 socket GID (Linux: usually the `docker` group). The package-level
 `statSockGID` var is the test seam for simulating both deployment
-modes. Session Plan deliberately does NOT encode this concept (host
+modes. The parameter is the in-container target paths, not
+`[]mountplan.Bind`: the caller reads `b.Target` off its typed binds, so a
+renamed field still breaks the build, while this leaf keeps its
+stdlib-only dependency set (`mountplan` would drag in `config`, `fsx`,
+`proximo`). The cost is a second copy of the `/var/run/docker.sock`
+literal — pinned to `mountplan`'s by a bijection test that imports
+`mountplan` from the test file only. Session Plan deliberately does NOT
+encode this concept (host
 process + daemon-fs state are read fresh at the Docker edge so the
 plan stays a pure design-time artifact composable in tests without OS
 state) — Docker Identity is that edge.
