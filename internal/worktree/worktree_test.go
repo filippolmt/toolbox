@@ -1,24 +1,36 @@
 package worktree
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // fakeGit scripts the Git seam: Output returns the value keyed by the
 // space-joined args (empty string + nil error by default), Run returns the
 // keyed error (nil by default). Both record their calls so tests can assert the
 // git the orchestration issued and, crucially, its order.
+// calls is the one ordered log across kinds — Output, Run and (via fakeDocker)
+// the container stop — because some orderings the orchestration owes span them:
+// the container must be stopped before its worktree directory is removed, and
+// the base is forgotten (a read-shaped `config --unset`) only after the
+// mutating `branch -D`.
 type fakeGit struct {
 	outputs map[string]string
 	outErrs map[string]error
 	runErrs map[string]error
 	gets    [][]string
 	runs    [][]string
+	calls   [][]string
 }
 
 func newFakeGit() *fakeGit {
@@ -28,6 +40,7 @@ func newFakeGit() *fakeGit {
 func (f *fakeGit) Output(args ...string) (string, error) {
 	key := strings.Join(args, " ")
 	f.gets = append(f.gets, append([]string(nil), args...))
+	f.record(args...)
 	if err := f.outErrs[key]; err != nil {
 		return "", err
 	}
@@ -37,7 +50,12 @@ func (f *fakeGit) Output(args ...string) (string, error) {
 func (f *fakeGit) Run(args ...string) error {
 	key := strings.Join(args, " ")
 	f.runs = append(f.runs, append([]string(nil), args...))
+	f.record(args...)
 	return f.runErrs[key]
+}
+
+func (f *fakeGit) record(args ...string) {
+	f.calls = append(f.calls, append([]string(nil), args...))
 }
 
 // runIndex returns the index of the first recorded Run whose joined args equal
@@ -51,6 +69,28 @@ func (f *fakeGit) runIndex(key string) int {
 	return -1
 }
 
+// callIndex is runIndex over the cross-kind log.
+func (f *fakeGit) callIndex(key string) int {
+	for i, c := range f.calls {
+		if strings.Join(c, " ") == key {
+			return i
+		}
+	}
+	return -1
+}
+
+// runCount reports how many recorded Runs joined-equal key, for "exactly once"
+// assertions (one fetch per distinct base, not per branch).
+func (f *fakeGit) runCount(key string) int {
+	n := 0
+	for _, r := range f.runs {
+		if strings.Join(r, " ") == key {
+			n++
+		}
+	}
+	return n
+}
+
 func (f *fakeGit) ranAny(substr string) bool {
 	for _, r := range f.runs {
 		if strings.Contains(strings.Join(r, " "), substr) {
@@ -60,9 +100,29 @@ func (f *fakeGit) ranAny(substr string) bool {
 	return false
 }
 
+// fakeDocker is the slice of client.APIClient container.Stop reaches (stop then
+// force-remove), recording the stop into the shared log so prune's ordering
+// against the git commands is observable. Unmocked methods fall through to the
+// embedded nil interface and would panic, surfacing any unexpected Docker call.
+type fakeDocker struct {
+	client.APIClient
+	log *fakeGit
+}
+
+func (d fakeDocker) ContainerStop(_ context.Context, name string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+	d.log.record("docker", "stop", name)
+	return client.ContainerStopResult{}, nil
+}
+
+func (d fakeDocker) ContainerRemove(_ context.Context, name string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+	d.log.record("docker", "remove", name)
+	return client.ContainerRemoveResult{}, nil
+}
+
 const (
-	commonDirKey = "rev-parse --path-format=absolute --git-common-dir"
-	listKey      = "worktree list --porcelain"
+	commonDirKey  = "rev-parse --path-format=absolute --git-common-dir"
+	listKey       = "worktree list --porcelain"
+	originHeadKey = "symbolic-ref --short refs/remotes/origin/HEAD"
 )
 
 // Rm removes the worktree BEFORE stopping the container and BEFORE deleting the
@@ -221,6 +281,160 @@ func TestOpen(t *testing.T) {
 		}
 		if gotRoot != "" || gotPath != "" {
 			t.Errorf("Open = (%q, %q), want empty paths alongside the error", gotRoot, gotPath)
+		}
+	})
+}
+
+// Prune is the destructive sweep: for every toolbox worktree whose branch is
+// merged into its own recorded base it stops the container, removes the
+// worktree, deletes the branch and forgets the base — while a base it cannot
+// resolve, a worktree git refuses to remove, and a dry run must each leave the
+// user's work exactly where it is.
+func TestPrune(t *testing.T) {
+	t.Run("each candidate is stopped, then removed, then branch-deleted, then forgotten", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.worktrees/tbx-fix\nbranch refs/heads/fix\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  fix\n* main\n"
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), fakeDocker{log: f}, &out, PruneOpts{}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		// The container is path-scoped: the one stopped must be the worktree's own.
+		stop := f.callIndex("docker stop " + sessionplan.ContainerNameFor("/repo/.worktrees/tbx-fix", ""))
+		remove := f.callIndex("worktree remove /repo/.worktrees/tbx-fix")
+		del := f.callIndex("-C /repo branch -D fix")
+		forget := f.callIndex("-C /repo config --unset branch.fix.base")
+		for name, idx := range map[string]int{"docker stop": stop, "worktree remove": remove, "branch -D": del, "config --unset": forget} {
+			if idx < 0 {
+				t.Fatalf("%s was never issued: %v", name, f.calls)
+			}
+		}
+		// No --force on the removal: git must still refuse a worktree the user
+		// has uncommitted work in, even though prune proved the branch merged.
+		if f.ranAny("worktree remove --force") {
+			t.Errorf("worktree remove must not force: %v", f.runs)
+		}
+		if !(stop < remove && remove < del && del < forget) {
+			t.Errorf("expected order stop<remove<delete<forget, got %d<%d<%d<%d: %v", stop, remove, del, forget, f.calls)
+		}
+	})
+
+	t.Run("a base is fetched once however many worktrees share it", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n\n" +
+			"worktree /repo/.worktrees/tbx-two\nbranch refs/heads/two\n\n" +
+			"worktree /repo/.worktrees/tbx-rel\nbranch refs/heads/rel\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["-C /repo config --get branch.rel.base"] = "release" // branched with --from
+		f.outputs["branch --merged origin/main"] = "  one\n  two\n"
+		f.outputs["branch --merged origin/release"] = "  rel\n"
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		if got := f.runCount("fetch origin main"); got != 1 {
+			t.Errorf("fetch origin main ran %d times, want 1 (once per distinct base, not per branch): %v", got, f.runs)
+		}
+		if got := f.runCount("fetch origin release"); got != 1 {
+			t.Errorf("fetch origin release ran %d times, want 1: %v", got, f.runs)
+		}
+	})
+
+	t.Run("a base whose fetch fails leaves its worktrees alone", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-fix\nbranch refs/heads/fix\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  fix\n" // merged, so only the skip protects it
+		f.runErrs["fetch origin main"] = errors.New("couldn't find remote ref main")
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{}); err != nil {
+			t.Fatalf("Prune must not abort on an unresolvable base: %v", err)
+		}
+
+		// A skipped base reads as not-merged, the safe default.
+		if f.ranAny("worktree remove") {
+			t.Errorf("a worktree under a skipped base must survive: %v", f.runs)
+		}
+		if f.ranAny("branch -D") {
+			t.Errorf("no branch may be deleted under a skipped base: %v", f.runs)
+		}
+	})
+
+	t.Run("a refused worktree removal leaves the branch alone and the sweep running", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-stuck\nbranch refs/heads/stuck\n\n" +
+			"worktree /repo/.worktrees/tbx-next\nbranch refs/heads/next\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  stuck\n  next\n"
+		f.runErrs["worktree remove /repo/.worktrees/tbx-stuck"] = errors.New("contains modified or untracked files")
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		// The branch is the worktree's only remaining handle — orphaning it
+		// would strand the work the failed removal preserved.
+		if f.runIndex("-C /repo branch -D stuck") >= 0 {
+			t.Errorf("branch of a worktree that survived removal must not be deleted: %v", f.runs)
+		}
+		if f.runIndex("-C /repo branch -D next") < 0 {
+			t.Errorf("a failed removal must not abort the sweep: %v", f.runs)
+		}
+	})
+
+	t.Run("dry run mutates nothing and predicts the dirty-worktree skip", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-clean\nbranch refs/heads/clean\n\n" +
+			"worktree /repo/.worktrees/tbx-wip\nbranch refs/heads/wip\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  clean\n  wip\n"
+		f.outputs["-C /repo/.worktrees/tbx-wip status --porcelain"] = " M main.go"
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{DryRun: true}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		if f.ranAny("worktree remove") || f.ranAny("branch -D") {
+			t.Errorf("a dry run must issue no destructive git: %v", f.runs)
+		}
+		// A dirty worktree fails the no-force removal, so promising to remove it
+		// (and delete its branch) would overstate what the real run would do.
+		if !strings.Contains(out.String(), "would remove clean (/repo/.worktrees/tbx-clean)") {
+			t.Errorf("dry run must announce the removal it would do, got:\n%s", out.String())
+		}
+		if !strings.Contains(out.String(), "would skip wip") {
+			t.Errorf("dry run must announce the dirty-worktree skip, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("nothing merged says so", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-fix\nbranch refs/heads/fix\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "* main\n"
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		if out.String() != "No merged toolbox worktrees to prune.\n" {
+			t.Errorf("out = %q, want the no-candidates line", out.String())
 		}
 	})
 }
