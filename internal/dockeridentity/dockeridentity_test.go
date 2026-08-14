@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
 // TestResolveReturnsHostUserSpec verifies the UserSpec encodes the
@@ -104,6 +106,25 @@ func TestDockerSockGroupsMatchesOnTargetNotSource(t *testing.T) {
 	if got := dockerSockGroups(binds); got != nil {
 		t.Errorf("should match on target only, got %v", got)
 	}
+}
+
+// TestSockPathMatchesMountplanDefault pins the bijection between the two
+// unconnected copies of "/var/run/docker.sock": the one dockeridentity
+// matches on, and the Target of mountplan's "docker-sock" default mount.
+// If the default mount is ever retargeted, group-add resolution silently
+// stops firing — nothing in the compiler links the two literals. The
+// import lives in this test file only: production dockeridentity stays a
+// stdlib-only leaf, which is checkable by reading its non-test imports.
+func TestSockPathMatchesMountplanDefault(t *testing.T) {
+	for _, m := range mountplan.Defaults() {
+		if m.Name == "docker-sock" {
+			if m.Target != sockPath {
+				t.Errorf("docker-sock mount Target = %q, want %q", m.Target, sockPath)
+			}
+			return
+		}
+	}
+	t.Fatal("no default mount named \"docker-sock\" — group-add can never fire")
 }
 
 // TestResolveGroupAddWhenSockBound integrates the two seams: Resolve

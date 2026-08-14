@@ -18,6 +18,13 @@ import (
 	"syscall"
 )
 
+// sockPath is the in-container target the group-add decision keys on. It
+// mirrors the Target of mountplan's "docker-sock" default mount; the two
+// literals are unconnected by the compiler, so the bijection is pinned by
+// TestSockPathMatchesMountplanDefault instead of by an import (which would
+// cost this leaf its stdlib-only dependency set).
+const sockPath = "/var/run/docker.sock"
+
 // Identity carries the Docker-edge inputs derived from the host process
 // and the bind set: the "<uid>:<gid>" user spec and the supplementary
 // group IDs to grant the runtime user.
@@ -59,8 +66,6 @@ func Resolve(binds []string) Identity {
 //
 // Returns nil when docker.sock is not in binds.
 func dockerSockGroups(binds []string) []string {
-	const sockPath = "/var/run/docker.sock"
-
 	mounted := false
 	for _, b := range binds {
 		// Bind format: "<source>:<target>[:<opts>]". Match on target.
