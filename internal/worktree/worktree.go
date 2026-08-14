@@ -193,11 +193,19 @@ func (s Service) deleteLocalBranch(root, branch string, force bool) bool {
 // seam's error to a warning: the worktree removal has already succeeded, so a
 // remote that refuses must not turn a completed cleanup into a failure or abort
 // prune's sweep. Callers pass only branches that passed shouldDeleteRemote.
+//
+// WithoutCancel deliberately: by the time this runs the worktrees and local
+// branches are already deleted, and prune enumerates its candidates from
+// exactly those — so a skipped push strands the origin refs with no local
+// handle left to retry them by. Ctrl+C cancels the command's context without
+// exiting the process, and neither loop above checks it, so honouring
+// cancellation here alone would abort only the one step that cannot be redone.
+// The push stays bounded by the seam's own timeout instead.
 func (s Service) deleteRemoteBranches(ctx context.Context, root string, branches []string) {
 	if len(branches) == 0 {
 		return
 	}
-	if err := s.git.PushDelete(ctx, root, branches); err != nil {
+	if err := s.git.PushDelete(context.WithoutCancel(ctx), root, branches); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not delete remote branch(es) %s: %v\n",
 			strings.Join(branches, ", "), err)
 	}

@@ -444,7 +444,10 @@ list / rm / prune / sync): one branch → one git worktree under
 
 Concretely: `worktree.Service{git}` (owned by `internal/worktree`) owns the git
 + filesystem side of every op. Every git invocation crosses one seam,
-`Git{Output, Run}` (production impl `RealGit`, a fake in tests), and container
+`Git{Output, Run, PushDelete}` (production impl `RealGit`, a fake in tests) —
+`Output` reads, `Run` mutates, and `PushDelete` is the one command needing more
+than an arg list (a bounded context and a scrubbed env for the origin
+round-trip), a named domain method so the generic pair stays cheap to fake — and container
 teardown/status use `container.Stop` / `ContainerInspect` through the existing
 `client.APIClient` seam — so `Create` (prepare), `Open` (resolve), `List`,
 `Rm`, `Prune` and `Sync` run in tests with a fake git and a nil client, no real

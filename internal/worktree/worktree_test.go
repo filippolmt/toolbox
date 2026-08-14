@@ -33,6 +33,7 @@ type fakeGit struct {
 	runs    [][]string
 	calls   [][]string
 	pushes  [][]string
+	pushErr error
 }
 
 func newFakeGit() *fakeGit {
@@ -57,10 +58,16 @@ func (f *fakeGit) Run(args ...string) error {
 }
 
 // PushDelete records one entry per call as {root, branches...}, so a test can
-// assert the repo targeted, the exact batch, and how many pushes it took.
-func (f *fakeGit) PushDelete(_ context.Context, root string, branches []string) error {
+// assert the repo targeted, the exact batch, and how many pushes it took, then
+// returns pushErr. It refuses a cancelled context as the real one does —
+// RealGit runs exec.CommandContext, which fails instantly on a dead context —
+// so a test can tell which context the orchestration hands the seam.
+func (f *fakeGit) PushDelete(ctx context.Context, root string, branches []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	f.pushes = append(f.pushes, append([]string{root}, branches...))
-	return nil
+	return f.pushErr
 }
 
 func (f *fakeGit) record(args ...string) {
@@ -198,6 +205,21 @@ func TestRmDeletesRemoteBranch(t *testing.T) {
 	want := []string{"/repo", "feat"}
 	if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
 		t.Errorf("pushes = %v, want exactly one %v", f.pushes, want)
+	}
+}
+
+// A remote that refuses the delete warns, it does not fail: the worktree and
+// the local branch are already gone, so returning an error would report a
+// cleanup that did happen as one that did not.
+func TestRmSurvivesARefusedRemoteDelete(t *testing.T) {
+	f := newFakeGit()
+	f.outputs[commonDirKey] = "/repo/.git"
+	f.outputs[listKey] = "worktree /repo/.worktrees/tbx-feat\nbranch refs/heads/feat\n"
+	f.outputs["-C /repo/.worktrees/tbx-feat status --porcelain"] = ""
+	f.pushErr = errors.New("remote: permission denied")
+
+	if err := New(f).Rm(context.Background(), nil, RmOpts{Branch: "feat", DeleteRemote: true}); err != nil {
+		t.Errorf("Rm must not fail on a refused remote delete, got: %v", err)
 	}
 }
 
@@ -471,6 +493,34 @@ func TestPrune(t *testing.T) {
 		want := []string{"/repo", "one", "two"}
 		if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
 			t.Errorf("pushes = %v, want exactly one %v", f.pushes, want)
+		}
+	})
+
+	// Ctrl+C cancels the command's context without exiting the process
+	// (signal.NotifyContext), and the sweep's loop does not check it — so a
+	// cancelled prune still removes worktrees and deletes local branches. The
+	// remote delete must therefore be equally uncancellable: it is the step
+	// whose omission cannot be retried, because prune enumerates candidates from
+	// the very worktrees and branches it just deleted. Skipping it strands the
+	// origin refs with no local handle left to find them by.
+	t.Run("a cancelled sweep still deletes the origin refs it orphaned locally", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  one\n"
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		var out bytes.Buffer
+		if err := New(f).Prune(ctx, nil, &out, PruneOpts{DeleteRemote: true}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		want := []string{"/repo", "one"}
+		if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
+			t.Errorf("pushes = %v, want exactly one %v even under a cancelled context", f.pushes, want)
 		}
 	})
 
