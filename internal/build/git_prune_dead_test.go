@@ -13,9 +13,8 @@ import (
 // abandoned the only way git can express it — an upstream configured but no
 // remote-tracking ref, i.e. `[gone]`. That state is what a squash-merged PR
 // and an abandoned one leave behind alike, which is the whole reason the
-// script has to ask the forge. origin's URL makes it a GitHub repo (so the
-// script reaches for gh) while http.proxy points at a closed port, so the
-// script's own `git fetch` fails instantly instead of touching the network.
+// script has to ask the forge. originURL decides which host the script sees;
+// both git transports are dead-ended below so no case reaches the network.
 func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -34,7 +33,11 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 	run("init", "--initial-branch=main", "--quiet")
 	run("config", "remote.origin.url", originURL)
 	run("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+	// Both transports the script's own `git fetch` might take are dead-ended,
+	// so no case reaches the network: a closed port for https, a failing
+	// command for the ssh/scp-form remotes.
 	run("config", "http.proxy", "http://127.0.0.1:1")
+	run("config", "core.sshCommand", "false")
 	run("commit", "--allow-empty", "--quiet", "-m", "root")
 	for _, b := range branches {
 		run("branch", b)
@@ -161,6 +164,35 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 	}
 }
 
+// Neither CLI scopes its branch filter to the head repository: on cli/cli one
+// branch name returns merged PRs from thirty different fork owners. Reading
+// that as proof would force-delete local work, so the query must carry both
+// the repository it means and a filter rejecting merges that happened on a
+// fork. The fakes answer on the branch name alone and cannot catch a wrong
+// flag, so the argv itself is what gets pinned here.
+func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t),
+		"AUTHED_CLI=gh", "FORGE_CALLS="+calls)
+
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	for _, want := range []string{
+		"--repo example/repo", // not whatever remote gh would have picked
+		"isCrossRepository",   // the fork-collision filter
+		"select(.isCrossRepository == false)",
+	} {
+		if !strings.Contains(string(argv), want) {
+			t.Errorf("forge call %q is missing %q", strings.TrimSpace(string(argv)), want)
+		}
+	}
+}
+
 // With no CLI logged in to origin's host, nothing is provable — so nothing is
 // deleted. The alternative (falling back to deleting every gone upstream)
 // makes the same command silently destructive exactly when it cannot check,
@@ -179,6 +211,11 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 	}
 	if !strings.Contains(out, "auth login") {
 		t.Errorf("the run must say how to log in, got:\n%s", out)
+	}
+	// Named here too: with no forge to ask, a branch that survives in silence
+	// reads as one that was pruned.
+	if !strings.Contains(out, "merged-one") {
+		t.Errorf("each kept branch must still be named without a forge, got:\n%s", out)
 	}
 }
 

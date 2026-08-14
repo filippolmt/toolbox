@@ -44,11 +44,16 @@ if [ -z "$default" ]; then
 fi
 [ -n "$default" ] || default=$current
 
-# Host of origin, from either URL form: scheme://[user@]host/path or the scp
-# shorthand [user@]host:path.
+# Host and owner/repo of origin, from either URL form: scheme://[user@]host/path
+# or the scp shorthand [user@]host:path. The repo is passed to the forge CLI
+# explicitly, because gh otherwise resolves its own repo from whichever remote
+# it prefers (an `upstream` on a fork clone) — a different repository from the
+# one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
-host=$(printf '%s\n' "$origin_url" |
-	sed -e 's#^[a-z+]*://##' -e 's#^[^/@]*@##' -e 's#[:/].*$##')
+bare_url=$(printf '%s\n' "$origin_url" |
+	sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
+host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##')
+slug=$(printf '%s\n' "$bare_url" | sed -e 's#^[^/:]*[:/]##' -e 's#\.git$##' -e 's#/$##')
 
 # The forge CLI is whichever one holds a session for that host — the question
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
@@ -64,13 +69,24 @@ if [ -n "$host" ]; then
 	done
 fi
 
-# merged <branch> — 0 merged, 1 no merged PR, 2 could not tell. Both CLIs
+# merge_state <branch> — 0 merged, 1 no merged PR, 2 could not tell. Both CLIs
 # answer with a JSON array, so "[]" is the one shape that means "no match";
 # anything else, including a failure, must never be read as "not merged".
-merged() {
+#
+# Both filters exist to reject a merge that happened on a *fork*: neither CLI
+# scopes its branch filter to the head repository, so `--head fix` on a fork
+# workflow matches a stranger's same-named branch — measured on cli/cli, where
+# one branch name returned merged PRs from 30 different owners. Taking that as
+# proof would force-delete local work, the exact failure this script prevents.
+# Each filter is written to exclude rather than include, so a field the forge
+# stops sending drops the branch out of the merged set instead of into it.
+merge_state() {
 	case "$forge" in
-	gh) out=$(gh pr list --head "$1" --state merged --json number 2>/dev/null) || return 2 ;;
-	glab) out=$(glab mr list --source-branch "$1" --merged --output json 2>/dev/null) || return 2 ;;
+	gh) out=$(gh pr list --repo "$slug" --head "$1" --state merged \
+		--json number,isCrossRepository \
+		--jq '[.[] | select(.isCrossRepository == false)]' 2>/dev/null) || return 2 ;;
+	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
+		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id)]' 2>/dev/null) || return 2 ;;
 	*) return 2 ;;
 	esac
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
@@ -91,7 +107,9 @@ delete_branch() {
 
 if [ -n "$(git remote)" ]; then
 	echo "git-prune-dead: fetching + pruning remote refs..."
-	git fetch --prune --quiet 2>/dev/null ||
+	# stderr is left alone: a failed prune is exactly what stops upstreams from
+	# reading [gone], so the reason has to reach the user.
+	git fetch --prune --quiet ||
 		echo "git-prune-dead: fetch failed — working from the refs already local"
 else
 	echo "git-prune-dead: no remote configured — skipping fetch"
@@ -110,11 +128,13 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		[ "$track" = "[gone]" ] || continue
 		[ "$name" = "$default" ] && continue
 		[ "$name" = "$current" ] && continue
-		merged "$name"
+		merge_state "$name"
 		case $? in
 		0) delete_branch "$name" ;;
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
-		*) [ -n "$forge" ] && echo "  kept $name (could not read its state from $forge)" ;;
+		# Named even with no forge to ask: a branch that survives silently reads
+		# as one that was pruned.
+		*) echo "  kept $name (merge state unverified${forge:+ — $forge could not answer})" ;;
 		esac
 	done
 
