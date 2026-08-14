@@ -229,11 +229,11 @@ func newHandler(token string, fns handlerFns, logger *log.Logger, now func() tim
 		limiter:     newRateLimiter(rateLimit, rateBurst, now),
 		credLimiter: newRateLimiter(credRateLimit, credRateBurst, now),
 	}
-	mux.HandleFunc("/open", h.handleOpen)
-	mux.HandleFunc("/edit", h.handleEdit)
-	mux.HandleFunc("/proximo", h.handleProximo)
-	mux.HandleFunc("/credential", h.handleCredential)
-	mux.HandleFunc("/healthz", h.handleHealth)
+	mux.HandleFunc(RouteOpen, h.handleOpen)
+	mux.HandleFunc(RouteEdit, h.handleEdit)
+	mux.HandleFunc(RouteProximo, h.handleProximo)
+	mux.HandleFunc(RouteCredential, h.handleCredential)
+	mux.HandleFunc(RouteHealth, h.handleHealth)
 	return mux
 }
 
