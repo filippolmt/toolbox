@@ -14,6 +14,9 @@ dist/
 .claude/settings.local.json
 .claude/worktrees/
 
+# Session handoff notes written between context resets (per-developer scratch)
+.mode-router/
+
 # Local architecture review reports (per-developer scratch, not team-shared)
 .architecture-reviews/
 
