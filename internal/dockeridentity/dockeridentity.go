@@ -23,6 +23,10 @@ import (
 // literals are unconnected by the compiler, so the bijection is pinned by
 // TestSockPathMatchesMountplanDefault instead of by an import (which would
 // cost this leaf its stdlib-only dependency set).
+//
+// That pin covers the default mount set only. A user `mounts:` patch that
+// retargets docker-sock still yields a bind this never matches — long-
+// standing behaviour, out of scope here.
 const sockPath = "/var/run/docker.sock"
 
 // Identity carries the Docker-edge inputs derived from the host process

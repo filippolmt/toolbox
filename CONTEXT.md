@@ -337,8 +337,9 @@ modes. The parameter is the in-container target paths, not
 renamed field still breaks the build, while this leaf keeps its
 stdlib-only dependency set (`mountplan` would drag in `config`, `fsx`,
 `proximo`). The cost is a second copy of the `/var/run/docker.sock`
-literal — pinned to `mountplan`'s by a bijection test that imports
-`mountplan` from the test file only. Session Plan deliberately does NOT
+literal — pinned to `mountplan`'s **default** mount set by a bijection
+test that imports `mountplan` from the test file only (a user `mounts:`
+patch retargeting `docker-sock` is outside that pin). Session Plan deliberately does NOT
 encode this concept (host
 process + daemon-fs state are read fresh at the Docker edge so the
 plan stays a pure design-time artifact composable in tests without OS

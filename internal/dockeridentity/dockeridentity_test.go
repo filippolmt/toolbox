@@ -109,7 +109,9 @@ func TestDockerSockGroupsRequiresExactTarget(t *testing.T) {
 // unconnected copies of "/var/run/docker.sock": the one dockeridentity
 // matches on, and the Target of mountplan's "docker-sock" default mount.
 // If the default mount is ever retargeted, group-add resolution silently
-// stops firing — nothing in the compiler links the two literals. The
+// stops firing — nothing in the compiler links the two literals. Scope is
+// the default set: a user `mounts:` patch retargeting docker-sock is not
+// covered here (pre-existing behaviour, not introduced by this test). The
 // import lives in this test file only: production dockeridentity stays a
 // stdlib-only leaf, which is checkable by reading its non-test imports.
 func TestSockPathMatchesMountplanDefault(t *testing.T) {
