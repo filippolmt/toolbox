@@ -44,9 +44,15 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 **Cause:** a squash merge rewrites history, so `git branch -d` refuses the branch as "not fully merged"; the remote branch is gone but the local tracking branch lingers. Agent worktrees leave throwaway branches behind once their worktree is removed.
 
-**Fix:** run `git prune-dead` (baked into the image, invoked as a `git` subcommand). It `git fetch --prune`s, deletes every branch whose upstream is gone and every merged `worktree-agent-*` branch, then `git worktree prune`s stale entries. It never touches the current branch or the repository's default branch (resolved from `origin/HEAD`, falling back to a local `main`/`master`, then the current branch), so a branch with a live remote — or one checked out in another worktree — is left alone.
+**Fix:** run `git prune-dead` (baked into the image, invoked as a `git` subcommand). It `git fetch --prune`s, then deletes a branch **only on positive proof that its PR/MR was merged**, asking the forge one branch at a time; it also deletes `worktree-agent-*` leftovers actually merged into the default branch, and `git worktree prune`s stale entries. It never touches the current branch or the repository's default branch (resolved from `origin/HEAD`, falling back to a local `main`/`master`, then the current branch), so a branch with a live remote — or one checked out in another worktree — is left alone.
 
-Deletes use `git branch -D` (force): a gone upstream means the remote branch was deleted, which is not the same as "merged", so a branch whose remote was removed without merging is dropped along with any unmerged local commits. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
+**A gone upstream is not the proof.** A squash-merged PR and one closed without merging leave exactly the same local state — upstream gone, commits unreachable from the default branch — and the second still holds the only copy of its work. So anything the forge does not confirm as merged is kept, with the reason printed: closed or never opened, unreadable state, or no logged-in CLI.
+
+**A merge on someone else's fork is not your merge.** Neither CLI scopes its branch filter to the head repository — on `cli/cli`, `gh pr list --head patch-1 --state merged` returns merged PRs from thirty different fork owners. So the query names the repository explicitly (`--repo <owner>/<name>`, derived from `origin`, rather than whichever remote the CLI would have picked on a fork clone) and discards any match that came from a fork. Without that, a common branch name like `fix` or `patch-1` would read as merged because a stranger's did.
+
+**Which forge, and being logged in.** The CLI is chosen by asking `gh` and then `glab` which one holds a session for origin's exact host (`gh auth status --hostname <host>`), so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab all work without the domain name mattering — what counts is where you are logged in. With no session for that host, nothing is deleted and the run tells you to `gh auth login --hostname <host>` (or `glab auth login --hostname <host>`). Both CLIs inherit their host credentials through [`inherit_host_auth`](configuration.md#inherit-host-auth).
+
+Deletes use `git branch -D` (force), since a squash-merged branch never reads as merged locally. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
 
 ## A new `.test` app is unreachable from the container
 
