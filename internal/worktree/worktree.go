@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/moby/moby/client"
 
@@ -191,29 +189,15 @@ func (s Service) deleteLocalBranch(root, branch string, force bool) bool {
 	return true
 }
 
-// remoteDeleteTimeout bounds the origin round-trip so a hung or credential-
-// prompting remote cannot freeze `rm` or block prune's remaining branches.
-const remoteDeleteTimeout = 60 * time.Second
-
-// deleteRemoteBranches best-effort deletes branches on origin in a single push
-// (one round-trip regardless of count, so prune scales to any number of merged
-// branches). warn-not-fail. GIT_TERMINAL_PROMPT=0 makes a missing credential
-// fail fast rather than block on a prompt; the timeout is the backstop. Callers
-// pass only branches that passed shouldDeleteRemote. Shells out directly (not
-// through the Git seam) because it needs a bounded context and a scrubbed env
-// the read/write seam does not carry.
-func (s Service) deleteRemoteBranches(root string, branches []string) {
+// deleteRemoteBranches best-effort deletes branches on origin, degrading the
+// seam's error to a warning: the worktree removal has already succeeded, so a
+// remote that refuses must not turn a completed cleanup into a failure or abort
+// prune's sweep. Callers pass only branches that passed shouldDeleteRemote.
+func (s Service) deleteRemoteBranches(ctx context.Context, root string, branches []string) {
 	if len(branches) == 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), remoteDeleteTimeout)
-	defer cancel()
-	args := append([]string{"-C", root, "push", "origin", "--delete"}, branches...)
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if err := cmd.Run(); err != nil {
+	if err := s.git.PushDelete(ctx, root, branches); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not delete remote branch(es) %s: %v\n",
 			strings.Join(branches, ", "), err)
 	}
@@ -222,10 +206,10 @@ func (s Service) deleteRemoteBranches(root string, branches []string) {
 // deleteBranch deletes the local branch orphaned by a removed worktree and,
 // gated by shouldDeleteRemote, its origin counterpart. Single-branch path for
 // rm; prune batches the remote deletes itself (deleteRemoteBranches).
-func (s Service) deleteBranch(root, branch string, force, remote bool) {
+func (s Service) deleteBranch(ctx context.Context, root, branch string, force, remote bool) {
 	localDeleted := s.deleteLocalBranch(root, branch, force)
 	if shouldDeleteRemote(localDeleted, remote, s.hasRemoteBranch(root, branch)) {
-		s.deleteRemoteBranches(root, []string{branch})
+		s.deleteRemoteBranches(ctx, root, []string{branch})
 	}
 }
 
@@ -437,7 +421,7 @@ func (s Service) Rm(ctx context.Context, cli client.APIClient, opts RmOpts) erro
 	if cli != nil {
 		_ = container.Stop(ctx, cli, wtPath)
 	}
-	s.deleteBranch(root, opts.Branch, opts.Force, opts.DeleteRemote)
+	s.deleteBranch(ctx, root, opts.Branch, opts.Force, opts.DeleteRemote)
 	s.forgetWorktreeBase(root, opts.Branch)
 	return nil
 }
@@ -539,7 +523,7 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 		}
 		s.forgetWorktreeBase(root, w.Branch)
 	}
-	s.deleteRemoteBranches(root, remoteToDelete) // one push for the whole sweep
+	s.deleteRemoteBranches(ctx, root, remoteToDelete) // one push for the whole sweep
 	if len(candidates) == 0 {
 		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
 	}

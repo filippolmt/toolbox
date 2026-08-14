@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,6 +32,7 @@ type fakeGit struct {
 	gets    [][]string
 	runs    [][]string
 	calls   [][]string
+	pushes  [][]string
 }
 
 func newFakeGit() *fakeGit {
@@ -52,6 +54,13 @@ func (f *fakeGit) Run(args ...string) error {
 	f.runs = append(f.runs, append([]string(nil), args...))
 	f.record(args...)
 	return f.runErrs[key]
+}
+
+// PushDelete records one entry per call as {root, branches...}, so a test can
+// assert the repo targeted, the exact batch, and how many pushes it took.
+func (f *fakeGit) PushDelete(_ context.Context, root string, branches []string) error {
+	f.pushes = append(f.pushes, append([]string{root}, branches...))
+	return nil
 }
 
 func (f *fakeGit) record(args ...string) {
@@ -168,6 +177,27 @@ func TestRmRefusesDirtyWithoutForce(t *testing.T) {
 	}
 	if f.ranAny("worktree remove") {
 		t.Errorf("worktree remove must not run for a dirty tree: %v", f.runs)
+	}
+}
+
+// Rm --delete-remote deletes the branch on origin through the Git seam. The
+// single-branch counterpart of prune's batch: rm has one branch, so exactly one
+// push carrying exactly it. (The gating itself is pure and already covered by
+// TestShouldDeleteRemote.)
+func TestRmDeletesRemoteBranch(t *testing.T) {
+	f := newFakeGit()
+	f.outputs[commonDirKey] = "/repo/.git"
+	f.outputs[listKey] = "worktree /repo/.worktrees/tbx-feat\nbranch refs/heads/feat\n"
+	f.outputs["-C /repo/.worktrees/tbx-feat status --porcelain"] = "" // clean
+
+	err := New(f).Rm(context.Background(), nil, RmOpts{Branch: "feat", DeleteRemote: true})
+	if err != nil {
+		t.Fatalf("Rm: %v", err)
+	}
+
+	want := []string{"/repo", "feat"}
+	if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
+		t.Errorf("pushes = %v, want exactly one %v", f.pushes, want)
 	}
 }
 
@@ -319,7 +349,7 @@ func TestPrune(t *testing.T) {
 		if f.ranAny("worktree remove --force") {
 			t.Errorf("worktree remove must not force: %v", f.runs)
 		}
-		if !(stop < remove && remove < del && del < forget) {
+		if stop >= remove || remove >= del || del >= forget {
 			t.Errorf("expected order stop<remove<delete<forget, got %d<%d<%d<%d: %v", stop, remove, del, forget, f.calls)
 		}
 	})
@@ -418,6 +448,29 @@ func TestPrune(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "would skip wip") {
 			t.Errorf("dry run must announce the dirty-worktree skip, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("remote deletes go out as one push for the whole sweep", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n\n" +
+			"worktree /repo/.worktrees/tbx-two\nbranch refs/heads/two\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  one\n  two\n"
+		// hasRemoteBranch reads a local remote-tracking ref; the fake resolves
+		// any rev-parse, so both branches have an origin counterpart.
+
+		var out bytes.Buffer
+		if err := New(f).Prune(context.Background(), nil, &out, PruneOpts{DeleteRemote: true}); err != nil {
+			t.Fatalf("Prune: %v", err)
+		}
+
+		// One round-trip regardless of count: prune must scale to a sweep of
+		// any size, so the origin deletes are batched, not one push per branch.
+		want := []string{"/repo", "one", "two"}
+		if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
+			t.Errorf("pushes = %v, want exactly one %v", f.pushes, want)
 		}
 	})
 
