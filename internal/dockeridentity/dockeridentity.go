@@ -7,16 +7,27 @@
 // → Session Plan): host-process identity and daemon-fs state are read
 // fresh at the Docker edge so the plan stays a pure design-time artifact
 // composable in tests without OS state. dockeridentity is that edge —
-// `Resolve(binds)` is the single seam container.Shell calls before
+// `Resolve(bindTargets)` is the single seam container.Shell calls before
 // ContainerCreate, returning a typed Identity{UserSpec, GroupAdd}.
 package dockeridentity
 
 import (
 	"fmt"
 	"os"
-	"strings"
+	"slices"
 	"syscall"
 )
+
+// sockPath is the in-container target the group-add decision keys on. It
+// mirrors the Target of mountplan's "docker-sock" default mount; the two
+// literals are unconnected by the compiler, so the bijection is pinned by
+// TestSockPathMatchesMountplanDefault instead of by an import (which would
+// cost this leaf its stdlib-only dependency set).
+//
+// That pin covers the default mount set only. A user `mounts:` patch that
+// retargets docker-sock still yields a bind this never matches — long-
+// standing behaviour, out of scope here.
+const sockPath = "/var/run/docker.sock"
 
 // Identity carries the Docker-edge inputs derived from the host process
 // and the bind set: the "<uid>:<gid>" user spec and the supplementary
@@ -36,13 +47,20 @@ type Identity struct {
 }
 
 // Resolve assembles the Identity from the current host process (os.Getuid,
-// os.Getgid) and the bind set the SessionPlan composed. The bind set is
-// only inspected for the docker.sock target path; everything else is
-// SessionPlan's concern.
-func Resolve(binds []string) Identity {
+// os.Getgid) and the in-container target paths of the bind set the
+// SessionPlan composed. Only the docker.sock target is inspected;
+// everything else is SessionPlan's concern.
+//
+// Targets rather than []mountplan.Bind: the caller already holds typed
+// binds and reads b.Target off them, which gives the same compile error
+// if the field is ever renamed — without making this stdlib-only leaf
+// depend on mountplan (and transitively on config, fsx and proximo). A
+// docker-sock mounted read-only still needs GroupAdd, so Bind.Mode would
+// never be consulted here either.
+func Resolve(bindTargets []string) Identity {
 	return Identity{
 		UserSpec: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
-		GroupAdd: dockerSockGroups(binds),
+		GroupAdd: dockerSockGroups(bindTargets),
 	}
 }
 
@@ -57,20 +75,9 @@ func Resolve(binds []string) Identity {
 //   - host sock GID: on Linux the socket keeps the host group (usually
 //     "docker"), so the container must join that GID.
 //
-// Returns nil when docker.sock is not in binds.
-func dockerSockGroups(binds []string) []string {
-	const sockPath = "/var/run/docker.sock"
-
-	mounted := false
-	for _, b := range binds {
-		// Bind format: "<source>:<target>[:<opts>]". Match on target.
-		parts := strings.SplitN(b, ":", 3)
-		if len(parts) >= 2 && parts[1] == sockPath {
-			mounted = true
-			break
-		}
-	}
-	if !mounted {
+// Returns nil when docker.sock is not among bindTargets.
+func dockerSockGroups(bindTargets []string) []string {
+	if !slices.Contains(bindTargets, sockPath) {
 		return nil
 	}
 

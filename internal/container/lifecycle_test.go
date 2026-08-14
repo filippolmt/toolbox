@@ -503,6 +503,44 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 // unconditional; see TestShellAppliesCodexSecurityOpt for the always-on
 // invariant.)
 
+// TestShellGrantsGroupAddForSockBindTarget pins the create path's half of
+// the group-add decision: the targets handed to dockeridentity.Resolve are
+// the binds' Target field, never their Source and never the flattened
+// "src:target:mode" spec. The bind below deliberately has Source != Target,
+// so reading the wrong field (or passing the specs, as this call site did
+// before) yields no match and GroupAdd comes back nil — a container that
+// starts fine and then fails every in-container `docker` command with
+// "permission denied ... /var/run/docker.sock". Only gid 0 is asserted:
+// the host GID depends on whether a real socket exists on the test machine.
+func TestShellGrantsGroupAddForSockBindTarget(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	var capturedGroupAdd []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+			capturedGroupAdd = hostCfg.GroupAdd
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Binds = []mountplan.Bind{{Source: "/host/alt-docker.sock", Target: "/var/run/docker.sock", Mode: "rw"}}
+
+	if err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !slices.Contains(capturedGroupAdd, "0") {
+		t.Errorf("GroupAdd = %v, want it to contain %q for a docker.sock target", capturedGroupAdd, "0")
+	}
+}
+
 // TestShellMirrorsWorkspaceAtHostPath verifies that a workspace with a safe
 // absolute host path is bind-mounted at BOTH /workspace and its own host path,
 // and the shell WorkingDir is set to the host path so that $PWD-based bind
