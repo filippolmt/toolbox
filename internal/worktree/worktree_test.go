@@ -34,6 +34,10 @@ type fakeGit struct {
 	calls   [][]string
 	pushes  [][]string
 	pushErr error
+	// onRun fires after each Run is recorded, the seam a test uses to interrupt
+	// an orchestration midway: Run takes no context, so cancelling on a git
+	// command is the only way to land a Ctrl+C between two loop iterations.
+	onRun func(args []string)
 }
 
 func newFakeGit() *fakeGit {
@@ -54,6 +58,9 @@ func (f *fakeGit) Run(args ...string) error {
 	key := strings.Join(args, " ")
 	f.runs = append(f.runs, append([]string(nil), args...))
 	f.record(args...)
+	if f.onRun != nil {
+		f.onRun(args)
+	}
 	return f.runErrs[key]
 }
 
@@ -497,13 +504,54 @@ func TestPrune(t *testing.T) {
 	})
 
 	// Ctrl+C cancels the command's context without exiting the process
-	// (signal.NotifyContext), and the sweep's loop does not check it — so a
-	// cancelled prune still removes worktrees and deletes local branches. The
-	// remote delete must therefore be equally uncancellable: it is the step
-	// whose omission cannot be retried, because prune enumerates candidates from
-	// the very worktrees and branches it just deleted. Skipping it strands the
-	// origin refs with no local handle left to find them by.
-	t.Run("a cancelled sweep still deletes the origin refs it orphaned locally", func(t *testing.T) {
+	// (signal.NotifyContext), so the sweep is what has to stop: without a check
+	// per iteration it keeps removing worktrees and deleting branches while the
+	// user believes they stopped it. The remote delete is the exception — it
+	// must run anyway, because it is the step whose omission cannot be retried:
+	// prune enumerates candidates from the very worktrees and branches it just
+	// deleted, so skipping it strands the origin refs with no local handle left
+	// to find them by.
+	t.Run("an interrupted sweep spares the next candidate and still deletes the origin refs it orphaned", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n\n" +
+			"worktree /repo/.worktrees/tbx-two\nbranch refs/heads/two\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  one\n  two\n"
+
+		// Ctrl+C lands mid-sweep: the first worktree is already gone, the second
+		// has not been looked at yet.
+		ctx, cancel := context.WithCancel(context.Background())
+		f.onRun = func(args []string) {
+			if strings.Join(args, " ") == "worktree remove /repo/.worktrees/tbx-one" {
+				cancel()
+			}
+		}
+
+		var out bytes.Buffer
+		err := New(f).Prune(ctx, nil, &out, PruneOpts{DeleteRemote: true})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Prune err = %v, want one wrapping context.Canceled", err)
+		}
+		// How far the sweep got is the one thing the user cannot reconstruct
+		// from a killed terminal, so the error carries it.
+		if !strings.Contains(err.Error(), "1 of 2") {
+			t.Errorf("err = %q, want it to report the sweep stopped after 1 of 2", err)
+		}
+		if f.ranAny("worktree remove /repo/.worktrees/tbx-two") {
+			t.Errorf("the candidate after the interruption must survive: %v", f.runs)
+		}
+		want := []string{"/repo", "one"}
+		if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
+			t.Errorf("pushes = %v, want exactly one %v even under a cancelled context", f.pushes, want)
+		}
+	})
+
+	// Interrupted before the sweep, prune has nothing to report as half-done and
+	// nothing on origin to clean up — but it must still fail rather than print
+	// the reassuring no-candidates line, which it would otherwise reach with an
+	// empty merged set purely because the fetches were skipped.
+	t.Run("a context already cancelled stops before the fetches and reports the interruption", func(t *testing.T) {
 		f := newFakeGit()
 		f.outputs[commonDirKey] = "/repo/.git"
 		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n"
@@ -514,13 +562,79 @@ func TestPrune(t *testing.T) {
 		cancel()
 
 		var out bytes.Buffer
-		if err := New(f).Prune(ctx, nil, &out, PruneOpts{DeleteRemote: true}); err != nil {
-			t.Fatalf("Prune: %v", err)
+		err := New(f).Prune(ctx, nil, &out, PruneOpts{DeleteRemote: true})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Prune err = %v, want one wrapping context.Canceled", err)
+		}
+		// The fetch loop is network-bound: bailing there is what spares the user
+		// a round-trip per base whose result the sweep will never use.
+		if f.ranAny("fetch origin") {
+			t.Errorf("an interrupted prune must not fetch: %v", f.runs)
+		}
+		if f.ranAny("worktree remove") || f.ranAny("branch -D") {
+			t.Errorf("an interrupted prune must remove nothing: %v", f.runs)
+		}
+		// Nothing was orphaned locally, so there is no origin ref to delete.
+		if len(f.pushes) != 0 {
+			t.Errorf("pushes = %v, want none", f.pushes)
+		}
+		if out.String() != "" {
+			t.Errorf("out = %q, want nothing announced", out.String())
+		}
+	})
+
+	// The count in the interruption is what the user acts on to see what is
+	// left, so it reports worktrees actually removed — not candidates reached.
+	// The two diverge whenever git refused a removal, and on a dry run, which
+	// reaches every candidate and removes none.
+	t.Run("the interrupted count reports removals, not candidates reached", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo/.worktrees/tbx-refused\nbranch refs/heads/refused\n\n" +
+			"worktree /repo/.worktrees/tbx-one\nbranch refs/heads/one\n\n" +
+			"worktree /repo/.worktrees/tbx-two\nbranch refs/heads/two\n"
+		f.outputs[originHeadKey] = "origin/main"
+		f.outputs["branch --merged origin/main"] = "  refused\n  one\n  two\n"
+		f.runErrs["worktree remove /repo/.worktrees/tbx-refused"] = errors.New("contains modified or untracked files")
+
+		// Three candidates reached in two iterations, but only one removal: the
+		// first was refused, the interruption lands on the second.
+		ctx, cancel := context.WithCancel(context.Background())
+		f.onRun = func(args []string) {
+			if strings.Join(args, " ") == "worktree remove /repo/.worktrees/tbx-one" {
+				cancel()
+			}
 		}
 
-		want := []string{"/repo", "one"}
-		if len(f.pushes) != 1 || !slices.Equal(f.pushes[0], want) {
-			t.Errorf("pushes = %v, want exactly one %v even under a cancelled context", f.pushes, want)
+		var out bytes.Buffer
+		err := New(f).Prune(ctx, nil, &out, PruneOpts{})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Prune err = %v, want one wrapping context.Canceled", err)
+		}
+		if !strings.Contains(err.Error(), "1 of 3") {
+			t.Errorf("err = %q, want 1 of 3 — the refused worktree is still there", err)
+		}
+	})
+
+	// With no toolbox worktree to sweep, neither loop runs at all — so the
+	// interruption has to be answered after them, or a cancelled prune ends on
+	// the reassuring no-candidates line and exit 0.
+	t.Run("an interruption with nothing to sweep is still reported", func(t *testing.T) {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = "/repo/.git"
+		f.outputs[listKey] = "worktree /repo\nbranch refs/heads/main\n"
+		f.outputs[originHeadKey] = "origin/main"
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		var out bytes.Buffer
+		err := New(f).Prune(ctx, nil, &out, PruneOpts{})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Prune err = %v, want one wrapping context.Canceled", err)
+		}
+		if out.String() != "" {
+			t.Errorf("out = %q, want no no-candidates line on an interrupted run", out.String())
 		}
 	})
 

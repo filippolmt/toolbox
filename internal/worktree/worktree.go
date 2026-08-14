@@ -393,6 +393,12 @@ func (s Service) List(ctx context.Context, cli client.APIClient) ([]WorktreeStat
 // --force), so a refused removal returns with the container still up rather than
 // a half-torn-down worktree. cli may be nil (no reachable daemon) — the removal
 // must not depend on the container.
+//
+// Unlike Prune, Rm does not honour a cancelled ctx: it is one removal, not a
+// sweep, and by the time cancellation could be noticed `git worktree remove`
+// has already run. Bailing then would leave exactly the orphaned branch and
+// running container the ordering above exists to prevent, so finishing is the
+// safer end. Do not "fix" the asymmetry.
 func (s Service) Rm(ctx context.Context, cli client.APIClient, opts RmOpts) error {
 	root, err := s.repoRoot()
 	if err != nil {
@@ -439,6 +445,10 @@ func (s Service) Rm(ctx context.Context, cli client.APIClient, opts RmOpts) erro
 // warnings go to stderr. cli may be nil — always nil for a dry run, and a down
 // daemon still lets healthy worktrees be removed. DeleteRemote batches the
 // origin deletes into one push at the end.
+//
+// The sweep is interruptible: a cancelled ctx stops it between worktrees (never
+// midway through one) and is reported as an error carrying how far it got. What
+// was already removed stays removed, batched origin deletes included.
 func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer, opts PruneOpts) error {
 	root, err := s.repoRoot()
 	if err != nil {
@@ -476,6 +486,13 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 	// not-merged and are preserved (the safe default).
 	mergedByBase := map[string]map[string]bool{}
 	for base := range bases {
+		// Nothing destructive has happened yet, so an interruption here returns
+		// outright rather than falling through: a skipped fetch leaves its base
+		// looking unmerged, which would run the sweep to a silent "nothing to
+		// prune" instead of reporting that the user stopped it.
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("prune interrupted before removing anything: %w", err)
+		}
 		if err := s.git.Run("fetch", "origin", base); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: skipping base %s: %v\n", base, err)
 			continue
@@ -494,7 +511,17 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 	)
 
 	var remoteToDelete []string // branches whose origin ref to delete in one push
+	removed := 0
 	for _, w := range candidates {
+		// Ctrl+C only cancels the context (signal.NotifyContext leaves the
+		// process running) and git runs without it, so nothing stops the sweep
+		// but this check — without it worktrees keep disappearing after the user
+		// believes they stopped it. break, not return: the origin deletes
+		// accumulated so far still have to go out below, or the local refs are
+		// gone with nothing left on this side to find their counterparts by.
+		if ctx.Err() != nil {
+			break
+		}
 		if opts.DryRun {
 			// A dirty worktree fails the no-force `git worktree remove` below, so
 			// its branch is not deleted either — don't overstate the removal.
@@ -530,8 +557,18 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 			remoteToDelete = append(remoteToDelete, w.Branch)
 		}
 		s.forgetWorktreeBase(root, w.Branch)
+		removed++
 	}
 	s.deleteRemoteBranches(ctx, root, remoteToDelete) // one push for the whole sweep
+	// An interruption is an error, not a quiet success: the exit status has to
+	// tell a script the sweep is incomplete, and the count — worktrees actually
+	// removed, so a dry run or a refused removal never inflates it — is the one
+	// thing the user cannot reconstruct from a terminal they just killed. This
+	// is also what answers a cancellation that arrives with no candidates at
+	// all, which never reaches the loop above.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("prune interrupted after %d of %d worktrees: %w", removed, len(candidates), err)
+	}
 	if len(candidates) == 0 {
 		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
 	}
