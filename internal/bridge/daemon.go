@@ -330,7 +330,7 @@ func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
 	if !h.decodeJSON(w, r, MaxURLLen+1024, &req) {
 		return
 	}
-	if _, ok := EditorAllowlist[req.Editor]; !ok {
+	if _, ok := editorAllowlist[req.Editor]; !ok {
 		h.logger.Printf("edit: rejected (unknown editor) editor=%q", truncate(req.Editor, 64))
 		http.Error(w, "unknown editor", http.StatusBadRequest)
 		return
@@ -358,7 +358,7 @@ func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 // proximoRequest is the body shape the proximo shim POSTs to /proximo. The
-// command must match ProximoAllowlist verbatim — no arguments.
+// command must match proximoAllowlist verbatim — no arguments.
 type proximoRequest struct {
 	Command string `json:"command"`
 }
@@ -378,7 +378,7 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 	if !h.decodeJSON(w, r, 4096, &req) {
 		return
 	}
-	if _, ok := ProximoAllowlist[req.Command]; !ok {
+	if _, ok := proximoAllowlist[req.Command]; !ok {
 		h.logger.Printf("proximo: rejected (command not allowed) command=%q", truncate(req.Command, 64))
 		http.Error(w, "command not allowed — only up, down, status are bridged; run anything else on the host", http.StatusBadRequest)
 		return

@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// ProximoAllowlist is the fixed set of proximo subcommands /proximo may
+// proximoAllowlist is the fixed set of proximo subcommands /proximo may
 // execute. A client-supplied command never reaches exec without passing this
 // gate. Deliberately excludes install/uninstall (interactive sudo on the
 // host) and accepts bare subcommands only — no argument passthrough.
-var ProximoAllowlist = map[string]struct{}{
+var proximoAllowlist = map[string]struct{}{
 	"up":     {},
 	"down":   {},
 	"status": {},

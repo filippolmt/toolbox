@@ -149,7 +149,7 @@ func TestRun_ServesOverUnixSocket(t *testing.T) {
 		},
 	}}
 
-	resp, err := client.Get("http://bridge/healthz")
+	resp, err := client.Get("http://bridge" + RouteHealth)
 	if err != nil {
 		t.Fatalf("GET /healthz over unix socket: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestRun_ServesOverUnixSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read token: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, "http://bridge/open",
+	req, err := http.NewRequest(http.MethodPost, "http://bridge"+RouteOpen,
 		strings.NewReader(`{"url":"https://example.com"}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)

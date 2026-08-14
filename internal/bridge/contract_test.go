@@ -3,6 +3,7 @@ package bridge
 import (
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -85,10 +86,10 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 
 // TestBridgeContract_ProximoAllowlistMatchesShim pins the second half of the
 // proximo gate. The shim rejects anything outside its own `case` arm before
-// the daemon is ever reached, so a command added to ProximoAllowlist stays
-// unreachable until the shim learns it — and one dropped from the map leaves
-// a shim still advertising it. Both directions are drift, so this is a set
-// equality, not a containment.
+// the daemon is ever reached, so a command added to the daemon's allowlist
+// stays unreachable until the shim learns it — and one dropped from the map
+// leaves a shim still advertising it. Both directions are drift, so this is a
+// set equality, not a containment.
 func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
 	shim := readShim(t, "proximo")
 
@@ -109,14 +110,15 @@ func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
 		got[strings.TrimSpace(alt)] = struct{}{}
 	}
 
-	for cmd := range ProximoAllowlist {
+	allowed := AllowedProximoCommands()
+	for _, cmd := range allowed {
 		if _, ok := got[cmd]; !ok {
-			t.Errorf("ProximoAllowlist has %q but shim proximo rejects it — the command is unreachable from the container", cmd)
+			t.Errorf("AllowedProximoCommands has %q but shim proximo rejects it — the command is unreachable from the container", cmd)
 		}
 	}
 	for cmd := range got {
-		if _, ok := ProximoAllowlist[cmd]; !ok {
-			t.Errorf("shim proximo forwards %q but ProximoAllowlist rejects it — the daemon answers 400", cmd)
+		if !slices.Contains(allowed, cmd) {
+			t.Errorf("shim proximo forwards %q but the daemon allowlist rejects it — the daemon answers 400", cmd)
 		}
 	}
 }
@@ -132,9 +134,9 @@ func TestBridgeContract_EditorAllowlistHasShim(t *testing.T) {
 		t.Fatalf("read Dockerfile: %v", err)
 	}
 	dockerfile := string(raw)
-	for editor := range EditorAllowlist {
+	for _, editor := range AllowedEditors() {
 		if !strings.Contains(dockerfile, "/usr/local/bin/"+editor) {
-			t.Errorf("EditorAllowlist has %q but the Dockerfile installs no /usr/local/bin/%s shim — the editor is unreachable from the container", editor, editor)
+			t.Errorf("AllowedEditors has %q but the Dockerfile installs no /usr/local/bin/%s shim — the editor is unreachable from the container", editor, editor)
 		}
 	}
 }

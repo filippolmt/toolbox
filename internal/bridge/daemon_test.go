@@ -61,7 +61,7 @@ func newProximoTestHandler(t *testing.T, fn func(ctx context.Context, command st
 
 func doPost(t *testing.T, h http.Handler, token, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	return doPostTo(t, h, "/open", token, body)
+	return doPostTo(t, h, RouteOpen, token, body)
 }
 
 func doPostTo(t *testing.T, h http.Handler, path, token, body string) *httptest.ResponseRecorder {
@@ -88,7 +88,7 @@ func TestHandler_OpenOK(t *testing.T) {
 
 func TestHandler_RejectBadMethod(t *testing.T) {
 	h, _, _ := newTestHandler(t, nil)
-	req := httptest.NewRequest(http.MethodGet, "/open", nil)
+	req := httptest.NewRequest(http.MethodGet, RouteOpen, nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -147,7 +147,7 @@ func editBody(editor, path string) string {
 
 func TestHandler_EditOK(t *testing.T) {
 	h, _, editCalls := newTestHandler(t, nil)
-	rr := doPostTo(t, h, "/edit", "tok", editBody("code", t.TempDir()))
+	rr := doPostTo(t, h, RouteEdit, "tok", editBody("code", t.TempDir()))
 	if rr.Code != http.StatusNoContent {
 		t.Errorf("code = %d, body=%q", rr.Code, rr.Body.String())
 	}
@@ -158,7 +158,7 @@ func TestHandler_EditOK(t *testing.T) {
 
 func TestHandler_EditRejectUnknownEditor(t *testing.T) {
 	h, _, editCalls := newTestHandler(t, nil)
-	rr := doPostTo(t, h, "/edit", "tok", editBody("vim; rm -rf /", t.TempDir()))
+	rr := doPostTo(t, h, RouteEdit, "tok", editBody("vim; rm -rf /", t.TempDir()))
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("code = %d", rr.Code)
 	}
@@ -169,7 +169,7 @@ func TestHandler_EditRejectUnknownEditor(t *testing.T) {
 
 func TestHandler_EditRejectMissingPath(t *testing.T) {
 	h, _, editCalls := newTestHandler(t, nil)
-	rr := doPostTo(t, h, "/edit", "tok", editBody("code", "/nope/missing"))
+	rr := doPostTo(t, h, RouteEdit, "tok", editBody("code", "/nope/missing"))
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("code = %d", rr.Code)
 	}
@@ -180,7 +180,7 @@ func TestHandler_EditRejectMissingPath(t *testing.T) {
 
 func TestHandler_EditRejectRelativePath(t *testing.T) {
 	h, _, editCalls := newTestHandler(t, nil)
-	rr := doPostTo(t, h, "/edit", "tok", editBody("code", "relative/path"))
+	rr := doPostTo(t, h, RouteEdit, "tok", editBody("code", "relative/path"))
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("code = %d", rr.Code)
 	}
@@ -192,7 +192,7 @@ func TestHandler_EditRejectRelativePath(t *testing.T) {
 func TestHandler_EditRejectBadToken(t *testing.T) {
 	h, _, editCalls := newTestHandler(t, nil)
 	for _, token := range []string{"", "wrong"} {
-		rr := doPostTo(t, h, "/edit", token, editBody("code", t.TempDir()))
+		rr := doPostTo(t, h, RouteEdit, token, editBody("code", t.TempDir()))
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("token=%q code = %d", token, rr.Code)
 		}
@@ -210,7 +210,7 @@ func TestHandler_EditSharesRateLimitWithOpen(t *testing.T) {
 			t.Fatalf("burst[%d] code = %d", i, rr.Code)
 		}
 	}
-	rr := doPostTo(t, h, "/edit", "tok", editBody("code", t.TempDir()))
+	rr := doPostTo(t, h, RouteEdit, "tok", editBody("code", t.TempDir()))
 	if rr.Code != http.StatusTooManyRequests {
 		t.Errorf("post-burst /edit code = %d, want 429 (shared limiter)", rr.Code)
 	}
@@ -227,7 +227,7 @@ func TestHandler_ProximoOK(t *testing.T) {
 		gotCmd = command
 		return []byte("stack started\n"), 0, nil
 	})
-	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("up"))
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("up"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d, body=%q", rr.Code, rr.Body.String())
 	}
@@ -247,7 +247,7 @@ func TestHandler_ProximoPropagatesExitCode(t *testing.T) {
 	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
 		return []byte("compose failed\n"), 3, nil
 	})
-	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("up"))
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("up"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}
@@ -267,7 +267,7 @@ func TestHandler_ProximoRejectUnknownCommand(t *testing.T) {
 			called = true
 			return nil, 0, nil
 		})
-		rr := doPostTo(t, h, "/proximo", "tok", proximoBody(cmd))
+		rr := doPostTo(t, h, RouteProximo, "tok", proximoBody(cmd))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("command %q: code = %d, want 400", cmd, rr.Code)
 		}
@@ -284,7 +284,7 @@ func TestHandler_ProximoRejectBadToken(t *testing.T) {
 		return nil, 0, nil
 	})
 	for _, token := range []string{"", "wrong"} {
-		rr := doPostTo(t, h, "/proximo", token, proximoBody("up"))
+		rr := doPostTo(t, h, RouteProximo, token, proximoBody("up"))
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("token=%q code = %d", token, rr.Code)
 		}
@@ -298,7 +298,7 @@ func TestHandler_ProximoExecErrorIs502(t *testing.T) {
 	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
 		return nil, 0, io.EOF
 	})
-	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("status"))
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status"))
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("code = %d, want 502", rr.Code)
 	}
@@ -311,7 +311,7 @@ func TestHandler_ProximoBudgetExceedsRequestTimeout(t *testing.T) {
 		return nil, 0, nil
 	})
 	before := time.Now()
-	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("up"))
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("up"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}
@@ -325,12 +325,12 @@ func TestHandler_ProximoSharesRateLimit(t *testing.T) {
 		return nil, 0, nil
 	})
 	for i := range 5 {
-		rr := doPostTo(t, h, "/proximo", "tok", proximoBody("status"))
+		rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status"))
 		if rr.Code != http.StatusOK {
 			t.Fatalf("burst[%d] code = %d", i, rr.Code)
 		}
 	}
-	rr := doPostTo(t, h, "/proximo", "tok", proximoBody("status"))
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status"))
 	if rr.Code != http.StatusTooManyRequests {
 		t.Errorf("post-burst code = %d, want 429 (shared limiter)", rr.Code)
 	}
@@ -356,7 +356,7 @@ func TestHandler_CredentialOK(t *testing.T) {
 		gotInput = input
 		return []byte("username=me\npassword=secret\n"), 0, nil
 	})
-	rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "protocol=https\nhost=forgejo.example\n\n"))
+	rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", "protocol=https\nhost=forgejo.example\n\n"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d, body=%q", rr.Code, rr.Body.String())
 	}
@@ -379,7 +379,7 @@ func TestHandler_CredentialPropagatesExit(t *testing.T) {
 	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
 		return nil, 1, nil
 	})
-	rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", ""))
+	rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", ""))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}
@@ -399,7 +399,7 @@ func TestHandler_CredentialRejectUnknownOp(t *testing.T) {
 			called = true
 			return nil, 0, nil
 		})
-		rr := doPostTo(t, h, "/credential", "tok", credentialBody(op, ""))
+		rr := doPostTo(t, h, RouteCredential, "tok", credentialBody(op, ""))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("op %q: code = %d, want 400", op, rr.Code)
 		}
@@ -416,7 +416,7 @@ func TestHandler_CredentialRejectBadToken(t *testing.T) {
 		return nil, 0, nil
 	})
 	for _, token := range []string{"", "wrong"} {
-		rr := doPostTo(t, h, "/credential", token, credentialBody("get", ""))
+		rr := doPostTo(t, h, RouteCredential, token, credentialBody("get", ""))
 		if rr.Code != http.StatusUnauthorized {
 			t.Errorf("token=%q code = %d", token, rr.Code)
 		}
@@ -430,7 +430,7 @@ func TestHandler_CredentialExecErrorIs502(t *testing.T) {
 	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
 		return nil, 0, io.EOF
 	})
-	rr := doPostTo(t, h, "/credential", "tok", credentialBody("store", ""))
+	rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("store", ""))
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("code = %d, want 502", rr.Code)
 	}
@@ -451,7 +451,7 @@ func TestHandler_CredentialSeparateRateLimit(t *testing.T) {
 	}
 	// /credential rides its own bucket, so it is unaffected — a clone must not
 	// 429 because URL opens happened first.
-	if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
+	if rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
 		t.Errorf("credential throttled by shared bucket: code = %d", rr.Code)
 	}
 }
@@ -462,18 +462,18 @@ func TestHandler_CredentialRateLimited(t *testing.T) {
 	})
 	// Own burst is 15 (fixed test clock → no refill); the 16th is throttled.
 	for i := range 15 {
-		if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
+		if rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
 			t.Fatalf("credential burst[%d] code = %d", i, rr.Code)
 		}
 	}
-	if rr := doPostTo(t, h, "/credential", "tok", credentialBody("get", "")); rr.Code != http.StatusTooManyRequests {
+	if rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", "")); rr.Code != http.StatusTooManyRequests {
 		t.Errorf("post-burst credential code = %d, want 429", rr.Code)
 	}
 }
 
 func TestHandler_HealthZ(t *testing.T) {
 	h, _, _ := newTestHandler(t, nil)
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, RouteHealth, nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {

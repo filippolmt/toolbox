@@ -1,5 +1,10 @@
 package bridge
 
+import (
+	"maps"
+	"slices"
+)
+
 // The daemon↔shim wire contract. Everything the container-side shell shims
 // hardcode lives here as one exported literal, so the Go side has a single
 // place to rename and TestBridgeContract_ShimMatchesGo has a single place to
@@ -32,3 +37,15 @@ const (
 	FieldExit   = "exit"
 	FieldOutput = "output"
 )
+
+// AllowedEditors and AllowedProximoCommands are the contract's third part,
+// after the paths and the routes/fields: the verbs the container side may
+// send at all. They return a
+// sorted copy rather than the gate itself — docs/bridge.md documents both
+// sets as fixed ("a client-supplied name never reaches exec without passing
+// this gate"), and an exported map would let any caller widen a security
+// boundary by assignment. The maps stay unexported next to the code that
+// gates on them (editors.go, proximo.go).
+func AllowedEditors() []string { return slices.Sorted(maps.Keys(editorAllowlist)) }
+
+func AllowedProximoCommands() []string { return slices.Sorted(maps.Keys(proximoAllowlist)) }
