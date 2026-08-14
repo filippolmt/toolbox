@@ -182,6 +182,49 @@ func TestListFiltersToToolboxWorktreesAbsentWhenNoDaemon(t *testing.T) {
 	}
 }
 
+// Open resolves the branch's worktree and — the reason it exists over a bare
+// path lookup — refuses one whose directory is gone: git keeps a worktree
+// registered after its directory is deleted by hand, and launching against a
+// missing source would have Docker silently create an empty dir.
+func TestOpen(t *testing.T) {
+	// fakeGit for a repo whose only toolbox worktree is tbx-fix under root.
+	setup := func(root string) *fakeGit {
+		f := newFakeGit()
+		f.outputs[commonDirKey] = filepath.Join(root, ".git")
+		f.outputs[listKey] = "worktree " + root + "\nbranch refs/heads/main\n\n" +
+			"worktree " + filepath.Join(root, worktreesSubdir, "tbx-fix") + "\nbranch refs/heads/fix\n"
+		return f
+	}
+
+	t.Run("present worktree resolves to root and path", func(t *testing.T) {
+		root := t.TempDir()
+		want := filepath.Join(root, worktreesSubdir, "tbx-fix")
+		if err := os.MkdirAll(want, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		gotRoot, gotPath, err := New(setup(root)).Open("fix")
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		if gotRoot != root || gotPath != want {
+			t.Errorf("Open = (%q, %q), want (%q, %q)", gotRoot, gotPath, root, want)
+		}
+	})
+
+	t.Run("registered worktree with a missing directory is refused", func(t *testing.T) {
+		root := t.TempDir() // .worktrees/tbx-fix deliberately not created
+
+		gotRoot, gotPath, err := New(setup(root)).Open("fix")
+		if err == nil {
+			t.Fatal("Open must refuse a worktree whose directory is missing")
+		}
+		if gotRoot != "" || gotPath != "" {
+			t.Errorf("Open = (%q, %q), want empty paths alongside the error", gotRoot, gotPath)
+		}
+	})
+}
+
 // Create fetches the base, adds a --no-track worktree branched from
 // origin/<base>, and returns the repo root + new worktree path.
 func TestCreatePreparesWorktree(t *testing.T) {
