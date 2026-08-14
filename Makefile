@@ -34,7 +34,7 @@ GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$
 # Bumped by the GO_IMAGE_VERSION customManager in renovate.json (docker
 # datasource, package golang) — that manager is what does the work; do not add
 # an inline `# renovate:` directive here, it would be a second, dead mechanism.
-GO_IMAGE_VERSION := 1.26.5
+GO_IMAGE_VERSION := 1.26.6
 GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
 GOLANGCI_VERSION := v2.12.2
 GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
