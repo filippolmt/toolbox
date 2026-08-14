@@ -268,8 +268,8 @@ Docker side-effects — the typed `Op` is dispatched at the Docker edge by
 
 Concretely: `runplan.Compute(inspect, inspectErr) → Op{Action, ExistingID}`
 with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
-`internal/runplan`. A nil `inspect.ContainerJSONBase` and an errdefs
-`NotFound` both route to `ActionCreate` so callers never dereference a
+`internal/runplan`. An `InspectResponse` with an empty `ID` and an errdefs
+`NotFound` both route to `ActionCreate` so callers never dispatch on a
 half-populated record; any other inspect error is returned verbatim and
 the caller aborts. Composes with Session Plan: SessionPlan resolves
 design-time inputs before any Docker call; RunPlan resolves the runtime
