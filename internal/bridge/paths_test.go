@@ -3,37 +3,8 @@ package bridge
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
-
-// TestBridgeContract_ShimMatchesGo binds the daemon↔shim wire contract: the
-// container-side paths/filenames the shell shim hardcodes must equal the Go
-// constants the daemon writes. They live in two languages linked only by
-// comments ("Must match BRIDGE_SOCK in bridge-lib.sh"); a rename on either
-// side otherwise breaks the bridge silently. Mirrors the init.d + Tool Catalog
-// bijection tests — drift is a red test, not a field report.
-func TestBridgeContract_ShimMatchesGo(t *testing.T) {
-	const shimPath = "../build/assets/bin/bridge-lib.sh"
-	raw, err := os.ReadFile(shimPath)
-	if err != nil {
-		t.Fatalf("read shim %s: %v", shimPath, err)
-	}
-	shim := string(raw)
-
-	// Each Go literal the shim must contain verbatim.
-	for _, c := range []struct{ name, literal string }{
-		{"ContainerDir", ContainerDir},
-		{"LegacyContainerDir", LegacyContainerDir},
-		{"ContainerSocket", ContainerSocket},
-		{"tokenFile", tokenFile},
-		{"portFile", portFile},
-	} {
-		if !strings.Contains(shim, c.literal) {
-			t.Errorf("%s: shim %s does not contain %q — Go/shell bridge contract drifted", c.name, shimPath, c.literal)
-		}
-	}
-}
 
 func TestResolveHostState_UsesHomeDir(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())

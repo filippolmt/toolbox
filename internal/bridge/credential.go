@@ -13,7 +13,7 @@ import (
 // it on the host. `get` fills from the host's configured helpers (osxkeychain
 // on macOS, libsecret/gnome-keyring on Linux); `store`/`erase` persist and
 // forget. Any op outside this map never reaches exec — the daemon rejects it,
-// mirroring proximoAllowlist.
+// mirroring ProximoAllowlist.
 var credentialSubcommand = map[string]string{
 	"get":   "fill",
 	"store": "approve",

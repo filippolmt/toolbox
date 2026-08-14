@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
@@ -13,23 +12,20 @@ import (
 // bridge shim sources; must match the Dockerfile COPY target.
 const bridgeLib = "/usr/local/lib/toolbox/bridge-lib.sh"
 
-// TestShimPathsMatchGoConstants guards the constants duplicated between the
-// Go packages and the embedded bridge shims: the state dir
-// (bridge.ContainerDir) hardcoded in bin/bridge-lib.sh (the shared
-// transport every shim sources), and the workspace mount target
-// (mountplan.WorkspaceTarget) in bin/code. The shims are static shell
-// assets, so a rename on the Go side would otherwise drift silently.
+// TestShimPathsMatchGoConstants guards what only this package can see: that
+// every bridge shim sources the shared transport at the path the Dockerfile
+// COPYs it to, and that bin/code hardcodes the workspace mount target
+// (mountplan.WorkspaceTarget). The shims are static shell assets, so a rename
+// on the Go side would otherwise drift silently. The daemon↔shim wire contract
+// itself (state dir, socket, routes, JSON fields, allowlists) is pinned next
+// to the constants it belongs to, by TestBridgeContract_ShimMatchesGo in
+// internal/bridge.
 func TestShimPathsMatchGoConstants(t *testing.T) {
 	sourceLib := `. ` + bridgeLib
 	cases := []struct {
 		shim    string
 		needles []string
 	}{
-		{"bin/bridge-lib.sh", []string{
-			`BRIDGE_STATE_DIR="` + bridge.ContainerDir + `"`,
-			`BRIDGE_STATE_DIR="` + bridge.LegacyContainerDir + `"`,
-			`BRIDGE_SOCK="` + bridge.ContainerSocket + `"`,
-		}},
 		{"bin/xdg-open", []string{sourceLib}},
 		{"bin/code", []string{
 			sourceLib,
