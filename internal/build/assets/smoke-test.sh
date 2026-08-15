@@ -439,3 +439,36 @@ SL=/etc/toolbox/statusline-command.sh
 bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
 echo "OK: managed statusline present and parses"
 '
+
+echo ""
+echo "=== Workspace Install Refresh (30-graphify.sh, real boot) ==="
+# Runtime half of TestWorkspaceInstallRefreshGate, which pins only the static
+# invariants. Boot 30-graphify.sh in a throwaway workspace that has opted in
+# (graphify-out/ present) and read the result back out of the files it actually
+# wrote: the PreToolUse matchers must be the narrowed values, no wide upstream
+# matcher may survive `graphify install`, the .graphify-bak must be gone, and a
+# version stamp must exist — without the stamp the gate reopens on every shell
+# and the churn this whole change removes comes straight back.
+#
+# The seed carries the wide upstream matchers so the assertion holds whether or
+# not the install itself succeeds. No single quotes — this body lives inside a
+# single-quoted bash -c.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+command -v graphify >/dev/null 2>&1 || { echo "SKIP: graphify not installed"; exit 0; }
+command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
+mkdir -p "$HOME/.claude"
+d=$(mktemp -d)
+cd "$d"
+mkdir -p graphify-out .claude
+printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]},{\"matcher\":\"Read|Glob\",\"hooks\":[]}]}}" > .claude/settings.json
+/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero"; exit 1; }
+wide=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Bash|Grep\" or . == \"Read|Glob\")] | length" .claude/settings.json)
+[ "$wide" = "0" ] || { echo "FAILED: ${wide} wide PreToolUse matcher(s) survived normalisation"; exit 1; }
+narrow=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Grep\" or . == \"Glob\")] | length" .claude/settings.json)
+[ "$narrow" -ge 2 ] || { echo "FAILED: only ${narrow} narrowed matcher(s), expected Grep and Glob"; exit 1; }
+[ ! -e .claude/settings.json.graphify-bak ] || { echo "FAILED: settings.json.graphify-bak left in the workspace"; exit 1; }
+stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/null | head -n1)
+[ -n "$stamp" ] || { echo "FAILED: no version stamp under ~/.toolbox-state/install-refresh — the gate would reopen every shell"; exit 1; }
+echo "OK: matchers narrowed, no .graphify-bak, stamped $(cat "$stamp")"
+'

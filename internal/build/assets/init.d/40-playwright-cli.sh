@@ -39,13 +39,15 @@ fi
 # workspace in CWD and writes the skill to `$PWD/.claude/skills/playwright-cli/`
 # (plus a `.playwright/` workspace dir). Nothing is registered globally.
 #
-# On every shell, IF the current workspace already has that per-repo skill dir,
-# re-run the local install so the skill stays in sync with the bundled
-# playwright-cli version after an image upgrade. Repos WITHOUT it are left
-# untouched — opening an un-opted-in repo never dirties it. (Replaces the
-# previous always-on `(cd "$HOME" && playwright-cli install --skills claude)`,
-# which registered the skill into ~/.claude/skills/ on every shell regardless of
-# the repo; an existing global copy is left as-is, just no longer refreshed.)
+# Workspace Install Refresh (docs/adr/0001-workspace-install-refresh.md): the
+# refresh re-runs only when the bundled playwright-cli version moved away from
+# the stamp OR the skill's SKILL.md went missing. The skill dir is tracked, so
+# an unconditional re-run would rewrite it on every image upgrade and hand the
+# user a dirty tree. Repos WITHOUT the skill dir are left untouched — opening an
+# un-opted-in repo never dirties it. (Replaces the always-on
+# `(cd "$HOME" && playwright-cli install --skills claude)`, which registered the
+# skill into ~/.claude/skills/ on every shell regardless of the repo; an
+# existing global copy is left as-is, just no longer refreshed.)
 #
 # Inner gate: `claude` binary AND ~/.claude exist (bind-mount auto-creates the
 # dir even when tools.claude=false).
@@ -53,6 +55,27 @@ command -v playwright-cli >/dev/null 2>&1 || exit 0
 [ -d "$PWD/.claude/skills/playwright-cli" ] || exit 0
 
 if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    playwright-cli install --skills claude >/dev/null 2>&1 || \
-        echo "toolbox: playwright-cli skill refresh failed (non-fatal — run \`playwright-cli install --skills claude\` manually to retry)"
+    # Stamp is toolbox-owned and lives outside the workspace, keyed by
+    # (workspace, tool); content is the version last installed from. $PWD is
+    # hashed so an arbitrarily deep workspace path still yields a valid name.
+    _pwc_ver=$(playwright-cli --version 2>/dev/null | tr -d '\n' || true)
+    _pwc_stamp="$HOME/.toolbox-state/install-refresh/$(printf '%s' "$PWD" | sha256sum | cut -c1-16)-playwright-cli"
+    _pwc_stamped=""
+    if [ -f "$_pwc_stamp" ]; then
+        read -r _pwc_stamped < "$_pwc_stamp" 2>/dev/null || true
+    fi
+
+    # No guard on an empty $_pwc_ver: if the version probe ever breaks upstream,
+    # an empty stamp still compares equal to an empty version, so a healthy
+    # workspace stays quiet — while the artefact half keeps self-healing a
+    # deleted install, which a `[ -n "$_pwc_ver" ]` guard would silently disable.
+    if [ "$_pwc_stamped" != "$_pwc_ver" ] || [ ! -f "$PWD/.claude/skills/playwright-cli/SKILL.md" ]; then
+        if playwright-cli install --skills claude >/dev/null 2>&1; then
+            mkdir -p "$(dirname "$_pwc_stamp")"
+            printf '%s' "$_pwc_ver" > "$_pwc_stamp"
+        else
+            echo "toolbox: playwright-cli skill refresh failed (non-fatal — run \`playwright-cli install --skills claude\` manually to retry)"
+        fi
+    fi
+    unset _pwc_ver _pwc_stamp _pwc_stamped
 fi
