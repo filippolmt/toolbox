@@ -48,8 +48,17 @@ done
 gate=$(api "/api/qualitygates/project_status?projectKey=$project_key&pullRequest=$PR_NUMBER")
 issues=$(api "/api/issues/search?componentKeys=$project_key&pullRequest=$PR_NUMBER&issueStatuses=OPEN,CONFIRMED&ps=50&s=SEVERITY&asc=false")
 
-gate_status=$(jq -r '.projectStatus.status' <<<"$gate")
-issue_total=$(jq -r '.total' <<<"$issues")
+gate_status=$(jq -r '.projectStatus.status // empty' <<<"$gate")
+issue_total=$(jq -r '.total // empty' <<<"$issues")
+# An error response still parses as JSON, so an absent field — not a parse
+# failure — is what a rejected query looks like. Say which one failed instead
+# of dying further down on an empty variable.
+if [ -z "$gate_status" ] || [ -z "$issue_total" ]; then
+  echo "SonarQube did not return a result for PR $PR_NUMBER of $project_key:" >&2
+  jq -r '.errors[]?.msg // empty' <<<"$gate" >&2
+  jq -r '.errors[]?.msg // empty' <<<"$issues" >&2
+  exit 1
+fi
 
 {
   case "$gate_status" in
@@ -100,13 +109,14 @@ issue_total=$(jq -r '.total' <<<"$issues")
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
   cat sonar-comment.md
-  exit 0
+else
+  gh pr comment "$PR_NUMBER" --create-if-none --edit-last --body-file sonar-comment.md
 fi
 
-gh pr comment "$PR_NUMBER" --create-if-none --edit-last --body-file sonar-comment.md
-
 # Comment first, then fail: the reason has to be readable on the PR before the
-# job goes red, or the red check is all the author gets.
+# job goes red, or the red check is all the author gets. A dry run takes the
+# same exit path, so it exercises this branch instead of always reporting
+# success.
 if [ "$gate_status" != "OK" ]; then
   echo "Quality Gate is $gate_status — failing the job." >&2
   exit 1
