@@ -1,10 +1,15 @@
 name: SonarQube
 
+# No `pull_request` trigger: the SonarQube server is powered off outside
+# working hours by design, so a PR-time analysis would fail on most pushes for
+# a check that isn't required on `main` anyway. Post-merge plus a weekday
+# in-hours cron keeps the project view fresh without gating anyone.
 on:
   push:
     branches: [main]
-  pull_request:
-    types: [opened, synchronize, reopened]
+  schedule:
+    # 08:00 UTC, Mon-Fri — inside working hours in Europe/Rome year-round.
+    - cron: '0 8 * * 1-5'
 
 permissions:
   contents: read
@@ -14,7 +19,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Reachability gate: a server that's off is a non-event, not a failure, so
+  # this reports green and `analyze` is skipped rather than failed.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      up: ${{ steps.check.outputs.up }}
+    steps:
+      - name: Check SonarQube availability
+        id: check
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          echo "::add-mask::$SONAR_HOST_URL"
+          if curl -sSf -m 10 "$SONAR_HOST_URL/api/system/status" | grep -q '"status":"UP"'; then
+            echo 'up=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'SonarQube is not reachable or not UP — skipping analysis.'
+          fi
+
   analyze:
+    needs: preflight
+    if: needs.preflight.outputs.up == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,25 +49,12 @@ jobs:
         with:
           fetch-depth: 0   # full history for blame/relevancy
 
+      # GitHub only redacts the secret's exact value; the scanner logs the host
+      # in normalised forms that wouldn't match. Mask it explicitly.
       - name: Mask SONAR_HOST_URL in logs
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: echo "::add-mask::$SONAR_HOST_URL"
-
-      - name: Diagnose Sonar reachability
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          set +e
-          echo "Runner egress IP:"
-          curl -sS https://api.ipify.org && echo
-          echo "Validate token against Sonar:"
-          code=$(curl -sS -o /tmp/resp -w "%{http_code}" -u "$SONAR_TOKEN:" \
-            "$SONAR_HOST_URL/api/authentication/validate")
-          echo "HTTP $code"
-          head -c 500 /tmp/resp || true
-          echo
 
       - uses: actions/setup-go@v6
         with:
@@ -50,7 +64,7 @@ jobs:
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
-      - uses: SonarSource/sonarqube-scan-action@v6
+      - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
