@@ -1,10 +1,13 @@
 name: CI
 
+# The PR trigger is deliberately unfiltered. `test`, `lint` and
+# `renovate-validate` are required status checks on `main`: a workflow that
+# never starts leaves them *pending*, not skipped, so any markdown-only PR was
+# unmergeable (#700 hit this). Running the three jobs on a docs PR costs a few
+# runner-minutes and always reports. The push trigger keeps the filter — no
+# ruleset consumes those runs, so a docs merge to `main` still skips them.
 on:
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
   push:
     branches: [main]
     paths-ignore:

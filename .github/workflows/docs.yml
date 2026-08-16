@@ -1,7 +1,8 @@
 name: Docs
 
-# Offline link + anchor validation for Markdown. Lives in its own workflow
-# because ci.yml deliberately paths-ignores '**.md' and 'docs/**'.
+# Offline link + anchor validation for Markdown. Lives in its own workflow so
+# the Go jobs in ci.yml stay unaware of it; ci.yml runs on docs PRs too, but
+# only because its jobs are required status checks (see the comment there).
 # Offline mode checks relative links and #fragment anchors only — external
 # URLs are never fetched, so third-party downtime can't block a PR.
 # Mirror of the local `make check-links` target; keep the flag sets in sync.
