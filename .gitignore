@@ -32,6 +32,11 @@ graphify-out/
 # reads it back; init.d/30-graphify.sh removes it, this is the belt-and-braces
 # half for anyone running graphify install by hand.
 .claude/settings.json.graphify-bak
+# `graphify install --project --platform claude` regenerates this whole skill
+# dir (SKILL.md, references/, .graphify_version) on every version bump, so
+# tracking it only adds diff noise. init.d/30-graphify.sh installs it in the
+# container; the version stamp is write-only in project scope.
+.claude/skills/graphify/
 docs/superpowers/specs/
 docs/superpowers/plans/
 
