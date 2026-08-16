@@ -100,13 +100,13 @@ func init() {
 	_ = shellsAddCmd.MarkFlagRequired("path")
 	shellsAddCmd.Flags().BoolVar(&shellsAddCreateDir, "create-dir", false, "create the path directory when missing")
 	shellsAddCmd.Flags().StringArrayVar(&shellsAddEnv, "env", nil, "env overlay entry K=V (repeatable)")
-	shellsAddCmd.Flags().StringVar(&shellsAddWhere, "where", "global", "config file to write: global|local")
+	shellsAddCmd.Flags().StringVar(&shellsAddWhere, "where", "global", whereFlagUsage)
 
 	shellsSetCmd.Flags().StringArrayVar(&shellsSetEnv, "env", nil, "env overlay entry K=V (repeatable, required)")
-	shellsSetCmd.Flags().StringVar(&shellsSetWhere, "where", "global", "config file to write: global|local")
+	shellsSetCmd.Flags().StringVar(&shellsSetWhere, "where", "global", whereFlagUsage)
 
 	shellsRemoveCmd.Flags().BoolVar(&shellsRemovePurge, "purge-dir", false, "also remove the configured path directory")
-	shellsRemoveCmd.Flags().StringVar(&shellsRemoveWhere, "where", "global", "config file to write: global|local")
+	shellsRemoveCmd.Flags().StringVar(&shellsRemoveWhere, "where", "global", whereFlagUsage)
 
 	shellsCmd.AddCommand(shellsListCmd)
 	shellsCmd.AddCommand(shellsGetCmd)
@@ -118,7 +118,7 @@ func init() {
 
 func runShellsList(cmd *cobra.Command, _ []string) error {
 	if cfg == nil {
-		return errors.New("internal: configuration not loaded")
+		return errConfigNotLoaded
 	}
 	out := cmd.OutOrStdout()
 	if len(cfg.Shells) == 0 {
@@ -149,7 +149,7 @@ func shellFileKey(target, name string) (string, error) {
 
 func runShellsGet(cmd *cobra.Command, args []string) error {
 	if cfg == nil {
-		return errors.New("internal: configuration not loaded")
+		return errConfigNotLoaded
 	}
 	name := args[0]
 	s, ok := cfg.Shells[config.NormalizeShellKey(name)]
@@ -217,7 +217,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if cfg == nil {
-		return errors.New("internal: configuration not loaded")
+		return errConfigNotLoaded
 	}
 	if _, ok := cfg.Shells[config.NormalizeShellKey(name)]; !ok {
 		return &usageError{err: fmt.Errorf("unknown shell %q%s",

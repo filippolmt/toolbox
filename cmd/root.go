@@ -10,6 +10,20 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
+// Wording shared across subcommands. Kept in one place so `toolbox mounts add
+// --help` and `toolbox shells add --help` cannot drift apart.
+const (
+	// whereFlagUsage documents the --where flag every config-mutating
+	// subcommand carries.
+	whereFlagUsage = "config file to write: global|local"
+	// dockerClientErrFmt wraps a failure to construct the moby client.
+	dockerClientErrFmt = "failed to create Docker client: %w"
+)
+
+// errConfigNotLoaded reports that a subcommand ran without cobra's
+// OnInitialize having populated cfg — a wiring bug, never a user error.
+var errConfigNotLoaded = errors.New("internal: configuration not loaded")
+
 // cfgFile holds the value of the --config flag (D-14: cobra-flag binding stays
 // in cmd/root.go because the flag IS a cobra concern). Empty when unset.
 var cfgFile string

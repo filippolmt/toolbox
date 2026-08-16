@@ -122,47 +122,13 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 	vp := viper.New()
 	vp.SetConfigType("yaml")
 
-	// Defaults seeding. Per-tool toggles no longer exist. The image-selection
-	// keys are seeded with their zero value not for the value itself but so
-	// they land in viper's key set — AutomaticEnv only resolves TOOLBOX_* for
-	// keys it already knows, so without these seeds TOOLBOX_IMAGE /
-	// TOOLBOX_REGISTRY_MIRROR / TOOLBOX_PULL would be silently ignored at
-	// Unmarshal. `bridge` gets BindEnv instead of SetDefault: a seeded
-	// default surfaces through Unmarshal as a non-nil *bool, which would
-	// shadow the deprecated browser_bridge fallback in fillDefaultsBackstop
-	// (the default lives there instead). Same reason browser_bridge itself
-	// is neither seeded nor bound: non-nil must mean "the user wrote it".
-	// Explicit env name: SetEnvPrefix runs later in Merge, and BindEnv with a
-	// single argument captures the prefix at call time. Derived from
-	// EnvBoundKeys so the env-resolvable set has a single source of truth (the
-	// same set configui consults for env provenance).
-	for _, k := range EnvBoundKeys {
-		if k == "bridge" {
-			_ = vp.BindEnv(k, envVarName(k))
-		} else {
-			vp.SetDefault(k, "")
-		}
-	}
+	seedEnvBoundKeys(vp)
 
 	warnLegacyTools(global, project, explicit)
 	warnLegacyBrowserBridge(global, project, explicit)
 
-	// File Load stage. explicit short-circuits global + project.
-	if len(explicit) > 0 {
-		if err := vp.MergeConfig(bytes.NewReader(explicit)); err != nil {
-			return nil, fmt.Errorf("parse --config bytes: %w", err)
-		}
-	} else {
-		if len(global) > 0 {
-			if err := vp.MergeConfig(bytes.NewReader(global)); err != nil {
-				return nil, fmt.Errorf("parse global config bytes: %w", err)
-			}
-		}
-		if len(project) > 0 {
-			if err := vp.MergeConfig(bytes.NewReader(project)); err != nil {
-				return nil, fmt.Errorf("parse project config bytes: %w", err)
-			}
-		}
+	if err := mergeFileLayers(vp, global, project, explicit); err != nil {
+		return nil, err
 	}
 
 	// Env-prefix overrides — applied to this instance only.
@@ -194,6 +160,52 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// seedEnvBoundKeys seeds the defaults for the env-bindable keys. Per-tool
+// toggles no longer exist. The image-selection keys are seeded with their zero
+// value not for the value itself but so they land in viper's key set —
+// AutomaticEnv only resolves TOOLBOX_* for keys it already knows, so without
+// these seeds TOOLBOX_IMAGE / TOOLBOX_REGISTRY_MIRROR / TOOLBOX_PULL would be
+// silently ignored at Unmarshal. `bridge` gets BindEnv instead of SetDefault: a
+// seeded default surfaces through Unmarshal as a non-nil *bool, which would
+// shadow the deprecated browser_bridge fallback in fillDefaultsBackstop (the
+// default lives there instead). Same reason browser_bridge itself is neither
+// seeded nor bound: non-nil must mean "the user wrote it". Explicit env name:
+// SetEnvPrefix runs later in Merge, and BindEnv with a single argument captures
+// the prefix at call time. Derived from EnvBoundKeys so the env-resolvable set
+// has a single source of truth (the same set configui consults for env
+// provenance).
+func seedEnvBoundKeys(vp *viper.Viper) {
+	for _, k := range EnvBoundKeys {
+		if k == "bridge" {
+			_ = vp.BindEnv(k, envVarName(k))
+		} else {
+			vp.SetDefault(k, "")
+		}
+	}
+}
+
+// mergeFileLayers merges the YAML layers in precedence order. explicit
+// short-circuits global + project.
+func mergeFileLayers(vp *viper.Viper, global, project, explicit []byte) error {
+	if len(explicit) > 0 {
+		if err := vp.MergeConfig(bytes.NewReader(explicit)); err != nil {
+			return fmt.Errorf("parse --config bytes: %w", err)
+		}
+		return nil
+	}
+	if len(global) > 0 {
+		if err := vp.MergeConfig(bytes.NewReader(global)); err != nil {
+			return fmt.Errorf("parse global config bytes: %w", err)
+		}
+	}
+	if len(project) > 0 {
+		if err := vp.MergeConfig(bytes.NewReader(project)); err != nil {
+			return fmt.Errorf("parse project config bytes: %w", err)
+		}
+	}
+	return nil
 }
 
 // =============================================================================
@@ -357,27 +369,7 @@ func restoreEnvKeyCase(cfg *Config, global, project, explicit []byte) {
 		layers = [][]byte{explicit}
 	}
 
-	topEnv := map[string]string{}
-	shellEnv := map[string]map[string]string{}
-	for _, b := range layers {
-		if len(b) == 0 {
-			continue
-		}
-		var raw rawCaseLayer
-		if yaml.Unmarshal(b, &raw) != nil {
-			continue
-		}
-		maps.Copy(topEnv, raw.Env)
-		for name, sh := range raw.Shells {
-			if len(sh.Env) == 0 {
-				continue
-			}
-			if shellEnv[name] == nil {
-				shellEnv[name] = map[string]string{}
-			}
-			maps.Copy(shellEnv[name], sh.Env)
-		}
-	}
+	topEnv, shellEnv := collectCaseCorrectEnv(layers)
 
 	if len(topEnv) > 0 {
 		cfg.Env = topEnv
@@ -390,6 +382,37 @@ func restoreEnvKeyCase(cfg *Config, global, project, explicit []byte) {
 			sh.Env = env
 			cfg.Shells[key] = sh
 		}
+	}
+}
+
+// collectCaseCorrectEnv re-parses the raw layers and returns the case-correct
+// top-level env plus the per-shell env, later layers winning per key. A layer
+// that fails to parse is skipped silently — LoadLayers already surfaced that
+// error upstream.
+func collectCaseCorrectEnv(layers [][]byte) (topEnv map[string]string, shellEnv map[string]map[string]string) {
+	topEnv = map[string]string{}
+	shellEnv = map[string]map[string]string{}
+	for _, b := range layers {
+		var raw rawCaseLayer
+		if len(b) == 0 || yaml.Unmarshal(b, &raw) != nil {
+			continue
+		}
+		maps.Copy(topEnv, raw.Env)
+		mergeShellEnv(shellEnv, raw)
+	}
+	return topEnv, shellEnv
+}
+
+// mergeShellEnv folds one layer's per-shell env maps into dst.
+func mergeShellEnv(dst map[string]map[string]string, raw rawCaseLayer) {
+	for name, sh := range raw.Shells {
+		if len(sh.Env) == 0 {
+			continue
+		}
+		if dst[name] == nil {
+			dst[name] = map[string]string{}
+		}
+		maps.Copy(dst[name], sh.Env)
 	}
 }
 

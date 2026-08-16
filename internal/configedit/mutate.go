@@ -131,28 +131,47 @@ func Shells(entries []ShellEntry) Mutator {
 	}
 	return func(doc *yaml.Node) {
 		root := configio.EnsureChildMap(doc, "shells")
-		want := make(map[string]bool, len(entries))
-		for _, e := range entries {
-			want[config.NormalizeShellKey(e.Name)] = true
-		}
+		// Captured before the removals: the write pass resolves each entry
+		// against how the file originally spelled its names.
 		spelled := childKeys(root)
-		for _, name := range spelled {
-			if !want[config.NormalizeShellKey(name)] {
-				configio.RemoveMapKey(root, name)
-			}
-		}
+		removeUnwantedShells(root, spelled, entries)
 		for _, e := range entries {
-			entry := configio.EnsureChildMap(root, ShellKeyIn(spelled, e.Name))
-			configio.SetMapValue(entry, "path", e.Path)
-			renamed := config.NormalizeShellKey(e.Name) != config.NormalizeShellKey(e.OrigName)
-			if renamed && len(e.Env) > 0 {
-				env := configio.EnsureChildMap(entry, "env")
-				env.Content = env.Content[:0]
-				for _, k := range slices.Sorted(maps.Keys(e.Env)) {
-					configio.SetMapValue(env, k, e.Env[k])
-				}
-			}
+			writeShellEntry(root, spelled, e)
 		}
+	}
+}
+
+// removeUnwantedShells drops every shell the file spells that no entry names.
+// Matching is by normalized key, so a differently-spelled name is recognised as
+// the same shell rather than removed as a stranger.
+func removeUnwantedShells(root *yaml.Node, spelled []string, entries []ShellEntry) {
+	want := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		want[config.NormalizeShellKey(e.Name)] = true
+	}
+	for _, name := range spelled {
+		if !want[config.NormalizeShellKey(name)] {
+			configio.RemoveMapKey(root, name)
+		}
+	}
+}
+
+// writeShellEntry writes one entry's .path and, only on a rename, its carried
+// Env overlay under the new name — which would otherwise vanish with the old
+// key. An unchanged name keeps its existing env block, formatting and comments
+// included.
+func writeShellEntry(root *yaml.Node, spelled []string, e ShellEntry) {
+	entry := configio.EnsureChildMap(root, ShellKeyIn(spelled, e.Name))
+	configio.SetMapValue(entry, "path", e.Path)
+
+	renamed := config.NormalizeShellKey(e.Name) != config.NormalizeShellKey(e.OrigName)
+	if !renamed || len(e.Env) == 0 {
+		return
+	}
+	env := configio.EnsureChildMap(entry, "env")
+	env.Content = env.Content[:0]
+	for _, k := range slices.Sorted(maps.Keys(e.Env)) {
+		configio.SetMapValue(env, k, e.Env[k])
 	}
 }
 

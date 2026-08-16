@@ -90,21 +90,9 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 		return err
 	}
 
-	ln := opts.Listener
-	port := 0
-	if ln == nil {
-		preferred := opts.Preferred
-		if preferred == 0 {
-			preferred = DefaultPort
-		}
-		ln, port, err = BindListener(preferred)
-		if err != nil {
-			return err
-		}
-	} else {
-		if tcpAddr, ok := ln.Addr().(*net.TCPAddr); ok {
-			port = tcpAddr.Port
-		}
+	ln, port, err := resolveListener(opts)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = ln.Close() }()
 
@@ -148,39 +136,64 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 		now = time.Now
 	}
 	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential}
-	if fns.open == nil {
-		fns.open = hostOpenCommand
-	}
-	if fns.edit == nil {
-		fns.edit = launchEditor
-	}
-	if fns.proximo == nil {
-		fns.proximo = launchProximo
-	}
-	if fns.credential == nil {
-		fns.credential = runHostCredential
-	}
-
-	handler := newHandler(token, fns, logger, now)
 
 	srv := &http.Server{
-		Handler:           handler,
+		Handler:           newHandler(token, fns.withHostDefaults(), logger, now),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}
 
-	// Buffer 2: both Serve goroutines must be able to send after a shutdown
-	// or the second one leaks.
-	serveErr := make(chan error, 2)
-	go func() {
-		serveErr <- srv.Serve(ln)
-	}()
+	listeners := []net.Listener{ln}
 	if unixLn != nil {
-		go func() {
-			serveErr <- srv.Serve(unixLn)
-		}()
+		listeners = append(listeners, unixLn)
+	}
+	return serve(ctx, srv, logger, listeners...)
+}
+
+// resolveListener returns the TCP listener to serve on plus the port it holds.
+// A caller-supplied listener (tests) is used as-is; otherwise the preferred
+// port is bound, falling back to DefaultPort when unset.
+func resolveListener(opts DaemonOptions) (net.Listener, int, error) {
+	if opts.Listener == nil {
+		preferred := opts.Preferred
+		if preferred == 0 {
+			preferred = DefaultPort
+		}
+		return BindListener(preferred)
+	}
+	if tcpAddr, ok := opts.Listener.Addr().(*net.TCPAddr); ok {
+		return opts.Listener, tcpAddr.Port, nil
+	}
+	return opts.Listener, 0, nil
+}
+
+// withHostDefaults fills every unset callback with its production
+// implementation, so a test overrides only the endpoint it exercises.
+func (f handlerFns) withHostDefaults() handlerFns {
+	if f.open == nil {
+		f.open = hostOpenCommand
+	}
+	if f.edit == nil {
+		f.edit = launchEditor
+	}
+	if f.proximo == nil {
+		f.proximo = launchProximo
+	}
+	if f.credential == nil {
+		f.credential = runHostCredential
+	}
+	return f
+}
+
+// serve runs srv on every listener and blocks until ctx is cancelled or one of
+// them fails. The error channel is buffered per listener: every Serve goroutine
+// must be able to send after a shutdown, or the ones that lose the race leak.
+func serve(ctx context.Context, srv *http.Server, logger *log.Logger, listeners ...net.Listener) error {
+	serveErr := make(chan error, len(listeners))
+	for _, ln := range listeners {
+		go func() { serveErr <- srv.Serve(ln) }()
 	}
 
 	select {
@@ -237,10 +250,17 @@ func newHandler(token string, fns handlerFns, logger *log.Logger, now func() tim
 	return mux
 }
 
-func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+// writeJSONOK sends v as a 200 JSON response. Every success path on this
+// daemon has the same three lines; net/http ships no constant for the header,
+// so the shape lives here once.
+func writeJSONOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSONOK(w, map[string]string{"status": "ok"})
 }
 
 // openRequest is the body shape the wrapper POSTs to /open.
@@ -396,9 +416,7 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.Printf("proximo: ok command=%q exit=%d", req.Command, exit)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(proximoResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, proximoResponse{Exit: exit, Output: string(out)})
 }
 
 // credentialTimeout bounds a /credential execution. Above the shared 5s
@@ -453,9 +471,7 @@ func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	// Never log the exchange body — it carries secrets. Op + exit only.
 	h.logger.Printf("credential: ok op=%q exit=%d", req.Op, exit)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(credentialResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, credentialResponse{Exit: exit, Output: string(out)})
 }
 
 func (h *handler) authOK(r *http.Request) bool {
@@ -508,7 +524,11 @@ func runQuiet(ctx context.Context, name string, args ...string) error {
 func openLogger(path string) (*log.Logger, func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, func() {}, fmt.Errorf("open log %s: %w", path, err)
+		noop := func() {
+			// The open failed, so there is no file to close — callers can
+			// still invoke the returned func unconditionally.
+		}
+		return nil, noop, fmt.Errorf("open log %s: %w", path, err)
 	}
 	l := log.New(f, "", log.LstdFlags|log.LUTC)
 	return l, func() { _ = f.Close() }, nil

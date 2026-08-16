@@ -84,6 +84,16 @@ func (s Service) repoRoot() (string, error) {
 	return filepath.Dir(commonDir), nil
 }
 
+// originPrefix is the remote-tracking namespace every base ref is resolved
+// under: toolbox always rebases and compares against origin, never a local
+// stale copy of the base branch.
+const originPrefix = "origin/"
+
+// branchBaseKey is the git-config key recording which base a worktree branch
+// was cut from. Not a git built-in — toolbox owns this key so `prune` can test
+// each branch against the base it actually came from.
+func branchBaseKey(branch string) string { return "branch." + branch + ".base" }
+
 // defaultBranch returns the repository default branch via origin/HEAD,
 // stripped of the origin/ prefix.
 func (s Service) defaultBranch() (string, error) {
@@ -91,7 +101,7 @@ func (s Service) defaultBranch() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot determine the default branch (origin/HEAD unset); pass --from <base>")
 	}
-	return strings.TrimPrefix(ref, "origin/"), nil
+	return strings.TrimPrefix(ref, originPrefix), nil
 }
 
 // configureWorktreeBranch persists per-branch facts git does not track on its
@@ -102,7 +112,7 @@ func (s Service) defaultBranch() (string, error) {
 // worktree. push.autoSetupRemote is repo-wide (git has no per-branch knob) and
 // only set when unset, so a user's explicit choice is never overridden.
 func (s Service) configureWorktreeBranch(root, branch, base string) {
-	if _, err := s.git.Output("-C", root, "config", "branch."+branch+".base", base); err != nil {
+	if _, err := s.git.Output("-C", root, "config", branchBaseKey(branch), base); err != nil {
 		// prune falls back to the default base when this is missing, so warn
 		// rather than abort — but don't leave the user guessing why prune later
 		// targets the wrong base.
@@ -152,7 +162,7 @@ func (s Service) excludeWorktreesDir(root string) {
 // if the branch name is reused. Best-effort: `git config --unset` exits
 // non-zero when the key is already absent.
 func (s Service) forgetWorktreeBase(root, branch string) {
-	_, _ = s.git.Output("-C", root, "config", "--unset", "branch."+branch+".base")
+	_, _ = s.git.Output("-C", root, "config", "--unset", branchBaseKey(branch))
 }
 
 // hasRemoteBranch reports whether branch has an origin counterpart, via the
@@ -226,7 +236,7 @@ func (s Service) deleteBranch(ctx context.Context, root, branch string, force, r
 // bases were tracked. Empty only when neither a persisted base nor a fallback
 // is available.
 func (s Service) worktreeBase(root, branch, fallback string) string {
-	base, err := s.git.Output("-C", root, "config", "--get", "branch."+branch+".base")
+	base, err := s.git.Output("-C", root, "config", "--get", branchBaseKey(branch))
 	if err != nil || base == "" {
 		return fallback
 	}
@@ -256,7 +266,7 @@ func (s Service) resolveToolboxWorktree(root, branch string) (string, error) {
 
 // mergedBranches returns the set of local branches merged into origin/<base>.
 func (s Service) mergedBranches(base string) (map[string]bool, error) {
-	out, err := s.git.Output("branch", "--merged", "origin/"+base)
+	out, err := s.git.Output("branch", "--merged", originPrefix+base)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +338,7 @@ func (s Service) Create(opts CreateOpts) (root, wtPath string, err error) {
 		if err = s.git.Run("fetch", "origin", base); err != nil {
 			return "", "", err
 		}
-		startRef = "origin/" + base
+		startRef = originPrefix + base
 	}
 	wtPath = worktreePath(root, opts.Branch)
 	// --no-track: branching from origin/<base> would otherwise set the new
@@ -459,13 +469,43 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 		return err
 	}
 
-	// Resolve each toolbox worktree's base (persisted at create, else the repo
-	// default) so a worktree branched with --from is tested against that base,
-	// not the default. defaultBranch is only a fallback, so origin/HEAD being
-	// unset is fatal only for worktrees that also lack a persisted base.
+	baseByBranch := s.resolveBases(root, infos)
+	mergedByBase, err := s.mergedBranchesByBase(ctx, baseByBranch)
+	if err != nil {
+		return err
+	}
+
+	candidates := pruneCandidates(root, infos,
+		func(branch string) string { return baseByBranch[branch] },
+		func(base, branch string) bool { return mergedByBase[base][branch] },
+	)
+
+	removed, remoteToDelete := s.sweep(ctx, cli, out, root, candidates, opts)
+	s.deleteRemoteBranches(ctx, root, remoteToDelete) // one push for the whole sweep
+	// An interruption is an error, not a quiet success: the exit status has to
+	// tell a script the sweep is incomplete, and the count — worktrees actually
+	// removed, so a dry run or a refused removal never inflates it — is the one
+	// thing the user cannot reconstruct from a terminal they just killed. This
+	// is also what answers a cancellation that arrives with no candidates at
+	// all, which never reaches the loop above.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("prune interrupted after %d of %d worktrees: %w", removed, len(candidates), err)
+	}
+	if len(candidates) == 0 {
+		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
+	}
+	return nil
+}
+
+// resolveBases maps each toolbox worktree's branch to the base it must be
+// tested against: the one persisted at create (so a worktree branched with
+// --from is tested against that base, not the default), else the repository
+// default. defaultBranch is only a fallback, so origin/HEAD being unset is
+// fatal only for worktrees that also lack a persisted base — those are warned
+// about and left out of the sweep.
+func (s Service) resolveBases(root string, infos []worktreeInfo) map[string]string {
 	defaultBase, defErr := s.defaultBranch()
 	baseByBranch := map[string]string{}
-	bases := map[string]bool{}
 	for _, w := range infos {
 		if !isToolboxWorktree(root, w.Path) || w.Branch == "" {
 			continue
@@ -476,22 +516,30 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 			continue
 		}
 		baseByBranch[w.Branch] = base
+	}
+	return baseByBranch
+}
+
+// mergedBranchesByBase fetches each distinct base once, then reads its
+// merged-branch set. Per-base failures are best-effort: a base deleted or
+// renamed on the remote must not abort the sweep — skip it with a warning and
+// prune the healthy ones. A skipped base leaves its entry nil, so its worktrees
+// read as not-merged and are preserved (the safe default).
+//
+// Nothing destructive has happened yet, so an interruption here returns
+// outright rather than falling through: a skipped fetch leaves its base looking
+// unmerged, which would run the sweep to a silent "nothing to prune" instead of
+// reporting that the user stopped it.
+func (s Service) mergedBranchesByBase(ctx context.Context, baseByBranch map[string]string) (map[string]map[string]bool, error) {
+	bases := map[string]bool{}
+	for _, base := range baseByBranch {
 		bases[base] = true
 	}
 
-	// Fetch each distinct base once, then its merged-branch set. Per-base
-	// failures are best-effort: a base deleted/renamed on the remote must not
-	// abort the sweep — skip it with a warning and prune the healthy ones. A
-	// skipped base leaves mergedByBase[base] nil, so its worktrees read as
-	// not-merged and are preserved (the safe default).
 	mergedByBase := map[string]map[string]bool{}
 	for base := range bases {
-		// Nothing destructive has happened yet, so an interruption here returns
-		// outright rather than falling through: a skipped fetch leaves its base
-		// looking unmerged, which would run the sweep to a silent "nothing to
-		// prune" instead of reporting that the user stopped it.
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("prune interrupted before removing anything: %w", err)
+			return nil, fmt.Errorf("prune interrupted before removing anything: %w", err)
 		}
 		if err := s.git.Run("fetch", "origin", base); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: skipping base %s: %v\n", base, err)
@@ -504,36 +552,25 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 		}
 		mergedByBase[base] = m
 	}
+	return mergedByBase, nil
+}
 
-	candidates := pruneCandidates(root, infos,
-		func(branch string) string { return baseByBranch[branch] },
-		func(base, branch string) bool { return mergedByBase[base][branch] },
-	)
-
-	var remoteToDelete []string // branches whose origin ref to delete in one push
-	removed := 0
+// sweep removes each candidate worktree, returning how many were actually
+// removed (so a dry run or a refused removal never inflates the count) and the
+// branches whose origin ref the caller should delete in one batched push.
+func (s Service) sweep(ctx context.Context, cli client.APIClient, out io.Writer, root string, candidates []worktreeInfo, opts PruneOpts) (removed int, remoteToDelete []string) {
 	for _, w := range candidates {
 		// Ctrl+C only cancels the context (signal.NotifyContext leaves the
 		// process running) and git runs without it, so nothing stops the sweep
 		// but this check — without it worktrees keep disappearing after the user
 		// believes they stopped it. break, not return: the origin deletes
-		// accumulated so far still have to go out below, or the local refs are
-		// gone with nothing left on this side to find their counterparts by.
+		// accumulated so far still have to go out, or the local refs are gone
+		// with nothing left on this side to find their counterparts by.
 		if ctx.Err() != nil {
 			break
 		}
 		if opts.DryRun {
-			// A dirty worktree fails the no-force `git worktree remove` below, so
-			// its branch is not deleted either — don't overstate the removal.
-			if s.worktreeDirty(w.Path) {
-				_, _ = fmt.Fprintf(out, "would skip %s (%s): worktree has uncommitted changes\n", w.Branch, w.Path)
-				continue
-			}
-			msg := fmt.Sprintf("would remove %s (%s) and delete local branch %s", w.Branch, w.Path, w.Branch)
-			if opts.DeleteRemote && s.hasRemoteBranch(root, w.Branch) {
-				msg += " and remote origin/" + w.Branch
-			}
-			_, _ = fmt.Fprintln(out, msg)
+			s.reportPruneDryRun(out, root, w, opts.DeleteRemote)
 			continue
 		}
 		_, _ = fmt.Fprintf(out, "removing %s (%s)\n", w.Branch, w.Path)
@@ -559,20 +596,22 @@ func (s Service) Prune(ctx context.Context, cli client.APIClient, out io.Writer,
 		s.forgetWorktreeBase(root, w.Branch)
 		removed++
 	}
-	s.deleteRemoteBranches(ctx, root, remoteToDelete) // one push for the whole sweep
-	// An interruption is an error, not a quiet success: the exit status has to
-	// tell a script the sweep is incomplete, and the count — worktrees actually
-	// removed, so a dry run or a refused removal never inflates it — is the one
-	// thing the user cannot reconstruct from a terminal they just killed. This
-	// is also what answers a cancellation that arrives with no candidates at
-	// all, which never reaches the loop above.
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("prune interrupted after %d of %d worktrees: %w", removed, len(candidates), err)
+	return removed, remoteToDelete
+}
+
+// reportPruneDryRun prints what a real prune would do to w. A dirty worktree
+// fails the no-force `git worktree remove`, so its branch is not deleted
+// either — don't overstate the removal.
+func (s Service) reportPruneDryRun(out io.Writer, root string, w worktreeInfo, deleteRemote bool) {
+	if s.worktreeDirty(w.Path) {
+		_, _ = fmt.Fprintf(out, "would skip %s (%s): worktree has uncommitted changes\n", w.Branch, w.Path)
+		return
 	}
-	if len(candidates) == 0 {
-		_, _ = fmt.Fprintln(out, "No merged toolbox worktrees to prune.")
+	msg := fmt.Sprintf("would remove %s (%s) and delete local branch %s", w.Branch, w.Path, w.Branch)
+	if deleteRemote && s.hasRemoteBranch(root, w.Branch) {
+		msg += " and remote origin/" + w.Branch
 	}
-	return nil
+	_, _ = fmt.Fprintln(out, msg)
 }
 
 // Sync rebases a worktree branch onto its recorded base and pushes with
@@ -587,23 +626,9 @@ func (s Service) Sync(opts SyncOpts) error {
 		return err
 	}
 
-	var branch, wtPath string
-	if opts.Branch == "" {
-		// No branch: operate on the worktree the command is invoked from, but
-		// only a toolbox worktree — never the primary checkout. Without this
-		// guard, running `sync` from the main repo on `main` would fetch, rebase
-		// and force-push the shared default branch.
-		if wtPath, err = s.git.Output("rev-parse", "--show-toplevel"); err != nil {
-			return err
-		}
-		if !isToolboxWorktree(root, wtPath) {
-			return fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
-		}
-	} else {
-		branch = opts.Branch
-		if wtPath, err = s.resolveToolboxWorktree(root, branch); err != nil {
-			return err
-		}
+	branch, wtPath, err := s.syncTarget(root, opts)
+	if err != nil {
+		return err
 	}
 
 	// A rebase already in progress means a previous sync stopped on a conflict
@@ -631,23 +656,54 @@ func (s Service) Sync(opts SyncOpts) error {
 		}
 	}
 
-	// defaultBranch is only a fallback, so origin/HEAD being unset is fatal only
-	// when the branch also lacks a persisted base (mirrors prune).
-	fallback, _ := s.defaultBranch()
-	base := s.worktreeBase(root, branch, fallback)
-	if base == "" {
-		return fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
-	}
-	// With --no-fetch the rebase targets the local origin/<base> ref directly, so
-	// if that ref is absent the rebase dies with an opaque "invalid upstream";
-	// surface an actionable error instead. When fetching (the default) we must NOT
-	// pre-check: `git fetch origin <base>` creates the tracking ref for a base not
-	// yet mirrored locally and fails clearly if the base is truly gone, so a
-	// pre-check would wrongly abort a valid first sync.
-	if opts.NoFetch && !s.hasRemoteBranch(root, base) {
-		return fmt.Errorf("base %q is not available locally (origin/%s is missing and --no-fetch skips the fetch); drop --no-fetch or re-create the worktree with --from", base, base)
+	base, err := s.syncBase(root, branch, opts.NoFetch)
+	if err != nil {
+		return err
 	}
 
 	return runSyncSteps(wtPath, syncPlan(base, !opts.NoFetch, !opts.NoPush), s.git.Run,
 		func() bool { return s.rebaseInProgress(wtPath) })
+}
+
+// syncTarget resolves which worktree and branch a sync acts on. With
+// opts.Branch empty it takes the worktree the command is invoked from, but only
+// a toolbox worktree — never the primary checkout. Without that guard, running
+// `sync` from the main repo on `main` would fetch, rebase and force-push the
+// shared default branch. The returned branch is empty in that case: the caller
+// resolves it after the rebase-in-progress check, since a rebase leaves HEAD
+// detached.
+func (s Service) syncTarget(root string, opts SyncOpts) (branch, wtPath string, err error) {
+	if opts.Branch != "" {
+		wtPath, err = s.resolveToolboxWorktree(root, opts.Branch)
+		return opts.Branch, wtPath, err
+	}
+	if wtPath, err = s.git.Output("rev-parse", "--show-toplevel"); err != nil {
+		return "", "", err
+	}
+	if !isToolboxWorktree(root, wtPath) {
+		return "", "", fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
+	}
+	return "", wtPath, nil
+}
+
+// syncBase resolves the base a sync rebases onto. defaultBranch is only a
+// fallback, so origin/HEAD being unset is fatal only when the branch also lacks
+// a persisted base (mirrors prune).
+//
+// With --no-fetch the rebase targets the local origin/<base> ref directly, so
+// if that ref is absent the rebase dies with an opaque "invalid upstream";
+// surface an actionable error instead. When fetching (the default) we must NOT
+// pre-check: `git fetch origin <base>` creates the tracking ref for a base not
+// yet mirrored locally and fails clearly if the base is truly gone, so a
+// pre-check would wrongly abort a valid first sync.
+func (s Service) syncBase(root, branch string, noFetch bool) (string, error) {
+	fallback, _ := s.defaultBranch()
+	base := s.worktreeBase(root, branch, fallback)
+	if base == "" {
+		return "", fmt.Errorf("cannot determine the base for %q (no recorded base and origin/HEAD is unset)", branch)
+	}
+	if noFetch && !s.hasRemoteBranch(root, base) {
+		return "", fmt.Errorf("base %q is not available locally (origin/%s is missing and --no-fetch skips the fetch); drop --no-fetch or re-create the worktree with --from", base, base)
+	}
+	return base, nil
 }

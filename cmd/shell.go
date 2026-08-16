@@ -106,7 +106,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf("failed to create Docker client: %w", err)
+		return fmt.Errorf(dockerClientErrFmt, err)
 	}
 	defer cli.Close()
 

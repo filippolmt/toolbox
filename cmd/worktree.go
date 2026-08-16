@@ -216,54 +216,7 @@ func seedWorktreeFiles(root, wtPath string, extra []string) {
 
 	seed := func(rel string) { seedEntry(filepath.Join(root, rel), filepath.Join(wtPath, rel)) }
 
-	// gated collects file/symlink leaves that need the per-file check-ignore
-	// gate; a directory ignored wholesale (openspec/, .planning/) is seeded
-	// directly, skipping an O(files) walk + git round-trip.
-	var gated []string
-	collect := func(dir string) {
-		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil || (d.IsDir() && d.Type()&fs.ModeSymlink == 0) {
-				return nil // skip unreadable entries; descend real dirs (link dirs are leaves)
-			}
-			if rel, err := filepath.Rel(root, p); err == nil {
-				gated = append(gated, rel)
-			}
-			return nil
-		})
-	}
-
-	for _, c := range candidates {
-		src := filepath.Join(root, c)
-		info, err := os.Lstat(src) // Lstat: a symlinked dir is a leaf, not a tree to walk
-		if errors.Is(err, os.ErrNotExist) {
-			continue // no such candidate in the main repo — nothing to seed
-		}
-		if err != nil {
-			// Present-but-unstattable (EACCES on a parent, odd ownership): warn
-			// so a missing seed in the worktree stays diagnosable, not silent.
-			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
-			continue
-		}
-		if info.IsDir() {
-			if gitIgnores(root, c) {
-				// Whole directory ignored by one rule — seed the tree wholesale.
-				_ = filepath.WalkDir(src, func(p string, d fs.DirEntry, walkErr error) error {
-					if walkErr != nil || (d.IsDir() && d.Type()&fs.ModeSymlink == 0) {
-						return nil
-					}
-					if rel, err := filepath.Rel(root, p); err == nil {
-						seed(rel)
-					}
-					return nil
-				})
-				continue
-			}
-			collect(src) // partially ignored — gate every file individually
-			continue
-		}
-		gated = append(gated, c) // a file or symlink leaf
-	}
-
+	gated := classifySeedCandidates(root, candidates, seed)
 	if len(gated) == 0 {
 		return
 	}
@@ -279,6 +232,49 @@ func seedWorktreeFiles(root, wtPath string, extra []string) {
 	for _, rel := range ignored {
 		seed(rel)
 	}
+}
+
+// classifySeedCandidates splits the candidates in two: a directory git ignores
+// wholesale (openspec/, .planning/) is handed to seed immediately, skipping an
+// O(files) walk plus a git round-trip per file; everything else is returned as
+// the leaf set that still needs the per-file check-ignore gate.
+func classifySeedCandidates(root string, candidates []string, seed func(rel string)) []string {
+	var gated []string
+	for _, c := range candidates {
+		src := filepath.Join(root, c)
+		info, err := os.Lstat(src) // Lstat: a symlinked dir is a leaf, not a tree to walk
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			// No such candidate in the main repo — nothing to seed.
+		case err != nil:
+			// Present-but-unstattable (EACCES on a parent, odd ownership): warn
+			// so a missing seed in the worktree stays diagnosable, not silent.
+			fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
+		case !info.IsDir():
+			gated = append(gated, c) // a file or symlink leaf
+		case gitIgnores(root, c):
+			walkLeaves(root, src, seed) // whole dir ignored by one rule
+		default:
+			// Partially ignored — gate every file individually.
+			walkLeaves(root, src, func(rel string) { gated = append(gated, rel) })
+		}
+	}
+	return gated
+}
+
+// walkLeaves hands visit the root-relative path of every leaf under dir. Real
+// directories are descended; a symlinked directory is a leaf, not a tree to
+// walk. Unreadable entries are skipped rather than aborting the walk.
+func walkLeaves(root, dir string, visit func(rel string)) {
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || (d.IsDir() && d.Type()&fs.ModeSymlink == 0) {
+			return nil
+		}
+		if rel, err := filepath.Rel(root, p); err == nil {
+			visit(rel)
+		}
+		return nil
+	})
 }
 
 // envSeeds returns the repo-relative names of .env.* dotenv variants present
@@ -409,7 +405,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf("failed to create Docker client: %w", err)
+		return fmt.Errorf(dockerClientErrFmt, err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()
@@ -438,7 +434,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf("failed to create Docker client: %w", err)
+		return fmt.Errorf(dockerClientErrFmt, err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()
@@ -449,7 +445,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 func runWorktreeList(cmd *cobra.Command, _ []string) error {
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf("failed to create Docker client: %w", err)
+		return fmt.Errorf(dockerClientErrFmt, err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()

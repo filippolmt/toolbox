@@ -34,15 +34,24 @@ func applyInheritHostAuth(base []config.Mount, keys []string, home string) ([]co
 	if len(keys) == 0 {
 		return base, nil
 	}
-	out := make([]config.Mount, 0, len(base))
+	// Resolve the catalog once: keys the catalog does not know, or that are
+	// not host-auth eligible, are silently skipped.
+	type inherited struct {
+		key   string
+		mount *catalog.HostAuthMount
+	}
+	var wanted []inherited
 	dropTargets := make(map[string]string, len(keys)) // target → mount name to preserve
 	for _, k := range keys {
 		entry, ok := catalog.Find(k)
 		if !ok || entry.HostAuthMount == nil {
 			continue
 		}
+		wanted = append(wanted, inherited{key: k, mount: entry.HostAuthMount})
 		dropTargets[entry.HostAuthMount.ContainerPath] = ""
 	}
+
+	out := make([]config.Mount, 0, len(base))
 	for _, m := range base {
 		if _, drop := dropTargets[m.Target]; drop {
 			dropTargets[m.Target] = m.Name
@@ -50,30 +59,34 @@ func applyInheritHostAuth(base []config.Mount, keys []string, home string) ([]co
 		}
 		out = append(out, m)
 	}
-	for _, k := range keys {
-		entry, ok := catalog.Find(k)
-		if !ok || entry.HostAuthMount == nil {
-			continue
+
+	for _, w := range wanted {
+		m, err := hostAuthMountFor(w.key, w.mount, dropTargets[w.mount.ContainerPath], home)
+		if err != nil {
+			return nil, err
 		}
-		// Pre-stat host source so a missing path fails loud instead of
-		// silently soft-skipping the mount in resolveAll. When home is empty
-		// (UserHomeDir failed upstream) ExpandTilde leaves the ~ in place and
-		// os.Stat reports the path missing — surfaces the misconfiguration.
-		expanded := fsx.ExpandTilde(entry.HostAuthMount.HostPath, home)
-		if _, err := os.Stat(expanded); err != nil {
-			return nil, fmt.Errorf(
-				"inherit_host_auth: %q host path %q is not accessible: %w (initialise the CLI on the host first, or remove it from inherit_host_auth)",
-				k, entry.HostAuthMount.HostPath, err)
-		}
-		name := dropTargets[entry.HostAuthMount.ContainerPath]
-		if name == "" {
-			name = k
-		}
-		out = append(out, config.Mount{
-			Name:   name,
-			Source: entry.HostAuthMount.HostPath,
-			Target: entry.HostAuthMount.ContainerPath,
-		})
+		out = append(out, m)
 	}
 	return out, nil
+}
+
+// hostAuthMountFor builds the replacement mount for one inherited key, reusing
+// name (the dropped default's name, empty when there was none) so user
+// `mounts:` patches keep addressing the same logical mount.
+//
+// The host source is pre-stat'ed so a missing path fails loud here instead of
+// soft-skipping in resolveAll and leaving the container with no credential
+// mount at all. When home is empty (UserHomeDir failed upstream) ExpandTilde
+// leaves the ~ in place and os.Stat reports the path missing — which surfaces
+// the misconfiguration.
+func hostAuthMountFor(key string, ham *catalog.HostAuthMount, name, home string) (config.Mount, error) {
+	if _, err := os.Stat(fsx.ExpandTilde(ham.HostPath, home)); err != nil {
+		return config.Mount{}, fmt.Errorf(
+			"inherit_host_auth: %q host path %q is not accessible: %w (initialise the CLI on the host first, or remove it from inherit_host_auth)",
+			key, ham.HostPath, err)
+	}
+	if name == "" {
+		name = key
+	}
+	return config.Mount{Name: name, Source: ham.HostPath, Target: ham.ContainerPath}, nil
 }

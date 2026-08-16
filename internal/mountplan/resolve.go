@@ -19,67 +19,85 @@ import (
 // dropping every ~/.toolbox/* default.
 func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []string) {
 	for _, m := range mounts {
-		// An empty source would resolve to CWD via filepath.Abs("") and
-		// silently bind the project dir. Defend at the resolver too — the
-		// validation in mergeMounts only covers config-file paths, not
-		// programmatic Mount{} construction by callers.
-		if m.Source == "" {
-			warnings = append(warnings, "mount with empty source skipped (target "+m.Target+")")
-			continue
+		b, ok, warns := resolveOne(m, home)
+		warnings = append(warnings, warns...)
+		if ok {
+			binds = append(binds, b)
 		}
+	}
+	return binds, warnings
+}
 
-		src := fsx.ExpandTilde(m.Source, home)
-		// Relative sources (./test, ../foo, plain "data") are resolved
-		// against the CWD at toolbox-shell invocation time — typically the
-		// project root. Docker bind mounts require absolute paths.
-		if !filepath.IsAbs(src) {
-			if abs, err := filepath.Abs(src); err == nil {
-				src = abs
-			}
-		}
-		src = filepath.Clean(src)
-
-		// Migration: if a previous run auto-created an empty dir where we now
-		// want a symlink, drop it. rmdir is a no-op on non-empty dirs, so
-		// existing content is preserved.
-		if m.SymlinkFrom != "" {
-			if info, err := os.Lstat(src); err == nil && info.IsDir() {
-				_ = os.Remove(src)
-			}
-		}
-
-		if _, err := os.Lstat(src); os.IsNotExist(err) {
-			ready, ensureErr := ensureSource(m, src, home)
-			if ensureErr != nil {
-				warnings = append(warnings, ensureErr.Error())
-			}
-			if !ready {
-				continue
-			}
-		} else if err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to stat mount source %s: %s", m.Source, err.Error()))
-			continue
-		}
-
-		// Resolve symlinks so the Docker daemon receives the real path.
-		// On failure keep the unresolved cleaned path and warn — resolution
-		// runs as the invoking user and can fail (e.g. EACCES on an
-		// intermediate dir) where the daemon (root) still mounts fine, so
-		// skipping here would break today-working mounts.
-		if real, err := filepath.EvalSymlinks(src); err == nil {
-			src = real
-		} else {
-			warnings = append(warnings, fmt.Sprintf("failed to resolve symlinks for mount source %s: %s", m.Source, err.Error()))
-		}
-
-		mode := "rw"
-		if m.ReadOnly {
-			mode = "ro"
-		}
-		binds = append(binds, Bind{Source: src, Target: m.Target, Mode: mode})
+// resolveOne resolves a single mount to its Bind. ok is false when the mount
+// must be skipped; the warnings to surface are returned either way, since a
+// mount can bind successfully and still warn (e.g. unresolvable symlinks).
+func resolveOne(m config.Mount, home string) (b Bind, ok bool, warnings []string) {
+	// An empty source would resolve to CWD via filepath.Abs("") and
+	// silently bind the project dir. Defend at the resolver too — the
+	// validation in mergeMounts only covers config-file paths, not
+	// programmatic Mount{} construction by callers.
+	if m.Source == "" {
+		return Bind{}, false, []string{"mount with empty source skipped (target " + m.Target + ")"}
 	}
 
-	return binds, warnings
+	src := resolveSource(m.Source, home)
+	clearStaleSymlinkDir(m, src)
+
+	switch _, err := os.Lstat(src); {
+	case os.IsNotExist(err):
+		ready, ensureErr := ensureSource(m, src, home)
+		if ensureErr != nil {
+			warnings = append(warnings, ensureErr.Error())
+		}
+		if !ready {
+			return Bind{}, false, warnings
+		}
+	case err != nil:
+		return Bind{}, false, []string{fmt.Sprintf("failed to stat mount source %s: %s", m.Source, err.Error())}
+	}
+
+	// Resolve symlinks so the Docker daemon receives the real path.
+	// On failure keep the unresolved cleaned path and warn — resolution
+	// runs as the invoking user and can fail (e.g. EACCES on an
+	// intermediate dir) where the daemon (root) still mounts fine, so
+	// skipping here would break today-working mounts.
+	if real, err := filepath.EvalSymlinks(src); err == nil {
+		src = real
+	} else {
+		warnings = append(warnings, fmt.Sprintf("failed to resolve symlinks for mount source %s: %s", m.Source, err.Error()))
+	}
+
+	mode := "rw"
+	if m.ReadOnly {
+		mode = "ro"
+	}
+	return Bind{Source: src, Target: m.Target, Mode: mode}, true, warnings
+}
+
+// resolveSource turns a declared source into the absolute, cleaned host path.
+// Relative sources (./test, ../foo, plain "data") are resolved against the CWD
+// at toolbox-shell invocation time — typically the project root. Docker bind
+// mounts require absolute paths.
+func resolveSource(source, home string) string {
+	src := fsx.ExpandTilde(source, home)
+	if !filepath.IsAbs(src) {
+		if abs, err := filepath.Abs(src); err == nil {
+			src = abs
+		}
+	}
+	return filepath.Clean(src)
+}
+
+// clearStaleSymlinkDir is a migration: if a previous run auto-created an empty
+// dir where a symlink now belongs, drop it. rmdir is a no-op on non-empty
+// dirs, so existing content is preserved.
+func clearStaleSymlinkDir(m config.Mount, src string) {
+	if m.SymlinkFrom == "" {
+		return
+	}
+	if info, err := os.Lstat(src); err == nil && info.IsDir() {
+		_ = os.Remove(src)
+	}
 }
 
 // ensureSource creates the mount source according to the Mount spec.

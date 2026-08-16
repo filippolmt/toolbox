@@ -157,7 +157,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&configSetRegistryMirror, "registry-mirror", "", "relocate the registry host (proxy hub / pull-through cache)")
 	configSetCmd.Flags().StringVar(&configSetPull, "pull", "", "registry-sync policy: auto|always|never")
 	configSetCmd.Flags().StringVar(&configSetAgent, "agent", "", "default AI agent for 'toolbox worktree': claude|codex (empty resets to default)")
-	configSetCmd.Flags().StringVar(&configSetWhere, "where", "global", "config file to write: global|local")
+	configSetCmd.Flags().StringVar(&configSetWhere, "where", "global", whereFlagUsage)
 
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configSetCmd)
@@ -173,6 +173,11 @@ func runConfigPath(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 	cwd, _ := os.Getwd()
 
+	// Labels and markers for the layer table below.
+	const (
+		globalLayerLabel = "global ~/.toolbox.yaml"
+		foundSuffix      = " (found)"
+	)
 	layer := func(label, detail string) {
 		_, _ = fmt.Fprintf(out, "  %-24s %s\n", label, detail)
 	}
@@ -185,13 +190,13 @@ func runConfigPath(cmd *cobra.Command, _ []string) error {
 
 	_, _ = fmt.Fprintln(out, "Configuration layers (highest precedence first):")
 	if cfgFile != "" {
-		layer("--config", cfgFile+" (found)")
+		layer("--config", cfgFile+foundSuffix)
 	} else {
 		layer("--config", "(not set)")
 	}
 
 	if p := config.WalkUpProjectConfig(cwd); p != "" {
-		layer("project .toolbox.yaml", p+" (found)"+shadow)
+		layer("project .toolbox.yaml", p+foundSuffix+shadow)
 	} else {
 		layer("project .toolbox.yaml", "(none found)")
 	}
@@ -199,12 +204,12 @@ func runConfigPath(cmd *cobra.Command, _ []string) error {
 	globalPath, err := configio.GlobalConfigPath()
 	switch {
 	case err != nil:
-		layer("global ~/.toolbox.yaml", "(home directory not resolvable)")
+		layer(globalLayerLabel, "(home directory not resolvable)")
 	default:
 		if _, statErr := os.Stat(globalPath); statErr == nil {
-			layer("global ~/.toolbox.yaml", globalPath+" (found)"+shadow)
+			layer(globalLayerLabel, globalPath+foundSuffix+shadow)
 		} else {
-			layer("global ~/.toolbox.yaml", globalPath+" (not present)")
+			layer(globalLayerLabel, globalPath+" (not present)")
 		}
 	}
 

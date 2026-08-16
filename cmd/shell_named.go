@@ -117,7 +117,7 @@ func validateShellName(name string) (string, error) {
 
 func shellPathFor(name string) (string, bool, error) {
 	if cfg == nil {
-		return "", false, errors.New("internal: configuration not loaded")
+		return "", false, errConfigNotLoaded
 	}
 	if cfg.Shells == nil {
 		return "", false, nil

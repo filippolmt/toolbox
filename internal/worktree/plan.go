@@ -186,7 +186,7 @@ func syncPlan(base string, fetch, push bool) [][]string {
 	if fetch {
 		steps = append(steps, []string{"fetch", "origin", base})
 	}
-	steps = append(steps, []string{"rebase", "origin/" + base})
+	steps = append(steps, []string{"rebase", originPrefix + base})
 	if push {
 		steps = append(steps, []string{"push", "--force-with-lease"})
 	}

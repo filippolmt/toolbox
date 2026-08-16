@@ -18,6 +18,10 @@ import (
 	"time"
 )
 
+// gitErrFmt wraps a git invocation failure with the full argument list, so the
+// error names the exact command that failed.
+const gitErrFmt = "git %s: %w"
+
 // Git is the seam over the git binary used by the worktree orchestration:
 // Output for read commands (returns trimmed stdout, wrapping failures with the
 // captured stderr), Run for mutating commands whose progress output the user
@@ -54,7 +58,7 @@ func (RealGit) Run(args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return fmt.Errorf(gitErrFmt, strings.Join(args, " "), err)
 	}
 	return nil
 }
@@ -76,7 +80,7 @@ func (RealGit) PushDelete(ctx context.Context, root string, branches []string) e
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return fmt.Errorf(gitErrFmt, strings.Join(args, " "), err)
 	}
 	return nil
 }
@@ -86,5 +90,5 @@ func gitError(args []string, err error) error {
 	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
 		return fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
 	}
-	return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	return fmt.Errorf(gitErrFmt, strings.Join(args, " "), err)
 }
