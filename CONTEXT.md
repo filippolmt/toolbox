@@ -510,7 +510,13 @@ and never the PreToolUse hook block or the `## graphify` section in `CLAUDE.md`,
 which a user may remove deliberately. `30-graphify.sh` additionally narrows the
 matchers `graphify install` writes (`Bash|Grep` → `Grep`, `Read|Glob` → `Glob`)
 only while they are still the known upstream values, so a hand-edited hook
-survives; `graphify hook install` stays outside the gate, because `.git/hooks/`
+survives — and, because that rename is exactly what blinds upstream's own
+"drop what I wrote last time" filter (it keys on the wide literal **and** the
+entry mentioning `graphify`), the same jq first drops the graphify-owned entries
+already parked at the narrowed matcher, which are the previous run's. Ownership
+is checked only on the drop, and the drop only fires when a wide graphify entry
+is actually present, so neither a hand-written `Grep` hook nor a failed install
+loses anything. `graphify hook install` stays outside the gate, because `.git/hooks/`
 is never committed and so absent from a fresh clone. Held by
 `TestWorkspaceInstallRefreshGate` + `TestGraphifyHookInstallOutsideGate`
 (`internal/build/workspace_install_refresh_test.go`) over the embedded scripts,

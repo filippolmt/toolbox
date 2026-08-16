@@ -54,6 +54,22 @@ not on us.
   the read guard `Read|Glob` to `Glob` — and only when a matcher is still the
   known upstream value, so a hand-edited hook survives.
   This is graphify-specific: it is the only member that installs hooks.
+- Renaming those matchers costs us upstream's own cleanup, so the same script
+  has to finish it. `graphify install` re-installs by dropping what it wrote
+  last time and appending it afresh, and it recognises its own hooks by *(the
+  matcher is a known wide literal)* **and** *(the entry mentions `graphify`)*.
+  The rename invalidates the first half only, so upstream stops seeing its own
+  work and appends a second pair on every reopened gate. `30-graphify.sh`
+  therefore drops the graphify-owned entries already sitting at the narrowed
+  matcher before renaming the freshly appended wide ones — last run's entry and
+  this run's are never confusable, because only the latter is still wide.
+  Ownership is tested only where an entry is deleted, never on the rename, so a
+  hand-written `Grep` hook that says nothing about graphify is left alone; and
+  the drop is guarded on a wide graphify entry actually being present, so a
+  failed install (nothing appended) removes nothing and the workspace is never
+  left hookless. Deduplicating identical entries instead would have been the
+  smaller change and the wrong one: an upgrade that alters the hook payload
+  produces two entries that differ, which no equality test collapses.
 - The artefact half watches exactly one artefact per tool — the skill's
   `SKILL.md` for graphify and playwright-cli, `.mcp.json` for codegraph — and
   deliberately not the PreToolUse hook block or the `## graphify` section in

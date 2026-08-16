@@ -455,10 +455,11 @@ echo "=== Workspace Install Refresh (30-graphify.sh, real boot) ==="
 # what stops the refresh from stomping a user's own hook, and a jq expression
 # widened by accident would still pass every other assertion here.
 #
-# The matcher assertions hold whether or not `graphify install` itself succeeds
-# (the seed already carries the wide values); the stamp assertion additionally
-# requires it to have succeeded, which is the point — a refresh that cannot
-# install has nothing to stamp. No single quotes — this body lives inside a
+# The wide/narrow/kept assertions hold whether or not `graphify install` itself
+# succeeds (the seed already carries the wide values); the stamp and the
+# graphify-owned-pair assertions additionally require it to have succeeded,
+# which is the point — a refresh that cannot install has nothing to stamp, and
+# nothing to duplicate either. No single quotes — this body lives inside a
 # single-quoted bash -c.
 docker run --rm "${IMAGE}" bash -c '
 set -e
@@ -469,15 +470,74 @@ d=$(mktemp -d)
 cd "$d"
 mkdir -p graphify-out .claude
 printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]},{\"matcher\":\"Read|Glob\",\"hooks\":[]},{\"matcher\":\"Write|Edit\",\"hooks\":[]}]}}" > .claude/settings.json
+# Snapshot retention: 12 dated dirs in, 10 out, oldest dropped. Seed distinct
+# mtimes because the prune orders by mtime — graphify appends _2, _3 … to
+# same-day runs and those do not sort lexically past _10. keeper/ is the control
+# for the pattern being anchored: an undated sibling must never be swept.
+for i in 01 02 03 04 05 06 07 08 09 10 11 12; do mkdir -p "graphify-out/2026-03-$i"; touch -d "2026-03-$i" "graphify-out/2026-03-$i"; done
+mkdir -p graphify-out/keeper
 /usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero"; exit 1; }
-wide=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Bash|Grep\" or . == \"Read|Glob\")] | length" .claude/settings.json)
-[ "$wide" = "0" ] || { echo "FAILED: ${wide} wide PreToolUse matcher(s) survived normalisation"; exit 1; }
-narrow=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Grep\" or . == \"Glob\")] | length" .claude/settings.json)
-[ "$narrow" -ge 2 ] || { echo "FAILED: only ${narrow} narrowed matcher(s), expected Grep and Glob"; exit 1; }
-kept=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Write|Edit\")] | length" .claude/settings.json)
-[ "$kept" = "1" ] || { echo "FAILED: the hand-edited Write|Edit matcher did not survive normalisation"; exit 1; }
+# Exactly one graphify-owned hook per narrowed matcher, whatever else the file
+# carries. Counting matchers alone cannot say this: the seed entries end up at
+# Grep and Glob too, and they are supposed to. Ownership is the same test
+# upstream uses on its own hooks (install.py:1768) — the entry mentions
+# graphify — which is precisely the half of that test the rename leaves intact.
+assert_gfy_pair() {
+    n=$(jq "[.hooks.PreToolUse[] | select((.matcher == \"Grep\" or .matcher == \"Glob\") and (tostring | contains(\"graphify\")))] | length" .claude/settings.json)
+    [ "$n" = "2" ] || { echo "FAILED: ${1}: ${n} graphify-owned narrowed hook entr(ies), expected exactly 2 (one Grep, one Glob)"; exit 1; }
+}
+assert_narrowed() {
+    wide=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Bash|Grep\" or . == \"Read|Glob\")] | length" .claude/settings.json)
+    [ "$wide" = "0" ] || { echo "FAILED: ${1}: ${wide} wide PreToolUse matcher(s) survived normalisation"; exit 1; }
+    narrow=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Grep\" or . == \"Glob\")] | length" .claude/settings.json)
+    [ "$narrow" -ge 2 ] || { echo "FAILED: ${1}: only ${narrow} narrowed matcher(s), expected Grep and Glob"; exit 1; }
+    kept=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Write|Edit\")] | length" .claude/settings.json)
+    [ "$kept" = "1" ] || { echo "FAILED: ${1}: the hand-edited Write|Edit matcher did not survive normalisation"; exit 1; }
+    assert_gfy_pair "$1"
+}
+assert_narrowed "first refresh"
+snaps=$(find graphify-out -maxdepth 1 -type d -name "20*" | wc -l)
+[ "$snaps" = "10" ] || { echo "FAILED: ${snaps} dated graphify-out snapshots after the prune, expected 10"; exit 1; }
+[ ! -d graphify-out/2026-03-02 ] || { echo "FAILED: the prune kept the oldest snapshots instead of the newest"; exit 1; }
+[ -d graphify-out/2026-03-12 ] || { echo "FAILED: the prune removed the newest snapshot"; exit 1; }
+[ -d graphify-out/keeper ] || { echo "FAILED: the prune swept an undated graphify-out directory"; exit 1; }
 [ ! -e .claude/settings.json.graphify-bak ] || { echo "FAILED: settings.json.graphify-bak left in the workspace"; exit 1; }
 stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/null | head -n1)
 [ -n "$stamp" ] || { echo "FAILED: no version stamp under ~/.toolbox-state/install-refresh — the gate would reopen every shell"; exit 1; }
-echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, stamped $(cat "$stamp")"
+# Second refresh, the case the normalisation itself creates: graphify install
+# recognises its own hooks by (wide upstream matcher) AND (entry mentions
+# graphify), so once we have narrowed the matcher it no longer sees its own work
+# and appends a fresh pair on every reopened gate. Deleting the skill reopens the
+# gate through the artefact half, which is the real-world trigger too (an image
+# upgrade bumps the version).
+rm -f .claude/skills/graphify/SKILL.md
+/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the second refresh"; exit 1; }
+# The refresh must have actually re-installed. 30-graphify.sh only warns when
+# graphify install fails and this smoke test swallows its output, so without
+# this line the whole re-refresh block would pass by installing nothing at all:
+# nothing appended, no duplicate possible, assertions vacuous. The stamp cannot
+# stand in — a failed install does not rewrite it, so it still holds the value
+# the first refresh wrote.
+[ -f .claude/skills/graphify/SKILL.md ] || { echo "FAILED: the second refresh did not re-install the graphify skill — the assertions below would prove nothing"; exit 1; }
+assert_narrowed "second refresh"
+# Compare whole entries, not their serialisations: object key order is not
+# significant in JSON, and a tostring-based check would call two equivalent
+# entries distinct — weaker than the jq in 30-graphify.sh, which is the thing
+# under test here.
+dupe_count=$(jq "(.hooks.PreToolUse | length) - (.hooks.PreToolUse | unique | length)" .claude/settings.json)
+[ "$dupe_count" = "0" ] || { echo "FAILED: ${dupe_count} duplicate PreToolUse entr(ies) after a second refresh"; exit 1; }
+# Third refresh, the case a verbatim dedup could never have caught: a graphify
+# upgrade that changes the hook payload. The stale narrowed entry and the freshly
+# appended one now differ, so nothing collapses them by equality — only dropping
+# by ownership does. Mutating the command here is exactly what an upstream bump
+# does to it (install.py appends --strict this way).
+jq "(.hooks.PreToolUse[] | select(.matcher == \"Grep\") | .hooks[]?.command) |= . + \" --stale-payload\"" .claude/settings.json > settings.next
+mv settings.next .claude/settings.json
+rm -f .claude/skills/graphify/SKILL.md
+/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the third refresh"; exit 1; }
+[ -f .claude/skills/graphify/SKILL.md ] || { echo "FAILED: the third refresh did not re-install the graphify skill"; exit 1; }
+assert_narrowed "third refresh, changed payload"
+stale=$(jq "[.hooks.PreToolUse[] | select(tostring | contains(\"--stale-payload\"))] | length" .claude/settings.json)
+[ "$stale" = "0" ] || { echo "FAILED: ${stale} stale-payload PreToolUse entr(ies) survived the refresh that replaced them"; exit 1; }
+echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, stamped $(cat "$stamp")"
 '
