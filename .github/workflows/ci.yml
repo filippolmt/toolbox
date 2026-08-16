@@ -38,7 +38,32 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test ./... -count=1
+        run: go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
+
+      # The repo-side half of the coverage gate. SonarQube owns the sharp one
+      # (80% on *new code*), but `analyze` is skipped whenever the server is
+      # powered down and GitHub counts a skipped required check as satisfied —
+      # so on its own it leaves a PR pushed outside working hours with no
+      # coverage gate at all. This job always runs, so the floor always holds.
+      #
+      # The number is lower because the denominator is different: this is the
+      # whole tree's total, Sonar's is the lines the PR touched. It also sits a
+      # couple of points under the current total on purpose — a floor set to
+      # today's exact figure turns the first sizeable untested addition into a
+      # red required check on an unrelated PR, and the error names the global
+      # total rather than that PR's own code. Raise it as the total climbs;
+      # never lower it to make a red build green.
+      # See docs/internals/sonarqube.md#the-two-coverage-numbers.
+      - name: Enforce the coverage floor
+        env:
+          COVERAGE_MIN: '74'
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/{print $3}' | tr -d '%')
+          echo "total coverage: ${total}% (floor ${COVERAGE_MIN}%)"
+          if awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN{exit !(t+0 < m+0)}'; then
+            echo "::error::total coverage ${total}% is below the ${COVERAGE_MIN}% floor"
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest

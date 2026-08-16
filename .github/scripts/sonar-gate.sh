@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 #
-# Post the SonarQube result of a pull-request analysis as a PR comment.
-#
-# Why this exists instead of the community branch plugin's own decoration: this
-# repository is public while the SonarQube project is private, so the plugin's
-# comment and check both link to a dashboard an outside reader cannot open, and
-# publish the server's hostname to do it. Rendering the findings here keeps the
-# host out of the PR entirely and puts the actual issues in front of the reader
-# rather than a link.
+# Read the SonarQube Quality Gate for the analysis the scanner just uploaded and
+# fail on a red one. On a pull request the gate and its new issues are also
+# rendered into a PR comment, posted before the failure so the reason is
+# readable there. Why the comment is hand-rolled rather than left to the branch
+# plugin's own decoration: docs/internals/sonarqube.md.
 #
 # Reads the analysis identity from .scannerwork/report-task.txt, which the
 # scanner writes, so the project key is never restated here.
@@ -15,10 +12,14 @@
 # Environment:
 #   SONAR_HOST_URL  server base URL (secret — never echoed)
 #   SONAR_TOKEN     analysis/user token with browse permission
-#   PR_NUMBER       pull request to comment on
+#   PR_NUMBER       pull request to comment on; empty selects branch mode,
+#                   which gates silently — there is nothing to comment on
+#   BRANCH          branch analysed; required when PR_NUMBER is empty
 #   GH_TOKEN        token with pull-requests: write (unused when DRY_RUN=1)
 #   GH_REPO         owner/repo (unused when DRY_RUN=1)
-#   DRY_RUN         when 1, print the comment instead of posting it
+#   DRY_RUN         when 1, print the comment instead of posting it. Still
+#                   needs PR_NUMBER or BRANCH — the scope is what is queried,
+#                   not what is posted.
 #
 set -euo pipefail
 
@@ -45,8 +46,23 @@ while :; do
   sleep 5
 done
 
-gate=$(api "/api/qualitygates/project_status?projectKey=$project_key&pullRequest=$PR_NUMBER")
-issues=$(api "/api/issues/search?componentKeys=$project_key&pullRequest=$PR_NUMBER&issueStatuses=OPEN,CONFIRMED&ps=50&s=SEVERITY&asc=false")
+# Every analysis is scoped to either a pull request or a branch, and the API
+# spells that scope the same way on both endpoints. The issue search needs one
+# extra term in branch mode: pullRequest= already restricts the result to what
+# the PR introduced, while branch= would return the branch's entire open
+# backlog — which the body below would then label "new issues".
+if [ -n "${PR_NUMBER:-}" ]; then
+  scope="pullRequest=$PR_NUMBER"
+  issues_scope="$scope"
+  scope_label="PR $PR_NUMBER"
+else
+  scope="branch=${BRANCH:?PR_NUMBER is empty, so BRANCH must be set}"
+  issues_scope="$scope&inNewCodePeriod=true"
+  scope_label="branch $BRANCH"
+fi
+
+gate=$(api "/api/qualitygates/project_status?projectKey=$project_key&$scope")
+issues=$(api "/api/issues/search?componentKeys=$project_key&$issues_scope&issueStatuses=OPEN,CONFIRMED&ps=50&s=SEVERITY&asc=false")
 
 gate_status=$(jq -r '.projectStatus.status // empty' <<<"$gate")
 issue_total=$(jq -r '.total // empty' <<<"$issues")
@@ -54,7 +70,7 @@ issue_total=$(jq -r '.total // empty' <<<"$issues")
 # failure — is what a rejected query looks like. Say which one failed instead
 # of dying further down on an empty variable.
 if [ -z "$gate_status" ] || [ -z "$issue_total" ]; then
-  echo "SonarQube did not return a result for PR $PR_NUMBER of $project_key:" >&2
+  echo "SonarQube did not return a result for $scope_label of $project_key:" >&2
   jq -r '.errors[]?.msg // empty' <<<"$gate" >&2
   jq -r '.errors[]?.msg // empty' <<<"$issues" >&2
   exit 1
@@ -102,15 +118,21 @@ fi
   # server's hostname into a public repository without helping the reader.
   if [ "$gate_status" = "OK" ]; then
     printf '\n_Quality Gate passed._\n'
-  else
+  elif [ -n "${PR_NUMBER:-}" ]; then
     printf '\n_The Quality Gate blocks this merge until the failing conditions above are met._\n'
+  else
+    printf '\n_The Quality Gate on %s is failing._\n' "$scope_label"
   fi
 } > sonar-comment.md
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
   cat sonar-comment.md
-else
+elif [ -n "${PR_NUMBER:-}" ]; then
   gh pr comment "$PR_NUMBER" --create-if-none --edit-last --body-file sonar-comment.md
+else
+  # Branch mode: nothing to comment on, so the rendered body goes to the job log
+  # — a red `main` should still say *what* went red without a dashboard link.
+  cat sonar-comment.md
 fi
 
 # Comment first, then fail: the reason has to be readable on the PR before the
