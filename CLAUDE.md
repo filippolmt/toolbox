@@ -21,7 +21,7 @@
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
 | `renovate.json` | `npx --yes --package renovate renovate-config-validator renovate.json` | `ci.yml` (renovate-validate) |
 
-Markdown-only and `docs/**`-only changes are path-ignored by `ci.yml`; `make check-links` is their gate.
+Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 
 ## Architecture
 
