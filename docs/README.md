@@ -117,7 +117,7 @@ sections.**
 ## Internals
 
 Maintainer-only material — build mechanics, boot plumbing, privacy lockdown,
-host-CLI primitives.
+host-CLI primitives, the static-analysis and coverage gates.
 
 ### [internals/image-build.md](internals/image-build.md)
 
@@ -166,3 +166,11 @@ host-CLI primitives.
 ### [internals/host-cli.md](internals/host-cli.md)
 
 - [Shared fs primitives](internals/host-cli.md#shared-fs-primitives)
+
+### [internals/sonarqube.md](internals/sonarqube.md)
+
+- [Private project, public repo](internals/sonarqube.md#private-project-public-repo)
+- [The two coverage numbers](internals/sonarqube.md#the-two-coverage-numbers)
+- [Where the gate is read](internals/sonarqube.md#where-the-gate-is-read)
+- [Cognitive Complexity is off for test files](internals/sonarqube.md#cognitive-complexity-is-off-for-test-files)
+- [Baseline: the 56 → 0 sweep](internals/sonarqube.md#baseline-the-56--0-sweep)

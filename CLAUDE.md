@@ -20,8 +20,17 @@
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
 | `renovate.json` | `npx --yes --package renovate renovate-config-validator renovate.json` | `ci.yml` (renovate-validate) |
+| `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
+| `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
+
+**Two gates block a merge on coverage**, and `make go-check` only mirrors one of them:
+
+- `ci.yml` (`test`) enforces a **75% floor on total statement coverage**, pinned in the workflow. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
+- `sonar.yml` (`analyze`) is a required check on `main` and goes red on a failing Quality Gate — **80% on new code**, a server-side threshold. Skipped, and therefore silently satisfied, whenever the SonarQube server is powered down (it runs 09:00–19:00 Europe/Rome, Mon–Fri).
+
+The two numbers use different denominators on purpose. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-numbers)
 
 ## Architecture
 
