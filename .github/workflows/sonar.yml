@@ -1,0 +1,71 @@
+name: SonarQube
+
+# No `pull_request` trigger: the SonarQube server is powered off outside
+# working hours by design, so a PR-time analysis would fail on most pushes for
+# a check that isn't required on `main` anyway. Post-merge plus a weekday
+# in-hours cron keeps the project view fresh without gating anyone.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 09:00 UTC, Mon-Fri — 11:00 CEST / 10:00 CET, comfortably inside the
+    # 09:00-19:00 Europe/Rome window the server is powered up for.
+    - cron: '0 9 * * 1-5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Reachability gate: a server that's off is a non-event, not a failure, so
+  # this reports green and `analyze` is skipped rather than failed.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      up: ${{ steps.check.outputs.up }}
+    steps:
+      - name: Check SonarQube availability
+        id: check
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          echo "::add-mask::$SONAR_HOST_URL"
+          if curl -sSf -m 10 "$SONAR_HOST_URL/api/system/status" | grep -q '"status":"UP"'; then
+            echo 'up=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'SonarQube is not reachable or not UP — skipping analysis.'
+          fi
+
+  analyze:
+    needs: preflight
+    if: needs.preflight.outputs.up == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history for blame/relevancy
+
+      # GitHub only redacts the secret's exact value; the scanner logs the host
+      # in normalised forms that wouldn't match. Mask it explicitly.
+      - name: Mask SONAR_HOST_URL in logs
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: echo "::add-mask::$SONAR_HOST_URL"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
