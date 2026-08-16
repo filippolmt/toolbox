@@ -54,7 +54,7 @@ func (RealGit) Run(args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return gitError(args, err)
 	}
 	return nil
 }
@@ -76,11 +76,15 @@ func (RealGit) PushDelete(ctx context.Context, root string, branches []string) e
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return gitError(args, err)
 	}
 	return nil
 }
 
+// gitError wraps a git invocation failure with the full argument list, so the
+// error names the exact command that failed. Every Git method routes through
+// it: the captured stderr is used when there is one (Output), and the bare
+// exit status otherwise (Run/PushDelete wire stderr straight to the terminal).
 func gitError(args []string, err error) error {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) && len(ee.Stderr) > 0 {

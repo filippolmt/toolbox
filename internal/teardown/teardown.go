@@ -58,7 +58,7 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 	_, stopErr := cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout})
 
 	if cerrdefs.IsNotFound(stopErr) {
-		ui.Warning("Container " + name + " not found")
+		ui.Warningf("Container %s not found", name)
 		return nil
 	}
 	if stopErr != nil {
@@ -74,7 +74,7 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 		return fmt.Errorf("failed to remove container %s: %w", name, rmErr)
 	}
 
-	ui.Success("Container " + name + " stopped and removed")
+	ui.Successf("Container %s stopped and removed", name)
 	return nil
 }
 
@@ -136,7 +136,7 @@ func OnShellExit(cli client.APIClient, name string) error {
 	inspect := result.Container
 
 	if execsRunning(ctx, cli, inspect) {
-		ui.Info("Container " + name + " still has active sessions — leaving it running")
+		ui.Infof("Container %s still has active sessions — leaving it running", name)
 		return nil
 	}
 
@@ -165,6 +165,6 @@ func killAutoRemove(ctx context.Context, cli client.APIClient, name string) erro
 	if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "KILL"}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
 		return fmt.Errorf("failed to kill container %s: %w", name, err)
 	}
-	ui.Success("Container " + name + " stopped (removing in background)")
+	ui.Successf("Container %s stopped (removing in background)", name)
 	return nil
 }

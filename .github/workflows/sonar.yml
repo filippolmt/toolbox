@@ -1,11 +1,17 @@
 name: SonarQube
 
-# No `pull_request` trigger: the SonarQube server is powered off outside
-# working hours by design, so a PR-time analysis would fail on most pushes for
-# a check that isn't required on `main` anyway. Post-merge plus a weekday
-# in-hours cron keeps the project view fresh without gating anyone.
+# A failing Quality Gate blocks the merge: `analyze` is a required check on
+# `main`, and it goes red when the gate does. The server is powered off outside
+# working hours by design, so `preflight` skips `analyze` when it cannot be
+# reached and GitHub counts the skip as satisfying the check — which is why the
+# coverage floor that must hold unconditionally lives in `ci.yml` instead.
+#
+# Full rationale (private project in a public repo, the hand-rolled comment, the
+# two coverage numbers): docs/internals/sonarqube.md.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     # 09:00 UTC, Mon-Fri — 11:00 CEST / 10:00 CET, comfortably inside the
@@ -33,6 +39,13 @@ jobs:
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
+          # A fork PR gets no secrets, which is indistinguishable from a
+          # misconfigured repo at this point — either way there is nothing to
+          # analyse against.
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo 'SONAR_HOST_URL is unset (fork PR, or secrets not configured) — skipping analysis.'
+            exit 0
+          fi
           echo "::add-mask::$SONAR_HOST_URL"
           if curl -sSf -m 10 "$SONAR_HOST_URL/api/system/status" | grep -q '"status":"UP"'; then
             echo 'up=true' >> "$GITHUB_OUTPUT"
@@ -45,6 +58,9 @@ jobs:
     if: needs.preflight.outputs.up == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write   # the PR comment only; unused on push and schedule
     steps:
       - uses: actions/checkout@v7
         with:
@@ -65,7 +81,29 @@ jobs:
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
+      # On a pull_request event the scanner's GitHub Actions autoconfiguration
+      # supplies sonar.pullrequest.{key,branch,base}, so the analysis lands
+      # against the PR rather than the branch.
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # Reads the Quality Gate and fails the job when it is red — on `main` and
+      # on the cron run too, so a red default branch is not silent. On a
+      # same-repo PR it additionally renders the gate and the new issues into
+      # the PR, and posts before failing so the reason is readable there before
+      # the check goes red.
+      #
+      # Fork PRs never reach this step: with no secrets, preflight skips the
+      # whole job. Hence PR_NUMBER is unconditional — it is empty on push and
+      # schedule, which is what selects the branch-scoped, comment-free mode.
+      - name: Check the Quality Gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.number }}
+          BRANCH: ${{ github.ref_name }}
+        run: ./.github/scripts/sonar-gate.sh

@@ -108,11 +108,11 @@ func init() {
 	mountsAddCmd.Flags().StringVar(&mountsAddTarget, "target", "", "container path to bind to (required)")
 	_ = mountsAddCmd.MarkFlagRequired("target")
 	mountsAddCmd.Flags().BoolVar(&mountsAddReadonly, "readonly", false, "mount read-only")
-	mountsAddCmd.Flags().StringVar(&mountsAddWhere, "where", "global", "config file to write: global|local")
+	mountsAddCmd.Flags().StringVar(&mountsAddWhere, "where", "global", whereFlagUsage)
 
-	mountsDisableCmd.Flags().StringVar(&mountsDisableWhere, "where", "global", "config file to write: global|local")
-	mountsRemoveCmd.Flags().StringVar(&mountsRemoveWhere, "where", "global", "config file to write: global|local")
-	mountsRootCmd.Flags().StringVar(&mountsRootWhere, "where", "global", "config file to write: global|local")
+	mountsDisableCmd.Flags().StringVar(&mountsDisableWhere, "where", "global", whereFlagUsage)
+	mountsRemoveCmd.Flags().StringVar(&mountsRemoveWhere, "where", "global", whereFlagUsage)
+	mountsRootCmd.Flags().StringVar(&mountsRootWhere, "where", "global", whereFlagUsage)
 
 	mountsCmd.AddCommand(mountsListCmd)
 	mountsCmd.AddCommand(mountsAddCmd)
@@ -133,7 +133,7 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if cfg == nil {
-		return errors.New("internal: configuration not loaded")
+		return errConfigNotLoaded
 	}
 	classified, err := mountplan.Classify(cfg)
 	if err != nil {
@@ -189,7 +189,7 @@ func runMountsAdd(cmd *cobra.Command, args []string) error {
 func runMountsDisable(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	if cfg == nil {
-		return errors.New("internal: configuration not loaded")
+		return errConfigNotLoaded
 	}
 	// A {name, disabled: true} patch referencing a name unknown to the merge
 	// fails the next config load — validate against defaults + user entries

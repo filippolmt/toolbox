@@ -160,36 +160,52 @@ func (m Model) renderEditor() string {
 		fmt.Fprintf(&b, "%s\n\n", m.ed.input.View())
 		b.WriteString(styleKeybar.Render("enter: save   esc: cancel"))
 	case edEnum, edTri:
-		for i, opt := range m.ed.options {
-			cursor := "  "
-			label := opt + optionTags(opt, m.ed.current, m.ed.def)
-			if i == m.ed.cursor {
-				cursor = "> "
-				label = styleSelected.Render(label)
-			}
-			fmt.Fprintf(&b, "%s%s\n", cursor, label)
-		}
-		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("↑/↓: choose   enter: save   esc: cancel"))
+		b.WriteString(m.renderOptions())
 	case edMulti:
-		for i, opt := range m.ed.options {
-			cursor := "  "
-			if i == m.ed.cursor {
-				cursor = "> "
-			}
-			box := "[ ]"
-			if m.ed.selected[opt] {
-				box = "[x]"
-			}
-			line := fmt.Sprintf("%s%s %s", cursor, box, opt)
-			if i == m.ed.cursor {
-				line = styleSelected.Render(line)
-			}
-			fmt.Fprintf(&b, "%s\n", line)
-		}
-		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("space: toggle   enter: save   esc: cancel"))
+		b.WriteString(m.renderCheckboxes())
 	case edRows:
 		b.WriteString(m.renderRows())
 	}
+	return b.String()
+}
+
+// renderOptions is the single-choice list behind edEnum / edTri: one option per
+// line, the cursor one highlighted, each tagged with current/default.
+func (m Model) renderOptions() string {
+	var b strings.Builder
+	for i, opt := range m.ed.options {
+		cursor := "  "
+		label := opt + optionTags(opt, m.ed.current, m.ed.def)
+		if i == m.ed.cursor {
+			cursor = "> "
+			label = styleSelected.Render(label)
+		}
+		fmt.Fprintf(&b, "%s%s\n", cursor, label)
+	}
+	fmt.Fprintf(&b, "\n%s", styleKeybar.Render("↑/↓: choose   enter: save   esc: cancel"))
+	return b.String()
+}
+
+// renderCheckboxes is the multi-select list behind edMulti: every option
+// carries its own [x]/[ ] box, independent of where the cursor sits.
+func (m Model) renderCheckboxes() string {
+	var b strings.Builder
+	for i, opt := range m.ed.options {
+		cursor := "  "
+		if i == m.ed.cursor {
+			cursor = "> "
+		}
+		box := "[ ]"
+		if m.ed.selected[opt] {
+			box = "[x]"
+		}
+		line := fmt.Sprintf("%s%s %s", cursor, box, opt)
+		if i == m.ed.cursor {
+			line = styleSelected.Render(line)
+		}
+		fmt.Fprintf(&b, "%s\n", line)
+	}
+	fmt.Fprintf(&b, "\n%s", styleKeybar.Render("space: toggle   enter: save   esc: cancel"))
 	return b.String()
 }
 
@@ -215,32 +231,42 @@ func (m Model) renderRows() string {
 		fmt.Fprintf(&b, "%s\n", styleKeybar.Render("(no entries)"))
 	}
 	for i, r := range m.ed.rows {
-		cursor := "  "
-		if i == m.ed.cursor && !m.ed.adding {
-			cursor = "> "
-		}
-		var line string
-		if m.ed.rowPair {
-			line = fmt.Sprintf("%s%s = %s", cursor, r[0], r[1])
-		} else {
-			line = cursor + r[0]
-		}
-		if i == m.ed.cursor && !m.ed.rowEdit {
-			line = styleSelected.Render(line)
-		}
-		fmt.Fprintf(&b, "%s\n", line)
+		fmt.Fprintf(&b, "%s\n", m.rowLine(i, r))
 	}
-	if m.ed.rowEdit {
-		label := "value"
-		if m.ed.rowPair && m.ed.field == 0 {
-			label = "key"
-		}
-		fmt.Fprintf(&b, "\n%s: %s\n", label, m.ed.input.View())
-		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("enter: next/commit   esc: cancel field"))
-	} else {
-		fmt.Fprintf(&b, "\n%s", styleKeybar.Render("a: add   enter: edit   d: delete   s: save   esc: cancel"))
-	}
+	b.WriteString(m.rowsFooter())
 	return b.String()
+}
+
+// rowLine renders row i: a "key = value" pair or a bare value, cursor-marked
+// and highlighted — except while that very row is being edited in place, where
+// the field prompt below carries the focus instead.
+func (m Model) rowLine(i int, r [2]string) string {
+	cursor := "  "
+	if i == m.ed.cursor && !m.ed.adding {
+		cursor = "> "
+	}
+	line := cursor + r[0]
+	if m.ed.rowPair {
+		line = fmt.Sprintf("%s%s = %s", cursor, r[0], r[1])
+	}
+	if i == m.ed.cursor && !m.ed.rowEdit {
+		line = styleSelected.Render(line)
+	}
+	return line
+}
+
+// rowsFooter is the keybar under the row list: the field prompt while a row is
+// being edited, the row-list keys otherwise.
+func (m Model) rowsFooter() string {
+	if !m.ed.rowEdit {
+		return "\n" + styleKeybar.Render("a: add   enter: edit   d: delete   s: save   esc: cancel")
+	}
+	label := "value"
+	if m.ed.rowPair && m.ed.field == 0 {
+		label = "key"
+	}
+	return fmt.Sprintf("\n%s: %s\n\n%s", label, m.ed.input.View(),
+		styleKeybar.Render("enter: next/commit   esc: cancel field"))
 }
 
 // renderPreview shows the change the pending edit would make to the target

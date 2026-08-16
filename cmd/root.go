@@ -10,6 +10,26 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
+// Wording shared across subcommands. Kept in one place so `toolbox mounts add
+// --help` and `toolbox shells add --help` cannot drift apart.
+const (
+	// whereFlagUsage documents the --where flag every config-mutating
+	// subcommand carries.
+	whereFlagUsage = "config file to write: global|local"
+)
+
+// dockerClientErr wraps a failure to construct the moby client. A function
+// rather than a shared format constant: `fmt.Errorf(const, err)` hides the
+// format string from `go vet`'s printf checking and from grep at every call
+// site, while the wording still lives in exactly one place.
+func dockerClientErr(err error) error {
+	return fmt.Errorf("failed to create Docker client: %w", err)
+}
+
+// errConfigNotLoaded reports that a subcommand ran without cobra's
+// OnInitialize having populated cfg — a wiring bug, never a user error.
+var errConfigNotLoaded = errors.New("internal: configuration not loaded")
+
 // cfgFile holds the value of the --config flag (D-14: cobra-flag binding stays
 // in cmd/root.go because the flag IS a cobra concern). Empty when unset.
 var cfgFile string

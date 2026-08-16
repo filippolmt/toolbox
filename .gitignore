@@ -4,6 +4,15 @@
 # Go binary
 toolbox
 
+# Coverage profile: produced by the CI and SonarQube workflows and by any local
+# `go test -coverprofile`, consumed by the scanner, never committed.
+coverage.out
+
+# Rendered Quality Gate comment: .github/scripts/sonar-gate.sh builds it in the
+# workspace before posting it (or printing it under DRY_RUN=1). Same deal as
+# coverage.out — a CI by-product that a local dry run also leaves behind.
+sonar-comment.md
+
 # Per-developer toolbox config override
 .toolbox.yaml
 

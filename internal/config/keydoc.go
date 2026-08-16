@@ -14,6 +14,10 @@ type KeyDoc struct {
 	Default string // human-readable built-in default
 }
 
+// defaultNone is the Default rendering for a key that ships empty — there is
+// no built-in value, not a value that happens to be blank.
+const defaultNone = "(none)"
+
 // KeyDocs returns the per-key documentation keyed by the top-level config key
 // (the `mapstructure` tag). Every SchemaKeys() field except the deprecated
 // browser_bridge alias has an entry; keydoc_test asserts that coverage.
@@ -33,7 +37,7 @@ func KeyDocs() map[string]KeyDoc {
 		},
 		"registry_mirror": {
 			Summary: "Relocate only the registry host of the canonical image (proxy hub / pull-through cache). Bare host[:port][/path], no scheme.",
-			Default: "(none)",
+			Default: defaultNone,
 		},
 		"pull": {
 			Summary: "Registry-sync policy every shell: auto (TTL-cached) | always (force) | never (air-gapped).",
@@ -57,11 +61,11 @@ func KeyDocs() map[string]KeyDoc {
 		},
 		"env": {
 			Summary: "Arbitrary KEY=VALUE pairs injected into every shell (after curated TOOLBOX_*/PWD). TOOLBOX_* and PWD are reserved.",
-			Default: "(none)",
+			Default: defaultNone,
 		},
 		"shells": {
 			Summary: "Reusable named workspaces for `toolbox shell <name>`; each path is bind-mounted path -> path.",
-			Default: "(none)",
+			Default: defaultNone,
 		},
 		"mounts_root": {
 			Summary: "Retarget every default mount under ~/.toolbox/ to this prefix. Absolute (/path) or home-relative (~/sub); bare ~ rejected.",

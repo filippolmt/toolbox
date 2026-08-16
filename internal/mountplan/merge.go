@@ -140,68 +140,111 @@ func profileHostSharedWarnings(merged []config.Mount, profile *Profile) []string
 // users can opt out of a default (e.g. docker-sock) without redeclaring the
 // rest of the list. Patches referencing an unknown Name fail loudly.
 func mergeMounts(base, user []config.Mount) ([]config.Mount, error) {
-	out := make([]config.Mount, len(base))
-	copy(out, base)
-	nameIdx := map[string]int{}
-	for i, m := range out {
-		if m.Name != "" {
-			nameIdx[m.Name] = i
-		}
-	}
-
-	var unknown []string
+	acc := newMountAccumulator(base)
 	for _, u := range user {
-		switch {
-		case u.Name != "" && u.Target == "":
-			idx, ok := nameIdx[u.Name]
-			if !ok {
-				unknown = append(unknown, u.Name)
-				continue
-			}
-			if u.Source != "" {
-				out[idx].Source = u.Source
-			}
-			if u.SymlinkFrom != "" {
-				out[idx].SymlinkFrom = u.SymlinkFrom
-			}
-			if u.ReadOnly {
-				out[idx].ReadOnly = true
-			}
-			if u.CreateIfMissing {
-				out[idx].CreateIfMissing = true
-			}
-			if u.Disabled {
-				out[idx].Disabled = true
-			}
-		case u.Name != "":
-			if u.Source == "" {
-				return nil, fmt.Errorf("mounts[%q]: source must not be empty when target is set", u.Name)
-			}
-			if idx, ok := nameIdx[u.Name]; ok {
-				out[idx] = u
-			} else {
-				nameIdx[u.Name] = len(out)
-				out = append(out, u)
-			}
-		default:
-			if u.Source == "" {
-				return nil, fmt.Errorf("mounts: anonymous mount (target %q) must declare a non-empty source", u.Target)
-			}
-			out = append(out, u)
+		if err := acc.merge(u); err != nil {
+			return nil, err
 		}
 	}
-
-	if len(unknown) > 0 {
-		sort.Strings(unknown)
-		return nil, fmt.Errorf("mounts: patch references unknown mount name(s): %s", strings.Join(unknown, ", "))
+	if len(acc.unknown) > 0 {
+		sort.Strings(acc.unknown)
+		return nil, fmt.Errorf("mounts: patch references unknown mount name(s): %s", strings.Join(acc.unknown, ", "))
 	}
+	return dropDisabled(acc.mounts), nil
+}
 
-	final := make([]config.Mount, 0, len(out))
-	for _, m := range out {
-		if m.Disabled {
-			continue
+// mountAccumulator is the in-progress merge: the mount list, the name→index
+// map that makes a patch lookup O(1), and the unknown patch names seen so far.
+// The three are mutated together by every merge step — the list can reallocate,
+// which the index must survive — so they are one value rather than three
+// parameters threaded through a free function.
+type mountAccumulator struct {
+	mounts  []config.Mount
+	nameIdx map[string]int
+	unknown []string
+}
+
+// newMountAccumulator seeds the merge with a copy of base, indexed by name.
+func newMountAccumulator(base []config.Mount) *mountAccumulator {
+	a := &mountAccumulator{
+		mounts:  make([]config.Mount, len(base)),
+		nameIdx: make(map[string]int, len(base)),
+	}
+	copy(a.mounts, base)
+	for i, m := range a.mounts {
+		if m.Name != "" {
+			a.nameIdx[m.Name] = i
 		}
-		final = append(final, m)
 	}
-	return final, nil
+	return a
+}
+
+// merge folds a single user entry in, following the three rules in mergeMounts'
+// doc comment. A patch naming a mount that does not exist is recorded on
+// a.unknown rather than returned as an error, so mergeMounts can report every
+// bad name in one message instead of failing on the first.
+func (a *mountAccumulator) merge(u config.Mount) error {
+	switch {
+	case u.Name != "" && u.Target == "":
+		idx, ok := a.nameIdx[u.Name]
+		if !ok {
+			a.unknown = append(a.unknown, u.Name)
+			return nil
+		}
+		applyMountPatch(&a.mounts[idx], u)
+
+	case u.Name != "":
+		if u.Source == "" {
+			return fmt.Errorf("mounts[%q]: source must not be empty when target is set", u.Name)
+		}
+		if idx, ok := a.nameIdx[u.Name]; ok {
+			a.mounts[idx] = u
+			return nil
+		}
+		a.add(u)
+
+	default:
+		if u.Source == "" {
+			return fmt.Errorf("mounts: anonymous mount (target %q) must declare a non-empty source", u.Target)
+		}
+		a.add(u)
+	}
+	return nil
+}
+
+// add appends a new mount, indexing it by name so a later patch can find it.
+// Anonymous mounts carry no name and are simply appended.
+func (a *mountAccumulator) add(u config.Mount) {
+	if u.Name != "" {
+		a.nameIdx[u.Name] = len(a.mounts)
+	}
+	a.mounts = append(a.mounts, u)
+}
+
+// applyMountPatch overlays the non-zero fields of patch onto dst. Bool fields
+// can only ever flip false→true: mapstructure cannot distinguish "not set" from
+// an explicit false, so a patch adds flags but never clears them — the replace
+// form (Name + Target) is how you turn one off.
+func applyMountPatch(dst *config.Mount, patch config.Mount) {
+	if patch.Source != "" {
+		dst.Source = patch.Source
+	}
+	if patch.SymlinkFrom != "" {
+		dst.SymlinkFrom = patch.SymlinkFrom
+	}
+	dst.ReadOnly = dst.ReadOnly || patch.ReadOnly
+	dst.CreateIfMissing = dst.CreateIfMissing || patch.CreateIfMissing
+	dst.Disabled = dst.Disabled || patch.Disabled
+}
+
+// dropDisabled removes every opted-out entry, so a user can disable a default
+// (e.g. docker-sock) without redeclaring the rest of the list.
+func dropDisabled(mounts []config.Mount) []config.Mount {
+	final := make([]config.Mount, 0, len(mounts))
+	for _, m := range mounts {
+		if !m.Disabled {
+			final = append(final, m)
+		}
+	}
+	return final
 }

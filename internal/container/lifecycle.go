@@ -355,7 +355,7 @@ func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []strin
 		// on every shell.
 		return base
 	}
-	ui.Info(fmt.Sprintf("proximo: routing %d host(s) via host-gateway", len(hosts)))
+	ui.Infof("proximo: routing %d host(s) via host-gateway", len(hosts))
 	out := make([]string, 0, len(base)+len(hosts))
 	out = append(out, base...)
 	out = append(out, hosts...)

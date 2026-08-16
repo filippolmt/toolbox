@@ -361,36 +361,51 @@ func validateBareRef(key, s, shape string) error {
 // inside the container instead of erroring anywhere.
 func ValidateSDD(m map[string]SDDSkill) error {
 	for _, k := range slices.Sorted(maps.Keys(m)) { // deterministic first-error across runs
-		v := m[k]
-		if v.Steps == nil {
-			continue
+		if err := validateSDDSteps(k, m[k]); err != nil {
+			return err
 		}
-		if _, ok := sdd.Lookup(k); !ok {
-			return fmt.Errorf(
-				"sdd.%s: unknown integration for steps override; supported: %s",
-				k, strings.Join(sdd.Keys(), ", "))
+	}
+	return nil
+}
+
+// validateSDDSteps checks one sdd.<key> entry. A bool-shorthand entry
+// (Steps == nil) passes untouched, per the rules in ValidateSDD's doc.
+func validateSDDSteps(k string, v SDDSkill) error {
+	if v.Steps == nil {
+		return nil
+	}
+	if _, ok := sdd.Lookup(k); !ok {
+		return fmt.Errorf(
+			"sdd.%s: unknown integration for steps override; supported: %s",
+			k, strings.Join(sdd.Keys(), ", "))
+	}
+	if len(v.Steps) == 0 {
+		return fmt.Errorf(
+			"sdd.%s.steps: must list at least one step (or use `sdd.%s: true` for the registry default)",
+			k, k)
+	}
+	for i, step := range v.Steps {
+		if len(step) == 0 {
+			return fmt.Errorf("sdd.%s.steps[%d]: step must list at least one argument", k, i)
 		}
-		if len(v.Steps) == 0 {
-			return fmt.Errorf(
-				"sdd.%s.steps: must list at least one step (or use `sdd.%s: true` for the registry default)",
-				k, k)
-		}
-		for i, step := range v.Steps {
-			if len(step) == 0 {
-				return fmt.Errorf("sdd.%s.steps[%d]: step must list at least one argument", k, i)
-			}
-			for _, tok := range step {
-				if tok == "" ||
-					strings.Contains(tok, sdd.StepSeparator) ||
-					strings.ContainsFunc(tok, unicode.IsSpace) {
-					return fmt.Errorf(
-						"sdd.%s.steps[%d]: invalid token %q: tokens must be non-empty, whitespace-free, and must not contain %q",
-						k, i, tok, sdd.StepSeparator)
-				}
+		for _, tok := range step {
+			if !validStepToken(tok) {
+				return fmt.Errorf(
+					"sdd.%s.steps[%d]: invalid token %q: tokens must be non-empty, whitespace-free, and must not contain %q",
+					k, i, tok, sdd.StepSeparator)
 			}
 		}
 	}
 	return nil
+}
+
+// validStepToken reports whether tok survives the host→container encoding
+// intact: whitespace or a step separator inside a token would shift argument
+// boundaries when entrypoint.sh re-splits, instead of erroring anywhere.
+func validStepToken(tok string) bool {
+	return tok != "" &&
+		!strings.Contains(tok, sdd.StepSeparator) &&
+		!strings.ContainsFunc(tok, unicode.IsSpace)
 }
 
 // ReservedEnvPrefix is the namespace owned by the curated session env

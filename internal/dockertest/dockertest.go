@@ -21,8 +21,12 @@ import (
 type NotFoundError struct{ Msg string }
 
 func (e *NotFoundError) Error() string { return e.Msg }
-func (e *NotFoundError) NotFound()     {}
 func (e *NotFoundError) Unwrap() error { return nil }
+
+func (e *NotFoundError) NotFound() {
+	// Marker method: its presence alone is what satisfies the errdefs
+	// interface, so there is no behaviour to implement.
+}
 
 // PullResponse adapts a plain io.ReadCloser to client.ImagePullResponse: the
 // SDK's pull result is an interface with no public constructor, so a fake has
@@ -33,5 +37,8 @@ type PullResponse struct {
 
 func (PullResponse) Wait(context.Context) error { return nil }
 func (PullResponse) JSONMessages(context.Context) iter.Seq2[jsonstream.Message, error] {
-	return func(func(jsonstream.Message, error) bool) {}
+	return func(func(jsonstream.Message, error) bool) {
+		// An empty iterator: a fake pull streams no progress messages, so the
+		// sequence yields nothing and never calls yield.
+	}
 }

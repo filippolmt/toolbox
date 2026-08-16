@@ -61,28 +61,10 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	}
 	defer resp.Close()
 
-	// TTY raw mode: capture every keypress and forward it to the container.
-	// If stdin is not a terminal (e.g. piped), proceed without raw mode.
 	fd := int(os.Stdin.Fd())
-	var oldState *term.State
-	if term.IsTerminal(fd) {
-		oldState, err = term.MakeRaw(fd)
-		if err != nil {
-			return fmt.Errorf("set stdin to raw mode: %w", err)
-		}
-	}
-
-	// Restore TTY exactly once, whether via defer or the signal handler.
-	var restoreOnce sync.Once
-	restoreTerm := func() {
-		if oldState == nil {
-			return
-		}
-		restoreOnce.Do(func() {
-			if rerr := term.Restore(fd, oldState); rerr != nil {
-				ui.Warning("terminal restore failed: " + rerr.Error())
-			}
-		})
+	restoreTerm, isTTY, err := rawTerminal(fd)
+	if err != nil {
+		return err
 	}
 	defer restoreTerm()
 
@@ -111,36 +93,8 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	}()
 
 	// Forward terminal resize (SIGWINCH) to the container exec session.
-	if oldState != nil {
-		winchCh := make(chan os.Signal, 1)
-		signal.Notify(winchCh, syscall.SIGWINCH)
-		defer signal.Stop(winchCh)
-
-		go func() {
-			for {
-				select {
-				case <-winchCh:
-					w, h, sizeErr := term.GetSize(fd)
-					if sizeErr != nil {
-						continue
-					}
-					_, _ = cli.ExecResize(sessionCtx, execResp.ID, client.ExecResizeOptions{
-						Height: uint(h),
-						Width:  uint(w),
-					})
-				case <-sessionCtx.Done():
-					return
-				}
-			}
-		}()
-
-		// Initial resize to sync dimensions.
-		if w, h, sizeErr := term.GetSize(fd); sizeErr == nil {
-			_, _ = cli.ExecResize(sessionCtx, execResp.ID, client.ExecResizeOptions{
-				Height: uint(h),
-				Width:  uint(w),
-			})
-		}
+	if isTTY {
+		defer forwardResize(sessionCtx, cli, execResp.ID, fd)()
 	}
 
 	// Bidirectional I/O; the stdout copy drives lifecycle. The stdin
@@ -157,6 +111,62 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
 	return diagnoseSessionExit(ctx, cli, containerID, tail.String())
+}
+
+// rawTerminal puts stdin in raw mode so every keypress is captured and
+// forwarded to the container, and returns the func that restores it. If stdin
+// is not a terminal (e.g. piped), isTTY is false and restore is a no-op.
+// Restore runs at most once, so the caller's defer and the signal handler can
+// both call it.
+func rawTerminal(fd int) (restore func(), isTTY bool, err error) {
+	if !term.IsTerminal(fd) {
+		noop := func() {
+			// Stdin was never put in raw mode, so there is nothing to restore —
+			// callers defer this unconditionally.
+		}
+		return noop, false, nil
+	}
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, false, fmt.Errorf("set stdin to raw mode: %w", err)
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if rerr := term.Restore(fd, oldState); rerr != nil {
+				ui.Warning("terminal restore failed: " + rerr.Error())
+			}
+		})
+	}, true, nil
+}
+
+// forwardResize keeps the container exec's terminal size in sync with the local
+// one: an initial resize to sync dimensions, then one per SIGWINCH until ctx is
+// done. The returned func detaches the signal handler.
+func forwardResize(ctx context.Context, cli client.APIClient, execID string, fd int) (stop func()) {
+	winchCh := make(chan os.Signal, 1)
+	signal.Notify(winchCh, syscall.SIGWINCH)
+
+	resize := func() {
+		w, h, err := term.GetSize(fd)
+		if err != nil {
+			return
+		}
+		_, _ = cli.ExecResize(ctx, execID, client.ExecResizeOptions{Height: uint(h), Width: uint(w)})
+	}
+	go func() {
+		for {
+			select {
+			case <-winchCh:
+				resize()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	resize()
+
+	return func() { signal.Stop(winchCh) }
 }
 
 // tailBuffer is an io.Writer that retains only the last max bytes written. It

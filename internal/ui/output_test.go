@@ -55,6 +55,29 @@ func TestInfoWritesToStderr(t *testing.T) {
 	}
 }
 
+// The printf variants exist so callers stop wrapping every interpolated
+// message in fmt.Sprintf: the wrapper adds an import and a nesting level, and
+// building the message by concatenation instead duplicates the shared prefix
+// literal across call sites.
+func TestFormattingVariantsWriteToStderr(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fn   func()
+		want string
+	}{
+		{"Successf", func() { Successf("Container %s stopped", "web") }, "OK: Container web stopped"},
+		{"Warningf", func() { Warningf("Container %s not found", "web") }, "WARN: Container web not found"},
+		{"Infof", func() { Infof("routing %d host(s)", 3) }, "routing 3 host(s)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := captureStderr(t, tc.fn)
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("stderr = %q, want to contain %q", out, tc.want)
+			}
+		})
+	}
+}
+
 // TestOutputDoesNotWriteToStdout locks the stdout/stderr discipline in place:
 // if ui ever regresses to fmt.Println (stdout), pipelines like
 // `toolbox shell | grep foo` get corrupted by diagnostic lines.

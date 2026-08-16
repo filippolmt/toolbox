@@ -32,3 +32,17 @@ func Warning(msg string) {
 func Info(msg string) {
 	fmt.Fprintln(os.Stderr, infoStyle.Render("  "+msg))
 }
+
+// Successf, Warningf and Infof are the printf forms. Callers interpolating a
+// value use these rather than wrapping the message in fmt.Sprintf themselves —
+// and rather than concatenating, which duplicates the shared prefix literal
+// ("Container %s …", used four times in internal/teardown) across call sites.
+
+// Successf prints a formatted success message with an "OK: " prefix.
+func Successf(format string, a ...any) { Success(fmt.Sprintf(format, a...)) }
+
+// Warningf prints a formatted warning message with a "WARN: " prefix.
+func Warningf(format string, a ...any) { Warning(fmt.Sprintf(format, a...)) }
+
+// Infof prints a formatted informational message with no prefix.
+func Infof(format string, a ...any) { Info(fmt.Sprintf(format, a...)) }
