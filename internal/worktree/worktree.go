@@ -626,10 +626,11 @@ func (s Service) Sync(opts SyncOpts) error {
 		return err
 	}
 
-	branch, wtPath, err := s.syncTarget(root, opts)
+	wtPath, err := s.syncTarget(root, opts)
 	if err != nil {
 		return err
 	}
+	branch := opts.Branch
 
 	// A rebase already in progress means a previous sync stopped on a conflict
 	// the user has since resolved: resume it (continue, then push) rather than
@@ -665,25 +666,24 @@ func (s Service) Sync(opts SyncOpts) error {
 		func() bool { return s.rebaseInProgress(wtPath) })
 }
 
-// syncTarget resolves which worktree and branch a sync acts on. With
-// opts.Branch empty it takes the worktree the command is invoked from, but only
-// a toolbox worktree — never the primary checkout. Without that guard, running
-// `sync` from the main repo on `main` would fetch, rebase and force-push the
-// shared default branch. The returned branch is empty in that case: the caller
-// resolves it after the rebase-in-progress check, since a rebase leaves HEAD
-// detached.
-func (s Service) syncTarget(root string, opts SyncOpts) (branch, wtPath string, err error) {
+// syncTarget resolves which worktree a sync acts on. With opts.Branch empty it
+// takes the worktree the command is invoked from, but only a toolbox worktree —
+// never the primary checkout. Without that guard, running `sync` from the main
+// repo on `main` would fetch, rebase and force-push the shared default branch.
+// The branch is not resolved here: with opts.Branch set the caller already has
+// it, and without it the lookup has to wait until after the
+// rebase-in-progress check, since a rebase leaves HEAD detached.
+func (s Service) syncTarget(root string, opts SyncOpts) (wtPath string, err error) {
 	if opts.Branch != "" {
-		wtPath, err = s.resolveToolboxWorktree(root, opts.Branch)
-		return opts.Branch, wtPath, err
+		return s.resolveToolboxWorktree(root, opts.Branch)
 	}
 	if wtPath, err = s.git.Output("rev-parse", "--show-toplevel"); err != nil {
-		return "", "", err
+		return "", err
 	}
 	if !isToolboxWorktree(root, wtPath) {
-		return "", "", fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
+		return "", fmt.Errorf("%s is not a toolbox worktree; run sync from a 'toolbox worktree' checkout or pass a branch", wtPath)
 	}
-	return "", wtPath, nil
+	return wtPath, nil
 }
 
 // syncBase resolves the base a sync rebases onto. defaultBranch is only a

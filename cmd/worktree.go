@@ -405,7 +405,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf(dockerClientErrFmt, err)
+		return dockerClientErr(err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()
@@ -434,7 +434,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf(dockerClientErrFmt, err)
+		return dockerClientErr(err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()
@@ -445,7 +445,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 func runWorktreeList(cmd *cobra.Command, _ []string) error {
 	cli, err := container.NewClient()
 	if err != nil {
-		return fmt.Errorf(dockerClientErrFmt, err)
+		return dockerClientErr(err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()

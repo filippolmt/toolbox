@@ -140,67 +140,85 @@ func profileHostSharedWarnings(merged []config.Mount, profile *Profile) []string
 // users can opt out of a default (e.g. docker-sock) without redeclaring the
 // rest of the list. Patches referencing an unknown Name fail loudly.
 func mergeMounts(base, user []config.Mount) ([]config.Mount, error) {
-	out := make([]config.Mount, len(base))
-	copy(out, base)
-	nameIdx := map[string]int{}
-	for i, m := range out {
-		if m.Name != "" {
-			nameIdx[m.Name] = i
-		}
-	}
-
-	var unknown []string
+	acc := newMountAccumulator(base)
 	for _, u := range user {
-		next, unknownName, err := mergeOne(out, nameIdx, u)
-		if err != nil {
+		if err := acc.merge(u); err != nil {
 			return nil, err
 		}
-		out = next
-		if unknownName != "" {
-			unknown = append(unknown, unknownName)
-		}
 	}
-
-	if len(unknown) > 0 {
-		sort.Strings(unknown)
-		return nil, fmt.Errorf("mounts: patch references unknown mount name(s): %s", strings.Join(unknown, ", "))
+	if len(acc.unknown) > 0 {
+		sort.Strings(acc.unknown)
+		return nil, fmt.Errorf("mounts: patch references unknown mount name(s): %s", strings.Join(acc.unknown, ", "))
 	}
-
-	return dropDisabled(out), nil
+	return dropDisabled(acc.mounts), nil
 }
 
-// mergeOne folds a single user entry into acc, following the three rules in
-// mergeMounts' doc comment, and returns the (possibly reallocated) slice. An
-// unknown patch name is reported as unknownName rather than an error, so
-// mergeMounts can gather every bad name into one message instead of failing on
-// the first.
-func mergeOne(acc []config.Mount, nameIdx map[string]int, u config.Mount) (out []config.Mount, unknownName string, err error) {
+// mountAccumulator is the in-progress merge: the mount list, the name→index
+// map that makes a patch lookup O(1), and the unknown patch names seen so far.
+// The three are mutated together by every merge step — the list can reallocate,
+// which the index must survive — so they are one value rather than three
+// parameters threaded through a free function.
+type mountAccumulator struct {
+	mounts  []config.Mount
+	nameIdx map[string]int
+	unknown []string
+}
+
+// newMountAccumulator seeds the merge with a copy of base, indexed by name.
+func newMountAccumulator(base []config.Mount) *mountAccumulator {
+	a := &mountAccumulator{
+		mounts:  make([]config.Mount, len(base)),
+		nameIdx: make(map[string]int, len(base)),
+	}
+	copy(a.mounts, base)
+	for i, m := range a.mounts {
+		if m.Name != "" {
+			a.nameIdx[m.Name] = i
+		}
+	}
+	return a
+}
+
+// merge folds a single user entry in, following the three rules in mergeMounts'
+// doc comment. A patch naming a mount that does not exist is recorded on
+// a.unknown rather than returned as an error, so mergeMounts can report every
+// bad name in one message instead of failing on the first.
+func (a *mountAccumulator) merge(u config.Mount) error {
 	switch {
 	case u.Name != "" && u.Target == "":
-		idx, ok := nameIdx[u.Name]
+		idx, ok := a.nameIdx[u.Name]
 		if !ok {
-			return acc, u.Name, nil
+			a.unknown = append(a.unknown, u.Name)
+			return nil
 		}
-		applyMountPatch(&acc[idx], u)
-		return acc, "", nil
+		applyMountPatch(&a.mounts[idx], u)
 
 	case u.Name != "":
 		if u.Source == "" {
-			return nil, "", fmt.Errorf("mounts[%q]: source must not be empty when target is set", u.Name)
+			return fmt.Errorf("mounts[%q]: source must not be empty when target is set", u.Name)
 		}
-		if idx, ok := nameIdx[u.Name]; ok {
-			acc[idx] = u
-			return acc, "", nil
+		if idx, ok := a.nameIdx[u.Name]; ok {
+			a.mounts[idx] = u
+			return nil
 		}
-		nameIdx[u.Name] = len(acc)
-		return append(acc, u), "", nil
+		a.add(u)
 
 	default:
 		if u.Source == "" {
-			return nil, "", fmt.Errorf("mounts: anonymous mount (target %q) must declare a non-empty source", u.Target)
+			return fmt.Errorf("mounts: anonymous mount (target %q) must declare a non-empty source", u.Target)
 		}
-		return append(acc, u), "", nil
+		a.add(u)
 	}
+	return nil
+}
+
+// add appends a new mount, indexing it by name so a later patch can find it.
+// Anonymous mounts carry no name and are simply appended.
+func (a *mountAccumulator) add(u config.Mount) {
+	if u.Name != "" {
+		a.nameIdx[u.Name] = len(a.mounts)
+	}
+	a.mounts = append(a.mounts, u)
 }
 
 // applyMountPatch overlays the non-zero fields of patch onto dst. Bool fields

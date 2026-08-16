@@ -16,9 +16,15 @@ const (
 	// whereFlagUsage documents the --where flag every config-mutating
 	// subcommand carries.
 	whereFlagUsage = "config file to write: global|local"
-	// dockerClientErrFmt wraps a failure to construct the moby client.
-	dockerClientErrFmt = "failed to create Docker client: %w"
 )
+
+// dockerClientErr wraps a failure to construct the moby client. A function
+// rather than a shared format constant: `fmt.Errorf(const, err)` hides the
+// format string from `go vet`'s printf checking and from grep at every call
+// site, while the wording still lives in exactly one place.
+func dockerClientErr(err error) error {
+	return fmt.Errorf("failed to create Docker client: %w", err)
+}
 
 // errConfigNotLoaded reports that a subcommand ran without cobra's
 // OnInitialize having populated cfg — a wiring bug, never a user error.

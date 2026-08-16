@@ -41,7 +41,7 @@ func resolveOne(m config.Mount, home string) (b Bind, ok bool, warnings []string
 	}
 
 	src := resolveSource(m.Source, home)
-	clearStaleSymlinkDir(m, src)
+	clearStaleSymlinkDir(m.SymlinkFrom, src)
 
 	switch _, err := os.Lstat(src); {
 	case os.IsNotExist(err):
@@ -90,9 +90,10 @@ func resolveSource(source, home string) string {
 
 // clearStaleSymlinkDir is a migration: if a previous run auto-created an empty
 // dir where a symlink now belongs, drop it. rmdir is a no-op on non-empty
-// dirs, so existing content is preserved.
-func clearStaleSymlinkDir(m config.Mount, src string) {
-	if m.SymlinkFrom == "" {
+// dirs, so existing content is preserved. Takes symlinkFrom rather than the
+// whole Mount — that one field is all it reads.
+func clearStaleSymlinkDir(symlinkFrom, src string) {
+	if symlinkFrom == "" {
 		return
 	}
 	if info, err := os.Lstat(src); err == nil && info.IsDir() {
