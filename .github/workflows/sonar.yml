@@ -1,11 +1,17 @@
 name: SonarQube
 
-# No `pull_request` trigger: the SonarQube server is powered off outside
-# working hours by design, so a PR-time analysis would fail on most pushes for
-# a check that isn't required on `main` anyway. Post-merge plus a weekday
-# in-hours cron keeps the project view fresh without gating anyone.
+# The SonarQube server is powered off outside working hours by design, so an
+# analysis cannot be guaranteed at any given moment. Every job below therefore
+# treats an unreachable server as a non-event, never a failure, and Sonar is not
+# a required check on `main`: a PR opened at night must still be mergeable.
+#
+# `pull_request` is what makes findings land on the PR itself — the community
+# branch plugin decorates it server-side through the registered GitHub App.
+# Post-merge plus a weekday in-hours cron keep the `main` project view fresh.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     # 09:00 UTC, Mon-Fri — 11:00 CEST / 10:00 CET, comfortably inside the
@@ -27,16 +33,27 @@ jobs:
     timeout-minutes: 5
     outputs:
       up: ${{ steps.check.outputs.up }}
+      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Check SonarQube availability
         id: check
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
+          # A fork PR gets no secrets, which is indistinguishable from a
+          # misconfigured repo at this point — either way there is nothing to
+          # analyse against, and it is not the same story as a powered-down
+          # server, so the two reasons stay separate for the reporting job.
+          if [ -z "$SONAR_HOST_URL" ]; then
+            echo 'reason=no-credentials' >> "$GITHUB_OUTPUT"
+            echo 'SONAR_HOST_URL is unset (fork PR, or secrets not configured) — skipping analysis.'
+            exit 0
+          fi
           echo "::add-mask::$SONAR_HOST_URL"
           if curl -sSf -m 10 "$SONAR_HOST_URL/api/system/status" | grep -q '"status":"UP"'; then
             echo 'up=true' >> "$GITHUB_OUTPUT"
           else
+            echo 'reason=server-down' >> "$GITHUB_OUTPUT"
             echo 'SonarQube is not reachable or not UP — skipping analysis.'
           fi
 
@@ -65,7 +82,47 @@ jobs:
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
+      # On a pull_request event the scanner's GitHub Actions autoconfiguration
+      # supplies sonar.pullrequest.{key,branch,base}; the findings are then
+      # written onto the PR by the server, not from here.
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # A silent absence on a PR reads as "nothing found", which is the wrong
+  # reading when the truth is "never checked". One comment, edited in place on
+  # every push rather than accumulating, says so out loud.
+  #
+  # Same-repo PRs only: a fork's GITHUB_TOKEN is read-only, so the comment would
+  # fail rather than inform.
+  report-skipped:
+    needs: preflight
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.preflight.outputs.up != 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Report that the analysis did not run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.number }}
+          REASON: ${{ needs.preflight.outputs.reason }}
+        run: |
+          if [ "$REASON" = 'server-down' ]; then
+            detail='the SonarQube server is powered down (it runs 09:00-19:00 Europe/Rome, Mon-Fri).'
+          else
+            detail='SonarQube credentials were not available to this run.'
+          fi
+          # Built with printf, not an indented here-doc: the script's own
+          # indentation would survive into the body, and four leading spaces
+          # turn a Markdown paragraph into a code block.
+          body=$(printf '%s\n\n%s\n' \
+            "**SonarQube — analysis skipped.** This PR has *not* been analysed: $detail" \
+            "Nothing is being asserted about the code here, neither good nor bad. Sonar is not a required check, so this does not block the merge, and the analysis will run against \`main\` after merge.")
+          gh pr comment "$PR" --create-if-none --edit-last --body "$body"

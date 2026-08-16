@@ -4,6 +4,10 @@
 # Go binary
 toolbox
 
+# Coverage profile: produced by the SonarQube workflow and by any local
+# `go test -coverprofile`, consumed by the scanner, never committed.
+coverage.out
+
 # Per-developer toolbox config override
 .toolbox.yaml
 
