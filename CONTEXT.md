@@ -488,3 +488,42 @@ seam to fake git, so its edge cases (rm ordering, prune per-base sweep, sync
 resume) were exercised only through real git in temp repos. The "Worktree"
 name turns the git orchestration into one named owner behind the `Git` seam,
 mirroring the Mount Plan / Session Plan deepening pattern.
+
+### Workspace Install Refresh
+
+The rule every Init Sequence script follows when it re-runs a tool's *per-repo*
+installer: refresh only when the bundled tool version differs from a
+toolbox-owned stamp, **or** the artefact that installer should have written is
+missing. Members today are `30-graphify.sh`, `31-codegraph.sh` and
+`40-playwright-cli.sh`.
+
+Concretely: the stamp lives outside the workspace at
+`$HOME/.toolbox-state/install-refresh/<sha256($PWD)[0:16]>-<tool>` (host
+`~/.toolbox/state/`, so it survives `toolbox stop` and is per-host), and its
+content is the version last installed from. The emptiness guard scopes to the
+version half alone — `{ [ -n "$ver" ] && [ "$stamped" != "$ver" ]; } || [ ! -f
+<artefact> ]` — because an unreadable version must not read as "differs" (the
+gate would reopen every shell) and must not suppress the artefact half either (a
+deleted install would stop self-healing). One artefact per tool is watched, on
+purpose: `SKILL.md` for graphify and playwright-cli, `.mcp.json` for codegraph,
+and never the PreToolUse hook block or the `## graphify` section in `CLAUDE.md`,
+which a user may remove deliberately. `30-graphify.sh` additionally narrows the
+matchers `graphify install` writes (`Bash|Grep` → `Grep`, `Read|Glob` → `Glob`)
+only while they are still the known upstream values, so a hand-edited hook
+survives; `graphify hook install` stays outside the gate, because `.git/hooks/`
+is never committed and so absent from a fresh clone. Held by
+`TestWorkspaceInstallRefreshGate` + `TestGraphifyHookInstallOutsideGate`
+(`internal/build/workspace_install_refresh_test.go`) over the embedded scripts,
+and by the `Workspace Install Refresh` block in `smoke-test.sh`, which boots
+`30-graphify.sh` in a throwaway workspace and reads the result back out.
+Rationale and rejected options: `docs/adr/0001-workspace-install-refresh.md`.
+
+Why the term exists: before this concept was named, the three scripts re-ran
+their installer on *every* shell, gated only on the opt-in artefact existing.
+Those installers write into the workspace, so every image upgrade that moved a
+bundled tool version rewrote tracked files — `CLAUDE.md`,
+`.claude/settings.json`, `.claude/skills/` — and handed the user a dirty tree
+they never asked for. The scripts already referenced each other in comments
+("mirrors graphify/codegraph") without a written rule, the same unnamed fan-out
+this repo collapsed before under Tool Catalog and Config Schema: unnamed, the
+fourth member would have copied the old pattern.

@@ -28,6 +28,10 @@ dist/
 # the whole graphify-out/ tree is per-developer scratch, regenerated on
 # every branch switch / `/graphify` invocation. Not team-shared.
 graphify-out/
+# `graphify install` drops this backup beside the settings it patched. Nothing
+# reads it back; init.d/30-graphify.sh removes it, this is the belt-and-braces
+# half for anyone running graphify install by hand.
+.claude/settings.json.graphify-bak
 docs/superpowers/specs/
 docs/superpowers/plans/
 
