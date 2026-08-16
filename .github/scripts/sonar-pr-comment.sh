@@ -91,7 +91,11 @@ issue_total=$(jq -r '.total' <<<"$issues")
 
   # Deliberately no link: the project is private, so a URL would only leak the
   # server's hostname into a public repository without helping the reader.
-  printf '\n_Sonar is informational here and does not block the merge._\n'
+  if [ "$gate_status" = "OK" ]; then
+    printf '\n_Quality Gate passed._\n'
+  else
+    printf '\n_The Quality Gate blocks this merge until the failing conditions above are met._\n'
+  fi
 } > sonar-comment.md
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
@@ -100,3 +104,10 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 gh pr comment "$PR_NUMBER" --create-if-none --edit-last --body-file sonar-comment.md
+
+# Comment first, then fail: the reason has to be readable on the PR before the
+# job goes red, or the red check is all the author gets.
+if [ "$gate_status" != "OK" ]; then
+  echo "Quality Gate is $gate_status — failing the job." >&2
+  exit 1
+fi
