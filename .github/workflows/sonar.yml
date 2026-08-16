@@ -5,8 +5,11 @@ name: SonarQube
 # treats an unreachable server as a non-event, never a failure, and Sonar is not
 # a required check on `main`: a PR opened at night must still be mergeable.
 #
-# `pull_request` is what makes findings land on the PR itself — the community
-# branch plugin decorates it server-side through the registered GitHub App.
+# `pull_request` is what makes findings land on the PR itself. The decoration
+# is written by `report-result` below rather than by the branch plugin's own
+# server-side decoration: this repository is public while the SonarQube project
+# is private, so the plugin's comment and check link to a dashboard an outside
+# reader cannot open, and publish the server's hostname to do it.
 # Post-merge plus a weekday in-hours cron keep the `main` project view fresh.
 on:
   push:
@@ -62,6 +65,9 @@ jobs:
     if: needs.preflight.outputs.up == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write   # report-result only; no-op on push and schedule
     steps:
       - uses: actions/checkout@v7
         with:
@@ -83,12 +89,26 @@ jobs:
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
       # On a pull_request event the scanner's GitHub Actions autoconfiguration
-      # supplies sonar.pullrequest.{key,branch,base}; the findings are then
-      # written onto the PR by the server, not from here.
+      # supplies sonar.pullrequest.{key,branch,base}, so the analysis lands
+      # against the PR rather than the branch.
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # Renders the gate and the new issues into the PR itself, with no link
+      # back to the private dashboard. A red gate is reported, not enforced:
+      # the step stays green so an informational check cannot block a merge.
+      - name: Report the result on the PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: ./.github/scripts/sonar-pr-comment.sh
 
   # A silent absence on a PR reads as "nothing found", which is the wrong
   # reading when the truth is "never checked". One comment, edited in place on
