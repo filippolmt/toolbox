@@ -450,8 +450,15 @@ echo "=== Workspace Install Refresh (30-graphify.sh, real boot) ==="
 # version stamp must exist — without the stamp the gate reopens on every shell
 # and the churn this whole change removes comes straight back.
 #
-# The seed carries the wide upstream matchers so the assertion holds whether or
-# not the install itself succeeds. No single quotes — this body lives inside a
+# The seed carries the wide upstream matchers plus one hand-edited matcher the
+# normalisation must NOT touch — that "only the known upstream values" clause is
+# what stops the refresh from stomping a user's own hook, and a jq expression
+# widened by accident would still pass every other assertion here.
+#
+# The matcher assertions hold whether or not `graphify install` itself succeeds
+# (the seed already carries the wide values); the stamp assertion additionally
+# requires it to have succeeded, which is the point — a refresh that cannot
+# install has nothing to stamp. No single quotes — this body lives inside a
 # single-quoted bash -c.
 docker run --rm "${IMAGE}" bash -c '
 set -e
@@ -461,14 +468,16 @@ mkdir -p "$HOME/.claude"
 d=$(mktemp -d)
 cd "$d"
 mkdir -p graphify-out .claude
-printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]},{\"matcher\":\"Read|Glob\",\"hooks\":[]}]}}" > .claude/settings.json
+printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]},{\"matcher\":\"Read|Glob\",\"hooks\":[]},{\"matcher\":\"Write|Edit\",\"hooks\":[]}]}}" > .claude/settings.json
 /usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero"; exit 1; }
 wide=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Bash|Grep\" or . == \"Read|Glob\")] | length" .claude/settings.json)
 [ "$wide" = "0" ] || { echo "FAILED: ${wide} wide PreToolUse matcher(s) survived normalisation"; exit 1; }
 narrow=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Grep\" or . == \"Glob\")] | length" .claude/settings.json)
 [ "$narrow" -ge 2 ] || { echo "FAILED: only ${narrow} narrowed matcher(s), expected Grep and Glob"; exit 1; }
+kept=$(jq "[.hooks.PreToolUse[].matcher | select(. == \"Write|Edit\")] | length" .claude/settings.json)
+[ "$kept" = "1" ] || { echo "FAILED: the hand-edited Write|Edit matcher did not survive normalisation"; exit 1; }
 [ ! -e .claude/settings.json.graphify-bak ] || { echo "FAILED: settings.json.graphify-bak left in the workspace"; exit 1; }
 stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/null | head -n1)
 [ -n "$stamp" ] || { echo "FAILED: no version stamp under ~/.toolbox-state/install-refresh — the gate would reopen every shell"; exit 1; }
-echo "OK: matchers narrowed, no .graphify-bak, stamped $(cat "$stamp")"
+echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, stamped $(cat "$stamp")"
 '

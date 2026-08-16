@@ -13,6 +13,17 @@ import (
 // See docs/adr/0001-workspace-install-refresh.md.
 const refreshStampRoot = `$HOME/.toolbox-state/install-refresh`
 
+// gateShape spells out the one condition every member must carry: the emptiness
+// guard scopes to the version half ALONE. Both ways of getting this wrong are
+// live failure modes, which is why the shape is pinned verbatim rather than
+// grepped loosely. Drop the guard and an unreadable version reads as "differs
+// from the stamp", reopening the gate on every shell — the exact churn the gate
+// removes. Stretch it over the whole condition and a deleted install stops
+// self-healing, silently, because the artefact half never gets evaluated.
+func gateShape(verVar, stampedVar string) string {
+	return `{ [ -n "$` + verVar + `" ] && [ "$` + stampedVar + `" != "$` + verVar + `" ]; } || [ ! -f `
+}
+
 // gateEndMarker closes the gated block. `graphify hook install` must sit after
 // it: it writes .git/hooks/, which is never committed and therefore absent from
 // a fresh clone, so gating it on a version stamp would leave the graph stale.
@@ -36,10 +47,11 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 		{
 			script: "init.d/30-graphify.sh",
 			needles: []string{
-				// Version half of the gate: bundled version vs. stamp.
+				// Version half of the gate: bundled version vs. stamp. The -n
+				// guard must scope to this half alone — see gateShape.
 				refreshStampRoot,
 				`graphify --version`,
-				`"$_gfy_stamped" != "$_gfy_ver"`,
+				gateShape("_gfy_ver", "_gfy_stamped"),
 				// Artefact half: a deleted skill still self-heals.
 				`[ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]`,
 				// Matcher normalisation, only from the known upstream values so
@@ -55,7 +67,7 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 			needles: []string{
 				refreshStampRoot,
 				`codegraph --version`,
-				`"$_cg_stamped" != "$_cg_ver"`,
+				gateShape("_cg_ver", "_cg_stamped"),
 				`[ ! -f "$PWD/.mcp.json" ]`,
 				// Upstream's own "rewrite what previous installs configured"
 				// semantics (Q8/Q18) — narrower than a full local install.
@@ -68,7 +80,7 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 			needles: []string{
 				refreshStampRoot,
 				`playwright-cli --version`,
-				`"$_pwc_stamped" != "$_pwc_ver"`,
+				gateShape("_pwc_ver", "_pwc_stamped"),
 				`[ ! -f "$PWD/.claude/skills/playwright-cli/SKILL.md" ]`,
 			},
 		},

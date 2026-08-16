@@ -31,11 +31,12 @@ if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
         read -r _cg_stamped < "$_cg_stamp" 2>/dev/null || true
     fi
 
-    # No guard on an empty $_cg_ver: if the version probe ever breaks upstream,
-    # an empty stamp still compares equal to an empty version, so a healthy
-    # workspace stays quiet — while the artefact half keeps self-healing a
-    # deleted install, which a `[ -n "$_cg_ver" ]` guard would silently disable.
-    if [ "$_cg_stamped" != "$_cg_ver" ] || [ ! -f "$PWD/.mcp.json" ]; then
+    # The -n guard scopes to the version half ONLY. If the version probe ever
+    # breaks upstream, an unreadable version must not read as "differs from the
+    # stamp" — that would reopen the gate on every shell and hand back exactly
+    # the churn this gate removes. Guarding the whole condition instead would be
+    # the opposite bug: a deleted install would stop self-healing, silently.
+    if { [ -n "$_cg_ver" ] && [ "$_cg_stamped" != "$_cg_ver" ]; } || [ ! -f "$PWD/.mcp.json" ]; then
         if codegraph install --refresh >/dev/null 2>&1; then
             mkdir -p "$(dirname "$_cg_stamp")"
             printf '%s' "$_cg_ver" > "$_cg_stamp"

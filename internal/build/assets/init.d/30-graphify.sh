@@ -36,11 +36,12 @@ if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
         read -r _gfy_stamped < "$_gfy_stamp" 2>/dev/null || true
     fi
 
-    # No guard on an empty $_gfy_ver: if the version probe ever breaks upstream,
-    # an empty stamp still compares equal to an empty version, so a healthy
-    # workspace stays quiet — while the artefact half keeps self-healing a
-    # deleted install, which a `[ -n "$_gfy_ver" ]` guard would silently disable.
-    if [ "$_gfy_stamped" != "$_gfy_ver" ] || [ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]; then
+    # The -n guard scopes to the version half ONLY. If the version probe ever
+    # breaks upstream, an unreadable version must not read as "differs from the
+    # stamp" — that would reopen the gate on every shell and hand back exactly
+    # the churn this gate removes. Guarding the whole condition instead would be
+    # the opposite bug: a deleted install would stop self-healing, silently.
+    if { [ -n "$_gfy_ver" ] && [ "$_gfy_stamped" != "$_gfy_ver" ]; } || [ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]; then
         if graphify install --project --platform claude >/dev/null 2>&1; then
             mkdir -p "$(dirname "$_gfy_stamp")"
             printf '%s' "$_gfy_ver" > "$_gfy_stamp"

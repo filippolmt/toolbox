@@ -35,7 +35,7 @@ Uniform, but it creates a new workspace file — the exact churn the gate exists
 to remove.
 
 **Gate on version alone.** Simpler, but it turns a broken installation into a
-permanently broken one: deleting `.mcp.json` or the graphify hook block would no
+permanently broken one: deleting `.mcp.json` or the graphify skill would no
 longer self-heal at the next shell, and the symptom (a missing source) does not
 point at the cause (an up-to-date stamp). The `or artefact missing` half of the
 condition keeps the self-healing property the unconditional re-install had.
@@ -54,6 +54,17 @@ not on us.
   the read guard `Read|Glob` to `Glob` — and only when a matcher is still the
   known upstream value, so a hand-edited hook survives.
   This is graphify-specific: it is the only member that installs hooks.
+- The artefact half watches exactly one artefact per tool — the skill's
+  `SKILL.md` for graphify and playwright-cli, `.mcp.json` for codegraph — and
+  deliberately not the PreToolUse hook block or the `## graphify` section in
+  `CLAUDE.md`. Those two are content a user may edit or remove on purpose, and
+  re-installing them on every shell would fight exactly the hand edits the
+  matcher normalisation goes out of its way to preserve. A missing skill means
+  the installation is broken; a missing hook block may mean the user meant it.
+- An unreadable tool version (a probe the upstream CLI breaks) does not count as
+  "differs from the stamp" — it would reopen the gate on every shell. The
+  emptiness guard therefore scopes to the version half alone, so the artefact
+  half still self-heals while the version is unreadable.
 - The stamp lives on the state bind mount, so it survives `toolbox stop` and is
   per-host, not per-container.
 - `graphify hook install` stays outside the gate. It writes into `.git/hooks/`,
