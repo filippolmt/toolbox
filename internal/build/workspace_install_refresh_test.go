@@ -56,8 +56,20 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 				`[ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]`,
 				// Matcher normalisation, only from the known upstream values so
 				// a hand-edited hook survives (Q5/Q13).
-				`select(.matcher == "Bash|Grep") | .matcher) = "Grep"`,
-				`select(.matcher == "Read|Glob") | .matcher) = "Glob"`,
+				`(.hooks.PreToolUse[]? | select(.matcher == $wide) | .matcher) = $new`,
+				`narrow("Bash|Grep"; "Grep") | narrow("Read|Glob"; "Glob")`,
+				// Finishing upstream's own drop filter, inseparable from the
+				// normalisation above: renaming the matchers is exactly what
+				// blinds `graphify install`'s "drop what I wrote last time"
+				// pass, which keys on (wide literal) AND (entry mentions
+				// graphify). Without this, every graphify upgrade appends a
+				// second Grep/Glob pair — identical, or worse, differing only
+				// in payload, which no verbatim dedup would ever collapse.
+				`def gfy: tostring | contains("graphify")`,
+				`.hooks.PreToolUse |= map(select((.matcher == $new and gfy) | not))`,
+				// The guard that keeps a failed install from leaving the
+				// workspace hookless: nothing appended, nothing dropped.
+				`if any(.hooks.PreToolUse[]?; .matcher == $wide and gfy)`,
 				// graphify install leaves this behind on every run (Q11).
 				`rm -f "$PWD/.claude/settings.json.graphify-bak"`,
 			},
