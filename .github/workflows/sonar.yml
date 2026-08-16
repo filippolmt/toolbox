@@ -8,8 +8,9 @@ on:
   push:
     branches: [main]
   schedule:
-    # 08:00 UTC, Mon-Fri — inside working hours in Europe/Rome year-round.
-    - cron: '0 8 * * 1-5'
+    # 09:00 UTC, Mon-Fri — 11:00 CEST / 10:00 CET, comfortably inside the
+    # 09:00-19:00 Europe/Rome window the server is powered up for.
+    - cron: '0 9 * * 1-5'
 
 permissions:
   contents: read
