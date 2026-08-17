@@ -89,6 +89,23 @@ check_zsh() {
         test -f "/home/toolbox/.oh-my-zsh/custom/plugins/$1/$1.plugin.zsh"
     }
 
+    # c2. the clone is world-writable. fetch-omz sets this itself, because its
+    # COPY lands BELOW the user-setup layer, where "chmod -R a+rwX
+    # /home/toolbox" runs (ADR 0002) — that chmod can no longer reach it.
+    # A regression here is
+    # invisible on a green build and only breaks for a host UID other than 1000,
+    # which is why it is asserted instead of assumed. Sampling the tree root,
+    # the deepest shipped dir and a file is enough: the fetch stage applies one
+    # recursive chmod, so a failure is never partial.
+    _zsh_omz_perms_check() {
+        for p in /home/toolbox/.oh-my-zsh \
+                 /home/toolbox/.oh-my-zsh/custom/plugins/fzf-tab \
+                 /home/toolbox/.oh-my-zsh/oh-my-zsh.sh; do
+            perms=$(stat -c '%A' "$p") || return 1
+            case "$perms" in *w*w*w*) ;; *) echo "    not world-writable: $p ($perms)"; return 1 ;; esac
+        done
+    }
+
     # d. .git retained, HEAD is a 40-char SHA (R-05 / SPEC ZSH-02)
     _zsh_omz_git_check() {
         head=$(git -c safe.directory=/home/toolbox/.oh-my-zsh -C /home/toolbox/.oh-my-zsh rev-parse HEAD 2>&1) || return 1
@@ -188,6 +205,7 @@ check_zsh() {
         _plugin_named_check() { _zsh_plugin_check "$p"; }
         _zsh_assert "plugin/${p}"              _plugin_named_check
     done
+    _zsh_assert "omz world-writable"           _zsh_omz_perms_check
     _zsh_assert "omz .git retained"            _zsh_omz_git_check
     _zsh_assert "fzf binary"                   _zsh_fzf_check
     _zsh_assert "zoxide binary"                _zsh_zoxide_check

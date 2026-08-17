@@ -175,6 +175,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
+      # Only .github/scripts is needed here (the Invalidation Floor gate); the
+      # build legs check out the whole repo, this job does not.
+      - name: Checkout gate script
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
@@ -199,6 +207,14 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: ${{ inputs.tags }}
 
+      # Invalidation Floor baseline (see CONTEXT.md, ADR 0002): resolve the
+      # CURRENT `latest` before `imagetools create` overwrites it. A missing tag
+      # (first publish ever) leaves the file empty and the gate below passes.
+      - name: Resolve previous latest
+        run: |
+          docker buildx imagetools inspect \
+            "${REGISTRY}/${IMAGE_NAME}:latest" --raw > baseline.json || true
+
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |
@@ -214,3 +230,32 @@ jobs:
         run: |
           docker buildx imagetools inspect \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+
+      # Invalidation Floor gate — rationale and measured thresholds live in
+      # docs/adr/0002-layer-ordering-by-invalidation-floor.md; the comparison
+      # itself is in .github/scripts/invalidation-floor.sh, which carries a
+      # self-test run here first so the logic is exercised on every publish
+      # rather than only the day it first has to fail.
+      #
+      # Reports after the push by design — the cost of a regression is one fat
+      # pull, not an outage.
+      #
+      # Escape hatch: [floor-reset] anywhere in the pushed commit messages, for
+      # a change that is *meant* to rebuild everything (the mtime freeze). Reads
+      # every message in the push, not just the head commit: with squash the
+      # marker rides in on the PR title, with rebase on the individual commit,
+      # and with a merge commit only on the merged commits — head_commit alone
+      # would catch the first case and miss the other two.
+      - name: Invalidation Floor gate
+        env:
+          MAX_LAYERS: 3
+          MIN_BYTES: 1048576
+          COMMIT_MSGS: ${{ join(github.event.commits.*.message, ' ') }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          .github/scripts/invalidation-floor.sh --self-test
+          case "${COMMIT_MSGS} ${HEAD_MSG}" in
+            *'[floor-reset]'*) echo "::notice::[floor-reset] — gate suppressed."; exit 0 ;;
+          esac
+          .github/scripts/invalidation-floor.sh baseline.json "${REGISTRY}/${IMAGE_NAME}:latest"

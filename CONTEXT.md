@@ -317,6 +317,33 @@ redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 create-branch guarantee into a single var inside `imageplan`.
 
+### Invalidation Floor
+
+The highest layer a change touches, and therefore the boundary below
+which every layer is rebuilt with a fresh digest — the build-side
+counterpart to the Image Plan's host-side pull policy. It is what a
+change actually costs the people pulling the image, measured in
+transferred bytes, not in lines of Dockerfile edited.
+
+Concretely: `COPY --link` raises the floor, because such a layer is
+built independently of the filesystem beneath it and neither depends on
+what precedes it nor invalidates the COPYs beside it. Any `RUN` that
+*consumes* a copied file lowers the floor back down for that COPY: the
+COPY must be declared above the RUN, so bumping it re-runs the whole
+tail. The rule that follows: the ordering that matters is not
+rare→frequent among the `RUN`s, it is how few consumers each COPY has
+below it.
+
+Why the term exists: the Dockerfile's build-strategy header claimed a
+Renovate bump of one tool "re-runs only that stage + its COPY — never
+the tail". Measured against the published manifests, a one-line version
+bump moved half the image, because the `COPY --link` declarations sat
+above the entire `RUN` tail. The claim was true of the COPYs relative to
+each other and false of the tail, and no single word existed to say which
+of the two a given edit was about. The figures live in
+`docs/adr/0002-layer-ordering-by-invalidation-floor.md` — this entry
+defines the term, not the incident.
+
 ### Docker Identity
 
 The host-process → container-identity translation at the Docker edge:
