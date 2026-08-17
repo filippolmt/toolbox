@@ -336,11 +336,13 @@ below it.
 
 Why the term exists: the Dockerfile's build-strategy header claimed a
 Renovate bump of one tool "re-runs only that stage + its COPY — never
-the tail". Measured against GHCR, a single `OMZ_COMMIT` bump moved 34
-of 71 layers and 586 MB of 1157 MB, because all 28 `COPY --link`
-declarations sat above the entire `RUN` tail. The claim was true of the
-COPYs relative to each other and false of the tail, and no single word
-existed to say which of the two a given edit was about.
+the tail". Measured against the published manifests, a one-line version
+bump moved half the image, because the `COPY --link` declarations sat
+above the entire `RUN` tail. The claim was true of the COPYs relative to
+each other and false of the tail, and no single word existed to say which
+of the two a given edit was about. The figures live in
+`docs/adr/0002-layer-ordering-by-invalidation-floor.md` — this entry
+defines the term, not the incident.
 
 ### Docker Identity
 

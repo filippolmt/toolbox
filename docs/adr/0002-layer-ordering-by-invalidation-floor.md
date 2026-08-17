@@ -35,7 +35,7 @@ into `/out/home/toolbox` and set the permissions itself, so `-m` has nothing
 left to relocate). Afterwards a fetch-stage bump moves exactly one layer.
 
 Separately and as a precondition, the fetch stages normalise mtimes
-(`touch -d @1` over `/out`). Files in the image today carry the wall-clock time
+(`freeze-mtimes`, a `touch -d @1` over `/out`). Files in the image today carry the wall-clock time
 of whichever build last ran that stage — `jq` 2026-06-20, `kubectl` 2026-07-23,
 `go` 2026-08-11 — and `COPY --link` folds mtime into the layer digest. The 28
 COPY digests are therefore stable only for as long as BuildKit reuses the stage
@@ -88,17 +88,27 @@ readability.
   installed.
 - `docker-publish-reusable.yml` gains a layer-count gate. The `merge` job
   resolves `latest` to a digest **before** `imagetools create` overwrites it —
-  tolerating failure, so the first-ever publish passes — and fails when the new
-  amd64 manifest diverges by more than 3 layers **larger than 1 MB**. Only amd64
+  tolerating a missing or half-written baseline, so the first-ever publish
+  passes — and fails when the new amd64 manifest diverges by more than 3 layers
+  **larger than 1 MB**. The comparison lives in
+  `.github/scripts/invalidation-floor.sh` rather than inline in the workflow, so
+  it can carry a `--self-test` over fixed data; the workflow runs that self-test
+  before every real comparison. A gate whose logic is first exercised on the day
+  it must fail is a gate nobody has tested — and the fixture proved its worth
+  immediately, since the first version put three big layers against a `-gt 3`
+  bound and asserted nothing. Only amd64
   is measured: the floor is a property of the Dockerfile, not of the
   architecture. The size filter is not a refinement, it is what makes the gate
   work: a naked layer count does not separate the two measured cases. The
   `30-graphify.sh` fix moves 11 layers and 0 MB — the asset COPYs and the two
   trailing `RUN`s, all in the tens of kB — while the `OMZ_COMMIT` regression
   moves 34, of which 17 are above 1 MB, for 599 MB on amd64.
-- The mtime-normalisation commit trips that gate by design, all 71 layers at
-  once, and is merged with an explicit single-use suppression. A gate never
-  observed firing is a YAML file, not a gate.
+- The mtime normalisation trips that gate by design, every layer at once, and
+  ships with an explicit single-use `[floor-reset]` suppression. The marker is
+  matched against **every commit message in the push**, not just the head
+  commit: this repo allows squash, rebase and merge commits, and only the squash
+  path puts the PR title on `main`. Matching `head_commit` alone would have
+  worked in one of the three cases.
 - Normalisation covers all of `/out` with no exception for the `fetch-omz` and
   `fetch-brew` clones. An earlier draft excluded `.git/index` to keep it older
   than the working tree; that turned out to be unnecessary. Git already treats an

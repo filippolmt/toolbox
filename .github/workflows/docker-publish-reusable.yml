@@ -175,6 +175,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
+      # Only .github/scripts is needed here (the Invalidation Floor gate); the
+      # build legs check out the whole repo, this job does not.
+      - name: Checkout gate script
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
@@ -223,47 +231,31 @@ jobs:
           docker buildx imagetools inspect \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
 
-      # Invalidation Floor gate. Counts *substantial* moved layers, not bytes: a
-      # GO_VERSION bump legitimately moves ~120 MB in one layer, so a byte
-      # threshold reddens on healthy changes. The 1 MB floor is what separates
-      # the two measured cases (see ADR 0002) — a graphify init.d fix moves 11
-      # layers but 0 above 1 MB, while the OMZ_COMMIT regression moves 34, of
-      # which 17 are above 1 MB, for 599 MB. amd64 only: the floor is a property
-      # of the Dockerfile, not of the architecture. Reports after the push by
-      # design — the cost of a regression is one fat pull, not an outage.
-      # Escape hatch: put [floor-reset] in the commit subject for a change that
-      # is *meant* to rebuild everything (e.g. the mtime normalisation).
+      # Invalidation Floor gate — rationale and measured thresholds live in
+      # docs/adr/0002-layer-ordering-by-invalidation-floor.md; the comparison
+      # itself is in .github/scripts/invalidation-floor.sh, which carries a
+      # self-test run here first so the logic is exercised on every publish
+      # rather than only the day it first has to fail.
+      #
+      # Reports after the push by design — the cost of a regression is one fat
+      # pull, not an outage.
+      #
+      # Escape hatch: [floor-reset] anywhere in the pushed commit messages, for
+      # a change that is *meant* to rebuild everything (the mtime freeze). Reads
+      # every message in the push, not just the head commit: with squash the
+      # marker rides in on the PR title, with rebase on the individual commit,
+      # and with a merge commit only on the merged commits — head_commit alone
+      # would catch the first case and miss the other two.
       - name: Invalidation Floor gate
         env:
           MAX_LAYERS: 3
           MIN_BYTES: 1048576
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_MSGS: ${{ join(github.event.commits.*.message, ' ') }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          case "${COMMIT_MSG}" in
+          .github/scripts/invalidation-floor.sh --self-test
+          case "${COMMIT_MSGS} ${HEAD_MSG}" in
             *'[floor-reset]'*) echo "::notice::[floor-reset] — gate suppressed."; exit 0 ;;
           esac
-          if [ ! -s baseline.json ]; then
-            echo "::notice::No previous :latest — nothing to compare."; exit 0
-          fi
-          layers() {  # $1 = raw OCI index; prints "<digest> <size>" per amd64 layer
-            local d
-            d=$(jq -r '.manifests[]
-                 | select(.platform.architecture=="amd64" and .platform.os=="linux")
-                 | select(.annotations["vnd.docker.reference.type"]==null)
-                 | .digest' "$1" | head -1)
-            [ -n "$d" ] || return 1
-            docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}@${d}" --raw \
-              | jq -r '.layers[] | "\(.digest) \(.size)"'
-          }
-          docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:latest" --raw > current.json
-          layers baseline.json > old.txt
-          layers current.json > new.txt
-          comm -23 <(sort new.txt) <(sort old.txt) > moved.txt
-          n=$(awk -v m="$MIN_BYTES" '$2 > m' moved.txt | wc -l)
-          mb=$(awk '{s+=$2} END{printf "%.0f", s/1048576}' moved.txt)
-          echo "Moved $(wc -l < moved.txt) layer(s) of $(wc -l < new.txt), ${n} above 1 MB, ${mb} MB total."
-          if [ "$n" -gt "$MAX_LAYERS" ]; then
-            echo "::error::Invalidation Floor regression: ${n} substantial layers moved (max ${MAX_LAYERS}), ${mb} MB pushed to every puller. See docs/adr/0002-layer-ordering-by-invalidation-floor.md"
-            exit 1
-          fi
+          .github/scripts/invalidation-floor.sh baseline.json "${REGISTRY}/${IMAGE_NAME}:latest"
