@@ -15,9 +15,12 @@
 #   2. RUN layers that must live in the final stage (apt/pip/npm installs) are
 #      ordered rare→frequent by measured Renovate cadence: heavy+rare first
 #      (azure, oci, playwright deps, zsh), frequent npm/pip CLIs last
-#      (claude-code and graphify bump ~25×/6 months each). This ordering only
+#      (graphify and claude-code bump ~100×/6 months each). This ordering only
 #      ever protected against bumps landing IN the tail; the majority, which
-#      land in a fetch stage, are handled by (1).
+#      land in a fetch stage, are handled by (1). It was also inert until the
+#      version pins were scoped per RUN: a stage-wide ARG block put every
+#      version in every tail RUN's cache key, so every bump rebuilt the whole
+#      tail and position bought nothing (ADR 0002, follow-up).
 #   3. `make build` seeds BuildKit from the CI registry cache
 #      (ghcr.io/filippolmt/toolbox:buildcache-main).
 #
@@ -29,7 +32,9 @@
 # binary before the smoke test.
 
 # Version pins. Renovate-bumped; declared once here (global), re-declared bare
-# (no value) inside the stage that consumes them.
+# (no value) immediately above the RUN — not merely inside the stage — that
+# consumes them, so a bump lands in that RUN's cache key and not in every one
+# below it.
 ARG RTK_VERSION=0.45.0
 ARG GH_VERSION=2.97.0
 ARG GLAB_VERSION=1.114.0
@@ -856,21 +861,14 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
-# Versions consumed by final-stage RUN layers (apt/pip/npm — cannot fan out).
-ARG PNPM_VERSION
-ARG CLAUDE_CODE_VERSION
-ARG CODEX_CLI_VERSION
-ARG CODEGRAPH_VERSION
-ARG CF_CLI_VERSION
-ARG WRANGLER_VERSION
-ARG PYRIGHT_VERSION
-ARG TYPESCRIPT_VERSION
-ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
-ARG AZURE_CLI_VERSION
-ARG OCI_VERSION
-ARG GRAPHIFY_VERSION
-ARG PLAYWRIGHT_VERSION
-ARG PLAYWRIGHT_CLI_VERSION
+# The version pins these RUNs consume (apt/pip/npm — cannot fan out into
+# fetch stages) are declared immediately above the single RUN that consumes
+# each one, NEVER as a block here. An ARG in scope lands in the cache key of
+# every RUN below it (the `|N` prefix in `docker history`), so one block at the
+# top of the stage put all 14 in all 21 tail layers: any single tool bump then
+# rebuilt the whole tail, which silently defeated the rare->frequent ordering
+# this stage is built around. Cost figures, and what they can honestly be
+# attributed to, are in ADR 0002's follow-up.
 
 # consoledonottrack.com convention — honored by bun, playwright, and much of
 # the JS toolchain users run in here (next, astro, turbo, …). claude is the
@@ -997,6 +995,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
 # Azure CLI from MS apt repo. AZURE_CORE_COLLECT_TELEMETRY=false also stops
 # the telemetry subprocess that races with __pycache__ cleanup on qemu arm64.
 ENV AZURE_CORE_COLLECT_TELEMETRY=false
+ARG AZURE_CLI_VERSION
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     set -eux; \
@@ -1029,6 +1028,7 @@ ENV NODE_OPTIONS=--dns-result-order=ipv4first
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
 # ~/.toolbox/playwright-cache bind.
+ARG PLAYWRIGHT_VERSION
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     --mount=type=cache,target=/root/.npm,id=npm-cache \
@@ -1043,6 +1043,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
         -prune -exec rm -rf {} +;
 # OCI CLI via pip. No upstream binary release; --break-system-packages
 # accepted for this single-purpose image (PEP 668).
+ARG OCI_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
     set -eux; \
       pip install --break-system-packages \
@@ -1057,6 +1058,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
 # No _cf completion: 0.0.6 dropped the `completions <shell>` subcommand and the
 # yargs default `completion` is not registered either. Revisit on the next
 # Renovate bump and reinstate it here when upstream restores it.
+ARG CF_CLI_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "cf@${CF_CLI_VERSION}"; \
@@ -1078,6 +1080,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # ~/.config/.wrangler/ via xdg-app-paths(".wrangler"). OAuth callback is
 # static localhost:8976 — use `toolbox shell -B -p 8976:8976`.
 ENV WRANGLER_SEND_METRICS=false
+ARG WRANGLER_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "wrangler@${WRANGLER_VERSION}"; \
@@ -1102,6 +1105,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # file `cli-client/program.js` resolves via `libPath("tools", "skills",
 # "playwright-cli", "SKILL.md")`, so another upstream move fails the build
 # loudly instead of shipping an empty skill.
+ARG PLAYWRIGHT_CLI_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "@playwright/cli@${PLAYWRIGHT_CLI_VERSION}"; \
@@ -1113,6 +1117,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -prune -exec rm -rf {} +; \
       test -s /usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md;
 # OpenAI Codex CLI. bubblewrap required for its in-tool sandbox.
+ARG CODEX_CLI_VERSION
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     --mount=type=cache,target=/root/.npm,id=npm-cache \
@@ -1131,6 +1136,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
 # matching @colbymchenry/codegraph-<os>-<arch> optional dep carries the
 # bundled runtime + compiled library, so the prune is scoped to the shim
 # package only — never the platform package that holds the binary.
+ARG CODEGRAPH_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
@@ -1140,6 +1146,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
 # Pyright language server (Python LSP for Claude Code plugin).
+ARG PYRIGHT_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g pyright@${PYRIGHT_VERSION}; \
@@ -1152,6 +1159,8 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # Global typescript alongside: the server resolves the workspace's own
 # typescript when present, global tsserver is the fallback for checkouts
 # without node_modules.
+ARG TYPESCRIPT_VERSION
+ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g typescript@${TYPESCRIPT_VERSION} \
@@ -1170,6 +1179,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # `tree-sitter-dm` (transitive dep) ships only a win_amd64 wheel on PyPI, so
 # pip builds it from sdist on Linux — gcc + python3-dev installed transiently
 # and purged after to keep the final image lean.
+ARG GRAPHIFY_VERSION
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
@@ -1188,6 +1198,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
 # served from cache across this layer's frequent rebuilds (11 bumps/6mo).
+ARG PNPM_VERSION
 RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
     set -eux; \
       corepack enable; \
@@ -1197,6 +1208,7 @@ RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
 # Claude Code CLI. Runtime env knobs live AFTER the RUN tail (see the
 # "Claude Code env knobs" ENV block below): none of them affect the install,
 # and ENV-before-RUN would bust this layer's cache on every knob tweak.
+ARG CLAUDE_CODE_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
