@@ -155,7 +155,7 @@ Measured with `.github/scripts/invalidation-floor.sh` against the published
 
 Each version ARG is now declared immediately above the single RUN that consumes
 it, so a RUN is keyed only on the versions it actually uses and the ordering
-finally takes effect. `TestFinalStageVersionARGsScopedToTheirRUN` holds the
+finally takes effect. `TestFinalStageARGsScopedToTheirRUN` holds the
 placement over the embedded Dockerfile.
 
 Like the mtime normalisation, the move rebuilds every tail layer once and ships

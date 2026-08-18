@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// TestFinalStageVersionARGsScopedToTheirRUN pins the placement rule that makes
-// the Invalidation Floor ordering actually bite: in the final stage, every
-// version ARG is declared immediately above the single RUN that consumes it.
+// TestFinalStageARGsScopedToTheirRUN pins the placement rule that makes the
+// Invalidation Floor ordering actually bite: in the final stage, every ARG other
+// than the stage-wide ones is declared immediately above the single RUN that
+// consumes it.
 //
 // A build ARG that is in scope lands in the cache key of every RUN below it —
 // visible as the `|N` prefix `docker history` prints for each layer. Declared as
@@ -21,7 +22,15 @@ import (
 //
 // The Dockerfile is a static asset no Go code reads, so only a test over the
 // embedded bytes can hold this — same technique as TestWorkspaceInstallRefreshGate.
-func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
+// stageWideARGs are the final-stage ARGs that legitimately apply to the whole
+// stage rather than to one RUN: neither carries a version, so neither moves on a
+// Renovate bump, and both are read by many RUNs.
+var stageWideARGs = map[string]bool{
+	"TARGETARCH":      true,
+	"DEBIAN_FRONTEND": true,
+}
+
+func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
 	body := readAsset(t, "Dockerfile")
 
 	// The final stage is the last FROM: everything below it is the RUN tail the
@@ -33,10 +42,11 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 	stage := body[from+1:]
 	lines := strings.Split(stage, "\n")
 
-	// The default is matched too (`ARG FOO_VERSION=1.2`). Without it a defaulted
-	// ARG slips past unseen — which is the regression shape itself, an ARG in
-	// scope for RUNs that never use it.
-	argRE := regexp.MustCompile(`^ARG ([A-Z0-9_]+_VERSION)(=.*)?$`)
+	// EVERY ARG in the stage, not just the `_VERSION` ones: the pathology is
+	// about scope, and an `ARG OMZ_COMMIT` block would reintroduce it just as
+	// well. The default is matched too (`ARG FOO=1.2`) — a defaulted ARG is the
+	// regression shape as much as a bare one.
+	argRE := regexp.MustCompile(`^ARG ([A-Za-z_][A-Za-z0-9_]*)(=.*)?$`)
 
 	var seen, checked int
 	for i := 0; i < len(lines); i++ {
@@ -45,18 +55,34 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 			continue
 		}
 
-		// Consecutive ARGs form one group: two versions can share a RUN.
+		// Consecutive ARGs form one group: two of them can share a RUN.
 		group := []string{m[1]}
-		seen++
 		j := i + 1
 		for ; j < len(lines); j++ {
 			if next := argRE.FindStringSubmatch(lines[j]); next != nil {
 				group = append(group, next[1])
-				seen++
 				continue
 			}
 			break
 		}
+
+		// The deliberately stage-wide ones carry no version and are consumed by
+		// many RUNs, so the rule cannot apply to them. Adding a name here is a
+		// decision about the Dockerfile, which is why it is an explicit list and
+		// not a pattern: a new ARG reddens this test until someone says which of
+		// the two it is.
+		kept := group[:0:0]
+		for _, name := range group {
+			if !stageWideARGs[name] {
+				kept = append(kept, name)
+				seen++
+			}
+		}
+		if len(kept) == 0 {
+			i = j - 1
+			continue
+		}
+		group = kept
 		if j >= len(lines) || !strings.HasPrefix(lines[j], "RUN ") {
 			got := "end of stage"
 			if j < len(lines) {
@@ -105,6 +131,6 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 	// found but never verified, and blaming the parse there would misdiagnose a
 	// real finding.
 	if seen == 0 {
-		t.Error("found no final-stage version ARG declarations at all — the parse is broken, not the Dockerfile")
+		t.Error("found no final-stage ARG declarations at all — the parse is broken, not the Dockerfile")
 	}
 }
