@@ -126,3 +126,50 @@ readability.
   `docs/internals/image-build.md` are corrected in the reordering commit, not
   before it — until the code moves, the current wording accurately describes the
   current (wrong) behaviour.
+
+## Follow-up (2026-08-18): a block of version ARGs defeated the ordering
+
+The Consequences above state that "a tail bump is unchanged — it was already
+cheap". That was wrong, and the gate this ADR introduced is what surfaced it: the
+first genuine comparison after the reordering rejected a one-line `OCI_VERSION`
+bump at **16 substantial layers, 694 MB**.
+
+The cause was not the ordering but the scope of the version ARGs. All 14 of them
+were declared as one block at the top of the final stage, and a build ARG that is
+in scope lands in the cache key of every RUN below it — the `|16` prefix
+`docker history` printed on every tail layer. So each of the 20 tail RUNs was
+keyed on all 14 versions: bumping any single tool gave every tail RUN a new key,
+the whole tail rebuilt, and the layers came back with new digests.
+
+While that held, the rare→frequent ordering could not do anything. The position
+of a RUN only matters if a bump invalidates *some* RUNs; here every bump
+invalidated all of them, so ordering them by Renovate cadence bought nothing.
+Measured with `.github/scripts/invalidation-floor.sh` against the published
+`sha-<commit>` tags, post-reordering:
+
+| Transition | Change | Layers > 1 MB | MB |
+|---|---|---|---|
+| `2800616` → `12ade4b` | dockerfile ARG bump | 31 | 966 |
+| `12ade4b` → `acf2843` | `OCI_VERSION` bump + one init.d asset | 16 | 694 |
+
+Each version ARG is now declared immediately above the single RUN that consumes
+it, so a RUN is keyed only on the versions it actually uses and the ordering
+finally takes effect. `TestFinalStageVersionARGsScopedToTheirRUN` holds the
+placement over the embedded Dockerfile.
+
+Like the mtime normalisation, the move rebuilds every tail layer once and ships
+with a single-use `[floor-reset]`.
+
+Two observations from the same investigation are **not** addressed here, and
+neither is proven:
+
+- A green publish (run `32074128559`, commit `12ade4b`) logged `Moved 0 layer(s)
+  of 70` for a transition measured above at 31 substantial layers. The only
+  reading that reconciles the two is a baseline resolved to the run's own output.
+  Publishes on `main` are cancelled by the next push and re-run by
+  `CI Retry Cancelled`, which would produce exactly that, so the gate may have
+  been passing vacuously. Unverified.
+- Because those cancellations leave `:latest` behind, the gate attributes the
+  accumulated cost of the skipped publishes to whichever commit next completes.
+  The `OCI_VERSION` bump landed in `fb8dcca`, whose publish was cancelled; the
+  gate reported it against `acf2843`.
