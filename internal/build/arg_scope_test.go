@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-// finalStageARGs pins the placement rule that makes the Invalidation Floor
-// ordering actually bite: in the final stage, every version ARG is declared
-// immediately above the single RUN that consumes it.
+// TestFinalStageVersionARGsScopedToTheirRUN pins the placement rule that makes
+// the Invalidation Floor ordering actually bite: in the final stage, every
+// version ARG is declared immediately above the single RUN that consumes it.
 //
 // A build ARG that is in scope lands in the cache key of every RUN below it —
 // visible as the `|N` prefix `docker history` prints for each layer. Declared as
-// one block at the top of the stage, all 14 version ARGs sat in all 20 tail
-// layers, so bumping any single tool gave every tail RUN a new cache key: the
-// whole tail rebuilt and ~700 MB moved, measured at 16 substantial layers for a
-// one-line OCI_VERSION bump. That silently defeated the rare→frequent ordering
-// ADR 0002 built this stage around — the position of a RUN cannot matter while
-// every RUN is invalidated by every bump.
+// one block at the top of the stage, all 14 version ARGs sat in all 21 tail
+// layers, so bumping any single tool gave every tail RUN a new cache key and the
+// whole tail rebuilt. That silently defeated the rare→frequent ordering ADR 0002
+// built this stage around — the position of a RUN cannot matter while every RUN
+// is invalidated by every bump. Figures for the cost are in ADR 0002's
+// follow-up, which also records what they can and cannot be attributed to.
 //
 // The Dockerfile is a static asset no Go code reads, so only a test over the
 // embedded bytes can hold this — same technique as TestWorkspaceInstallRefreshGate.
@@ -30,25 +30,29 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 	if from < 0 {
 		t.Fatal("Dockerfile: cannot locate the final `FROM node:` stage")
 	}
-	lines := strings.Split(body[from+1:], "\n")
+	stage := body[from+1:]
+	lines := strings.Split(stage, "\n")
 
-	argRE := regexp.MustCompile(`^ARG ([A-Z0-9_]+_VERSION)$`)
+	// The default is matched too (`ARG FOO_VERSION=1.2`). Without it a defaulted
+	// ARG slips past unseen — which is the regression shape itself, an ARG in
+	// scope for RUNs that never use it.
+	argRE := regexp.MustCompile(`^ARG ([A-Z0-9_]+_VERSION)(=.*)?$`)
 
-	// Walk the stage. A version ARG must be followed by more version ARGs and
-	// then a RUN, and that RUN must reference every ARG in the group. Anything
-	// else means the ARG is in scope for RUNs that do not use it.
-	var checked int
+	var seen, checked int
 	for i := 0; i < len(lines); i++ {
 		m := argRE.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
 		}
 
+		// Consecutive ARGs form one group: two versions can share a RUN.
 		group := []string{m[1]}
+		seen++
 		j := i + 1
 		for ; j < len(lines); j++ {
 			if next := argRE.FindStringSubmatch(lines[j]); next != nil {
 				group = append(group, next[1])
+				seen++
 				continue
 			}
 			break
@@ -64,7 +68,7 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 			continue
 		}
 
-		// Body of that RUN: up to the next instruction at column 0.
+		// Body of that RUN: continuation lines until one does not end in `\`.
 		var runBody strings.Builder
 		for k := j; k < len(lines); k++ {
 			runBody.WriteString(lines[k])
@@ -73,18 +77,34 @@ func TestFinalStageVersionARGsScopedToTheirRUN(t *testing.T) {
 				break
 			}
 		}
+
 		for _, name := range group {
-			if !strings.Contains(runBody.String(), "${"+name+"}") {
-				t.Errorf("ARG %s is declared above a RUN that does not reference ${%s} — move it to the RUN that consumes it", name, name)
+			ref := "${" + name + "}"
+			inRUN := strings.Count(runBody.String(), ref)
+			if inRUN == 0 {
+				t.Errorf("ARG %s is declared above a RUN that does not reference %s — move it to the RUN that consumes it", name, ref)
+				continue
+			}
+			// "the single RUN that consumes it" is the claim the name makes, so
+			// check it: a second consumer further down the stage would put this
+			// ARG back in the cache key of RUNs between the two.
+			if total := strings.Count(stage, ref); total != inRUN {
+				t.Errorf("ARG %s is referenced %d times in the stage but only %d inside its own RUN — a second consumer re-widens its scope; split the version or move the ARG above the first consumer",
+					name, total, inRUN)
 			}
 			checked++
 		}
 		i = j - 1
 	}
 
-	// Guard against the regex quietly matching nothing (a rename would turn this
-	// test into a no-op that reports success).
-	if checked < 14 {
-		t.Errorf("checked only %d final-stage version ARGs, expected at least 14 — the parse stopped seeing them", checked)
+	// Anti-vacuity only. A floor tied to today's tool count would fail the day a
+	// tool is legitimately removed, and would be a further hardcoded copy of a
+	// number the Dockerfile already owns — the repo's rule is to derive counts,
+	// not restate them (.claude/rules/image-build.md).
+	// `seen`, not `checked`: on a Dockerfile that violates the rule the ARGs are
+	// found but never verified, and blaming the parse there would misdiagnose a
+	// real finding.
+	if seen == 0 {
+		t.Error("found no final-stage version ARG declarations at all — the parse is broken, not the Dockerfile")
 	}
 }

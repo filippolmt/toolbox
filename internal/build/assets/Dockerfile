@@ -15,9 +15,12 @@
 #   2. RUN layers that must live in the final stage (apt/pip/npm installs) are
 #      ordered rare→frequent by measured Renovate cadence: heavy+rare first
 #      (azure, oci, playwright deps, zsh), frequent npm/pip CLIs last
-#      (claude-code and graphify bump ~25×/6 months each). This ordering only
+#      (graphify and claude-code bump ~100×/6 months each). This ordering only
 #      ever protected against bumps landing IN the tail; the majority, which
-#      land in a fetch stage, are handled by (1).
+#      land in a fetch stage, are handled by (1). It was also inert until the
+#      version pins were scoped per RUN: a stage-wide ARG block put every
+#      version in every tail RUN's cache key, so every bump rebuilt the whole
+#      tail and position bought nothing (ADR 0002, follow-up).
 #   3. `make build` seeds BuildKit from the CI registry cache
 #      (ghcr.io/filippolmt/toolbox:buildcache-main).
 #
@@ -29,7 +32,9 @@
 # binary before the smoke test.
 
 # Version pins. Renovate-bumped; declared once here (global), re-declared bare
-# (no value) inside the stage that consumes them.
+# (no value) immediately above the RUN — not merely inside the stage — that
+# consumes them, so a bump lands in that RUN's cache key and not in every one
+# below it.
 ARG RTK_VERSION=0.45.0
 ARG GH_VERSION=2.97.0
 ARG GLAB_VERSION=1.114.0
@@ -856,12 +861,14 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
-# Version ARGs are declared immediately above the single RUN that consumes
+# The version pins these RUNs consume (apt/pip/npm — cannot fan out into
+# fetch stages) are declared immediately above the single RUN that consumes
 # each one, NEVER as a block here. An ARG in scope lands in the cache key of
 # every RUN below it (the `|N` prefix in `docker history`), so one block at the
-# top of the stage put all 14 in all 20 tail layers: bumping any single tool
-# rebuilt the whole tail and re-pushed ~700 MB, which silently defeated the
-# rare->frequent ordering this stage is built around. See ADR 0002.
+# top of the stage put all 14 in all 21 tail layers: any single tool bump then
+# rebuilt the whole tail, which silently defeated the rare->frequent ordering
+# this stage is built around. Cost figures, and what they can honestly be
+# attributed to, are in ADR 0002's follow-up.
 
 # consoledonottrack.com convention — honored by bun, playwright, and much of
 # the JS toolchain users run in here (next, astro, turbo, …). claude is the

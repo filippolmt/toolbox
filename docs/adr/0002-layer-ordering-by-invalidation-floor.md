@@ -80,6 +80,7 @@ readability.
 
 - A `fetch-*` bump moves one layer (~30 MB for `omz`, ~120 MB for `go`) instead
   of 34 layers and 586 MB. A tail bump is unchanged — it was already cheap.
+  **Superseded: see the Follow-up below — a tail bump rebuilt the whole tail.**
 - Adding shell completion for a CLI changes shape: the `_<tool>` file is
   generated inside that tool's fetch stage, never in a shared layer, because a
   shared layer re-imposes a floor on every COPY feeding it. The literal write
@@ -137,7 +138,7 @@ bump at **16 substantial layers, 694 MB**.
 The cause was not the ordering but the scope of the version ARGs. All 14 of them
 were declared as one block at the top of the final stage, and a build ARG that is
 in scope lands in the cache key of every RUN below it — the `|16` prefix
-`docker history` printed on every tail layer. So each of the 20 tail RUNs was
+`docker history` printed on every tail layer. So each of the 21 tail RUNs was
 keyed on all 14 versions: bumping any single tool gave every tail RUN a new key,
 the whole tail rebuilt, and the layers came back with new digests.
 
@@ -159,6 +160,19 @@ placement over the embedded Dockerfile.
 
 Like the mtime normalisation, the move rebuilds every tail layer once and ships
 with a single-use `[floor-reset]`.
+
+**Necessary, not sufficient.** Scoping the ARGs only restores the *premise* of the
+ordering; it does not by itself bring a bump under the gate's max of 3. Now that
+cost is positional, the order itself matters — and it does not match the cadence
+measured in `docs/internals/image-build.md`: `oci` (20 bumps in 6 months) sits 4th
+of 21 while `codegraph` (15) sits 9th, so a mid-cadence bump still moves more than
+three substantial layers. Closing that gap needs a reorder by measured cadence
+*and* a `MAX_LAYERS` recalibrated to the resulting worst case. Neither is done
+here, and the reorder carries a hazard worth writing down: moving the `oci-cli`
+RUN below the `graphifyy` one inverts pip dependency resolution, and the build
+verifies graphify *before* installing oci, so a break there would pass green.
+Sequence the reorder so the pip pair keeps its relative order, or add graphify's
+import check after the oci install.
 
 Two observations from the same investigation are **not** addressed here, and
 neither is proven:
