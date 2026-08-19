@@ -82,6 +82,14 @@ func TestFetchStageCopyBijection(t *testing.T) {
 	}
 	copies := map[string]bool{}
 	for _, m := range copyRE.FindAllStringSubmatch(dockerfile, -1) {
+		// Same exemption as the stage set above, for the same reason: fetch-base
+		// is the shared parent, not a tool. The stages that cannot descend from
+		// it — the ones needing node or python rather than curl — copy
+		// `freeze-mtimes` out of it. That is a build utility landing in the
+		// stage, not a tool landing in the image, so it is not an orphan COPY.
+		if m[1] == "fetch-base" {
+			continue
+		}
 		copies[m[1]] = true
 	}
 

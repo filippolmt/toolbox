@@ -207,13 +207,37 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: ${{ inputs.tags }}
 
-      # Invalidation Floor baseline (see CONTEXT.md, ADR 0002): resolve the
-      # CURRENT `latest` before `imagetools create` overwrites it. A missing tag
-      # (first publish ever) leaves the file empty and the gate below passes.
-      - name: Resolve previous latest
+      # Invalidation Floor baseline (see CONTEXT.md, ADR 0002). Prefer the
+      # immutable per-commit tag of the commit this push replaced. `latest` is
+      # mutable and lags whenever a publish is cancelled by the next push —
+      # which this repo does, then re-runs — and that lag has two costs: one
+      # commit is billed for another's churn, and a re-run of an already
+      # published commit resolves `latest` to the manifest it is about to push
+      # and compares it against itself. Falls back to `latest`, then to nothing:
+      # a missing baseline is not a failure, the gate says so and passes.
+      - name: Resolve baseline manifest
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
+          set -uo pipefail
+          : > baseline.json
+          before="${BEFORE:-}"
+          case "${before}" in
+          "" | 0000000000000000000000000000000000000000) ;;
+          *)
+              ref="${REGISTRY}/${IMAGE_NAME}:sha-$(printf %s "${before}" | cut -c1-7)"
+              if docker buildx imagetools inspect "${ref}" --raw > baseline.json 2>/dev/null; then
+                  echo "baseline: ${ref}"
+                  exit 0
+              fi
+              : > baseline.json
+              echo "::notice::No per-commit tag for ${before} — falling back to :latest."
+              ;;
+          esac
           docker buildx imagetools inspect \
-            "${REGISTRY}/${IMAGE_NAME}:latest" --raw > baseline.json || true
+            "${REGISTRY}/${IMAGE_NAME}:latest" --raw > baseline.json 2>/dev/null \
+            || : > baseline.json
+          echo "baseline: ${REGISTRY}/${IMAGE_NAME}:latest"
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
@@ -248,8 +272,9 @@ jobs:
       # would catch the first case and miss the other two.
       - name: Invalidation Floor gate
         env:
-          MAX_LAYERS: 3
-          MIN_BYTES: 1048576
+          # MAX_LAYERS/MIN_BYTES are deliberately NOT set here: the script
+          # carries the defaults, so there is one literal to change rather than
+          # two to keep in step. An env override here would still win.
           COMMIT_MSGS: ${{ join(github.event.commits.*.message, ' ') }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
         run: |

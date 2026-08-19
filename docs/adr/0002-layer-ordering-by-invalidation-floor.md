@@ -91,7 +91,7 @@ readability.
   resolves `latest` to a digest **before** `imagetools create` overwrites it —
   tolerating a missing or half-written baseline, so the first-ever publish
   passes — and fails when the new amd64 manifest diverges by more than 3 layers
-  **larger than 1 MB**. The comparison lives in
+  **larger than 1 MB** (raised to 6 in follow-up 2, and moved into the script). The comparison lives in
   `.github/scripts/invalidation-floor.sh` rather than inline in the workflow, so
   it can carry a `--self-test` over fixed data; the workflow runs that self-test
   before every real comparison. A gate whose logic is first exercised on the day
@@ -168,7 +168,7 @@ measured in `docs/internals/image-build.md`: `oci` (20 bumps in 6 months) sits 4
 of 21 while `codegraph` (15) sits 9th, so a mid-cadence bump still moves more than
 three substantial layers. Closing that gap needs a reorder by measured cadence
 *and* a `MAX_LAYERS` recalibrated to the resulting worst case. Neither is done
-here, and the reorder carries a hazard worth writing down: moving the `oci-cli`
+here — both land in follow-up 2 below, and the reorder carries a hazard worth writing down: moving the `oci-cli`
 RUN below the `graphifyy` one inverts pip dependency resolution, and the build
 verifies graphify *before* installing oci, so a break there would pass green.
 Sequence the reorder so the pip pair keeps its relative order, or add graphify's
@@ -187,3 +187,90 @@ neither is proven:
   accumulated cost of the skipped publishes to whichever commit next completes.
   The `OCI_VERSION` bump landed in `fb8dcca`, whose publish was cancelled; the
   gate reported it against `acf2843`.
+
+## Follow-up 2 (2026-08-19): the ordering, now that it does something
+
+Scoping the ARGs (follow-up 1) made position matter. Three publishes on `main`
+then measured what position is worth, and confirmed both halves of that
+follow-up's prediction:
+
+| Publish | Bump | Where it sat | Layers > 1 MB | MB | Gate |
+|---|---|---|---|---|---|
+| `80f56e9` | claude-code | last version RUN | 2 | 101 | pass |
+| `a9839f8` | codex | 7th of 13 | 7 | 320 | **fail** |
+| `6b112a8` | yq | a `fetch-*` stage | 2 | 10 | pass |
+
+Before the scoping, every one of these would have moved 16-31 substantial layers
+and 600-966 MB. So the cost of a bump is now `(number of version RUNs at or below
+it) + 1` — the `+1` is a trailing non-version layer, measured by attributing the
+claude-code publish: its own 96 MB npm layer plus one below it.
+
+Two consequences follow, and this commit takes both.
+
+**The tail is reordered by re-measured cadence** (6-month window): graphifyy 100,
+claude-code 95, wrangler 37, pnpm 36, codex 34, oci 20, codegraph 15,
+playwright-cli 10, cf 8, azure 7, playwright 7, pyright 5, typescript 2. Least
+first, most last. Two orderings inside that are load-bearing rather than
+aesthetic, and both fall out of the cadence order anyway: `oci` stays above
+`graphifyy`, so the two pip installs keep resolving shared dependencies in the
+same order as before — the build verifies graphify *before* installing oci, so an
+inversion would ship broken and pass green — and `playwright` stays above
+`playwright-cli`.
+
+**`MAX_LAYERS` moves from 3 to 6**, and moves into the script, so the calibration
+is one literal that CI reads rather than two that can drift. 6 is the cost of the
+fifth-most-bumped tool once ordered, so it admits graphifyy, claude-code,
+wrangler, pnpm and codex — 302 of the 376 tail bumps in the window, 80% —
+while the structural regression the gate exists for, measured at 16-31 layers,
+still fails by a factor of 3 to 5. The `--self-test` fixture now derives its layer
+count from `MAX_LAYERS` instead of hardcoding four. At a hardcoded four the
+self-test does not go quiet when the bound is raised — it goes red, measured:
+`MAX_LAYERS=6` against the old fixture prints `self-test FAILED: regression
+accepted` and exits 1, because four moved layers no longer exceed six. So the
+fixture had to move with the bound either way; deriving it means the next person
+to change the threshold cannot fix that red by weakening the fixture instead.
+
+**The baseline was the other half of the noise, and it is fixed here.** The gate
+resolved its baseline from `:latest`, which is mutable and lags whenever a
+publish is cancelled by the next push — this repo cancels them and re-runs them.
+Two costs followed. One commit was billed for another's churn: `OCI_VERSION` was
+bumped in `fb8dcca`, whose publish was cancelled, so `:latest` never advanced and
+the gate charged the cost to `acf2843`. And a re-run of an already-published
+commit resolved `:latest` to the manifest it was about to push and compared it
+against itself, which is the unexplained `Moved 0 layer(s) of 70` in run
+`32074128559` — no longer a hypothesis. The baseline is now the immutable
+`sha-<commit>` tag of the commit the push replaced, falling back to `:latest`;
+and a baseline that equals the manifest just pushed is reported as "no comparison
+performed" instead of being banked as a green.
+
+**What this still does not fix, and one idea that does not work.** oci (20 bumps)
+is bounded at 7 and codegraph (15) at 8, so roughly 75 bumps per window — about
+12 a month — will still redden a publish. An earlier draft of this section
+proposed the durable fix as a positional invariant: no layer *above* the highest
+changed instruction may move. That does not work, and the case that motivated
+this whole ADR is the counter-example. With the fetch COPYs declared above the
+tail, an `OMZ_COMMIT` bump changed a COPY high in the file and moved the 34
+layers *below* it — every moved layer sits at or below the change, so a
+positional rule passes it. Legitimate bump and structural regression have the
+same shape; they differ only in magnitude, which is what a count measures. So the
+count is the right instrument and the residual noise is not an artefact of it:
+a bump high in a 13-deep tail is genuinely expensive, and the gate saying so is
+the gate working. The way out is fewer substantial layers in the tail — moving
+npm/pip installs into `fetch-*` stages where each bump costs one `--link` layer,
+as the six tools in that table already do — not a cleverer bound.
+
+That way out is taken for the two worst offenders in the same change. `oci` (20
+bumps, bounded at 7) and `codegraph` (15, bounded at 8) now install in
+`fetch-oci` and `fetch-codegraph`, so each bump moves one layer whatever its
+position, and the tail drops from 13 version blocks to 11 — which also takes two
+off the bounded cost of everything that sat above them. Coverage against
+`MAX_LAYERS` = 6 goes from 302 of 376 tail bumps to about 337: roughly 6 red
+publishes a month rather than 12. `fetch-codegraph` has to use the same node
+image as the final stage, because an npm global tree is only valid on the runtime
+that resolved it. `fetch-oci` installs into a venv at `/opt/oci-cli` rather than
+the system site-packages, which also ends a coupling this ADR had only flagged:
+oci and graphifyy shared site-packages, so whichever pip ran last decided the
+version of every dependency they have in common, and the only check that would
+have caught a break — graphify's import test — ran before oci was installed.
+What is left over the bound is playwright-cli (10), cf (8), azure (7), playwright
+(7), pyright (5) and typescript (2); the same treatment applies to any of them.

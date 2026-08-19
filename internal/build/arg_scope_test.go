@@ -95,8 +95,18 @@ func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
 		}
 
 		// Body of that RUN: continuation lines until one does not end in `\`.
+		// An in-body comment does NOT end the instruction — the Dockerfile parser
+		// strips comments before joining continuations, so a mid-body comment
+		// carries no trailing backslash (the azure RUN has one). Treating it as
+		// the end truncates the body and the reference check below reads half a
+		// RUN.
 		var runBody strings.Builder
 		for k := j; k < len(lines); k++ {
+			if strings.HasPrefix(strings.TrimSpace(lines[k]), "#") {
+				// Skipped, not appended: a comment mentioning ${FOO_VERSION}
+				// would otherwise satisfy the reference check below on its own.
+				continue
+			}
 			runBody.WriteString(lines[k])
 			runBody.WriteString("\n")
 			if !strings.HasSuffix(strings.TrimRight(lines[k], " \t"), `\`) {

@@ -13,11 +13,14 @@
 #      rare→frequent here — it is how few consumers a COPY has below it.
 #      → CONTEXT.md "Invalidation Floor", ADR 0002
 #   2. RUN layers that must live in the final stage (apt/pip/npm installs) are
-#      ordered rare→frequent by measured Renovate cadence: heavy+rare first
-#      (azure, oci, playwright deps, zsh), frequent npm/pip CLIs last
+#      ordered rare→frequent by measured Renovate cadence: least-bumped first
+#      (typescript, pyright, azure, playwright), most-bumped last
 #      (graphify and claude-code bump ~100×/6 months each). This ordering only
 #      ever protected against bumps landing IN the tail; the majority, which
-#      land in a fetch stage, are handled by (1). It was also inert until the
+#      land in a fetch stage, are handled by (1). The two orderings inside the
+#      tail that are load-bearing rather than cadence-driven are named in the
+#      comment directly above the tail, not restated here. It was also inert
+#      until the
 #      version pins were scoped per RUN: a stage-wide ARG block put every
 #      version in every tail RUN's cache key, so every bump rebuilt the whole
 #      tail and position bought nothing (ADR 0002, follow-up).
@@ -855,6 +858,62 @@ RUN set -eux; \
       freeze-mtimes
 
 # ============================== Final stage ==================================
+
+# CodeGraph (deterministic code-symbol graph: tree-sitter -> SQLite/FTS5, exposed
+# as an MCP server + CLI) in its own stage, so a bump moves one `--link` layer
+# instead of every tail RUN below it (ADR 0002, follow-up 2). The base must be the
+# SAME node image as the final stage: an npm global tree is only valid on the
+# runtime that resolved it, and the optional @colbymchenry/codegraph-<os>-<arch>
+# dep is chosen by platform at install time. The npm meta-package is a thin shim
+# and that platform package carries the bundled runtime + compiled library, so the
+# weight prune stays scoped to the shim — never the package holding the binary.
+FROM node:24-bookworm-slim AS fetch-codegraph
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG CODEGRAPH_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local; \
+      npm install -g --prefix /out/usr/local "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
+      /out/usr/local/bin/codegraph --version; \
+      find /out/usr/local/lib/node_modules/@colbymchenry/codegraph \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      freeze-mtimes
+
+# OCI CLI. No upstream binary release, so it stays a pip install — but into its
+# own venv at /opt/oci-cli rather than the system site-packages, for two reasons.
+# A bump now moves one `--link` layer instead of every tail RUN below it (ADR
+# 0002, follow-up 2); and it ends the shared-site-packages coupling with
+# graphifyy, where whichever pip ran last silently decided the version of every
+# dependency the two share, with only graphify's build-time import check to
+# notice — and that check ran before oci was installed. The venv is created at
+# its final path so the console-script shebangs already read /opt/oci-cli/bin,
+# which is where the copy lands it. `python3` inside the venv is a symlink to the
+# system interpreter: bookworm here and bookworm in the final stage, so 3.11 both
+# sides. PEP 668 no longer applies, so --break-system-packages is gone with it.
+FROM debian:bookworm-slim AS fetch-oci
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OCI_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=fetch-apt-lists \
+    --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux; \
+      rm -f /etc/apt/apt.conf.d/docker-clean; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends python3 python3-venv; \
+      python3 -m venv /opt/oci-cli; \
+      /opt/oci-cli/bin/pip install --timeout 300 --retries 5 "oci-cli==${OCI_VERSION}"; \
+      /opt/oci-cli/bin/oci --version; \
+      find /opt/oci-cli -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
+      mkdir -p /out/opt /out/usr/local/bin; \
+      cp -a /opt/oci-cli /out/opt/oci-cli; \
+      ln -s /opt/oci-cli/bin/oci /out/usr/local/bin/oci; \
+      freeze-mtimes
+
 FROM node:24-bookworm-slim
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -966,11 +1025,17 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Per-user bun global bin in PATH.
 ENV PATH="/home/toolbox/.bun/bin:${PATH}"
 
-# From here on: layers that must run in the final stage (apt/pip/npm),
-# ordered to minimize rebuild tail: cost-below × Renovate cadence. Heavy +
-# rare first; cheap + frequent last. One inversion is deliberate: graphify
-# (expensive pip+gcc, 25 bumps/6mo) sits ABOVE pnpm/claude (cheap, 11/25
-# bumps) so its 2-minute layer is not re-run by their frequent bumps.
+# From here on: layers that must run in the final stage (apt/pip/npm), ordered
+# by measured Renovate cadence, least-bumped first, so a bump rebuilds only what
+# sits below it. There is no deliberate inversion left: an earlier one parked
+# graphify above pnpm/claude-code to spare its expensive pip+gcc layer, on the
+# then-current reading of 25 bumps/6mo. Re-measured it is 100 — the most bumped
+# tool in the tail — so it belongs last, and the inversion cost more than it
+# saved. Two orderings here ARE load-bearing: oci above graphify, so the two pip
+# installs keep resolving shared dependencies in the same order (the build
+# verifies graphify BEFORE installing oci, so an inversion ships broken on a
+# green build), and playwright above playwright-cli. Both fall out of the
+# cadence order anyway. Figures and the cost formula: ADR 0002, follow-up 2.
 
 # zsh + fzf. OMZ + plugins arrive pre-cloned via fetch-omz above.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
@@ -992,6 +1057,46 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       mkdir -p /etc/zsh; \
       zsh --version; \
       fzf --version;
+# NPM_CONFIG_FUND/AUDIT: suppress banner + audit on every npm install -g below.
+ENV NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
+# Loopback OAuth CLIs (cf, wrangler, codex) call server.listen('localhost'); on
+# Node 17+ `localhost` resolves to ::1 (IPv6) first, so they bind ::1:<port>. The
+# loopback bridge (init.d/70-loopback-bridge.sh) forwards IPv4 127.0.0.1 only, so
+# an ::1 listener never receives the OAuth callback (browser → ERR_EMPTY_RESPONSE,
+# the CLI then times out waiting for the code). Force IPv4-first resolution so
+# `localhost` binds 127.0.0.1, matching the bridge. The flag only reorders DNS
+# results (Node <17 default); benign for every other Node process.
+# See docs/commands.md#loopback-bridge.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+
+# TypeScript language server (TS/JS LSP for Claude Code typescript-lsp plugin).
+# Global typescript alongside: the server resolves the workspace's own
+# typescript when present, global tsserver is the fallback for checkouts
+# without node_modules.
+ARG TYPESCRIPT_VERSION
+ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      npm install -g typescript@${TYPESCRIPT_VERSION} \
+        typescript-language-server@${TYPESCRIPT_LANGUAGE_SERVER_VERSION}; \
+      tsc --version; \
+      typescript-language-server --version; \
+      find /usr/local/lib/node_modules/typescript \
+           /usr/local/lib/node_modules/typescript-language-server \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +;
+# Pyright language server (Python LSP for Claude Code plugin).
+ARG PYRIGHT_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      npm install -g pyright@${PYRIGHT_VERSION}; \
+      pyright --version; \
+      find /usr/local/lib/node_modules/pyright \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +;
 # Azure CLI from MS apt repo. AZURE_CORE_COLLECT_TELEMETRY=false also stops
 # the telemetry subprocess that races with __pycache__ cleanup on qemu arm64.
 ENV AZURE_CORE_COLLECT_TELEMETRY=false
@@ -1012,19 +1117,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       for d in idlelib turtledemo tkinter pydoc_data; do \
         rm -rf /opt/az/lib/python*/$d; \
       done;
-# NPM_CONFIG_FUND/AUDIT: suppress banner + audit on every npm install -g below.
-ENV NPM_CONFIG_FUND=false \
-    NPM_CONFIG_AUDIT=false
-# Loopback OAuth CLIs (cf, wrangler, codex) call server.listen('localhost'); on
-# Node 17+ `localhost` resolves to ::1 (IPv6) first, so they bind ::1:<port>. The
-# loopback bridge (init.d/70-loopback-bridge.sh) forwards IPv4 127.0.0.1 only, so
-# an ::1 listener never receives the OAuth callback (browser → ERR_EMPTY_RESPONSE,
-# the CLI then times out waiting for the code). Force IPv4-first resolution so
-# `localhost` binds 127.0.0.1, matching the bridge. The flag only reorders DNS
-# results (Node <17 default); benign for every other Node process.
-# See docs/commands.md#loopback-bridge.
-ENV NODE_OPTIONS=--dns-result-order=ipv4first
-
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
 # ~/.toolbox/playwright-cache bind.
@@ -1041,16 +1133,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
-# OCI CLI via pip. No upstream binary release; --break-system-packages
-# accepted for this single-purpose image (PEP 668).
-ARG OCI_VERSION
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
-    set -eux; \
-      pip install --break-system-packages \
-        --timeout 300 --retries 5 \
-        "oci-cli==${OCI_VERSION}"; \
-      oci --version; \
-      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # Cloudflare `cf` (Wrangler vNext preview). Its state splits across two upstream
 # paths (credential store + user config), both bound under ~/.toolbox/cf/ — the
 # canonical targets live in the cf-auth/cf-config entries of
@@ -1073,19 +1155,6 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # post-0.1.0, poisoned the redirect_uri itself — Cloudflare rejected the \
       # `0.0.0.0` callback as an unregistered redirect url. Dropped for good. \
       find /usr/local/lib/node_modules/cf \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
-# Cloudflare Wrangler (primary Workers CLI). State under
-# ~/.config/.wrangler/ via xdg-app-paths(".wrangler"). OAuth callback is
-# static localhost:8976 — use `toolbox shell -B -p 8976:8976`.
-ENV WRANGLER_SEND_METRICS=false
-ARG WRANGLER_VERSION
-RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g "wrangler@${WRANGLER_VERSION}"; \
-      wrangler --version; \
-      find /usr/local/lib/node_modules/wrangler \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
@@ -1131,47 +1200,49 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
-# CodeGraph (deterministic code-symbol graph: tree-sitter -> SQLite/FTS5,
-# exposed as an MCP server + CLI). The npm meta-package is a thin shim; the
-# matching @colbymchenry/codegraph-<os>-<arch> optional dep carries the
-# bundled runtime + compiled library, so the prune is scoped to the shim
-# package only — never the platform package that holds the binary.
-ARG CODEGRAPH_VERSION
+# pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
+# served from cache across this layer's frequent rebuilds (36 bumps/6mo).
+ARG PNPM_VERSION
+RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
+    set -eux; \
+      corepack enable; \
+      corepack prepare pnpm@${PNPM_VERSION} --activate; \
+      pnpm --version; \
+      pnpm completion zsh > /usr/share/zsh/vendor-completions/_pnpm;
+# Cloudflare Wrangler (primary Workers CLI). State under
+# ~/.config/.wrangler/ via xdg-app-paths(".wrangler"). OAuth callback is
+# static localhost:8976 — use `toolbox shell -B -p 8976:8976`.
+ENV WRANGLER_SEND_METRICS=false
+ARG WRANGLER_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
-      npm install -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
-      codegraph --version; \
-      find /usr/local/lib/node_modules/@colbymchenry/codegraph \
+      npm install -g "wrangler@${WRANGLER_VERSION}"; \
+      wrangler --version; \
+      find /usr/local/lib/node_modules/wrangler \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
-# Pyright language server (Python LSP for Claude Code plugin).
-ARG PYRIGHT_VERSION
+# Claude Code CLI. Runtime env knobs live AFTER the RUN tail (see the
+# "Claude Code env knobs" ENV block below): none of them affect the install,
+# and ENV-before-RUN would bust this layer's cache on every knob tweak.
+ARG CLAUDE_CODE_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
-      npm install -g pyright@${PYRIGHT_VERSION}; \
-      pyright --version; \
-      find /usr/local/lib/node_modules/pyright \
+      npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
+      claude --version; \
+      find /usr/local/lib/node_modules/@anthropic-ai \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
-# TypeScript language server (TS/JS LSP for Claude Code typescript-lsp plugin).
-# Global typescript alongside: the server resolves the workspace's own
-# typescript when present, global tsserver is the fallback for checkouts
-# without node_modules.
-ARG TYPESCRIPT_VERSION
-ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
-RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g typescript@${TYPESCRIPT_VERSION} \
-        typescript-language-server@${TYPESCRIPT_LANGUAGE_SERVER_VERSION}; \
-      tsc --version; \
-      typescript-language-server --version; \
-      find /usr/local/lib/node_modules/typescript \
-           /usr/local/lib/node_modules/typescript-language-server \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
+        -prune -exec rm -rf {} +; \
+      # DO_NOT_TRACK exemption: swap the npm symlink for a wrapper that
+      # strips the var for the claude process only. Rationale: ENV comment
+      # near the top of this stage; known cost: runtime-notes.
+      target="$(readlink -f /usr/local/bin/claude)"; \
+      rm /usr/local/bin/claude; \
+      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK kills the Statsig feature-flag channel\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "$target" \
+        > /usr/local/bin/claude; \
+      chmod 0755 /usr/local/bin/claude; \
+      claude --version;
 # graphify (knowledge-graph builder, Claude Code skill). PyPI name is
 # `graphifyy` (double y); binary stays `graphify`. The `[sql]` extra pulls the
 # SQL tree-sitter grammar so `.sql` files land in the graph; `tree-sitter-sql`
@@ -1196,36 +1267,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       python3 -c "import tree_sitter_sql"; \
       pip show graphifyy | grep ^Version:; \
       find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
-# pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
-# served from cache across this layer's frequent rebuilds (11 bumps/6mo).
-ARG PNPM_VERSION
-RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
-    set -eux; \
-      corepack enable; \
-      corepack prepare pnpm@${PNPM_VERSION} --activate; \
-      pnpm --version; \
-      pnpm completion zsh > /usr/share/zsh/vendor-completions/_pnpm;
-# Claude Code CLI. Runtime env knobs live AFTER the RUN tail (see the
-# "Claude Code env knobs" ENV block below): none of them affect the install,
-# and ENV-before-RUN would bust this layer's cache on every knob tweak.
-ARG CLAUDE_CODE_VERSION
-RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}; \
-      claude --version; \
-      find /usr/local/lib/node_modules/@anthropic-ai \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +; \
-      # DO_NOT_TRACK exemption: swap the npm symlink for a wrapper that
-      # strips the var for the claude process only. Rationale: ENV comment
-      # near the top of this stage; known cost: runtime-notes.
-      target="$(readlink -f /usr/local/bin/claude)"; \
-      rm /usr/local/bin/claude; \
-      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK kills the Statsig feature-flag channel\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "$target" \
-        > /usr/local/bin/claude; \
-      chmod 0755 /usr/local/bin/claude; \
-      claude --version;
 # xterm-ghostty terminfo. ncurses 6.4 (bookworm) predates the entry added
 # in 6.5. Bundled .src is a fully-resolved infocmp dump of the terminfo
 # Ghostty itself ships (version in the .src provenance header) — no use=
@@ -1504,6 +1545,8 @@ COPY --link --from=fetch-go       /out/ /
 COPY --link --from=fetch-gcloud   /out/ /
 COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /
+COPY --link --from=fetch-codegraph /out/ /
+COPY --link --from=fetch-oci      /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
 COPY --link --chmod=0755 --from=rtk-builder /out/bin/rtk /usr/local/bin/rtk
 
