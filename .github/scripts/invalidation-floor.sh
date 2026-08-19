@@ -26,12 +26,18 @@ ARCH="${ARCH:-amd64}"
 
 # Layers of the ARCH manifest inside an OCI index, as "<digest> <size>" lines.
 # The attestation manifests carry vnd.docker.reference.type and are skipped.
-layers_of() { # $1 = raw index JSON file, $2 = repo ref for the blob fetch
-  local digest
-  digest=$(jq -r --arg a "$ARCH" '.manifests[]
+# Digest of the ARCH manifest inside an OCI index. The attestation manifests
+# carry vnd.docker.reference.type and are skipped.
+arch_digest() { # $1 = raw index JSON file
+  jq -r --arg a "$ARCH" '.manifests[]
       | select(.platform.architecture == $a and .platform.os == "linux")
       | select(.annotations["vnd.docker.reference.type"] == null)
-      | .digest' "$1" | head -1)
+      | .digest' "$1" | head -1
+}
+
+layers_of() { # $1 = raw index JSON file, $2 = repo ref for the blob fetch
+  local digest
+  digest=$(arch_digest "$1")
   [ -n "$digest" ] || return 1
   docker buildx imagetools inspect "${2}@${digest}" --raw \
     | jq -r '.layers[] | "\(.digest) \(.size)"'
@@ -100,6 +106,15 @@ fi
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 docker buildx imagetools inspect "$ref" --raw > "$work/current.json"
+
+# A baseline that resolves to the manifest we just pushed compares the image
+# against itself and reports "Moved 0" — a pass that means nothing happened, not
+# that nothing moved. Say so instead of banking it as a green.
+if [ "$(arch_digest "$baseline")" = "$(arch_digest "$work/current.json")" ]; then
+  echo "::notice::Baseline resolves to the manifest just pushed — no comparison performed."
+  exit 0
+fi
+
 layers_of "$baseline" "${ref%%:*}" > "$work/old.txt"
 layers_of "$work/current.json" "${ref%%:*}" > "$work/new.txt"
 verdict "$work/old.txt" "$work/new.txt"

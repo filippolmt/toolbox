@@ -230,11 +230,31 @@ accepted` and exits 1, because four moved layers no longer exceed six. So the
 fixture had to move with the bound either way; deriving it means the next person
 to change the threshold cannot fix that red by weakening the fixture instead.
 
-**What this still does not fix.** oci (20 bumps) costs 7 and codegraph (15) costs
-8, so roughly 75 bumps per window — about 12 a month — will still redden a
-publish. Raising the number further buys coverage by giving up the signal, and
-that is the wrong trade: a scalar bound cannot separate "a bump that legitimately
-moved everything below it" from "a COPY was dragged above the tail". The durable
-fix is a positional invariant instead of a count — no layer *above* the highest
-changed instruction may move — which is a redesign of the gate, not a bigger
-number. Recorded here rather than attempted.
+**The baseline was the other half of the noise, and it is fixed here.** The gate
+resolved its baseline from `:latest`, which is mutable and lags whenever a
+publish is cancelled by the next push — this repo cancels them and re-runs them.
+Two costs followed. One commit was billed for another's churn: `OCI_VERSION` was
+bumped in `fb8dcca`, whose publish was cancelled, so `:latest` never advanced and
+the gate charged the cost to `acf2843`. And a re-run of an already-published
+commit resolved `:latest` to the manifest it was about to push and compared it
+against itself, which is the unexplained `Moved 0 layer(s) of 70` in run
+`32074128559` — no longer a hypothesis. The baseline is now the immutable
+`sha-<commit>` tag of the commit the push replaced, falling back to `:latest`;
+and a baseline that equals the manifest just pushed is reported as "no comparison
+performed" instead of being banked as a green.
+
+**What this still does not fix, and one idea that does not work.** oci (20 bumps)
+is bounded at 7 and codegraph (15) at 8, so roughly 75 bumps per window — about
+12 a month — will still redden a publish. An earlier draft of this section
+proposed the durable fix as a positional invariant: no layer *above* the highest
+changed instruction may move. That does not work, and the case that motivated
+this whole ADR is the counter-example. With the fetch COPYs declared above the
+tail, an `OMZ_COMMIT` bump changed a COPY high in the file and moved the 34
+layers *below* it — every moved layer sits at or below the change, so a
+positional rule passes it. Legitimate bump and structural regression have the
+same shape; they differ only in magnitude, which is what a count measures. So the
+count is the right instrument and the residual noise is not an artefact of it:
+a bump high in a 13-deep tail is genuinely expensive, and the gate saying so is
+the gate working. The way out is fewer substantial layers in the tail — moving
+npm/pip installs into `fetch-*` stages where each bump costs one `--link` layer,
+as the six tools in that table already do — not a cleverer bound.
