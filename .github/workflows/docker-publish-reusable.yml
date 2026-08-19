@@ -248,8 +248,9 @@ jobs:
       # would catch the first case and miss the other two.
       - name: Invalidation Floor gate
         env:
-          # MAX_LAYERS/MIN_BYTES are NOT set here: the script owns the
-          # calibration so the two cannot drift apart.
+          # MAX_LAYERS/MIN_BYTES are deliberately NOT set here: the script
+          # carries the defaults, so there is one literal to change rather than
+          # two to keep in step. An env override here would still win.
           COMMIT_MSGS: ${{ join(github.event.commits.*.message, ' ') }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
         run: |

@@ -91,7 +91,7 @@ readability.
   resolves `latest` to a digest **before** `imagetools create` overwrites it —
   tolerating a missing or half-written baseline, so the first-ever publish
   passes — and fails when the new amd64 manifest diverges by more than 3 layers
-  **larger than 1 MB**. The comparison lives in
+  **larger than 1 MB** (raised to 6 in follow-up 2, and moved into the script). The comparison lives in
   `.github/scripts/invalidation-floor.sh` rather than inline in the workflow, so
   it can carry a `--self-test` over fixed data; the workflow runs that self-test
   before every real comparison. A gate whose logic is first exercised on the day
@@ -168,7 +168,7 @@ measured in `docs/internals/image-build.md`: `oci` (20 bumps in 6 months) sits 4
 of 21 while `codegraph` (15) sits 9th, so a mid-cadence bump still moves more than
 three substantial layers. Closing that gap needs a reorder by measured cadence
 *and* a `MAX_LAYERS` recalibrated to the resulting worst case. Neither is done
-here, and the reorder carries a hazard worth writing down: moving the `oci-cli`
+here — both land in follow-up 2 below, and the reorder carries a hazard worth writing down: moving the `oci-cli`
 RUN below the `graphifyy` one inverts pip dependency resolution, and the build
 verifies graphify *before* installing oci, so a break there would pass green.
 Sequence the reorder so the pip pair keeps its relative order, or add graphify's
@@ -220,12 +220,15 @@ inversion would ship broken and pass green — and `playwright` stays above
 **`MAX_LAYERS` moves from 3 to 6**, and moves into the script, so the calibration
 is one literal that CI reads rather than two that can drift. 6 is the cost of the
 fifth-most-bumped tool once ordered, so it admits graphifyy, claude-code,
-wrangler, pnpm and codex — about 300 of the ~377 tail bumps in the window, ~80% —
+wrangler, pnpm and codex — 302 of the 376 tail bumps in the window, 80% —
 while the structural regression the gate exists for, measured at 16-31 layers,
 still fails by a factor of 3 to 5. The `--self-test` fixture now derives its layer
-count from `MAX_LAYERS` instead of hardcoding four; at a hardcoded four, raising
-the bound to 6 would have left the self-test asserting nothing, which is the
-failure mode the self-test was written to prevent.
+count from `MAX_LAYERS` instead of hardcoding four. At a hardcoded four the
+self-test does not go quiet when the bound is raised — it goes red, measured:
+`MAX_LAYERS=6` against the old fixture prints `self-test FAILED: regression
+accepted` and exits 1, because four moved layers no longer exceed six. So the
+fixture had to move with the bound either way; deriving it means the next person
+to change the threshold cannot fix that red by weakening the fixture instead.
 
 **What this still does not fix.** oci (20 bumps) costs 7 and codegraph (15) costs
 8, so roughly 75 bumps per window — about 12 a month — will still redden a

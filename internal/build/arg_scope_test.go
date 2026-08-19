@@ -102,11 +102,13 @@ func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
 		// RUN.
 		var runBody strings.Builder
 		for k := j; k < len(lines); k++ {
-			runBody.WriteString(lines[k])
-			runBody.WriteString("\n")
 			if strings.HasPrefix(strings.TrimSpace(lines[k]), "#") {
+				// Skipped, not appended: a comment mentioning ${FOO_VERSION}
+				// would otherwise satisfy the reference check below on its own.
 				continue
 			}
+			runBody.WriteString(lines[k])
+			runBody.WriteString("\n")
 			if !strings.HasSuffix(strings.TrimRight(lines[k], " \t"), `\`) {
 				break
 			}

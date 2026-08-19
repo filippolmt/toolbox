@@ -15,11 +15,11 @@
 # is a YAML file, not a gate.
 set -euo pipefail
 
-# Calibration lives here, not in the workflow: one literal, CI reads it (same
-# rule as GOLANGCI_VERSION). 6 is the cost of the fifth-most-bumped tool in
-# the frequency-ordered tail — it lets the five that account for ~80% of tail
-# bumps through while a structural regression, measured at 16-31 layers, still
-# fails with room to spare. Figures and the coverage arithmetic: ADR 0002.
+# Calibration lives here rather than in the workflow, so there is one literal to
+# change instead of two. 6 is the bounded cost of the fifth-most-bumped tool in
+# the frequency-ordered tail; the coverage arithmetic, and why a scalar bound
+# cannot do better, are in ADR 0002's second follow-up. An env override still
+# wins, which is what lets the loop below be exercised at another bound.
 MAX_LAYERS="${MAX_LAYERS:-6}"
 MIN_BYTES="${MIN_BYTES:-1048576}"
 ARCH="${ARCH:-amd64}"

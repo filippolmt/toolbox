@@ -13,11 +13,14 @@
 #      rare→frequent here — it is how few consumers a COPY has below it.
 #      → CONTEXT.md "Invalidation Floor", ADR 0002
 #   2. RUN layers that must live in the final stage (apt/pip/npm installs) are
-#      ordered rare→frequent by measured Renovate cadence: heavy+rare first
-#      (azure, oci, playwright deps, zsh), frequent npm/pip CLIs last
+#      ordered rare→frequent by measured Renovate cadence: least-bumped first
+#      (typescript, pyright, azure, playwright), most-bumped last
 #      (graphify and claude-code bump ~100×/6 months each). This ordering only
 #      ever protected against bumps landing IN the tail; the majority, which
-#      land in a fetch stage, are handled by (1). It was also inert until the
+#      land in a fetch stage, are handled by (1). The two orderings inside the
+#      tail that are load-bearing rather than cadence-driven are named in the
+#      comment directly above the tail, not restated here. It was also inert
+#      until the
 #      version pins were scoped per RUN: a stage-wide ARG block put every
 #      version in every tail RUN's cache key, so every bump rebuilt the whole
 #      tail and position bought nothing (ADR 0002, follow-up).
@@ -966,11 +969,17 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # Per-user bun global bin in PATH.
 ENV PATH="/home/toolbox/.bun/bin:${PATH}"
 
-# From here on: layers that must run in the final stage (apt/pip/npm),
-# ordered to minimize rebuild tail: cost-below × Renovate cadence. Heavy +
-# rare first; cheap + frequent last. One inversion is deliberate: graphify
-# (expensive pip+gcc, 25 bumps/6mo) sits ABOVE pnpm/claude (cheap, 11/25
-# bumps) so its 2-minute layer is not re-run by their frequent bumps.
+# From here on: layers that must run in the final stage (apt/pip/npm), ordered
+# by measured Renovate cadence, least-bumped first, so a bump rebuilds only what
+# sits below it. There is no deliberate inversion left: an earlier one parked
+# graphify above pnpm/claude-code to spare its expensive pip+gcc layer, on the
+# then-current reading of 25 bumps/6mo. Re-measured it is 100 — the most bumped
+# tool in the tail — so it belongs last, and the inversion cost more than it
+# saved. Two orderings here ARE load-bearing: oci above graphify, so the two pip
+# installs keep resolving shared dependencies in the same order (the build
+# verifies graphify BEFORE installing oci, so an inversion ships broken on a
+# green build), and playwright above playwright-cli. Both fall out of the
+# cadence order anyway. Figures and the cost formula: ADR 0002, follow-up 2.
 
 # zsh + fzf. OMZ + plugins arrive pre-cloned via fetch-omz above.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
@@ -1160,7 +1169,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
 # pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
-# served from cache across this layer's frequent rebuilds (11 bumps/6mo).
+# served from cache across this layer's frequent rebuilds (36 bumps/6mo).
 ARG PNPM_VERSION
 RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
     set -eux; \
