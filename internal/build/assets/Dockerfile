@@ -858,6 +858,62 @@ RUN set -eux; \
       freeze-mtimes
 
 # ============================== Final stage ==================================
+
+# CodeGraph (deterministic code-symbol graph: tree-sitter -> SQLite/FTS5, exposed
+# as an MCP server + CLI) in its own stage, so a bump moves one `--link` layer
+# instead of every tail RUN below it (ADR 0002, follow-up 2). The base must be the
+# SAME node image as the final stage: an npm global tree is only valid on the
+# runtime that resolved it, and the optional @colbymchenry/codegraph-<os>-<arch>
+# dep is chosen by platform at install time. The npm meta-package is a thin shim
+# and that platform package carries the bundled runtime + compiled library, so the
+# weight prune stays scoped to the shim — never the package holding the binary.
+FROM node:24-bookworm-slim AS fetch-codegraph
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG CODEGRAPH_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local; \
+      npm install -g --prefix /out/usr/local "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
+      /out/usr/local/bin/codegraph --version; \
+      find /out/usr/local/lib/node_modules/@colbymchenry/codegraph \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      freeze-mtimes
+
+# OCI CLI. No upstream binary release, so it stays a pip install — but into its
+# own venv at /opt/oci-cli rather than the system site-packages, for two reasons.
+# A bump now moves one `--link` layer instead of every tail RUN below it (ADR
+# 0002, follow-up 2); and it ends the shared-site-packages coupling with
+# graphifyy, where whichever pip ran last silently decided the version of every
+# dependency the two share, with only graphify's build-time import check to
+# notice — and that check ran before oci was installed. The venv is created at
+# its final path so the console-script shebangs already read /opt/oci-cli/bin,
+# which is where the copy lands it. `python3` inside the venv is a symlink to the
+# system interpreter: bookworm here and bookworm in the final stage, so 3.11 both
+# sides. PEP 668 no longer applies, so --break-system-packages is gone with it.
+FROM debian:bookworm-slim AS fetch-oci
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OCI_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=fetch-apt-lists \
+    --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux; \
+      rm -f /etc/apt/apt.conf.d/docker-clean; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends python3 python3-venv; \
+      python3 -m venv /opt/oci-cli; \
+      /opt/oci-cli/bin/pip install --timeout 300 --retries 5 "oci-cli==${OCI_VERSION}"; \
+      /opt/oci-cli/bin/oci --version; \
+      find /opt/oci-cli -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
+      mkdir -p /out/opt /out/usr/local/bin; \
+      cp -a /opt/oci-cli /out/opt/oci-cli; \
+      ln -s /opt/oci-cli/bin/oci /out/usr/local/bin/oci; \
+      freeze-mtimes
+
 FROM node:24-bookworm-slim
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -1129,30 +1185,6 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +; \
       test -s /usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md;
-# CodeGraph (deterministic code-symbol graph: tree-sitter -> SQLite/FTS5,
-# exposed as an MCP server + CLI). The npm meta-package is a thin shim; the
-# matching @colbymchenry/codegraph-<os>-<arch> optional dep carries the
-# bundled runtime + compiled library, so the prune is scoped to the shim
-# package only — never the platform package that holds the binary.
-ARG CODEGRAPH_VERSION
-RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"; \
-      codegraph --version; \
-      find /usr/local/lib/node_modules/@colbymchenry/codegraph \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
-# OCI CLI via pip. No upstream binary release; --break-system-packages
-# accepted for this single-purpose image (PEP 668).
-ARG OCI_VERSION
-RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
-    set -eux; \
-      pip install --break-system-packages \
-        --timeout 300 --retries 5 \
-        "oci-cli==${OCI_VERSION}"; \
-      oci --version; \
-      find /usr/local/lib/python* -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # OpenAI Codex CLI. bubblewrap required for its in-tool sandbox.
 ARG CODEX_CLI_VERSION
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
@@ -1513,6 +1545,8 @@ COPY --link --from=fetch-go       /out/ /
 COPY --link --from=fetch-gcloud   /out/ /
 COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /
+COPY --link --from=fetch-codegraph /out/ /
+COPY --link --from=fetch-oci      /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
 COPY --link --chmod=0755 --from=rtk-builder /out/bin/rtk /usr/local/bin/rtk
 
