@@ -258,3 +258,19 @@ a bump high in a 13-deep tail is genuinely expensive, and the gate saying so is
 the gate working. The way out is fewer substantial layers in the tail — moving
 npm/pip installs into `fetch-*` stages where each bump costs one `--link` layer,
 as the six tools in that table already do — not a cleverer bound.
+
+That way out is taken for the two worst offenders in the same change. `oci` (20
+bumps, bounded at 7) and `codegraph` (15, bounded at 8) now install in
+`fetch-oci` and `fetch-codegraph`, so each bump moves one layer whatever its
+position, and the tail drops from 13 version blocks to 11 — which also takes two
+off the bounded cost of everything that sat above them. Coverage against
+`MAX_LAYERS` = 6 goes from 302 of 376 tail bumps to about 337: roughly 6 red
+publishes a month rather than 12. `fetch-codegraph` has to use the same node
+image as the final stage, because an npm global tree is only valid on the runtime
+that resolved it. `fetch-oci` installs into a venv at `/opt/oci-cli` rather than
+the system site-packages, which also ends a coupling this ADR had only flagged:
+oci and graphifyy shared site-packages, so whichever pip ran last decided the
+version of every dependency they have in common, and the only check that would
+have caught a break — graphify's import test — ran before oci was installed.
+What is left over the bound is playwright-cli (10), cf (8), azure (7), playwright
+(7), pyright (5) and typescript (2); the same treatment applies to any of them.
