@@ -187,3 +187,51 @@ neither is proven:
   accumulated cost of the skipped publishes to whichever commit next completes.
   The `OCI_VERSION` bump landed in `fb8dcca`, whose publish was cancelled; the
   gate reported it against `acf2843`.
+
+## Follow-up 2 (2026-08-19): the ordering, now that it does something
+
+Scoping the ARGs (follow-up 1) made position matter. Three publishes on `main`
+then measured what position is worth, and confirmed both halves of that
+follow-up's prediction:
+
+| Publish | Bump | Where it sat | Layers > 1 MB | MB | Gate |
+|---|---|---|---|---|---|
+| `80f56e9` | claude-code | last version RUN | 2 | 101 | pass |
+| `a9839f8` | codex | 7th of 13 | 7 | 320 | **fail** |
+| `6b112a8` | yq | a `fetch-*` stage | 2 | 10 | pass |
+
+Before the scoping, every one of these would have moved 16-31 substantial layers
+and 600-966 MB. So the cost of a bump is now `(number of version RUNs at or below
+it) + 1` — the `+1` is a trailing non-version layer, measured by attributing the
+claude-code publish: its own 96 MB npm layer plus one below it.
+
+Two consequences follow, and this commit takes both.
+
+**The tail is reordered by re-measured cadence** (6-month window): graphifyy 100,
+claude-code 95, wrangler 37, pnpm 36, codex 34, oci 20, codegraph 15,
+playwright-cli 10, cf 8, azure 7, playwright 7, pyright 5, typescript 2. Least
+first, most last. Two orderings inside that are load-bearing rather than
+aesthetic, and both fall out of the cadence order anyway: `oci` stays above
+`graphifyy`, so the two pip installs keep resolving shared dependencies in the
+same order as before — the build verifies graphify *before* installing oci, so an
+inversion would ship broken and pass green — and `playwright` stays above
+`playwright-cli`.
+
+**`MAX_LAYERS` moves from 3 to 6**, and moves into the script, so the calibration
+is one literal that CI reads rather than two that can drift. 6 is the cost of the
+fifth-most-bumped tool once ordered, so it admits graphifyy, claude-code,
+wrangler, pnpm and codex — about 300 of the ~377 tail bumps in the window, ~80% —
+while the structural regression the gate exists for, measured at 16-31 layers,
+still fails by a factor of 3 to 5. The `--self-test` fixture now derives its layer
+count from `MAX_LAYERS` instead of hardcoding four; at a hardcoded four, raising
+the bound to 6 would have left the self-test asserting nothing, which is the
+failure mode the self-test was written to prevent.
+
+**What this still does not fix.** oci (20 bumps) costs 7 and codegraph (15) costs
+8, so roughly 75 bumps per window — about 12 a month — will still redden a
+publish. Raising the number further buys coverage by giving up the signal, and
+that is the wrong trade: a scalar bound cannot separate "a bump that legitimately
+moved everything below it" from "a COPY was dragged above the tail". The durable
+fix is a positional invariant instead of a count — no layer *above* the highest
+changed instruction may move — which is a redesign of the gate, not a bigger
+number. Recorded here rather than attempted.

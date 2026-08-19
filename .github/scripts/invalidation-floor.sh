@@ -15,7 +15,12 @@
 # is a YAML file, not a gate.
 set -euo pipefail
 
-MAX_LAYERS="${MAX_LAYERS:-3}"
+# Calibration lives here, not in the workflow: one literal, CI reads it (same
+# rule as GOLANGCI_VERSION). 6 is the cost of the fifth-most-bumped tool in
+# the frequency-ordered tail — it lets the five that account for ~80% of tail
+# bumps through while a structural regression, measured at 16-31 layers, still
+# fails with room to spare. Figures and the coverage arithmetic: ADR 0002.
+MAX_LAYERS="${MAX_LAYERS:-6}"
 MIN_BYTES="${MIN_BYTES:-1048576}"
 ARCH="${ARCH:-amd64}"
 
@@ -49,17 +54,27 @@ verdict() { # $1 = old listing, $2 = new listing
 }
 
 self_test() {
-  local dir base healthy regression
+  local dir base healthy regression big i
   dir=$(mktemp -d); trap 'rm -rf "$dir"' RETURN
   base="$dir/base"; healthy="$dir/healthy"; regression="$dir/regression"
-  # Four big layers and two tiny ones. Four, not three: MAX_LAYERS is a `-gt`
-  # bound, so a regression fixture sitting exactly on the threshold would pass
-  # and the self-test would assert nothing.
-  printf 'sha256:aaa 200000000\nsha256:bbb 100000000\nsha256:ccc 50000000\nsha256:ddd 40000000\nsha256:eee 20000\nsha256:fff 20000\n' > "$base"
-  # Healthy: both tiny layers replaced — several layers move, none of them big.
-  printf 'sha256:aaa 200000000\nsha256:bbb 100000000\nsha256:ccc 50000000\nsha256:ddd 40000000\nsha256:ggg 20000\nsha256:hhh 20000\n' > "$healthy"
+  # One big layer MORE than the bound: MAX_LAYERS is a `-gt` bound, so a
+  # regression fixture sitting exactly on the threshold would pass and the
+  # self-test would assert nothing. Derived from MAX_LAYERS rather than
+  # hardcoded, so raising the threshold cannot silently defuse this fixture —
+  # which is exactly what a hardcoded four would have done at MAX_LAYERS=6.
+  big=$((MAX_LAYERS + 1))
+  : > "$base"; : > "$regression"
+  i=1
+  while [ "$i" -le "$big" ]; do
+    printf 'sha256:old%02d %d\n' "$i" $((40000000 + i)) >> "$base"
+    printf 'sha256:new%02d %d\n' "$i" $((40000000 + i)) >> "$regression"
+    i=$((i + 1))
+  done
+  printf 'sha256:eee 20000\nsha256:fff 20000\n' >> "$base"
+  # Healthy: the big layers stay, both tiny ones are replaced.
+  { head -n "$big" "$base"; printf 'sha256:ggg 20000\nsha256:hhh 20000\n'; } > "$healthy"
   # Regression: every big layer replaced too.
-  printf 'sha256:iii 200000000\nsha256:jjj 100000000\nsha256:kkk 50000000\nsha256:lll 40000000\nsha256:ggg 20000\nsha256:hhh 20000\n' > "$regression"
+  printf 'sha256:ggg 20000\nsha256:hhh 20000\n' >> "$regression"
 
   verdict "$base" "$healthy"    >/dev/null || { echo "self-test FAILED: healthy change rejected"; return 1; }
   verdict "$base" "$regression" >/dev/null && { echo "self-test FAILED: regression accepted"; return 1; }
