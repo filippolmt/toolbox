@@ -457,6 +457,13 @@
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "golangci/golangci-lint",
       "extractVersionTemplate": "^(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["RENOVATE_VERSION:\\s+(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "renovate"
     }
   ]
 }

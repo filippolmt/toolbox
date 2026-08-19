@@ -19,7 +19,7 @@
 |---|---|---|
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
-| `renovate.json` | `npx --yes --package renovate renovate-config-validator renovate.json` | `ci.yml` (renovate-validate) |
+| `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
 
