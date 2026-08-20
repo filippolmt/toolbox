@@ -111,7 +111,7 @@ var Skills = []Skill{
 		// so it is deliberately NOT fenced here.
 		Key:        "gsd",
 		NpmPackage: "@opengsd/gsd-core",
-		Version:    "1.10.0",
+		Version:    "1.11.0",
 		BinName:    "gsd-core",
 		InstallSteps: [][]string{
 			{"--claude", "--global", "--config-dir", "./.claude"},
@@ -174,7 +174,7 @@ var Skills = []Skill{
 		// init command unconditionally enables both adapter sets.
 		Key:        "openspec",
 		NpmPackage: "@fission-ai/openspec",
-		Version:    "1.9.0",
+		Version:    "1.10.0",
 		BinName:    "openspec",
 		InstallSteps: [][]string{
 			{"init", "--tools=claude,codex", "--force"},
