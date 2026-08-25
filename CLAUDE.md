@@ -27,7 +27,7 @@ Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as 
 
 **Two gates block a merge on coverage**, and `make go-check` only mirrors one of them:
 
-- `ci.yml` (`test`) enforces a **75% floor on total statement coverage**, pinned in the workflow. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
+- `ci.yml` (`test`) enforces a **74% floor on total statement coverage**, pinned in the workflow — deliberately a couple of points under the current total (~75.6%), so the first sizeable untested addition doesn't turn an unrelated PR red. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
 - `sonar.yml` (`analyze`) is a required check on `main` and goes red on a failing Quality Gate — **80% on new code**, a server-side threshold. Skipped, and therefore silently satisfied, whenever the SonarQube server is powered down (it runs 09:00–19:00 Europe/Rome, Mon–Fri).
 
 The two numbers use different denominators on purpose. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-numbers)

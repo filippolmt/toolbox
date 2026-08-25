@@ -330,6 +330,8 @@ check_optional  "herdr"     herdr    herdr --version
 check_optional  "tofu"      tofu     tofu version
 check_optional  "gh"        gh       gh --version
 check_optional  "glab"      glab     glab --version
+check_optional  "glab flock shim" glab grep -c "flock -w 10 9" /usr/local/bin/glab
+check_optional  "glab real binary" glab test -x /usr/local/libexec/glab
 check_optional  "gws"       gws      gws --version
 check_optional  "atuin"     atuin    atuin --version
 check_optional  "docker"    docker   docker --version
