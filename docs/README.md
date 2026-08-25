@@ -157,6 +157,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Per-repo playwright-cli skill](internals/shell-start.md#per-repo-playwright-cli-skill)
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
+- [Workspace safe.directory ("dubious ownership")](internals/shell-start.md#workspace-safedirectory-dubious-ownership)
 
 ### [internals/privacy.md](internals/privacy.md)
 
