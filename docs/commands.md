@@ -101,6 +101,8 @@ toolbox shell --oauth oci    # = -p 8181:8181 (no -B — oci binds 0.0.0.0)
 toolbox shell --oauth glab   # = -p 7171:7171 (no -B — glab binds 0.0.0.0)
 ```
 
+**Authenticate glab from one container at a time.** `~/.config/glab-cli` is a single host-shared mount, so `/usr/local/bin/glab` in the image is a shim that serializes every glab call on a lock over that mount ([why](internals/shell-start.md#gitlab-git-credential-helper-glab)). An interactive `glab auth login` holds the lock for as long as you take in the browser, and other containers stop waiting after 10 seconds and proceed **unlocked** — which is exactly the window where two of them can trade a single-use `refresh_token` and leave you with `oauth2: "invalid_grant"` and a full re-login on every host. The lock cannot fix a race you start on purpose: finish the login before running glab elsewhere. Device flow (`glab auth login --hostname <host> --device`) avoids the callback port entirely and needs no `--oauth glab` at all, but holds the lock the same way.
+
 `cf` is a loopback-bind range too: it picks its callback port from `startPort: 8877, maxPortAttempts: 10`, binds `127.0.0.1`, and advertises a `localhost` redirect_uri — the same shape as `sonar`, so the whole range is published and bridged. It carries **no** dist patch: cf 0.1.0 binds loopback natively, and the historical build-time `sed` that rewrote the callback host `localhost` → `0.0.0.0` was dropped — post-0.1.0 that literal **is** the redirect_uri, so the rewrite made Cloudflare reject the `0.0.0.0` callback as an unregistered redirect url. `cf login` recipe:
 
 ```

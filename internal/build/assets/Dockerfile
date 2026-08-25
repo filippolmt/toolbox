@@ -283,10 +283,45 @@ RUN set -eux; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/glab_checksums.txt \
         "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/checksums.txt"; \
       cd /tmp && grep "${GLAB_TARBALL}" glab_checksums.txt | sha256sum -c -; \
-      tar -xzf "/tmp/${GLAB_TARBALL}" -C /out/usr/local/bin bin/glab --strip-components=1; \
+      install -d -m 0755 /out/usr/local/libexec; \
+      tar -xzf "/tmp/${GLAB_TARBALL}" -C /out/usr/local/libexec bin/glab --strip-components=1; \
       rm "/tmp/${GLAB_TARBALL}" /tmp/glab_checksums.txt; \
-      /out/usr/local/bin/glab version; \
-      /out/usr/local/bin/glab completion -s zsh > /out/usr/share/zsh/vendor-completions/_glab; \
+      /out/usr/local/libexec/glab version; \
+      /out/usr/local/libexec/glab completion -s zsh > /out/usr/share/zsh/vendor-completions/_glab; \
+      printf '%s\n' \
+        '#!/bin/sh' \
+        '# toolbox shim over /usr/local/libexec/glab — serializes glab across containers,' \
+        '# because ~/.config/glab-cli is ONE host-shared RW mount and a concurrent OAuth' \
+        '# refresh corrupts it. Rationale + failure mode: docs/internals/shell-start.md,' \
+        '# "GitLab git credential helper (glab)". Invariants pinned by' \
+        '# internal/build/glab_flock_shim_test.go — read it before editing this script.' \
+        'set -u' \
+        'REAL=/usr/local/libexec/glab' \
+        '# Re-entrancy guard, load-bearing: the credential helper registered by' \
+        '# init.d/60-glab.sh resolves through command -v, i.e. to THIS shim, so a glab' \
+        '# process can invoke glab. flock is not recursive — without the guard that' \
+        '# inner call would wait out the whole timeout behind its own parent.' \
+        '[ -n "${TOOLBOX_GLAB_LOCKED:-}" ] && exec "$REAL" "$@"' \
+        'TOOLBOX_GLAB_LOCKED=1' \
+        'export TOOLBOX_GLAB_LOCKED' \
+        '# Every path below must run glab EXACTLY ONCE: locked when it can, unlocked when' \
+        '# it cannot. Never fail closed — a lock problem must not stop glab from running,' \
+        '# and never run twice — a retry would repeat the side effects of a mutating' \
+        '# command. HOME unset, a read-only config dir and a foreign-UID one all land on' \
+        '# the unlocked path. The probe is a subshell, not `exec 9>`: POSIX makes a' \
+        '# non-interactive shell EXIT when exec-with-only-redirections fails.' \
+        'LOCK="${HOME:-}/.config/glab-cli/.toolbox-lock"' \
+        'if [ -n "${HOME:-}" ] && mkdir -p "${LOCK%/*}" 2>/dev/null && ( : >>"$LOCK" ) 2>/dev/null; then' \
+        '    # -w 10 then proceed unlocked: an interactive `glab auth login` holds the' \
+        '    # lock for as long as the human takes, and wedging every other container' \
+        '    # meanwhile is worse than the race being avoided. The lock is held on fd 9,' \
+        '    # so it survives the exec and covers glab for its whole run.' \
+        '    { flock -w 10 9 || :; exec "$REAL" "$@"; } 9>>"$LOCK"' \
+        'fi' \
+        'exec "$REAL" "$@"' \
+        > /out/usr/local/bin/glab; \
+      chmod 0755 /out/usr/local/bin/glab; \
+      sh -n /out/usr/local/bin/glab; \
       freeze-mtimes
 
 # gws (Google Workspace CLI). MUSL variant — upstream `-gnu` targets
