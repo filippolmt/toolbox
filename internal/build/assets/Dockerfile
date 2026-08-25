@@ -1589,5 +1589,7 @@ USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]
 # See the fetch-tini stage comment for why CMD is `sleep infinity` rather
-# than a shell.
+# than a shell. It applies to a bare `docker run` of this image only: every
+# `toolbox shell` overrides it with the resolved shell as Config.Cmd
+# (sessionplan.ResolveShellCmd), which is what actually runs under tini.
 CMD ["sleep", "infinity"]

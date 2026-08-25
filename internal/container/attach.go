@@ -221,9 +221,9 @@ func diagnoseExecFailure(ctx context.Context, cli client.APIClient, containerID 
 }
 
 // diagnoseSessionExit inspects the container after the exec stream closes.
-// A still-running container means the shell exited normally — PID 1 is
-// `sleep infinity`, so the container outlives any shell exit code — and yields
-// nil. A gone or exited container means the session died with it, most often
+// A still-running container means the shell exited normally — the user's shell
+// is an exec session beside the container's own idle shell (Config.Cmd), so the
+// container outlives any shell exit code — and yields nil. A gone or exited container means the session died with it, most often
 // because the daemon ran out of disk mid-session; streamTail carries the last
 // bytes the daemon wrote so a disk signature is recognized even once AutoRemove
 // has reaped the container.

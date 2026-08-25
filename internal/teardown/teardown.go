@@ -42,11 +42,15 @@ import (
 const DefaultTimeout = 30 * time.Second
 
 // DefaultStopGrace is the SIGTERM grace (seconds) passed to
-// ContainerStop on shell-exit teardown. Kept short because the image's
-// PID 1 child is `sleep infinity` (terminates instantly on SIGTERM) and
-// persistent state lives on bind mounts — nothing to flush. Older
-// images that shipped `CMD ["zsh"]` would fall back to SIGKILL after
-// this grace; user-visible delta is "2s tail" instead of the prior 10s.
+// ContainerStop on shell-exit teardown. Kept short because nothing in the
+// container needs to flush: persistent state lives on bind mounts, and the
+// process under tini is the idle shell the CLI asked for — `sessionplan.Plan`
+// sets Cmd from ResolveShellCmd (`/bin/zsh` by default) as Config.Cmd, which
+// overrides the image's own `CMD ["sleep", "infinity"]`, so that CMD only ever
+// runs for a bare `docker run` of the image. Measured on the real Config.Cmd,
+// with and without a TTY: `docker stop -t 2` returns in under 100ms with exit
+// 143, so the grace is a ceiling this path does not reach rather than a tail
+// the user waits out.
 const DefaultStopGrace = 2
 
 // StopOne stops and removes the named container. NotFound on stop is
@@ -153,7 +157,8 @@ func OnShellExit(cli client.APIClient, name string) error {
 }
 
 // killAutoRemove SIGKILLs an AutoRemove container and returns without waiting
-// on the remove. PID 1 is `sleep infinity` with all state on bind mounts, so
+// on the remove. The idle shell under tini holds no unflushed state — it all
+// lives on bind mounts — so
 // there is nothing to flush — SIGKILL is safe and skips the SIGTERM grace.
 // The daemon's auto-remove worker deletes the container afterwards. NotFound
 // means it is already gone (a race with a prior teardown); Conflict is the
