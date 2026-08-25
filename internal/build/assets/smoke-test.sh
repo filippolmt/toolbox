@@ -290,6 +290,11 @@ check_required "git-credential-toolbox shim" sh -c "test -x /usr/local/bin/git-c
 # entrypoint registers the credential helper in the system gitconfig when the
 # bridge is installed — assert the wiring is present.
 check_required "git credential helper wired" sh -c "grep -q 'credential.helper' /usr/local/bin/entrypoint && grep -q git-credential-toolbox /usr/local/bin/entrypoint && echo present"
+# entrypoint registers the workspace mount points as git safe.directory — a
+# runtime check, not a grep: the mount point transiently reports uid 0 and git
+# then refuses the worktree. /workspace always exists, so this holds with no
+# workspace bind.
+check_required "workspace safe.directory registered" sh -c "git config --system --get-all safe.directory | grep -qx /workspace && echo present"
 # Host-only credential-helper names alias to the bridge shim so a host
 # ~/.gitconfig naming osxkeychain/manager/libsecret resolves with no warning.
 # Must be symlinks to git-credential-toolbox — NEVER shadow the built-in
