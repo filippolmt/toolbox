@@ -5,7 +5,7 @@ go 1.26.2
 toolchain go1.27.0
 
 require (
-	charm.land/bubbles/v2 v2.2.0
+	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/containerd/errdefs v1.0.0
