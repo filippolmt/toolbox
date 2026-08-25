@@ -112,12 +112,10 @@ jobs:
           load: true
           platforms: ${{ matrix.platforms }}
           tags: ${{ env.TEST_TAG }}
-          cache-from: |
-            type=registry,ref=${{ inputs.cache_ref }}
-            type=gha,scope=${{ matrix.variant }}
-          # mode=min: final-image layers only. Fetch-stage misses fall through
-          # to the registry cache (cache_ref) — the authoritative mode=max store.
-          cache-to: type=gha,mode=min,scope=${{ matrix.variant }}
+          # Registry cache only — see docker-ci.yml for why `type=gha` is gone.
+          # This build's output is thrown away after the smoke test, so it needs
+          # to read a cache, never write one.
+          cache-from: type=registry,ref=${{ inputs.cache_ref }}
 
       - name: Smoke test
         if: matrix.load
@@ -145,12 +143,10 @@ jobs:
           # `docker buildx imagetools inspect`.
           provenance: mode=max
           sbom: true
-          cache-from: |
-            type=registry,ref=${{ inputs.cache_ref }}
-            type=gha,scope=${{ matrix.variant }}
-          cache-to: |
-            type=gha,mode=min,scope=${{ matrix.variant }}
-            type=registry,ref=${{ inputs.cache_ref }},mode=max
+          # The authoritative store, and now the only one: mode=max keeps every
+          # intermediate fetch-stage layer, which is what PR builds read.
+          cache-from: type=registry,ref=${{ inputs.cache_ref }}
+          cache-to: type=registry,ref=${{ inputs.cache_ref }},mode=max
 
       # Fan-in via digest artifacts (Docker's documented multi-runner pattern):
       # matrix job outputs are last-writer-wins across legs and would clobber
