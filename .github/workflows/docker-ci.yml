@@ -22,9 +22,9 @@ permissions:
 
 env:
   # BuildKit registry cache published by the main-branch publish workflow
-  # (docker-publish.yml, cache-to mode=max). PR builds read it so a cold GHA
-  # cache still seeds from main instead of rebuilding every stage. The bare
-  # `:buildcache` tag previously referenced here is written by nothing.
+  # (docker-publish.yml, cache-to mode=max), and the only build cache this repo
+  # uses: PR builds seed every stage from main instead of rebuilding it. The
+  # bare `:buildcache` tag previously referenced here is written by nothing.
   CACHE_REF: ghcr.io/${{ github.repository }}:buildcache-main
 
 # Cancel superseded builds on the same ref to free runner minutes during
@@ -123,14 +123,15 @@ jobs:
           tags: ${{ matrix.tag }}
           # Cache scope per matrix variant so concurrent variants don't
           # overwrite each other's GHA cache layers.
-          cache-from: |
-            type=registry,ref=${{ env.CACHE_REF }}
-            type=gha,scope=${{ matrix.variant }}
-          # mode=min: final-image layers only. Intermediate fetch-stage layers
-          # live in the registry cache (CACHE_REF, mode=max) — writing them
-          # here too would burn the 10 GB/repo GHA quota (2 multi-GB scopes
-          # per active PR) for data the registry already serves.
-          cache-to: type=gha,mode=min,scope=${{ matrix.variant }}
+          # Registry cache only, no `type=gha`. Exporting to the GitHub Actions
+          # Cache hung indefinitely mid-export ("exporting to GitHub Actions
+          # Cache", one layer, no further output) and burned the whole 30-minute
+          # budget without ever reaching the smoke test — on this repo's own PRs
+          # and on unrelated Renovate branches alike, both arches, so the trigger
+          # was the service and not the change. Evidence in issue #765. The
+          # registry cache is mode=max and already serves every stage, so the
+          # loss is the final-image layer warm on PR builds.
+          cache-from: type=registry,ref=${{ env.CACHE_REF }}
 
       - name: Smoke test
         if: matrix.load
