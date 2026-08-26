@@ -146,7 +146,7 @@ stay isolated — the token matches a `toolbox mounts` name, and a prefix like
 shareable mount is rejected, so a typo can't silently isolate everything.
 
 Because a profile is a fresh root, each one re-downloads regenerable caches
-(`npm-global`, `bun`, `go`, `playwright`) on first use — expected, and the cost
+(`npm-global`, `bun`, `pnpm`, `uv`, `go`, `playwright`) on first use — expected, and the cost
 of full isolation. Like `mounts_root`, a profile changes only where state
 *binds*; it never moves existing data.
 

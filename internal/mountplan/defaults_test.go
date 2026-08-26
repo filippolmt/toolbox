@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 33 {
-		t.Fatalf("expected 33 default mounts, got %d", len(mounts))
+	if len(mounts) != 35 {
+		t.Fatalf("expected 35 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -72,6 +72,10 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/npm-global", false, true)
 	// bun state (install cache + global packages): read-write, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/bun", false, true)
+	// pnpm user-global root (global bin + store): read-write, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/pnpm", false, true)
+	// uv tool root (tool venvs + launchers): read-write, create-if-missing.
+	assertMount(t, mounts, "~/.toolbox/uv", false, true)
 	// Per-user Go workspace (GOPATH): read-write, create-if-missing (GO-05).
 	assertMount(t, mounts, "~/.toolbox/go", false, true)
 	// herdr config + state (sessions, plugins): read-write, create-if-missing.

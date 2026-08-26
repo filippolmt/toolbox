@@ -1439,6 +1439,26 @@ ENV HOME=/home/toolbox \
     TZ=Europe/Rome \
     SHELL=/bin/zsh
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
+# Per-user global bins for the remaining toolchains, each backed by its own
+# bind mount (internal/mountplan/defaults.go) so runtime `go install`,
+# `pnpm add -g` and `uv tool install` survive a container recreate:
+#   - go: GOPATH defaults to $HOME/go, so the mount already persisted the
+#     binaries — only the bin dir was missing from PATH.
+#   - pnpm: PNPM_HOME drives both the global bin ($PNPM_HOME/bin) and the
+#     content-addressable store, so one mount covers both.
+#   - uv: UV_TOOL_DIR already defaults inside the mount; only the launchers
+#     need moving off ~/.local/bin, which is not persisted.
+# Declared HERE, below the tail, not beside the go/bun PATH entries above it:
+# an ENV above the tail lands in the cache key of every RUN below it, and
+# moving 12 substantial layers would trip the Invalidation Floor gate
+# (MAX_LAYERS in .github/scripts/invalidation-floor.sh). Same reason the
+# npm-global entry sits here. Why: docs/adr/0002-layer-ordering-by-invalidation-floor.md
+# Like npm-global, these sit ahead of /usr/local/bin so a deliberate runtime
+# install wins over the baked pin — see the shadow gotcha in
+# .claude/rules/config-mounts-sdd.md.
+ENV PNPM_HOME="/home/toolbox/.local/share/pnpm" \
+    UV_TOOL_BIN_DIR="/home/toolbox/.local/share/uv/bin"
+ENV PATH="/home/toolbox/go/bin:/home/toolbox/.local/share/pnpm/bin:/home/toolbox/.local/share/uv/bin:${PATH}"
 # Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
 # additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
 # HOMEBREW_PREFIX/MANPATH/INFOPATH. Analytics off (privacy posture, rtk
