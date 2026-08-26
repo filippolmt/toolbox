@@ -114,7 +114,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
     --mount=type=cache,target=/usr/local/cargo/registry,id=rtk-cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=rtk-cargo-git \
     set -eux; \
-    mkdir -p /out/bin; \
+    mkdir -p /out/usr/local/bin; \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends curl ca-certificates; \
@@ -126,15 +126,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/rtk_checksums.txt \
         "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
       cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
-      tar -xzf "/tmp/${RTK_TARBALL}" -C /out/bin rtk; \
-      chmod +x /out/bin/rtk; \
+      tar -xzf "/tmp/${RTK_TARBALL}" -C /out/usr/local/bin rtk; \
+      chmod 0755 /out/usr/local/bin/rtk; \
     elif [ "${TARGETARCH}" = "arm64" ]; then \
       apt-get install -qqy --no-install-recommends build-essential pkg-config; \
-      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out --locked rtk; \
+      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out/usr/local --locked rtk; \
+      rm -f /out/usr/local/.crates.toml /out/usr/local/.crates2.json; \
     else \
       echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
-    /out/bin/rtk --version; \
+    /out/usr/local/bin/rtk --version; \
     find /out -exec touch -h -d @1 {} +
 
 # Shared parent for the fetch-* stages: curl + CA bundle + git. tar/gzip/awk/
@@ -1603,7 +1604,11 @@ COPY --link --from=fetch-brew     /out/ /
 COPY --link --from=fetch-codegraph /out/ /
 COPY --link --from=fetch-oci      /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
-COPY --link --chmod=0755 --from=rtk-builder /out/bin/rtk /usr/local/bin/rtk
+# Copies the tree, not the file: a single-file COPY makes BuildKit synthesise
+# /usr/local/bin, and those directories are stamped with the build's wall clock
+# however frozen the file's own mtime is — so the layer digest moved on every
+# rebuild. Same shape as the fetch-* stages for the same reason. → ADR 0002
+COPY --link --from=rtk-builder /out/ /
 
 USER toolbox
 WORKDIR /workspace
