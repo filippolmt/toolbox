@@ -373,18 +373,23 @@ so its `COPY --link` layer comes back with a fresh digest whenever the
 stage re-executes. Distinct from Archive Drift, which moves layers the
 stage sits on rather than the stage's own output.
 
-Concretely: `fetch-omz` and `fetch-brew` clone git repositories and
-`rtk-builder` compiles from source, and none of the three produces
-identical bytes twice. `freeze-mtimes` normalises timestamps, which is
-what makes the other 27 fetch stages reproducible, but it cannot
-normalise content. The cost stays invisible while BuildKit reuses the
+Concretely: `fetch-omz` and `fetch-brew` clone git repositories, and a
+shallow fetch does not produce a reproducible pack file.
+`freeze-mtimes` normalises timestamps, which is what makes the other
+fetch stages reproducible, but it cannot normalise content.
+
+`rtk-builder` was first counted here and does not belong: on amd64 its
+binary comes from a checksummed tarball and is identical across builds.
+Its layer moved because the COPY named a single file, and a `--link`
+layer stamps the destination directories it has to synthesise with the
+build clock — a defect of the copy, not of the stage's output. The cost stays invisible while BuildKit reuses the
 stage and appears in full whenever anything invalidates it — an archive
 update, or a lost build cache.
 
 Why the term exists: `COPY --link` is what buys a bump the price of one
 layer, and that guarantee is worth exactly as much as the reproducibility
-of the stage behind it. Three stages did not hold up their end, and the
-gap had no name because the ADR that introduced the ordering had only
+of the stage behind it. Two stages do not hold up their end, and the gap
+had no name because the ADR that introduced the ordering had only
 measured mtimes.
 
 ### Docker Identity
