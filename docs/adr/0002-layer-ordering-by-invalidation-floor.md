@@ -180,9 +180,13 @@ neither is proven:
 - A green publish (run `32074128559`, commit `12ade4b`) logged `Moved 0 layer(s)
   of 70` for a transition measured above at 31 substantial layers. The only
   reading that reconciles the two is a baseline resolved to the run's own output.
-  Publishes on `main` are cancelled by the next push and re-run by
-  `CI Retry Cancelled`, which would produce exactly that, so the gate may have
-  been passing vacuously. Unverified.
+  Publishes on `main` are cancelled by the next push, so the gate may have been
+  passing vacuously. Unverified. **Corrected: the re-run half of this was
+  wrong.** An earlier wording credited `CI Retry Cancelled` with re-running
+  them; that workflow fires on `workflow_run` of `CI` and requires
+  `event == 'pull_request'`, so it never touches a publish and never runs for a
+  `main` push. Nothing re-runs a cancelled publish. Follow-up 2 resolved the
+  vacuous pass by another route and left this sentence unchecked behind it.
 - Because those cancellations leave `:latest` behind, the gate attributes the
   accumulated cost of the skipped publishes to whichever commit next completes.
   The `OCI_VERSION` bump landed in `fb8dcca`, whose publish was cancelled; the
@@ -242,6 +246,17 @@ against itself, which is the unexplained `Moved 0 layer(s) of 70` in run
 `sha-<commit>` tag of the commit the push replaced, falling back to `:latest`;
 and a baseline that equals the manifest just pushed is reported as "no comparison
 performed" instead of being banked as a green.
+
+**How often the immutable half actually lands, measured after the fact:** only
+when the commit the push replaced happened to publish. `docker-publish.yml` is
+path-filtered to `internal/build/assets/**` and its own two workflow files, and
+over the twenty `main` commits ending at `fc6f8c7`, 11 matched and 9 did not — so
+`github.event.before` names a commit with no `sha-` tag roughly half the time,
+and the `:latest` fallback is the ordinary path rather than the exception. That
+is not a degradation: `:latest` *is* the last published manifest, which is the
+baseline the comparison wants. What the fallback loses is attribution, and only
+the part of it that was never recoverable — bytes from a cancelled publish were
+never delivered, so the next publish genuinely does push them.
 
 **What this still does not fix, and one idea that does not work.** oci (20 bumps)
 is bounded at 7 and codegraph (15) at 8, so roughly 75 bumps per window — about
