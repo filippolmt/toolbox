@@ -1056,9 +1056,21 @@ ENV CHECKPOINT_DISABLE=1 \
     CLOUDSDK_SURVEY_PROMPT_DISABLE=1 \
     RTK_TELEMETRY_DISABLED=1 \
     RTK_TEE=0
-ENV PATH="/usr/local/go/bin:${PATH}"
+# Go toolchain (GOROOT) + per-user GOPATH bin, so runtime `go install`
+# binaries are runnable. GOPATH defaults to $HOME/go, which is the
+# persistent "go" bind mount (internal/mountplan/defaults.go).
+ENV PATH="/usr/local/go/bin:/home/toolbox/go/bin:${PATH}"
 # Per-user bun global bin in PATH.
 ENV PATH="/home/toolbox/.bun/bin:${PATH}"
+# pnpm and uv keep their user-global installs under their own XDG data dirs,
+# each persisted by a bind mount (internal/mountplan/defaults.go), so runtime
+# `pnpm add -g` and `uv tool install` survive a container recreate. pnpm derives
+# both its global bin (`$PNPM_HOME/bin`) and its store from PNPM_HOME, so the
+# mount covers both; uv's tool dir already defaults inside its mount, only the
+# bin dir needs redirecting off ~/.local/bin, which is not persisted.
+ENV PNPM_HOME="/home/toolbox/.local/share/pnpm" \
+    UV_TOOL_BIN_DIR="/home/toolbox/.local/share/uv/bin"
+ENV PATH="/home/toolbox/.local/share/pnpm/bin:/home/toolbox/.local/share/uv/bin:${PATH}"
 
 # From here on: layers that must run in the final stage (apt/pip/npm), ordered
 # by measured Renovate cadence, least-bumped first, so a bump rebuilds only what
