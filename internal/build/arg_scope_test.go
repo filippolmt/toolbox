@@ -31,15 +31,7 @@ var stageWideARGs = map[string]bool{
 }
 
 func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
-	body := readAsset(t, "Dockerfile")
-
-	// The final stage is the last FROM: everything below it is the RUN tail the
-	// rule is about.
-	from := strings.LastIndex(body, "\nFROM node:")
-	if from < 0 {
-		t.Fatal("Dockerfile: cannot locate the final `FROM node:` stage")
-	}
-	stage := body[from+1:]
+	stage := finalStage(t)
 	lines := strings.Split(stage, "\n")
 
 	// EVERY ARG in the stage, not just the `_VERSION` ones: the pathology is
@@ -157,16 +149,10 @@ func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
 // goes green on the regression it exists to catch. A gate that fails silently
 // green needs a test, not a comment. ADR 0002, follow-up 3.
 func TestFinalStageFirstRUNHasNoVersionARG(t *testing.T) {
-	body := readAsset(t, "Dockerfile")
-
-	from := strings.LastIndex(body, "\nFROM node:")
-	if from < 0 {
-		t.Fatal("Dockerfile: cannot locate the final `FROM node:` stage")
-	}
 	argRE := regexp.MustCompile(`^ARG ([A-Za-z_][A-Za-z0-9_]*)(=.*)?$`)
 
 	var reachedRUN bool
-	for _, line := range strings.Split(body[from+1:], "\n") {
+	for _, line := range strings.Split(finalStage(t), "\n") {
 		if strings.HasPrefix(line, "RUN ") {
 			reachedRUN = true
 			break

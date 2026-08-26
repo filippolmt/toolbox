@@ -130,8 +130,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
       chmod 0755 /out/usr/local/bin/rtk; \
     elif [ "${TARGETARCH}" = "arm64" ]; then \
       apt-get install -qqy --no-install-recommends build-essential pkg-config; \
-      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /out/usr/local --locked rtk; \
-      rm -f /out/usr/local/.crates.toml /out/usr/local/.crates2.json; \
+      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /tmp/cargo --locked rtk; \
+      install -m 0755 /tmp/cargo/bin/rtk /out/usr/local/bin/rtk; \
     else \
       echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \

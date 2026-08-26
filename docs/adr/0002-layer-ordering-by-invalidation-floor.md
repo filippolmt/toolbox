@@ -318,6 +318,16 @@ re-executed because their shared `fetch-base` moved, and unlike the other 27
 they do not produce identical bytes twice. `freeze-mtimes` made the fetch
 layers reproducible against timestamps; it says nothing about content.
 
+**Corrected: idx 69 is not one of them.** Two `--no-cache` builds of a minimal
+reproduction show rtk's amd64 binary — a checksummed upstream tarball — identical
+across builds while its layer digest was not. It moved because the COPY named a
+single file: a `--link` layer is built independently of what is beneath it, so it
+materialises `usr/`, `usr/local/` and `usr/local/bin/` itself, and those carry the
+build's wall clock however thoroughly the stage froze the file. The row above is
+therefore 2 stages of genuine Fetch Nondeterminism plus one mis-attributed copy;
+the fix is to copy `/out/ /`, as every fetch stage already does, and
+`TestBuildStageCOPYsCopyWholeTree` holds the shape for the class.
+
 **The issue's first proposed direction is not merely weak, it is fatal.**
 Comparing only layers whose `created_by` differs would have counted zero here —
 and zero for every regression this ADR exists to catch. Measured: all 70

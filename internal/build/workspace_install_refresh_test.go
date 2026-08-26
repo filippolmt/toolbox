@@ -142,3 +142,17 @@ func readAsset(t *testing.T, name string) string {
 	}
 	return string(b)
 }
+
+// finalStage returns the text of the Dockerfile's final stage — the RUN tail and
+// the COPY block ADR 0002's layer ordering is about. The last `FROM node:` is the
+// anchor: fetch-codegraph starts from the same image and has to stay out of the
+// match, so this cannot be the first occurrence.
+func finalStage(t *testing.T) string {
+	t.Helper()
+	body := readAsset(t, "Dockerfile")
+	from := strings.LastIndex(body, "\nFROM node:")
+	if from < 0 {
+		t.Fatal("Dockerfile: cannot locate the final `FROM node:` stage")
+	}
+	return body[from+1:]
+}
