@@ -148,12 +148,16 @@ func defaults() []config.Mount {
 		// pnpm user-global root: global bin (PNPM_HOME) plus the content-addressable
 		// store beside it. `pnpm add -g` writes here; without this bind every
 		// `toolbox stop` wipes the global package set and the store. PNPM_HOME +
-		// PATH are wired in the Dockerfile, next to the bun block.
+		// PATH are wired in the Dockerfile, beside the npm-global PATH entry.
 		{Name: "pnpm", Source: "~/.toolbox/pnpm", Target: "/home/toolbox/.local/share/pnpm", ReadOnly: false, CreateIfMissing: true},
-		// uv tool root: `uv tool install` puts each tool's venv under tools/ (the
+		// uv data root: `uv tool install` puts each tool's venv under tools/ (the
 		// UV_TOOL_DIR default already falls inside this dir) and its launchers in
 		// bin/ — the Dockerfile sets UV_TOOL_BIN_DIR to move them off ~/.local/bin,
 		// which is not persisted. Python's counterpart to npm-global / bun.
+		// Deliberately the whole data root, not just tools/ + bin/: `uv python
+		// install` interpreters land in python/ and persist too. That is a
+		// regenerable download cache like playwright-cache, not a system-package
+		// hierarchy — `rm -rf ~/.toolbox/uv/python` reclaims it.
 		{Name: "uv", Source: "~/.toolbox/uv", Target: "/home/toolbox/.local/share/uv", ReadOnly: false, CreateIfMissing: true},
 		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
 		// to /home/toolbox/go inside the container; this bind-mount persists
@@ -162,6 +166,8 @@ func defaults() []config.Mount {
 		// playwright-cache / npm-global pattern (D-11). No GOROOT/GOPATH
 		// ENV required (D-08 / D-09): Go auto-detects GOROOT from the
 		// `/usr/local/go/bin/go` exec path and defaults GOPATH to $HOME/go.
+		// PATH augmentation for ~/go/bin IS wired in the Dockerfile, beside the
+		// npm-global PATH entry — without it the binaries persist unreachable.
 		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
 		// herdr (agent multiplexer TUI) follows XDG and splits durable state across
 		// ~/.config/herdr and ~/.local/state/herdr, so both bind sources nest
