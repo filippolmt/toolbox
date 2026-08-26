@@ -6,6 +6,11 @@
 # MIN_BYTES rather than bytes: a GO_VERSION bump legitimately moves one big
 # layer, while the regression this guards against moves many.
 #
+# Not every moved layer measures ordering. An unpinned `apt-get install` in the
+# final stage moves whenever the Debian archive publishes something new, and
+# takes every RUN beneath it along — Archive Drift, in CONTEXT.md. The canary in
+# verdict() tells the two apart; follow-up 3 of the ADR has the measurements.
+#
 # Usage:
 #   invalidation-floor.sh <baseline-index.json> <image-ref>
 #   invalidation-floor.sh --self-test
@@ -24,8 +29,6 @@ MAX_LAYERS="${MAX_LAYERS:-6}"
 MIN_BYTES="${MIN_BYTES:-1048576}"
 ARCH="${ARCH:-amd64}"
 
-# Layers of the ARCH manifest inside an OCI index, as "<digest> <size>" lines.
-# The attestation manifests carry vnd.docker.reference.type and are skipped.
 # Digest of the ARCH manifest inside an OCI index. The attestation manifests
 # carry vnd.docker.reference.type and are skipped.
 arch_digest() { # $1 = raw index JSON file
@@ -35,23 +38,56 @@ arch_digest() { # $1 = raw index JSON file
       | .digest' "$1" | head -1
 }
 
-layers_of() { # $1 = raw index JSON file, $2 = repo ref for the blob fetch
-  local digest
+# Layer listing as "<digest> <size> <kind>" lines. The kind is what the layer's
+# instruction does to the layers below it: a RUN is invalidated by anything
+# above it, a COPY --link is not. `argrun` is a RUN with build args in scope —
+# the `|N` prefix docker history prints — which the final stage's own RUNs carry
+# and the base image's do not, so the first `argrun` is the final stage's apt
+# layer. Returns non-zero when either half is unreadable; the caller passes.
+layers_of() { # $1 = raw index JSON file, $2 = repo ref, $3 = output file
+  local digest ref
   digest=$(arch_digest "$1")
   [ -n "$digest" ] || return 1
-  docker buildx imagetools inspect "${2}@${digest}" --raw \
-    | jq -r '.layers[] | "\(.digest) \(.size)"'
+  ref="${2}@${digest}"
+  docker buildx imagetools inspect "$ref" --raw \
+    | jq -r '.layers[] | "\(.digest) \(.size)"' > "${3}.layers" || return 1
+  docker buildx imagetools inspect "$ref" --format '{{json .Image}}' \
+    | jq -r '.history[] | select(.empty_layer != true) | .created_by
+             | if startswith("COPY") then "copy"
+               elif startswith("RUN |") then "argrun"
+               else "run" end' > "${3}.kinds" || return 1
+  [ -s "${3}.layers" ] || return 1
+  [ "$(wc -l < "${3}.layers")" = "$(wc -l < "${3}.kinds")" ] || return 1
+  paste -d' ' "${3}.layers" "${3}.kinds" > "$3"
 }
 
 # The pure half: compare two layer listings and report. Returns 1 when the
-# number of moved layers above MIN_BYTES exceeds MAX_LAYERS.
+# number of counted layers above MIN_BYTES exceeds MAX_LAYERS.
 verdict() { # $1 = old listing, $2 = new listing
-  local moved n mb
+  local moved canary n excused=0 drift="" mb line
   moved=$(mktemp)
   comm -23 <(sort "$2") <(sort "$1") > "$moved"
-  n=$(awk -v m="$MIN_BYTES" '$2 > m' "$moved" | wc -l)
   mb=$(awk '{s += $2} END {printf "%.0f", s / 1048576}' "$moved")
-  echo "Moved $(wc -l < "$moved") layer(s) of $(wc -l < "$2"), ${n} above $((MIN_BYTES / 1048576)) MB, ${mb} MB total."
+
+  # The final stage's first RUN is its unpinned apt layer — the one instruction
+  # no version bump can reach, held there by TestFinalStageFirstRUNHasNoVersionARG.
+  # If it moved, the archive moved, and every RUN below it moved for that reason
+  # rather than for anything in the diff. Only the --link COPYs still measure
+  # ordering, so only those are counted.
+  canary=$(awk '$3 == "argrun" { print $1; exit }' "$2")
+  if [ -n "$canary" ] && grep -q "^${canary} " "$moved"; then
+    drift=1
+    excused=$(awk -v m="$MIN_BYTES" '$2 > m && $3 != "copy"' "$moved" | wc -l)
+    n=$(awk -v m="$MIN_BYTES" '$2 > m && $3 == "copy"' "$moved" | wc -l)
+  else
+    n=$(awk -v m="$MIN_BYTES" '$2 > m' "$moved" | wc -l)
+  fi
+
+  line="Moved $(wc -l < "$moved") layer(s) of $(wc -l < "$2"), $((n + excused)) above $((MIN_BYTES / 1048576)) MB, ${mb} MB total"
+  if [ -n "$drift" ]; then
+    line="${line} — ${excused} excused as archive drift, ${n} counted (max ${MAX_LAYERS})"
+  fi
+  echo "${line}."
   rm -f "$moved"
   if [ "$n" -gt "$MAX_LAYERS" ]; then
     echo "::error::Invalidation Floor regression: ${n} substantial layers moved (max ${MAX_LAYERS}), ${mb} MB pushed to every puller. See docs/adr/0002-layer-ordering-by-invalidation-floor.md"
@@ -60,32 +96,47 @@ verdict() { # $1 = old listing, $2 = new listing
 }
 
 self_test() {
-  local dir base healthy regression big i
+  local dir base healthy regression drift driftbad big i
   dir=$(mktemp -d); trap 'rm -rf "$dir"' RETURN
-  base="$dir/base"; healthy="$dir/healthy"; regression="$dir/regression"
+  base="$dir/base"
+  healthy="$dir/healthy"; regression="$dir/regression"
+  drift="$dir/drift"; driftbad="$dir/driftbad"
+
   # One big layer MORE than the bound: MAX_LAYERS is a `-gt` bound, so a
   # regression fixture sitting exactly on the threshold would pass and the
   # self-test would assert nothing. Derived from MAX_LAYERS rather than
-  # hardcoded, so raising the threshold cannot silently defuse this fixture —
+  # hardcoded, so raising the threshold cannot silently defuse these fixtures —
   # which is exactly what a hardcoded four would have done at MAX_LAYERS=6.
   big=$((MAX_LAYERS + 1))
-  : > "$base"; : > "$regression"
+
+  # Shaped like the image: the apt layer first, then a tail of arg-keyed RUNs,
+  # then the --link COPYs, then two tiny ones below the size filter.
+  printf 'sha256:apt0 90000000 argrun\n' > "$base"
   i=1
   while [ "$i" -le "$big" ]; do
-    printf 'sha256:old%02d %d\n' "$i" $((40000000 + i)) >> "$base"
-    printf 'sha256:new%02d %d\n' "$i" $((40000000 + i)) >> "$regression"
+    printf 'sha256:run%02d %d argrun\n' "$i" $((40000000 + i)) >> "$base"
     i=$((i + 1))
   done
-  printf 'sha256:eee 20000\nsha256:fff 20000\n' >> "$base"
-  # Healthy: the big layers stay, both tiny ones are replaced.
-  { head -n "$big" "$base"; printf 'sha256:ggg 20000\nsha256:hhh 20000\n'; } > "$healthy"
-  # Regression: every big layer replaced too.
-  printf 'sha256:ggg 20000\nsha256:hhh 20000\n' >> "$regression"
+  i=1
+  while [ "$i" -le "$big" ]; do
+    printf 'sha256:cp%02d %d copy\n' "$i" $((40000000 + i)) >> "$base"
+    i=$((i + 1))
+  done
+  printf 'sha256:eee 20000 copy\nsha256:fff 20000 copy\n' >> "$base"
+
+  sed 's/sha256:eee/sha256:ggg/; s/sha256:fff/sha256:hhh/' "$base" > "$healthy"
+  sed 's/sha256:run/sha256:xrun/'                          "$base" > "$regression"
+  sed 's/sha256:apt0/sha256:xapt0/; s/sha256:run/sha256:xrun/' "$base" > "$drift"
+  sed 's/sha256:cp/sha256:xcp/' "$drift" > "$driftbad"
 
   verdict "$base" "$healthy"    >/dev/null || { echo "self-test FAILED: healthy change rejected"; return 1; }
   verdict "$base" "$regression" >/dev/null && { echo "self-test FAILED: regression accepted"; return 1; }
   verdict "$base" "$base"       >/dev/null || { echo "self-test FAILED: identical images rejected"; return 1; }
-  echo "self-test OK (healthy passes, regression fails, identical passes)"
+  # The canary moved, so the whole RUN tail moving with it is upstream drift.
+  verdict "$base" "$drift"      >/dev/null || { echo "self-test FAILED: archive drift rejected"; return 1; }
+  # Same drift, plus a real regression among the COPYs the excuse does not cover.
+  verdict "$base" "$driftbad"   >/dev/null && { echo "self-test FAILED: regression under drift accepted"; return 1; }
+  echo "self-test OK (healthy passes, regression fails, identical passes, drift passes, drift+regression fails)"
 }
 
 case "${1:-}" in
@@ -115,6 +166,14 @@ if [ "$(arch_digest "$baseline")" = "$(arch_digest "$work/current.json")" ]; the
   exit 0
 fi
 
-layers_of "$baseline" "${ref%%:*}" > "$work/old.txt"
-layers_of "$work/current.json" "${ref%%:*}" > "$work/new.txt"
+# Unreadable layer metadata is a notice and a pass, for the same reason a
+# missing baseline is: a publish that could not measure must not redden.
+# Falling back to an unclassified count would reproduce exactly the
+# unactionable red that follow-up 3 removed.
+if ! layers_of "$baseline" "${ref%%:*}" "$work/old.txt" \
+  || ! layers_of "$work/current.json" "${ref%%:*}" "$work/new.txt"; then
+  echo "::notice::Could not read layer metadata — nothing to compare."
+  exit 0
+fi
+
 verdict "$work/old.txt" "$work/new.txt"

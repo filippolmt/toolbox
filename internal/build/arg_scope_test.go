@@ -144,3 +144,40 @@ func TestFinalStageARGsScopedToTheirRUN(t *testing.T) {
 		t.Error("found no final-stage ARG declarations at all — the parse is broken, not the Dockerfile")
 	}
 }
+
+// TestFinalStageFirstRUNHasNoVersionARG pins the fact the Invalidation Floor
+// gate reads as its Archive Drift canary: the final stage's first RUN is its
+// unpinned `apt-get install`, and no version ARG is in scope for it.
+//
+// .github/scripts/invalidation-floor.sh identifies that layer structurally — the
+// first whose `created_by` starts with `RUN |` — and treats its digest changing
+// as evidence that the Debian archive moved rather than the Dockerfile, which
+// excuses every RUN beneath it from the count. Declare a version ARG above that
+// RUN and a Renovate bump moves it too: the gate then excuses the whole tail and
+// goes green on the regression it exists to catch. A gate that fails silently
+// green needs a test, not a comment. ADR 0002, follow-up 3.
+func TestFinalStageFirstRUNHasNoVersionARG(t *testing.T) {
+	body := readAsset(t, "Dockerfile")
+
+	from := strings.LastIndex(body, "\nFROM node:")
+	if from < 0 {
+		t.Fatal("Dockerfile: cannot locate the final `FROM node:` stage")
+	}
+	argRE := regexp.MustCompile(`^ARG ([A-Za-z_][A-Za-z0-9_]*)(=.*)?$`)
+
+	var reachedRUN bool
+	for _, line := range strings.Split(body[from+1:], "\n") {
+		if strings.HasPrefix(line, "RUN ") {
+			reachedRUN = true
+			break
+		}
+		// The same explicit list as the rule above: a stage-wide ARG carries no
+		// version, so no bump can move the canary through it.
+		if m := argRE.FindStringSubmatch(line); m != nil && !stageWideARGs[m[1]] {
+			t.Errorf("ARG %s is declared above the final stage's first RUN — that RUN is the gate's Archive Drift canary and has to stay unreachable by any version bump", m[1])
+		}
+	}
+	if !reachedRUN {
+		t.Error("found no RUN in the final stage — the parse is broken, not the Dockerfile")
+	}
+}

@@ -344,6 +344,49 @@ of the two a given edit was about. The figures live in
 `docs/adr/0002-layer-ordering-by-invalidation-floor.md` — this entry
 defines the term, not the incident.
 
+### Archive Drift
+
+A layer whose bytes change because an unpinned upstream package archive
+published something new, with no edit on our side. Not an Invalidation
+Floor: the floor is a positional property of the Dockerfile, this is a
+content property of an input we do not control.
+
+Concretely: the final stage's `apt-get install` is not version-pinned, so
+a Debian archive update gives that layer a fresh digest. Every layer
+built on top of it in the same stage is then rebuilt too, and the
+`fetch-*` stages, which share `fetch-base`, re-execute for the same
+reason. One archive update therefore moves the base layer plus the whole
+parent-chained tail beneath it.
+
+Why the term exists: the layer-count gate could not tell this apart from
+the regression it was built to catch, because both show up as "many
+substantial layers moved". Measured on `sha-2fe107a` to `sha-14bb4c0`,
+whose only image-affecting edit was a one-line `GCLOUD_VERSION` bump, 12
+of the 16 moved layers above 1 MB — 587 MB of 639 — were archive drift.
+The gate now excuses them: see
+`docs/adr/0002-layer-ordering-by-invalidation-floor.md`.
+
+### Fetch Nondeterminism
+
+A `fetch-*` stage whose `/out` is not a function of the version it pins,
+so its `COPY --link` layer comes back with a fresh digest whenever the
+stage re-executes. Distinct from Archive Drift, which moves layers the
+stage sits on rather than the stage's own output.
+
+Concretely: `fetch-omz` and `fetch-brew` clone git repositories and
+`rtk-builder` compiles from source, and none of the three produces
+identical bytes twice. `freeze-mtimes` normalises timestamps, which is
+what makes the other 27 fetch stages reproducible, but it cannot
+normalise content. The cost stays invisible while BuildKit reuses the
+stage and appears in full whenever anything invalidates it — an archive
+update, or a lost build cache.
+
+Why the term exists: `COPY --link` is what buys a bump the price of one
+layer, and that guarantee is worth exactly as much as the reproducibility
+of the stage behind it. Three stages did not hold up their end, and the
+gap had no name because the ADR that introduced the ordering had only
+measured mtimes.
+
 ### Docker Identity
 
 The host-process → container-identity translation at the Docker edge:

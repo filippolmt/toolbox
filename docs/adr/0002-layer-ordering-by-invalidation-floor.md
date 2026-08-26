@@ -274,3 +274,138 @@ version of every dependency they have in common, and the only check that would
 have caught a break — graphify's import test — ran before oci was installed.
 What is left over the bound is playwright-cli (10), cf (8), azure (7), playwright
 (7), pyright (5) and typescript (2); the same treatment applies to any of them.
+
+## Follow-up 3 (2026-08-26): what the count was actually counting
+
+Follow-up 2 closed with "the count is the right instrument and the residual
+noise is not an artefact of it". Half of that holds. The instrument is right;
+the noise was not all residual, and a share of it never measured ordering at
+all. Issue #778 is the case that separates them: run `32919323729` on `main`
+(`14bb4c0`) failed at **16 substantial layers, 639 MB**, and the diff it was
+charged for — `2fe107a..14bb4c0` — touches one image-affecting line,
+`GCLOUD_VERSION` 581.0.0 → 582.0.0.
+
+Attributing every moved layer to its `created_by`, against the published
+manifests:
+
+| Cause | Layers > 1 MB | MB | Where |
+|---|---|---|---|
+| The diff | **1** | 52 | idx 64, `COPY --link --from=fetch-gcloud` |
+| Archive Drift | **12** | 587 | idx 6, the final stage's apt layer, plus the 11 tail RUNs beneath it |
+| Fetch Nondeterminism | **3** | 21 | idx 65 `fetch-omz`, 66 `fetch-brew`, 69 `rtk-builder` |
+
+Both new terms are defined in `CONTEXT.md`. The base image did not move: the
+first five layers are byte-identical across the two manifests, Debian's own
+included. The drift enters at layer 6, which is ours — `apt-get install` with no
+version pins — and cascades through everything parent-chained below it. The
+three `COPY --link` layers are a second, unrelated defect: those stages
+re-executed because their shared `fetch-base` moved, and unlike the other 27
+they do not produce identical bytes twice. `freeze-mtimes` made the fetch
+layers reproducible against timestamps; it says nothing about content.
+
+**The issue's first proposed direction is not merely weak, it is fatal.**
+Comparing only layers whose `created_by` differs would have counted zero here —
+and zero for every regression this ADR exists to catch. Measured: all 70
+`created_by` strings are byte-identical between the two images. A build ARG's
+*value* never reaches `created_by`, which carries only the `|N` argument count
+and the command text, so the follow-up 1 regression (one `ARG` bump rebuilding
+the whole tail) and a pure reorder of the `RUN`s both leave it untouched. The
+filter would not have softened the gate; it would have retired it.
+
+### The rule
+
+The image has two kinds of layer, and only one of them cascades. A `RUN` is
+invalidated by anything above it; a `COPY --link` is built independently of the
+filesystem beneath it. So:
+
+> If the final stage's first `RUN` layer moved, every `RUN` layer moving is
+> expected, and only the `COPY --link` layers are counted. If it did not move
+> and `RUN` layers moved anyway, that is the regression the gate exists for, and
+> everything is counted as before.
+
+The first `RUN` layer of the final stage is the apt layer, and it is the one
+instruction in the image that no version bump can reach. It is identified
+structurally, as the first layer whose `created_by` begins with `RUN |` — the
+node image's own layers are `RUN /bin/sh -c`, with no build args and hence no
+prefix. Counting the args in that prefix would be more expressive and would
+break silently the day a global `ARG` is added; a fixed index would break
+sooner. `docker buildx imagetools inspect <ref>@<digest> --format
+'{{json .Image}}'` returns the history, which costs one call per image and no
+new tooling.
+
+Against every transition measured so far:
+
+| Transition | apt layer moved | Verdict | Correct |
+|---|---|---|---|
+| `2fe107a` → `14bb4c0` (#778) | yes | 4 counted, pass | yes |
+| `12ade4b` → `acf2843` (`OCI_VERSION`, follow-up 1) | no | 16 counted, fail | yes |
+| `OMZ_COMMIT` pre-reordering | no | 34 counted, fail | yes |
+| a pure reorder of the tail | no | counted, fail | yes |
+
+The layers do not form a clean prefix and a clean block — two `RUN`s sit
+interleaved among the asset COPYs at idx 27 and 38 — so the split is by
+instruction kind, never by index range. Both weigh under `MIN_BYTES` and have
+never counted, but a positional reading of the same rule would be wrong today,
+not eventually.
+
+**The hole this leaves.** A genuine ordering regression that lands on the same
+day as an archive update is excused. It is caught by the next publish without
+drift, which costs one release cycle — the same latency this ADR already accepts
+for reporting after the push rather than before it.
+
+### Calibration, failure, and what the log says
+
+`MAX_LAYERS` stays at 6 and stays one literal. It was calibrated on the
+drift-free path, which is where it still applies unchanged; on the excused path
+it bounds a population that measures 4 today. Two literals would be two things
+that drift apart, which is why follow-up 2 moved this one into the script in the
+first place.
+
+A history that cannot be fetched is a notice and a pass, matching the existing
+treatment of a missing baseline and for the same reason: a publish that could
+not measure must not redden. Falling back to the old unclassified count would
+reproduce exactly the unactionable red being removed here, at the moment nobody
+would understand why.
+
+The log keeps one line, unchanged when the canary is quiet and naming the split
+when it fires:
+
+```
+Moved 34 layer(s) of 70, 16 above 1 MB, 639 MB total — 12 excused as archive drift, 4 counted (max 6).
+```
+
+The real cost to pullers stays the first thing on the line. `Invalidation Floor`
+in `CONTEXT.md` is deliberately left alone: it defines what a change costs the
+people pulling the image, and that cost is real whoever caused it. What changes
+is only which part of it we treat as a regression.
+
+### The invariant, and a test for it
+
+The canary depends on a fact nothing currently pins: the final stage's first
+`RUN` has no version `ARG` in scope. Put one there and the canary fires on a
+legitimate bump, excusing the entire tail — a gate that goes green in silence,
+which is the worst way it can break. `TestFinalStageARGsScopedToTheirRUN` gains
+an assertion that only `TARGETARCH` and `DEBIAN_FRONTEND` appear between the
+final `FROM` and the first `RUN`. It goes in that file because it is the same
+parse read by a second consumer, and its comment has to name the canary — read
+without that, it looks like pedantry and gets deleted.
+
+The `--self-test` fixtures grow a third column for `created_by` and two cases:
+drift excused, and drift *plus* a real regression among the COPYs, so the new
+branch asserts something in both directions. The second derives its layer count
+from `MAX_LAYERS`, as the existing fixture already does.
+
+### What this does not fix
+
+Nothing here reduces a single byte anyone downloads. Archive Drift is real
+transfer, and 587 MB of it. What removes it is the direction follow-up 2 already
+named — fewer substantial layers parent-chained below the apt layer — and #778
+is further evidence for it rather than an alternative to it: with the tail
+emptied, an archive update moves the base layer and little else. Fetch
+Nondeterminism is a separate defect with a separate remedy and is tracked in
+issue #780; without it the worst case does not stay under the bound, because
+three layers move on every cache miss regardless of ordering.
+
+Three changes, in this order: the measure, then the tail, then the
+reproducibility. The measure comes first because the other two have no honest
+signal to be judged by until it does.
