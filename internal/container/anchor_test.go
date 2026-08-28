@@ -306,6 +306,7 @@ func TestShellPeerReattachMatchingPidModeIsSilent(t *testing.T) {
 					ID:         id,
 					State:      &container.State{Running: true},
 					HostConfig: &container.HostConfig{PidMode: container.PidMode("container:" + anchorID)},
+					Mounts:     []container.MountPoint{peerSocketMountPoint()},
 				}, nil
 			case sessionplan.PeerAnchorContainerName:
 				return container.InspectResponse{ID: anchorID, State: &container.State{Running: true}}, nil
@@ -431,5 +432,114 @@ func TestStopByNameAcceptsContainerName(t *testing.T) {
 				t.Errorf("stopped %q, want %q", stopped, tc.want)
 			}
 		})
+	}
+}
+
+// peerSocketMountPoint is the inspect-side shape of the shared socket volume on
+// a healthy participating container.
+func peerSocketMountPoint() container.MountPoint {
+	return container.MountPoint{
+		Name:        mountplan.PeerSocketVolumeName,
+		Destination: mountplan.PeerSocketDirTarget,
+	}
+}
+
+// TestShellPeerReattachWithoutSocketVolumeWarns covers the upgrade path the
+// container-name fold cannot see: a container created before the socket
+// directory became a Docker volume carries the same name and the same PID
+// namespace, so it reattaches looking healthy while its inbox sockets sit in a
+// directory no peer shares.
+func TestShellPeerReattachWithoutSocketVolumeWarns(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "e6b1c0f3anchor"
+	plan := peerPlan(t, testWorkspace(t))
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			switch id {
+			case plan.ContainerName:
+				return container.InspectResponse{
+					ID:         id,
+					State:      &container.State{Running: true},
+					HostConfig: &container.HostConfig{PidMode: container.PidMode("container:" + anchorID)},
+					// The pre-volume host bind: right destination, no volume.
+					Mounts: []container.MountPoint{{
+						Source:      "/host/.toolbox/cc-socks",
+						Destination: mountplan.PeerSocketDirTarget,
+					}},
+				}, nil
+			case sessionplan.PeerAnchorContainerName:
+				return container.InspectResponse{ID: anchorID, State: &container.State{Running: true}}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+	}
+
+	out := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, plan); err != nil {
+			t.Fatalf("Shell: %v", err)
+		}
+	})
+	if !strings.Contains(out, mountplan.PeerSocketVolumeName) {
+		t.Errorf("expected a warning naming %s, got %q", mountplan.PeerSocketVolumeName, out)
+	}
+	if !strings.Contains(out, "toolbox stop "+plan.ContainerName) {
+		t.Errorf("expected the warning to name the targeted recreate, got %q", out)
+	}
+}
+
+// TestShellPeerStartEnsuresSocketVolume asserts the reattach path re-creates a
+// volume that was removed since the container was created — the cleanup the
+// docs prescribe. The daemon would otherwise recreate it root-owned on start,
+// and Claude Code answers that by falling back to a private directory without
+// saying so.
+func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "e6b1c0f3anchor"
+	plan := peerPlan(t, testWorkspace(t))
+	var createdVolume string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			switch id {
+			case plan.ContainerName:
+				return container.InspectResponse{
+					ID:         id,
+					State:      &container.State{Running: false},
+					HostConfig: &container.HostConfig{PidMode: container.PidMode("container:" + anchorID)},
+					Mounts:     []container.MountPoint{peerSocketMountPoint()},
+				}, nil
+			case sessionplan.PeerAnchorContainerName:
+				return container.InspectResponse{ID: anchorID, State: &container.State{Running: true}}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		volInspectFn: func(_ context.Context, name string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + name}
+		},
+		volCreateFn: func(_ context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			createdVolume = opts.Name
+			return client.VolumeCreateResult{}, nil
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if createdVolume != mountplan.PeerSocketVolumeName {
+		t.Errorf("created volume %q, want %q re-initialised before the container starts", createdVolume, mountplan.PeerSocketVolumeName)
 	}
 }

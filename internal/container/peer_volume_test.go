@@ -186,3 +186,115 @@ func TestDropPeerSocketBindWithoutOptIn(t *testing.T) {
 		t.Errorf("dropPeerSocketBind(%v) = %v, want it unchanged", binds, got)
 	}
 }
+
+// TestEnsurePeerSocketVolumeFailsOnInspectError asserts a VolumeInspect error
+// that is not "not found" is reported instead of read as an absent volume.
+// Treating every error as absence sends the code into VolumeCreate, which
+// returns the *existing* volume, and a failing init would then force-remove a
+// volume live sessions are binding sockets in.
+func TestEnsurePeerSocketVolumeFailsOnInspectError(t *testing.T) {
+	mock := &mockClient{
+		volInspectFn: func(context.Context, string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, errors.New("daemon went away")
+		},
+		volCreateFn: func(_ context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			t.Errorf("VolumeCreate called for %s after an inconclusive inspect", opts.Name)
+			return client.VolumeCreateResult{}, nil
+		},
+	}
+
+	err := ensurePeerSocketVolume(context.Background(), mock, testImage)
+	if err == nil || !strings.Contains(err.Error(), "daemon went away") {
+		t.Errorf("err = %v, want the inspect failure surfaced", err)
+	}
+}
+
+// TestEnsurePeerSocketVolumeReportsFailedCleanup asserts that when the rollback
+// of a failed init also fails, the user hears about it. The leftover volume is
+// root-owned and satisfies the inspect fast path forever, so silence here is
+// the one outcome that makes peer messaging permanently and quietly dead.
+func TestEnsurePeerSocketVolumeReportsFailedCleanup(t *testing.T) {
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, name string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + name}
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+		waitFn: func(context.Context, string, client.ContainerWaitOptions) (int64, error) {
+			return 1, nil
+		},
+		volRemoveFn: func(context.Context, string, client.VolumeRemoveOptions) error {
+			return errors.New("volume is in use")
+		},
+	}
+
+	err := ensurePeerSocketVolume(context.Background(), mock, testImage)
+	if err == nil {
+		t.Fatal("ensurePeerSocketVolume returned nil, want the failed init reported")
+	}
+	if !strings.Contains(err.Error(), "volume is in use") ||
+		!strings.Contains(err.Error(), mountplan.PeerSocketVolumeName) {
+		t.Errorf("err = %v, want it to name the volume left behind and why it stayed", err)
+	}
+}
+
+// TestEnsurePeerSocketVolumeNamesInitContainer asserts the initialiser carries
+// the toolbox- prefix. One that outlives its defer — a hard daemon restart —
+// keeps the volume in use, and without the prefix neither `toolbox list` nor
+// `toolbox stop --all` can reach it.
+func TestEnsurePeerSocketVolumeNamesInitContainer(t *testing.T) {
+	var name string
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, v string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + v}
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, n string) (container.CreateResponse, error) {
+			name = n
+			return container.CreateResponse{ID: "init"}, nil
+		},
+	}
+
+	if err := ensurePeerSocketVolume(context.Background(), mock, testImage); err != nil {
+		t.Fatalf("ensurePeerSocketVolume: %v", err)
+	}
+	if !sessionplan.IsToolboxContainerName(name) {
+		t.Errorf("initialiser container name = %q, want a toolbox-managed one", name)
+	}
+}
+
+// TestEnsurePeerSocketVolumeRemovesInitContainerAfterCancel asserts the
+// throwaway initialiser is reaped even when the shell was interrupted. Passing
+// the cancelled context straight through would leave the container alive, and
+// with it the volume in use — so the rollback above could not remove it either.
+func TestEnsurePeerSocketVolumeRemovesInitContainerAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var removed string
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, v string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + v}
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+		waitFn: func(context.Context, string, client.ContainerWaitOptions) (int64, error) {
+			return 0, errors.New("interrupted")
+		},
+		removeFn: func(rmCtx context.Context, id string, _ client.ContainerRemoveOptions) error {
+			if rmCtx.Err() != nil {
+				return rmCtx.Err()
+			}
+			removed = id
+			return nil
+		},
+	}
+
+	if err := ensurePeerSocketVolume(ctx, mock, testImage); err == nil {
+		t.Fatal("ensurePeerSocketVolume returned nil, want the interrupted wait reported")
+	}
+	if removed != "init" {
+		t.Errorf("removed %q, want the initialiser reaped despite the cancelled context", removed)
+	}
+}

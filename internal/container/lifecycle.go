@@ -248,7 +248,12 @@ func preflightHostConfig(ctx context.Context, cli client.APIClient, plan *sessio
 	if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
 		ui.Warning(formatPublishMismatch(plan, inspect, missing))
 	}
+	// One warning at a time: both prescribe the same targeted recreate, and a
+	// container whose namespace is already wrong says nothing new by also
+	// reporting the mount.
 	if w := peerMismatchWarning(ctx, cli, plan, inspect); w != "" {
+		ui.Warning(w)
+	} else if w := peerSocketMountWarning(plan, inspect); w != "" {
 		ui.Warning(w)
 	}
 	return nil
@@ -266,6 +271,17 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 
 	case runplan.ActionStart:
 		ui.Info("Starting stopped container " + plan.ContainerName + "...")
+		// The container's binds are fixed, but the volume behind them is not:
+		// the documented cleanup is `docker volume rm toolbox-cc-socks`, and
+		// starting against a missing one lets the daemon recreate it
+		// root-owned, which Claude Code answers by falling back to a private
+		// directory in silence. Best-effort — a failure here costs peer
+		// messaging, not the shell.
+		if plan.PidMode != "" {
+			if volErr := ensurePeerSocketVolume(ctx, cli, plan.Image); volErr != nil {
+				ui.Warning(peerWarnPrefix + volErr.Error() + " — this session may reach no peer")
+			}
+		}
 		if _, startErr := cli.ContainerStart(ctx, op.ExistingID, client.ContainerStartOptions{}); startErr != nil {
 			return "", fmt.Errorf("failed to start container: %w", startErr)
 		}

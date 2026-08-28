@@ -135,16 +135,41 @@ func peerMismatchWarning(ctx context.Context, cli client.APIClient, plan *sessio
 		return ""
 	}
 
-	// The targeted recreate, not `toolbox stop --all`: that one would take the
-	// anchor and every sibling shell down with it. `toolbox stop` accepts a
-	// full container name verbatim, which is what this plan holds.
-	recreate := " — stop it with `toolbox stop " + plan.ContainerName + "`, then start the shell again"
+	recreate := peerRecreateHint(plan)
 	if plan.PidMode == "" {
 		return peerWarnPrefix + plan.ContainerName + " already runs in the shared PID namespace, " +
 			"so this session can see the process table of every opted-in shell" + recreate
 	}
 	return peerWarnPrefix + plan.ContainerName + " was created without the shared PID namespace, " +
 		"so this session will see no peers" + recreate
+}
+
+// peerSocketMountWarning is the mount-side sibling of peerMismatchWarning, and
+// covers the upgrade the container-name fold cannot see: a container created
+// before the socket directory became a Docker volume — or while that volume was
+// unavailable — folds to the same name and holds the right PID namespace, so it
+// reattaches looking healthy while its inbox sockets sit where no peer looks.
+// Returns "" when there is nothing to say.
+func peerSocketMountWarning(plan *sessionplan.SessionPlan, inspect container.InspectResponse) string {
+	if plan.PidMode == "" {
+		return ""
+	}
+	for _, m := range inspect.Mounts {
+		if m.Destination == mountplan.PeerSocketDirTarget && m.Name == mountplan.PeerSocketVolumeName {
+			return ""
+		}
+	}
+	return peerWarnPrefix + plan.ContainerName + " does not mount the " + mountplan.PeerSocketVolumeName +
+		" volume at " + mountplan.PeerSocketDirTarget + ", so this session can reach no peer" +
+		peerRecreateHint(plan)
+}
+
+// peerRecreateHint is the tail every peer warning ends with. The targeted
+// recreate, not `toolbox stop --all`: that one would take the anchor and every
+// sibling shell down with it. `toolbox stop` accepts a full container name
+// verbatim, which is what this plan holds.
+func peerRecreateHint(plan *sessionplan.SessionPlan) string {
+	return " — stop it with `toolbox stop " + plan.ContainerName + "`, then start the shell again"
 }
 
 // samePidNamespace reports whether an existing container's

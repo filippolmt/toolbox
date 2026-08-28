@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
@@ -12,6 +13,13 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
+
+// peerSocketInitContainerName is the throwaway container that takes ownership
+// of a freshly created socket volume. It carries the ContainerNamePrefix for
+// the same reason the anchor does: one that outlives its own cleanup — a
+// daemon restart mid-init — holds the volume in use, and the prefix is what
+// lets `toolbox list` show it and `toolbox stop --all` sweep it up.
+const peerSocketInitContainerName = sessionplan.ContainerNamePrefix + "cc-socks-init"
 
 // ensurePeerSocketVolume makes the shared inbox-socket volume exist and carry
 // the ownership Claude Code requires, so an opted-in session finds a directory
@@ -24,8 +32,15 @@ import (
 func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, image sessionplan.Image) error {
 	name := mountplan.PeerSocketVolumeName
 
-	if _, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); err == nil {
+	switch _, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); {
+	case err == nil:
 		return nil
+	case !cerrdefs.IsNotFound(err):
+		// Anything but a clean "no such volume" leaves the volume's existence
+		// unknown, and guessing "absent" is the dangerous guess: VolumeCreate
+		// returns the *existing* volume, so a failing init below would then
+		// force-remove one live sessions are binding sockets in.
+		return fmt.Errorf("failed to inspect peer socket volume %s: %w", name, err)
 	}
 
 	ui.Info("Creating peer-messaging socket volume " + name + "...")
@@ -39,7 +54,10 @@ func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, image ses
 		// session would fail its bind instead — silently, which is the failure
 		// mode this whole subsystem is written to avoid. Removing it keeps the
 		// next shell on the same self-healing path.
-		_, _ = cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true})
+		if _, rmErr := cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
+			return fmt.Errorf("%w — and %s could not be removed (%v), so every later shell would reuse it "+
+				"as-is: remove it with `docker volume rm %s` once no participating shell is running", err, name, rmErr, name)
+		}
 		return err
 	}
 	return nil
@@ -66,6 +84,7 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, image sessi
 	owner := dockeridentity.Resolve(nil).UserSpec
 
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name: peerSocketInitContainerName,
 		Config: &container.Config{
 			Image:      image.Ref,
 			User:       "0:0",
@@ -84,7 +103,12 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, image sessi
 		return fmt.Errorf("failed to create peer socket volume initialiser: %w", err)
 	}
 	defer func() {
-		_, _ = cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+		// WithoutCancel: a Ctrl-C reaches this defer through a cancelled ctx,
+		// and passing that straight on would leave the container alive — which
+		// keeps the volume in use, so the rollback in ensurePeerSocketVolume
+		// could not remove it either, and the name above would collide on the
+		// next shell.
+		_, _ = cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
 	}()
 
 	// Wait before Start: ContainerWait blocks until the daemon acknowledges the
