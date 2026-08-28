@@ -9,6 +9,7 @@
 **Go is not installed on the host** — reach every Go command through the `make` targets, which run `golang:1.26` (cache volume `toolbox-gomod`). `make help` lists them; what the target comments can't carry:
 
 - `make go-check` — test + lint in one pass.
+- `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make go-run-clean` — `go-run` plus stopping the existing container, because env and mounts are fixed at ContainerCreate.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. → [image selection](docs/configuration.md#image-selection)
 - Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.

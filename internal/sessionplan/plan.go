@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -299,6 +300,7 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, extra []string) []string {
 	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
 	env = append(env, identityEnv(in.ImageDigest)...)
+	env = append(env, hostPlatformEnv()...)
 	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
 	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
@@ -317,6 +319,19 @@ func identityEnv(imageDigest string) []string {
 		out = append(out, "TOOLBOX_IMAGE_DIGEST="+imageDigest)
 	}
 	return out
+}
+
+// hostPlatformEnv emits the host's OS and architecture in GOOS/GOARCH spelling.
+// The CLI knows both firsthand — it is the host process — which is the whole
+// point: `uname` run inside the container reports the container, so anything
+// cross-compiling for the host from a toolbox shell (the Makefile's go-build)
+// has no way to ask. Always emitted, so a consumer can treat "absent" as
+// "container predates this" and fall back rather than guess wrong.
+func hostPlatformEnv() []string {
+	return []string{
+		"TOOLBOX_HOST_OS=" + runtime.GOOS,
+		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
+	}
 }
 
 // managedStatuslineEnv emits TOOLBOX_MANAGED_STATUSLINE=0 only when the user

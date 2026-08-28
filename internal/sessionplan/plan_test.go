@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -331,9 +332,39 @@ func TestPlanComputesEnv(t *testing.T) {
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + filepath.Base(workspace),
 		"TOOLBOX_CLI_VERSION=" + version.Version,
+		"TOOLBOX_HOST_OS=" + runtime.GOOS,
+		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
+	}
+}
+
+// TestPlanInjectsHostPlatform asserts the host's GOOS/GOARCH reach the
+// container unconditionally. They are the only way something running inside
+// the container can cross-compile for the host: `uname` there reports the
+// container, so a build driven from a toolbox shell would silently target
+// linux. Emitted for every session, not just a mirrored or opted-in one.
+func TestPlanInjectsHostPlatform(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	workspace := filepath.Join(tmpHome, "ws")
+	if err := mkdirAll(t, workspace); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	for _, want := range []string{
+		"TOOLBOX_HOST_OS=" + runtime.GOOS,
+		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
+	} {
+		if !slices.Contains(plan.Env, want) {
+			t.Errorf("Env missing %s; got %v", want, plan.Env)
+		}
 	}
 }
 
@@ -459,6 +490,8 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=ws",
 		"TOOLBOX_CLI_VERSION=" + version.Version,
+		"TOOLBOX_HOST_OS=" + runtime.GOOS,
+		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
 		"ZED=z",
