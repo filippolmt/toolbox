@@ -95,7 +95,7 @@ ARG FZF_TAB_COMMIT=24105b15714bfec37989ed5c5b6e60f572253019
 ARG ZOXIDE_VERSION=0.10.0
 ARG SHELLCHECK_VERSION=0.11.0
 # shellcheck: use the .tar.gz asset (slim base has no xz for the .xz build).
-ARG SHFMT_VERSION=3.13.1
+ARG SHFMT_VERSION=3.14.0
 
 # rtk builder: amd64 uses upstream MUSL tarball, arm64 builds from source
 # against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
