@@ -109,3 +109,42 @@ func TestPlanPeerSocketDirIgnoresMountsRoot(t *testing.T) {
 		t.Errorf("Source = %q, want the named volume %q regardless of mounts_root", b.Source, PeerSocketVolumeName)
 	}
 }
+
+// TestWithoutPeerSocketBind asserts the degrade path removes exactly the shared
+// socket mount and leaves the rest of the bind set intact. A session that
+// mounts the shared directory without joining the anchor's PID namespace looks
+// healthy and reaches nobody, so the two have to fall together.
+func TestWithoutPeerSocketBind(t *testing.T) {
+	workspace := Bind{Source: "/host/repo", Target: "/workspace", Mode: "rw"}
+	claude := Bind{Source: "/host/.toolbox/claude", Target: "/home/toolbox/.claude", Mode: "rw"}
+	socks := Bind{
+		Source: PeerSocketVolumeName,
+		Target: PeerSocketDirTarget,
+		Mode:   "rw",
+	}
+
+	got := WithoutPeerSocketBind([]Bind{workspace, socks, claude})
+
+	want := []Bind{workspace, claude}
+	if len(got) != len(want) {
+		t.Fatalf("kept %d binds (%v), want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("bind %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestWithoutPeerSocketBindNoOptIn asserts a non-participating bind set
+// passes through untouched — the ordinary case, since the mount is only ever
+// appended for an opted-in session.
+func TestWithoutPeerSocketBindNoOptIn(t *testing.T) {
+	binds := []Bind{{Source: "/host/repo", Target: "/workspace", Mode: "rw"}}
+
+	got := WithoutPeerSocketBind(binds)
+
+	if len(got) != len(binds) || got[0] != binds[0] {
+		t.Errorf("WithoutPeerSocketBind(%v) = %v, want it unchanged", binds, got)
+	}
+}

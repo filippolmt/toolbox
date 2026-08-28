@@ -88,36 +88,19 @@ func ensurePeerRuntime(ctx context.Context, cli client.APIClient, plan *sessionp
 	if plan.PidMode == "" {
 		return "", plan.Binds
 	}
-	if err := ensurePeerRuntimeParts(ctx, cli, plan); err != nil {
+	// Anchor first, then the volume: the anchor is the half a stale container
+	// name can already be diagnosed against (peerMismatchWarning), so failing
+	// on it first keeps the warning the user sees pointed at the same thing
+	// across runs.
+	err := ensureAnchor(ctx, cli, plan.Image)
+	if err == nil {
+		err = ensurePeerSocketVolume(ctx, cli, plan.Image)
+	}
+	if err != nil {
 		ui.Warning(peerWarnPrefix + err.Error() + " — starting this shell without it")
-		return "", dropPeerSocketBind(plan.Binds)
+		return "", mountplan.WithoutPeerSocketBind(plan.Binds)
 	}
 	return plan.PidMode, plan.Binds
-}
-
-// ensurePeerRuntimeParts prepares the anchor's PID namespace and the shared
-// socket volume, in that order: the anchor is the half a stale container name
-// can already be diagnosed against (peerMismatchWarning), so failing on it
-// first keeps the warning the user sees pointed at the same thing across runs.
-func ensurePeerRuntimeParts(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
-	if err := ensureAnchor(ctx, cli, plan.Image); err != nil {
-		return err
-	}
-	return ensurePeerSocketVolume(ctx, cli, plan.Image)
-}
-
-// dropPeerSocketBind returns binds without the shared socket mount, for a
-// session that turned out not to be participating. Matching on the target
-// rather than the volume name keeps this in step with a renamed volume.
-func dropPeerSocketBind(binds []mountplan.Bind) []mountplan.Bind {
-	kept := make([]mountplan.Bind, 0, len(binds))
-	for _, b := range binds {
-		if b.Target == mountplan.PeerSocketDirTarget {
-			continue
-		}
-		kept = append(kept, b)
-	}
-	return kept
 }
 
 // peerMismatchWarning covers the silent failures the container-name fold

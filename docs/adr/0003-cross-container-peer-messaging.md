@@ -124,10 +124,17 @@ to take on the risk below.
   as root once, to `chown` the volume to the host UID/GID and `chmod` it to
   `0700`. It runs on volume *creation* only, because confirming it otherwise
   would cost a container start per shell; what makes that safe is that a failed
-  init removes the volume again. Left behind, it would satisfy the
-  volume-exists fast path forever, and every later session would fail its bind
-  on a root-owned directory instead — silently, the exact failure class this
-  ADR exists to avoid.
+  init removes the volume again, and says so when even that removal fails. Left
+  behind, it would satisfy the volume-exists fast path forever, and every later
+  session would fail its bind on a root-owned directory instead — silently, the
+  exact failure class this ADR exists to avoid. "Creation" is therefore first
+  sight, not the create path: a shell that reattaches to an existing container
+  ensures the volume too, since the documented `docker volume rm` cleanup would
+  otherwise let the daemon recreate it root-owned with no init behind it. For
+  the same reason the fast path treats only a real not-found as absence —
+  guessing absence on a transient daemon error leads to `VolumeCreate`, which
+  returns the *existing* volume, and a failing init would then force-remove one
+  live sessions are binding sockets in.
 - **The regression gate asserts the mechanism, not the feature.** A
   `docker-ci.yml` step starts two opted-in containers and checks that the second
   socket is visible under `/tmp/cc-socks` and that the peer's pid resolves —

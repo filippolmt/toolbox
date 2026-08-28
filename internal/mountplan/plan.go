@@ -27,6 +27,12 @@ import (
 // stringifies these via Bind.String at the daemon edge so internal callers
 // and tests deal with structured fields instead of "src:target:mode" strings.
 type Bind struct {
+	// Source is a host path for every mount the pipeline resolves, and a
+	// Docker named volume for the session inputs appended after resolveAll
+	// (peerSocketBind). Docker reads the two off the same field — a spec whose
+	// source is not absolute is taken as a volume name — so nothing downstream
+	// branches on which it is; the difference only matters to code that would
+	// stat, create or retarget the source, and no such code may touch a volume.
 	Source string
 	Target string
 	Mode   string // "rw" | "ro"

@@ -148,45 +148,6 @@ func TestEnsurePeerSocketVolumePropagatesWaitError(t *testing.T) {
 	}
 }
 
-// TestDropPeerSocketBind asserts the degrade path removes exactly the shared
-// socket mount and leaves the rest of the bind set intact. A session that
-// mounts the shared directory without joining the anchor's PID namespace looks
-// healthy and reaches nobody, so the two have to fall together.
-func TestDropPeerSocketBind(t *testing.T) {
-	workspace := mountplan.Bind{Source: "/host/repo", Target: "/workspace", Mode: "rw"}
-	claude := mountplan.Bind{Source: "/host/.toolbox/claude", Target: "/home/toolbox/.claude", Mode: "rw"}
-	socks := mountplan.Bind{
-		Source: mountplan.PeerSocketVolumeName,
-		Target: mountplan.PeerSocketDirTarget,
-		Mode:   "rw",
-	}
-
-	got := dropPeerSocketBind([]mountplan.Bind{workspace, socks, claude})
-
-	want := []mountplan.Bind{workspace, claude}
-	if len(got) != len(want) {
-		t.Fatalf("kept %d binds (%v), want %d", len(got), got, len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("bind %d = %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
-
-// TestDropPeerSocketBindWithoutOptIn asserts a non-participating bind set
-// passes through untouched — the ordinary case, since the mount is only ever
-// appended for an opted-in session.
-func TestDropPeerSocketBindWithoutOptIn(t *testing.T) {
-	binds := []mountplan.Bind{{Source: "/host/repo", Target: "/workspace", Mode: "rw"}}
-
-	got := dropPeerSocketBind(binds)
-
-	if len(got) != len(binds) || got[0] != binds[0] {
-		t.Errorf("dropPeerSocketBind(%v) = %v, want it unchanged", binds, got)
-	}
-}
-
 // TestEnsurePeerSocketVolumeFailsOnInspectError asserts a VolumeInspect error
 // that is not "not found" is reported instead of read as an absent volume.
 // Treating every error as absence sends the code into VolumeCreate, which

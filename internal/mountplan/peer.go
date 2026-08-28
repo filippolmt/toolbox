@@ -35,3 +35,19 @@ const PeerSocketDirTarget = "/tmp/cc-socks"
 func peerSocketBind() Bind {
 	return Bind{Source: PeerSocketVolumeName, Target: PeerSocketDirTarget, Mode: "rw"}
 }
+
+// WithoutPeerSocketBind returns binds without the shared socket mount, for a
+// session that turned out not to be participating — the degrade path in
+// internal/container, where an unusable anchor or volume drops both halves of
+// peer messaging together. Matching on the target rather than the volume name
+// keeps this in step with a renamed volume.
+func WithoutPeerSocketBind(binds []Bind) []Bind {
+	kept := make([]Bind, 0, len(binds))
+	for _, b := range binds {
+		if b.Target == PeerSocketDirTarget {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	return kept
+}

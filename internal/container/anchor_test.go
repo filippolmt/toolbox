@@ -18,7 +18,7 @@ import (
 // hasPeerSocketBind reports whether a HostConfig.Binds slice still carries the
 // shared inbox-socket mount. Matching on the in-container target rather than
 // the volume name keeps it in step with a renamed volume, the same way
-// dropPeerSocketBind does.
+// mountplan.WithoutPeerSocketBind does.
 func hasPeerSocketBind(binds []string) bool {
 	for _, b := range binds {
 		if strings.Contains(b, ":"+mountplan.PeerSocketDirTarget+":") {
