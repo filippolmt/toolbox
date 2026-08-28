@@ -36,7 +36,7 @@ GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$
 # an inline `# renovate:` directive here, it would be a second, dead mechanism.
 GO_IMAGE_VERSION := 1.27.0
 GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
-GOLANGCI_VERSION := v2.13.1
+GOLANGCI_VERSION := v2.13.2
 GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
 GO_MOD_VOL      := toolbox-gomod
 # When running inside a toolbox shell we are talking to the host daemon over
