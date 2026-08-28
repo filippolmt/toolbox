@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -136,6 +137,100 @@ func TestRulePathsResolve(t *testing.T) {
 			if _, err := os.Stat(target); err != nil {
 				t.Errorf("%s: paths: entry %q resolves to missing path %q",
 					filepath.Base(rule), g, filepath.Join(lit...))
+			}
+		}
+	}
+}
+
+// ruleBody returns everything after a rule file's YAML frontmatter (the block
+// between the first two `---` lines), i.e. the prose the rule actually states.
+func ruleBody(t *testing.T, file string) string {
+	t.Helper()
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+	parts := strings.SplitN(string(raw), "---\n", 3)
+	if len(parts) < 3 {
+		t.Fatalf("%s: no frontmatter fence found", filepath.Base(file))
+	}
+	return parts[2]
+}
+
+// globCoversPackage reports whether a `paths:` glob scopes a rule to pkg. Only
+// the two shapes the rule files use are understood: a `<dir>/**` subtree and an
+// exact path.
+func globCoversPackage(glob, pkg string) bool {
+	if dir := strings.TrimSuffix(glob, "/**"); dir != glob {
+		return pkg == dir || strings.HasPrefix(pkg, dir+"/")
+	}
+	return pkg == glob
+}
+
+// ruleMentionExemptions lists `<rule file>: <path>` pairs a rule may name in its
+// body without scoping itself to that path — a passing cross-reference to a
+// neighbouring package rather than material the rule governs. Empty on purpose:
+// add an entry only after deciding the rule does not own edits in that package,
+// because the default reading of a named package is that it does.
+var ruleMentionExemptions = map[string]bool{}
+
+var (
+	internalPkgPattern = regexp.MustCompile(`\binternal/([a-z][a-z0-9]*)\b`)
+	cmdFilePattern     = regexp.MustCompile(`\bcmd/([a-z_]+\.go)\b`)
+)
+
+// TestRuleMentionsAreCovered asserts that every package a rule file names in its
+// body is matched by that same file's `paths:` frontmatter, so the rule loads on
+// the edits it governs.
+//
+// TestRulePathsResolve checks the opposite direction — that each glob still
+// points at something on disk — and cannot catch this: config-mounts-sdd.md
+// documented `configedit.ApplyChecked` as the only validated config write lane
+// while listing neither internal/configui, internal/configrender nor the cmd/
+// files that write through it, so editing cmd/config.go loaded a different rule
+// (via cmd/**) and never that one. Every glob it did list resolved fine.
+func TestRuleMentionsAreCovered(t *testing.T) {
+	root := repoRoot(t)
+	rulesDir := filepath.Join(root, ".claude", "rules")
+	entries, err := os.ReadDir(rulesDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", rulesDir, err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		rule := filepath.Join(rulesDir, e.Name())
+		globs := frontmatterPaths(t, rule)
+		body := ruleBody(t, rule)
+
+		var mentioned []string
+		for _, m := range internalPkgPattern.FindAllStringSubmatch(body, -1) {
+			mentioned = append(mentioned, "internal/"+m[1])
+		}
+		for _, m := range cmdFilePattern.FindAllStringSubmatch(body, -1) {
+			mentioned = append(mentioned, "cmd/"+m[1])
+		}
+
+		seen := make(map[string]bool, len(mentioned))
+		for _, pkg := range mentioned {
+			if seen[pkg] || ruleMentionExemptions[e.Name()+": "+pkg] {
+				continue
+			}
+			seen[pkg] = true
+
+			covered := false
+			for _, g := range globs {
+				if globCoversPackage(g, pkg) {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				t.Errorf("%s: names %q in its body but no paths: entry scopes it there — "+
+					"add a glob, or exempt it in ruleMentionExemptions",
+					e.Name(), pkg)
 			}
 		}
 	}
