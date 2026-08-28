@@ -1,63 +1,53 @@
 package mountplan
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/filippolmt/toolbox/internal/config"
-)
-
-// PeerSocketDirName is the Name carried by the bind PlanInput.Peer produces,
-// and the last path element of its host source. It names the entry in the
-// mount-skip warnings only: `toolbox mounts` renders Classify(cfg), and this
-// bind is appended inside Plan, after Merge — a session input, not a
-// configurable mount, so it never shows up there.
-const PeerSocketDirName = "cc-socks"
+// PeerSocketVolumeName is the Docker named volume carrying the shared
+// inbox-socket directory.
+//
+// A named volume rather than a bind under ~/.toolbox: Claude Code chmods each
+// inbox socket right after binding it, and Docker Desktop for macOS serves a
+// host bind over virtiofs, where chmod(2) on a socket inode fails with EINVAL.
+// The listener then never starts, so the session publishes no socket path and
+// no session is reachable — its own included, and with nothing on screen to
+// say so. A volume lives in the daemon's own filesystem on every platform, so
+// the bind-then-chmod sequence behaves the same everywhere.
+//
+// A bind spec cannot carry ownership, and the session container runs as the
+// unprivileged host UID, so internal/container initialises the volume before
+// the first session mounts it (see ensurePeerSocketVolume).
+const PeerSocketVolumeName = "toolbox-cc-socks"
 
 // PeerSocketDirTarget is where Claude Code keeps one inbox socket per live
 // session. Per-container by default (it lives on /tmp), which is exactly why
-// peers cannot reach each other without this bind.
+// peers cannot reach each other without this mount.
 const PeerSocketDirTarget = "/tmp/cc-socks"
 
-// peerSocketMount is the bind that makes opted-in containers share one
-// inbox-socket directory. It deliberately follows the config-level
-// mounts_root (the whole ~/.toolbox tree relocates together) but NOT a
-// --profile root: like the bridge dir, this is host infrastructure rather
-// than a per-account credential, and forking it per profile would leave two
-// opted-in shells discovering each other through the shared PID namespace
-// while silently failing to deliver.
+// peerSocketBind is the mount that makes opted-in containers share one
+// inbox-socket directory.
 //
-// CreateIfMissing rather than a pre-existing path: resolveAll's MkdirAll uses
-// 0700, which is what Claude Code requires — it falls back to
-// /tmp/cc-socks-<uid>, without saying so, on a looser or foreign-owned
-// directory.
-func peerSocketMount(mountsRoot string) config.Mount {
-	return config.Mount{
-		Name:            PeerSocketDirName,
-		Source:          mountsRootJoin(mountsRoot, PeerSocketDirName),
-		Target:          PeerSocketDirTarget,
-		CreateIfMissing: true,
-	}
+// A Bind appended after resolveAll rather than a config.Mount: a named volume
+// has no host source to expand, create or stat, and no `mounts:` patch should
+// be able to retarget or disable a session input.
+//
+// It deliberately ignores both mounts_root and --profile. The volume is
+// toolbox-owned infrastructure rather than a per-account credential, and
+// forking it per profile would leave two opted-in shells discovering each
+// other through the shared PID namespace while silently failing to deliver.
+func peerSocketBind() Bind {
+	return Bind{Source: PeerSocketVolumeName, Target: PeerSocketDirTarget, Mode: "rw"}
 }
 
-// enforcePeerSocketMode holds the 0700 invariant on a socket directory that
-// already exists. CreateIfMissing only covers the directory resolveAll
-// creates: MkdirAll leaves a pre-existing ~/.toolbox/cc-socks at whatever
-// mode it has, and Claude Code answers anything looser by falling back to
-// /tmp/cc-socks-<uid> — silently, so the feature dies with no error anywhere.
-// Returns a mount-skip warning when the mode cannot be corrected, "" when the
-// directory is (now) fine or absent, which is resolveAll's job.
-//
-// A foreign-owned directory that is already 0700 is not covered: nothing here
-// can tell it apart from ours, and the container-side failure (a bind it
-// cannot write to) is at least loud.
-func enforcePeerSocketMode(src string) string {
-	info, err := os.Stat(src)
-	if err != nil || info.Mode().Perm() == 0o700 {
-		return ""
+// WithoutPeerSocketBind returns binds without the shared socket mount, for a
+// session that turned out not to be participating — the degrade path in
+// internal/container, where an unusable anchor or volume drops both halves of
+// peer messaging together. Matching on the target rather than the volume name
+// keeps this in step with a renamed volume.
+func WithoutPeerSocketBind(binds []Bind) []Bind {
+	kept := make([]Bind, 0, len(binds))
+	for _, b := range binds {
+		if b.Target == PeerSocketDirTarget {
+			continue
+		}
+		kept = append(kept, b)
 	}
-	if chmodErr := os.Chmod(src, 0o700); chmodErr != nil {
-		return fmt.Sprintf("peer socket dir must be 0700 or Claude Code silently stops sharing it, mount skipped: %s: %v", src, chmodErr)
-	}
-	return ""
+	return kept
 }

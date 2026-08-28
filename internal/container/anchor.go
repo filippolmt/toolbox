@@ -7,6 +7,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
@@ -68,21 +69,38 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 	return nil
 }
 
-// ensurePeerPidMode resolves the PID namespace the session container is
-// created with, materialising the anchor on the way — the daemon I/O is the
-// reason it is not the pure sessionplan.peerPidMode. An unusable anchor
-// degrades to the container's own namespace with a warning rather than
-// blocking the shell — the same posture the repo takes for a missing proximo
-// stack. The shell still works; only peer messaging is gone.
-func ensurePeerPidMode(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) string {
+// ensurePeerRuntime materialises both halves of peer messaging and returns
+// what ContainerCreate needs: the PID namespace to join, and the bind set to
+// create the container with.
+//
+// The daemon I/O is the reason this is not the pure sessionplan.peerPidMode.
+// An unusable half degrades the session to a non-participating one — own
+// namespace, socket mount dropped — with a warning rather than blocking the
+// shell, the same posture the repo takes for a missing proximo stack. The
+// shell still works; only peer messaging is gone.
+//
+// Both halves fall together on purpose. Half the mechanism is not half the
+// feature: a session that mounts the shared socket dir but sits in its own PID
+// namespace, or joins the namespace with a private socket dir, believes it is
+// reachable and is not — the silent failure the whole subsystem is written to
+// avoid.
+func ensurePeerRuntime(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, []mountplan.Bind) {
 	if plan.PidMode == "" {
-		return ""
+		return "", plan.Binds
 	}
-	if err := ensureAnchor(ctx, cli, plan.Image); err != nil {
+	// Anchor first, then the volume: the anchor is the half a stale container
+	// name can already be diagnosed against (peerMismatchWarning), so failing
+	// on it first keeps the warning the user sees pointed at the same thing
+	// across runs.
+	err := ensureAnchor(ctx, cli, plan.Image)
+	if err == nil {
+		err = ensurePeerSocketVolume(ctx, cli, plan.Image)
+	}
+	if err != nil {
 		ui.Warning(peerWarnPrefix + err.Error() + " — starting this shell without it")
-		return ""
+		return "", mountplan.WithoutPeerSocketBind(plan.Binds)
 	}
-	return plan.PidMode
+	return plan.PidMode, plan.Binds
 }
 
 // peerMismatchWarning covers the silent failures the container-name fold
@@ -100,16 +118,41 @@ func peerMismatchWarning(ctx context.Context, cli client.APIClient, plan *sessio
 		return ""
 	}
 
-	// The targeted recreate, not `toolbox stop --all`: that one would take the
-	// anchor and every sibling shell down with it. `toolbox stop` accepts a
-	// full container name verbatim, which is what this plan holds.
-	recreate := " — stop it with `toolbox stop " + plan.ContainerName + "`, then start the shell again"
+	recreate := peerRecreateHint(plan)
 	if plan.PidMode == "" {
 		return peerWarnPrefix + plan.ContainerName + " already runs in the shared PID namespace, " +
 			"so this session can see the process table of every opted-in shell" + recreate
 	}
 	return peerWarnPrefix + plan.ContainerName + " was created without the shared PID namespace, " +
 		"so this session will see no peers" + recreate
+}
+
+// peerSocketMountWarning is the mount-side sibling of peerMismatchWarning, and
+// covers the upgrade the container-name fold cannot see: a container created
+// before the socket directory became a Docker volume — or while that volume was
+// unavailable — folds to the same name and holds the right PID namespace, so it
+// reattaches looking healthy while its inbox sockets sit where no peer looks.
+// Returns "" when there is nothing to say.
+func peerSocketMountWarning(plan *sessionplan.SessionPlan, inspect container.InspectResponse) string {
+	if plan.PidMode == "" {
+		return ""
+	}
+	for _, m := range inspect.Mounts {
+		if m.Destination == mountplan.PeerSocketDirTarget && m.Name == mountplan.PeerSocketVolumeName {
+			return ""
+		}
+	}
+	return peerWarnPrefix + plan.ContainerName + " does not mount the " + mountplan.PeerSocketVolumeName +
+		" volume at " + mountplan.PeerSocketDirTarget + ", so this session can reach no peer" +
+		peerRecreateHint(plan)
+}
+
+// peerRecreateHint is the tail every peer warning ends with. The targeted
+// recreate, not `toolbox stop --all`: that one would take the anchor and every
+// sibling shell down with it. `toolbox stop` accepts a full container name
+// verbatim, which is what this plan holds.
+func peerRecreateHint(plan *sessionplan.SessionPlan) string {
+	return " — stop it with `toolbox stop " + plan.ContainerName + "`, then start the shell again"
 }
 
 // samePidNamespace reports whether an existing container's

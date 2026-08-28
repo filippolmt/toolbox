@@ -51,7 +51,7 @@ GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false"
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-.PHONY: build test shell shell-bash clean help go-build go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links update-skills
+.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -98,11 +98,30 @@ BINARY := toolbox
 # The build still happens inside the Linux golang container, but GOOS/GOARCH
 # target the host's platform (darwin/arm64 on M-series Macs, linux/amd64 on
 # typical CI runners, …).
-HOST_OS    := $(shell uname -s | tr '[:upper:]' '[:lower:]')
-HOST_ARCH  := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+#
+# uname runs wherever make runs, so from INSIDE a toolbox shell it reports the
+# container (linux) and the build would silently yield a binary the host cannot
+# execute. TOOLBOX_HOST_OS / TOOLBOX_HOST_ARCH carry the real values across that
+# boundary — sessionplan injects them in every shell, read off the CLI's own
+# runtime.GOOS/GOARCH — the same trick HOST_SRC plays with
+# TOOLBOX_HOST_WORKSPACE. uname stays the fallback, for a native host terminal
+# and for a container created before those vars existed.
+HOST_OS    := $(if $(TOOLBOX_HOST_OS),$(TOOLBOX_HOST_OS),$(shell uname -s | tr '[:upper:]' '[:lower:]'))
+HOST_ARCH  := $(if $(TOOLBOX_HOST_ARCH),$(TOOLBOX_HOST_ARCH),$(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'))
+
+# MACOS_ARCH is what go-build-macos targets. arm64 covers every M-series Mac;
+# override it for an Intel one (`make go-build-macos MACOS_ARCH=amd64`).
+MACOS_ARCH ?= arm64
 
 go-build: ## Build the Go CLI binary for the host platform
 	$(GO_RUN) env GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -o $(BINARY) .
+
+# Delegates to go-build rather than repeating its recipe, so the two can never
+# drift on flags (GOFLAGS, CGO, -o). With TOOLBOX_HOST_OS in the env go-build
+# already targets macOS on its own; this stays as the explicit override, for a
+# container predating that var and for building a macOS binary from elsewhere.
+go-build-macos: ## Build the Go CLI binary for macOS explicitly, ignoring the detected host (arch: MACOS_ARCH, default arm64)
+	$(MAKE) go-build HOST_OS=darwin HOST_ARCH=$(MACOS_ARCH)
 
 go-test: ## Run Go tests inside a golang container
 	$(GO_RUN) go test ./... -count=1

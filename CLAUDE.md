@@ -9,6 +9,7 @@
 **Go is not installed on the host** — reach every Go command through the `make` targets, which run `golang:1.26` (cache volume `toolbox-gomod`). `make help` lists them; what the target comments can't carry:
 
 - `make go-check` — test + lint in one pass.
+- `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make go-run-clean` — `go-run` plus stopping the existing container, because env and mounts are fixed at ContainerCreate.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. → [image selection](docs/configuration.md#image-selection)
 - Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.
@@ -19,9 +20,12 @@
 |---|---|---|
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
+| `internal/{container,mountplan,sessionplan}/**` | `make go-check` — the extra CI gate has no local equivalent | `docker-ci.yml` (build + smoke + peer gate) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
+
+The peer-messaging gate `docker-ci.yml` runs for those three packages (`go test -tags peergate`) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place it runs.
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 

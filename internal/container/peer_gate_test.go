@@ -25,6 +25,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
 )
@@ -97,6 +98,21 @@ func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient) s
 	return id
 }
 
+// peerProbeSocketPath is where the probe binds, inside the shared socket dir.
+const peerProbeSocketPath = mountplan.PeerSocketDirTarget + "/probe.sock"
+
+// peerSocketProbe replicates Claude Code's uds-messaging startup: bind a UNIX
+// socket in the shared directory, then chmod it to 0600. It leaves the socket
+// in place so the peer container can assert on it, and exits non-zero on
+// either step — the chmod is the one that fails on a virtiofs bind mount.
+const peerSocketProbe = `
+import os, socket
+p = "` + peerProbeSocketPath + `"
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(p)
+os.chmod(p, 0o600)
+`
+
 func TestPeerMessagingMechanism(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -107,8 +123,9 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	}
 	defer cli.Close()
 
-	// A shared HOME keeps both sessions on one ~/.toolbox/cc-socks, which is
-	// the point: the bind is what makes the directory shared.
+	// A throwaway HOME keeps the run off the developer's own ~/.toolbox. The
+	// socket directory is shared through the toolbox-cc-socks volume rather
+	// than through HOME, so both sessions land in it regardless.
 	t.Setenv("HOME", t.TempDir())
 
 	// The anchor outlives sessions by design, so it is torn down explicitly.
@@ -119,14 +136,21 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	a := startPeerSession(ctx, t, cli)
 	b := startPeerSession(ctx, t, cli)
 
-	// Condition 1 — the inbox-socket directory is shared: what A drops in it
-	// is what B reads. Without this bind /tmp is per-container and every peer
-	// socket is unreachable.
-	if _, code := dockerExec(ctx, t, cli, a, "sh", "-c", "touch /tmp/cc-socks/probe.sock"); code != 0 {
-		t.Fatalf("could not write into the shared socket dir from container A (exit %d)", code)
+	// Condition 1 — the inbox-socket directory carries a real peer socket, and
+	// what A drops in it is what B reads. Without the shared mount /tmp is
+	// per-container and every peer socket is unreachable.
+	//
+	// The probe binds a UNIX socket and chmods it, which is the sequence Claude
+	// Code's uds-messaging listener actually runs — not `touch`. The two differ
+	// on a bind-mounted host directory: Docker Desktop on macOS serves those
+	// over virtiofs, where chmod(2) on a socket inode fails with EINVAL while
+	// touch and chmod on a regular file both succeed. A `touch` probe stays
+	// green while peer messaging is dead, which is how #796 shipped broken.
+	if out, code := dockerExec(ctx, t, cli, a, "python3", "-c", peerSocketProbe); code != 0 {
+		t.Fatalf("could not bind and chmod a peer socket in container A (exit %d): %s", code, out)
 	}
-	if _, code := dockerExec(ctx, t, cli, b, "test", "-e", "/tmp/cc-socks/probe.sock"); code != 0 {
-		t.Errorf("socket written by A is not visible in B: /tmp/cc-socks is not shared")
+	if _, code := dockerExec(ctx, t, cli, b, "test", "-S", peerProbeSocketPath); code != 0 {
+		t.Errorf("socket bound by A is not visible in B: %s is not shared", mountplan.PeerSocketDirTarget)
 	}
 
 	// The directory must be 0700 and owned by the session user: Claude Code

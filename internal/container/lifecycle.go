@@ -248,7 +248,12 @@ func preflightHostConfig(ctx context.Context, cli client.APIClient, plan *sessio
 	if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
 		ui.Warning(formatPublishMismatch(plan, inspect, missing))
 	}
+	// One warning at a time: both prescribe the same targeted recreate, and a
+	// container whose namespace is already wrong says nothing new by also
+	// reporting the mount.
 	if w := peerMismatchWarning(ctx, cli, plan, inspect); w != "" {
+		ui.Warning(w)
+	} else if w := peerSocketMountWarning(plan, inspect); w != "" {
 		ui.Warning(w)
 	}
 	return nil
@@ -266,6 +271,17 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 
 	case runplan.ActionStart:
 		ui.Info("Starting stopped container " + plan.ContainerName + "...")
+		// The container's binds are fixed, but the volume behind them is not:
+		// the documented cleanup is `docker volume rm toolbox-cc-socks`, and
+		// starting against a missing one lets the daemon recreate it
+		// root-owned, which Claude Code answers by falling back to a private
+		// directory in silence. Best-effort — a failure here costs peer
+		// messaging, not the shell.
+		if plan.PidMode != "" {
+			if volErr := ensurePeerSocketVolume(ctx, cli, plan.Image); volErr != nil {
+				ui.Warning(peerWarnPrefix + volErr.Error() + " — this session may reach no peer")
+			}
+		}
 		if _, startErr := cli.ContainerStart(ctx, op.ExistingID, client.ContainerStartOptions{}); startErr != nil {
 			return "", fmt.Errorf("failed to start container: %w", startErr)
 		}
@@ -286,13 +302,18 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		return "", ensureErr
 	}
 
+	// Resolved before the bind set is flattened because an unusable anchor or
+	// socket volume degrades the session to its own PID namespace, without the
+	// shared socket mount, rather than failing it.
+	pidMode, planBinds := ensurePeerRuntime(ctx, cli, plan)
+
 	// One pass, two slices: the daemon wants flattened specs (HostConfig.Binds
 	// below), dockeridentity wants the in-container targets it keys group-add
 	// on. Reading b.Target here rather than re-parsing the spec keeps that
 	// decision on the typed field.
-	binds := make([]string, len(plan.Binds))
-	bindTargets := make([]string, len(plan.Binds))
-	for i, b := range plan.Binds {
+	binds := make([]string, len(planBinds))
+	bindTargets := make([]string, len(planBinds))
+	for i, b := range planBinds {
 		binds[i] = b.String()
 		bindTargets[i] = b.Target
 	}
@@ -306,10 +327,6 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	if plan.Proximo {
 		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts)
 	}
-
-	// Resolved before the create because an unusable anchor degrades the
-	// session to its own PID namespace rather than failing it.
-	pidMode := ensurePeerPidMode(ctx, cli, plan)
 
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{

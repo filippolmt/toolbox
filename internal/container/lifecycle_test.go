@@ -13,6 +13,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -35,6 +36,10 @@ type mockClient struct {
 	imgPullFn     func(ctx context.Context, ref string, opts client.ImagePullOptions) (io.ReadCloser, error)
 	listFn        func(ctx context.Context, opts client.ContainerListOptions) ([]container.Summary, error)
 	execInspectFn func(ctx context.Context, execID string) (client.ExecInspectResult, error)
+	volInspectFn  func(ctx context.Context, name string) (client.VolumeInspectResult, error)
+	volCreateFn   func(ctx context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error)
+	volRemoveFn   func(ctx context.Context, name string, opts client.VolumeRemoveOptions) error
+	waitFn        func(ctx context.Context, id string, opts client.ContainerWaitOptions) (int64, error)
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -106,6 +111,48 @@ func (m *mockClient) ExecInspect(ctx context.Context, execID string, _ client.Ex
 		return m.execInspectFn(ctx, execID)
 	}
 	return client.ExecInspectResult{}, fmt.Errorf("ExecInspect not mocked")
+}
+
+// VolumeInspect defaults to reporting the peer socket volume as already
+// present, which is the state every test that is not about volume creation
+// runs in: ensurePeerSocketVolume then returns without touching the daemon, so
+// container counts stay about the containers the test is asserting on.
+func (m *mockClient) VolumeInspect(ctx context.Context, name string, _ client.VolumeInspectOptions) (client.VolumeInspectResult, error) {
+	if m.volInspectFn != nil {
+		return m.volInspectFn(ctx, name)
+	}
+	return client.VolumeInspectResult{Volume: volume.Volume{Name: name}}, nil
+}
+
+func (m *mockClient) VolumeCreate(ctx context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+	if m.volCreateFn != nil {
+		return m.volCreateFn(ctx, opts)
+	}
+	return client.VolumeCreateResult{Volume: volume.Volume{Name: opts.Name}}, nil
+}
+
+func (m *mockClient) VolumeRemove(ctx context.Context, name string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error) {
+	if m.volRemoveFn != nil {
+		return client.VolumeRemoveResult{}, m.volRemoveFn(ctx, name, opts)
+	}
+	return client.VolumeRemoveResult{}, nil
+}
+
+// ContainerWait defaults to a clean exit, delivered on a buffered channel so
+// the caller reads it whether it subscribes before or after this returns.
+func (m *mockClient) ContainerWait(ctx context.Context, id string, opts client.ContainerWaitOptions) client.ContainerWaitResult {
+	code, err := int64(0), error(nil)
+	if m.waitFn != nil {
+		code, err = m.waitFn(ctx, id, opts)
+	}
+	if err != nil {
+		errCh := make(chan error, 1)
+		errCh <- err
+		return client.ContainerWaitResult{Error: errCh}
+	}
+	resCh := make(chan container.WaitResponse, 1)
+	resCh <- container.WaitResponse{StatusCode: code}
+	return client.ContainerWaitResult{Result: resCh}
 }
 
 func (m *mockClient) Close() error { return nil }

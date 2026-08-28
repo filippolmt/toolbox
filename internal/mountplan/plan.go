@@ -27,6 +27,12 @@ import (
 // stringifies these via Bind.String at the daemon edge so internal callers
 // and tests deal with structured fields instead of "src:target:mode" strings.
 type Bind struct {
+	// Source is a host path for every mount the pipeline resolves, and a
+	// Docker named volume for the session inputs appended after resolveAll
+	// (peerSocketBind). Docker reads the two off the same field — a spec whose
+	// source is not absolute is taken as a volume name — so nothing downstream
+	// branches on which it is; the difference only matters to code that would
+	// stat, create or retarget the source, and no such code may touch a volume.
 	Source string
 	Target string
 	Mode   string // "rw" | "ro"
@@ -66,9 +72,9 @@ type PlanInput struct {
 	// is a soft skip with a warning instead of a bind ContainerCreate rejects.
 	GitDir string
 	// Peer opts the session into cross-container Claude Code peer messaging.
-	// The only mount-side consequence is the shared inbox-socket directory
-	// (see peerSocketMount); the PID namespace half lives in sessionplan +
-	// internal/container.
+	// The only mount-side consequence is the shared inbox-socket volume
+	// (see peerSocketBind); the PID namespace half, and the volume's
+	// one-time ownership init, live in sessionplan + internal/container.
 	Peer bool
 }
 
@@ -94,15 +100,6 @@ func Plan(in PlanInput) (Result, error) {
 
 	// Appended post-Merge: session inputs, not configurable mounts — no
 	// `mounts:` patch should be able to retarget or disable them.
-	var peerWarnings []string
-	if in.Peer {
-		peer := peerSocketMount(in.Cfg.MountsRoot)
-		if w := enforcePeerSocketMode(fsx.ExpandTilde(peer.Source, home)); w != "" {
-			peerWarnings = append(peerWarnings, w)
-		} else {
-			merged = append(merged, peer)
-		}
-	}
 	if in.GitDir != "" {
 		merged = append(merged, config.Mount{
 			Name:   WorktreeGitDirMountName,
@@ -113,7 +110,13 @@ func Plan(in PlanInput) (Result, error) {
 
 	binds, warnings := resolveAll(merged, home)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
-	warnings = append(warnings, peerWarnings...)
+
+	// The peer socket mount joins the set after resolveAll: its source is a
+	// named volume, so there is no host path to expand, create or stat, and
+	// nothing that could turn it into a soft skip.
+	if in.Peer {
+		binds = append(binds, peerSocketBind())
+	}
 
 	binds = append(binds, Bind{Source: in.Workspace, Target: WorkspaceTarget, Mode: "rw"})
 
