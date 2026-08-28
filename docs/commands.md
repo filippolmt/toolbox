@@ -62,7 +62,8 @@ toolbox shell --peer=false      # in repo C — this one stays isolated
 ```
 
 Both ends must participate: the containers join one anchor container's PID
-namespace and share `~/.toolbox/cc-socks` as their socket directory. That also
+namespace and share the `toolbox-cc-socks` Docker volume as their socket
+directory. That also
 means they can see each other's process table — the reason to turn it off for
 workspaces that must stay apart.
 

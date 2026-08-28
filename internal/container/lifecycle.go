@@ -286,13 +286,18 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		return "", ensureErr
 	}
 
+	// Resolved before the bind set is flattened because an unusable anchor or
+	// socket volume degrades the session to its own PID namespace, without the
+	// shared socket mount, rather than failing it.
+	pidMode, planBinds := ensurePeerRuntime(ctx, cli, plan)
+
 	// One pass, two slices: the daemon wants flattened specs (HostConfig.Binds
 	// below), dockeridentity wants the in-container targets it keys group-add
 	// on. Reading b.Target here rather than re-parsing the spec keeps that
 	// decision on the typed field.
-	binds := make([]string, len(plan.Binds))
-	bindTargets := make([]string, len(plan.Binds))
-	for i, b := range plan.Binds {
+	binds := make([]string, len(planBinds))
+	bindTargets := make([]string, len(planBinds))
+	for i, b := range planBinds {
 		binds[i] = b.String()
 		bindTargets[i] = b.Target
 	}
@@ -306,10 +311,6 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	if plan.Proximo {
 		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts)
 	}
-
-	// Resolved before the create because an unusable anchor degrades the
-	// session to its own PID namespace rather than failing it.
-	pidMode := ensurePeerPidMode(ctx, cli, plan)
 
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{

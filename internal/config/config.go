@@ -125,9 +125,9 @@ type Config struct {
 	Env map[string]string `mapstructure:"env"`
 	// PeerMessaging controls cross-container Claude Code peer
 	// messaging (`ListAgents` / `SendMessage`): opted-in containers join one
-	// toolbox-owned PID namespace and share `~/.toolbox/cc-socks` as their
-	// inbox-socket directory, which is what makes peers both discoverable and
-	// reachable. Default true — messaging between sessions is the useful
+	// toolbox-owned PID namespace and share the `toolbox-cc-socks` Docker
+	// volume as their inbox-socket directory, which is what makes peers both
+	// discoverable and reachable. Default true — messaging between sessions is the useful
 	// default, and the shared namespace is scoped to toolbox's own anchor.
 	// Opt out with `peer_messaging: false`, or per session with
 	// `toolbox shell --peer=false`.

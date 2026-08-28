@@ -7,6 +7,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
@@ -68,21 +69,55 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 	return nil
 }
 
-// ensurePeerPidMode resolves the PID namespace the session container is
-// created with, materialising the anchor on the way — the daemon I/O is the
-// reason it is not the pure sessionplan.peerPidMode. An unusable anchor
-// degrades to the container's own namespace with a warning rather than
-// blocking the shell — the same posture the repo takes for a missing proximo
-// stack. The shell still works; only peer messaging is gone.
-func ensurePeerPidMode(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) string {
+// ensurePeerRuntime materialises both halves of peer messaging and returns
+// what ContainerCreate needs: the PID namespace to join, and the bind set to
+// create the container with.
+//
+// The daemon I/O is the reason this is not the pure sessionplan.peerPidMode.
+// An unusable half degrades the session to a non-participating one — own
+// namespace, socket mount dropped — with a warning rather than blocking the
+// shell, the same posture the repo takes for a missing proximo stack. The
+// shell still works; only peer messaging is gone.
+//
+// Both halves fall together on purpose. Half the mechanism is not half the
+// feature: a session that mounts the shared socket dir but sits in its own PID
+// namespace, or joins the namespace with a private socket dir, believes it is
+// reachable and is not — the silent failure the whole subsystem is written to
+// avoid.
+func ensurePeerRuntime(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, []mountplan.Bind) {
 	if plan.PidMode == "" {
-		return ""
+		return "", plan.Binds
 	}
-	if err := ensureAnchor(ctx, cli, plan.Image); err != nil {
+	if err := ensurePeerRuntimeParts(ctx, cli, plan); err != nil {
 		ui.Warning(peerWarnPrefix + err.Error() + " — starting this shell without it")
-		return ""
+		return "", dropPeerSocketBind(plan.Binds)
 	}
-	return plan.PidMode
+	return plan.PidMode, plan.Binds
+}
+
+// ensurePeerRuntimeParts prepares the anchor's PID namespace and the shared
+// socket volume, in that order: the anchor is the half a stale container name
+// can already be diagnosed against (peerMismatchWarning), so failing on it
+// first keeps the warning the user sees pointed at the same thing across runs.
+func ensurePeerRuntimeParts(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+	if err := ensureAnchor(ctx, cli, plan.Image); err != nil {
+		return err
+	}
+	return ensurePeerSocketVolume(ctx, cli, plan.Image)
+}
+
+// dropPeerSocketBind returns binds without the shared socket mount, for a
+// session that turned out not to be participating. Matching on the target
+// rather than the volume name keeps this in step with a renamed volume.
+func dropPeerSocketBind(binds []mountplan.Bind) []mountplan.Bind {
+	kept := make([]mountplan.Bind, 0, len(binds))
+	for _, b := range binds {
+		if b.Target == mountplan.PeerSocketDirTarget {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	return kept
 }
 
 // peerMismatchWarning covers the silent failures the container-name fold

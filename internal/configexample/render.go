@@ -106,7 +106,8 @@ func Render() string {
 
 	b.WriteString("# peer_messaging — let Claude Code sessions in DIFFERENT toolbox containers\n")
 	b.WriteString("# see and message each other (ListAgents / SendMessage). Participating\n")
-	b.WriteString("# containers join one toolbox-owned PID namespace and share ~/.toolbox/cc-socks\n")
+	b.WriteString("# containers join one toolbox-owned PID namespace and share a toolbox-owned\n")
+	b.WriteString("# Docker volume (toolbox-cc-socks)\n")
 	b.WriteString("# as their socket dir, so they see each other's process table. Default TRUE:\n")
 	b.WriteString("# set false to keep every workspace isolated. Per-session override:\n")
 	b.WriteString("# `toolbox shell --peer=false`.\n")

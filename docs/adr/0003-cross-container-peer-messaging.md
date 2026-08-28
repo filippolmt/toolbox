@@ -14,7 +14,9 @@ another, and toolbox satisfies exactly one of them today:
   satisfied: the `claude` default mount binds one `~/.toolbox/.claude` into every
   container, so each session already *sees* the others' registry entries.
 - **A reachable inbox socket** (`/tmp/cc-socks/<pid>.sock`) — not satisfied:
-  `/tmp` is per-container.
+  `/tmp` is per-container. Claude Code binds the socket and then `chmod`s it,
+  so the shared directory must also be one where `chmod(2)` works on a socket
+  inode — see the volume-vs-bind option below.
 - **A resolvable pid** — not satisfied: the registry is keyed by pid and carries
   a `pidDomain`, and the liveness check runs in the reading session's PID
   namespace. Two containers can also hold the *same* pid, so the registry key is
@@ -25,10 +27,10 @@ We make all three hold, **on by default** — `peer_messaging:` in the config
 override, because the namespace is shared across workspaces and declining it for
 a single run has to be as cheap as leaving it on: a toolbox-owned anchor container
 holds a PID namespace that participating session containers join
-(`PidMode: container:<anchor>`), and `~/.toolbox/cc-socks` is bound onto
-`/tmp/cc-socks` so the sockets land in one shared directory. Sharing the
-namespace also makes pids unique by construction, which removes the registry
-collision rather than working around it.
+(`PidMode: container:<anchor>`), and a toolbox-owned Docker volume
+(`toolbox-cc-socks`) is mounted at `/tmp/cc-socks` so the sockets land in one
+shared directory. Sharing the namespace also makes pids unique by construction,
+which removes the registry collision rather than working around it.
 
 The anchor runs the **toolbox runtime image** with its entrypoint overridden to
 a bare `sleep`, not a second minimal base image. The image is already on disk on
@@ -55,6 +57,20 @@ would silently inherit a shared PID namespace it never asked for. A `.` is
 legal in a Docker container name and `SanitizeShellName` cannot produce one.
 
 ## Considered Options
+
+**Bind a host directory (`~/.toolbox/cc-socks`) instead of a volume.** What
+this ADR originally specified, and what shipped in #796. Rejected after it was
+found broken on the primary platform: Docker Desktop for macOS serves host
+binds over virtiofs, where `chmod(2)` on a socket inode fails with `EINVAL`.
+Claude Code chmods each inbox socket right after binding it, so the listener
+never starts — the session publishes no `messagingSocketPath` and is
+unreachable, its own `ListAgents` included, with nothing on screen to say so.
+`touch` and `chmod` on a *regular* file both succeed there, which is why the
+gate stayed green. A named volume lives in the daemon's own filesystem on every
+platform, so the bind-then-chmod sequence behaves the same everywhere. The cost
+is that the directory is no longer inspectable from the host, and that a volume
+is created root-owned while the session container runs as the unprivileged host
+UID — hence the ownership init below.
 
 **Run both sessions in one container.** Upstream's own answer, and it works
 today. Rejected as the general answer because it collapses the per-workspace
@@ -101,6 +117,17 @@ to take on the risk below.
   liveness check are implementation detail, not contract; a Claude Code upgrade
   can end this without notice, and the image upgrades Claude Code on its own
   cadence. Accepted deliberately.
+- **The volume's ownership is initialised once, by a throwaway root
+  container.** A Docker volume is created root-owned, the session container runs
+  as the unprivileged host UID (host-UID mapping), and no bind spec can hand
+  over ownership — so `container.ensurePeerSocketVolume` runs the runtime image
+  as root once, to `chown` the volume to the host UID/GID and `chmod` it to
+  `0700`. It runs on volume *creation* only, because confirming it otherwise
+  would cost a container start per shell; what makes that safe is that a failed
+  init removes the volume again. Left behind, it would satisfy the
+  volume-exists fast path forever, and every later session would fail its bind
+  on a root-owned directory instead — silently, the exact failure class this
+  ADR exists to avoid.
 - **The regression gate asserts the mechanism, not the feature.** A
   `docker-ci.yml` step starts two opted-in containers and checks that the second
   socket is visible under `/tmp/cc-socks` and that the peer's pid resolves —
@@ -108,7 +135,12 @@ to take on the risk below.
   owned by the session user, which is a third condition in practice: Claude Code
   answers anything looser by falling back to `/tmp/cc-socks-<uid>` without
   saying so, and a gate that let that through would pass while the feature was
-  dead. It deliberately does not parse `/list-agents` output, which upstream may
+  dead. The socket-sharing half binds a real UNIX socket and chmods it, the
+  sequence Claude Code runs, rather than `touch`ing a regular file: the earlier
+  `touch` probe is what let the virtiofs breakage above ship green. Note the
+  gate runs on a Linux runner, where a host bind would have passed that check
+  too — the fix is the volume, which makes the filesystem the same everywhere;
+  the sharper probe only keeps the *mechanism* honest. It deliberately does not parse `/list-agents` output, which upstream may
   reformat at will. The gate therefore cannot catch upstream changing the rules
   underneath us; nothing local can.
 - **The gate is a step in the image-build job, not a job of its own.** The image
