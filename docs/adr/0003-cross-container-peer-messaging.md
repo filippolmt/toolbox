@@ -147,8 +147,8 @@ to take on the risk below.
   `touch` probe is what let the virtiofs breakage above ship green. Note the
   gate runs on a Linux runner, where a host bind would have passed that check
   too — the fix is the volume, which makes the filesystem the same everywhere;
-  the sharper probe only keeps the *mechanism* honest. It deliberately does not parse `/list-agents` output, which upstream may
-  reformat at will. The gate therefore cannot catch upstream changing the rules
+  the sharper probe only keeps the *mechanism* honest. It deliberately does not
+  parse `/list-agents` output, which upstream may reformat at will. The gate therefore cannot catch upstream changing the rules
   underneath us; nothing local can.
 - **The gate is a step in the image-build job, not a job of its own.** The image
   it must exercise exists only on the runner that built it (`load: true`), so a

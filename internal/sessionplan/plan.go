@@ -287,7 +287,9 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // composeEnv assembles the full ordered env slice for a session: the curated
 // workspace + SDD entries first, then the loopback-bridge markers, then the
 // self-identity entries (CLI version + image digest) the in-container update
-// poller compares against published releases, then any caller-supplied
+// poller compares against published releases, then the host platform
+// (GOOS/GOARCH, for anything cross-compiling for the host from inside a
+// shell), then the managed-statusline opt-out marker, then any caller-supplied
 // curated extras (Plan passes proximo.Env, which stats the host CA), then
 // the user-supplied env: map.
 //
