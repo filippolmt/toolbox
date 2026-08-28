@@ -138,3 +138,31 @@ jobs:
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
+
+      # Cross-container peer messaging rests on Claude Code implementation
+      # detail (a pid-keyed session registry, a liveness check run in the
+      # reading session's PID namespace), and the image upgrades Claude Code on
+      # its own cadence — so this gate belongs on the image build, not on the
+      # Go CI. It asserts the two conditions toolbox builds (shared socket dir,
+      # resolvable peer pid) and deliberately does not parse /list-agents
+      # output, which upstream may reformat at will.
+      # See docs/adr/0003-cross-container-peer-messaging.md.
+      #
+      # It shares the job with the image build because the image is only
+      # loaded on this runner (`load: true`); a separate job would have to
+      # rebuild it or ship a multi-GB tarball between jobs. `!cancelled()`
+      # keeps it independent of the smoke test all the same, so a smoke-test
+      # failure reports both gates instead of hiding this one.
+      - name: Set up Go
+        if: ${{ !cancelled() && matrix.load }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # IMAGE_TAG reaches the gate as the `image:` config override, so the
+      # canonical ref lives only in internal/build.
+      - name: Peer messaging mechanism gate
+        if: ${{ !cancelled() && matrix.load }}
+        env:
+          IMAGE_TAG: ${{ matrix.tag }}
+        run: go test -tags peergate -count=1 -run TestPeerMessagingMechanism ./internal/container/

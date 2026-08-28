@@ -148,15 +148,17 @@ func writeScalars(e *errWriter, c *config.Config, ann func(string) string) {
 	e.printf("mounts_root: %s%s\n", quoteIfEmpty(c.MountsRoot), ann("mounts_root"))
 }
 
-// writeToggles emits the tri-state *bool keys: nil renders as `auto` (the
-// resolved effective value is host-derived and can't be computed from *Config
-// alone). The deprecated browser_bridge alias is intentionally not rendered —
-// only the canonical bridge key is shown (browser_bridge is still tracked in
-// provenance).
+// writeToggles emits the boolean keys: the tri-state *bool ones render `auto`
+// when nil (the resolved effective value is host-derived and can't be computed
+// from *Config alone), while the plain bool peer_messaging renders its literal
+// value — unset simply is false. The deprecated browser_bridge alias is
+// intentionally not rendered — only the canonical bridge key is shown
+// (browser_bridge is still tracked in provenance).
 func writeToggles(e *errWriter, c *config.Config, ann func(string) string) {
 	e.printf("bridge: %s%s\n", boolPtrStr(c.Bridge), ann("bridge"))
 	e.printf("proximo: %s%s\n", boolPtrStr(c.Proximo), ann("proximo"))
 	e.printf("managed_statusline: %s%s\n", boolPtrStr(c.ManagedStatusline), ann("managed_statusline"))
+	e.printf("peer_messaging: %t%s\n", c.PeerMessaging, ann("peer_messaging"))
 }
 
 // writeCollections emits the map- and slice-valued keys that need no per-entry

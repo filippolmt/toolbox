@@ -17,7 +17,6 @@ package mountplan
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -66,6 +65,11 @@ type PlanInput struct {
 	// and goes through resolveAll like every other mount, so a missing source
 	// is a soft skip with a warning instead of a bind ContainerCreate rejects.
 	GitDir string
+	// Peer opts the session into cross-container Claude Code peer messaging.
+	// The only mount-side consequence is the shared inbox-socket directory
+	// (see peerSocketMount); the PID namespace half lives in sessionplan +
+	// internal/container.
+	Peer bool
 }
 
 // Plan walks the full mount pipeline for in.Cfg and returns the bind set + the
@@ -88,8 +92,17 @@ func Plan(in PlanInput) (Result, error) {
 		return Result{}, err
 	}
 
-	// Appended post-Merge: it is a session input, not a configurable mount —
-	// no `mounts:` patch should be able to retarget or disable it.
+	// Appended post-Merge: session inputs, not configurable mounts — no
+	// `mounts:` patch should be able to retarget or disable them.
+	var peerWarnings []string
+	if in.Peer {
+		peer := peerSocketMount(in.Cfg.MountsRoot)
+		if w := enforcePeerSocketMode(fsx.ExpandTilde(peer.Source, home)); w != "" {
+			peerWarnings = append(peerWarnings, w)
+		} else {
+			merged = append(merged, peer)
+		}
+	}
 	if in.GitDir != "" {
 		merged = append(merged, config.Mount{
 			Name:   WorktreeGitDirMountName,
@@ -100,6 +113,7 @@ func Plan(in PlanInput) (Result, error) {
 
 	binds, warnings := resolveAll(merged, home)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
+	warnings = append(warnings, peerWarnings...)
 
 	binds = append(binds, Bind{Source: in.Workspace, Target: WorkspaceTarget, Mode: "rw"})
 
@@ -191,8 +205,5 @@ func OverlayDockerfilePath(cfg *config.Config, profile *Profile) (string, error)
 	if r := profile.Root(); r != "" {
 		root = r
 	}
-	if root == "" {
-		root = mountsRootPrefix // "~/.toolbox/"
-	}
-	return filepath.Join(fsx.ExpandTilde(strings.TrimSuffix(root, "/"), home), "Dockerfile"), nil
+	return filepath.Clean(fsx.ExpandTilde(mountsRootJoin(root, "Dockerfile"), home)), nil
 }

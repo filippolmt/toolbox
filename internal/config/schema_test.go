@@ -15,7 +15,7 @@ func TestSchemaKeys(t *testing.T) {
 		"mounts", "inherit_host_auth", "shells", "shell", "agent",
 		"image", "registry_mirror", "pull", "mounts_root", "sdd",
 		"bridge", "browser_bridge", "proximo", "managed_statusline",
-		"env", "worktree",
+		"env", "peer_messaging", "worktree",
 	}
 	if got := SchemaKeys(); !slices.Equal(got, want) {
 		t.Errorf("SchemaKeys drifted:\n got %v\nwant %v", got, want)

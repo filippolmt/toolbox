@@ -59,6 +59,10 @@ func KeyDocs() map[string]KeyDoc {
 			Summary: "Image-owned Claude Code statusline force-applied to settings.json each shell. Tri-state: unset = auto (on); false keeps your own.",
 			Default: "auto (on)",
 		},
+		"peer_messaging": {
+			Summary: "Let Claude Code sessions in different toolbox containers see and message each other (shared PID namespace + socket dir).",
+			Default: "false (off)",
+		},
 		"env": {
 			Summary: "Arbitrary KEY=VALUE pairs injected into every shell (after curated TOOLBOX_*/PWD). TOOLBOX_* and PWD are reserved.",
 			Default: defaultNone,

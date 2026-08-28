@@ -104,6 +104,14 @@ func Render() string {
 	b.WriteString("# managed_statusline: false\n")
 	b.WriteString("\n")
 
+	b.WriteString("# peer_messaging — let Claude Code sessions in DIFFERENT toolbox containers\n")
+	b.WriteString("# see and message each other (ListAgents / SendMessage). Opted-in containers\n")
+	b.WriteString("# join one toolbox-owned PID namespace and share ~/.toolbox/cc-socks as their\n")
+	b.WriteString("# socket dir, so they can see each other's process table. Default false.\n")
+	b.WriteString("# Per-session override: `toolbox shell --peer`.\n")
+	b.WriteString("# peer_messaging: true\n")
+	b.WriteString("\n")
+
 	b.WriteString("# env — arbitrary KEY=VALUE pairs injected into every container shell,\n")
 	b.WriteString("# after the curated TOOLBOX_* / PWD entries. Reserved keys (the TOOLBOX_\n")
 	b.WriteString("# prefix and PWD) are rejected. Per-shell shells.<name>.env overlays this.\n")

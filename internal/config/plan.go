@@ -460,6 +460,7 @@ var noValidationKeys = map[string]bool{
 	DeprecatedBridgeKey:  true,
 	"proximo":            true,
 	"managed_statusline": true,
+	"peer_messaging":     true,
 	"mounts":             true,
 }
 

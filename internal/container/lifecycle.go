@@ -202,6 +202,15 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}
 
+	// Same shape as the publish mismatch, for the same reason: HostConfig is
+	// fixed at ContainerCreate, so reconnecting can only inherit what the
+	// create decided.
+	if op.Action != runplan.ActionCreate {
+		if w := peerMismatchWarning(ctx, cli, plan, inspect); w != "" {
+			ui.Warning(w)
+		}
+	}
+
 	// Best-effort registry sync of the base image. Hard guarantee runs in
 	// imageplan.Ensure inside createAndStart.
 	imageplan.Refresh(ctx, cli, plan.Image)
@@ -292,6 +301,10 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts)
 	}
 
+	// Resolved before the create because an unusable anchor degrades the
+	// session to its own PID namespace rather than failing it.
+	pidMode := ensurePeerPidMode(ctx, cli, plan)
+
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: plan.ContainerName,
@@ -316,6 +329,9 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			// and the daemon's auto-remove worker deletes it asynchronously so
 			// the user's prompt is not blocked on the unmount. See teardown.
 			AutoRemove: true,
+			// Empty for an ordinary session; `container:<anchor>` when the
+			// session opted into cross-container peer messaging.
+			PidMode: container.PidMode(pidMode),
 		},
 	})
 	if createErr != nil {
@@ -368,8 +384,20 @@ func Stop(ctx context.Context, cli client.APIClient, workspace string) error {
 }
 
 // StopByName stops and removes the toolbox container for a named shell.
+//
+// An argument that is already a full toolbox container name (as printed by
+// `toolbox list`, or by the peer-mismatch warning) is used verbatim: it is the
+// only handle on a container whose name carries a discriminator the CLI cannot
+// re-derive from a shell name — a peer opt-in, a profile — and the alternative
+// there is `toolbox stop --all`, which takes every sibling shell down with it.
+// A named shell whose own name starts with "toolbox-" is the one ambiguous
+// case, and it resolves to the container name as typed.
 func StopByName(ctx context.Context, cli client.APIClient, name string) error {
-	return teardown.StopOne(ctx, cli, sessionplan.NamedContainerName(name), teardown.DefaultStopGrace)
+	target := sessionplan.NamedContainerName(name)
+	if strings.HasPrefix(name, sessionplan.ContainerNamePrefix) {
+		target = name
+	}
+	return teardown.StopOne(ctx, cli, target, teardown.DefaultStopGrace)
 }
 
 // StopAll stops and removes every toolbox-managed container on the host.
@@ -453,6 +481,12 @@ func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
 
 	items := make([]Item, 0, len(summaries))
 	for _, c := range summaries {
+		// The anchor carries the toolbox- prefix so StopAll sweeps it up, but
+		// it is not a shell anyone opened — listing it as one would invite a
+		// `toolbox stop` on infrastructure.
+		if containerName(c) == sessionplan.PeerAnchorContainerName {
+			continue
+		}
 		items = append(items, Item{
 			Name:      containerName(c),
 			Workspace: workspaceOf(c),

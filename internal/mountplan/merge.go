@@ -13,6 +13,17 @@ import (
 // when the user sets mounts_root in their config.
 const mountsRootPrefix = "~/.toolbox/"
 
+// mountsRootJoin joins name onto a mounts root, defaulting an empty root to
+// the ~/.toolbox/ prefix and tolerating either spelling of the trailing
+// separator. The result stays tilde-relative, like every configured source:
+// ExpandTilde runs later, at resolve time.
+func mountsRootJoin(root, name string) string {
+	if root == "" {
+		root = mountsRootPrefix
+	}
+	return strings.TrimSuffix(root, "/") + "/" + name
+}
+
 // applyMountsRoot returns a copy of base with every Source under
 // ~/.toolbox/ rewritten to live under root instead. Mounts whose Source
 // is outside that prefix (e.g. /var/run/docker.sock) are left untouched,

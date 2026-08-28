@@ -71,6 +71,7 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		BrowserBridge:     &yes,
 		Proximo:           &yes,
 		ManagedStatusline: &yes,
+		PeerMessaging:     true,
 		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:               map[string]string{"FOO": "bar"},
 		Worktree:          config.WorktreeConfig{Seed: []string{".env"}},

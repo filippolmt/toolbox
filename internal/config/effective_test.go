@@ -46,6 +46,7 @@ func TestEffectiveValueCoversSchema(t *testing.T) {
 		"bridge":             "tri-state, resolved host-side at runtime",
 		"proximo":            "tri-state, resolved host-side at runtime",
 		"managed_statusline": "tri-state, resolved host-side at runtime",
+		"peer_messaging":     "plain bool: unset is the effective false",
 		"mounts":             "collection: structured per-entry rendering",
 		"inherit_host_auth":  "collection: structured per-entry rendering",
 		"shells":             "collection: structured per-entry rendering",

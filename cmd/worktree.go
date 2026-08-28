@@ -187,6 +187,7 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent,
 		Cfg:         cfg,
 		Workspace:   wtPath,
 		ImageDigest: imageDigest,
+		Peer:        cfg.PeerMessaging,
 		Worktree:    &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
 	})
 	if err != nil {
