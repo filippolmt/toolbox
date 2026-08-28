@@ -106,9 +106,7 @@ Two Go tests enforce the catalog↔image bijection, so a missing or misspelled e
 
 Add a `check_optional "<key>" <binary> <version-command>` line in the same alphabetical-ish block as the other tool checks. `<binary>` is what `command -v` checks; the version command confirms the binary is functional. Skip only if the tool has no version flag at all.
 
-If you also added an `init.d/<NN>-<tool>.sh` script, bump the `count -ne N` gate **and** the `N (M catalog InitScripts + K system …)` message in the smoke-test's init.d bijection block. `TestSmokeTestInitDCountLiteral` derives all three numbers from the catalog plus the embedded `init.d/`, so let `make go-test` tell you what they should be rather than counting by hand.
-
-If the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the `-ge N` floor in `_zsh_vendor_completions_check` the same way — `TestSmokeTestVendorCompletionsFloor` derives N from the Dockerfile write sites. The completion gotcha in `.claude/rules/image-build.md` covers the two edits and the declared-exception list.
+If you also added an `init.d/<NN>-<tool>.sh` script, bump the counts in the smoke-test's init.d bijection block; if the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the floor in `_zsh_vendor_completions_check`. Both are covered by `.claude/rules/image-build.md` — the synced edits, and which test names the number for you.
 
 ### 5. `renovate.json`
 
