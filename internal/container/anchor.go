@@ -12,6 +12,10 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
+// peerWarnPrefix labels every warning this file emits about peer messaging, so
+// the three degrade paths read as one subsystem in the terminal.
+const peerWarnPrefix = "peer messaging: "
+
 // ensureAnchor makes the peer-messaging anchor container exist and run, so
 // opted-in sessions have a PID namespace to join. It reuses runplan.Compute
 // for the connect / start / create branch — the same three-way decision the
@@ -75,7 +79,7 @@ func ensurePeerPidMode(ctx context.Context, cli client.APIClient, plan *sessionp
 		return ""
 	}
 	if err := ensureAnchor(ctx, cli, plan.Image); err != nil {
-		ui.Warning("peer messaging: " + err.Error() + " — starting this shell without it")
+		ui.Warning(peerWarnPrefix + err.Error() + " — starting this shell without it")
 		return ""
 	}
 	return plan.PidMode
@@ -101,10 +105,10 @@ func peerMismatchWarning(ctx context.Context, cli client.APIClient, plan *sessio
 	// full container name verbatim, which is what this plan holds.
 	recreate := " — stop it with `toolbox stop " + plan.ContainerName + "`, then start the shell again"
 	if plan.PidMode == "" {
-		return "peer messaging: " + plan.ContainerName + " already runs in the shared PID namespace, " +
+		return peerWarnPrefix + plan.ContainerName + " already runs in the shared PID namespace, " +
 			"so this session can see the process table of every opted-in shell" + recreate
 	}
-	return "peer messaging: " + plan.ContainerName + " was created without the shared PID namespace, " +
+	return peerWarnPrefix + plan.ContainerName + " was created without the shared PID namespace, " +
 		"so this session will see no peers" + recreate
 }
 
