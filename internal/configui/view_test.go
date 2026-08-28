@@ -296,6 +296,11 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			},
 		},
 		{
+			key:  "peer_messaging",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("peer_messaging", boolPtr(true))) },
+		},
+		{
 			key:  "inherit_host_auth",
 			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
 			save: func(m Model) error {

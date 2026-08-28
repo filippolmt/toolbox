@@ -608,3 +608,31 @@ they never asked for. The scripts already referenced each other in comments
 ("mirrors graphify/codegraph") without a written rule, the same unnamed fan-out
 this repo collapsed before under Tool Catalog and Config Schema: unnamed, the
 fourth member would have copied the old pattern.
+
+### Peer Anchor
+
+The toolbox-owned container whose PID namespace every peer-messaging session
+joins: `toolbox-peer-anchor`, named by `sessionplan.PeerAnchorContainerName`.
+It is not a shell — nothing runs a workspace in it, and its only job is to give
+the namespace a stable owner.
+
+Concretely: the runtime image with its entrypoint overridden to `sleep
+infinity`, `AutoRemove: false`, created lazily by `container.ensureAnchor` on
+the first participating shell — with `peer_messaging` defaulting to true, that
+is effectively the first shell opened (it reuses `runplan.Compute` for the same
+connect / start / create branch the session container takes). Participating sessions
+get `PidMode: container:toolbox-peer-anchor` plus the `cc-socks` bind, and the
+opt-in is folded into the container name on both branches so a changed setting
+can never reattach to a container carrying the old `HostConfig`. It carries the
+`toolbox-` prefix so `StopAll` sweeps it up, and `List` excludes it by name
+because that command enumerates shells. An anchor that cannot be created warns
+and the shell starts without peer messaging. Rationale and rejected options:
+`docs/adr/0003-cross-container-peer-messaging.md`.
+
+Why the term exists: the reason a *separate* container is needed is not
+self-evident from any one file. Session containers are `AutoRemove: true` and
+each owns a workspace, so none can host a namespace the others outlive — the
+anchor exists precisely because no session can play that role. Unnamed, the
+next reader sees an odd extra container in `docker ps` and the obvious
+"simplification" is to point `PidMode` at one of the shells, which breaks the
+moment that shell exits.

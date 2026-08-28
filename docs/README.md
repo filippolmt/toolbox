@@ -43,6 +43,7 @@ sections.**
 - [shell](configuration.md#shell)
 - [agent](configuration.md#agent)
 - [managed_statusline](configuration.md#managed_statusline)
+- [peer_messaging](configuration.md#peer_messaging)
 - [inherit-host-auth](configuration.md#inherit-host-auth)
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)

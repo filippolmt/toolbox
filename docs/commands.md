@@ -17,6 +17,7 @@ Start an interactive shell session in the toolbox container. With no argument it
 | `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `sonar`, `wrangler`). |
 | `--profile <name>` | Isolate the whole `~/.toolbox/` credential + state set under a named profile (see [Profiles](#profiles)). |
 | `--share <tool,...>` | Under `--profile`, keep the named tools on the host root instead of the profile (repeatable/comma-separated). Requires `--profile`. |
+| `--peer` | Let Claude Code sessions in other toolbox containers see and message this one — on by default, `--peer=false` declines it (see [Peer messaging](#peer-messaging)). |
 | `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
 | `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
 
@@ -44,6 +45,38 @@ A profile shell runs in its own container, so it coexists with the default shell
 for the same directory. SSH keys and git config always stay shared with the
 host, and the host bridge keeps working under a profile. See
 [profiles in mounts](mounts.md#profiles) for what is isolated and why.
+
+### Peer messaging
+
+Cross-container Claude Code peer messaging is **on by default**, so
+`ListAgents` / `SendMessage` reach a session running in a *different* toolbox
+container — handing a task to a session already open on another repo, without
+mounting that repo here. `--peer=false` declines it for one run; `--peer` asks
+for it back. Both are the per-run override of the
+[`peer_messaging`](configuration.md#peer_messaging) config key.
+
+```bash
+toolbox shell                   # in repo A
+toolbox shell                   # in repo B — the two sessions see each other
+toolbox shell --peer=false      # in repo C — this one stays isolated
+```
+
+Both ends must participate: the containers join one anchor container's PID
+namespace and share `~/.toolbox/cc-socks` as their socket directory. That also
+means they can see each other's process table — the reason to turn it off for
+workspaces that must stay apart.
+
+A participating session runs in its own container, distinct from the isolated
+one for the same directory — the setting is folded into the container name, after a `.`
+separator no shell name can produce (`toolbox-named-infra.peer`). The namespace
+is fixed at container creation, so flipping the flag on a container that
+already exists means stopping that container first; the shell warns when it
+spots the mismatch, in either direction, and names the exact
+[`toolbox stop`](#toolbox-stop) to run. The anchor is hidden from
+[`toolbox list`](#toolbox-list) and swept up by `toolbox stop --all`.
+
+Rationale, and why `docker exec` is the better tool for fire-and-forget
+delegation: [ADR 0003](adr/0003-cross-container-peer-messaging.md).
 
 ### Publishing ports
 
@@ -171,6 +204,8 @@ Because `git worktree remove` never deletes the branch itself, `rm` and `prune` 
 
 `create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
 
+A worktree session reads the [`peer_messaging`](configuration.md#peer_messaging) config key like any other session, so worktrees see each other and the ordinary shells by default. There is no `--peer` flag here on purpose: worktree sessions are launched in batches, and a per-invocation override would be the flag most likely to differ between two of them — leaving one session out of the namespace with nothing on screen to say so. Set the config key when you want it changed, for all of them.
+
 ## toolbox list
 
 List every toolbox container on the host (alias: `toolbox ls`), across all directories, with the workspace path bound at `/workspace` and its status:
@@ -181,15 +216,17 @@ toolbox-api-1a2b3c4d  /home/u/api    Up 2 hours
 toolbox-named-infra   /home/u/infra  Up 10 minutes
 ```
 
-Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
+The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructure, not a shell anyone opened. Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
 
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.
 
+An argument that is already a full container name — as printed by [`toolbox list`](#toolbox-list) or by the peer-mismatch warning — is stopped verbatim: `toolbox stop toolbox-named-infra.peer`. That is the handle on a container whose name carries a discriminator this command cannot re-derive from a shell name, a [`--peer`](#peer-messaging) opt-in or a [`--profile`](#profiles), and it beats reaching for `--all`. (A named shell whose own name starts with `toolbox-` is the one ambiguous case; it resolves to the container name as typed.)
+
 | Flag | Description |
 |------|-------------|
-| `--all` | Stop every toolbox container on the host (cannot be combined with a positional argument). |
+| `--all` | Stop every toolbox container on the host, the [peer-messaging anchor](#peer-messaging) included (cannot be combined with a positional argument). |
 
 ## toolbox build
 

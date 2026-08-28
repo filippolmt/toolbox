@@ -105,7 +105,7 @@ func LoadLayers(searchFrom string, explicitOverride string) (global, project, ex
 // TOOLBOX_* var at Unmarshal, so consumers reasoning about env provenance (e.g.
 // configui's read-only marking) MUST consult this set rather than assuming
 // every key is env-bindable.
-var EnvBoundKeys = []string{"bridge", "image", "registry_mirror", "pull"}
+var EnvBoundKeys = []string{"bridge", "image", "registry_mirror", "pull", "peer_messaging"}
 
 // EnvVarSet reports whether key is env-bindable and its TOOLBOX_* variable is
 // currently set — the single source of truth for "this key's effective value
@@ -173,14 +173,22 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 // default lives there instead). Same reason browser_bridge itself is neither
 // seeded nor bound: non-nil must mean "the user wrote it". Explicit env name:
 // SetEnvPrefix runs later in Merge, and BindEnv with a single argument captures
-// the prefix at call time. Derived from EnvBoundKeys so the env-resolvable set
-// has a single source of truth (the same set configui consults for env
-// provenance).
+// the prefix at call time. `peer_messaging` is seeded with its real shipped
+// value (true) rather than a zero: it is a plain bool, so the seed is the only
+// place "absent" and "explicitly false" can be told apart — the file layers are
+// merged as raw maps before a single Unmarshal, so a written `peer_messaging:
+// false` still wins over the default. Seeding it also makes it env-resolvable,
+// which is why it belongs in EnvBoundKeys. Derived from EnvBoundKeys so the
+// env-resolvable set has a single source of truth (the same set configui
+// consults for env provenance).
 func seedEnvBoundKeys(vp *viper.Viper) {
 	for _, k := range EnvBoundKeys {
-		if k == "bridge" {
+		switch k {
+		case "bridge":
 			_ = vp.BindEnv(k, envVarName(k))
-		} else {
+		case "peer_messaging":
+			vp.SetDefault(k, true)
+		default:
 			vp.SetDefault(k, "")
 		}
 	}
@@ -460,6 +468,7 @@ var noValidationKeys = map[string]bool{
 	DeprecatedBridgeKey:  true,
 	"proximo":            true,
 	"managed_statusline": true,
+	"peer_messaging":     true,
 	"mounts":             true,
 }
 

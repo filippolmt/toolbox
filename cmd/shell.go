@@ -28,6 +28,7 @@ var shellBridgeLoopback bool
 var shellOAuth []string
 var shellProfile string
 var shellShare []string
+var shellPeer bool
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [name|dir]",
@@ -131,6 +132,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		ImageDigest:    imageDigest,
 		Name:           shellName,
 		Profile:        profile,
+		Peer:           resolvePeer(cmd, cfg.PeerMessaging, shellPeer),
 	})
 	if err != nil {
 		return err
@@ -168,6 +170,18 @@ func expandShellOAuth(publish []string, bridge bool, oauthTools []string) ([]str
 		return nil, false, err
 	}
 	return append(append([]string(nil), publish...), oauthPublish...), bridge || oauthBridge, nil
+}
+
+// resolvePeer resolves the cross-container peer-messaging opt-in for this
+// session: the `peer_messaging:` config value, overridden by --peer whenever
+// the user typed it. Reading Changed rather than ORing the flag in is what
+// makes `--peer=false` meaningful — with the key defaulting to on, declining
+// the shared PID namespace for a single run is the override that matters.
+func resolvePeer(cmd *cobra.Command, configured, flag bool) bool {
+	if cmd.Flags().Changed("peer") {
+		return flag
+	}
+	return configured
 }
 
 // resolveShellProfile validates the --profile / --share flags and builds the
@@ -248,6 +262,12 @@ func init() {
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root instead of the profile "+
 			"(repeatable/comma-separated). Names match 'toolbox mounts' identifiers; a prefix like 'cf' or "+
 			"'rtk' covers its split mounts. Requires --profile.")
+	shellCmd.Flags().BoolVar(&shellPeer, "peer", false,
+		"let Claude Code sessions in other toolbox containers see and message this one "+
+			"(ListAgents / SendMessage). On by default; --peer=false declines it for this run, "+
+			"overriding the peer_messaging config key. Participating containers share a PID "+
+			"namespace, so they see each other's process table. Fixed at container creation — "+
+			"stop the container by name to refresh it.")
 	shellCmd.Flags().BoolVar(&shellCreate, "create", false, "Auto-bootstrap a missing named shell in ~/.toolbox.yaml")
 	shellCmd.Flags().StringVar(&shellPath, "path", "", "Path to use with --create (default: $HOME/toolbox-shells/<name>; falls back to /tmp/<name> when home is unresolvable)")
 	rootCmd.AddCommand(shellCmd)

@@ -123,6 +123,16 @@ type Config struct {
 	// keep the curated env contract authoritative. Motivating use: opt-in
 	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
 	Env map[string]string `mapstructure:"env"`
+	// PeerMessaging controls cross-container Claude Code peer
+	// messaging (`ListAgents` / `SendMessage`): opted-in containers join one
+	// toolbox-owned PID namespace and share `~/.toolbox/cc-socks` as their
+	// inbox-socket directory, which is what makes peers both discoverable and
+	// reachable. Default true — messaging between sessions is the useful
+	// default, and the shared namespace is scoped to toolbox's own anchor.
+	// Opt out with `peer_messaging: false`, or per session with
+	// `toolbox shell --peer=false`.
+	// See docs/adr/0003-cross-container-peer-messaging.md.
+	PeerMessaging bool `mapstructure:"peer_messaging"`
 	// Worktree tunes `toolbox worktree` sessions. Currently only Seed: extra
 	// repo-relative paths to carry from the main repo into a freshly created
 	// worktree, on top of the built-in defaults. Only paths git actually

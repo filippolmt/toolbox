@@ -78,6 +78,12 @@ type SessionPlan struct {
 	// holds. The CA bind + NODE_EXTRA_CA_CERTS/TOOLBOX_PROXIMO_CA env are
 	// already resolved into Binds/Env here (pure, host-side).
 	Proximo bool
+	// PidMode is the docker --pid value. Empty for an ordinary session (the
+	// container gets its own PID namespace); `container:<anchor>` when the
+	// session opted into cross-container peer messaging, which is what makes
+	// Claude Code's pid-keyed session registry resolvable across containers.
+	// The container edge creates the anchor if it is missing.
+	PidMode string
 }
 
 // PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
@@ -119,6 +125,14 @@ type PlanInput struct {
 	// repo's .git enters the mount plan and ExecCmd launches the agent in the
 	// user's attached session. Nil for every other session.
 	Worktree *WorktreeSession
+
+	// Peer opts the session into cross-container Claude Code peer messaging:
+	// the shared inbox-socket bind (mountplan) plus the shared PID namespace
+	// (PidMode), and the opt-in folded into the container name. Resolved by
+	// cmd from `peer_messaging:` and `--peer`. Default on — declining it
+	// takes an explicit `peer_messaging: false` or `--peer=false`.
+	// See docs/adr/0003-cross-container-peer-messaging.md.
+	Peer bool
 }
 
 // WorktreeSession carries the inputs a `toolbox worktree` session adds to a
@@ -147,7 +161,7 @@ func (in PlanInput) gitDir() string {
 // raw named-shell name — the single place the workspace-hash vs named-shell
 // choice lives. A name that sanitizes to nothing (empty, blanks-only) →
 // workspace-derived; otherwise the named form. bridgeLoopback-free and fs-free.
-func containerName(workspace, name string, profile *mountplan.Profile) string {
+func containerName(workspace, name string, profile *mountplan.Profile, peer bool) string {
 	// SanitizeShellName trims before it lowercases and folds the charset, so
 	// `toolbox shell " Infra"` lands on the same container as `infra`.
 	sanitized := SanitizeShellName(name)
@@ -155,7 +169,7 @@ func containerName(workspace, name string, profile *mountplan.Profile) string {
 		// Workspace sessions fold the full profile discriminator (name + share
 		// set) into the hash, so switching profile OR --share yields a distinct
 		// container — mounts are fixed at ContainerCreate.
-		return ContainerNameFor(workspace, mountplan.ContainerDiscriminator(profile))
+		return ContainerNameFor(workspace, peerDiscriminator(mountplan.ContainerDiscriminator(profile), peer))
 	}
 	// Named shells fold the profile name into the sanitized name so a profile
 	// named-shell keeps a distinct container from the default one. The suffix
@@ -164,6 +178,9 @@ func containerName(workspace, name string, profile *mountplan.Profile) string {
 	// same as any mount/port flag; see docs/commands.md#profiles.)
 	if pn := mountplan.ProfileName(profile); pn != "" {
 		sanitized = sanitized + "-" + SanitizeShellName(pn)
+	}
+	if peer {
+		sanitized = sanitized + peerNameSuffix
 	}
 	return namedContainerNameFromSanitized(sanitized)
 }
@@ -203,6 +220,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Workspace: workspace,
 		Profile:   in.Profile,
 		GitDir:    in.gitDir(),
+		Peer:      in.Peer,
 	})
 	if err != nil {
 		return nil, err
@@ -223,13 +241,14 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
 		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, proximo.Env(in.Cfg)),
-		ContainerName:     containerName(workspace, in.Name, in.Profile),
+		ContainerName:     containerName(workspace, in.Name, in.Profile, in.Peer),
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
 		Proximo:           proximo.Enabled(in.Cfg),
+		PidMode:           peerPidMode(in.Peer),
 	}, nil
 }
 
