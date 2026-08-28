@@ -20,9 +20,12 @@
 |---|---|---|
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
+| `internal/{container,mountplan,sessionplan}/**` | `make go-check` — the extra CI gate has no local equivalent | `docker-ci.yml` (build + smoke + peer gate) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
+
+The peer-messaging gate `docker-ci.yml` runs for those three packages (`go test -tags peergate`) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place it runs.
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 

@@ -153,6 +153,12 @@ to take on the risk below.
 - **The gate is a step in the image-build job, not a job of its own.** The image
   it must exercise exists only on the runner that built it (`load: true`), so a
   separate job would have to rebuild it or ship a multi-GB tarball between jobs.
+  The consequence is that `docker-ci.yml`'s `paths` filter decides when the gate
+  runs, and it therefore covers `internal/{container,mountplan,sessionplan}/**`
+  as well as the image assets: the gate drives the host CLI, so a refactor of
+  the anchor or the socket volume can break it without touching a single image
+  file, and the unit tests that would otherwise catch it all run on Docker
+  mocks.
   It runs under `!cancelled()` so a failing smoke test cannot hide it, and takes
   the image under test through the `image:` config override — the canonical ref
   stays in `internal/build` alone.
