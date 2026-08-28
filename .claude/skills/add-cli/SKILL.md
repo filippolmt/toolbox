@@ -1,6 +1,6 @@
 ---
 name: add-cli
-description: Wire a CLI into the toolbox image — install layer, version ARG, `internal/catalog/catalog.go` row, `smoke-test.sh` check, Renovate manager, and the `~/.toolbox/<tool>` bind-mount that keeps its auth alive across `toolbox stop`. Use when the user wants a binary available inside `toolbox shell`, or when an already-installed CLI's credentials don't survive a container recreate.
+description: Wire a CLI into the toolbox image — install layer, catalog row, smoke check, Renovate manager, auth bind-mount. Use when the user wants a binary available inside `toolbox shell`, or when an already-installed CLI's credentials don't survive a container recreate.
 ---
 
 # /add-cli
@@ -49,6 +49,8 @@ Pick the install method by matching the closest analog already in the Dockerfile
 | GCloud-style bundle | `fetch-gcloud` stage | Distro tarball, accepted-risk no-checksum (T-01-08); relocatable SDKs run from `/out` in-stage |
 | Debian package via apt | final-stage base apt / `azure-cli` layers | Last resort — pulls the world. Prefer a static binary unless the tool genuinely needs system integration |
 | Vendor CDN zip (no GitHub releases) | `fetch-bun` stage | `curl` zip + SHA256 check + `unzip` installed in-stage (fetch-stage helpers never reach the final image) |
+
+Prefer a verified archive over a piped install script: `curl … | sh` is the last resort of this table, not a shortcut past the checksum work.
 
 For GitHub releases, `gh release view --json tagName,assets -R <owner>/<repo>` gives the latest tag without scraping HTML. Verify the asset naming pattern across architectures (`linux_amd64` vs `linux-x86_64` vs `x86_64-unknown-linux-musl`) — the #1 source of layer bugs.
 
@@ -104,9 +106,7 @@ Two Go tests enforce the catalog↔image bijection, so a missing or misspelled e
 
 Add a `check_optional "<key>" <binary> <version-command>` line in the same alphabetical-ish block as the other tool checks. `<binary>` is what `command -v` checks; the version command confirms the binary is functional. Skip only if the tool has no version flag at all.
 
-If you also added an `init.d/<NN>-<tool>.sh` script, bump the `count -ne N` gate **and** the `N (M catalog InitScripts + K system …)` message in the smoke-test's init.d bijection block. `TestSmokeTestInitDCountLiteral` derives all three numbers from the catalog plus the embedded `init.d/`, so let `make go-test` tell you what they should be rather than counting by hand.
-
-If the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the `-ge N` floor in `_zsh_vendor_completions_check` the same way — `TestSmokeTestVendorCompletionsFloor` derives N from the Dockerfile write sites. The completion gotcha in `.claude/rules/image-build.md` covers the two edits and the declared-exception list.
+If you also added an `init.d/<NN>-<tool>.sh` script, bump the counts in the smoke-test's init.d bijection block; if the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the floor in `_zsh_vendor_completions_check`. Both are covered by `.claude/rules/image-build.md` — the synced edits, and which test names the number for you.
 
 ### 5. `renovate.json`
 
@@ -125,6 +125,8 @@ Most CLIs persist *something*. Decide before merging:
 - **Local cache (browser binaries, model weights, big artifacts)** → mount the same way. Playwright (`~/.cache/ms-playwright`) is the precedent.
 - **Split-state tool (state spans two non-XDG paths upstream)** → two binds nested under a single `~/.toolbox/<tool>/` root, flat host layout. Precedents: rtk (`rtk/config` + `rtk/data`) and cf (`cf/auth` + `cf/config`). Use this only when the tool exposes no env override to consolidate; otherwise prefer one bind.
 - **Pure stateless tool (jq, yq, bat)** → no mount. Skip this step.
+
+Mount only paths the user asked for — never `~/.secrets` or another host path nobody requested. The `DefaultMounts` doc comment explains why (D-08).
 
 Pattern (matches gws / gcloud / azure / oci, all in `internal/mountplan/defaults.go`):
 
@@ -162,18 +164,14 @@ Skip the pipeline above, do only:
 
 That was ~5 edits for gws and shipped clean. Keep it that size.
 
-## Success
-
-Every file in your branch's row edited, and `make go-check` green — lint plus the catalog bijection, smoke-count and mount-count tests these edits move.
-
-That gate proves the configuration is internally consistent, **not** that the new binary executes inside the image. Say so plainly and point the user at `make test` (build + smoke) for the end-to-end check; `docker-ci.yml` triggers on `internal/build/assets/**`, so CI runs it on this change anyway. Leave `make build` to them — multi-minute, and it rebuilds every layer below the new one.
-
-## Guardrails
-
-- **Report pre-existing lint/test failures and stop** when they surface during the gate. A failure your edits didn't cause is a separate change; folding it in hides which edit broke what.
-- **Mount only paths the user asked for** — never `~/.secrets` or another host path nobody requested. The `DefaultMounts` doc comment explains why (D-08).
-- **Prefer a verified archive over a piped install script.** `curl … | sh` is the last resort of step 1, not a shortcut past the checksum work.
-
 ## CLAUDE.md gotcha
 
 When a tool has a non-obvious quirk worth surfacing to future contributors (the gws keyring backend is the model case), add a one-line bullet to the "Gotchas" section in `CLAUDE.md`. When an in-Dockerfile comment already captures the quirk, leave it there — duplication rots faster than it helps.
+
+## Success
+
+Every file in your branch's row edited, the `CLAUDE.md` gotcha judged, and `make go-check` green — lint plus the catalog bijection, smoke-count and mount-count tests these edits move.
+
+Report pre-existing lint/test failures and stop when they surface during that gate. A failure your edits didn't cause is a separate change; folding it in hides which edit broke what.
+
+That gate proves the configuration is internally consistent, **not** that the new binary executes inside the image. Say so plainly and point the user at `make test` (build + smoke) for the end-to-end check; `docker-ci.yml` triggers on `internal/build/assets/**`, so CI runs it on this change anyway. Leave `make build` to them — multi-minute, and it rebuilds every layer below the new one.
