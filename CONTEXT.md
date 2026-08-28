@@ -618,8 +618,9 @@ the namespace a stable owner.
 
 Concretely: the runtime image with its entrypoint overridden to `sleep
 infinity`, `AutoRemove: false`, created lazily by `container.ensureAnchor` on
-the first opted-in shell (which reuses `runplan.Compute` for the same
-connect / start / create branch the session container takes). Opted-in sessions
+the first participating shell — with `peer_messaging` defaulting to true, that
+is effectively the first shell opened (it reuses `runplan.Compute` for the same
+connect / start / create branch the session container takes). Participating sessions
 get `PidMode: container:toolbox-peer-anchor` plus the `cc-socks` bind, and the
 opt-in is folded into the container name on both branches so a changed setting
 can never reattach to a container carrying the old `HostConfig`. It carries the

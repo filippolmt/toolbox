@@ -61,7 +61,7 @@ func KeyDocs() map[string]KeyDoc {
 		},
 		"peer_messaging": {
 			Summary: "Let Claude Code sessions in different toolbox containers see and message each other (shared PID namespace + socket dir).",
-			Default: "false (off)",
+			Default: "true (on)",
 		},
 		"env": {
 			Summary: "Arbitrary KEY=VALUE pairs injected into every shell (after curated TOOLBOX_*/PWD). TOOLBOX_* and PWD are reserved.",

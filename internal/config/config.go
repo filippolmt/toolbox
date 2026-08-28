@@ -123,12 +123,14 @@ type Config struct {
 	// keep the curated env contract authoritative. Motivating use: opt-in
 	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
 	Env map[string]string `mapstructure:"env"`
-	// PeerMessaging opts the session into cross-container Claude Code peer
+	// PeerMessaging controls cross-container Claude Code peer
 	// messaging (`ListAgents` / `SendMessage`): opted-in containers join one
 	// toolbox-owned PID namespace and share `~/.toolbox/cc-socks` as their
 	// inbox-socket directory, which is what makes peers both discoverable and
-	// reachable. Default false — sharing a PID namespace across workspaces
-	// must be asked for. Per-session override: `toolbox shell --peer`.
+	// reachable. Default true — messaging between sessions is the useful
+	// default, and the shared namespace is scoped to toolbox's own anchor.
+	// Opt out with `peer_messaging: false`, or per session with
+	// `toolbox shell --peer=false`.
 	// See docs/adr/0003-cross-container-peer-messaging.md.
 	PeerMessaging bool `mapstructure:"peer_messaging"`
 	// Worktree tunes `toolbox worktree` sessions. Currently only Seed: extra

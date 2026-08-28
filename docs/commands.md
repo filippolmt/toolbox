@@ -17,7 +17,7 @@ Start an interactive shell session in the toolbox container. With no argument it
 | `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `sonar`, `wrangler`). |
 | `--profile <name>` | Isolate the whole `~/.toolbox/` credential + state set under a named profile (see [Profiles](#profiles)). |
 | `--share <tool,...>` | Under `--profile`, keep the named tools on the host root instead of the profile (repeatable/comma-separated). Requires `--profile`. |
-| `--peer` | Let Claude Code sessions in other opted-in containers see and message this one (see [Peer messaging](#peer-messaging)). |
+| `--peer` | Let Claude Code sessions in other toolbox containers see and message this one — on by default, `--peer=false` declines it (see [Peer messaging](#peer-messaging)). |
 | `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
 | `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
 
@@ -48,24 +48,26 @@ host, and the host bridge keeps working under a profile. See
 
 ### Peer messaging
 
-`--peer` opts the session into cross-container Claude Code peer messaging, so
+Cross-container Claude Code peer messaging is **on by default**, so
 `ListAgents` / `SendMessage` reach a session running in a *different* toolbox
 container — handing a task to a session already open on another repo, without
-mounting that repo here. It is the per-run override of the
-[`peer_messaging`](configuration.md#peer_messaging) config key; `--peer=false`
-declines it for one run.
+mounting that repo here. `--peer=false` declines it for one run; `--peer` asks
+for it back. Both are the per-run override of the
+[`peer_messaging`](configuration.md#peer_messaging) config key.
 
 ```bash
-toolbox shell --peer            # in repo A
-toolbox shell --peer            # in repo B — the two sessions now see each other
+toolbox shell                   # in repo A
+toolbox shell                   # in repo B — the two sessions see each other
+toolbox shell --peer=false      # in repo C — this one stays isolated
 ```
 
-Both ends must opt in: the containers join one anchor container's PID namespace
-and share `~/.toolbox/cc-socks` as their socket directory. That also means they
-can see each other's process table, which is why the default is off.
+Both ends must participate: the containers join one anchor container's PID
+namespace and share `~/.toolbox/cc-socks` as their socket directory. That also
+means they can see each other's process table — the reason to turn it off for
+workspaces that must stay apart.
 
-An opted-in session runs in its own container, distinct from the plain one for
-the same directory — the opt-in is folded into the container name, after a `.`
+A participating session runs in its own container, distinct from the isolated
+one for the same directory — the setting is folded into the container name, after a `.`
 separator no shell name can produce (`toolbox-named-infra.peer`). The namespace
 is fixed at container creation, so flipping the flag on a container that
 already exists means stopping that container first; the shell warns when it
@@ -202,7 +204,7 @@ Because `git worktree remove` never deletes the branch itself, `rm` and `prune` 
 
 `create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
 
-A worktree session reads the [`peer_messaging`](configuration.md#peer_messaging) config key like any other session, so worktrees opted in that way see each other and the ordinary shells. There is no `--peer` flag here on purpose: worktree sessions are launched in batches, and a per-invocation opt-in would be the flag most likely to differ between two of them — leaving one session out of the namespace with nothing on screen to say so. Set the config key when you want it, for all of them.
+A worktree session reads the [`peer_messaging`](configuration.md#peer_messaging) config key like any other session, so worktrees see each other and the ordinary shells by default. There is no `--peer` flag here on purpose: worktree sessions are launched in batches, and a per-invocation override would be the flag most likely to differ between two of them — leaving one session out of the namespace with nothing on screen to say so. Set the config key when you want it changed, for all of them.
 
 ## toolbox list
 

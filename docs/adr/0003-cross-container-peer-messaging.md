@@ -20,11 +20,11 @@ another, and toolbox satisfies exactly one of them today:
   namespace. Two containers can also hold the *same* pid, so the registry key is
   not unique across them.
 
-We make all three hold, behind an opt-in — `peer_messaging:` in the config, with
-`toolbox shell --peer` / `--peer=false` as the per-run override, because the
-namespace is shared across workspaces and declining it for a single run has to
-be as cheap as asking for it: a toolbox-owned anchor container
-holds a PID namespace that opted-in session containers join
+We make all three hold, **on by default** — `peer_messaging:` in the config
+(default `true`), with `toolbox shell --peer=false` / `--peer` as the per-run
+override, because the namespace is shared across workspaces and declining it for
+a single run has to be as cheap as leaving it on: a toolbox-owned anchor container
+holds a PID namespace that participating session containers join
 (`PidMode: container:<anchor>`), and `~/.toolbox/cc-socks` is bound onto
 `/tmp/cc-socks` so the sockets land in one shared directory. Sharing the
 namespace also makes pids unique by construction, which removes the registry
@@ -39,8 +39,8 @@ rule below exists to absorb. It is `AutoRemove: false` (it must outlive the
 sessions referencing it), carries the `toolbox-` prefix so `toolbox stop --all`
 sweeps it up, and is filtered out of `toolbox list`, which enumerates shells.
 
-The opt-in is folded into the container name. Mounts and `HostConfig` are fixed
-at `ContainerCreate`, so a session whose opt-in changed would otherwise reattach
+The setting is folded into the container name. Mounts and `HostConfig` are fixed
+at `ContainerCreate`, so a session whose setting changed would otherwise reattach
 to an existing container carrying the old `PidMode` — and the failure is silent:
 the session starts, looks healthy, and simply sees no peers. The same reattach
 wart is tolerated for `--share` on named shells, where a wrong mount set shows up
@@ -84,9 +84,19 @@ to take on the risk below.
 
 ## Consequences
 
-- **Opted-in containers can see each other's process table.** The isolation cost
-  is real and is why this is opt-in with a default of off: workspaces for
-  different clients must not share a namespace unless asked.
+- **Participating containers can see each other's process table.** The isolation
+  cost is real, and defaulting to on means every workspace pays it unless told
+  otherwise: workspaces that must not see each other — different clients, say —
+  need an explicit `peer_messaging: false`, which a project's own
+  `.toolbox.yaml` can set without touching the global config.
+- **The anchor is effectively always-on.** With the default on,
+  `toolbox-peer-anchor` is created by the first shell of the day and outlives
+  the sessions referencing it. `toolbox stop --all` still sweeps it up.
+- **Flipping this default orphaned every container created before it.** The
+  setting is part of the container identity (below), so the same workspace now
+  resolves to a different container name than it did under the opt-in default;
+  the first shell after the upgrade creates a new one and leaves the old one
+  behind for `toolbox stop`.
 - **We depend on undocumented internals.** The pid-keyed registry and the
   liveness check are implementation detail, not contract; a Claude Code upgrade
   can end this without notice, and the image upgrades Claude Code on its own

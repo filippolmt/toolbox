@@ -184,8 +184,8 @@ var keyDescriptors = map[string]keyDescriptor{
 	},
 	// peer_messaging is a plain bool, not a tri-state: the pointer is always
 	// non-nil, so the editor shows true/false and never "auto". Choosing
-	// "unset" removes the key, which reads back as false — the same value,
-	// written the shorter way.
+	// "unset" removes the key, which reads back as true (the default seeded
+	// in config.Merge) — the same value as true, written the shorter way.
 	"peer_messaging": {
 		kind:    edTri,
 		tri:     func(c *config.Config) *bool { return &c.PeerMessaging },
