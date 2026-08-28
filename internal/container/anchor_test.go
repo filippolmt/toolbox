@@ -11,8 +11,22 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
+
+// hasPeerSocketBind reports whether a HostConfig.Binds slice still carries the
+// shared inbox-socket mount. Matching on the in-container target rather than
+// the volume name keeps it in step with a renamed volume, the same way
+// dropPeerSocketBind does.
+func hasPeerSocketBind(binds []string) bool {
+	for _, b := range binds {
+		if strings.Contains(b, ":"+mountplan.PeerSocketDirTarget+":") {
+			return true
+		}
+	}
+	return false
+}
 
 // peerPlan builds a plan for an opted-in session, so plan.PidMode names the
 // anchor.
@@ -41,6 +55,7 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 
 	var created []string
 	var sessionPidMode string
+	var sessionBinds []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
@@ -52,6 +67,7 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 			created = append(created, name)
 			if name != sessionplan.PeerAnchorContainerName {
 				sessionPidMode = string(hostCfg.PidMode)
+				sessionBinds = hostCfg.Binds
 			}
 			return container.CreateResponse{ID: name}, nil
 		},
@@ -68,6 +84,11 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 	if sessionPidMode != plan.PidMode {
 		t.Errorf("session HostConfig.PidMode = %q, want %q", sessionPidMode, plan.PidMode)
 	}
+	// The namespace without the socket mount is half the mechanism, which is
+	// worse than none: the session would believe it is reachable.
+	if !hasPeerSocketBind(sessionBinds) {
+		t.Errorf("session Binds = %v, want the %s mount", sessionBinds, mountplan.PeerSocketDirTarget)
+	}
 }
 
 // TestShellPeerAnchorFailureDegrades asserts an unusable anchor warns and
@@ -80,6 +101,7 @@ func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 
 	sessionCreated := false
 	var sessionPidMode string
+	var sessionBinds []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
@@ -93,6 +115,7 @@ func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 			}
 			sessionCreated = true
 			sessionPidMode = string(hostCfg.PidMode)
+			sessionBinds = hostCfg.Binds
 			return container.CreateResponse{ID: name}, nil
 		},
 	}
@@ -108,6 +131,66 @@ func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 	}
 	if sessionPidMode != "" {
 		t.Errorf("session HostConfig.PidMode = %q, want empty after the anchor failed", sessionPidMode)
+	}
+	// Both halves fall together: keeping the shared socket directory while
+	// sitting in a private namespace is the silent half-failure.
+	if hasPeerSocketBind(sessionBinds) {
+		t.Errorf("session Binds = %v, want the %s mount dropped too", sessionBinds, mountplan.PeerSocketDirTarget)
+	}
+	if !strings.Contains(out, "peer messaging") {
+		t.Errorf("expected a peer-messaging warning on stderr, got %q", out)
+	}
+}
+
+// TestShellPeerSocketVolumeFailureDegrades is the mirror of the anchor case:
+// the volume half failing must drop the PID namespace as well, or the session
+// joins the shared process table believing it is reachable through a socket
+// directory only it can see.
+func TestShellPeerSocketVolumeFailureDegrades(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	sessionCreated := false
+	var sessionPidMode string
+	var sessionBinds []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		volInspectFn: func(_ context.Context, name string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + name}
+		},
+		volCreateFn: func(context.Context, client.VolumeCreateOptions) (client.VolumeCreateResult, error) {
+			return client.VolumeCreateResult{}, errors.New("no space left on device")
+		},
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name != sessionplan.PeerAnchorContainerName {
+				sessionCreated = true
+				sessionPidMode = string(hostCfg.PidMode)
+				sessionBinds = hostCfg.Binds
+			}
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	out := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+			t.Fatalf("Shell: %v", err)
+		}
+	})
+
+	if !sessionCreated {
+		t.Fatal("a failing socket volume must not block the shell")
+	}
+	if sessionPidMode != "" {
+		t.Errorf("session HostConfig.PidMode = %q, want empty after the volume failed", sessionPidMode)
+	}
+	if hasPeerSocketBind(sessionBinds) {
+		t.Errorf("session Binds = %v, want the %s mount dropped", sessionBinds, mountplan.PeerSocketDirTarget)
 	}
 	if !strings.Contains(out, "peer messaging") {
 		t.Errorf("expected a peer-messaging warning on stderr, got %q", out)
