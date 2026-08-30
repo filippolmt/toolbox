@@ -74,6 +74,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`, `sync`; alias `wt`) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
 | [`toolbox list`](docs/commands.md#toolbox-list) | List toolbox containers running on the host (alias `ls`) |
+| [`toolbox container`](docs/commands.md#toolbox-container) | Clean up the containers a test suite leaves on the host, which toolbox did not create (`stop`, `rm`, `prune`; TAB-completes the live targets) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
 | [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
 | [`toolbox init`](docs/commands.md#toolbox-init) | Write an annotated `.toolbox.yaml` in the current directory |

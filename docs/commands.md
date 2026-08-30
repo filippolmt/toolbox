@@ -228,6 +228,40 @@ An argument that is already a full container name — as printed by [`toolbox li
 |------|-------------|
 | `--all` | Stop every toolbox container on the host, the [peer-messaging anchor](#peer-messaging) included (cannot be combined with a positional argument). |
 
+## toolbox container
+
+Act on the containers on the host that toolbox did **not** create — the [Orphaned Siblings](../CONTEXT.md#orphaned-sibling) a test suite leaves behind. A `docker compose up` inside a shell creates its containers on the *host* daemon, as siblings of the shell rather than children of it, so nothing ties their lifetime to the session: the shell exits and they stay. Plain Compose ships no reaper, so they pile up, one `<project>_default` network per run with them.
+
+A **target** is either a Compose project (all of its containers, plus the networks it created) or a single container carrying no Compose label. Shell completion lists what is on the host right now and offers *typed* values, so a project and a container that share a name stay apart:
+
+```
+$ toolbox container stop <TAB>
+container:pg      standalone container
+project:api       Compose project, 3 container(s), /Users/u/projects/api
+project:proximo   proximo stack — never removed by --all or prune
+```
+
+Two projects whose names collide — the default project name is the basename of the directory, so two repos called `api` produce two projects called `api` — are offered with the working directory appended (`project:api@/Users/u/projects/api`). A bare name is accepted whenever it is unique and errors with the alternatives when it is not. Naming a toolbox container is refused with a pointer to [`toolbox stop`](#toolbox-stop), which owns those.
+
+| Command | Description |
+|---------|-------------|
+| `toolbox container stop <target…>` | Stop the targets named, leaving them in place for `docker start`. |
+| `toolbox container stop --all` | Stop every target on the host except the proximo stack. |
+| `toolbox container rm <target…>` | Stop, then remove: the containers and, for a Compose project, its networks. |
+| `toolbox container prune` | The same removal for every target on the host. Takes no arguments. |
+
+| Flag | Applies to | Description |
+|------|-----------|-------------|
+| `--all` | `stop` | Bulk form; cannot be combined with a target. |
+| `--volumes` | `rm`, `prune` | Also remove the volumes each Compose project owns. **Destroys their data** — a volume declared `external: true` carries no project label and is never eligible. |
+| `--dry-run` | `prune` | List what would be removed without removing it. |
+
+Networks are removed without a flag and volumes are not, and the line between them is what a target can rebuild for free: Compose recreates a network identically on the next `up`, while a volume is the one place a test stack keeps something you may want back. Each container is stopped with a SIGTERM grace before removal, never force-killed — a test stack usually has a database in it.
+
+**The proximo stack is never removed in bulk**, and the skip is announced rather than left silent: `stop --all` and `prune` print `Skipping project:proximo — stop it by name if you mean it`. It stays addressable by name, because typing it is a choice. Everything else the completion offers is exactly what the bulk forms act on.
+
+Completion has to be installed for the TAB listing to exist. The Homebrew cask generates the scripts at install time; a `go install` build needs [`toolbox completion`](#toolbox-completion) run by hand.
+
 ## toolbox build
 
 Build the toolbox Docker image from the embedded context (Dockerfile + assets are compiled into the binary, so it runs anywhere). The build overwrites the local cache of the canonical tag, so the next `toolbox shell` picks it up — see [image selection](configuration.md#image-selection) for how it interacts with `image` / `registry_mirror` / `pull` and how to restore the upstream copy.

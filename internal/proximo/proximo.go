@@ -49,6 +49,13 @@ const (
 	// value is a comma-separated list of hostnames.
 	HostsLabel = "proximo.hosts"
 
+	// RoleLabel is the Docker label proximo's own stack containers carry
+	// (traefik, watcher, dns). It is what tells the proxy stack apart from a
+	// project's routed containers, which carry HostsLabel instead: the two
+	// mark disjoint populations. Read by the Orphaned Sibling cleanup, which
+	// offers the stack by name but never sweeps it in bulk.
+	RoleLabel = "proximo.role"
+
 	// gateway is Docker's reserved ExtraHosts target that resolves to the
 	// host's gateway IP — the host where proximo's Traefik publishes :443.
 	gateway = "host-gateway"
