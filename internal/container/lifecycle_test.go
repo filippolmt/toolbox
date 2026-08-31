@@ -40,6 +40,32 @@ type mockClient struct {
 	volCreateFn   func(ctx context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error)
 	volRemoveFn   func(ctx context.Context, name string, opts client.VolumeRemoveOptions) error
 	waitFn        func(ctx context.Context, id string, opts client.ContainerWaitOptions) (int64, error)
+	netListFn     func(ctx context.Context, opts client.NetworkListOptions) ([]network.Summary, error)
+	netRemoveFn   func(ctx context.Context, id string) error
+	volListFn     func(ctx context.Context, opts client.VolumeListOptions) ([]volume.Volume, error)
+}
+
+func (m *mockClient) NetworkList(ctx context.Context, opts client.NetworkListOptions) (client.NetworkListResult, error) {
+	if m.netListFn != nil {
+		items, err := m.netListFn(ctx, opts)
+		return client.NetworkListResult{Items: items}, err
+	}
+	return client.NetworkListResult{}, nil
+}
+
+func (m *mockClient) NetworkRemove(ctx context.Context, id string, _ client.NetworkRemoveOptions) (client.NetworkRemoveResult, error) {
+	if m.netRemoveFn != nil {
+		return client.NetworkRemoveResult{}, m.netRemoveFn(ctx, id)
+	}
+	return client.NetworkRemoveResult{}, nil
+}
+
+func (m *mockClient) VolumeList(ctx context.Context, opts client.VolumeListOptions) (client.VolumeListResult, error) {
+	if m.volListFn != nil {
+		items, err := m.volListFn(ctx, opts)
+		return client.VolumeListResult{Items: items}, err
+	}
+	return client.VolumeListResult{}, nil
 }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {

@@ -686,3 +686,31 @@ anchor exists precisely because no session can play that role. Unnamed, the
 next reader sees an odd extra container in `docker ps` and the obvious
 "simplification" is to point `PidMode` at one of the shells, which breaks the
 moment that shell exits.
+
+### Orphaned Sibling
+
+A container created from *inside* a toolbox shell through the host's
+bind-mounted Docker socket. It is born on the host daemon as a *sibling* of
+the shell, never as a child, so nothing ties its lifetime to the session
+that created it: when the shell exits, it stays.
+
+Concretely: the usual source is a `docker compose up` in a project's test
+suite, which leaves both its containers and its `<project>_default` network
+behind — plain Compose has no reaper, unlike testcontainers' Ryuk. An
+Orphaned Sibling carries no `toolbox-` prefix, so
+`sessionplan.IsToolboxContainerName` does not match it and neither
+`Teardown` nor `toolbox stop --all` ever reaches it; it is recognised
+instead by the Compose project labels its creator wrote, which also record
+the host working directory it was launched from. The proximo stack is not
+one: it is host-local infrastructure, created outside any shell, and it
+carries a label of its own so a bulk sweep never mistakes it for one. Rationale, verbs and blast radius:
+`docs/adr/0004-orphaned-sibling-cleanup.md`.
+
+Why the term exists: called "the containers my tests leave behind", this
+reads as housekeeping, and the obvious fix is to widen `StopAll` — which
+would make `toolbox stop` act on containers toolbox did not create, the one
+property that makes that command safe to run blind. The word *sibling*
+carries the whole mechanism instead: Docker-outside-of-Docker gives no
+parent/child relation, so the leak is structural rather than a forgotten
+cleanup step. That is also why the answer is a second command with its own
+criterion and its own removal policy, not a bigger sweep.
