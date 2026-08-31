@@ -519,6 +519,34 @@ that stopped reaching the host. The "Bridge Contract" name turns that
 comment-enforced invariant into a red-on-drift bijection test, mirroring the
 Init Sequence `init.d` bijection and the Tool Catalog fan-out collapse.
 
+### Bridge Run Mount
+
+The one **read-write** bridge bind: `~/.toolbox/toolbox/bridge/run` →
+`ContainerRunDir` (`mountplan.defaults`, mount name `bridge-run`), nested
+inside the read-only state-dir bind so the shim can reach `run/bridge.sock`
+without the token and port files becoming writable.
+
+Concretely: it is live for as long as a bridge-enabled toolbox shell is open
+(`bridge: false` drops all three bridge binds), and on a Docker Desktop host
+that makes the state dir undeletable. `toolbox bridge
+uninstall` therefore treats `os.RemoveAll` on the state dir as best-effort
+(`bridge.stateDirOutcome`, `TestStateDirOutcome`): a warning naming the path
+and the remedy, exit 0 — the daemon and its service file, the half that cannot
+be undone, are already gone by then. A surviving `token` file is the one
+exception and still fails hard, uninstall+install being the documented token
+rotation, and the removal fails closed there: a token whose absence cannot be
+proven counts as live.
+
+Why the term exists: the failure reads as a permission bug, not as a mount.
+Docker Desktop serves the bind over virtiofs, which answers the unlink with
+`EACCES` — "permission denied" on a directory the user owns. A native-Linux
+host does not fail at all: the bind only exists in the container's mount
+namespace, so the host directory unlinks clean and the open shells keep the
+orphaned inode until they exit. Naming the mount puts the cause in the
+vocabulary, so the next reader of that message looks for an open shell instead
+of for a `chmod`, and does not go hunting on Linux for a warning that host
+cannot produce.
+
 ### Proximo Execution Modes
 
 The two ways the bridge daemon runs the **host** proximo binary on behalf of a

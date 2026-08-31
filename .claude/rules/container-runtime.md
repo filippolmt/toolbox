@@ -68,7 +68,11 @@ opt-in host daemon (`toolbox bridge install`; `browser-bridge` = deprecated alia
 
 ### State mounts
 
-State `~/.toolbox/toolbox/bridge/` RO-mounted (new + legacy container targets; install migrates the pre-rename `~/.toolbox/browser`) + RW nested `bridge-run` mount for `run/bridge.sock`; `bridge: false` (legacy key `browser_bridge` still read) skips all three mounts.
+State `~/.toolbox/toolbox/bridge/` RO-mounted (new + legacy container targets; install migrates the pre-rename `~/.toolbox/browser`) + RW nested `bridge-run` mount for `run/bridge.sock` (glossary: [Bridge Run Mount](../../CONTEXT.md#bridge-run-mount)); `bridge: false` (legacy key `browser_bridge` still read) skips all three mounts.
+
+### Uninstall is best-effort on the state dir
+
+`bridge.Uninstall` returns `(warning, error)`: a failed `os.RemoveAll` on the state dir is a **warning on stderr with exit 0**, not an error — a bridge-enabled shell holds the [Bridge Run Mount](../../CONTEXT.md#bridge-run-mount) open and the daemon is already gone by then. Three constraints the tests pin (`TestStateDirOutcome`, `TestStateDirOutcome_UnprovableTokenFailsClosed`, `TestUninstallSummary`): the decision lives in the pure `stateDirOutcome`, never in an injected remover (`make go-test` runs as root, where no `chmod` makes a removal fail — same reason the sudo guard sits in `cmd/`); it **fails closed on the token** (a stat that is not `fs.ErrNotExist` counts as live, since it can be defeated by the errno that defeated the removal); and only the current state dir is best-effort, `LegacyHostDir` being no mount source. **No pre-flight**, unlike `preflightPortConflicts` — there a check prevents a failed create, here it would block an uninstall that already did the irreversible 90%. Presentation stays in `cmd/`: the `warning: ` prefix (as for `CheckHostCredentialHelper`) and the stdout line from `uninstallSummary`.
 
 ### Transport
 

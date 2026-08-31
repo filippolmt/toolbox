@@ -72,23 +72,45 @@ func migrateLegacyHostDir(s HostState) error {
 }
 
 // Uninstall stops the daemon, removes the service file, and wipes the state
-// dir (both the current and the pre-rename location).
-func Uninstall(a Agent) error {
+// dir (both the current and the pre-rename location). Wiping the current state
+// dir is best-effort — see stateDirOutcome and the Bridge Run Mount glossary
+// entry; the pre-rename dir is never a mount source and keeps failing hard.
+func Uninstall(a Agent) (warning string, err error) {
 	s, err := ResolveHostState()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := a.Uninstall(); err != nil {
-		return err
+		return "", err
 	}
 	home, err := fsx.Home()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.RemoveAll(filepath.Join(home, LegacyHostDir)); err != nil {
-		return err
+		return "", err
 	}
-	return os.RemoveAll(s.Dir)
+	return stateDirOutcome(s, os.RemoveAll(s.Dir))
+}
+
+// stateDirOutcome decides what a failed state-dir removal means: leftovers the
+// daemon no longer reads are a warning the caller prints (exit 0), a surviving
+// token is a hard error — uninstall+install is the documented way to rotate it
+// (see LoadOrCreateToken), so exiting 0 would hand the next install the old
+// token back. It fails closed: the stat can be defeated by the same EACCES
+// that just defeated the removal, so only a token that is provably gone counts
+// as gone. The remedy line is fixed text — the errno carries no signal
+// (virtiofs answers EACCES where a blocked unlink answers EBUSY) and this
+// package cannot see which shell holds the mount.
+func stateDirOutcome(s HostState, err error) (string, error) {
+	if err == nil {
+		return "", nil
+	}
+	if _, statErr := os.Stat(s.Token); !errors.Is(statErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("bridge state dir %s not removed and its token is still live: %w", s.Dir, err)
+	}
+	return fmt.Sprintf("bridge state dir %s not removed: %v\n"+
+		"close any open toolbox shells (they bind-mount the state dir) and re-run", s.Dir, err), nil
 }
 
 // Status reports the current bridge + agent state.
