@@ -191,7 +191,7 @@ h() { print "my helper"; }
 EOF
 ```
 
-One caveat, and it is the reason the loader exists: zsh expands aliases at **parse** time, so defining a function named like an existing alias — the image ships `h`, `g`, `d`, `k`, `l`, `tf` — is a parse error, and the error discards the rest of that file, not just the function. Snippets are therefore sourced with alias expansion disabled, which makes the definition parse; add `unalias <name>` if your function should also win when you type the name. Defining new aliases works normally.
+One caveat, and it is the reason the loader exists: zsh expands aliases at **parse** time, so defining a function named like an existing alias is a parse error, and the error discards the rest of that file, not just the function. The surface is wider than it looks — the image ships `h`, `g`, `d`, `k`, `l`, `ll`, `la`, `tf`, `cdw`, `reload` and more, plus every alias oh-my-zsh's plugins define (`alias` with no argument lists them all). Snippets are therefore sourced with alias expansion disabled, which makes the definition parse; add `unalias <name>` if your function should also win when you type the name. Defining new aliases works normally. → [why, in detail](internals/shell-start.md#user-config-in-zshrcd)
 
 This is for shell config only. For bootstrap that must run once per container start (installing tools, seeding state), use the [startup hooks](#startup-hooks) above.
 

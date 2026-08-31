@@ -49,7 +49,7 @@ check_optional() {
     fi
 }
 
-# Bundled zsh stack (ZSH-01..07).
+# Bundled zsh stack (ZSH-01..08).
 #
 # Each sub-check is a named function (`_zsh_<name>_check`); the `_zsh_assert`
 # reporter invokes it and feeds PASS/FAIL into the outer counters. This
@@ -200,11 +200,13 @@ check_zsh() {
 
     # p. user config loader (ZSH-08) — a snippet dropped in
     # ~/.toolbox-state/zshrc.d is sourced by an interactive shell, and a
-    # function it defines survives an alias of the same name. Both halves
-    # matter: the loader sources with alias expansion off, because zsh expands
-    # aliases at parse time and "h() {" under "alias h=helm" is a parse error
-    # that drops the rest of the snippet. Asserting the function (not just that
-    # the file was sourced) is what catches a regression re-enabling expansion.
+    # function it defines survives an alias of the same name.
+    # The line ORDER below is the test. The function is defined while h is still
+    # an alias, which parses only because the loader disabled alias expansion;
+    # with unalias first, the alias is gone before line 2 is parsed and this
+    # assertion passes even with the loader re-enabling expansion, proving
+    # nothing beyond "the file was sourced". The unalias then lets the function
+    # win at command position, which is what whence -w reads.
     # No apostrophes or single quotes here — single-quoted bash -c body.
     _zsh_user_rc_check() {
         d=/home/toolbox/.toolbox-state/zshrc.d
@@ -214,7 +216,7 @@ check_zsh() {
             made=1
         fi
         f="$d/99-smoke-$$.zsh"
-        printf "unalias h 2>/dev/null\nh() { print smoke; }\n" > "$f" || return 1
+        printf "h() { print smoke; }\nunalias h 2>/dev/null\n" > "$f"
         result=$(zsh -i -c "whence -w h" 2>/dev/null)
         rm -f "$f"
         [ "$made" = 1 ] && rmdir "$d" 2>/dev/null
