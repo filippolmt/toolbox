@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -334,6 +335,8 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
+		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
+		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
@@ -492,6 +495,8 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
+		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
+		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
 		"ZED=z",

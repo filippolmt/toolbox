@@ -1,6 +1,6 @@
 # Bridge
 
-A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, and `proximo up|down|status` to the host proximo binary. Opt-in: nothing runs on the host until `toolbox bridge install`.
+A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, and `proximo up|down|status|errors|skill` (arguments included) to the host proximo binary. Opt-in: nothing runs on the host until `toolbox bridge install`.
 
 ## Quick start
 
@@ -68,11 +68,11 @@ The daemon refuses anything that isn't:
 
 1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time); the Linux unix socket is `0600` inside a `0700` dir owned by the same UID the container runs as (`--user`), so it adds no principal beyond the user themselves. The bearer token is required on both transports.
 2. Authenticated with the exact bearer token from `~/.toolbox/toolbox/bridge/token` (constant-time compare).
-3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400.
+3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400. `/proximo`: subcommand in the fixed allowlist (`up`, `down`, `status`, `errors`, `skill`), otherwise 400 — its **arguments** are then forwarded verbatim, with one exception: `--out`/`-o` is rejected, because through the bridge it would write to the *host* filesystem (redirect the shim's stdout in the container instead), and `errors dom` is refused outright because it writes a host file with or without the flag.
 4. Below the URL length cap.
 5. Within the rate limit. `/open`, `/edit` and `/proximo` share one bucket (10/s, burst 5); `/credential` has its own, more generous bucket (30/s, burst 15) so a `git clone` with many HTTPS submodules — a rapid burst of credential lookups — is not throttled into failure.
 
-The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell).
+The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell). `/proximo` widens that last sentence in one direction only: arbitrary *arguments* reach one known binary, on a gated verb. Argv is passed as a slice to `exec.CommandContext`, so an argument never reaches a word-splitting or globbing context, and the argument-shaped risk that remains — writing to a host path — is what the `--out`/`-o` rule closes. See [ADR-0004](adr/0004-proximo-full-surface-through-the-bridge.md).
 
 ## Editor shims
 

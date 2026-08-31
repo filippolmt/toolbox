@@ -30,8 +30,18 @@ const (
 	FieldEditor  = "editor"  // editRequest
 	FieldPath    = "path"    // editRequest
 	FieldCommand = "command" // proximoRequest
-	FieldOp      = "op"      // credentialRequest
-	FieldInput   = "input"   // credentialRequest
+	FieldArgs    = "args"    // proximoRequest
+	// The calling session's agent homes, as HOST paths — see proximoAgentHome.
+	FieldHome      = "home"       // proximoRequest
+	FieldCodexHome = "codex_home" // proximoRequest
+	FieldOp        = "op"         // credentialRequest
+	FieldInput     = "input"      // credentialRequest
+
+	// Container env carrying the two agent homes the proximo shim forwards as
+	// FieldHome / FieldCodexHome. Emitted host-side by sessionplan (the only
+	// stage that knows a session's mount plan), read by the shim.
+	HostAgentHomeEnv = "TOOLBOX_HOST_AGENT_HOME"
+	HostCodexHomeEnv = "TOOLBOX_HOST_CODEX_HOME"
 
 	// Response keys, shared by proximoResponse and credentialResponse.
 	FieldExit   = "exit"
