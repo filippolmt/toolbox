@@ -38,3 +38,15 @@ func TestBridge_LegacyAliasResolves(t *testing.T) {
 		t.Errorf("resolved %q, want daemon subcommand", cmd.Name())
 	}
 }
+
+// stdout must distinguish the two uninstall outcomes: the warning itself goes
+// to stderr, which a `toolbox bridge uninstall > log` never captures.
+func TestUninstallSummary(t *testing.T) {
+	if got := uninstallSummary(""); got != "bridge: uninstalled" {
+		t.Errorf("uninstallSummary(\"\") = %q", got)
+	}
+	got := uninstallSummary("bridge state dir /h not removed: permission denied")
+	if got != "bridge: daemon removed; state dir left behind" {
+		t.Errorf("uninstallSummary(warning) = %q", got)
+	}
+}

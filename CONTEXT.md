@@ -526,14 +526,16 @@ The one **read-write** bridge bind: `~/.toolbox/toolbox/bridge/run` →
 inside the read-only state-dir bind so the shim can reach `run/bridge.sock`
 without the token and port files becoming writable.
 
-Concretely: it is live for as long as any toolbox shell is open, and on a
-Docker Desktop host that makes the state dir undeletable. `toolbox bridge
+Concretely: it is live for as long as a bridge-enabled toolbox shell is open
+(`bridge: false` drops all three bridge binds), and on a Docker Desktop host
+that makes the state dir undeletable. `toolbox bridge
 uninstall` therefore treats `os.RemoveAll` on the state dir as best-effort
 (`bridge.stateDirOutcome`, `TestStateDirOutcome`): a warning naming the path
 and the remedy, exit 0 — the daemon and its service file, the half that cannot
 be undone, are already gone by then. A surviving `token` file is the one
 exception and still fails hard, uninstall+install being the documented token
-rotation.
+rotation, and the removal fails closed there: a token whose absence cannot be
+proven counts as live.
 
 Why the term exists: the failure reads as a permission bug, not as a mount.
 Docker Desktop serves the bind over virtiofs, which answers the unlink with

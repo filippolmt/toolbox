@@ -106,12 +106,12 @@ The container side can read `token` because the mount is RO; an attacker who lan
 ## Uninstall surface
 
 ```bash
-toolbox bridge uninstall   # supervisor unit + plist/service file + state dir
+toolbox bridge uninstall   # supervisor unit + state dir
 ```
 
 `uninstall` removes only what `install` wrote: the supervisor unit (LaunchAgent plist / systemd user unit) and the state dir `~/.toolbox/toolbox/bridge` (token + port + pid + log), the pre-rename `~/.toolbox/browser` included. No system-level files, no `sudo` (refused outright — see [quick start](#quick-start)), no Homebrew formula touch.
 
-Wiping the state dir is **best-effort on macOS**. Every open `toolbox shell` bind-mounts `~/.toolbox/toolbox/bridge/run` read-write, and Docker Desktop shares that path into the VM over virtiofs, which refuses the unlink with `permission denied` — a mount held open, not a broken permission. (On a native-Linux host the bind lives only in the container's mount namespace, so the directory is removed cleanly and you never see this.) The daemon is already stopped and unregistered at that point, so the command warns and exits 0 rather than reporting a rollback that did not happen:
+Wiping the state dir is **best-effort on macOS**. Every open `toolbox shell` that has the bridge enabled (the default — [`bridge: false`](#mount-gating) drops the mounts) bind-mounts `~/.toolbox/toolbox/bridge/run` read-write, and Docker Desktop shares that path into the VM over virtiofs, which refuses the unlink with `permission denied` — a mount held open, not a broken permission. (On a native-Linux host the bind lives only in the container's mount namespace, so the directory is removed cleanly and you never see this.) The daemon is already stopped and unregistered at that point, so the command warns and exits 0 rather than reporting a rollback that did not happen:
 
 ```
 $ toolbox bridge uninstall
@@ -120,7 +120,7 @@ close any open toolbox shells (they bind-mount the state dir) and re-run
 bridge: daemon removed; state dir left behind
 ```
 
-Close the shells and re-run, or `rm -rf ~/.toolbox/toolbox/bridge` once they are gone. A clean run prints `bridge: uninstalled` and nothing on stderr. One case still fails outright: if the `token` file itself survived the removal, the command exits non-zero, because a later `install` would otherwise pick the old token back up instead of generating a fresh one.
+Close the shells and re-run, or `rm -rf ~/.toolbox/toolbox/bridge` once they are gone. A clean run prints `bridge: uninstalled` and nothing on stderr. One case still fails outright: if the `token` file survived the removal — or its absence cannot be established at all — the command exits non-zero, because a later `install` would otherwise pick the old token back up instead of generating a fresh one.
 
 ## Troubleshooting
 

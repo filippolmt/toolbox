@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,35 +161,75 @@ func TestStatus_BridgeAndAgent(t *testing.T) {
 }
 
 func TestStateDirOutcome(t *testing.T) {
-	const dir = "/h/.toolbox/toolbox/bridge"
-	rmErr := errors.New("unlinkat /h/.toolbox/toolbox/bridge/run: permission denied")
+	rmErr := errors.New("unlinkat /run: permission denied")
+	tests := []struct {
+		name      string
+		token     string // written under the state dir when non-empty
+		rmErr     error
+		wantErr   bool
+		wantInMsg []string
+	}{
+		{name: "removed", token: "tok", rmErr: nil},
+		{
+			name:      "leftovers-warn",
+			rmErr:     rmErr,
+			wantInMsg: []string{"not removed", "permission denied", "close any open toolbox shells (they bind-mount the state dir) and re-run"},
+		},
+		{name: "surviving-token-fails", token: "tok", rmErr: rmErr, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := HostState{Dir: dir, Token: filepath.Join(dir, "token")}
+			if tc.token != "" {
+				if err := os.WriteFile(s.Token, []byte(tc.token), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := stateDirOutcome(s, tc.rmErr)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want a hard error, got none")
+				}
+				if !errors.Is(err, tc.rmErr) {
+					t.Errorf("err = %v, want it to wrap the removal error", err)
+				}
+				if got != "" {
+					t.Errorf("warning = %q, want it empty when the outcome is an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(tc.wantInMsg) == 0 && got != "" {
+				t.Errorf("warning = %q, want none", got)
+			}
+			for _, want := range tc.wantInMsg {
+				if !strings.Contains(got, want) {
+					t.Errorf("warning = %q, want it to contain %q", got, want)
+				}
+			}
+		})
+	}
+}
 
-	if w, err := stateDirOutcome(dir, false, nil); w != "" || err != nil {
-		t.Errorf("stateDirOutcome(nil) = (%q, %v), want no warning and no error", w, err)
+// A token that cannot be proven gone is treated as live: the stat can fail
+// with the same errno that defeated the removal, and exiting 0 there would let
+// the next install pick the old token back up. Provoked with ENOTDIR rather
+// than a chmod, which `make go-test` (running as root) would stat straight
+// through.
+func TestStateDirOutcome_UnprovableTokenFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	notADir := filepath.Join(dir, "run")
+	if err := os.WriteFile(notADir, nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	w, err := stateDirOutcome(dir, false, rmErr)
-	if err != nil {
-		t.Errorf("leftovers must not fail the command, got %v", err)
+	s := HostState{Dir: dir, Token: filepath.Join(notADir, "token")}
+	if _, err := os.Stat(s.Token); errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("stat must fail with something other than NotExist, got %v", err)
 	}
-	for _, want := range []string{
-		dir,
-		"permission denied",
-		"close any open toolbox shells (they bind-mount the state dir) and re-run",
-	} {
-		if !strings.Contains(w, want) {
-			t.Errorf("warning = %q, want it to contain %q", w, want)
-		}
-	}
-
-	w, err = stateDirOutcome(dir, true, rmErr)
-	if err == nil {
-		t.Fatal("a surviving token must fail the command, not warn")
-	}
-	if w != "" {
-		t.Errorf("warning = %q, want it empty when the outcome is an error", w)
-	}
-	if !errors.Is(err, rmErr) {
-		t.Errorf("err = %v, want it to wrap the removal error", err)
+	if _, err := stateDirOutcome(s, errors.New("unlinkat /run: permission denied")); err == nil {
+		t.Error("a token that cannot be proven gone must fail the command")
 	}
 }

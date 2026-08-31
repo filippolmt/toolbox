@@ -73,13 +73,21 @@ var bridgeUninstallCmd = &cobra.Command{
 			return err
 		}
 		if warning != "" {
-			fmt.Fprintln(os.Stderr, warning)
-			fmt.Println("bridge: daemon removed; state dir left behind")
-			return nil
+			fmt.Fprintln(os.Stderr, "warning: "+warning)
 		}
-		fmt.Println("bridge: uninstalled")
+		fmt.Println(uninstallSummary(warning))
 		return nil
 	},
+}
+
+// uninstallSummary is the stdout line, kept apart from stderr so a script
+// reading only stdout can still tell a full uninstall from one that left the
+// state dir behind.
+func uninstallSummary(warning string) string {
+	if warning == "" {
+		return "bridge: uninstalled"
+	}
+	return "bridge: daemon removed; state dir left behind"
 }
 
 var bridgeStatusCmd = &cobra.Command{
