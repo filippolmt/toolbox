@@ -68,7 +68,11 @@ opt-in host daemon (`toolbox bridge install`; `browser-bridge` = deprecated alia
 
 ### State mounts
 
-State `~/.toolbox/toolbox/bridge/` RO-mounted (new + legacy container targets; install migrates the pre-rename `~/.toolbox/browser`) + RW nested `bridge-run` mount for `run/bridge.sock`; `bridge: false` (legacy key `browser_bridge` still read) skips all three mounts.
+State `~/.toolbox/toolbox/bridge/` RO-mounted (new + legacy container targets; install migrates the pre-rename `~/.toolbox/browser`) + RW nested `bridge-run` mount for `run/bridge.sock` (glossary: [Bridge Run Mount](../../CONTEXT.md#bridge-run-mount)); `bridge: false` (legacy key `browser_bridge` still read) skips all three mounts.
+
+### Uninstall is best-effort on the state dir
+
+`bridge.Uninstall` returns `(warning, error)`: `os.RemoveAll` on the state dir failing is a **warning on stderr with exit 0**, never an error — the Bridge Run Mount is live in every open toolbox shell and the daemon is already gone by then. **A Docker Desktop symptom only**: a bind lives in the container's mount namespace, so a native-Linux host unlinks the state dir clean under open shells (they keep binding the orphaned inode until they exit) and the warning never fires there; on macOS the same unlink comes back `EACCES` through virtiofs. stdout tells the two outcomes apart (`bridge: uninstalled` vs `bridge: daemon removed; state dir left behind`). **A surviving `token` file escalates back to a hard error** — `uninstall` + `install` is the documented token rotation (`LoadOrCreateToken`), and exiting 0 there would hand the next install the old token. **No pre-flight**, unlike `preflightPortConflicts`: there a check prevents a failed create, here it would block an uninstall that already did the irreversible 90%. The decision lives in the pure `stateDirOutcome` (`TestStateDirOutcome`), not in an injected remover — `make go-test` runs as root, where no `chmod` can make a removal fail (same reason the sudo guard sits in `cmd/`). Only the current state dir is best-effort; `LegacyHostDir` is never a mount source, so its removal keeps failing hard. The remedy line is fixed text: `internal/bridge` knows nothing about mounts and the errno carries no signal.
 
 ### Transport
 

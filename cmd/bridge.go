@@ -68,8 +68,14 @@ var bridgeUninstallCmd = &cobra.Command{
 			}
 			return err
 		}
-		if err := bridge.Uninstall(a); err != nil {
+		warning, err := bridge.Uninstall(a)
+		if err != nil {
 			return err
+		}
+		if warning != "" {
+			fmt.Fprintln(os.Stderr, warning)
+			fmt.Println("bridge: daemon removed; state dir left behind")
+			return nil
 		}
 		fmt.Println("bridge: uninstalled")
 		return nil

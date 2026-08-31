@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,8 +47,12 @@ func TestUninstall_RemovesStateAndCallsAgent(t *testing.T) {
 	if err := Install(fa, "/x"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Uninstall(fa); err != nil {
+	warning, err := Uninstall(fa)
+	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
+	}
+	if warning != "" {
+		t.Errorf("warning = %q, want none on a clean uninstall", warning)
 	}
 	if !fa.uninstallCalled {
 		t.Error("agent.Uninstall not called")
@@ -128,7 +133,7 @@ func TestUninstall_RemovesLegacyDirToo(t *testing.T) {
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := Uninstall(&fakeAgent{}); err != nil {
+	if _, err := Uninstall(&fakeAgent{}); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
@@ -151,5 +156,39 @@ func TestStatus_BridgeAndAgent(t *testing.T) {
 	}
 	if !rep.AgentInstalled || !rep.AgentRunning {
 		t.Errorf("rep = %+v", rep)
+	}
+}
+
+func TestStateDirOutcome(t *testing.T) {
+	const dir = "/h/.toolbox/toolbox/bridge"
+	rmErr := errors.New("unlinkat /h/.toolbox/toolbox/bridge/run: permission denied")
+
+	if w, err := stateDirOutcome(dir, false, nil); w != "" || err != nil {
+		t.Errorf("stateDirOutcome(nil) = (%q, %v), want no warning and no error", w, err)
+	}
+
+	w, err := stateDirOutcome(dir, false, rmErr)
+	if err != nil {
+		t.Errorf("leftovers must not fail the command, got %v", err)
+	}
+	for _, want := range []string{
+		dir,
+		"permission denied",
+		"close any open toolbox shells (they bind-mount the state dir) and re-run",
+	} {
+		if !strings.Contains(w, want) {
+			t.Errorf("warning = %q, want it to contain %q", w, want)
+		}
+	}
+
+	w, err = stateDirOutcome(dir, true, rmErr)
+	if err == nil {
+		t.Fatal("a surviving token must fail the command, not warn")
+	}
+	if w != "" {
+		t.Errorf("warning = %q, want it empty when the outcome is an error", w)
+	}
+	if !errors.Is(err, rmErr) {
+		t.Errorf("err = %v, want it to wrap the removal error", err)
 	}
 }

@@ -72,23 +72,47 @@ func migrateLegacyHostDir(s HostState) error {
 }
 
 // Uninstall stops the daemon, removes the service file, and wipes the state
-// dir (both the current and the pre-rename location).
-func Uninstall(a Agent) error {
+// dir (both the current and the pre-rename location). Wiping the current state
+// dir is best-effort: on a Docker Desktop host every open toolbox shell
+// bind-mounts the Bridge Run Mount inside it and the unlink comes back EACCES,
+// while the irreversible half — the daemon and its service file — is already
+// gone, so the failure is a warning for the caller to print, not an error. The
+// pre-rename dir is never a mount source and keeps failing hard.
+func Uninstall(a Agent) (warning string, err error) {
 	s, err := ResolveHostState()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := a.Uninstall(); err != nil {
-		return err
+		return "", err
 	}
 	home, err := fsx.Home()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.RemoveAll(filepath.Join(home, LegacyHostDir)); err != nil {
-		return err
+		return "", err
 	}
-	return os.RemoveAll(s.Dir)
+	rmErr := os.RemoveAll(s.Dir)
+	_, statErr := os.Stat(s.Token)
+	return stateDirOutcome(s.Dir, statErr == nil, rmErr)
+}
+
+// stateDirOutcome decides what a failed state-dir removal means. Leftovers the
+// daemon no longer reads are a warning and exit 0; a surviving token is a hard
+// error, because uninstall+install is the documented way to rotate it (see
+// LoadOrCreateToken) and exiting 0 would hand the next install the old one
+// back. The remedy line is fixed text: the errno carries no signal and this
+// package knows nothing about mounts.
+func stateDirOutcome(dir string, tokenLive bool, err error) (string, error) {
+	switch {
+	case err == nil:
+		return "", nil
+	case tokenLive:
+		return "", fmt.Errorf("bridge state dir %s not removed and its token is still live: %w", dir, err)
+	}
+	return fmt.Sprintf("warning: bridge state dir %s not removed: %v\n"+
+		"close any open toolbox shells (they bind-mount the state dir) and re-run", dir, err), nil
 }
 
 // Status reports the current bridge + agent state.
