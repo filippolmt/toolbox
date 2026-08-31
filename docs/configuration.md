@@ -33,7 +33,7 @@ Configuration is loaded from (highest priority first):
 | [`inherit_host_auth`](#inherit-host-auth) | list | `[]` | Opt listed CLIs into the host's real credential path instead of the isolated default. |
 | [`shells`](shells.md) | map | – | Named shell shortcuts: `<name>: {path, env}`. |
 | [`shell`](#shell) | string | `zsh` | Login shell inside the container (only `zsh` is supported). |
-| [`agent`](#agent) | string | `claude` | Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree): `claude` or `codex`. |
+| [`agent`](#agent) | string | `claude` | Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree): `claude`, `codex` or `pi`. |
 | [`image`](#image-selection) | string | `""` | Full image ref override (pull-source concern). |
 | [`registry_mirror`](#image-selection) | string | `""` | Swap only the registry host of the canonical ref. |
 | [`pull`](#image-selection) | string | `auto` | Registry-sync policy: `auto` / `always` / `never`. |
@@ -52,7 +52,7 @@ Login shell inside the container. Only `zsh` is supported (the default); `bash` 
 
 ## `agent`
 
-Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree) sessions. Accepts `claude` or `codex` — the two agents baked into the canonical image (`config.ValidateAgent`). Resolved with precedence `--agent` flag > this key > the default `claude`, so the flag is optional once a default is set. Honouring the standard [loading order](#loading-order), it can be set globally (`~/.toolbox.yaml`) for a per-user default or per-directory (`.toolbox.yaml`) to pin a project to one agent.
+Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree) sessions. Accepts `claude`, `codex` or `pi` — the three agents baked into the canonical image (`config.ValidateAgent`). Resolved with precedence `--agent` flag > this key > the default `claude`, so the flag is optional once a default is set. Honouring the standard [loading order](#loading-order), it can be set globally (`~/.toolbox.yaml`) for a per-user default or per-directory (`.toolbox.yaml`) to pin a project to one agent.
 
 Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-targeting) selects global vs local). The key has no default written to disk: when unset it resolves to `claude` at launch, and `config show` renders that resolved value (`agent: claude`). A non-canonical `image:` lacking the chosen agent fails at launch, not at validation.
 
@@ -103,6 +103,7 @@ Eligible CLIs and their host paths (catalog entries with non-nil `HostAuthMount`
 | `oci`    | `~/.oci`                  | `/home/toolbox/.oci`                 |
 | `claude` | `~/.claude`               | `/home/toolbox/.claude`              |
 | `codex`  | `~/.codex`                | `/home/toolbox/.codex`               |
+| `pi`     | `~/.pi`                   | `/home/toolbox/.pi`                  |
 | `atuin`  | `~/.local/share/atuin`    | `/home/toolbox/.local/share/atuin`   |
 
 Validation in `config.Plan` rejects unknown keys and keys whose catalog entry lacks `HostAuthMount`.

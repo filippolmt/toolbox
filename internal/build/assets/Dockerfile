@@ -60,6 +60,7 @@ ARG UV_VERSION=0.12.7
 ARG SONARQUBE_CLI_VERSION=1.7.0.4638
 ARG CLAUDE_CODE_VERSION=2.1.251
 ARG CODEX_CLI_VERSION=0.151.0
+ARG PI_CLI_VERSION=0.84.4
 ARG CODEGRAPH_VERSION=1.6.0
 ARG CF_CLI_VERSION=0.8.0
 ARG WRANGLER_VERSION=4.127.1
@@ -918,6 +919,49 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -prune -exec rm -rf {} +; \
       freeze-mtimes
 
+# pi coding agent (npm `@earendil-works/pi-coding-agent`, binary `pi`) in its
+# own stage, for the reason fetch-codegraph states above and more sharply:
+# upstream ships several releases a week, and anywhere in the tail that cadence
+# re-runs every RUN below it AND raises the bounded cost of every tool above it
+# (ADR 0002 — "Moving a tool out of the tail"). Here a bump moves one `--link`
+# layer whatever its position, and the MAX_LAYERS=6 calibration is untouched.
+# Same node image as the final stage: an npm global tree is only valid on the
+# runtime that resolved it.
+#
+# The weight prune spares `docs/`, `examples/` and `README.md` at the package
+# root: pi resolves all three off its own package dir at runtime
+# (`getReadmePath()` / `getDocsPath()` / `getExamplesPath()`), prints
+# `docs/providers.md` as a live pointer from the /login dialog, and reads them
+# as its own documentation. Same trap as the playwright-cli skills. Matched by
+# path rather than by name — unlike playwright's relocatable skill tree these
+# three are pinned to the package root by construction, and a path match still
+# prunes a nested `docs/` inside a bundled dep. The `test -s` lines pin the
+# exact files those getters resolve, so an upstream relocation fails the build
+# instead of shipping an agent whose own docs are gone.
+#
+# Runtime knobs live in the "pi env knobs" ENV block in the final stage, not
+# here: a fetch stage contributes through `COPY --from` alone, which carries
+# filesystem and not image metadata, so an ENV set here would vanish silently.
+FROM node:24-bookworm-slim AS fetch-pi
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG PI_CLI_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local; \
+      npm install -g --prefix /out/usr/local "@earendil-works/pi-coding-agent@${PI_CLI_VERSION}"; \
+      /out/usr/local/bin/pi --version; \
+      pkg=/out/usr/local/lib/node_modules/@earendil-works/pi-coding-agent; \
+      find "$pkg" \
+        \( -path "$pkg/docs" -o -path "$pkg/examples" -o -path "$pkg/README.md" \) -prune -o \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      test -s "$pkg/README.md"; \
+      test -s "$pkg/docs/providers.md"; \
+      test -n "$(ls -A "$pkg/examples")"; \
+      freeze-mtimes
+
 # OCI CLI. No upstream binary release, so it stays a pip install — but into its
 # own venv at /opt/oci-cli rather than the system site-packages, for two reasons.
 # A bump now moves one `--link` layer instead of every tail RUN below it (ADR
@@ -1412,6 +1456,18 @@ ENV DISABLE_AUTOUPDATER=1 \
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
     CLAUDE_CODE_NEW_INIT=1
 
+# pi env knobs. pi installs in the `fetch-pi` stage, but these cannot go there
+# — `COPY --from` carries filesystem, not image metadata — so they live here,
+# and here specifically: they are runtime-only, and after the RUN tail a knob
+# tweak re-runs zero layers (same rationale as the claude block above).
+#   PI_SKIP_VERSION_CHECK: the CLI lives under root-owned /usr/local/lib, so
+#     `pi update self` can never succeed — skip the startup release poll and
+#     let Renovate drive the pin, exactly like claude's DISABLE_AUTOUPDATER.
+#   PI_TELEMETRY=0: pi does not honour the image-wide DO_NOT_TRACK, so the
+#     opt-out has to be spelled in its own namespace.
+ENV PI_SKIP_VERSION_CHECK=1 \
+    PI_TELEMETRY=0
+
 # LANG (not LC_ALL, so host env passthrough can still override the locale):
 # debian-slim defaults to the POSIX locale, under which zsh's line editor
 # cannot decode UTF-8 bytes (history entries, prompt glyphs) and renders each
@@ -1603,6 +1659,7 @@ COPY --link --from=fetch-gcloud   /out/ /
 COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /
 COPY --link --from=fetch-codegraph /out/ /
+COPY --link --from=fetch-pi       /out/ /
 COPY --link --from=fetch-oci      /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
 # Copies the tree, not the file: a single-file COPY makes BuildKit synthesise

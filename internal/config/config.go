@@ -33,7 +33,7 @@ type Config struct {
 	// value (falling back to DefaultAgent) so the output reflects what will
 	// launch. Honours the standard config layering, so it can be set globally
 	// (~/.toolbox.yaml) or per-directory (.toolbox.yaml). Validated to
-	// claude|codex.
+	// claude|codex|pi.
 	Agent string `mapstructure:"agent"`
 	// Image overrides the container image reference verbatim (full host/path:tag
 	// or digest). Empty = the canonical default. Highest-precedence image
@@ -246,7 +246,7 @@ func ValidateShell(s string) error {
 // SupportedAgents is the canonical list accepted by the `agent` key and the
 // `--agent` flag: the AI agents baked into the canonical image. Empty
 // resolves to DefaultAgent at use time (cmd/worktree.go resolveAgent).
-var SupportedAgents = []string{"claude", "codex"}
+var SupportedAgents = []string{"claude", "codex", "pi"}
 
 // DefaultAgent is the agent launched by `toolbox worktree` when neither
 // --agent nor the agent config key is set.

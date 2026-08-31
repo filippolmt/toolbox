@@ -20,7 +20,7 @@ func worktreeExecCmd(shellCmd []string, wt *WorktreeSession) []string {
 // agentCommand composes the shell fragment that launches agent, optionally with
 // an initial prompt. An empty prompt launches the agent bare; otherwise the
 // prompt is passed as a single positional argument — the convention both
-// supported agents (claude, codex) follow. An agent needing different
+// supported agents (claude, codex, pi) follow. An agent needing different
 // ergonomics (e.g. a --task flag) would branch on agent here.
 func agentCommand(agent, prompt string) string {
 	if prompt == "" {

@@ -157,6 +157,38 @@ prints a warning naming it. Give it a profile-specific source if you want that
 mount isolated too. Switching `--profile`/`--share` on a workspace session opens
 a distinct container, so profiles coexist without a `toolbox stop`.
 
+## Persisting a user-installed tool's state
+
+The default mounts cover the *bundled* tools — the ones declared in `internal/catalog` and installed by the image (`claude`, `codex`, `gh`, `glab`, `herdr`, …). A tool you install yourself inside the container is a different case, and the split is easy to misread: the package-manager mounts (`~/.npm-global`, `pnpm`, `uv`, `go`) persist **binaries**, not the configuration and state those binaries write into `$HOME`. So `npm install -g some-cli` survives `toolbox stop`, while the credentials, settings, and history `some-cli` then writes under `~/.some-cli/` do not.
+
+Adding a catalog row is not the fix: `TestCatalogDockerfilePresence` requires every catalog key to appear in the embedded Dockerfile, so a row for a tool the image does not install fails `make go-test`. Reach for one of these instead, cheapest first.
+
+**1. Relocate the tool's config directory onto an existing mount.** Best option when the tool honours an env override for its config path, because it needs no new mount and no code change — the same trick the image already uses for `known_hosts` and `UV_TOOL_BIN_DIR`. Point the override at `~/.toolbox-state/`, the container side of the always-present `state` mount, via [`env:` passthrough](configuration.md#env-passthrough) in `~/.toolbox.yaml`:
+
+```yaml
+env:
+  SOME_CLI_CONFIG_DIR: /home/toolbox/.toolbox-state/some-cli
+```
+
+Check the tool's own documentation for the variable name — `<TOOL>_CONFIG_DIR` and `<TOOL>_HOME` are the usual spellings; a tool that exposes no override at all belongs in option 2. Env vars are read at container creation, so run `toolbox stop` once after editing the config, and copy the existing directory across first if you don't want to re-authenticate:
+
+```console
+$ mkdir -p ~/.toolbox-state/some-cli && cp -a ~/.some-cli/. ~/.toolbox-state/some-cli/
+```
+
+**2. Give the directory a mount of its own.** For a tool with no env override but a stable config path, append an entry to `mounts:` — the [append form](#mounts-merge-semantics), since the name matches no default:
+
+```yaml
+mounts:
+  - name: some-cli
+    source: ~/.toolbox/some-cli
+    target: /home/toolbox/.some-cli
+```
+
+Per-project in the repo's `.toolbox.yaml`, or global in `~/.toolbox.yaml` if the tool follows you everywhere. Bindings are fixed at container creation, so this too takes a `toolbox stop`.
+
+**3. Reinstall it on every shell.** Last resort, for tools whose state is genuinely regenerable or whose paths move between versions: do the install from a startup hook (below) and accept the cost on each session.
+
 ## Startup hooks
 
 Drop any `*.sh` file into `~/.toolbox/startup.d/` on the host and it will be executed by the entrypoint on every `toolbox shell`, before your zsh prompt. Use this for per-user bootstrap that should not live in the image (installing Claude Code skill packs, `direnv` shims, custom env bootstrap, etc.). Hooks run as the toolbox user, share the mounted credentials, and can write to the per-user npm prefix at `~/.toolbox/npm-global/` without needing root.

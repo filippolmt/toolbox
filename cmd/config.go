@@ -108,7 +108,7 @@ passing an empty value resets that key to its default.
                      image at a proxy hub / pull-through cache (Harbor,
                      Artifactory, Nexus, ECR pull-through)
   --pull             registry-sync policy: auto (default) | always | never
-  --agent            default AI agent for 'toolbox worktree': claude | codex
+  --agent            default AI agent for 'toolbox worktree': claude | codex | pi
 
   --where global     ~/.toolbox.yaml (default)
   --where local      the walked-up project .toolbox.yaml, creating
@@ -156,7 +156,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&configSetImage, "image", "", "full image ref override (empty resets to default)")
 	configSetCmd.Flags().StringVar(&configSetRegistryMirror, "registry-mirror", "", "relocate the registry host (proxy hub / pull-through cache)")
 	configSetCmd.Flags().StringVar(&configSetPull, "pull", "", "registry-sync policy: auto|always|never")
-	configSetCmd.Flags().StringVar(&configSetAgent, "agent", "", "default AI agent for 'toolbox worktree': claude|codex (empty resets to default)")
+	configSetCmd.Flags().StringVar(&configSetAgent, "agent", "", "default AI agent for 'toolbox worktree': claude|codex|pi (empty resets to default)")
 	configSetCmd.Flags().StringVar(&configSetWhere, "where", "global", whereFlagUsage)
 
 	configCmd.AddCommand(configShowCmd)
