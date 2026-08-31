@@ -28,6 +28,9 @@ var bridgeInstallCmd = &cobra.Command{
 	Short: "Generate token, write service file, start the daemon",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
+		if err := bridge.EnsureUserContext(); err != nil {
+			return err
+		}
 		a, err := bridge.NewAgent()
 		if err != nil {
 			if errors.Is(err, bridge.ErrUnsupported) {
@@ -55,6 +58,9 @@ var bridgeUninstallCmd = &cobra.Command{
 	Short: "Stop the daemon, remove service file + state",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
+		if err := bridge.EnsureUserContext(); err != nil {
+			return err
+		}
 		a, err := bridge.NewAgent()
 		if err != nil {
 			if errors.Is(err, bridge.ErrUnsupported) {
