@@ -198,6 +198,29 @@ check_zsh() {
         grep -qzx "SHELL=/bin/zsh" /proc/1/environ 2>/dev/null
     }
 
+    # p. user config loader (ZSH-08) — a snippet dropped in
+    # ~/.toolbox-state/zshrc.d is sourced by an interactive shell, and a
+    # function it defines survives an alias of the same name. Both halves
+    # matter: the loader sources with alias expansion off, because zsh expands
+    # aliases at parse time and "h() {" under "alias h=helm" is a parse error
+    # that drops the rest of the snippet. Asserting the function (not just that
+    # the file was sourced) is what catches a regression re-enabling expansion.
+    # No apostrophes or single quotes here — single-quoted bash -c body.
+    _zsh_user_rc_check() {
+        d=/home/toolbox/.toolbox-state/zshrc.d
+        made=0
+        if [ ! -d "$d" ]; then
+            mkdir -p "$d" || return 1
+            made=1
+        fi
+        f="$d/99-smoke-$$.zsh"
+        printf "unalias h 2>/dev/null\nh() { print smoke; }\n" > "$f" || return 1
+        result=$(zsh -i -c "whence -w h" 2>/dev/null)
+        rm -f "$f"
+        [ "$made" = 1 ] && rmdir "$d" 2>/dev/null
+        [ "$result" = "h: function" ]
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -219,6 +242,7 @@ check_zsh() {
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
     _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check
+    _zsh_assert "zshrc.d user config loader"   _zsh_user_rc_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli

@@ -265,4 +265,27 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ] && command -v too
     add-zsh-hook precmd _toolbox_update_precmd
 fi
 
+# -- User customisation (ZSH-08) — survives image rebuilds -------------------
+# ~/.zshrc lives in the image layer and the Dockerfile truncates it on every
+# rebuild, so nothing a user puts there is durable. ~/.toolbox-state is a
+# read-write mount that is — this file already keeps history, the compdump and
+# the update-check cache there.
+#
+# Alias expansion is OFF while sourcing. zsh expands aliases at parse time, so a
+# snippet defining a function named like one of the aliases above (`h`, `g`,
+# `d`, `k`, `l`, `tf`) is a parse error — and the error drops the REST of that
+# snippet, not just the function. Defining aliases still works with expansion
+# off; a snippet whose function must also win at command position calls
+# `unalias <name>` first.
+if [ -d "${HOME}/.toolbox-state/zshrc.d" ]; then
+    _toolbox_aliases_on=0
+    [[ -o aliases ]] && _toolbox_aliases_on=1
+    unsetopt aliases
+    for _toolbox_rc in "${HOME}"/.toolbox-state/zshrc.d/*.zsh(N); do
+        source "$_toolbox_rc"
+    done
+    (( _toolbox_aliases_on )) && setopt aliases
+    unset _toolbox_rc _toolbox_aliases_on
+fi
+
 return 0
