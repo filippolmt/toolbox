@@ -265,4 +265,22 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ] && command -v too
     add-zsh-hook precmd _toolbox_update_precmd
 fi
 
+# -- User customisation (ZSH-08) — survives image rebuilds -------------------
+# ~/.zshrc lives in the image layer and the Dockerfile truncates it on every
+# rebuild; ~/.toolbox-state is a read-write mount that does not. Sourced last so
+# a snippet can override anything above, and with alias expansion OFF: zsh
+# expands aliases at parse time, so a snippet defining a function named like a
+# shipped alias is a parse error that discards the rest of that file.
+# → docs/internals/shell-start.md#user-config-in-zshrcd
+if [ -n "${HOME:-}" ] && [ -d "${HOME}/.toolbox-state/zshrc.d" ]; then
+    _toolbox_aliases_on=0
+    [[ -o aliases ]] && _toolbox_aliases_on=1
+    unsetopt aliases
+    for _toolbox_rc in "${HOME}"/.toolbox-state/zshrc.d/*.zsh(N); do
+        source "$_toolbox_rc"
+    done
+    (( _toolbox_aliases_on )) && setopt aliases
+    unset _toolbox_rc _toolbox_aliases_on
+fi
+
 return 0

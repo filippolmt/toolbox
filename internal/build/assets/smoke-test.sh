@@ -49,7 +49,7 @@ check_optional() {
     fi
 }
 
-# Bundled zsh stack (ZSH-01..07).
+# Bundled zsh stack (ZSH-01..08).
 #
 # Each sub-check is a named function (`_zsh_<name>_check`); the `_zsh_assert`
 # reporter invokes it and feeds PASS/FAIL into the outer counters. This
@@ -198,6 +198,31 @@ check_zsh() {
         grep -qzx "SHELL=/bin/zsh" /proc/1/environ 2>/dev/null
     }
 
+    # p. user config loader (ZSH-08) — a snippet dropped in
+    # ~/.toolbox-state/zshrc.d is sourced by an interactive shell, and a
+    # function it defines survives an alias of the same name.
+    # The line ORDER below is the test. The function is defined while h is still
+    # an alias, which parses only because the loader disabled alias expansion;
+    # with unalias first, the alias is gone before line 2 is parsed and this
+    # assertion passes even with the loader re-enabling expansion, proving
+    # nothing beyond "the file was sourced". The unalias then lets the function
+    # win at command position, which is what whence -w reads.
+    # No apostrophes or single quotes here — single-quoted bash -c body.
+    _zsh_user_rc_check() {
+        d=/home/toolbox/.toolbox-state/zshrc.d
+        made=0
+        if [ ! -d "$d" ]; then
+            mkdir -p "$d" || return 1
+            made=1
+        fi
+        f="$d/99-smoke-$$.zsh"
+        printf "h() { print smoke; }\nunalias h 2>/dev/null\n" > "$f"
+        result=$(zsh -i -c "whence -w h" 2>/dev/null)
+        rm -f "$f"
+        [ "$made" = 1 ] && rmdir "$d" 2>/dev/null
+        [ "$result" = "h: function" ]
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -219,6 +244,7 @@ check_zsh() {
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
     _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check
+    _zsh_assert "zshrc.d user config loader"   _zsh_user_rc_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli

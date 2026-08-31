@@ -113,7 +113,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 ### Highlights
 
-**Credential isolation & mounts.** By default the container never sees your real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. — every credential path is isolated under `~/.toolbox/` on the host. The `mounts:` list patches the defaults by name, `mounts_root` relocates them wholesale, and `~/.toolbox/startup.d/*.sh` hooks run on every shell start. → [docs/mounts.md](docs/mounts.md)
+**Credential isolation & mounts.** By default the container never sees your real `~/.ssh`, `~/.gitconfig`, `~/.claude`, etc. — every credential path is isolated under `~/.toolbox/` on the host. The `mounts:` list patches the defaults by name, `mounts_root` relocates them wholesale, and `~/.toolbox/startup.d/*.sh` hooks run on every shell start. Shell config goes in `~/.toolbox-state/zshrc.d/*.zsh`, not `~/.zshrc` — the image rebuild truncates that one. → [docs/mounts.md](docs/mounts.md)
 
 **Publishing ports & OAuth callbacks.** `toolbox shell -p <port>` forwards host ports docker-style; `--oauth <tool>` expands the documented recipe for CLIs with OAuth callback listeners (`-B` bridges container-loopback binds). → [docs/commands.md](docs/commands.md#publishing-ports)
 

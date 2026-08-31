@@ -73,6 +73,12 @@ unset _ws
 # inside the container.
 INIT_D="/usr/local/lib/toolbox/init.d"
 TOOLBOX_INIT_LOG_DIR="$HOME/.toolbox-state/init"
+
+# User zsh config lives on the state mount because ~/.zshrc is truncated by
+# every image rebuild. Created empty so the extension point is discoverable
+# via `ls ~/.toolbox-state`; zshrc.sh tolerates its absence either way.
+# → docs/internals/shell-start.md#user-config-in-zshrcd
+mkdir -p "$HOME/.toolbox-state/zshrc.d" 2>/dev/null || true
 # Cred-probe scripts (init.d/0[2-8]-*-creds.sh + 60-glab.sh) emit two-space-
 # indented child lines under this banner — restoring it preserves D-08 (see
 # .planning/phases/10-init-sequence/10-CONTEXT.md) which kept the

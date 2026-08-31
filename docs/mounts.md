@@ -177,6 +177,24 @@ Then drop hook scripts into `./startup.d/*.sh` at the repo root. The patch retar
 
 Trade-off vs. the global directory: per-repo hooks let a repo's `.toolbox.yaml` (and any contributor with push access) run code inside your container with your mounted credentials — treat them like any other repo-shipped automation. Commit the `startup.d/` directory if the hooks should be shared, or add it to `.gitignore` for per-user setup.
 
+## Shell customisation
+
+Do **not** edit `~/.zshrc` inside the container: it lives in the image layer and the image build truncates it, so a `toolbox build` (or any pull of a newer image) throws away whatever you added.
+
+Put shell config in `~/.toolbox-state/zshrc.d/*.zsh` instead — that directory is on a read-write mount and survives rebuilds. Every `*.zsh` file in it is sourced by each interactive shell, in filename order, after oh-my-zsh and after the toolbox aliases, so your snippets can override anything the image sets:
+
+```sh
+mkdir -p ~/.toolbox-state/zshrc.d
+cat > ~/.toolbox-state/zshrc.d/10-mine.zsh <<'EOF'
+unalias h 2>/dev/null      # see the caveat below
+h() { print "my helper"; }
+EOF
+```
+
+One caveat, and it is the reason the loader exists: zsh expands aliases at **parse** time, so defining a function named like an existing alias is a parse error, and the error discards the rest of that file, not just the function. The surface is wider than it looks — the image ships `h`, `g`, `d`, `k`, `l`, `ll`, `la`, `tf`, `cdw`, `reload` and more, plus every alias oh-my-zsh's plugins define (`alias` with no argument lists them all). Snippets are therefore sourced with alias expansion disabled, which makes the definition parse; add `unalias <name>` if your function should also win when you type the name. Defining new aliases works normally. → [why, in detail](internals/shell-start.md#user-config-in-zshrcd)
+
+This is for shell config only. For bootstrap that must run once per container start (installing tools, seeding state), use the [startup hooks](#startup-hooks) above.
+
 ## CA certificate trust
 
 Drop any CA certificate into `~/.toolbox/certs/` on the host and it is trusted inside the container on the next `toolbox shell` — no flag, no config key. The folder is created empty (mode 0700) when missing and RO-mounted at `/etc/toolbox/certs`; the container can never rewrite your certs. This is the generic complement to [proximo's](proximo.md) tool-specific CA handling: any internal, corporate-proxy, or private-runtime CA belongs here.

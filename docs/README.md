@@ -59,6 +59,7 @@ sections.**
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
 - [Profiles](mounts.md#profiles)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
+- [Shell customisation](mounts.md#shell-customisation)
 - [CA certificate trust](mounts.md#ca-certificate-trust)
 - [mounts CLI](mounts.md#mounts-cli)
 
