@@ -190,6 +190,12 @@ func setEnv(env []string, key, value string) []string {
 	return out
 }
 
+// proximoRunFailure wraps an infrastructure failure — a binary that would not
+// run, a deadline — with the binary and verb that were about to execute. Only
+// those: a non-zero exit from proximo itself is data the shim propagates, not
+// an error to wrap.
+const proximoRunFailure = "run %s %s: %w"
+
 // proximoTimeout bounds a /proximo execution. Far above the shared 5s
 // requestTimeout because the first `proximo up` pulls/builds the stack
 // images; status/down complete in seconds.
@@ -305,7 +311,7 @@ func launchProximo(ctx context.Context, command string, args []string, agent pro
 	if command == proximoSkillCommand {
 		agentEnv, err := proximoAgentHomeEnv(env, agent)
 		if err != nil {
-			return nil, 0, fmt.Errorf("run %s %s: %w", bin, command, err)
+			return nil, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
 		}
 		args, env = proximoSkillArgs(args), agentEnv
 	}
@@ -321,12 +327,12 @@ func launchProximo(ctx context.Context, command string, args []string, agent pro
 		// A deadline kill also surfaces as *exec.ExitError — classify it as an
 		// infrastructure failure, not a command exit.
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return out, 0, fmt.Errorf("run %s %s: %w", bin, command, ctxErr)
+			return out, 0, fmt.Errorf(proximoRunFailure, bin, command, ctxErr)
 		}
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return out, exitErr.ExitCode(), nil
 		}
-		return out, 0, fmt.Errorf("run %s %s: %w", bin, command, err)
+		return out, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
 	}
 	return out, 0, nil
 }
