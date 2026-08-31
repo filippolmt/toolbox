@@ -53,6 +53,28 @@ func isProximoOutputFlag(arg string) bool {
 	return strings.ContainsRune(name[1:], 'o')
 }
 
+// proximoErrorsCommand and proximoDomSubcommand name the one verb/subcommand
+// pair the gate refuses outright. `errors dom` writes an HTML file on the HOST
+// with or without a flag — upstream defaults the destination to
+// os.TempDir()/proximo-dom-<id>.html (proximo internal/cli/errors.go:216-221) —
+// so the --out rule cannot see it. Through the bridge the file lands where the
+// container cannot read it: the subcommand buys nothing here and leaves a host
+// write behind, so the verb gate refuses it. Its sibling `errors transcript`
+// writes to stdout when given no --out, and stays bridged.
+const (
+	proximoErrorsCommand = "errors"
+	proximoDomSubcommand = "dom"
+)
+
+// isProximoHostWrite reports whether command+args is the one combination that
+// writes to the host filesystem no matter what flags accompany it.
+func isProximoHostWrite(command string, args []string) bool {
+	if command != proximoErrorsCommand {
+		return false
+	}
+	return slices.Contains(args, proximoDomSubcommand)
+}
+
 // proximoSkillCommand is the one verb that runs in the home-rewritten
 // execution mode — see "Proximo Execution Modes" in CONTEXT.md.
 const proximoSkillCommand = "skill"

@@ -390,6 +390,38 @@ func TestHandler_ProximoOversizedBodyIsExplicit(t *testing.T) {
 	}
 }
 
+// TestHandler_ProximoRejectErrorsDom: `errors dom` writes a file on the HOST
+// even with no flag at all — upstream defaults the destination to
+// os.TempDir()/proximo-dom-<id>.html (proximo internal/cli/errors.go:216-221).
+// Through the bridge that file lands where the container cannot read it, so
+// the subcommand buys nothing here and only leaves a host write behind. The
+// --out gate cannot see it; the verb gate can.
+func TestHandler_ProximoRejectErrorsDom(t *testing.T) {
+	for _, args := range [][]string{{"dom", "abc123"}, {"--json", "dom", "abc123"}} {
+		called := false
+		h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+			called = true
+			return nil, 0, nil
+		})
+		rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("errors", args...))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("args %q: code = %d, want 400", args, rr.Code)
+		}
+		if called {
+			t.Errorf("args %q: executor must not run", args)
+		}
+	}
+	// The sibling that writes to stdout stays bridged.
+	called := false
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+		called = true
+		return nil, 0, nil
+	})
+	if rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("errors", "transcript")); rr.Code != http.StatusOK || !called {
+		t.Errorf("errors transcript: code = %d, called = %v — must stay bridged", rr.Code, called)
+	}
+}
+
 func TestHandler_ProximoRejectBadToken(t *testing.T) {
 	called := false
 	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {

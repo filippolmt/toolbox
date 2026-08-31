@@ -63,8 +63,11 @@ exec an arbitrary binary"*. What changes, and what that section must now say, is
 that arbitrary *arguments* reach one known binary. One argument-shaped rule
 follows: `--out` / `-o` on `errors transcript|dom` is rejected, because via the
 bridge it would write to the **host** filesystem, and shell redirection inside the
-container is the correct way to capture output. Everything else passes, `--image`
-on `up` included — pulling an arbitrary reference is the same trust the container
+container is the correct way to capture output. `errors dom` is refused outright
+rather than by flag: it writes an HTML file with or without `--out`, defaulting
+into the host's temp dir, so no flag rule can reach it — and through the bridge
+that file lands where the container cannot read it, so nothing is lost.
+Everything else passes, `--image` on `up` included — pulling an arbitrary reference is the same trust the container
 already holds over the mounted Docker socket.
 
 Two alternatives were rejected. A per-flag allowlist would be a third list to keep

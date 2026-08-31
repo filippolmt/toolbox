@@ -423,6 +423,11 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "command not allowed — only "+strings.Join(AllowedProximoCommands(), ", ")+" are bridged; run anything else on the host", http.StatusBadRequest)
 		return
 	}
+	if isProximoHostWrite(req.Command, req.Args) {
+		h.logger.Printf("proximo: rejected (writes a host file) command=%q", req.Command)
+		http.Error(w, "errors dom is not bridged — it always writes an HTML file on the host, where this container cannot read it; run it on the host", http.StatusBadRequest)
+		return
+	}
 	for _, arg := range req.Args {
 		if isProximoOutputFlag(arg) {
 			h.logger.Printf("proximo: rejected (output flag) command=%q arg=%q", req.Command, truncate(arg, 64))
