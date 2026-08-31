@@ -22,6 +22,9 @@ func defaults() []config.Mount {
 		{Name: "claude", Source: "~/.toolbox/.claude", Target: "/home/toolbox/.claude", ReadOnly: false, CreateIfMissing: true},
 		// OpenAI Codex CLI auth + config — populated by `codex login` inside the container.
 		{Name: "codex", Source: "~/.toolbox/.codex", Target: "/home/toolbox/.codex", ReadOnly: false, CreateIfMissing: true},
+		// pi coding agent auth + config — ~/.pi/agent/ holds auth.json,
+		// settings.json, sessions/ and installed extensions.
+		{Name: "pi", Source: "~/.toolbox/.pi", Target: "/home/toolbox/.pi", ReadOnly: false, CreateIfMissing: true},
 		// Bash history and other shell state, shared across every toolbox shell.
 		{Name: "state", Source: "~/.toolbox/toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
 		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,

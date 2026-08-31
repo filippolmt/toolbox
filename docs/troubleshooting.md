@@ -69,3 +69,26 @@ Deletes use `git branch -D` (force), since a squash-merged branch never reads as
 **Cause:** a pull-through cache (Harbor proxy project, ECR pull-through, Artifactory/Nexus remote repo) only copies an image from GHCR when something asks for it — and some return `manifest unknown` on the very first request while they ingest the upstream copy asynchronously; replication-based mirrors serve nothing until a replication run completes. The registry refresh is best-effort, but on a first shell there is no local copy to fall back to, so `imageplan.Ensure` fails loud instead of starting a container without an image. Only *successful* pulls stamp the refresh TTL cache, so the failed attempt doesn't poison later ones — a retry asks the mirror again.
 
 **Fix:** warm the cache before the first shell — `docker pull <mirror-host>/filippolmt/toolbox:latest` (re-run once if the mirror 404s while it ingests). Once the mirror serves the manifest, `toolbox shell` works with the default `pull: auto`. Alternatively take the registry out of the startup path entirely: pull manually from the mirror as above, then set `toolbox config set --pull never --where global` — the local copy becomes authoritative and no round-trip happens at shell start. Note the presence check is by exact ref: an image pulled from GHCR directly needs a retag first (`docker tag ghcr.io/filippolmt/toolbox:latest <mirror-host>/filippolmt/toolbox:latest`). Mechanism and precedence: [image selection](configuration.md#image-selection).
+
+## herdr reopens in the wrong directory
+
+**Symptom:** `herdr`, launched from a project directory, opens its pane somewhere else — usually `/home/toolbox`, where a plain `ls` lists only `go` because everything else in the home is a dotfile.
+
+**Cause:** herdr restores its persisted session and discards the launch directory — its own `~/.config/herdr/herdr-server.log` says so verbatim: `restored session already has workspaces; ignoring startup cwd`. The session lives in `~/.config/herdr/session.json`, bind-mounted to `~/.toolbox/herdr/config` on the host, so the directory recorded at the *first* launch outlives every `toolbox stop` and container recreate. That persistence is deliberate — without the bind, every detachable session, plugin, and config setting would wipe on `toolbox stop`, which is herdr's whole value (`toolbox mounts list` shows the `herdr` and `herdr-state` entries).
+
+**Fix:** herdr has no supported reset for the default session (`herdr session delete default` refuses), so delete the file with the server stopped:
+
+```console
+$ herdr server stop
+$ rm ~/.toolbox/herdr/config/session.json   # host path; ~/.config/herdr/session.json inside the container
+```
+
+The next launch records the directory it started from. Note that this clears a stale pin, it does not change the behaviour: a restored session always wins over the launch directory. For more than one project, give each its own session — `herdr --session <name>` — instead of resetting between them.
+
+## A herdr agent integration disappears or goes stale
+
+**Symptom:** `herdr integration status` reports an integration you had installed as `not installed` after a `toolbox stop`, or as `outdated (v7 < v8)` after the image ships a newer herdr.
+
+**Cause:** herdr installs its integrations into each *agent's* own config directory, not under `~/.config/herdr` — so the `herdr` and `herdr-state` binds do not cover them, and survival depends entirely on whether that agent's directory is itself a mount. `claude` (`~/.claude/hooks/`), `codex` (`~/.codex/`) and `pi` (`~/.pi/agent/extensions/`) are bundled tools with a row in `internal/catalog`, so they land on the `~/.toolbox/.claude`, `~/.toolbox/.codex` and `~/.toolbox/.pi` binds and persist. A user-installed agent does not: `opencode`, for instance, is an npm global whose binary survives through `~/.npm-global`, while the integration herdr drops into `~/.config/opencode/plugins/` — like everything else it writes outside the mounts — is gone after `toolbox stop`. Persistence cuts both ways: the three that outlive a recreate also outlive a herdr version bump, so their registration stays pinned to the old version until it is reinstalled.
+
+**Fix:** re-run `herdr integration install <name>` — after a herdr bump for a bundled agent, and after every recreate for a user-installed one. `herdr integration status` lists the state of all of them. Reinstalling is only worth automating for the bundled case; when the agent is user-installed the durable answer is to move its config directory onto a mount rather than rebuild it every session — see [persisting a user-installed tool's state](mounts.md#persisting-a-user-installed-tools-state).

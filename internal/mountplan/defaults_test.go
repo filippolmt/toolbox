@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 35 {
-		t.Fatalf("expected 35 default mounts, got %d", len(mounts))
+	if len(mounts) != 36 {
+		t.Fatalf("expected 36 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -34,6 +34,8 @@ func TestDefaults(t *testing.T) {
 	assertMount(t, mounts, "~/.toolbox/.claude", false, true)
 	// ~/.toolbox/.codex must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/.codex", false, true)
+	// ~/.toolbox/.pi must be rw and auto-created.
+	assertMount(t, mounts, "~/.toolbox/.pi", false, true)
 	// ~/.toolbox/toolbox/state (toolbox-own namespace) must be rw and auto-created.
 	assertMount(t, mounts, "~/.toolbox/toolbox/state", false, true)
 	// Every cloud / forge CLI must have a rw, auto-created state dir.

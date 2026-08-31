@@ -319,6 +319,7 @@ check_optional  "claude"    claude   claude --version
 # inside a single-quoted bash -c (see header comment above check_zsh).
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "codex"     codex    codex --version
+check_optional  "pi"        pi       pi --version
 check_optional  "codegraph" codegraph codegraph --version
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version

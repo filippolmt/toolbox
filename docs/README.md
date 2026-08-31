@@ -58,6 +58,7 @@ sections.**
 - [mounts: merge semantics](mounts.md#mounts-merge-semantics) — [Source paths](mounts.md#source-paths)
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
 - [Profiles](mounts.md#profiles)
+- [Persisting a user-installed tool's state](mounts.md#persisting-a-user-installed-tools-state)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
 - [CA certificate trust](mounts.md#ca-certificate-trust)
 - [mounts CLI](mounts.md#mounts-cli)
@@ -114,6 +115,8 @@ sections.**
 - [Stale local branches pile up after merges](troubleshooting.md#stale-local-branches-pile-up-after-merges)
 - [A new .test app is unreachable from the container](troubleshooting.md#a-new-test-app-is-unreachable-from-the-container)
 - ["manifest unknown" with a registry mirror](troubleshooting.md#manifest-unknown-with-a-registry-mirror)
+- [herdr reopens in the wrong directory](troubleshooting.md#herdr-reopens-in-the-wrong-directory)
+- [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
 
 ## Internals
 

@@ -35,7 +35,7 @@ func Render() string {
 	b.WriteString("\n")
 
 	b.WriteString("# agent — default AI agent auto-launched by `toolbox worktree` sessions.\n")
-	b.WriteString("# One of: claude (default) | codex. The --agent flag overrides this per run.\n")
+	b.WriteString("# One of: claude (default) | codex | pi. The --agent flag overrides this per run.\n")
 	b.WriteString("# agent: claude\n")
 	b.WriteString("\n")
 
