@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // shimDir is the on-disk root of the container-side bridge shims, relative to
@@ -63,8 +65,19 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 		{"proximo", []struct{ name, literal string }{
 			{"RouteProximo", post(RouteProximo)},
 			{"FieldCommand", field(FieldCommand)},
+			{"FieldArgs", field(FieldArgs)},
+			{"FieldHome", field(FieldHome)},
+			{"FieldCodexHome", field(FieldCodexHome)},
+			// The agent homes travel host CLI → container env → shim → daemon;
+			// the env names are the one hop no compiler checks.
+			{"HostAgentHomeEnv", HostAgentHomeEnv},
+			{"HostCodexHomeEnv", HostCodexHomeEnv},
 			{"FieldOutput", get(FieldOutput)},
 			{"FieldExit", get(FieldExit)},
+			// The Proximo Availability Gate: the shim's pre-POST file test and
+			// the Go constant naming the CA bind target are the same path, or
+			// the gate silently stops gating.
+			{"proximo.CATarget", proximo.CATarget},
 		}},
 		{"git-credential-toolbox", []struct{ name, literal string }{
 			{"RouteCredential", post(RouteCredential)},
@@ -152,7 +165,7 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 	}{
 		{reflect.TypeFor[openRequest](), []string{FieldURL}},
 		{reflect.TypeFor[editRequest](), []string{FieldEditor, FieldPath}},
-		{reflect.TypeFor[proximoRequest](), []string{FieldCommand}},
+		{reflect.TypeFor[proximoRequest](), []string{FieldCommand, FieldArgs, FieldHome, FieldCodexHome}},
 		{reflect.TypeFor[proximoResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput}},
 		{reflect.TypeFor[credentialResponse](), []string{FieldExit, FieldOutput}},

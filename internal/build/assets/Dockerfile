@@ -57,7 +57,7 @@ ARG BUN_VERSION=1.4.0
 ARG UV_VERSION=0.12.7
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
-ARG SONARQUBE_CLI_VERSION=1.6.0.4255
+ARG SONARQUBE_CLI_VERSION=1.7.0.4638
 ARG CLAUDE_CODE_VERSION=2.1.251
 ARG CODEX_CLI_VERSION=0.151.0
 ARG CODEGRAPH_VERSION=1.6.0
@@ -69,7 +69,7 @@ ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.0.0
 ARG GCLOUD_VERSION=582.0.0
 ARG AZURE_CLI_VERSION=2.89.1
 ARG OCI_VERSION=3.91.0
-ARG GRAPHIFY_VERSION=0.9.52
+ARG GRAPHIFY_VERSION=0.9.53
 ARG PLAYWRIGHT_VERSION=1.62.1
 ARG PLAYWRIGHT_CLI_VERSION=0.1.18
 ARG COMPOSE_VERSION=5.5.0
@@ -87,7 +87,7 @@ ARG EZA_VERSION=0.23.5
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=4b657407c98bbc8830ae66c2ac7ff3d737c55a83
+ARG OMZ_COMMIT=a5ecff7560b2e26f612032c632a12c75a3048bd0
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
 ARG ZSH_COMPLETIONS_COMMIT=8cd3bd78e8b1f17271cfdd8269074e5557d8d7b8
@@ -1512,9 +1512,10 @@ COPY --link --chmod=0755 bin/xdg-open /usr/local/bin/xdg-open
 # host editor opens them (container ships no GUI editor).
 COPY --link --chmod=0755 bin/code /usr/local/bin/code
 # Browser-bridge proximo shim. proximo itself runs on the host (its stack
-# bind-mounts host paths); the shim forwards up/down/status to the daemon's
-# /proximo endpoint and propagates output + exit code. install/uninstall need
-# interactive sudo and are rejected with a run-on-host hint.
+# bind-mounts host paths); the shim forwards up/down/status/errors/skill plus
+# their arguments to the daemon's /proximo endpoint and propagates output +
+# exit code. install/uninstall/trust/config need host root and are rejected
+# with a run-on-host hint; the shim self-gates on the proximo CA mount.
 COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 # Bridge git credential helper. The container can't reach the host credential
 # store (macOS Keychain / Linux secret-service); this forwards the git

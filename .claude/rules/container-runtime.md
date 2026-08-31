@@ -75,6 +75,14 @@ State `~/.toolbox/toolbox/bridge/` RO-mounted (new + legacy container targets; i
 
 **Transport**: Linux hosts bind a unix socket too — loopback TCP is unreachable from docker-ce containers (`host-gateway` = docker0 IP, daemon binds `127.0.0.1` only); shim tries the socket first, TCP fallback **only on curl `000`** (covers macOS, Docker Desktop, stale socket — never retry a real HTTP status, `/proximo` would double-exec). Editor/proximo shims exit non-zero on failure (unlike `xdg-open`'s exit 0). → [bridge](../../docs/bridge.md), [editor-shims](../../docs/bridge.md#editor-shims), [proximo-lifecycle](../../docs/proximo.md#lifecycle-from-inside-the-container-bridge-shim)
 
+### Host credential helper lookup
+
+A plain-name `credential.helper` is resolved **the way git resolves it — `git --exec-path` first, then `PATH`** (`lookHelperIn`), never `exec.LookPath` alone: Apple git and Homebrew git both ship `git-credential-osxkeychain` under `libexec/git-core` and never in a `bin/` dir on `PATH`, so a PATH-only check warned on **every** macOS host about a helper that already worked. Legitimate because the consumer is `git credential fill` (`runHostCredential`), which reaches the helper through that same exec-path. Both git queries go through the one `gitOutput` seam (trimmed stdout, `""` on absent/erroring/timed-out git, 5s budget) so `checkHostCredentialHelper` takes git, GOOS and the PATH lookup as parameters — **the composition itself is what fixes the bug, so it is the seam that must stay tested**, not just the halves: `TestCheckHostCredentialHelper` (case `osxkeychain-in-exec-path-only` fails on any revert to a bare PATH lookup), plus `TestEvaluateCredentialHelpers`, `TestLookHelperIn`, `TestParseHelperList`, `TestGitOutput`.
+
+### Never under sudo
+
+`bridge install|uninstall` refuse at euid 0 (`EnsureUserContext` → pure `checkNotRoot`/`rootServiceAdvice`, `TestCheckNotRoot` + `TestEnsureUserContext`). Both supervisors are per-user — LaunchAgent in the caller's GUI domain, systemd unit on their user bus — and root has neither, so `sudo` could only fail *after* writing the plist/unit and a root-owned token into whatever `HOME` sudo passed through (`launchctl bootstrap gui/0` → `Bootstrap failed: 125: Domain does not support specified action`; `systemctl --user` → `Failed to connect to bus`). The guard sits in `cmd/bridge.go`, not in `bridge.Install`: `make go-test` runs the suite as root inside `golang:1.26`, so a guard inside the package would fail locally and pass in CI. `status` is unguarded — a read needs no domain.
+
 ## Workspace `safe.directory` is registered at boot, and the cause is not ownership
 
 ### What is registered

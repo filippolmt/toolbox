@@ -519,6 +519,57 @@ that stopped reaching the host. The "Bridge Contract" name turns that
 comment-enforced invariant into a red-on-drift bijection test, mirroring the
 Init Sequence `init.d` bijection and the Tool Catalog fan-out collapse.
 
+### Proximo Execution Modes
+
+The two ways the bridge daemon runs the **host** proximo binary on behalf of a
+container-side request: *plain*, and *with the agent home rewritten*. Decided in
+[ADR-0004](docs/adr/0004-proximo-full-surface-through-the-bridge.md).
+
+Concretely: plain execution covers every verb whose effect is on the host or is
+pure output — `up`, `down`, `status`, `errors` — and is just the resolved binary
+with the request's argv. Home-rewritten execution exists for exactly one verb,
+`skill`, whose effect is *files an in-container agent must read*: the daemon sets
+`HOME` and `CODEX_HOME` to the host directories *the calling session* binds to
+`/home/toolbox/.claude` and `/home/toolbox/.codex` and passes `--scope global`,
+so upstream's own resolution (`$CODEX_HOME`, else `os.UserHomeDir()`) writes
+where the container reads. Those paths travel with the request
+(`TOOLBOX_HOST_AGENT_HOME` / `TOOLBOX_HOST_CODEX_HOME`, emitted by
+`sessionplan`) because the daemon cannot derive them: `mounts_root`, `--profile`
+and `inherit_host_auth` each move that source, and the last can move one of the
+two without the other. A third mode is
+deliberately absent: nothing runs proximo *inside* the container, and nothing
+runs it elevated. Owned by `internal/bridge`.
+
+Why the term exists: "run proximo from the container" reads like one operation
+and is three, distinguished by *where the effect has to land* rather than by what
+the verb does. Without the distinction the obvious designs are both wrong in ways
+that only show up at runtime — a binary in the image clobbers the host's compose
+stack through the mounted Docker socket, and a bridged `skill install` writes to
+the host's `~/.claude`, which is not the `~/.claude` any container-side agent
+reads. Naming the modes makes "which home does this verb write into" a question
+the reader is forced to ask.
+
+### Proximo Availability Gate
+
+The single predicate for "is proximo usable in this shell": the presence of
+proximo's root CA at the container path `/etc/ssl/proximo-ca.pem`.
+
+Concretely: `proximo.Enabled(cfg)` decides host-side whether the CA is mounted at
+all — explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
+existence — so the mounted file *is* the in-container shadow of that decision.
+`entrypoint.sh` already self-gates its whole trust block on it; the bridge shim
+tests the same file before any POST, and refuses with one message naming both
+causes (proximo absent on the host, or disabled for this workspace). No third
+state, no extra env var, and no round-trip to the daemon to learn the answer.
+
+Why the term exists: enablement was readable from three unrelated places — a
+tri-state config field on the host, a file test in the entrypoint, and, for
+anything else, an error returned by the daemon after a network round-trip. Calling
+the CA's presence *the* gate collapses those into one testable fact and settles
+what a proximo-less host should look like from inside a container: a command that
+refuses clearly, not a command that is missing (which invites an agent to install
+it) and not a command that fails only after reaching the host.
+
 ### Worktree
 
 The per-branch worktree subsystem behind `toolbox worktree` (create / open /

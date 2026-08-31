@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
@@ -241,7 +243,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        mp.WorkingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, proximo.Env(in.Cfg)),
+		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds))),
 		ContainerName:     containerName(workspace, in.Name, in.Profile, in.Peer),
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
@@ -251,6 +253,49 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Proximo:           proximo.Enabled(in.Cfg),
 		PidMode:           peerPidMode(in.Peer),
 	}, nil
+}
+
+// Container paths of the two agent homes whose HOST source the bridge daemon
+// needs. They are the mount targets in mountplan.Defaults, kept here as
+// literals and pinned to that set by TestAgentHomeTargetsAreMounted — the
+// daemon's copy of these paths would otherwise drift silently.
+const (
+	claudeHomeTarget = "/home/toolbox/.claude"
+	codexHomeTarget  = "/home/toolbox/.codex"
+)
+
+// agentHomeEnv exports the HOST paths behind the container's two agent homes.
+// `proximo skill install` runs on the host through the bridge but writes files
+// an *in-container* agent must read, and mounts_root, --profile and
+// inherit_host_auth each move the source backing those targets — so the daemon
+// cannot derive them and the session plan has to say. TOOLBOX_HOST_AGENT_HOME
+// is the parent of the claude source (upstream resolves the Claude dir as
+// $HOME/.claude); TOOLBOX_HOST_CODEX_HOME is the codex source itself
+// ($CODEX_HOME is read directly). The two are separate values because
+// inherit_host_auth can move one without the other. A target absent from the
+// plan yields no entry, and the daemon falls back to its own default.
+//
+// Emitted as composeEnv's "extra", so these land with the curated entries and
+// ahead of the user's own env — which must stay last to win collisions.
+// → "Proximo Execution Modes" in CONTEXT.md.
+func agentHomeEnv(binds []mountplan.Bind) []string {
+	var agentHome, codexHome string
+	for _, b := range binds {
+		switch b.Target {
+		case claudeHomeTarget:
+			agentHome = filepath.Dir(b.Source)
+		case codexHomeTarget:
+			codexHome = b.Source
+		}
+	}
+	var out []string
+	if agentHome != "" {
+		out = append(out, bridge.HostAgentHomeEnv+"="+agentHome)
+	}
+	if codexHome != "" {
+		out = append(out, bridge.HostCodexHomeEnv+"="+codexHome)
+	}
+	return out
 }
 
 // browserBridgeExtraHosts returns the docker --add-host entries needed for

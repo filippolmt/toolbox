@@ -1,6 +1,6 @@
 # Bridge
 
-A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, and `proximo up|down|status` to the host proximo binary. Opt-in: nothing runs on the host until `toolbox bridge install`.
+A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, and `proximo up|down|status|errors|skill` (arguments included) to the host proximo binary. Opt-in: nothing runs on the host until `toolbox bridge install`.
 
 ## Quick start
 
@@ -9,6 +9,8 @@ toolbox bridge install     # generate token, write LaunchAgent/systemd unit, sta
 toolbox bridge status      # show install state, port, daemon liveness
 toolbox bridge uninstall   # stop daemon, remove unit + token
 ```
+
+Run them as yourself — **never under `sudo`**. Both supervisors are per-user (a LaunchAgent in the calling user's GUI domain, a systemd unit on their user bus) and root has neither, so a `sudo` install used to write the plist/unit and a root-owned token into whatever `HOME` sudo handed it and only then die inside `launchctl` (`Bootstrap failed: 125: Domain does not support specified action`) or `systemctl` (`Failed to connect to bus`), leaving state every later non-sudo run tripped over. `install` and `uninstall` now refuse up front when the effective uid is 0 (`bridge.EnsureUserContext`), naming `$SUDO_USER` as the account to re-run as.
 
 The `bridge:` config key (default on) controls whether the container gets the bridge mounts at all — see [mount gating](#mount-gating).
 
@@ -68,11 +70,11 @@ The daemon refuses anything that isn't:
 
 1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time); the Linux unix socket is `0600` inside a `0700` dir owned by the same UID the container runs as (`--user`), so it adds no principal beyond the user themselves. The bearer token is required on both transports.
 2. Authenticated with the exact bearer token from `~/.toolbox/toolbox/bridge/token` (constant-time compare).
-3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400.
+3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400. `/proximo`: subcommand in the fixed allowlist (`up`, `down`, `status`, `errors`, `skill`), otherwise 400 — its **arguments** are then forwarded verbatim, with one exception: `--out`/`-o` is rejected, because through the bridge it would write to the *host* filesystem (redirect the shim's stdout in the container instead), and `errors dom` is refused outright because it writes a host file with or without the flag.
 4. Below the URL length cap.
 5. Within the rate limit. `/open`, `/edit` and `/proximo` share one bucket (10/s, burst 5); `/credential` has its own, more generous bucket (30/s, burst 15) so a `git clone` with many HTTPS submodules — a rapid burst of credential lookups — is not throttled into failure.
 
-The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell).
+The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell). `/proximo` widens that last sentence in one direction only: arbitrary *arguments* reach one known binary, on a gated verb. Argv is passed as a slice to `exec.CommandContext`, so an argument never reaches a word-splitting or globbing context, and the argument-shaped risk that remains — writing to a host path — is what the `--out`/`-o` rule closes. See [ADR-0004](adr/0004-proximo-full-surface-through-the-bridge.md).
 
 ## Editor shims
 
@@ -94,7 +96,7 @@ The container side can read `token` because the mount is RO; an attacker who lan
 - Helper-name aliases: `git-credential-osxkeychain`, `git-credential-manager`, `git-credential-manager-core`, `git-credential-libsecret` are symlinks to the shim. When the host `~/.gitconfig` names one of these (absent in the Debian image), git resolves it to the bridge instead of printing `'credential-<x>' is not a git command`. The built-in `store`/`cache` helpers ship with git and are deliberately **not** aliased — they keep their real in-container behaviour.
 - Daemon-side: `runHostCredential` execs `git credential <fill|approve|reject>` with `GIT_TERMINAL_PROMPT=0` (the daemon has no TTY and must never block). A first-time `store` may raise a host keychain authorization dialog, so `/credential` gets a 60s budget (vs the shared 5s `requestTimeout`), the write deadline pushed per-response like `/proximo`. The exchange body is never logged — only op + exit.
 - First clone: enter the credential once; git's `store` writes it into the host keychain. Subsequent clones (even from a fresh shell) get it back silently via `get`.
-- Host prerequisite: the forwarding only persists credentials if the **host** git has a working `credential.helper` (macOS `osxkeychain`; Linux `libsecret`, which needs `git-credential-libsecret` installed). Without one, `git credential fill` returns nothing and every clone re-prompts. `toolbox bridge install` and `toolbox config doctor` warn when no helper is configured, or when a configured plain-name helper's `git-credential-<name>` binary is missing from the host `PATH` (`bridge.CheckHostCredentialHelper`).
+- Host prerequisite: the forwarding only persists credentials if the **host** git has a working `credential.helper` (macOS `osxkeychain`; Linux `libsecret`, which needs `git-credential-libsecret` installed). Without one, `git credential fill` returns nothing and every clone re-prompts. `toolbox bridge install` and `toolbox config doctor` warn when no helper is configured, or when a configured plain-name helper's `git-credential-<name>` binary is nowhere git would find it (`bridge.CheckHostCredentialHelper`). The lookup mirrors git's own resolution order — `git --exec-path` first, then `PATH` — because both Apple git and Homebrew git ship `git-credential-osxkeychain` under `libexec/git-core` and never in a `bin/` dir on `PATH`: a `PATH`-only check warned on every macOS host about a helper that already worked.
 - Opt out without uninstalling the bridge: set `GIT_CREDENTIAL_BRIDGE=0` via the [`env:` passthrough](configuration.md#env-passthrough) in `.toolbox.yaml` — the shim and the entrypoint registration both honor it. (The key is un-prefixed on purpose: `config.ValidateEnv` reserves the `TOOLBOX_` prefix, so a `TOOLBOX_*` opt-out couldn't travel through `env:`.)
 
 ## Mount gating
@@ -108,7 +110,7 @@ toolbox bridge uninstall   # supervisor unit + plist/service file
 rm -rf ~/.toolbox/toolbox/bridge          # token + port + pid + log
 ```
 
-Both steps are independent: `uninstall` removes only what `install` wrote. The state dir is left behind if a user revokes the daemon but wants to keep the token around (rare; documented for completeness). No system-level files, no `sudo`, no Homebrew formula touch.
+Both steps are independent: `uninstall` removes only what `install` wrote. The state dir is left behind if a user revokes the daemon but wants to keep the token around (rare; documented for completeness). No system-level files, no `sudo` (refused outright — see [quick start](#quick-start)), no Homebrew formula touch.
 
 ## Troubleshooting
 
