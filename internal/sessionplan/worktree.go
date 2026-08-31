@@ -21,16 +21,17 @@ func worktreeExecCmd(shellCmd []string, wt *WorktreeSession) []string {
 // modes: resume, prompt, or bare.
 //
 // Resume is the one that has to branch per agent, and this is the spot the
-// doc comment below always reserved for it: the two supported agents spell it
-// differently — claude takes a flag, codex a subcommand — so there is no
-// shared shape to factor out. Most-recent rather than by session id on both,
-// which is what keeps toolbox out of an agent's on-disk conversation store.
-// Resume outranks a prompt because the only caller that sets it is a reload,
-// which has already dropped the prompt as spent.
+// doc comment below always reserved for it: the supported agents spell it
+// differently — claude and pi take a flag, codex a subcommand — so there is no
+// shared shape to factor out. Most-recent rather than by session id on all
+// three, which is what keeps toolbox out of an agent's on-disk conversation
+// store. Resume outranks a prompt because the only caller that sets it is a
+// reload, which has already dropped the prompt as spent.
 //
 // An empty prompt launches the agent bare; otherwise the prompt is passed as a
-// single positional argument — the convention both agents follow. An agent
-// needing different ergonomics (e.g. a --task flag) would branch here too.
+// single positional argument — the convention all supported agents (claude,
+// codex, pi) follow. An agent needing different ergonomics (e.g. a --task
+// flag) would branch here too.
 func agentCommand(agent, prompt string, resume bool) string {
 	if resume {
 		switch agent {
