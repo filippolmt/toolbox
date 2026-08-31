@@ -43,7 +43,14 @@ GO_MOD_VOL      := toolbox-gomod
 # the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
 # usually /workspace) is not resolvable by that daemon. Fall back to the
 # absolute host path exposed via TOOLBOX_HOST_WORKSPACE when it is set.
-HOST_SRC        := $(if $(TOOLBOX_HOST_WORKSPACE),$(TOOLBOX_HOST_WORKSPACE),$(CURDIR))
+# TOOLBOX_HOST_WORKSPACE is the host path of the *workspace root* — the
+# directory `toolbox shell` was opened from — which is the repo only when the
+# shell was opened here. Open it one level up and every containerised target
+# would mount the parent and fail with a misleading "module not found" /
+# "README.md not found". /workspace is that root inside the container, so the
+# suffix $(CURDIR) carries below it is exactly what the host path is missing.
+# The filter guard leaves a CURDIR outside /workspace untouched.
+HOST_SRC        := $(if $(TOOLBOX_HOST_WORKSPACE),$(TOOLBOX_HOST_WORKSPACE)$(patsubst /workspace%,%,$(filter /workspace%,$(CURDIR))),$(CURDIR))
 
 # Shared docker-run fragments. Every Go-side target reuses GO_MOUNT and
 # GO_BUILD_ENV; CGO is off by default (race detector opt-in adds it back).
