@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,7 +28,9 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 		fns.edit = func(_ context.Context, _, _ string) error { return nil }
 	}
 	if fns.proximo == nil {
-		fns.proximo = func(_ context.Context, _ string) ([]byte, int, error) { return nil, 0, nil }
+		fns.proximo = func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+			return nil, 0, nil
+		}
 	}
 	if fns.credential == nil {
 		fns.credential = func(_ context.Context, _ string, _ []byte) ([]byte, int, error) { return nil, 0, nil }
@@ -54,7 +59,7 @@ func newTestHandler(t *testing.T, openErr error) (http.Handler, *atomic.Int32, *
 
 // newProximoTestHandler builds a handler whose /proximo executor is the given
 // fake; open/edit are inert.
-func newProximoTestHandler(t *testing.T, fn func(ctx context.Context, command string) ([]byte, int, error)) http.Handler {
+func newProximoTestHandler(t *testing.T, fn func(ctx context.Context, command string, args []string, agent proximoAgentHome) ([]byte, int, error)) http.Handler {
 	t.Helper()
 	return buildTestHandler(t, handlerFns{proximo: fn})
 }
@@ -216,14 +221,29 @@ func TestHandler_EditSharesRateLimitWithOpen(t *testing.T) {
 	}
 }
 
-func proximoBody(command string) string {
-	b, _ := json.Marshal(map[string]string{"command": command})
+func proximoBody(command string, args ...string) string {
+	b, _ := json.Marshal(map[string]any{"command": command, "args": args})
 	return string(b)
+}
+
+func TestHandler_ProximoForwardsArgs(t *testing.T) {
+	var gotArgs []string
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, args []string, _ proximoAgentHome) ([]byte, int, error) {
+		gotArgs = args
+		return nil, 0, nil
+	})
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status", "--json", "--service", "web"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, body=%q", rr.Code, rr.Body.String())
+	}
+	if want := []string{"--json", "--service", "web"}; !slices.Equal(gotArgs, want) {
+		t.Errorf("args = %q, want %q", gotArgs, want)
+	}
 }
 
 func TestHandler_ProximoOK(t *testing.T) {
 	var gotCmd string
-	h := newProximoTestHandler(t, func(_ context.Context, command string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(_ context.Context, command string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		gotCmd = command
 		return []byte("stack started\n"), 0, nil
 	})
@@ -244,7 +264,7 @@ func TestHandler_ProximoOK(t *testing.T) {
 }
 
 func TestHandler_ProximoPropagatesExitCode(t *testing.T) {
-	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		return []byte("compose failed\n"), 3, nil
 	})
 	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("up"))
@@ -260,10 +280,36 @@ func TestHandler_ProximoPropagatesExitCode(t *testing.T) {
 	}
 }
 
+// TestHandler_ProximoAllowsBridgedVerbs pins the verb gate as a whole: the
+// three lifecycle verbs plus the two that make the agent-facing loop work —
+// `errors` reads the inspector's browser reports back, `skill` installs
+// proximo's own agent skill where the container's agents look for it.
+func TestHandler_ProximoAllowsBridgedVerbs(t *testing.T) {
+	for _, cmd := range AllowedProximoCommands() {
+		called := false
+		h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+			called = true
+			return nil, 0, nil
+		})
+		rr := doPostTo(t, h, RouteProximo, "tok", proximoBody(cmd))
+		if rr.Code != http.StatusOK {
+			t.Errorf("command %q: code = %d, want 200 (body=%q)", cmd, rr.Code, rr.Body.String())
+		}
+		if !called {
+			t.Errorf("command %q: executor must run", cmd)
+		}
+	}
+	for _, cmd := range []string{"errors", "skill"} {
+		if !slices.Contains(AllowedProximoCommands(), cmd) {
+			t.Errorf("%q must be bridged", cmd)
+		}
+	}
+}
+
 func TestHandler_ProximoRejectUnknownCommand(t *testing.T) {
 	for _, cmd := range []string{"install", "uninstall", "config", "up --observability", ""} {
 		called := false
-		h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
+		h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 			called = true
 			return nil, 0, nil
 		})
@@ -277,9 +323,76 @@ func TestHandler_ProximoRejectUnknownCommand(t *testing.T) {
 	}
 }
 
+// TestHandler_ProximoRejectOutputFlag pins the one argument-shaped rule of the
+// verb gate: -o/--output would write to the HOST filesystem through the
+// bridge, so it never reaches exec.
+// TestHandler_ProximoForwardsAgentHome pins the path that makes `skill`
+// land where an in-container agent reads: the session's real agent homes
+// travel from the shim to the executor, because mounts_root / --profile /
+// inherit_host_auth move them and the daemon cannot derive them.
+func TestHandler_ProximoForwardsAgentHome(t *testing.T) {
+	home := t.TempDir()
+	codex := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codex, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var got proximoAgentHome
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, agent proximoAgentHome) ([]byte, int, error) {
+		got = agent
+		return nil, 0, nil
+	})
+	body, _ := json.Marshal(map[string]any{"command": "skill", "args": []string{"install"}, "home": home, "codex_home": codex})
+	rr := doPostTo(t, h, RouteProximo, "tok", string(body))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, body=%q", rr.Code, rr.Body.String())
+	}
+	if got.Home != home || got.CodexHome != codex {
+		t.Errorf("agent home = %+v, want {%q %q}", got, home, codex)
+	}
+}
+
+func TestHandler_ProximoRejectOutputFlag(t *testing.T) {
+	for _, args := range [][]string{{"transcript", "-o", "/etc/hosts"}, {"dom", "--output=/tmp/x"}, {"transcript", "-o/tmp/x"}} {
+		called := false
+		h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+			called = true
+			return nil, 0, nil
+		})
+		rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("errors", args...))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("args %q: code = %d, want 400", args, rr.Code)
+		}
+		if called {
+			t.Errorf("args %q: executor must not run", args)
+		}
+	}
+}
+
+// TestHandler_ProximoOversizedBodyIsExplicit: the body cap used to truncate
+// silently, so an over-long argv failed json.Unmarshal and the caller was told
+// its JSON was malformed. With argv passthrough the cap is reachable, so it
+// has to name the real cause.
+func TestHandler_ProximoOversizedBodyIsExplicit(t *testing.T) {
+	called := false
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
+		called = true
+		return nil, 0, nil
+	})
+	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status", strings.Repeat("x", proximoBodyLimit)))
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("code = %d, want 413; body = %q", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "malformed") {
+		t.Errorf("body %q blames JSON for a size problem", rr.Body.String())
+	}
+	if called {
+		t.Error("executor must not run")
+	}
+}
+
 func TestHandler_ProximoRejectBadToken(t *testing.T) {
 	called := false
-	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		called = true
 		return nil, 0, nil
 	})
@@ -295,7 +408,7 @@ func TestHandler_ProximoRejectBadToken(t *testing.T) {
 }
 
 func TestHandler_ProximoExecErrorIs502(t *testing.T) {
-	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		return nil, 0, io.EOF
 	})
 	rr := doPostTo(t, h, RouteProximo, "tok", proximoBody("status"))
@@ -306,7 +419,7 @@ func TestHandler_ProximoExecErrorIs502(t *testing.T) {
 
 func TestHandler_ProximoBudgetExceedsRequestTimeout(t *testing.T) {
 	var deadline time.Time
-	h := newProximoTestHandler(t, func(ctx context.Context, _ string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(ctx context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		deadline, _ = ctx.Deadline()
 		return nil, 0, nil
 	})
@@ -321,7 +434,7 @@ func TestHandler_ProximoBudgetExceedsRequestTimeout(t *testing.T) {
 }
 
 func TestHandler_ProximoSharesRateLimit(t *testing.T) {
-	h := newProximoTestHandler(t, func(_ context.Context, _ string) ([]byte, int, error) {
+	h := newProximoTestHandler(t, func(_ context.Context, _ string, _ []string, _ proximoAgentHome) ([]byte, int, error) {
 		return nil, 0, nil
 	})
 	for i := range 5 {

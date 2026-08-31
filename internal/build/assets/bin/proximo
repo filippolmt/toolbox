@@ -1,29 +1,61 @@
 #!/bin/sh
 # toolbox bridge proximo shim. proximo runs on the HOST (its stack
-# bind-mounts host paths, so running the real binary in here cannot work);
-# this shim forwards an allowlisted lifecycle subcommand to the host daemon's
-# /proximo endpoint, prints the host output, and propagates the exit code.
-# install/uninstall need interactive sudo and are deliberately not bridged.
+# bind-mounts host paths, so running the real binary in here cannot work —
+# under DooD it would hand the host daemon bind sources that do not exist and
+# silently recreate the working stack); this shim forwards an allowlisted
+# subcommand *and its arguments* to the host daemon's /proximo endpoint,
+# prints the host output, and propagates the exit code. The shim knows nothing
+# about proximo's flags: classification lives in the daemon, so a flag added
+# upstream needs no toolbox change. See docs/adr/0004-*.md.
 
 set -eu
 
 . /usr/local/lib/toolbox/bridge-lib.sh
 
+# Proximo Availability Gate: the bind-mounted root CA is the in-container
+# shadow of the host's proximo.Enabled decision, and entrypoint.sh gates its
+# whole trust block on the same file. Must match proximo.CATarget.
+PROXIMO_CA="/etc/ssl/proximo-ca.pem"
+
+# Checked after the dispatch (so a host-only verb still gets its own hint) but
+# before any POST, so a proximo-less host gets one clear refusal instead of a
+# round-trip — and gets it even when the bridge is not installed.
+require_proximo() {
+    if [ -f "${PROXIMO_CA}" ]; then
+        return 0
+    fi
+    cat >&2 <<MSG
+proximo: not available in this shell — no proximo CA at ${PROXIMO_CA}. Either:
+  - the host has no proximo installed (https://github.com/filippolmt/proximo)
+  - this workspace sets 'proximo: false' in .toolbox.yaml
+  - proximo was installed on the host after this container was created: the CA
+    bind is fixed at create, so run 'toolbox stop' on the host and reopen the shell
+MSG
+    exit 1
+}
+
 usage() {
-    echo "usage: proximo up|down|status   (toolbox bridge shim — other subcommands run on the host)" >&2
+    echo "usage: proximo up|down|status|errors|skill [args...]   (toolbox bridge shim — everything else runs on the host)" >&2
     exit 2
 }
 
-[ "$#" -eq 1 ] || usage
+[ "$#" -ge 1 ] || usage
 
 case "$1" in
-up | down | status) COMMAND="$1" ;;
-install | uninstall)
-    echo "proximo: '$1' needs interactive sudo — run it on the host" >&2
+up | down | status | errors | skill) COMMAND="$1" ;;
+install | uninstall | trust)
+    echo "proximo: '$1' is host-only — it needs root on the host, which is deliberately not reachable from a container" >&2
+    exit 1
+    ;;
+config)
+    echo "proximo: 'config' is host-only — 'config tld' rewrites the host resolver (root), and the read-only queries describe a host the container cannot change" >&2
     exit 1
     ;;
 *) usage ;;
 esac
+shift
+
+require_proximo
 
 if ! bridge_ready; then
     case "${BRIDGE_ERROR}" in
@@ -33,9 +65,25 @@ if ! bridge_ready; then
     exit 1
 fi
 
-# COMMAND is one of three fixed literals (case above), so no JSON escaping is
-# needed — unlike bin/code, which encodes arbitrary paths via python3.
-PAYLOAD=$(printf '{"command":"%s"}' "${COMMAND}")
+# Arguments are arbitrary, so the payload is encoded by python3 (like bin/code)
+# rather than composed with printf. The remaining positional params are the
+# argv after the subcommand.
+#
+# The two agent-home values are the HOST paths behind /home/toolbox/.claude and
+# /home/toolbox/.codex for THIS session (injected by sessionplan, which is the
+# only place that knows them — mounts_root, --profile and inherit_host_auth all
+# move them). The daemon uses them for `skill` and ignores them otherwise; an
+# older host CLI injects neither, and empty values make the daemon fall back to
+# the default mounts root.
+PAYLOAD=$(COMMAND="${COMMAND}" \
+    AGENT_HOME="${TOOLBOX_HOST_AGENT_HOME:-}" \
+    AGENT_CODEX_HOME="${TOOLBOX_HOST_CODEX_HOME:-}" \
+    python3 -c 'import json, os, sys; print(json.dumps({
+        "command": os.environ["COMMAND"],
+        "args": sys.argv[1:],
+        "home": os.environ["AGENT_HOME"],
+        "codex_home": os.environ["AGENT_CODEX_HOME"],
+    }))' "$@")
 
 BODY_FILE=$(mktemp)
 trap 'rm -f "${BODY_FILE}"' EXIT

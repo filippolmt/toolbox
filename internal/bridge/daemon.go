@@ -63,9 +63,10 @@ type DaemonOptions struct {
 	// Edit launches a host editor on a path. Tests override; production
 	// callers leave it nil to use the per-OS launchEditor.
 	Edit func(ctx context.Context, editor, path string) error
-	// Proximo executes an allowlisted proximo subcommand on the host. Tests
-	// override; production callers leave it nil to use launchProximo.
-	Proximo func(ctx context.Context, command string) (output []byte, exit int, err error)
+	// Proximo executes an allowlisted proximo subcommand on the host, with the
+	// request's arguments appended. Tests override; production callers leave it
+	// nil to use launchProximo.
+	Proximo func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
 	// Credential forwards an allowlisted git credential operation to the host
 	// git. Tests override; production callers leave it nil to use
 	// runHostCredential.
@@ -218,7 +219,7 @@ func serve(ctx context.Context, srv *http.Server, logger *log.Logger, listeners 
 type handlerFns struct {
 	open       func(ctx context.Context, url string) error
 	edit       func(ctx context.Context, editor, path string) error
-	proximo    func(ctx context.Context, command string) (output []byte, exit int, err error)
+	proximo    func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
 	credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
 }
 
@@ -271,9 +272,17 @@ type openRequest struct {
 // decodeJSON reads at most limit bytes of r's body into dst, writing the 400
 // response itself on failure — the shared prologue of every POST handler.
 func (h *handler) decodeJSON(w http.ResponseWriter, r *http.Request, limit int64, dst any) bool {
-	body, err := io.ReadAll(io.LimitReader(r.Body, limit))
+	// limit+1: io.LimitReader truncates rather than erroring, so reading one
+	// byte past the cap is what tells an over-long body apart from a body that
+	// merely fills it — otherwise the truncated JSON fails to parse and the
+	// caller is told its JSON is malformed when the real problem is size.
+	body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
 	if err != nil {
 		http.Error(w, "read body", http.StatusBadRequest)
+		return false
+	}
+	if int64(len(body)) > limit {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return false
 	}
 	if err := json.Unmarshal(body, dst); err != nil {
@@ -378,10 +387,21 @@ func (h *handler) handleEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 // proximoRequest is the body shape the proximo shim POSTs to /proximo. The
-// command must match proximoAllowlist verbatim — no arguments.
+// command must match proximoAllowlist verbatim; Args is the rest of the
+// container-side argv, forwarded verbatim to the host binary. The shim knows
+// nothing about proximo's flags — classification lives here, so a flag added
+// upstream needs no toolbox change.
 type proximoRequest struct {
-	Command string `json:"command"`
+	Command   string   `json:"command"`
+	Args      []string `json:"args"`
+	Home      string   `json:"home"`
+	CodexHome string   `json:"codex_home"`
 }
+
+// proximoBodyLimit caps a /proximo request body. Four times the other routes'
+// 4KiB because this one carries argv: a handful of long paths is ordinary,
+// while anything approaching this is not a command line a human wrote.
+const proximoBodyLimit = 16384
 
 // proximoResponse carries the host command's combined output and exit code
 // back to the shim, which prints the output and propagates the exit.
@@ -395,13 +415,20 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req proximoRequest
-	if !h.decodeJSON(w, r, 4096, &req) {
+	if !h.decodeJSON(w, r, proximoBodyLimit, &req) {
 		return
 	}
 	if _, ok := proximoAllowlist[req.Command]; !ok {
 		h.logger.Printf("proximo: rejected (command not allowed) command=%q", truncate(req.Command, 64))
-		http.Error(w, "command not allowed — only up, down, status are bridged; run anything else on the host", http.StatusBadRequest)
+		http.Error(w, "command not allowed — only "+strings.Join(AllowedProximoCommands(), ", ")+" are bridged; run anything else on the host", http.StatusBadRequest)
 		return
+	}
+	for _, arg := range req.Args {
+		if isProximoOutputFlag(arg) {
+			h.logger.Printf("proximo: rejected (output flag) command=%q arg=%q", req.Command, truncate(arg, 64))
+			http.Error(w, "-o/--output is not bridged — it would write to the host filesystem; redirect the output in the container instead", http.StatusBadRequest)
+			return
+		}
 	}
 	// The exec can legitimately run for minutes (first `up` pulls the stack
 	// images), far past the server's WriteTimeout — push the connection's
@@ -409,7 +436,7 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(proximoTimeout + 10*time.Second))
 	ctx, cancel := context.WithTimeout(r.Context(), proximoTimeout)
 	defer cancel()
-	out, exit, err := h.fns.proximo(ctx, req.Command)
+	out, exit, err := h.fns.proximo(ctx, req.Command, req.Args, proximoAgentHome{Home: req.Home, CodexHome: req.CodexHome})
 	if err != nil {
 		h.logger.Printf("proximo: handler failed: %v command=%q", err, req.Command)
 		http.Error(w, err.Error(), http.StatusBadGateway)

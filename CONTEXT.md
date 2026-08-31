@@ -523,17 +523,20 @@ Init Sequence `init.d` bijection and the Tool Catalog fan-out collapse.
 
 The two ways the bridge daemon runs the **host** proximo binary on behalf of a
 container-side request: *plain*, and *with the agent home rewritten*. Decided in
-[ADR-0004](docs/adr/0004-proximo-full-surface-through-the-bridge.md); not yet
-implemented.
+[ADR-0004](docs/adr/0004-proximo-full-surface-through-the-bridge.md).
 
 Concretely: plain execution covers every verb whose effect is on the host or is
 pure output — `up`, `down`, `status`, `errors` — and is just the resolved binary
 with the request's argv. Home-rewritten execution exists for exactly one verb,
 `skill`, whose effect is *files an in-container agent must read*: the daemon sets
-`HOME=$HOME/.toolbox` and `CODEX_HOME=$HOME/.toolbox/.codex` and passes
-`--scope global`, so upstream's own resolution (`$CODEX_HOME`, else
-`os.UserHomeDir()`) writes into the two host directories `mountplan.defaults`
-binds to `/home/toolbox/.claude` and `/home/toolbox/.codex`. A third mode is
+`HOME` and `CODEX_HOME` to the host directories *the calling session* binds to
+`/home/toolbox/.claude` and `/home/toolbox/.codex` and passes `--scope global`,
+so upstream's own resolution (`$CODEX_HOME`, else `os.UserHomeDir()`) writes
+where the container reads. Those paths travel with the request
+(`TOOLBOX_HOST_AGENT_HOME` / `TOOLBOX_HOST_CODEX_HOME`, emitted by
+`sessionplan`) because the daemon cannot derive them: `mounts_root`, `--profile`
+and `inherit_host_auth` each move that source, and the last can move one of the
+two without the other. A third mode is
 deliberately absent: nothing runs proximo *inside* the container, and nothing
 runs it elevated. Owned by `internal/bridge`.
 

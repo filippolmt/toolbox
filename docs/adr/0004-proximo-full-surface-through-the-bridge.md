@@ -60,12 +60,12 @@ The [security boundary](../bridge.md#security-boundary) survives this in the for
 it is written: the daemon still resolves exactly one binary and execs it directly
 with no shell, so an attacker inside the container still *"cannot make the daemon
 exec an arbitrary binary"*. What changes, and what that section must now say, is
-that arbitrary *arguments* reach one known binary. Two argument-shaped rules
-follow. `-o` / `--output` on `errors transcript|dom` is rejected: via the bridge it
-would write to the **host** filesystem, and shell redirection inside the container
-is the correct way to capture output. `--image` on `up` / `update` is allowed —
-pulling an arbitrary reference is the same trust the container already holds over
-the mounted Docker socket.
+that arbitrary *arguments* reach one known binary. One argument-shaped rule
+follows: `--out` / `-o` on `errors transcript|dom` is rejected, because via the
+bridge it would write to the **host** filesystem, and shell redirection inside the
+container is the correct way to capture output. Everything else passes, `--image`
+on `up` included — pulling an arbitrary reference is the same trust the container
+already holds over the mounted Docker socket.
 
 Two alternatives were rejected. A per-flag allowlist would be a third list to keep
 aligned with a CLI we do not release, and it buys nothing the verb gate plus the
@@ -77,11 +77,29 @@ schedule.
 ## `skill` runs with the agent home rewritten
 
 `skill install` writes files an agent must *read*, and the container's agent homes
-are not the host's. The daemon therefore runs this one verb with `HOME` set to
-`$HOME/.toolbox` and `CODEX_HOME` to `$HOME/.toolbox/.codex`, at `--scope global`.
-Those are exactly the sources `mountplan.defaults` binds to
-`/home/toolbox/.claude` and `/home/toolbox/.codex`, so the skill lands where the
+are not the host's. The daemon therefore runs this one verb with `HOME` and `CODEX_HOME` pointed at
+the host directories *this session* binds to `/home/toolbox/.claude` and
+`/home/toolbox/.codex`, at `--scope global`, so the skill lands where the
 in-container Claude and Codex look.
+
+Those directories are **not** derivable by the daemon. `mounts_root`, `--profile`
+and `inherit_host_auth` each move the host source behind those two targets, and
+`inherit_host_auth` can move one without the other — a daemon that assumed
+`$HOME/.toolbox` would write outside the container's mounts and exit 0, the
+silent no-op this ADR exists to avoid. Only the session plan knows, so
+`sessionplan` exports the two resolved host paths as `TOOLBOX_HOST_AGENT_HOME`
+(parent of the claude source, since upstream resolves the Claude dir as
+`$HOME/.claude`) and `TOOLBOX_HOST_CODEX_HOME`; the shim forwards them, and the
+daemon refuses anything that is not a clean absolute path to an existing host
+directory rather than falling back to a default. A shim that sends neither — an
+older image — gets the default mounts root.
+
+Scope is forced on the `install` / `uninstall` leaves only. Upstream registers
+`--scope` there and gives the `skill` parent no flags of its own, so appending it
+to a bare `proximo skill` yields `unknown flag`; the default it overrides is
+`project`, which resolves against the daemon's working directory. `skill install`
+does not read proximo's own state home, so the rewritten `HOME` costs it no
+config, TLD or CA.
 
 The rewrite is load-bearing and was verified against upstream rather than assumed:
 `internal/skill/skill.go` resolves an agent's base directory from `$CODEX_HOME`
@@ -118,6 +136,15 @@ what is deliberately absent.
 `errors transcript` is documented upstream as *"Unredacted; may contain
 credentials"*. This design routes that output from the host's in-memory buffer to
 the stdout of an agent inside the container; the toolbox skill has to say so.
+
+The availability gate lives in the shim alone, and the bridge token is readable
+inside the container by design — a direct `curl` to `/proximo` bypasses it. So a
+workspace that opted out with `proximo: false` is protected from *accident*, not
+from a deliberately hostile container process, which can read the host's
+unredacted transcript. This is accepted rather than fixed: the daemon has no way
+to know which workspace a request came from, and the bridge already forwards the
+host's git credentials through `/credential` — the endpoint does not widen a
+boundary that was narrower before it.
 
 The skill is installed per **host** (`~/.toolbox/.claude`) while proximo enablement
 is per **workspace**, so a workspace with `proximo: false` still has an agent that

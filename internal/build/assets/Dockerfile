@@ -1512,9 +1512,10 @@ COPY --link --chmod=0755 bin/xdg-open /usr/local/bin/xdg-open
 # host editor opens them (container ships no GUI editor).
 COPY --link --chmod=0755 bin/code /usr/local/bin/code
 # Browser-bridge proximo shim. proximo itself runs on the host (its stack
-# bind-mounts host paths); the shim forwards up/down/status to the daemon's
-# /proximo endpoint and propagates output + exit code. install/uninstall need
-# interactive sudo and are rejected with a run-on-host hint.
+# bind-mounts host paths); the shim forwards up/down/status/errors/skill plus
+# their arguments to the daemon's /proximo endpoint and propagates output +
+# exit code. install/uninstall/trust/config need host root and are rejected
+# with a run-on-host hint; the shim self-gates on the proximo CA mount.
 COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 # Bridge git credential helper. The container can't reach the host credential
 # store (macOS Keychain / Linux secret-service); this forwards the git
