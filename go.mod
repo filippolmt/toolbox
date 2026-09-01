@@ -2,7 +2,7 @@ module github.com/filippolmt/toolbox
 
 go 1.26.2
 
-toolchain go1.27.0
+toolchain go1.27.1
 
 require (
 	charm.land/bubbles/v2 v2.2.1
