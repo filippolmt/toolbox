@@ -44,10 +44,30 @@ An anchor created before this carries the old entrypoint, and the connect path u
 
 | Anchor state | Outcome |
 |---|---|
-| Stopped (`runplan.ActionStart`) | Force-removed and recreated. Every session that held the namespace died with it, so nothing is left to break — and the holder scan is skipped, so a daemon that will not list containers cannot strand it. |
+| Stopped | Force-removed and recreated. Every session that held the namespace died with it, so nothing is left to break — and the holder scan is skipped, so a daemon that will not list containers cannot strand it. |
 | Running, no holder | Force-removed and recreated. |
 | Running, a session holds it | Left alone, with a warning. Exiting the other shells and starting one again is enough: the next start finds no holder and replaces it. |
+| Removal itself fails | Warned about, and the stale anchor reused. |
 
-`container.anchorHeld` is the guard, and it **fails closed** — a `ContainerList` or `ContainerInspect` that errors answers "held". Guessing "free" from a daemon that would not answer costs a live session; guessing "held" costs one more shell start on the old anchor.
+Running-ness is read off the inspect record rather than taken as the `runplan.Action`: `runplan.Compute` derives that action from the same `State`, and the decision is about the container, not about which branch the caller arrived on.
 
-Pinned by `TestShellPeerReplacesUnusedStaleAnchor`, `TestShellPeerReplacesStoppedStaleAnchor`, `TestShellPeerKeepsHeldStaleAnchor` and `TestShellPeerKeepsStaleAnchorWhenHoldersUnknown`; `TestShellPeerReusesRunningAnchor` holds the other direction — a current anchor is neither removed nor warned about.
+That last row is why `replaceStaleAnchor` returns no error and `ensureAnchor` never fails on it. A stale anchor is a reaper-less PID 1 but a *working* namespace; failing the caller would send the session through `ensurePeerRuntime`'s degrade path to no peer messaging at all, which is worse than the bug being fixed. A self-heal that makes things worse when it cannot run is not one.
+
+### Failing closed
+
+`container.anchorHeld` is the guard between the replacement and a dead sibling shell, so it answers "held" for everything it cannot clear. It clears exactly three container states, each of which provably holds nothing:
+
+| State | Cleared? |
+|---|---|
+| `created` | Yes — never started. |
+| `exited`, `dead` | Yes — gone. |
+| `running`, `paused`, `restarting` | No — a paused or restarting container keeps the namespace it joined. |
+| `removing` | No — it cannot be shown to have let go yet. |
+
+A `ContainerList` that errors, a `ContainerInspect` that errors, and an inspect that comes back with no `HostConfig` to read all answer "held" too. Guessing "free" from a daemon that would not answer costs a live session; guessing "held" costs one more shell start on the old anchor.
+
+### One case the replacement cannot rescue
+
+A **stopped** session container created against the old anchor still carries `PidMode: container:<old anchor id>`, fixed at `ContainerCreate`. Once the old anchor is gone that id resolves to nothing, so `preflightHostConfig` warns and the `ContainerStart` behind it fails. In practice session containers are `AutoRemove: true` and a stopped one does not survive to be reattached (see [container teardown](#container-teardown)); a legacy container predating that can, and its recreate is the `toolbox stop <container>` the warning already prescribes. What changed is only who triggers it — this used to follow the user's own `docker rm -f`, and now follows toolbox's.
+
+Pinned by `TestShellPeerReplacesUnusedStaleAnchor`, `TestShellPeerReplacesStoppedStaleAnchor`, `TestShellPeerKeepsHeldStaleAnchor`, `TestShellPeerKeepsStaleAnchorWhenHoldersUnknown`, `TestShellPeerKeepsStaleAnchorWhenHolderCannotBeRuledOut` and `TestShellPeerKeepsPeerMessagingWhenReplacementFails`; `TestShellPeerReusesRunningAnchor` holds the other direction — a current anchor is neither removed nor warned about.

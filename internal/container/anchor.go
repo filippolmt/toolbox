@@ -64,14 +64,9 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 		return fmt.Errorf("failed to inspect peer anchor: %w", err)
 	}
 
-	if op.Action != runplan.ActionCreate && !isCurrentAnchor(res.Container) {
-		replaced, replaceErr := replaceStaleAnchor(ctx, cli, res.Container, op.Action)
-		if replaceErr != nil {
-			return replaceErr
-		}
-		if replaced {
-			op = runplan.Op{Action: runplan.ActionCreate}
-		}
+	if op.Action != runplan.ActionCreate && !isCurrentAnchor(res.Container) &&
+		replaceStaleAnchor(ctx, cli, res.Container) {
+		op = runplan.Op{Action: runplan.ActionCreate}
 	}
 
 	id := op.ExistingID
@@ -118,32 +113,53 @@ func isCurrentAnchor(anchor container.InspectResponse) bool {
 // replaceStaleAnchor removes an anchor that predates the current spec so the
 // caller can create a fresh one, and reports whether it did.
 //
+// Running-ness is read off the record itself rather than taken as a
+// runplan.Action: runplan.Compute derives the action from that same State, and
+// the argument below is about the container, not about which branch the caller
+// took to get here.
+//
 // A stopped anchor is free to replace: every session that held its namespace
 // died with it, so there is nothing left to break. A running one is the case
 // Docker gives no help with — `docker rm -f` on an in-use anchor is not
 // refused, it succeeds and leaves every session that held the namespace
 // `exited` with 137 — so it is replaced only once anchorHeld can prove nobody
 // is on it, and warned about otherwise.
-func replaceStaleAnchor(ctx context.Context, cli client.APIClient, anchor container.InspectResponse, action runplan.Action) (bool, error) {
+//
+// Neither refusal is an error, which is why nothing here returns one: the
+// anchor the caller then reuses is stale but running, so peer messaging works
+// with the PID 1 it always had. Failing the caller instead would drop the
+// session to no peer messaging at all — strictly worse than the bug this is
+// fixing, and a self-heal that makes things worse when it cannot run is not
+// one.
+func replaceStaleAnchor(ctx context.Context, cli client.APIClient, anchor container.InspectResponse) bool {
 	name := sessionplan.PeerAnchorContainerName
-	if action == runplan.ActionConnect && anchorHeld(ctx, cli, anchor.ID) {
+	if anchor.State != nil && anchor.State.Running && anchorHeld(ctx, cli, anchor.ID) {
 		ui.Warning(peerWarnPrefix + name + " predates the reaping init, so orphaned processes in the " +
 			"shared PID namespace stay as zombies — it is replaced automatically once no other toolbox " +
 			"shell holds it, so exit them and start this shell again")
-		return false, nil
+		return false
 	}
 	ui.Info("Replacing peer-messaging anchor " + name + ": its PID 1 does not reap orphans...")
 	if _, err := cli.ContainerRemove(ctx, anchor.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
-		return false, fmt.Errorf("failed to remove the reaper-less peer anchor: %w", err)
+		ui.Warning(peerWarnPrefix + "could not remove the reaper-less " + name + ": " + err.Error() +
+			" — reusing it, so orphaned processes stay as zombies")
+		return false
 	}
-	return true, nil
+	return true
 }
 
-// anchorHeld reports whether any running toolbox container joined the anchor's
-// PID namespace. It is the only thing standing between the self-heal above and
-// killing a sibling shell, so every uncertainty answers "held": a list or
-// inspect that fails leaves the anchor in place and the user with a warning,
-// which costs one stale anchor — guessing the other way costs a live session.
+// anchorHeld reports whether any toolbox container still holds the anchor's PID
+// namespace. It is the only thing standing between the self-heal above and
+// killing a sibling shell, so it answers "held" for everything it cannot
+// clear — a container in a state that still owns a namespace, a list or inspect
+// that errors, an inspect that comes back with no HostConfig to read. Being
+// wrong that way costs one more shell start on the stale anchor; being wrong
+// the other way costs a live session.
+//
+// Only three states are cleared, and each provably holds nothing: created
+// (never started), exited and dead (gone). Running is joined by paused and
+// restarting, which keep the namespace they joined, and by removing, which
+// cannot be shown to have let go of it yet.
 //
 // The PidMode is read per container rather than through samePidNamespace: the
 // anchor's ID is already in hand here, and that helper would re-inspect the
@@ -155,14 +171,18 @@ func anchorHeld(ctx context.Context, cli client.APIClient, anchorID string) bool
 	}
 	want := container.PidMode("container:" + anchorID)
 	for _, c := range items {
-		if c.ID == anchorID || c.State != container.StateRunning {
+		if c.ID == anchorID {
+			continue
+		}
+		switch c.State {
+		case container.StateCreated, container.StateExited, container.StateDead:
 			continue
 		}
 		res, inspectErr := cli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
-		if inspectErr != nil {
+		if inspectErr != nil || res.Container.HostConfig == nil {
 			return true
 		}
-		if res.Container.HostConfig != nil && res.Container.HostConfig.PidMode == want {
+		if res.Container.HostConfig.PidMode == want {
 			return true
 		}
 	}
