@@ -707,7 +707,15 @@ sessions get `PidMode: container:toolbox-peer-anchor` plus the
 `toolbox-cc-socks` volume mounted at `/tmp/cc-socks`. It carries the
 `toolbox-` prefix so `StopAll` sweeps it up, and `List` excludes it by name
 because that command enumerates shells. An anchor that cannot be created warns
-and the shell starts without peer messaging. Rationale and rejected options:
+and the shell starts without peer messaging.
+
+Because it outlives every session, an anchor can outlive the spec it was
+created from — and one created before the tini override kept a PID 1 that never
+reaped. `ensureAnchor` therefore replaces an anchor whose entrypoint is not the
+current one, but only when no session holds its namespace: Docker does not
+refuse the removal of an in-use anchor, it kills the sessions on it.
+
+Rationale and rejected options:
 `docs/adr/0003-cross-container-peer-messaging.md`.
 
 Why the term exists: the reason a *separate* container is needed is not
