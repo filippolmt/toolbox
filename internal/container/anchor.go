@@ -17,6 +17,10 @@ import (
 // the three degrade paths read as one subsystem in the terminal.
 const peerWarnPrefix = "peer messaging: "
 
+// tiniPath is the init the runtime image ships (Dockerfile ENTRYPOINT), reused
+// here to give the anchor a PID 1 that reaps. See ensureAnchor.
+const tiniPath = "/usr/bin/tini"
+
 // ensureAnchor makes the peer-messaging anchor container exist and run, so
 // opted-in sessions have a PID namespace to join. It reuses runplan.Compute
 // for the connect / start / create branch — the same three-way decision the
@@ -25,8 +29,21 @@ const peerWarnPrefix = "peer messaging: "
 // The anchor runs the toolbox runtime image (already guaranteed present
 // locally by imageplan.Ensure on this path) rather than a second base image:
 // the layers are shared, and there is no registry round-trip to fail on an
-// offline host. Its entrypoint is overridden to a bare sleep — none of the
-// image's shell-start init belongs in a container that only holds a namespace.
+// offline host. Its entrypoint is overridden past the image's shell-start init
+// — none of that belongs in a container that only holds a namespace — but NOT
+// past tini: the anchor's PID 1 is PID 1 for every session that joins the
+// namespace, and reaping orphans is PID 1's job. Under a bare `sleep`, which
+// never calls wait(), every process reparented after its parent exits stays a
+// zombie for the anchor's lifetime, one PID slot each, accumulated across every
+// shell that ever shared it. The image's own tini cannot cover this from the
+// session side: there it is not PID 1, and the baked ENTRYPOINT carries no -s,
+// so it never registers as a subreaper. Verified with
+// TestShellPeerAnchorReapsOrphans.
+//
+// An anchor created before this ran keeps its reaper-less PID 1: the connect
+// path reuses it, and force-removing one kills every session holding its
+// namespace, so the recreate is the user's call — `docker rm -f` the anchor
+// with no toolbox shell open.
 //
 // AutoRemove is deliberately left off: the anchor outlives the sessions
 // referencing it, which is the whole reason a session container cannot play
@@ -51,7 +68,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 			Name: name,
 			Config: &container.Config{
 				Image:      image.Ref,
-				Entrypoint: []string{"sleep"},
+				Entrypoint: []string{tiniPath, "-g", "--", "sleep"},
 				Cmd:        []string{"infinity"},
 			},
 			HostConfig: &container.HostConfig{AutoRemove: false},

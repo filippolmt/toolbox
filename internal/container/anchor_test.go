@@ -543,3 +543,43 @@ func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
 		t.Errorf("created volume %q, want %q re-initialised before the container starts", createdVolume, mountplan.PeerSocketVolumeName)
 	}
 }
+
+// TestShellPeerAnchorReapsOrphans asserts the anchor runs tini as its PID 1.
+//
+// The anchor owns the PID namespace every opted-in session joins, so its PID 1
+// is PID 1 for all of them — and reaping orphans is PID 1's job. A bare `sleep`
+// never calls wait(), and the image's own tini is not PID 1 in a joined
+// namespace (nor a subreaper: the ENTRYPOINT carries no -s), so every process
+// reparented after its parent exits stays a zombie for the anchor's lifetime,
+// one PID slot each, across every shell that ever shared it.
+func TestShellPeerAnchorReapsOrphans(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	var anchorCfg *container.Config
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name == sessionplan.PeerAnchorContainerName {
+				anchorCfg = cfg
+			}
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if anchorCfg == nil {
+		t.Fatal("anchor was never created")
+	}
+	if len(anchorCfg.Entrypoint) == 0 || anchorCfg.Entrypoint[0] != tiniPath {
+		t.Errorf("anchor Entrypoint = %v, want %s first so PID 1 reaps orphans", anchorCfg.Entrypoint, tiniPath)
+	}
+}
