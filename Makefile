@@ -49,8 +49,12 @@ GO_MOD_VOL      := toolbox-gomod
 # would mount the parent and fail with a misleading "module not found" /
 # "README.md not found". /workspace is that root inside the container, so the
 # suffix $(CURDIR) carries below it is exactly what the host path is missing.
-# The filter guard leaves a CURDIR outside /workspace untouched.
-HOST_SRC        := $(if $(TOOLBOX_HOST_WORKSPACE),$(TOOLBOX_HOST_WORKSPACE)$(patsubst /workspace%,%,$(filter /workspace%,$(CURDIR))),$(CURDIR))
+# The guard is the /workspace prefix, not TOOLBOX_HOST_WORKSPACE being set: a
+# CURDIR outside /workspace is already a host path — the workspace mirror bind
+# (mountplan.WorkspaceMirrorPath) is the shell's WorkingDir whenever it exists,
+# so `cd` below it leaves CURDIR host-valid — and rewriting it to the workspace
+# root is what mounted the parent and produced the misleading failure.
+HOST_SRC        := $(if $(filter /workspace%,$(CURDIR)),$(TOOLBOX_HOST_WORKSPACE)$(patsubst /workspace%,%,$(CURDIR)),$(CURDIR))
 
 # Shared docker-run fragments. Every Go-side target reuses GO_MOUNT and
 # GO_BUILD_ENV; CGO is off by default (race detector opt-in adds it back).
