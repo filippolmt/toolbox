@@ -40,7 +40,7 @@ The session side cannot cover this. A container joining another's PID namespace 
 
 An anchor created before this carries the old entrypoint, and the connect path used to reuse it forever. It now replaces it — but only when that breaks nothing, because Docker offers no help here: `docker rm -f` on an in-use anchor is **not** refused, it succeeds and leaves every session that held the namespace `exited` with 137 (measured, not inferred; the daemon tracks no dependency for `--pid container:<id>` the way it does for network mode).
 
-`container.isCurrentAnchor` compares the running anchor's whole entrypoint against `container.anchorEntrypoint` — the same slice `ContainerCreate` is handed, so the check and the spec cannot drift, and a later change to the anchor's PID 1 inherits the replacement for free. On a mismatch `container.replaceStaleAnchor` decides:
+`container.isCurrentAnchor` compares the running anchor's whole entrypoint against `container.anchorEntrypoint()` — the same slice `ContainerCreate` is handed, so the check and the spec cannot drift, and a later change to the anchor's PID 1 inherits the replacement for free. On a mismatch `container.replaceStaleAnchor` decides:
 
 | Anchor state | Outcome |
 |---|---|

@@ -243,7 +243,7 @@ func TestShellPeerReusesRunningAnchor(t *testing.T) {
 				return container.InspectResponse{
 					ID:     id,
 					State:  &container.State{Running: true},
-					Config: &container.Config{Entrypoint: anchorEntrypoint, Cmd: []string{"infinity"}},
+					Config: &container.Config{Entrypoint: anchorEntrypoint(), Cmd: []string{"infinity"}},
 				}, nil
 			}
 			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}

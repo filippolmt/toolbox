@@ -22,11 +22,12 @@ const peerWarnPrefix = "peer messaging: "
 // here to give the anchor a PID 1 that reaps. See ensureAnchor.
 const tiniPath = "/usr/bin/tini"
 
-// anchorEntrypoint is the anchor's PID 1 and the payload it supervises.
+// anchorEntrypoint returns the anchor's PID 1 and the payload it supervises.
 // ContainerCreate writes it and isCurrentAnchor reads it back off the daemon,
 // so the spec the connect path checks against cannot drift from the one the
-// create path applies.
-var anchorEntrypoint = []string{tiniPath, "-g", "--", "sleep"}
+// create path applies. A function rather than a package-level slice, which
+// nothing could stop a later caller from rewriting under both of them.
+func anchorEntrypoint() []string { return []string{tiniPath, "-g", "--", "sleep"} }
 
 // ensureAnchor makes the peer-messaging anchor container exist and run, so
 // opted-in sessions have a PID namespace to join. It reuses runplan.Compute
@@ -80,7 +81,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 			Name: name,
 			Config: &container.Config{
 				Image:      image.Ref,
-				Entrypoint: anchorEntrypoint,
+				Entrypoint: anchorEntrypoint(),
 				Cmd:        []string{"infinity"},
 			},
 			HostConfig: &container.HostConfig{AutoRemove: false},
@@ -107,7 +108,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 // Config counts as stale — an anchor whose spec cannot be read is one whose
 // PID 1 cannot be vouched for.
 func isCurrentAnchor(anchor container.InspectResponse) bool {
-	return anchor.Config != nil && slices.Equal(anchor.Config.Entrypoint, anchorEntrypoint)
+	return anchor.Config != nil && slices.Equal(anchor.Config.Entrypoint, anchorEntrypoint())
 }
 
 // replaceStaleAnchor removes an anchor that predates the current spec so the
