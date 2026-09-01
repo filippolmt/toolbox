@@ -205,7 +205,7 @@ if command -v starship >/dev/null 2>&1; then
     eval "$(starship init zsh)"
 fi
 
-# -- Update-availability banner (update-notification) ------------------------
+# -- Update-availability banner (session-reload) -----------------------------
 # A precmd hook surfaces "a newer runtime image / CLI is available" without
 # ever blocking the prompt: it reads ONLY a local cache file, and renders it.
 # Nothing here touches the network — the host CLI is the single detector and
@@ -214,7 +214,20 @@ fi
 # per distinct result (keyed on a shown-signature file). Opt out by exporting
 # TOOLBOX_NO_UPDATE_CHECK — no banner. Set in `env:` it also stops the
 # host-side probe; typed inside a live shell it only stops the rendering.
-# → docs/update-notification.md
+#
+# The host owns the facts, the image owns the words. The copy lives here and
+# not in a host-rendered string because the CLI and this image ship on separate
+# pipelines: a host that wrote the sentence would eventually tell an old image
+# to run a `toolbox-reload` it does not have.
+#
+# It states a fact and a command, and no longer prescribes an exit. Because the
+# reload asks for no confirmation, this line is the only place its cost is
+# named before the act — hence the one clause about recreating the container,
+# and hence the deliberate silence about the agent, whose resume is
+# conditional. `brew upgrade` and the reload CHAIN rather than alternate: the
+# reload re-execs whatever CLI is on disk, so upgrading first is what makes one
+# act cover both axes, and both-axes therefore renders as a single line.
+# → docs/session-reload.md
 if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
     _toolbox_update_cache="${HOME}/.toolbox-state/update-check"
     _toolbox_update_shown="${HOME}/.toolbox-state/update-check.shown"
@@ -241,16 +254,36 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
             esac
         done < $_toolbox_update_cache
 
-        [[ $image_update == 1 ]] && \
-            print -P "%F{yellow}toolbox:%f a newer runtime image is downloaded — exit the shell and run %B'toolbox stop'%b, then reopen it to run on it."
+        # How this session adopts an image, decided by the one thing the image
+        # can know about the CLI driving it: whether the reload marker was
+        # injected. Without it the CLI is older than the command, so advising
+        # `toolbox-reload` would advise a refusal — the pre-reload wording is
+        # still true there, and still works.
+        local adopt
+        if [[ -n ${TOOLBOX_RELOAD_MARKER:-} ]]; then
+            adopt="run %Btoolbox-reload%b to move this session onto it (recreates the container)"
+        else
+            adopt="exit the shell and run %Btoolbox stop%b, then reopen it"
+        fi
+
+        # One reload covers both axes, so both-axes is one line: upgrade the
+        # CLI first and the reload picks it up, because it re-execs the binary
+        # on disk before it recreates anything.
+        if [[ $image_update == 1 && $cli_update == 1 ]]; then
+            print -P "%F{yellow}toolbox:%f a newer CLI${cli_latest:+ ($cli_latest)} and runtime image are ready — run %Bbrew upgrade%b on the host, then $adopt."
+        elif [[ $image_update == 1 ]]; then
+            print -P "%F{yellow}toolbox:%f a newer runtime image is downloaded — $adopt."
+        elif [[ $cli_update == 1 ]]; then
+            print -P "%F{yellow}toolbox:%f a newer CLI${cli_latest:+ ($cli_latest)} is available — run %Bbrew upgrade%b on the host."
+        fi
         # The registry moved but the bytes did not arrive, and have not for at
         # least a full probe cadence — an expired registry credential looks
         # exactly like this, and the host cannot say so mid-session without
-        # printing into the middle of your work.
+        # printing into the middle of your work. Never rendered beside a
+        # "ready" line: the host already picked one, and there is nothing to
+        # adopt here.
         [[ $image_state == unavailable ]] && \
             print -P "%F{yellow}toolbox:%f a newer runtime image exists but could not be downloaded — check registry access."
-        [[ $cli_update == 1 ]] && \
-            print -P "%F{yellow}toolbox:%f a newer CLI${cli_latest:+ ($cli_latest)} is available — run %B'brew upgrade'%b on the host."
 
         # Mark this result shown even when nothing surfaced, so the comparison
         # above short-circuits until the cached result actually changes.
@@ -259,6 +292,45 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd _toolbox_update_precmd
 fi
+
+# -- Session reload (session-reload) -----------------------------------------
+# `toolbox-reload` moves this session onto whatever runtime image the host has
+# already downloaded, without exiting and reopening by hand. Docker cannot swap
+# the image of a running container and this command runs inside the very
+# container being replaced, so the work belongs to the host-side `toolbox
+# shell` process: we only signal it. The signal is a marker file the host reads
+# exactly where it already decides whether to tear the session down.
+#
+# A function, not a script in bin/: a child process cannot make its parent
+# shell exit, and the exit is the whole point. That also scopes it to the zsh
+# prompt, which is where it belongs — asking for a reload from inside an agent
+# would be asking the agent to kill itself.
+#
+# $TOOLBOX_RELOAD_MARKER is injected by the host. Its PRESENCE is the
+# capability: an image shipping this function can meet a CLI too old to read
+# the marker (the image is pushed on merge, the CLI released on tag, and
+# `brew upgrade` is yours to run), and that CLI would write nothing, notice
+# nothing, and tear the session down for good. Refusing here costs a message;
+# not refusing costs the session. The refusal deliberately names no required
+# version — presence is all this side ever learns.
+# → docs/session-reload.md
+toolbox-reload() {
+    emulate -L zsh
+    if [ -z "${TOOLBOX_RELOAD_MARKER:-}" ]; then
+        print -u2 -P "%F{yellow}toolbox:%f the toolbox CLI running this session${TOOLBOX_CLI_VERSION:+ ($TOOLBOX_CLI_VERSION)} does not support reload — run %B'brew upgrade toolbox'%b on the host, then exit and reopen this shell once."
+        return 1
+    fi
+    # Atomic: write beside the target and rename over it, so a host reading the
+    # marker never sees a half-written working directory.
+    local tmp="${TOOLBOX_RELOAD_MARKER}.tmp.$$"
+    if ! { print -r -- "$PWD" > "$tmp" && mv -f "$tmp" "$TOOLBOX_RELOAD_MARKER"; } 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null
+        print -u2 -P "%F{yellow}toolbox:%f could not write the reload marker ($TOOLBOX_RELOAD_MARKER) — the session is unchanged."
+        return 1
+    fi
+    print -P "%F{yellow}toolbox:%f reloading — the container is recreated, this shell ends and a new one opens."
+    exit
+}
 
 # -- User customisation (ZSH-08) — survives image rebuilds -------------------
 # ~/.zshrc lives in the image layer and the Dockerfile truncates it on every

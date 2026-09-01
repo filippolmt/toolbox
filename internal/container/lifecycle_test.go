@@ -40,7 +40,19 @@ type mockClient struct {
 	volCreateFn   func(ctx context.Context, opts client.VolumeCreateOptions) (client.VolumeCreateResult, error)
 	volRemoveFn   func(ctx context.Context, name string, opts client.VolumeRemoveOptions) error
 	waitFn        func(ctx context.Context, id string, opts client.ContainerWaitOptions) (int64, error)
+	topFn         func(ctx context.Context, id string) (client.ContainerTopResult, error)
+
+	// calls is an ordered log of the daemon calls whose *sequence* is a
+	// contract, not just their presence: the reload has to prove the image is
+	// usable before it destroys anything, and has to see the old container
+	// removed before it asks for the name back. Appended by the methods below
+	// rather than by every method, so the log stays readable.
+	calls []string
 }
+
+// record appends to the ordered call log. Named rather than inlined so a
+// method that starts recording cannot forget the argument.
+func (m *mockClient) record(call string) { m.calls = append(m.calls, call) }
 
 func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	if m.inspectFn != nil {
@@ -51,6 +63,7 @@ func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.C
 }
 
 func (m *mockClient) ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
+	m.record("ContainerCreate")
 	if m.createFn != nil {
 		resp, err := m.createFn(ctx, options.Config, options.HostConfig, options.Name)
 		return client.ContainerCreateResult{ID: resp.ID, Warnings: resp.Warnings}, err
@@ -73,6 +86,7 @@ func (m *mockClient) ContainerStop(ctx context.Context, id string, opts client.C
 }
 
 func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+	m.record("ContainerRemove")
 	if m.removeFn != nil {
 		return client.ContainerRemoveResult{}, m.removeFn(ctx, id, opts)
 	}
@@ -80,6 +94,7 @@ func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts client
 }
 
 func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
+	m.record("ImageInspect")
 	if m.imgInspFn != nil {
 		return m.imgInspFn(ctx, id)
 	}
@@ -141,6 +156,7 @@ func (m *mockClient) VolumeRemove(ctx context.Context, name string, opts client.
 // ContainerWait defaults to a clean exit, delivered on a buffered channel so
 // the caller reads it whether it subscribes before or after this returns.
 func (m *mockClient) ContainerWait(ctx context.Context, id string, opts client.ContainerWaitOptions) client.ContainerWaitResult {
+	m.record("ContainerWait")
 	code, err := int64(0), error(nil)
 	if m.waitFn != nil {
 		code, err = m.waitFn(ctx, id, opts)
@@ -153,6 +169,18 @@ func (m *mockClient) ContainerWait(ctx context.Context, id string, opts client.C
 	resCh := make(chan container.WaitResponse, 1)
 	resCh <- container.WaitResponse{StatusCode: code}
 	return client.ContainerWaitResult{Result: resCh}
+}
+
+// ContainerTop is the reload's one look at what it is about to kill. It
+// defaults to the empty result rather than panicking: the enumeration is
+// informational and best-effort, so every pre-existing test that now reaches
+// it must keep passing without saying anything about processes.
+func (m *mockClient) ContainerTop(ctx context.Context, id string, _ client.ContainerTopOptions) (client.ContainerTopResult, error) {
+	m.record("ContainerTop")
+	if m.topFn != nil {
+		return m.topFn(ctx, id)
+	}
+	return client.ContainerTopResult{}, nil
 }
 
 func (m *mockClient) Close() error { return nil }
@@ -302,7 +330,7 @@ func TestShellContainerNaming(t *testing.T) {
 				},
 			}
 
-			if err := Shell(context.Background(), mock, testPlan(t, tc.workspace, nil)); err != nil {
+			if _, err := Shell(context.Background(), mock, testPlan(t, tc.workspace, nil)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			tc.assertName(t, capturedName)
@@ -337,7 +365,7 @@ func TestShellContainerNaming(t *testing.T) {
 				return container.CreateResponse{ID: "x"}, nil
 			},
 		}
-		if err := Shell(context.Background(), mock, testPlan(t, "/Users/alice/project/toolbox", nil)); err != nil {
+		if _, err := Shell(context.Background(), mock, testPlan(t, "/Users/alice/project/toolbox", nil)); err != nil {
 			t.Fatalf("Shell() error on rerun: %v", err)
 		}
 		if second != firstAlice {
@@ -365,7 +393,7 @@ func TestShellExecInRunningContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, ws, nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, ws, nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -395,7 +423,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -433,7 +461,7 @@ func TestShellAbortsWhenStartFails(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err == nil {
 		t.Fatal("Shell() should fail when ContainerStart fails")
 	}
@@ -482,7 +510,7 @@ func TestShellCreatesNewContainer(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, ws, nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, ws, nil))
 	if err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
@@ -538,7 +566,7 @@ func TestShellSetsCodexSecurityOptByDefault(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if !slices.Contains(capturedSecurityOpt, "seccomp=unconfined") {
@@ -580,7 +608,7 @@ func TestShellGrantsGroupAddForSockBindTarget(t *testing.T) {
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.Binds = []mountplan.Bind{{Source: "/host/alt-docker.sock", Target: "/var/run/docker.sock", Mode: "rw"}}
 
-	if err := Shell(context.Background(), mock, plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if !slices.Contains(capturedGroupAdd, "0") {
@@ -616,7 +644,7 @@ func TestShellMirrorsWorkspaceAtHostPath(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -659,7 +687,7 @@ func TestShellSkipsMirrorForReservedPath(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -693,7 +721,7 @@ func TestShellErrorOnMissingImage(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err == nil {
 		t.Fatal("Shell() should have returned error for missing image")
 	}
@@ -727,7 +755,7 @@ func TestShellSurvivesPullFailureWhenImageLocal(t *testing.T) {
 		},
 	}
 
-	err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
+	_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err != nil {
 		t.Fatalf("Shell() should not error when pull fails but local image exists, got: %v", err)
 	}
@@ -851,7 +879,7 @@ func TestShellSetsHostWorkspaceEnv(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, ws, nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -896,7 +924,7 @@ func TestShellSkipsStopWhenSiblingExecRunning(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if stopCalled {
@@ -929,7 +957,7 @@ func TestShellStopsWhenNoSiblingExecs(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if !stopCalled {
@@ -1002,7 +1030,7 @@ func TestShellPublishPopulatesBindings(t *testing.T) {
 				},
 			}
 
-			if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs)); err != nil {
+			if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			if capturedCfg == nil || capturedHost == nil {
@@ -1124,7 +1152,7 @@ func TestShellPortConflictFailsBeforeCreate(t *testing.T) {
 				},
 			}
 
-			err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs))
+			_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), tc.specs))
 			if tc.wantCreate {
 				if err != nil {
 					t.Fatalf("Shell() error: %v", err)
@@ -1205,7 +1233,7 @@ func TestShellPublishEmptyYieldsNoBindings(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if capturedCfg == nil || capturedHost == nil {
@@ -1269,7 +1297,7 @@ func TestShellInspectZeroValueResponse(t *testing.T) {
 	publish := []string{"127.0.0.1:8080:8080"}
 
 	captured := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, testPlan(t, ws, publish)); err != nil {
+		if _, err := Shell(context.Background(), mock, testPlan(t, ws, publish)); err != nil {
 			t.Fatalf("Shell returned error: %v", err)
 		}
 	})
@@ -1329,7 +1357,7 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 
 			cfg := &config.Config{Shell: tc.shell}
 
-			if err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
+			if _, err := Shell(context.Background(), mock, testPlanWithCfg(t, cfg, testWorkspace(t), nil)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			if !*called {

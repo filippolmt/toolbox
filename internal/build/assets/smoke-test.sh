@@ -223,19 +223,26 @@ check_zsh() {
         [ "$result" = "h: function" ]
     }
 
-    # q. update banner (update-notification). zshrc.sh is the only renderer of
+    # q. update banner (session-reload). zshrc.sh is the only renderer of
     # the host-written update-check cache, and it has no Go coverage at all —
     # its behaviour is provable only here. Drive the precmd hook directly:
     # zsh -i -c never draws a prompt, so the hook would not fire on its own.
     # Each state seeds the cache and clears the shown-signature, because the
     # renderer prints once per distinct result. No apostrophes or single
     # quotes below — this body lives inside a single-quoted bash -c.
+    # $2, when given, is exported as TOOLBOX_RELOAD_MARKER: its presence is how
+    # the renderer decides between advising the reload and advising the old
+    # exit-and-reopen, so both halves have to be drivable from here.
     _zsh_banner_render() {
         local d=/home/toolbox/.toolbox-state
         mkdir -p "$d" || return 1
         printf "%s" "$1" > "$d/update-check" || return 1
         rm -f "$d/update-check.shown"
-        zsh -i -c "_toolbox_update_precmd" 2>/dev/null
+        if [ -n "${2:-}" ]; then
+            TOOLBOX_RELOAD_MARKER="$2" zsh -i -c "_toolbox_update_precmd" 2>/dev/null
+        else
+            env -u TOOLBOX_RELOAD_MARKER zsh -i -c "_toolbox_update_precmd" 2>/dev/null
+        fi
     }
     _zsh_banner_cleanup() {
         rm -f /home/toolbox/.toolbox-state/update-check \
@@ -255,8 +262,34 @@ cli_latest=
         test -z "$out" || { echo "    expected silence, got: $out"; return 1; }
     }
 
-    # q2. The bytes landed and this session predates them.
+    # q2. The bytes landed and this session predates them. The banner states a
+    # fact and names the command; it must NOT prescribe an exit, and it must
+    # name the cost once, because the reload asks for no confirmation.
     _zsh_banner_ready_check() {
+        out=$(_zsh_banner_render "image_update=1
+image_latest=sha256:bbb
+image_state=ready
+cli_update=0
+cli_latest=
+" /home/toolbox/.toolbox-state/reload.toolbox-smoke)
+        _zsh_banner_cleanup
+        case "$out" in *"newer runtime image is downloaded"*) ;; *)
+            echo "    got: $out"; return 1 ;;
+        esac
+        case "$out" in *toolbox-reload*) ;; *)
+            echo "    banner does not name toolbox-reload: $out"; return 1 ;;
+        esac
+        case "$out" in *"recreates the container"*) ;; *)
+            echo "    banner does not state the cost: $out"; return 1 ;;
+        esac
+        case "$out" in *agent*) echo "    banner promises something about the agent: $out"; return 1 ;; esac
+    }
+
+    # q2b. Without the capability marker the CLI is older than the command, so
+    # advising the reload would advise a refusal. The pre-reload wording is
+    # still true there — this is the half that regresses silently once the new
+    # copy exists.
+    _zsh_banner_ready_old_cli_check() {
         out=$(_zsh_banner_render "image_update=1
 image_latest=sha256:bbb
 image_state=ready
@@ -264,8 +297,28 @@ cli_update=0
 cli_latest=
 ")
         _zsh_banner_cleanup
-        case "$out" in *"newer runtime image is downloaded"*) return 0 ;; esac
+        case "$out" in *toolbox-reload*) echo "    advises a command this CLI lacks: $out"; return 1 ;; esac
+        case "$out" in *"toolbox stop"*) return 0 ;; esac
         echo "    got: $out"; return 1
+    }
+
+    # q2c. One reload covers both axes, so both-axes is ONE line, and the brew
+    # upgrade comes first: the reload re-execs the binary on disk, which is
+    # what makes the chain work. Two lines here would read as two choices.
+    _zsh_banner_both_axes_check() {
+        out=$(_zsh_banner_render "image_update=1
+image_latest=sha256:bbb
+image_state=ready
+cli_update=1
+cli_latest=v9.9.9
+" /home/toolbox/.toolbox-state/reload.toolbox-smoke)
+        _zsh_banner_cleanup
+        lines=$(printf "%s" "$out" | grep -c "toolbox:")
+        [ "$lines" = "1" ] || { echo "    expected one line, got $lines: $out"; return 1; }
+        case "$out" in *"brew upgrade"*) ;; *) echo "    no brew upgrade: $out"; return 1 ;; esac
+        case "$out" in *toolbox-reload*) ;; *) echo "    no toolbox-reload: $out"; return 1 ;; esac
+        case "$out" in *v9.9.9*) return 0 ;; esac
+        echo "    no CLI version: $out"; return 1
     }
 
     # q3. The registry moved and the download keeps failing — the state the
@@ -280,6 +333,22 @@ cli_latest=
         _zsh_banner_cleanup
         case "$out" in *"could not be downloaded"*) return 0 ;; esac
         echo "    got: $out"; return 1
+    }
+
+    # r. toolbox-reload refuses when the host CLI is too old to have injected
+    # TOOLBOX_RELOAD_MARKER. Both halves matter and only one is obvious: the
+    # refusal text, and that the shell SURVIVES it. A guard that printed and
+    # then exited would reproduce half the harm it exists to prevent — spending
+    # the session for nothing — and that half regresses silently, so the probe
+    # runs a second command and asserts its output arrives.
+    _zsh_reload_refusal_check() {
+        out=$(env -u TOOLBOX_RELOAD_MARKER TOOLBOX_CLI_VERSION=v0.0.0-test \
+              zsh -i -c "toolbox-reload; print STILL_ALIVE" 2>&1)
+        case "$out" in *"does not support reload"*) ;; *)
+            echo "    no refusal in: $out"; return 1 ;;
+        esac
+        case "$out" in *STILL_ALIVE*) return 0 ;; esac
+        echo "    refusal ended the shell: $out"; return 1
     }
 
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
@@ -306,7 +375,10 @@ cli_latest=
     _zsh_assert "zshrc.d user config loader"   _zsh_user_rc_check
     _zsh_assert "update banner silent"         _zsh_banner_none_check
     _zsh_assert "update banner ready"          _zsh_banner_ready_check
+    _zsh_assert "update banner ready, old CLI" _zsh_banner_ready_old_cli_check
+    _zsh_assert "update banner both axes"      _zsh_banner_both_axes_check
     _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
+    _zsh_assert "toolbox-reload refuses without marker" _zsh_reload_refusal_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli

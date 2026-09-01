@@ -53,7 +53,7 @@ func TestShellProximoAugmentsExtraHosts(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, proximoCreatePlan(t, true)); err != nil {
+	if _, err := Shell(context.Background(), mock, proximoCreatePlan(t, true)); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestShellNonProximoSkipsDiscovery(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, proximoCreatePlan(t, false)); err != nil {
+	if _, err := Shell(context.Background(), mock, proximoCreatePlan(t, false)); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if !slices.Equal(capturedHosts, []string{"host.docker.internal:host-gateway"}) {

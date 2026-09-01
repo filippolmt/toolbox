@@ -234,7 +234,7 @@ func StateDirPath(cfg *config.Config, profile *Profile) (string, error) {
 		return "", err
 	}
 	for _, m := range merged {
-		if m.Target == stateMountTarget {
+		if m.Target == StateMountTarget {
 			return filepath.Clean(fsx.ExpandTilde(m.Source, home)), nil
 		}
 	}

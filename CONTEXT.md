@@ -303,7 +303,10 @@ basis — on under `auto` and `always`, off under `never` — and keeps its
 own cadence under both on-states.
 `imageplan.Ensure(ctx, cli, image)` runs inside the `ActionCreate`
 branch and is a hard guarantee: present in the local store → done;
-otherwise fatal, because the pull already had its chance. **`Ensure`
+otherwise fatal, because the pull already had its chance. A
+[Session Reload](#session-reload) calls the same pair a second time and
+earlier — before it destroys anything — which is what turns "no usable
+image" from a spent session into a no-op. **`Ensure`
 never builds** — `toolbox build` is the explicit user-driven path for a
 local rebuild (the auto-build branch died with the local-hash image
 tag). Owned by `internal/imageplan`. `Ensure` is exposed as a
@@ -374,6 +377,89 @@ detection and prefetch into one host-side act is what lets the banner
 state a fact instead of prescribing an exit. Owned by
 `internal/imageprefetch`; the render half stays in `zshrc.sh`, because
 the image owns the words.
+
+### Session Reload
+
+Moving an attached session onto a newer runtime image, on the
+developer's word, without exiting and reopening by hand. Process
+continuity is not preserved; **conversation** continuity is — history,
+agent transcripts and credentials survive because they already sit on
+bind mounts, not because anything copies them.
+
+Concretely, a reload is a **tail call**, not a loop. `container.Shell`
+returns a typed `*reload.From` when the exiting shell left a
+[Reload Marker](#reload-marker), `cmd.runSession` performs the
+`syscall.Exec` behind the `execSelf` var, and each host process still
+handles exactly one attach. The order is the whole safety argument:
+**re-exec first, verify, then destroy.** The riskiest step is therefore
+also the first, when the old session is still alive; `imageplan.Refresh`
++ `Ensure` gate the teardown, so a reload with no usable image leaves
+the developer exactly where they were. The new binary owns the destroy,
+which means a `brew upgrade` landed meanwhile takes effect on the
+teardown policy too, not just on the create.
+
+`TOOLBOX_RELOAD_FROM` is the handover across the exec: one JSON
+variable, consumed and unset by `reload.Take()` before any container env
+is built. Every field is optional with a safe zero value **except the
+container name** — lose that and nothing destroys the old container, the
+next `toolbox shell` resolves the same deterministic name and reuses it,
+and the developer lands silently back on the old image. So an
+unparseable payload is a hard error printing the re-entry command, never
+a degrade. One item is carried deliberately, the working directory
+(`sessionplan.reloadWorkingDir`, validated against the workspace, silent
+fallback); everything else is **re-derived** by a fresh
+`sessionplan.Plan`, so the `TOOLBOX_*` identity is right for the *new*
+image instead of replaying the old one's `PATH` into it.
+
+The reload gates on nothing and confirms nothing. It looks once
+(`ContainerTop`, cgroup-scoped even under the shared peer PID namespace)
+and prints what it killed as part of a before/after summary, because a
+dev server or a watcher is the normal state of a working shell and a
+prompt there would fire on nearly every reload. The summary is not
+cosmetic: the command **always** reloads, including when nothing is
+newer, so it is the only thing distinguishing a successful-but-pointless
+reload from one that failed silently. Sibling attached panes die with
+the container — see [Teardown](#teardown).
+
+Why the term exists: the alternative reading was "auto-update", which
+put the decision on the tool and the surprise on the developer, and
+invited an in-place mutation of the live container that would cover
+barely half the update surface while diverging the container from its
+image digest. Naming the act *reload* puts the moment in the
+developer's hands and keeps one mechanism instead of two. Owned by
+`internal/reload` (the two names and the payload), `internal/container`
+(the destructive half), and `cmd` (the exec).
+
+### Reload Marker
+
+The file an exiting shell writes to ask the host for a
+[Session Reload](#session-reload), and the host-injected variable that
+declares the host is able to read it.
+
+Concretely: `TOOLBOX_RELOAD_MARKER` carries the marker's absolute path
+into the container (`sessionplan.reloadMarkerEnv`, under the state
+mount, named after the container); the `toolbox-reload` zsh function
+writes `$PWD` there atomically and exits; `container.Shell` reads and
+**deletes** it exactly where `execShell` returns, which is where the
+teardown decision was already being made. Deleting on read is what stops
+a marker orphaned by a crashed session from firing later.
+
+Two properties are load-bearing and easy to lose. **Presence is the
+capability**: the image ships on merge and the CLI on tag, so a new
+image can meet an old CLI that would write nothing, notice nothing and
+tear the session down for good — `toolbox-reload` therefore refuses *at
+the prompt, without exiting*, naming no required version because a
+presence marker means the image never learns one. And **the value is a
+path**, not a boolean, because the container cannot build the path: it
+would need the state mount's target, the naming convention and its own
+container name, and the hostname it can read is Docker's short id.
+
+It earns its own entry only because two host-injected names share a
+prefix and point in opposite directions: `TOOLBOX_RELOAD_MARKER` travels
+host → container and never leaves it, `TOOLBOX_RELOAD_FROM` travels
+host → host across the exec and never enters one. Owned by
+`internal/reload`; bound to the shell side by
+`TestReloadMarkerContract`.
 
 ### Invalidation Floor
 
@@ -503,6 +589,13 @@ the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
 must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
 `internal/teardown`. Timing constants `DefaultTimeout` (30s) and
 `DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+
+One caller deliberately does **not** use this policy: a
+[Session Reload](#session-reload) needs an unconditional destroy that
+waits for the removal, because skip-if-sibling would spare a container
+still holding the deterministic name the reload's own create is about
+to ask for. Considerate refusal there turns into a name collision, so
+the reload owns `container.reloadTeardown` instead.
 
 Why the term exists: before this concept was named, the policy was a
 4-deep nested defer block inside `Shell`, with the timing constants as
@@ -771,7 +864,12 @@ Because it outlives every session, an anchor can outlive the spec it was
 created from — and one created before the tini override kept a PID 1 that never
 reaped. `ensureAnchor` therefore replaces an anchor whose entrypoint is not the
 current one, but only when no session holds its namespace: Docker does not
-refuse the removal of an in-use anchor, it kills the sessions on it.
+refuse the removal of an in-use anchor, it kills the sessions on it. That
+replacement is **load-bearing for the [Session Reload](#session-reload)**, not
+merely tidy: the reload destroys before it creates, so it is the one moment a
+single-session developer stops holding the anchor — and a legacy anchor's
+failure mode there is not accumulated zombies but the loss of every sibling
+session, which the reload turns from occasional into routine.
 
 Rationale and rejected options:
 `docs/adr/0003-cross-container-peer-messaging.md`.

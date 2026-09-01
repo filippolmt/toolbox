@@ -106,7 +106,7 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 	}
 
 	plan := peerPlan(t, testWorkspace(t))
-	if err := Shell(context.Background(), mock, plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -210,7 +210,7 @@ func TestShellPeerSocketVolumeFailureDegrades(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -262,7 +262,7 @@ func TestShellPeerReusesRunningAnchor(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -310,7 +310,7 @@ func TestShellPeerReattachMismatchWarns(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, plan); err != nil {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -372,7 +372,7 @@ func TestShellPeerReattachMatchingPidModeIsSilent(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, plan); err != nil {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -418,7 +418,7 @@ func TestShellReattachUnwantedNamespaceWarns(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, plan); err != nil {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -534,7 +534,7 @@ func TestShellPeerReattachWithoutSocketVolumeWarns(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, plan); err != nil {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -589,7 +589,7 @@ func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if createdVolume != mountplan.PeerSocketVolumeName {
@@ -626,7 +626,7 @@ func TestShellPeerAnchorReapsOrphans(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+	if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if anchorCfg == nil {
@@ -707,7 +707,7 @@ func TestShellPeerReplacesUnusedStaleAnchor(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+	if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if len(removed) != 1 || removed[0] != anchorID {
@@ -762,7 +762,7 @@ func TestShellPeerKeepsHeldStaleAnchor(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -808,7 +808,7 @@ func TestShellPeerReplacesStoppedStaleAnchor(t *testing.T) {
 
 	// listFn is deliberately unset: reaching ContainerList here fails the test
 	// with "not mocked" rather than silently taking the warn-and-keep branch.
-	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+	if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if len(removed) != 1 || removed[0] != anchorID {
@@ -851,7 +851,7 @@ func TestShellPeerKeepsStaleAnchorWhenHoldersUnknown(t *testing.T) {
 	}
 
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})
@@ -927,7 +927,7 @@ func TestShellPeerKeepsStaleAnchorWhenHolderCannotBeRuledOut(t *testing.T) {
 			}
 
 			out := captureStderr(t, func() {
-				if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+				if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
 					t.Fatalf("Shell: %v", err)
 				}
 			})
@@ -978,7 +978,7 @@ func TestShellPeerKeepsPeerMessagingWhenReplacementFails(t *testing.T) {
 
 	plan := peerPlan(t, testWorkspace(t))
 	out := captureStderr(t, func() {
-		if err := Shell(context.Background(), mock, plan); err != nil {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
 			t.Fatalf("Shell: %v", err)
 		}
 	})

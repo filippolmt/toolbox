@@ -69,6 +69,14 @@ equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
+	// Consumed and unset before anything builds a container env, so the
+	// host-to-host handover never reaches a container. Nil on an ordinary
+	// shell start; unreadable is a hard error, never a silent degrade.
+	reloadFrom, err := takeReloadHandover()
+	if err != nil {
+		return err
+	}
+
 	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
 	// fails fast before any fs side effects or container creation.
 	publish, bridgeLoopback, err := expandShellOAuth(shellPublish, shellBridgeLoopback, shellOAuth)
@@ -116,7 +124,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// created from — the baseline the update prefetch compares the local image
 	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
-	// the env entry. See update-notification.
+	// the env entry. See session-reload.
 	imageDigest := resolveImageDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 
 	// Plan after the Docker client is constructed so a failed client init
@@ -134,6 +142,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		Name:           shellName,
 		Profile:        profile,
 		Peer:           resolvePeer(cmd, cfg.PeerMessaging, shellPeer),
+		ReloadFrom:     reloadFrom,
 	})
 	if err != nil {
 		return err
@@ -144,7 +153,10 @@ func runShell(cmd *cobra.Command, args []string) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return container.Shell(ctx, cli, plan)
+	// A plain shell's re-entry form is its own invocation: `toolbox shell` and
+	// `toolbox shell <name>` are both idempotent and promptless, so there is
+	// nothing to normalise away — unlike `worktree create`.
+	return runSession(ctx, cli, plan, append([]string{"shell"}, args...))
 }
 
 // resolveImageDigest returns the resolved repo digest (`sha256:...`) of the

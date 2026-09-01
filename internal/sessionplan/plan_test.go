@@ -17,6 +17,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
 )
@@ -90,8 +91,11 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	if named.ContainerName == plain.ContainerName {
 		t.Errorf("named and workspace container names collided: %q", named.ContainerName)
 	}
-	// Only the container name differs; the rest of the plan matches.
+	// Only the container name differs — and the reload marker, which is named
+	// after it on purpose: two sessions on one workspace must not share the
+	// file that says "this one asked to reload".
 	named.ContainerName = plain.ContainerName
+	named.Env = plain.Env
 	if !reflect.DeepEqual(named, plain) {
 		t.Errorf("named plan diverges beyond ContainerName:\n named=%+v\n plain=%+v", named, plain)
 	}
@@ -338,6 +342,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
 		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
@@ -499,6 +504,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
 		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
 		"ZED=z",
