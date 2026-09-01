@@ -695,8 +695,11 @@ joins: `toolbox-peer-anchor`, named by `sessionplan.PeerAnchorContainerName`.
 It is not a shell — nothing runs a workspace in it, and its only job is to give
 the namespace a stable owner.
 
-Concretely: the runtime image with its entrypoint overridden to `sleep
-infinity`, `AutoRemove: false`, created lazily by `container.ensureAnchor` on
+Concretely: the runtime image with its entrypoint overridden past the image's
+shell-start init but **not** past tini — `tini -g -- sleep infinity`, because
+the anchor's PID 1 is PID 1 for every session that joins the namespace and
+reaping orphans is PID 1's job — `AutoRemove: false`, created lazily by
+`container.ensureAnchor` on
 the first participating shell — with `peer_messaging` defaulting to true, that
 is effectively the first shell opened (it reuses `runplan.Compute` for the same
 connect / start / create branch the session container takes). Participating

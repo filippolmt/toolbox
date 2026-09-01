@@ -695,6 +695,17 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // hex gibberish. The workspace slug (same rule as the container name)
 // gives readable session names that match `docker ps` output.
 //
+// HERDR_SESSION names herdr's persistent session per workspace. ~/.config/herdr
+// is one host-global bind (mountplan defaults, "herdr") and herdr persists its
+// workspace list there with absolute cwds, then ignores the startup cwd whenever
+// the restored session already has workspaces. Unnamed, every container would
+// therefore reopen whatever another project saved last — a path this container
+// does not mount, which herdr answers by silently falling back to $HOME, so the
+// shell lands on /home/toolbox. ContainerNameFor with an empty discriminator is
+// the plain workspace identity (slug + path hash, the sddEnv sentinel form):
+// derived from the workspace alone, so a --peer or --profile change, which forks
+// the container name over the same mounted workspace, keeps the session.
+//
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
@@ -703,6 +714,7 @@ func shellEnv(workspace, workingDir string, sddCfg map[string]config.SDDSkill) [
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
+		"HERDR_SESSION=" + ContainerNameFor(workspace, ""),
 	}
 	env = append(env, sddEnv(workspace, sddCfg)...)
 	return env

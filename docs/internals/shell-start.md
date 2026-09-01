@@ -79,7 +79,23 @@ This is unrelated to the global `playwright` browser-cache sync in the [same scr
 
 ## Skill discovery paths diverge between Claude and Codex
 
-Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Reference: `internal/build/assets/init.d/60-glab.sh` runs `glab skills install --path ~/.claude/skills --force` for Claude and `glab skills install --global --force` for Codex, gated on the respective binaries.
+Claude Code reads only `~/.claude/skills/<name>/SKILL.md` (per docs.claude.com); Codex CLI reads only `~/.agents/skills/<name>/SKILL.md` (Agent Skills USER scope per agentskills.io). Despite the shared "Agent Skills" branding, the two locations are NOT mutually compatible. CLI wrappers that ship a SKILL.md need a dual-install pass to be visible in both agents. Two scripts do it, differently:
+
+- `internal/build/assets/init.d/60-glab.sh` delegates: `glab skills install --path ~/.claude/skills --force` for Claude, `glab skills install --global --force` for Codex, gated on the respective binaries.
+- `internal/build/assets/init.d/61-herdr.sh` writes the file itself, from `herdr --skill` — the binary prints its own version-matched SKILL.md, so there is no package to pin and no network call.
+
+Two traps the second script exists to document. Roots come from `CLAUDE_CONFIG_DIR` / `CODEX_HOME` with the `~` fallback, never a bare `$HOME` path: the Dockerfile sets both and the tools honour them, so probing `$HOME/.claude` directly can skip an install that would have landed. And **`~/.agents` is container-local** — unlike `~/.claude` it is no bind mount — so it must be created, never gated on: init.d scripts run backgrounded in parallel, and gating leaves the Codex skill landing or not depending on whether 60-glab.sh happened to create the directory first. `TestHerdrInitInstallsBothSkillPaths` holds both.
+
+`herdr integration install claude` additionally registers its hook in `~/.claude/settings.json`, which makes 61-herdr.sh the fourth concurrent writer of that file alongside 10-rtk.sh, 35-statusline.sh and 65-atuin.sh — hence the shared `.claude-settings.lock` (`TestHerdrInitLocksClaudeSettings`).
+
+## herdr session per workspace
+
+`sessionplan.shellEnv` emits `HERDR_SESSION=ContainerNameFor(workspace, "")`, and the reason is a mount: `~/.config/herdr` is bound from the host-global `~/.toolbox/herdr/config`, so a single herdr session state is shared by **every** toolbox container. herdr persists its workspace list there with absolute cwds and, on restore, ignores the startup cwd — its log says so verbatim: `restored session already has workspaces; ignoring startup cwd`. Unnamed, a container therefore reopens whatever project saved last; that path is not mounted here, and herdr answers a missing cwd by silently falling back to `$HOME`. The symptom is a shell that opens on `/home/toolbox` with the workspace labelled `~`, the only visible entry being the `~/go` mount.
+
+The discriminator is deliberately empty, which makes the value the plain workspace identity (slug + path hash). A `--peer` or `--profile` change forks the container name over the same mounted workspace, and the session survives it. The flip side: a named shell pointed at the same path as a workspace session shares that session — two containers, one saved layout. Deliberate, and not the failure above: both mount that path, so every restored cwd stays valid.
+
+Env is fixed at `ContainerCreate`, so a pre-existing container needs a `toolbox stop` before it sees the variable, and the pre-fix unnamed `session.json` stays on disk, orphaned (`herdr --session ''` still reaches it).
+
 
 ## GitLab git credential helper (glab)
 

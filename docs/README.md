@@ -144,6 +144,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Image selection mechanics](internals/container-lifecycle.md#image-selection-mechanics)
 - [Codex nested sandbox](internals/container-lifecycle.md#codex-nested-sandbox)
 - [Container teardown](internals/container-lifecycle.md#container-teardown)
+- [Peer anchor reaping](internals/container-lifecycle.md#peer-anchor-reaping)
 
 ### [internals/shell-start.md](internals/shell-start.md)
 
@@ -158,6 +159,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Per-repo code-graph skills: graphify and codegraph](internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 - [Per-repo playwright-cli skill](internals/shell-start.md#per-repo-playwright-cli-skill)
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
+- [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
 - [Workspace safe.directory ("dubious ownership")](internals/shell-start.md#workspace-safedirectory-dubious-ownership)
 

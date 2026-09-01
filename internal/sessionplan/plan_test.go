@@ -332,6 +332,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + filepath.Base(workspace),
+		"HERDR_SESSION=" + sessionplan.ContainerNameFor(workspace, ""),
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
@@ -492,6 +493,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + plan.WorkingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=ws",
+		"HERDR_SESSION=" + sessionplan.ContainerNameFor(workspace, ""),
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
@@ -1013,4 +1015,59 @@ func indexEnv(env []string) map[string]string {
 func mkdirAll(t *testing.T, path string) error {
 	t.Helper()
 	return os.MkdirAll(path, 0o755)
+}
+
+// TestPlanScopesHerdrSessionToWorkspace pins the fix for herdr reopening
+// another project's directory — or, when that path is not mounted here,
+// falling back to $HOME so the shell lands on /home/toolbox.
+//
+// ~/.config/herdr is one host-global bind (mountplan defaults, "herdr") and
+// herdr persists its workspace list, cwds included, there. On restore it
+// ignores the startup cwd ("restored session already has workspaces"), so
+// without a per-workspace session name every container reopens whatever
+// workspace another project saved last.
+//
+// Two invariants: distinct workspaces never share a session name (basename
+// collisions included — the workspace hash is what separates them), and the
+// name is derived from the workspace alone, so a --profile or --peer change,
+// which forks the container name over the same workspace, keeps the session.
+func TestPlanScopesHerdrSessionToWorkspace(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	herdrSession := func(t *testing.T, workspace string, profile *mountplan.Profile) string {
+		t.Helper()
+		if err := mkdirAll(t, workspace); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{
+			Cfg: testConfig(), Workspace: workspace, Profile: profile,
+		})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		for _, e := range plan.Env {
+			if v, ok := strings.CutPrefix(e, "HERDR_SESSION="); ok {
+				return v
+			}
+		}
+		t.Fatalf("Env = %v, want a HERDR_SESSION entry", plan.Env)
+		return ""
+	}
+
+	// Same basename, different workspaces — the collision `workspaceSlug`
+	// alone would not survive.
+	a := herdrSession(t, filepath.Join(tmpHome, "one", "api"), nil)
+	b := herdrSession(t, filepath.Join(tmpHome, "two", "api"), nil)
+	if a == b {
+		t.Errorf("HERDR_SESSION = %q for both workspaces, want distinct", a)
+	}
+
+	profile, err := mountplan.NewProfile("work", nil)
+	if err != nil {
+		t.Fatalf("NewProfile: %v", err)
+	}
+	if got := herdrSession(t, filepath.Join(tmpHome, "one", "api"), profile); got != a {
+		t.Errorf("HERDR_SESSION under --profile = %q, want %q (workspace identity only)", got, a)
+	}
 }

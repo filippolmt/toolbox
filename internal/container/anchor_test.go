@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/mountplan"
@@ -541,5 +542,81 @@ func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
 	}
 	if createdVolume != mountplan.PeerSocketVolumeName {
 		t.Errorf("created volume %q, want %q re-initialised before the container starts", createdVolume, mountplan.PeerSocketVolumeName)
+	}
+}
+
+// TestShellPeerAnchorReapsOrphans asserts the anchor runs tini as its PID 1.
+//
+// The anchor owns the PID namespace every opted-in session joins, so its PID 1
+// is PID 1 for all of them — and reaping orphans is PID 1's job. A bare `sleep`
+// never calls wait(), and the image's own tini is not PID 1 in a joined
+// namespace (nor a subreaper: the ENTRYPOINT carries no -s), so every process
+// reparented after its parent exits stays a zombie for the anchor's lifetime,
+// one PID slot each, across every shell that ever shared it.
+func TestShellPeerAnchorReapsOrphans(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	var anchorCfg *container.Config
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name == sessionplan.PeerAnchorContainerName {
+				anchorCfg = cfg
+			}
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if anchorCfg == nil {
+		t.Fatal("anchor was never created")
+	}
+	if len(anchorCfg.Entrypoint) == 0 || anchorCfg.Entrypoint[0] != tiniPath {
+		t.Errorf("anchor Entrypoint = %v, want %s first so PID 1 reaps orphans", anchorCfg.Entrypoint, tiniPath)
+	}
+}
+
+// TestAnchorInitMatchesImageEntrypoint pins the anchor's init against the
+// image's own, across a language boundary Go cannot type-check.
+//
+// tiniPath and the "-g" flag are a second spelling of the Dockerfile's
+// ENTRYPOINT. Nothing links the two, so relocating tini in the image — or
+// dropping -g there — would leave this package handing ContainerCreate a path
+// that no longer exists: the anchor would fail to start and every opted-in
+// session would degrade to no peer messaging, with the Dockerfile change
+// looking innocent. Read from the embedded build context, which is the same
+// Dockerfile `toolbox build` ships.
+func TestAnchorInitMatchesImageEntrypoint(t *testing.T) {
+	dockerfile, err := build.Assets.ReadFile("assets/Dockerfile")
+	if err != nil {
+		t.Fatalf("read embedded Dockerfile: %v", err)
+	}
+
+	var entrypoint string
+	for _, line := range strings.Split(string(dockerfile), "\n") {
+		if strings.HasPrefix(line, "ENTRYPOINT ") {
+			entrypoint = line
+		}
+	}
+	if entrypoint == "" {
+		t.Fatal("embedded Dockerfile declares no ENTRYPOINT")
+	}
+
+	// The anchor overrides the init's payload (sleep, not the shell-start
+	// entrypoint) but must keep the init itself, and -g with it: -g is what
+	// forwards a signal to the whole process group.
+	for _, want := range []string{`"` + tiniPath + `"`, `"-g"`} {
+		if !strings.Contains(entrypoint, want) {
+			t.Errorf("Dockerfile ENTRYPOINT = %s, want it to carry %s (anchor.go spells it separately)", entrypoint, want)
+		}
 	}
 }
