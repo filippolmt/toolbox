@@ -210,3 +210,33 @@ func OverlayDockerfilePath(cfg *config.Config, profile *Profile) (string, error)
 	}
 	return filepath.Clean(fsx.ExpandTilde(mountsRootJoin(root, "Dockerfile"), home)), nil
 }
+
+// StateDirPath returns the resolved host path of the toolbox state mount —
+// the directory the container sees as ~/.toolbox-state. Resolved through
+// Merge rather than re-derived, so a mounts_root retarget, a profile root, a
+// `--share state` carve-out and a user `mounts:` patch all land here the same
+// way they land on the bind itself. The lookup keys on the container *target*,
+// not the mount name: the name is the user's to change, the target is what
+// makes host and container agree on one directory. Returns "" when nothing
+// mounts there any more, which callers read as "no shared state to write" —
+// better than handing them a path the container cannot see.
+//
+// The mount source is needed as a *path* (not a bind) by the host-side update
+// prefetch, which writes the cache the in-container prompt hook reads: the
+// two ends must address the same directory or the banner never fires.
+func StateDirPath(cfg *config.Config, profile *Profile) (string, error) {
+	home, err := fsx.Home()
+	if err != nil {
+		return "", err
+	}
+	merged, err := Merge(cfg, profile)
+	if err != nil {
+		return "", err
+	}
+	for _, m := range merged {
+		if m.Target == stateMountTarget {
+			return filepath.Clean(fsx.ExpandTilde(m.Source, home)), nil
+		}
+	}
+	return "", nil
+}

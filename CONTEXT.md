@@ -296,7 +296,11 @@ Concretely: `imageplan.Refresh(ctx, cli, image)` runs at the top of
 `container.Shell` and best-effort syncs the image against its registry,
 steered by the Image's pull policy — `never` skips the round-trip,
 `always` forces `imagepull.ForcePull`, `auto` (default) goes through
-the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed.
+the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed. That
+policy steers the **synchronous** refresh only: the background
+[Image Prefetch](#image-prefetch) reads the same key on a two-state
+basis — on under `auto` and `always`, off under `never` — and keeps its
+own cadence under both on-states.
 `imageplan.Ensure(ctx, cli, image)` runs inside the `ActionCreate`
 branch and is a hard guarantee: present in the local store → done;
 otherwise fatal, because the pull already had its chance. **`Ensure`
@@ -316,6 +320,60 @@ in the inline call). Tests of code that exercised the not-found branch
 redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 create-branch guarantee into a single var inside `imageplan`.
+
+### Image Prefetch
+
+The single host-side detector that answers "is there a newer runtime
+image or CLI, and are its bytes already here?" for as long as a shell is
+attached — and downloads them when they are not. The separation it names is
+*when the bytes arrive* from *when a session moves onto them*, which is the
+design rather than an implementation detail.
+
+Concretely: `imageprefetch.Start(ctx, cli, Input{Ref, ContainerDigest,
+StateDir})`, launched from `container.Shell` behind the `startPrefetch`
+var and cancelled with the session. Its ticker is only an **alarm**: the
+"poll now?" decision is a `stat` on an attempt stamp
+(`<state>/update-check.stamp`), so the cadence lives on the state mount,
+is shared across sibling sessions, and would survive a re-exec of the
+host CLI for free. One poll is probe → prefetch → publish:
+`DistributionInspect` resolves the remote digest through the daemon
+(so a `registry_mirror` is honoured and no registry HTTP lives in this
+repo), `ImagePull` drained with `ImagePullResponse.Wait` fetches it when
+the local store's `RepoDigests` entry differs, and the result is written
+to `<state>/update-check` — the cache the in-container zsh `precmd` hook
+has always rendered. Everything is silent: the host process's stdout is
+the attached tty. The cache contract is **additive**: `image_state`
+(`none|ready|unavailable`) is written *alongside* a retained
+`image_update`, so an image predating the field still renders its own
+true sentence instead of going quiet. `unavailable` is earned, not
+reported on sight — a first-failure timestamp beside the attempt stamp
+must be a full cadence old before the word is used, because one failed
+download is a dropped connection and not a broken registry.
+
+**Two comparisons, not one.** *Remote vs local store* decides whether to
+pull; *local store vs the digest the container was created from* decides
+whether the session is behind, which is the fact the banner states. They
+diverge exactly at the moment that matters — right after a successful
+prefetch the first says no and the second says yes. The second baseline
+is read off the running container (`sessionplan.ImageDigestEnv`), never
+recomputed, so it stays true on the connect path. Two refusals: `pull:
+never` silences probe, prefetch and banner as one act (a probe talks to
+the registry), and the prefetch abstains while the resolved ref has no
+repo digest — the fingerprint of a local `toolbox build`, so an explicit
+act by the developer is never undone by an automatic one.
+
+Why the term exists: detection used to be a baked helper
+(`bin/toolbox-update-check`) polling GHCR with `curl` from inside the
+container, while only the host could act on what it found. Two
+detectors over two transports could disagree with nobody to reconcile
+them, the in-container one was `precmd`-driven so a shell left at a
+prompt never re-polled — the multi-day session, which is the case that
+matters — and it could not know whether the bytes had landed, because it
+spoke to a registry and not to the local content store. Collapsing
+detection and prefetch into one host-side act is what lets the banner
+state a fact instead of prescribing an exit. Owned by
+`internal/imageprefetch`; the render half stays in `zshrc.sh`, because
+the image owns the words.
 
 ### Invalidation Floor
 

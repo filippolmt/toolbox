@@ -74,6 +74,13 @@ type SessionPlan struct {
 	// container edge (localimage.Ensure) passes through unchanged when the
 	// file is absent and only builds the derived `:local` image when present.
 	OverlayDockerfile string
+	// StateDir is the resolved host source of the toolbox state mount — the
+	// directory the container sees as ~/.toolbox-state (mounts_root- and
+	// profile-aware, same resolution as OverlayDockerfile). The container edge
+	// hands it to the update prefetch, which writes the cache the in-container
+	// prompt hook reads back through the bind. Empty when the mount was
+	// removed from the plan, which turns the prefetch off.
+	StateDir string
 	// Proximo mirrors cfg.Proximo. When true, the container edge augments
 	// ExtraHosts with the proximo-routed hostnames discovered from running
 	// containers (pinned to host-gateway) just before ContainerCreate — that
@@ -103,8 +110,8 @@ type PlanInput struct {
 	// supplied host-side by the caller (it needs the Docker client, which the
 	// pure planner does not hold). Empty when unresolvable — e.g. a locally
 	// built untagged image; the identity injection then omits the digest entry
-	// so the in-container poller skips the image check rather than treating an
-	// empty value as a stale digest. See update-notification.
+	// so a reader skips the image comparison rather than treating an empty
+	// value as a stale digest. See update-notification.
 	ImageDigest string
 
 	// Name is the named shell exactly as the user typed it, empty for workspace
@@ -236,6 +243,12 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
+	// Host path of the state mount, for the host-side update prefetch.
+	stateDir, err := mountplan.StateDirPath(in.Cfg, in.Profile)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SessionPlan{
 		Image:             Image{Ref: ref, PullPolicy: in.Cfg.Pull},
 		Binds:             mp.Binds,
@@ -250,6 +263,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
+		StateDir:          stateDir,
 		Proximo:           proximo.Enabled(in.Cfg),
 		PidMode:           peerPidMode(in.Peer),
 	}, nil
@@ -353,17 +367,85 @@ func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, 
 	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
 }
 
-// identityEnv emits the self-identification env that lets the in-container
-// update poller compare the running toolbox against published releases:
-// TOOLBOX_CLI_VERSION (always, from the host CLI build) and
-// TOOLBOX_IMAGE_DIGEST (only when the host resolved a repo digest). The
-// digest entry is omitted — not emitted empty — when unresolvable so the
-// poller skips the image check instead of reading an empty value as a stale
-// digest and reporting a bogus "update available". See update-notification.
+// ImageDigestEnv names the container's record of the image it was created
+// from. Exported because the container edge reads it back off a running
+// container to answer "is this session behind the local store?" — the pair of
+// writer and reader is the seam, and a literal on each side would drift.
+const ImageDigestEnv = "TOOLBOX_IMAGE_DIGEST"
+
+// cliVersionEnv records which host CLI created the container. It lost its
+// only consumer when the in-container update poller was retired in favour of
+// a host-side detector — the host *is* the CLI, so it needs no injection — and
+// is kept anyway: one env entry is cheap, and a container that cannot say
+// which CLI created it is worse to debug.
+const cliVersionEnv = "TOOLBOX_CLI_VERSION"
+
+// NoUpdateCheckEnv opts a session out of the update banner. One name, read on
+// both sides of the bind mount since detection moved host-side: the container
+// edge skips the probe when it arrives through the `env:` passthrough, and
+// zshrc skips the render. Exported so neither side spells it as a literal —
+// a rename on one side alone would quietly half-disable the feature.
+const NoUpdateCheckEnv = "TOOLBOX_NO_UPDATE_CHECK"
+
+// EnvValue reads one variable out of a docker-style KEY=VALUE list, the shape
+// both a composed plan and a ContainerInspect carry. The last occurrence wins,
+// matching how the daemon resolves a duplicated key — which is the reason this
+// is not a one-line loop at the call site: getting that rule wrong reads the
+// value the container is *not* running under.
+func EnvValue(env []string, key string) string {
+	out := ""
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, key+"="); ok {
+			out = v
+		}
+	}
+	return out
+}
+
+// WithImageDigest returns env with the container's image-digest record set to
+// digest — replacing an existing entry, dropping it when digest is empty, and
+// otherwise inserting it in identityEnv's position (immediately after the CLI
+// version) so the documented emission order holds either way.
+//
+// It exists because the host resolves that digest *before* the shell-start
+// registry refresh runs: a refresh that pulls a newer image would otherwise
+// stamp the container with the digest the local store held a moment earlier,
+// and the container's record of what it was created from would be a lie —
+// one that reads, to the update prefetch, as "this session is behind".
+func WithImageDigest(env []string, digest string) []string {
+	out := make([]string, 0, len(env)+1)
+	placed := false
+	for _, e := range env {
+		// An existing entry is the position: replace it, or drop it when the
+		// digest became unresolvable.
+		if strings.HasPrefix(e, ImageDigestEnv+"=") {
+			if digest != "" && !placed {
+				out = append(out, ImageDigestEnv+"="+digest)
+				placed = true
+			}
+			continue
+		}
+		out = append(out, e)
+		// No entry to replace: identityEnv emits the digest right after the
+		// CLI version, so that is where a re-stamp puts it back.
+		if !placed && digest != "" && strings.HasPrefix(e, cliVersionEnv+"=") {
+			out = append(out, ImageDigestEnv+"="+digest)
+			placed = true
+		}
+	}
+	return out
+}
+
+// identityEnv emits the container's self-identification: cliVersionEnv
+// (always, from the host CLI build) and ImageDigestEnv (only when the host
+// resolved a repo digest). The digest entry is omitted — not emitted empty —
+// when unresolvable, so a reader distinguishes "created from a local build"
+// from "created from a digest that is now stale" instead of reporting a bogus
+// update. See update-notification.
 func identityEnv(imageDigest string) []string {
-	out := []string{"TOOLBOX_CLI_VERSION=" + version.Version}
+	out := []string{cliVersionEnv + "=" + version.Version}
 	if imageDigest != "" {
-		out = append(out, "TOOLBOX_IMAGE_DIGEST="+imageDigest)
+		out = append(out, ImageDigestEnv+"="+imageDigest)
 	}
 	return out
 }

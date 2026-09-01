@@ -256,3 +256,50 @@ func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 		}
 	}
 }
+
+// TestStateDirPath resolves the host side of the directory the container sees
+// as ~/.toolbox-state. It is the seam the host-side update prefetch writes
+// through and the in-container prompt hook reads back, so it has to follow
+// the same retargeting the bind itself follows — deriving it from the merged
+// mount set rather than re-deriving a path is what makes that hold.
+func TestStateDirPath(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	profile, err := NewProfile("work", nil)
+	if err != nil {
+		t.Fatalf("NewProfile: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		cfg     *config.Config
+		profile *Profile
+		want    string
+	}{
+		{"default", &config.Config{}, nil, filepath.Join(tmpHome, ".toolbox", "toolbox", "state")},
+		{"mounts_root", &config.Config{MountsRoot: "/custom/root"}, nil, "/custom/root/toolbox/state"},
+		{"profile wins over mounts_root", &config.Config{MountsRoot: "/custom/root"}, profile,
+			filepath.Join(tmpHome, ".toolbox", "profiles", "work", "toolbox", "state")},
+		{"mount disabled", &config.Config{Mounts: []config.Mount{{Name: "state", Disabled: true}}}, nil, ""},
+		// The lookup keys on the container target, not the name: a rename is
+		// the user's business, but a mount that no longer lands on
+		// ~/.toolbox-state is one the container cannot read the cache from.
+		{"renamed but same target", &config.Config{Mounts: []config.Mount{
+			{Name: "state", Source: "~/elsewhere"},
+		}}, nil, filepath.Join(tmpHome, "elsewhere")},
+		{"retargeted elsewhere", &config.Config{Mounts: []config.Mount{
+			{Name: "state", Source: "~/.toolbox/toolbox/state", Target: "/home/toolbox/somewhere-else"},
+		}}, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := StateDirPath(tc.cfg, tc.profile)
+			if err != nil {
+				t.Fatalf("StateDirPath: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("StateDirPath = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

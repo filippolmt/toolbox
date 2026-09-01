@@ -112,8 +112,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 
 	// Resolve the running image's repo digest host-side and thread it to the
-	// planner so the in-container update poller can compare it against GHCR's
-	// :latest. Best-effort: an unresolvable digest (locally built image,
+	// planner, which stamps it into the container as its record of what it was
+	// created from — the baseline the update prefetch compares the local image
+	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
 	// the env entry. See update-notification.
 	imageDigest := resolveImageDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
@@ -150,8 +151,9 @@ func runShell(cmd *cobra.Command, args []string) error {
 // image at ref, read from the local daemon's RepoDigests. Best-effort: any
 // inspect failure (image absent, daemon error) or a locally built image with
 // no repo digest returns "" so the caller threads an empty identity rather
-// than failing the shell. The digest is what the in-container poller compares
-// against GHCR's :latest manifest.
+// than failing the shell. The digest becomes the container's TOOLBOX_IMAGE_DIGEST,
+// which the update prefetch reads back to tell whether the session is behind
+// what the local image store now holds.
 func resolveImageDigest(ctx context.Context, cli client.APIClient, ref string) string {
 	res, err := cli.ImageInspect(ctx, ref)
 	if err != nil {

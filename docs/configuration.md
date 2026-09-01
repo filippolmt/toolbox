@@ -36,7 +36,7 @@ Configuration is loaded from (highest priority first):
 | [`agent`](#agent) | string | `claude` | Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree): `claude` or `codex`. |
 | [`image`](#image-selection) | string | `""` | Full image ref override (pull-source concern). |
 | [`registry_mirror`](#image-selection) | string | `""` | Swap only the registry host of the canonical ref. |
-| [`pull`](#image-selection) | string | `auto` | Registry-sync policy: `auto` / `always` / `never`. |
+| [`pull`](#image-selection) | string | `auto` | Registry-sync policy for the shell-start refresh *and* the background prefetch: `auto` / `always` / `never`. |
 | [`sdd`](sdd.md) | map | – | Per-repo Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`). |
 | [`bridge`](bridge.md) | bool | `true` | Mount the host bridge state dir (browser / editor / proximo forwarding). |
 | [`browser_bridge`](#browser_bridge-deprecated) | bool | – | **Deprecated** alias of `bridge`. |
@@ -124,10 +124,20 @@ macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keycha
 **Source relocation (opt-in).** The ref and pull behaviour are configurable — globally (`~/.toolbox.yaml`), per-repo (`.toolbox.yaml`), or via `TOOLBOX_*` env — for users who serve the image from a proxy hub / pull-through cache (Harbor, Artifactory, Nexus, ECR pull-through). `internal/build.ResolveImage(image, registryMirror)` owns the precedence, highest first:
 
 - `image` — full ref override, used verbatim. Highest. Caveat: a local `toolbox build` tags the *canonical* ref, so with a full override `imageplan.Ensure` looks for the override ref and won't find the local build — `image` is a pull-source concern, not a build target.
-- `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `build.SplitRegistryHost`, shared with `imagepull.registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`. Caveat: a pull-through cache that hasn't ingested the image yet fails the first shell with `manifest unknown` — warm it (or pre-seed locally with `pull: never`), see [troubleshooting](troubleshooting.md#manifest-unknown-with-a-registry-mirror).
+- `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `build.SplitRegistryHost`, shared with `imagepull.registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`. **The mirror is also authoritative for the update probe**: detection goes through the daemon (`DistributionInspect`), not to canonical GHCR, because the only probe worth making is the one that leads to a pull — announcing an image the mirror cannot serve would be noise. Perceived latency for a new image is therefore the mirror's. Caveat: a pull-through cache that hasn't ingested the image yet fails the first shell with `manifest unknown` — warm it (or pre-seed locally with `pull: never`), see [troubleshooting](troubleshooting.md#manifest-unknown-with-a-registry-mirror).
 - neither — the canonical default.
 
-The `pull` policy (`auto` default | `always` | `never`) steers `imageplan.Refresh`: `never` skips the registry round-trip entirely (air-gapped — `Ensure` still hard-requires the image locally), `always` forces a pull bypassing the 1 h TTL cache (`imagepull.ForcePull`), `auto` is the cache-aware default (`imagepull.RefreshIfStale`). Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
+The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: the synchronous registry refresh at shell start, and the [background update prefetch](update-notification.md) that runs for as long as the shell is attached.
+
+| `pull` | shell start | background prefetch | banner |
+|---|---|---|---|
+| `auto` (default) | `imagepull.RefreshIfStale`, 1 h TTL cache | on, one probe per 30 min shared across your sessions | yes |
+| `always` | `imagepull.ForcePull`, bypasses the TTL | on, **same cadence as `auto`** | yes |
+| `never` | no registry round-trip (air-gapped — `Ensure` still hard-requires the image locally) | off | silent |
+
+`always` therefore differs from `auto` at shell start and nowhere else: forcing a pull on every background tick would spend real bandwidth for the whole session, and adoption is a fresh container either way. Cross-cutting: under any policy the prefetch abstains while the resolved ref carries no repo digest — the fingerprint of a local `toolbox build`, so an automatic download never overwrites one you asked for.
+
+Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
 
 ### Local overlay Dockerfile
 
