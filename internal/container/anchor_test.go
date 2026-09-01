@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/mountplan"
@@ -581,5 +582,41 @@ func TestShellPeerAnchorReapsOrphans(t *testing.T) {
 	}
 	if len(anchorCfg.Entrypoint) == 0 || anchorCfg.Entrypoint[0] != tiniPath {
 		t.Errorf("anchor Entrypoint = %v, want %s first so PID 1 reaps orphans", anchorCfg.Entrypoint, tiniPath)
+	}
+}
+
+// TestAnchorInitMatchesImageEntrypoint pins the anchor's init against the
+// image's own, across a language boundary Go cannot type-check.
+//
+// tiniPath and the "-g" flag are a second spelling of the Dockerfile's
+// ENTRYPOINT. Nothing links the two, so relocating tini in the image — or
+// dropping -g there — would leave this package handing ContainerCreate a path
+// that no longer exists: the anchor would fail to start and every opted-in
+// session would degrade to no peer messaging, with the Dockerfile change
+// looking innocent. Read from the embedded build context, which is the same
+// Dockerfile `toolbox build` ships.
+func TestAnchorInitMatchesImageEntrypoint(t *testing.T) {
+	dockerfile, err := build.Assets.ReadFile("assets/Dockerfile")
+	if err != nil {
+		t.Fatalf("read embedded Dockerfile: %v", err)
+	}
+
+	var entrypoint string
+	for _, line := range strings.Split(string(dockerfile), "\n") {
+		if strings.HasPrefix(line, "ENTRYPOINT ") {
+			entrypoint = line
+		}
+	}
+	if entrypoint == "" {
+		t.Fatal("embedded Dockerfile declares no ENTRYPOINT")
+	}
+
+	// The anchor overrides the init's payload (sleep, not the shell-start
+	// entrypoint) but must keep the init itself, and -g with it: -g is what
+	// forwards a signal to the whole process group.
+	for _, want := range []string{`"` + tiniPath + `"`, `"-g"`} {
+		if !strings.Contains(entrypoint, want) {
+			t.Errorf("Dockerfile ENTRYPOINT = %s, want it to carry %s (anchor.go spells it separately)", entrypoint, want)
+		}
 	}
 }

@@ -27,3 +27,13 @@ Consequence: a stopped container is auto-removed, so the `runplan.ActionStart` "
 A container whose `ContainerStart` *failed* is no exception, even though `container.Shell` removes nothing on that path (it returns the wrapped error before the teardown defer is registered). The daemon force-removes an AutoRemove container when its start fails, so the record does not linger in state `created` — verified against both a failing entrypoint and a port conflict, the two shapes toolbox actually hits. `ActionStart` therefore survives only for containers created before AutoRemove was adopted (and for a daemon-side auto-remove that itself fails). Don't "fix" the failed-start path into leaving a container behind for reuse: the daemon overrules it.
 
 Rejected alternatives: a detached client-side `docker rm -f` (orphan process, no error feedback, races a fast re-`shell`); a single synchronous `ContainerRemove(Force)` (still blocks the client on the unmount). AutoRemove lets the daemon serialise the teardown correctly.
+
+## Peer anchor reaping
+
+The [Peer Anchor](../../CONTEXT.md#peer-anchor) holds the PID namespace every opted-in session joins, so **its** PID 1 is PID 1 for all of them — and reaping orphans is PID 1's job. `container.ensureAnchor` therefore overrides the image entrypoint's *payload* (a bare `sleep`, since none of the shell-start init belongs in a container that only holds a namespace) but not the init itself: the anchor runs `tini -g -- sleep infinity`.
+
+Under a bare `sleep`, which never calls `wait()`, every process reparented after its parent exits stays a zombie for the anchor's lifetime — one PID slot each, accumulated across every shell that ever shared the anchor. Measured on a week-old anchor: 456 zombies, mostly `[atuin]`, `[sudo]`, `[herdr]` and `[zsh]`.
+
+The session side cannot cover this. A container joining another's PID namespace is not PID 1 there, and the image's baked `ENTRYPOINT` carries no `-s`, so its tini never registers as a subreaper (`PR_SET_CHILD_SUBREAPER`) either.
+
+There is no self-healing for an anchor created before this: `docker rm -f` on an in-use anchor is **not** refused — it succeeds and leaves every session that held the namespace `exited`. So the connect path reuses whatever anchor exists, and replacing a reaper-less one is the user's call: `docker rm -f toolbox-peer-anchor` with no toolbox shell open, after which the next `toolbox shell` recreates it.
