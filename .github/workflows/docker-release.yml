@@ -10,8 +10,10 @@
 # alternative (drop `paths:` from docker-publish.yml) regresses to republishing
 # on every doc-only main push. Two thin caller files is the cleanest split.
 #
-# Outputs (vs main-branch publish): semver tags (vX.Y.Z + vX.Y + vX) plus
-# `latest`, no `sha-<short>`. Same SBOM + provenance attestations and the same
+# Outputs (vs main-branch publish): semver tags plus `latest`, no
+# `sha-<short>`. The semver ones carry NO leading `v` — docker/metadata-action's
+# type=semver strips it off the git tag, so pushing `v0.89.1` publishes
+# `0.89.1`, `0.89` and `0`. Same SBOM + provenance attestations and the same
 # pre-publish smoke-test gate — confidence that the image content at the tagged
 # commit boots cleanly even if main has drifted since the merge.
 #
