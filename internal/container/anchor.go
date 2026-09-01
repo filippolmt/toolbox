@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -20,6 +21,12 @@ const peerWarnPrefix = "peer messaging: "
 // tiniPath is the init the runtime image ships (Dockerfile ENTRYPOINT), reused
 // here to give the anchor a PID 1 that reaps. See ensureAnchor.
 const tiniPath = "/usr/bin/tini"
+
+// anchorEntrypoint is the anchor's PID 1 and the payload it supervises.
+// ContainerCreate writes it and isCurrentAnchor reads it back off the daemon,
+// so the spec the connect path checks against cannot drift from the one the
+// create path applies.
+var anchorEntrypoint = []string{tiniPath, "-g", "--", "sleep"}
 
 // ensureAnchor makes the peer-messaging anchor container exist and run, so
 // opted-in sessions have a PID namespace to join. It reuses runplan.Compute
@@ -40,10 +47,10 @@ const tiniPath = "/usr/bin/tini"
 // so it never registers as a subreaper. Verified with
 // TestShellPeerAnchorReapsOrphans.
 //
-// An anchor created before this ran keeps its reaper-less PID 1: the connect
-// path reuses it, and force-removing one kills every session holding its
-// namespace, so the recreate is the user's call — `docker rm -f` the anchor
-// with no toolbox shell open.
+// An anchor created before this ran carries the old entrypoint, and reusing it
+// would keep the reaper-less PID 1 forever. replaceStaleAnchor swaps it out
+// whenever that can be done without collateral — see there for why "whenever"
+// is not "always".
 //
 // AutoRemove is deliberately left off: the anchor outlives the sessions
 // referencing it, which is the whole reason a session container cannot play
@@ -57,6 +64,16 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 		return fmt.Errorf("failed to inspect peer anchor: %w", err)
 	}
 
+	if op.Action != runplan.ActionCreate && !isCurrentAnchor(res.Container) {
+		replaced, replaceErr := replaceStaleAnchor(ctx, cli, res.Container, op.Action)
+		if replaceErr != nil {
+			return replaceErr
+		}
+		if replaced {
+			op = runplan.Op{Action: runplan.ActionCreate}
+		}
+	}
+
 	id := op.ExistingID
 	switch op.Action {
 	case runplan.ActionConnect:
@@ -68,7 +85,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 			Name: name,
 			Config: &container.Config{
 				Image:      image.Ref,
-				Entrypoint: []string{tiniPath, "-g", "--", "sleep"},
+				Entrypoint: anchorEntrypoint,
 				Cmd:        []string{"infinity"},
 			},
 			HostConfig: &container.HostConfig{AutoRemove: false},
@@ -84,6 +101,72 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 		return fmt.Errorf("failed to start peer anchor: %w", startErr)
 	}
 	return nil
+}
+
+// isCurrentAnchor reports whether an existing anchor was created with the
+// entrypoint this build wants.
+//
+// The whole entrypoint is compared, not just tini: this is the general "the
+// anchor predates the current spec" test, so a later change to the anchor's
+// PID 1 inherits the replacement without a second check. A record carrying no
+// Config counts as stale — an anchor whose spec cannot be read is one whose
+// PID 1 cannot be vouched for.
+func isCurrentAnchor(anchor container.InspectResponse) bool {
+	return anchor.Config != nil && slices.Equal(anchor.Config.Entrypoint, anchorEntrypoint)
+}
+
+// replaceStaleAnchor removes an anchor that predates the current spec so the
+// caller can create a fresh one, and reports whether it did.
+//
+// A stopped anchor is free to replace: every session that held its namespace
+// died with it, so there is nothing left to break. A running one is the case
+// Docker gives no help with — `docker rm -f` on an in-use anchor is not
+// refused, it succeeds and leaves every session that held the namespace
+// `exited` with 137 — so it is replaced only once anchorHeld can prove nobody
+// is on it, and warned about otherwise.
+func replaceStaleAnchor(ctx context.Context, cli client.APIClient, anchor container.InspectResponse, action runplan.Action) (bool, error) {
+	name := sessionplan.PeerAnchorContainerName
+	if action == runplan.ActionConnect && anchorHeld(ctx, cli, anchor.ID) {
+		ui.Warning(peerWarnPrefix + name + " predates the reaping init, so orphaned processes in the " +
+			"shared PID namespace stay as zombies — it is replaced automatically once no other toolbox " +
+			"shell holds it, so exit them and start this shell again")
+		return false, nil
+	}
+	ui.Info("Replacing peer-messaging anchor " + name + ": its PID 1 does not reap orphans...")
+	if _, err := cli.ContainerRemove(ctx, anchor.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+		return false, fmt.Errorf("failed to remove the reaper-less peer anchor: %w", err)
+	}
+	return true, nil
+}
+
+// anchorHeld reports whether any running toolbox container joined the anchor's
+// PID namespace. It is the only thing standing between the self-heal above and
+// killing a sibling shell, so every uncertainty answers "held": a list or
+// inspect that fails leaves the anchor in place and the user with a warning,
+// which costs one stale anchor — guessing the other way costs a live session.
+//
+// The PidMode is read per container rather than through samePidNamespace: the
+// anchor's ID is already in hand here, and that helper would re-inspect the
+// anchor once per candidate to rediscover it.
+func anchorHeld(ctx context.Context, cli client.APIClient, anchorID string) bool {
+	items, err := toolboxContainers(ctx, cli)
+	if err != nil {
+		return true
+	}
+	want := container.PidMode("container:" + anchorID)
+	for _, c := range items {
+		if c.ID == anchorID || c.State != container.StateRunning {
+			continue
+		}
+		res, inspectErr := cli.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+		if inspectErr != nil {
+			return true
+		}
+		if res.Container.HostConfig != nil && res.Container.HostConfig.PidMode == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ensurePeerRuntime materialises both halves of peer messaging and returns

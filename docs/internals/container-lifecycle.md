@@ -36,4 +36,18 @@ Under a bare `sleep`, which never calls `wait()`, every process reparented after
 
 The session side cannot cover this. A container joining another's PID namespace is not PID 1 there, and the image's baked `ENTRYPOINT` carries no `-s`, so its tini never registers as a subreaper (`PR_SET_CHILD_SUBREAPER`) either.
 
-There is no self-healing for an anchor created before this: `docker rm -f` on an in-use anchor is **not** refused — it succeeds and leaves every session that held the namespace `exited`. So the connect path reuses whatever anchor exists, and replacing a reaper-less one is the user's call: `docker rm -f toolbox-peer-anchor` with no toolbox shell open, after which the next `toolbox shell` recreates it.
+### Replacing an anchor that predates it
+
+An anchor created before this carries the old entrypoint, and the connect path used to reuse it forever. It now replaces it — but only when that breaks nothing, because Docker offers no help here: `docker rm -f` on an in-use anchor is **not** refused, it succeeds and leaves every session that held the namespace `exited` with 137 (measured, not inferred; the daemon tracks no dependency for `--pid container:<id>` the way it does for network mode).
+
+`container.isCurrentAnchor` compares the running anchor's whole entrypoint against `container.anchorEntrypoint` — the same slice `ContainerCreate` is handed, so the check and the spec cannot drift, and a later change to the anchor's PID 1 inherits the replacement for free. On a mismatch `container.replaceStaleAnchor` decides:
+
+| Anchor state | Outcome |
+|---|---|
+| Stopped (`runplan.ActionStart`) | Force-removed and recreated. Every session that held the namespace died with it, so nothing is left to break — and the holder scan is skipped, so a daemon that will not list containers cannot strand it. |
+| Running, no holder | Force-removed and recreated. |
+| Running, a session holds it | Left alone, with a warning. Exiting the other shells and starting one again is enough: the next start finds no holder and replaces it. |
+
+`container.anchorHeld` is the guard, and it **fails closed** — a `ContainerList` or `ContainerInspect` that errors answers "held". Guessing "free" from a daemon that would not answer costs a live session; guessing "held" costs one more shell start on the old anchor.
+
+Pinned by `TestShellPeerReplacesUnusedStaleAnchor`, `TestShellPeerReplacesStoppedStaleAnchor`, `TestShellPeerKeepsHeldStaleAnchor` and `TestShellPeerKeepsStaleAnchorWhenHoldersUnknown`; `TestShellPeerReusesRunningAnchor` holds the other direction — a current anchor is neither removed nor warned about.

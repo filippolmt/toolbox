@@ -198,22 +198,31 @@ func TestShellPeerSocketVolumeFailureDegrades(t *testing.T) {
 	}
 }
 
-// TestShellPeerReusesRunningAnchor asserts a live anchor is left alone.
+// TestShellPeerReusesRunningAnchor asserts a live anchor carrying the current
+// entrypoint is left alone — no remove, no re-create, and no holder scan.
 func TestShellPeerReusesRunningAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	t.Setenv("HOME", t.TempDir())
 
-	var created []string
+	var created, removed []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
 			if id == sessionplan.PeerAnchorContainerName {
-				return container.InspectResponse{ID: id, State: &container.State{Running: true}}, nil
+				return container.InspectResponse{
+					ID:     id,
+					State:  &container.State{Running: true},
+					Config: &container.Config{Entrypoint: anchorEntrypoint, Cmd: []string{"infinity"}},
+				}, nil
 			}
 			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
 		},
 		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
 		},
 		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
 			created = append(created, name)
@@ -221,13 +230,25 @@ func TestShellPeerReusesRunningAnchor(t *testing.T) {
 		},
 	}
 
-	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
-		t.Fatalf("Shell: %v", err)
-	}
+	out := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+			t.Fatalf("Shell: %v", err)
+		}
+	})
 	for _, name := range created {
 		if name == sessionplan.PeerAnchorContainerName {
 			t.Error("a running anchor must not be re-created")
 		}
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want a current anchor left alone", removed)
+	}
+	// The staleness branch is silent about a healthy anchor. A peer-messaging
+	// warning here means the entrypoint comparison stopped recognising its own
+	// spec, which the two assertions above cannot see: a failed holder scan
+	// warns and keeps the anchor, which looks exactly like reuse.
+	if strings.Contains(out, peerWarnPrefix) {
+		t.Errorf("expected no peer-messaging warning for a current anchor, got %q", out)
 	}
 }
 
@@ -618,5 +639,236 @@ func TestAnchorInitMatchesImageEntrypoint(t *testing.T) {
 		if !strings.Contains(entrypoint, want) {
 			t.Errorf("Dockerfile ENTRYPOINT = %s, want it to carry %s (anchor.go spells it separately)", entrypoint, want)
 		}
+	}
+}
+
+// TestShellPeerReplacesUnusedStaleAnchor asserts an anchor that predates the
+// reaping init is replaced when no session holds its namespace.
+//
+// The connect path used to reuse any running anchor, so a namespace owned by a
+// bare `sleep` survived every upgrade and kept accumulating zombies. Nothing
+// holds it here, so replacing it breaks no session.
+func TestShellPeerReplacesUnusedStaleAnchor(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "staleanchorid"
+	var removed []string
+	var anchorCfg *container.Config
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			if id == sessionplan.PeerAnchorContainerName || id == anchorID {
+				return container.InspectResponse{
+					ID:     anchorID,
+					State:  &container.State{Running: true},
+					Config: &container.Config{Entrypoint: []string{"sleep"}, Cmd: []string{"infinity"}},
+				}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		listFn: func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
+			return []container.Summary{{
+				ID:    anchorID,
+				Names: []string{"/" + sessionplan.PeerAnchorContainerName},
+				State: container.StateRunning,
+			}}, nil
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name == sessionplan.PeerAnchorContainerName {
+				anchorCfg = cfg
+			}
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if len(removed) != 1 || removed[0] != anchorID {
+		t.Fatalf("removed = %v, want the stale anchor %q", removed, anchorID)
+	}
+	if anchorCfg == nil {
+		t.Fatal("the stale anchor was removed but never replaced")
+	}
+	if len(anchorCfg.Entrypoint) == 0 || anchorCfg.Entrypoint[0] != tiniPath {
+		t.Errorf("replacement anchor Entrypoint = %v, want %s first", anchorCfg.Entrypoint, tiniPath)
+	}
+}
+
+// TestShellPeerKeepsHeldStaleAnchor asserts a stale anchor someone is standing
+// on is warned about, never removed.
+//
+// Docker refuses none of this: `docker rm -f` on an in-use anchor succeeds and
+// leaves every session that held the namespace exited with 137. The holder
+// check is the only guard, so self-healing must lose to a sibling shell.
+func TestShellPeerKeepsHeldStaleAnchor(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "staleanchorid"
+	const holderID = "siblingshellid"
+	var removed []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			switch id {
+			case sessionplan.PeerAnchorContainerName, anchorID:
+				return container.InspectResponse{
+					ID:     anchorID,
+					State:  &container.State{Running: true},
+					Config: &container.Config{Entrypoint: []string{"sleep"}, Cmd: []string{"infinity"}},
+				}, nil
+			case holderID:
+				return container.InspectResponse{
+					ID:         holderID,
+					State:      &container.State{Running: true},
+					HostConfig: &container.HostConfig{PidMode: container.PidMode("container:" + anchorID)},
+				}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		listFn: func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
+			return []container.Summary{
+				{ID: anchorID, Names: []string{"/" + sessionplan.PeerAnchorContainerName}, State: container.StateRunning},
+				{ID: holderID, Names: []string{"/toolbox-named-infra.peer"}, State: container.StateRunning},
+			}, nil
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	out := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+			t.Fatalf("Shell: %v", err)
+		}
+	})
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want the held anchor left alone", removed)
+	}
+	if !strings.Contains(out, "peer messaging") || !strings.Contains(out, "zombies") {
+		t.Errorf("expected a warning naming the stale anchor, got %q", out)
+	}
+}
+
+// TestShellPeerReplacesStoppedStaleAnchor asserts a stopped stale anchor is
+// replaced without consulting the holder list.
+//
+// Nothing can be standing on it: a container joined to an anchor's namespace
+// dies when the anchor does. Skipping the scan is not just an optimisation —
+// anchorHeld answers "held" on a failed list, which would otherwise strand a
+// stopped anchor no session could possibly be using.
+func TestShellPeerReplacesStoppedStaleAnchor(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "stoppedanchorid"
+	var removed []string
+	var anchorCfg *container.Config
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			if id == sessionplan.PeerAnchorContainerName || id == anchorID {
+				return container.InspectResponse{
+					ID:     anchorID,
+					State:  &container.State{Running: false},
+					Config: &container.Config{Entrypoint: []string{"sleep"}, Cmd: []string{"infinity"}},
+				}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name == sessionplan.PeerAnchorContainerName {
+				anchorCfg = cfg
+			}
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	// listFn is deliberately unset: reaching ContainerList here fails the test
+	// with "not mocked" rather than silently taking the warn-and-keep branch.
+	if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if len(removed) != 1 || removed[0] != anchorID {
+		t.Fatalf("removed = %v, want the stopped stale anchor %q", removed, anchorID)
+	}
+	if anchorCfg == nil || len(anchorCfg.Entrypoint) == 0 || anchorCfg.Entrypoint[0] != tiniPath {
+		t.Errorf("replacement anchor Config = %+v, want an entrypoint starting with %s", anchorCfg, tiniPath)
+	}
+}
+
+// TestShellPeerKeepsStaleAnchorWhenHoldersUnknown asserts an unreadable
+// container list keeps the stale anchor rather than replacing it.
+//
+// anchorHeld fails closed on purpose: guessing "free" from a daemon that would
+// not answer costs a live session, guessing "held" costs one more shell start
+// with the old anchor. This is the branch that must never be relaxed into an
+// optimistic default.
+func TestShellPeerKeepsStaleAnchorWhenHoldersUnknown(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	t.Setenv("HOME", t.TempDir())
+
+	const anchorID = "staleanchorid"
+	var removed []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			if id == sessionplan.PeerAnchorContainerName || id == anchorID {
+				return container.InspectResponse{
+					ID:     anchorID,
+					State:  &container.State{Running: true},
+					Config: &container.Config{Entrypoint: []string{"sleep"}, Cmd: []string{"infinity"}},
+				}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		listFn: func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
+			return nil, errors.New("daemon says no")
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	out := captureStderr(t, func() {
+		if err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+			t.Fatalf("Shell: %v", err)
+		}
+	})
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want the anchor kept while its holders are unknown", removed)
+	}
+	if !strings.Contains(out, peerWarnPrefix) {
+		t.Errorf("expected a peer-messaging warning, got %q", out)
 	}
 }
