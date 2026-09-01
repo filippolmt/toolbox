@@ -12,7 +12,11 @@ import (
 	"io"
 	"iter"
 
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/client"
+	godigest "github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // NotFoundError implements the errdefs "not found" interface, so
@@ -41,4 +45,27 @@ func (PullResponse) JSONMessages(context.Context) iter.Seq2[jsonstream.Message, 
 		// An empty iterator: a fake pull streams no progress messages, so the
 		// sequence yields nothing and never calls yield.
 	}
+}
+
+// DistributionResult builds a DistributionInspect result carrying digest —
+// the shape the daemon returns for a registry probe. The OCI descriptor and
+// its digest type live here rather than in each caller's own mock: the probe
+// is stubbed by every package that drives the update prefetch, and a
+// hand-rolled descriptor per package is the duplication this package exists
+// to hold. The digest is not validated, matching the daemon's own decode.
+func DistributionResult(digest string) client.DistributionInspectResult {
+	res := client.DistributionInspectResult{}
+	res.Descriptor = ocispec.Descriptor{Digest: godigest.Digest(digest)}
+	return res
+}
+
+// ImageInspectResult builds a local-store inspect carrying one repo digest
+// for repo, or none at all — the fingerprint of an image produced by
+// `docker build` and never pushed, which is what makes the prefetch abstain.
+func ImageInspectResult(repo, digest string) client.ImageInspectResult {
+	res := client.ImageInspectResult{}
+	if digest != "" {
+		res.InspectResponse = image.InspectResponse{RepoDigests: []string{repo + "@" + digest}}
+	}
+	return res
 }

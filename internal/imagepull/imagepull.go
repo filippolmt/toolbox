@@ -172,11 +172,7 @@ func cached(ref string) bool {
 	if err != nil {
 		return false
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return time.Since(info.ModTime()) < TTL
+	return fsx.MarkerFresh(path, TTL)
 }
 
 // record stamps a fresh marker after a successful pull. Persist failures
@@ -193,11 +189,7 @@ func record(ref string) {
 		ui.Warning("pull cache: cannot resolve marker path: " + err.Error())
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		ui.Warning("pull cache: cannot create marker dir: " + err.Error())
-		return
-	}
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		ui.Warning("pull cache: cannot write marker: " + err.Error())
+	if err := fsx.TouchMarker(path); err != nil {
+		ui.Warning("pull cache: " + err.Error())
 	}
 }

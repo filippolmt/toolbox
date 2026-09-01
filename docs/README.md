@@ -12,7 +12,7 @@ sections.**
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
 | [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
-| [update-notification.md](update-notification.md) | explanation | In-shell "newer image / CLI available" banner |
+| [update-notification.md](update-notification.md) | explanation | Host-side update detection + background prefetch, and the in-shell banner |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
 | [internals/](#internals) | explanation | Maintainer-only material |
@@ -97,6 +97,7 @@ sections.**
 - [How it works](update-notification.md#how-it-works)
 - [Cache and TTL](update-notification.md#cache-and-ttl)
 - [Opt out](update-notification.md#opt-out)
+- [What the prefetch changes about metered connections](update-notification.md#what-the-prefetch-changes-about-metered-connections)
 
 ## sdd.md
 

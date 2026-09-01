@@ -26,8 +26,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
@@ -40,6 +43,12 @@ import (
 // execShellFn attaches an interactive shell to a container.
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
+
+// startPrefetch launches the host-side update probe + prefetch for the
+// lifetime of the attached session. A package-level var for the same reason
+// as execShellFn: every lifecycle test would otherwise start a goroutine that
+// talks to a registry.
+var startPrefetch = imageprefetch.Start
 
 // formatPublishMismatch builds the warning string emitted when a reused
 // container does not have every port the user asked for. Returns "" when
@@ -200,11 +209,18 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// build error so the shell never silently starts from the wrong image.
 	// The returned `:local` carries pull policy "never", so the later
 	// Ensure/Refresh for the create path never touch a registry for it.
+	baseImage := plan.Image
 	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
 	if overlayErr != nil {
 		return overlayErr
 	}
 	plan.Image = image
+
+	// Re-stamp the container's image-digest record from the store as it is
+	// *now*: cmd resolved it before planning, which is before Refresh had the
+	// chance to pull. Only the create path can be wrong — a connect or start
+	// reads the digest off a container that already exists.
+	restampImageDigest(ctx, cli, plan, baseImage, op)
 
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
 	if dispatchErr != nil {
@@ -220,11 +236,86 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
+	// One detector, host-side, for as long as the shell is attached: the
+	// probe that decides whether to pull is the same act that knows whether
+	// the bytes landed, which is the fact the prompt banner states. Cancelled
+	// with the session — an interrupted pull leaves no blob behind.
+	prefetchCtx, stopPrefetch := context.WithCancel(ctx)
+	defer stopPrefetch()
+	if in, ok := prefetchInput(baseImage, plan, createdImageDigest(plan, inspect, op)); ok {
+		startPrefetch(prefetchCtx, cli, in)
+	}
+
 	execCmd := plan.Cmd
 	if plan.ExecCmd != nil {
 		execCmd = plan.ExecCmd
 	}
 	return execShellFn(ctx, cli, containerID, execCmd)
+}
+
+// prefetchInput assembles the update prefetch's input and reports whether the
+// act runs at all. Two refusals, both settled on the map:
+//
+//   - pull: never means "do not talk to the registry", and a probe talks to
+//     the registry — so it silences probe, prefetch and banner as one act.
+//   - TOOLBOX_NO_UPDATE_CHECK silences the host half here and the render half
+//     in zshrc. Honoured only in its `env:` passthrough form, which is what
+//     reaches the composed plan env; an export typed inside a live shell still
+//     stops the rendering, which is what that variable is now for.
+//
+// The image tracked is the *base* ref, never the `:local` overlay tag: the
+// overlay is built, not pulled, and it is the base moving underneath it that
+// a reload would adopt.
+func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, containerDigest string) (imageprefetch.Input, bool) {
+	if base.PullPolicy == config.PullNever {
+		return imageprefetch.Input{}, false
+	}
+	if sessionplan.EnvValue(plan.Env, sessionplan.NoUpdateCheckEnv) != "" {
+		return imageprefetch.Input{}, false
+	}
+	return imageprefetch.Input{
+		Ref:             base.Ref,
+		ContainerDigest: containerDigest,
+		StateDir:        plan.StateDir,
+	}, true
+}
+
+// restampImageDigest rewrites the plan's TOOLBOX_IMAGE_DIGEST to the repo
+// digest the base image carries in the local store right now — which is what
+// the container about to be created actually runs. Without it, a shell opened
+// on the same morning as a release is stamped with the digest that Refresh
+// has just superseded, and the update prefetch reports it behind an image it
+// is already running. Best-effort and create-only: an unreadable store leaves
+// the plan's own answer in place, and a connect/start reads the container.
+func restampImageDigest(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, op runplan.Op) {
+	if op.Action != runplan.ActionCreate {
+		return
+	}
+	res, err := cli.ImageInspect(ctx, base.Ref)
+	if err != nil {
+		return
+	}
+	plan.Env = sessionplan.WithImageDigest(plan.Env, build.RepoDigest(base.Ref, res.RepoDigests))
+}
+
+// createdImageDigest returns the repo digest the attached container was
+// created from — the baseline half of "is this session behind the local
+// store?". Read off the container rather than recomputed, so it is right on
+// the connect path too, where this process never resolved a digest of its
+// own. On the create path the container does not exist yet and the plan env
+// about to be written is the same answer by construction.
+func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) string {
+	if op.Action == runplan.ActionCreate {
+		return sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv)
+	}
+	if inspect.Config == nil {
+		// An inspect that carries no Config says nothing about the container.
+		// Substituting the plan's digest would answer with what *this* process
+		// resolved — the very value that makes the comparison come out equal,
+		// hiding a real update instead of admitting the baseline is unknown.
+		return ""
+	}
+	return sessionplan.EnvValue(inspect.Config.Env, sessionplan.ImageDigestEnv)
 }
 
 // preflightHostConfig checks the parts of HostConfig that ContainerCreate

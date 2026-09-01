@@ -223,6 +223,65 @@ check_zsh() {
         [ "$result" = "h: function" ]
     }
 
+    # q. update banner (update-notification). zshrc.sh is the only renderer of
+    # the host-written update-check cache, and it has no Go coverage at all —
+    # its behaviour is provable only here. Drive the precmd hook directly:
+    # zsh -i -c never draws a prompt, so the hook would not fire on its own.
+    # Each state seeds the cache and clears the shown-signature, because the
+    # renderer prints once per distinct result. No apostrophes or single
+    # quotes below — this body lives inside a single-quoted bash -c.
+    _zsh_banner_render() {
+        local d=/home/toolbox/.toolbox-state
+        mkdir -p "$d" || return 1
+        printf "%s" "$1" > "$d/update-check" || return 1
+        rm -f "$d/update-check.shown"
+        zsh -i -c "_toolbox_update_precmd" 2>/dev/null
+    }
+    _zsh_banner_cleanup() {
+        rm -f /home/toolbox/.toolbox-state/update-check \
+              /home/toolbox/.toolbox-state/update-check.shown
+    }
+
+    # q1. Nothing to report renders nothing. The silent state is the one a
+    # regression turns into a banner on every prompt.
+    _zsh_banner_none_check() {
+        out=$(_zsh_banner_render "image_update=0
+image_latest=sha256:aaa
+image_state=none
+cli_update=0
+cli_latest=
+")
+        _zsh_banner_cleanup
+        test -z "$out" || { echo "    expected silence, got: $out"; return 1; }
+    }
+
+    # q2. The bytes landed and this session predates them.
+    _zsh_banner_ready_check() {
+        out=$(_zsh_banner_render "image_update=1
+image_latest=sha256:bbb
+image_state=ready
+cli_update=0
+cli_latest=
+")
+        _zsh_banner_cleanup
+        case "$out" in *"newer runtime image is downloaded"*) return 0 ;; esac
+        echo "    got: $out"; return 1
+    }
+
+    # q3. The registry moved and the download keeps failing — the state the
+    # host cannot report any other way, because its stdout is the users tty.
+    _zsh_banner_unavailable_check() {
+        out=$(_zsh_banner_render "image_update=0
+image_latest=sha256:ccc
+image_state=unavailable
+cli_update=0
+cli_latest=
+")
+        _zsh_banner_cleanup
+        case "$out" in *"could not be downloaded"*) return 0 ;; esac
+        echo "    got: $out"; return 1
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -245,6 +304,9 @@ check_zsh() {
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
     _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check
     _zsh_assert "zshrc.d user config loader"   _zsh_user_rc_check
+    _zsh_assert "update banner silent"         _zsh_banner_none_check
+    _zsh_assert "update banner ready"          _zsh_banner_ready_check
+    _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli
@@ -329,10 +391,6 @@ check_required "git credential helper stubs" sh -c "for h in osxkeychain manager
 # git-prune-dead is a `git prune-dead` subcommand helper; assert it ships
 # executable on PATH (no flag invocation — running it would prune branches).
 check_required "git-prune-dead" sh -c "test -x /usr/local/bin/git-prune-dead && command -v git-prune-dead >/dev/null && echo present"
-# Update poller ships executable and runs clean. Invoke with the opt-out set so
-# the smoke run exercises the script body (parse, gates, exit) without any
-# network round-trip to GHCR / GitHub.
-check_required "toolbox-update-check" sh -c "test -x /usr/local/bin/toolbox-update-check && TOOLBOX_NO_UPDATE_CHECK=1 toolbox-update-check && echo present"
 check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
 check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u \"\$(command -v sudo)\" && echo present"
 

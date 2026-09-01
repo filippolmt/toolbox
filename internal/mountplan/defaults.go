@@ -5,6 +5,16 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 )
 
+// stateMountTarget is the container path of the mount carrying toolbox's own
+// disposable state — shell history, the compdump, the update-check cache.
+// Named as a constant because StateDirPath looks the entry up by it: the
+// host-side update prefetch writes into that directory and the in-container
+// prompt hook reads it back at exactly this path, so the *target* is what
+// makes them the same directory. A mount renamed but still landing here still
+// matches; one retargeted elsewhere correctly stops matching, because the
+// container would no longer see it as ~/.toolbox-state either.
+const stateMountTarget = "/home/toolbox/.toolbox-state"
+
 // defaults returns the canonical default mount set (D-07).
 // ~/.secrets is intentionally NOT included (D-08).
 //
@@ -23,7 +33,7 @@ func defaults() []config.Mount {
 		// OpenAI Codex CLI auth + config — populated by `codex login` inside the container.
 		{Name: "codex", Source: "~/.toolbox/.codex", Target: "/home/toolbox/.codex", ReadOnly: false, CreateIfMissing: true},
 		// Bash history and other shell state, shared across every toolbox shell.
-		{Name: "state", Source: "~/.toolbox/toolbox/state", Target: "/home/toolbox/.toolbox-state", ReadOnly: false, CreateIfMissing: true},
+		{Name: "state", Source: "~/.toolbox/toolbox/state", Target: stateMountTarget, ReadOnly: false, CreateIfMissing: true},
 		// SSH keys and git config follow the host via symlinks under ~/.toolbox/,
 		// so changes made with `ssh-keygen` / `git config` on the host are
 		// immediately visible inside the container.
