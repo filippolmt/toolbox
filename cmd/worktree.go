@@ -181,7 +181,7 @@ func resolveAgent(flag string) (string, error) {
 // call, and the TTY attach in container.Shell, plus resolveImageDigest, shared
 // with the `shell` command. What a worktree session *is* — the .git bind and
 // the agent launch — lives behind PlanInput.Worktree.
-func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
+func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch, agent, prompt string) error {
 	reloadFrom, err := takeReloadHandover()
 	if err != nil {
 		return err
@@ -199,7 +199,10 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent,
 		return err
 	}
 	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	return runSession(ctx, cli, plan)
+	// The re-entry form is normalised, not replayed: `create` would fail on a
+	// branch that now exists and would re-send a prompt the agent already
+	// completed, while `open` is idempotent and promptless by construction.
+	return runSession(ctx, cli, plan, []string{"worktree", "open", branch})
 }
 
 // seedWorktreeFiles copies gitignored per-repo working state from the main
@@ -420,7 +423,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	// (daemon down, image pull error) the worktree is a valid artifact — point
 	// the user at `open` to re-attach rather than re-`create` (which would
 	// error on the existing branch/directory).
-	if err := openSession(ctx, cli, root, wtPath, agent, prompt); err != nil {
+	if err := openSession(ctx, cli, root, wtPath, branch, agent, prompt); err != nil {
 		return fmt.Errorf("%w\nworktree created at %s — re-attach with 'toolbox worktree open %s' once resolved", err, wtPath, branch)
 	}
 	return nil
@@ -445,7 +448,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 	ctx, stop := signalCtx()
 	defer stop()
-	return openSession(ctx, cli, root, wtPath, agent, "") // no prompt on re-attach
+	return openSession(ctx, cli, root, wtPath, branch, agent, "") // no prompt on re-attach
 }
 
 func runWorktreeList(cmd *cobra.Command, _ []string) error {

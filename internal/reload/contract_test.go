@@ -37,6 +37,17 @@ func TestReloadMarkerContract(t *testing.T) {
 		t.Error("zshrc.sh defines no toolbox-reload function")
 	}
 
+	// The banner reads the same variable, and for the same reason: it is the
+	// one thing the image can know about the CLI driving it. Without this gate
+	// a session under an older CLI is advised to run a command that will
+	// refuse — the banner promising what the function then declines.
+	if strings.Count(zshrc, "${"+reload.MarkerEnv+":-}") < 2 {
+		t.Errorf("the banner does not gate its advice on %s", reload.MarkerEnv)
+	}
+	if !strings.Contains(zshrc, "toolbox-reload%b to move this session onto it") {
+		t.Error("the banner no longer names toolbox-reload as the way to adopt the image")
+	}
+
 	// The host-to-host handover must never be spelled inside the image: it
 	// travels across the re-exec and is unset before any container env is
 	// built. Same prefix as the marker, opposite direction — which is exactly

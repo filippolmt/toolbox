@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func TestShellReloadComposesTheHandover(t *testing.T) {
 		ImageDigest: "sha256:old",
 		CLIVersion:  "v0.1.0",
 	}
-	if rl == nil || *rl != want {
+	if rl == nil || !reflect.DeepEqual(*rl, want) {
 		t.Errorf("handover = %+v, want %+v", rl, want)
 	}
 }
@@ -241,6 +242,10 @@ func TestShellReloadClearsTheBannerCache(t *testing.T) {
 	stale := []string{
 		filepath.Join(plan.StateDir, "update-check"),
 		filepath.Join(plan.StateDir, "update-check.shown"),
+		// The attempt stamp goes too: it gates the next probe behind up to a
+		// full cadence, and the reload has just invalidated the answer that
+		// cadence was throttling.
+		filepath.Join(plan.StateDir, "update-check.stamp"),
 	}
 	if err := os.MkdirAll(plan.StateDir, 0o755); err != nil {
 		t.Fatalf("seed state dir: %v", err)

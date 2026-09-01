@@ -32,11 +32,6 @@ var shellFn = container.Shell
 // reason as execSelf: os.Executable's failure branch is otherwise unreachable.
 var executablePath = os.Executable
 
-// reEntryHint is what a reload prints when it fails after the old container is
-// already gone. The shell that would normally tell the developer how to get
-// back is no longer there to print it.
-const reEntryHint = "re-enter the session with: toolbox shell"
-
 // takeReloadHandover consumes TOOLBOX_RELOAD_FROM before anything builds a
 // container env, so the host-to-host variable never reaches a container.
 //
@@ -48,7 +43,9 @@ const reEntryHint = "re-enter the session with: toolbox shell"
 func takeReloadHandover() (*reload.From, error) {
 	from, err := reload.Take()
 	if err != nil {
-		return nil, fmt.Errorf("%w — %s", err, reEntryHint)
+		// No payload means no re-entry form either, so this one line is the
+		// only place the fallback is spelled rather than carried.
+		return nil, fmt.Errorf("%w — re-enter the session with: toolbox shell", err)
 	}
 	return from, nil
 }
@@ -61,12 +58,29 @@ func takeReloadHandover() (*reload.From, error) {
 // The re-exec is what makes a `brew upgrade` landed meanwhile take effect: the
 // new binary owns the verify, the teardown and the create, so its fixes reach
 // the next container. Toolbox never runs the upgrade itself.
-func runSession(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+func runSession(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, reentry []string) error {
 	rl, err := shellFn(ctx, cli, plan)
-	if err != nil || rl == nil {
+	if err != nil {
+		return withReEntry(err, plan.ReloadFrom)
+	}
+	if rl == nil {
+		return nil
+	}
+	rl.Reentry = reentry
+	return execReload(rl)
+}
+
+// withReEntry appends the exact command that gets the developer back, but only
+// on a session this process reached by reloading. The shell that would normally
+// print it has already exited, and by the time anything downstream of the
+// teardown fails — a port conflict, a `:local` overlay that will not build —
+// the old container is gone too. A failure *before* the teardown still needs
+// the line: the old container survives, but nothing is attached to it.
+func withReEntry(err error, from *reload.From) error {
+	if err == nil || from == nil {
 		return err
 	}
-	return execReload(rl)
+	return fmt.Errorf("%w\n\nre-enter the session with: %s", err, from.ReentryCommand())
 }
 
 // execReload replaces this process with a fresh `toolbox`, carrying the
@@ -76,27 +90,27 @@ func runSession(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 func execReload(from *reload.From) error {
 	bin, err := executablePath()
 	if err != nil {
-		return fmt.Errorf("reload: cannot resolve the toolbox binary: %w — %s", err, reEntryHint)
+		return withReEntry(fmt.Errorf("reload: cannot resolve the toolbox binary: %w", err), from)
 	}
 	payload, err := reload.Encode(*from)
 	if err != nil {
-		return fmt.Errorf("reload: %w — %s", err, reEntryHint)
+		return withReEntry(fmt.Errorf("reload: %w", err), from)
 	}
-	// The invocation is replayed as typed. Normalising it — a `worktree create`
-	// that must come back as `worktree open <branch>`, an agent that should
-	// resume rather than restart — is the session-continuity half of the map
-	// and rides in the payload once it lands.
-	return execSelf(bin, reloadArgv(bin), append(os.Environ(), reload.FromEnv+"="+payload))
+	return execSelf(bin, reloadArgv(bin, from), append(os.Environ(), reload.FromEnv+"="+payload))
 }
 
-// reloadArgv rebuilds argv for the tail call. argv[0] is the resolved binary
-// rather than whatever name this process was invoked under, so the re-exec
-// cannot follow a symlink or a shell alias somewhere else.
-func reloadArgv(bin string) []string {
-	argv := make([]string, 0, len(os.Args))
-	argv = append(argv, bin)
-	if len(os.Args) > 1 {
-		argv = append(argv, os.Args[1:]...)
+// reloadArgv rebuilds argv for the tail call from the **normalised** re-entry
+// form, never from os.Args: replaying the invocation as typed would re-run a
+// `worktree create` against a branch that now exists and re-send a prompt the
+// agent has already completed. argv[0] is the resolved binary rather than the
+// name this process was invoked under, so the re-exec cannot follow a symlink
+// or a shell alias somewhere else.
+func reloadArgv(bin string, from *reload.From) []string {
+	argv := []string{bin}
+	if len(from.Reentry) == 0 {
+		// A session that carried no form is a plain shell: the bare command is
+		// what re-enters it, and it is also what the fallback advice names.
+		return append(argv, "shell")
 	}
-	return argv
+	return append(argv, from.Reentry...)
 }

@@ -864,7 +864,12 @@ Because it outlives every session, an anchor can outlive the spec it was
 created from — and one created before the tini override kept a PID 1 that never
 reaped. `ensureAnchor` therefore replaces an anchor whose entrypoint is not the
 current one, but only when no session holds its namespace: Docker does not
-refuse the removal of an in-use anchor, it kills the sessions on it.
+refuse the removal of an in-use anchor, it kills the sessions on it. That
+replacement is **load-bearing for the [Session Reload](#session-reload)**, not
+merely tidy: the reload destroys before it creates, so it is the one moment a
+single-session developer stops holding the anchor — and a legacy anchor's
+failure mode there is not accumulated zombies but the loss of every sibling
+session, which the reload turns from occasional into routine.
 
 Rationale and rejected options:
 `docs/adr/0003-cross-container-peer-messaging.md`.

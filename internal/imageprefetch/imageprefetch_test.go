@@ -594,3 +594,44 @@ func mtime(t *testing.T, path string) time.Time {
 	}
 	return info.ModTime()
 }
+
+// TestClearResult pins exactly which files a session reload drops, because
+// #834 settled it as a named set rather than a sweep. The result and the shown
+// signature describe the container the reload just retired; the attempt stamp
+// gates the next probe behind up to a full cadence, and the reload has just
+// invalidated the answer that cadence was throttling — deleting it is what
+// makes the documented "costs one extra probe" true.
+//
+// The unavailable-since marker stays: it records whether the registry can be
+// reached, which a reload does not change, and resetting it would restart a
+// clock that has to elapse before the word "unavailable" is earned.
+func TestClearResult(t *testing.T) {
+	dir := t.TempDir()
+	seed := func(name string) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+		return p
+	}
+	gone := []string{seed(cacheFile), seed(cacheFile + ".shown"), seed(stampFile)}
+	kept := seed(unavailFle)
+
+	ClearResult(dir)
+
+	for _, p := range gone {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s survived the reload (stat = %v)", filepath.Base(p), err)
+		}
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("%s was cleared, restarting a clock the reload did not change: %v", filepath.Base(kept), err)
+	}
+}
+
+// An empty state dir is the session that mounts none: there is nothing to
+// clear, and joining onto "" would reach for the filesystem root.
+func TestClearResultWithoutAStateDir(t *testing.T) {
+	ClearResult("") // must not panic, must not touch anything
+}

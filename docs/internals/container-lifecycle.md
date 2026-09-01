@@ -30,7 +30,7 @@ Rejected alternatives: a detached client-side `docker rm -f` (orphan process, no
 
 ## Session reload teardown
 
-A [session reload](../update-notification.md) is the one caller that must not use the policy documented directly above, and the reason is structural rather than a preference.
+A [session reload](../session-reload.md) is the one caller that must not use the policy documented directly above, and the reason is structural rather than a preference.
 
 `teardown.OnShellExit` declines to destroy while a sibling exec is attached. That is right on an ordinary exit and wrong here: the container name is deterministic per workspace, so a spared old container blocks the `ContainerCreate` the reload performs next — and refusal would cost machinery the design already ruled out (a Docker call from inside the container to guard the marker write, or a re-attach loop in the host). A split-brain, half the panes on the old container and half on the new over the same workspace, is worse than the loss it would avoid. So `container.reloadTeardown` is unconditional: **another attached terminal or a process left behind, the reload lists both and kills both.**
 
@@ -38,6 +38,8 @@ Two mechanics follow from that:
 
 - **Force-remove, not kill-and-let-AutoRemove-reap.** The AutoRemove path returns as soon as the SIGKILL lands and leaves the delete to the daemon's worker, which races the new container's name. `reloadTeardown` issues `ContainerRemove(Force)` and waits — subscribing `ContainerWait` with `WaitConditionRemoved` *before* the removal, because the daemon's own worker can finish in between and a wait started after that never fires. `NotFound` (already gone) and `Conflict` ("removal already in progress") are both success.
 - **It runs in the new binary, after the verify.** `imageplan.Refresh` + `Ensure` gate it, so a reload that finds no usable image destroys nothing and the session stays exactly as it was. That ordering is also what makes the process list evidence rather than prediction: `container.reloadCasualties` enumerates immediately before the teardown and prints only once it succeeded.
+
+One consequence belongs to the section below rather than this one: because the destroy precedes the create, the reloading session has stopped holding the [peer anchor](../../CONTEXT.md#peer-anchor) by the time `ensureAnchor` runs, so **the reload is the window in which a held stale anchor becomes replaceable** — the replacement documented under *Peer anchor reaping* is load-bearing for the reload, not merely tidy.
 
 The enumeration is `ContainerTop`, which stays **cgroup-scoped even under a shared PID namespace** — `PidMode.IsContainer()` rewrites the OCI namespace path and leaves `cgroupsPath` per-container, so it lists this session's processes and no sibling's. An in-container `ps` could not: under peer messaging the anchor's namespace is the whole process table. Over it sits a static deny-list of the known baseline (`tini`, the idle main shell, `proximo-hosts --watch` and its `docker events` child, one `socat` per `-B` port). The list is informational, so the deny-list **does not need to be right, only honest**: a stale entry costs one noisy line and never a wrong decision. The session's own shell command is dropped exactly once, because the container's idle main process and a sibling attached pane run the identical command line and the pane is the loud loss worth showing.
 

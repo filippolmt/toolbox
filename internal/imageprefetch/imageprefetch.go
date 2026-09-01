@@ -440,21 +440,24 @@ func writeResult(stateDir string, res result) {
 	_ = fsx.AtomicWriteFile(filepath.Join(stateDir, cacheFile), []byte(body), 0o644)
 }
 
-// ClearResult drops the published result and the renderer's shown-signature.
-// Called by a session reload, whose container is new while those two files
-// still describe the old one.
+// ClearResult drops the published result, the renderer's shown-signature and
+// the attempt stamp. Called by a session reload, whose container is new while
+// all three still describe the old one.
 //
 // Deletion, never a rewrite with the digest just landed on: the state mount is
 // shared across every session the user runs, so a rewritten result would tell
-// a sibling still on the old image that it is up to date. Deletion costs one
-// extra probe and stays true for every reader. The attempt stamp is left
-// alone — it records when the registry was last asked, which a reload does not
-// change.
+// a sibling still on the old image that it is up to date. Deletion stays true
+// for every reader, and it costs exactly one extra probe — which is the point
+// of clearing the stamp too rather than leaving the next poll gated behind up
+// to a full TTL of a cadence the reload has just invalidated.
+//
+// The unavailable-since marker is deliberately left: it records whether the
+// registry can be reached, which a reload does not change.
 func ClearResult(stateDir string) {
 	if stateDir == "" {
 		return
 	}
-	for _, name := range []string{cacheFile, cacheFile + ".shown"} {
+	for _, name := range []string{cacheFile, cacheFile + ".shown", stampFile} {
 		// Best-effort: a stale banner is the whole cost of failing here.
 		_ = os.Remove(filepath.Join(stateDir, name))
 	}

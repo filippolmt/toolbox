@@ -104,6 +104,13 @@ type SessionPlan struct {
 	ReloadFrom *reload.From
 }
 
+// LaunchesAgent reports whether the session auto-launches an agent in the
+// attached exec rather than dropping the developer at a shell. Only a
+// `toolbox worktree` session does, and that is exactly the launch mode a
+// reload has to reproduce — so the reload asks this rather than inferring
+// intent from what the developer happened to be running.
+func (p *SessionPlan) LaunchesAgent() bool { return p.ExecCmd != nil }
+
 // PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
 // container-name decision — the one field that varies between a workspace
 // session and a named shell — a single Name input rather than a post-planning
@@ -119,7 +126,7 @@ type PlanInput struct {
 	// pure planner does not hold). Empty when unresolvable — e.g. a locally
 	// built untagged image; the identity injection then omits the digest entry
 	// so a reader skips the image comparison rather than treating an empty
-	// value as a stale digest. See update-notification.
+	// value as a stale digest. See session-reload.
 	ImageDigest string
 
 	// Name is the named shell exactly as the user typed it, empty for workspace
@@ -170,6 +177,11 @@ type WorktreeSession struct {
 	Agent string
 	// Prompt is the initial task handed to the agent, empty for a bare launch.
 	Prompt string
+	// Resume relaunches the agent on its most recent conversation instead of
+	// starting one. The third launch mode beside prompt and bare, and the only
+	// one a developer never asks for directly: it is set by a reload, whose
+	// whole promise is conversational continuity across the recreate.
+	Resume bool
 }
 
 // gitDir returns the main repo's .git directory for a worktree session, or ""
@@ -275,10 +287,10 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(name))),
+		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
 		Cmd:               cmd,
-		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
+		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
@@ -298,8 +310,41 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 //
 // Container-side path, because that is the side that writes it. The host edge
 // composes the same basename against the bind's host source.
-func reloadMarkerEnv(containerName string) []string {
+//
+// **Emitted only when that bind exists.** A session whose `mounts:` dropped the
+// state mount has nowhere for the two sides to meet, and the container would
+// not notice: the entrypoint creates ~/.toolbox-state either way, so the write
+// succeeds into a container-local directory, the shell exits, and the host
+// reads nothing — the session spent in silence that the capability marker is
+// here to prevent. Withholding the variable turns that into the refusal at the
+// prompt it should have been.
+func reloadMarkerEnv(stateDir, containerName string) []string {
+	if stateDir == "" {
+		return nil
+	}
 	return []string{reload.MarkerEnv + "=" + path.Join(mountplan.StateMountTarget, reload.MarkerName(containerName))}
+}
+
+// resolveWorktreeLaunch reproduces a worktree session's launch mode across a
+// reload, which is deliberately not the same as replaying its intent.
+//
+// Two rules, both from the fact that the original invocation has already run.
+// The prompt is **dropped**: the task that opened this worktree was sent once
+// and completed, and re-sending it would start the work again. The agent
+// **resumes** instead — but only when the carried working directory survived
+// validation, because `claude --continue` is keyed on the cwd and the
+// workspace is mounted twice. On the fallback the agent launches bare:
+// resuming the wrong lineage in silence is worse than not resuming.
+//
+// Returns a copy; the caller's WorktreeSession is an input, not a scratchpad.
+func resolveWorktreeLaunch(wt *WorktreeSession, from *reload.From, workingDir string) *WorktreeSession {
+	if wt == nil || from == nil {
+		return wt
+	}
+	out := *wt
+	out.Prompt = ""
+	out.Resume = from.Resume && from.Cwd != "" && workingDir == from.Cwd
+	return &out
 }
 
 // reloadWorkingDir applies the one piece of in-container process state a
@@ -499,7 +544,7 @@ func WithImageDigest(env []string, digest string) []string {
 // resolved a repo digest). The digest entry is omitted — not emitted empty —
 // when unresolvable, so a reader distinguishes "created from a local build"
 // from "created from a digest that is now stale" instead of reporting a bogus
-// update. See update-notification.
+// update. See session-reload.
 func identityEnv(imageDigest string) []string {
 	out := []string{CLIVersionEnv + "=" + version.Version}
 	if imageDigest != "" {

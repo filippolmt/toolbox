@@ -124,7 +124,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// created from — the baseline the update prefetch compares the local image
 	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
-	// the env entry. See update-notification.
+	// the env entry. See session-reload.
 	imageDigest := resolveImageDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 
 	// Plan after the Docker client is constructed so a failed client init
@@ -153,7 +153,10 @@ func runShell(cmd *cobra.Command, args []string) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return runSession(ctx, cli, plan)
+	// A plain shell's re-entry form is its own invocation: `toolbox shell` and
+	// `toolbox shell <name>` are both idempotent and promptless, so there is
+	// nothing to normalise away — unlike `worktree create`.
+	return runSession(ctx, cli, plan, append([]string{"shell"}, args...))
 }
 
 // resolveImageDigest returns the resolved repo digest (`sha256:...`) of the

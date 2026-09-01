@@ -52,6 +52,11 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 		Cwd:         cwd,
 		ImageDigest: sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv),
 		CLIVersion:  sessionplan.EnvValue(plan.Env, sessionplan.CLIVersionEnv),
+		// The launch mode, not the developer's intent: only a session that
+		// auto-launched an agent gets one back, so a plain shell reloads into a
+		// plain shell. The re-entry argv is cmd's half of the payload — it is
+		// the only field this layer has no business constructing.
+		Resume: plan.LaunchesAgent(),
 	}
 }
 
@@ -152,9 +157,12 @@ func reloadCasualties(ctx context.Context, cli client.APIClient, name string, se
 }
 
 // reloadBaseline is the small known set of processes a healthy idle container
-// always carries, keyed on the first field's basename: tini as PID 1, one
-// socat per published port under -B, the proximo hosts watcher, and the
+// always carries: tini as PID 1, one socat per published port under -B, the
+// proximo hosts watcher and the `docker events` child it reconnects, and the
 // `sleep infinity` a bare image CMD would leave.
+//
+// Keyed by baselineKey, which is why the watcher's child can sit in the same
+// map as everything else despite needing two words to name.
 //
 // It does not need to be right, only honest. Because the list is informational
 // a stale entry costs one noisy line and never a wrong decision — the same
@@ -164,6 +172,19 @@ var reloadBaseline = map[string]bool{
 	"socat":         true,
 	"proximo-hosts": true,
 	"sleep":         true,
+	"docker events": true,
+}
+
+// baselineKey reduces a command line to the shape reloadBaseline is keyed on:
+// the first field's basename, plus the subcommand when the binary is one whose
+// name alone says nothing (`docker` runs the watcher's event stream, and it
+// also runs whatever the developer typed).
+func baselineKey(fields []string) string {
+	base := filepath.Base(fields[0])
+	if base == "docker" && len(fields) > 1 {
+		return base + " " + fields[1]
+	}
+	return base
 }
 
 // filterCasualties reduces a ContainerTop result to the command lines worth
@@ -194,12 +215,7 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 			mainShellSeen = true
 			continue
 		}
-		fields := strings.Fields(cmd)
-		if reloadBaseline[filepath.Base(fields[0])] {
-			continue
-		}
-		// The watcher's own child, the only two-word entry in the baseline.
-		if len(fields) > 1 && filepath.Base(fields[0]) == "docker" && fields[1] == "events" {
+		if reloadBaseline[baselineKey(strings.Fields(cmd))] {
 			continue
 		}
 		out = append(out, cmd)

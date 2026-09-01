@@ -66,6 +66,30 @@ type From struct {
 	// from one that failed silently.
 	ImageDigest string `json:"image_digest,omitempty"`
 	CLIVersion  string `json:"cli_version,omitempty"`
+	// Reentry is the argv the next process runs, **normalised** rather than
+	// replayed: `worktree create` comes back as `worktree open <branch>`,
+	// because replaying the original would re-create the worktree and re-send
+	// a prompt the agent has already completed. Empty falls back to a bare
+	// `shell`, and it is also the line printed when a reload fails after the
+	// old container is gone — the shell that would otherwise say how to get
+	// back has already exited.
+	Reentry []string `json:"reentry,omitempty"`
+	// Resume asks the next session to relaunch its agent on the most recent
+	// conversation instead of starting a new one. Set only for a session that
+	// auto-launched one, and honoured only when the carried cwd survived
+	// validation: resuming the wrong lineage silently is worse than not
+	// resuming, and `claude --continue` is keyed on the working directory.
+	Resume bool `json:"resume,omitempty"`
+}
+
+// ReentryCommand renders the payload's re-entry form as the command line a
+// developer can retype. Falls back to a bare `toolbox shell`, which is right
+// for the session that carried no form and is never wrong enough to withhold.
+func (f From) ReentryCommand() string {
+	if len(f.Reentry) == 0 {
+		return "toolbox shell"
+	}
+	return "toolbox " + strings.Join(f.Reentry, " ")
 }
 
 // MarkerName is the marker's basename inside the state mount.
@@ -88,12 +112,12 @@ func MarkerPath(stateDir, containerName string) string {
 
 // TakeMarker reads the marker at path and deletes it, reporting whether a
 // reload was asked for. Deleting on read is what keeps a marker orphaned by a
-// crashed session from firing later; the deletion is therefore unconditional
-// on the read succeeding.
+// crashed session from firing later.
 //
-// The body is the working directory the session was in. An empty or unreadable
-// body still counts as a reload request — the marker's existence is the
-// request, its content is the one carried nicety.
+// An *empty* marker is still a request: its existence is the ask and its body,
+// the working directory, is only the one nicety it carries. An *unreadable*
+// one is not — that error is almost always simply "absent", and treating an
+// I/O error as a reload would tear a session down on a failing filesystem.
 func TakeMarker(path string) (cwd string, requested bool) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -103,10 +127,11 @@ func TakeMarker(path string) (cwd string, requested bool) {
 	return strings.TrimRight(string(body), "\r\n"), true
 }
 
-// WriteMarker publishes a reload request at path. The host never calls this —
-// the in-container `toolbox-reload` zsh function does — but the Go side owns
-// the format, so the peer gate and any future host-side caller write it
-// through the same code rather than a second spelling of the same bytes.
+// WriteMarker publishes a reload request at path. Production writes come from
+// the in-container `toolbox-reload` zsh function, never from here; this exists
+// so the tests that drive the reload path — including the real-daemon gate in
+// internal/container — produce the bytes through the same code that defines
+// them, rather than a second spelling that could drift from TakeMarker.
 func WriteMarker(path, cwd string) error {
 	return fsx.AtomicWriteFile(path, []byte(cwd+"\n"), 0o644)
 }

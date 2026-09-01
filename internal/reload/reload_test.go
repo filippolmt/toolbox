@@ -3,6 +3,7 @@ package reload_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,11 +34,16 @@ func TestDecode(t *testing.T) {
 			want: reload.From{Container: "toolbox-p-1234abcd"},
 		},
 		{
+			name: "the two continuity fields",
+			raw:  `{"container":"c","reentry":["worktree","open","fix/x"],"resume":true}`,
+			want: reload.From{Container: "c", Reentry: []string{"worktree", "open", "fix/x"}, Resume: true},
+		},
+		{
 			// A field this version does not know must not turn into a refusal:
 			// the payload carries no version precisely so an older binary can
 			// read a newer one's.
 			name: "unknown field is ignored",
-			raw:  `{"container":"c","reentry":"worktree open x"}`,
+			raw:  `{"container":"c","launch_mode":"agent"}`,
 			want: reload.From{Container: "c"},
 		},
 		{name: "no container name", raw: `{"cwd":"/workspace"}`, wantErr: true},
@@ -58,7 +64,7 @@ func TestDecode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Decode(%q): %v", tc.raw, err)
 			}
-			if *got != tc.want {
+			if !reflect.DeepEqual(*got, tc.want) {
 				t.Errorf("Decode(%q) = %+v, want %+v", tc.raw, *got, tc.want)
 			}
 		})
@@ -76,6 +82,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		Cwd:         `/workspace/dir with spaces/and"quote`,
 		ImageDigest: "sha256:abc",
 		CLIVersion:  "v9.9.9",
+		Reentry:     []string{"worktree", "open", "fix/thing"},
+		Resume:      true,
 	}
 	raw, err := reload.Encode(want)
 	if err != nil {
@@ -85,7 +93,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode(%q): %v", raw, err)
 	}
-	if *got != want {
+	if !reflect.DeepEqual(*got, want) {
 		t.Errorf("round trip = %+v, want %+v", *got, want)
 	}
 }
@@ -174,5 +182,42 @@ func TestMarkerNameIsKeyedOnTheContainer(t *testing.T) {
 		if strings.ContainsAny(n, `/\`) {
 			t.Errorf("marker name %q is not a plain basename", n)
 		}
+	}
+}
+
+// TestReentryCommand pins the line a failed reload prints. By the time it is
+// needed the shell that would normally say how to get back has exited, and
+// after the teardown the old container is gone too — so the command has to be
+// the one that actually re-enters *this* session, not a generic suggestion.
+func TestReentryCommand(t *testing.T) {
+	cases := []struct {
+		name string
+		from reload.From
+		want string
+	}{
+		{
+			name: "no form falls back to a plain shell",
+			from: reload.From{Container: "c"},
+			want: "toolbox shell",
+		},
+		{
+			name: "a named shell re-enters by name",
+			from: reload.From{Container: "c", Reentry: []string{"shell", "infra"}},
+			want: "toolbox shell infra",
+		},
+		{
+			// Never `worktree create`: the branch exists now, and the prompt
+			// that came with it has already been answered.
+			name: "a worktree re-enters through open",
+			from: reload.From{Container: "c", Reentry: []string{"worktree", "open", "fix/thing"}},
+			want: "toolbox worktree open fix/thing",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.from.ReentryCommand(); got != tc.want {
+				t.Errorf("ReentryCommand() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

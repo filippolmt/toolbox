@@ -186,7 +186,7 @@ func NewClient() (client.APIClient, error) {
 // container is removed and the other session dies with it.
 //
 // Reload: a non-nil first return means the attached shell asked to move onto a
-// newer image (docs/session-reload). Shell does not perform the re-exec —
+// newer image (docs/session-reload.md). Shell does not perform the re-exec —
 // internal/container must not replace the host process, and it has no business
 // constructing argv — so it hands the typed request back and cmd tail-calls.
 // The cycle lives in the sequence of processes, not inside any one of them.
