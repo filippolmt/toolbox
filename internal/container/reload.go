@@ -1,0 +1,268 @@
+package container
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/reload"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/ui"
+	"github.com/filippolmt/toolbox/internal/version"
+)
+
+// reloadMarkerPath is the host-side path of this session's reload marker: the
+// state mount's resolved host source plus the basename both sides agree on.
+// Empty when the plan carries no state mount, which is also the only way the
+// container could not see the marker either.
+func reloadMarkerPath(plan *sessionplan.SessionPlan) string {
+	if plan.StateDir == "" {
+		return ""
+	}
+	return reload.MarkerPath(plan.StateDir, plan.ContainerName)
+}
+
+// takeReloadRequest reads the marker the exiting shell may have written and
+// composes the handover for the next host process. Called exactly where
+// execShell returns, which is where the teardown decision is already made.
+//
+// The "before" half of the summary is read off the plan this process ran with,
+// not recomputed: the new binary needs to state what was left, and by the time
+// it runs, the container that could have been asked is gone.
+func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
+	marker := reloadMarkerPath(plan)
+	if marker == "" {
+		return nil
+	}
+	cwd, requested := reload.TakeMarker(marker)
+	if !requested {
+		return nil
+	}
+	return &reload.From{
+		Container:   plan.ContainerName,
+		Cwd:         cwd,
+		ImageDigest: sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv),
+		CLIVersion:  sessionplan.EnvValue(plan.Env, sessionplan.CLIVersionEnv),
+	}
+}
+
+// replaceForReload runs the destructive half of a session reload, in the one
+// order that makes a failed reload harmless: refresh, prove the image is
+// present, only then destroy.
+//
+// imageplan.Ensure is a local-presence check that never pulls, so the gate
+// needs no new code and gives the contract outright — a reload that finds no
+// usable image is not a failed reload, it is a no-op that leaves the session
+// alive. Everything after the teardown can still fail (a port conflict, a
+// `:local` overlay that will not build), and those failures must print the
+// re-entry command, because the shell that would have printed it is gone.
+func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+	from := plan.ReloadFrom
+
+	imageplan.Refresh(ctx, cli, plan.Image)
+	if err := imageplan.Ensure(ctx, cli, plan.Image); err != nil {
+		return fmt.Errorf("reload aborted, session left as it was: %w", err)
+	}
+
+	// Enumerated before the teardown, printed after it: the container is still
+	// alive here, and a list printed by a reload that then failed would name
+	// casualties that never died.
+	casualties := reloadCasualties(ctx, cli, from.Container, plan.Cmd)
+
+	if err := reloadTeardown(ctx, cli, from.Container); err != nil {
+		return err
+	}
+
+	// The container is new; the banner's cache still describes the old one.
+	imageprefetch.ClearResult(plan.StateDir)
+
+	printReloadSummary(from, localRepoDigest(ctx, cli, plan.Image.Ref), casualties)
+	return nil
+}
+
+// reloadTeardown destroys the container the reload is replacing and does not
+// return until the name is free again.
+//
+// Deliberately not teardown.OnShellExit, and the reason is structural rather
+// than a preference: that policy declines while a sibling shell is attached,
+// and the container name is deterministic per workspace — so a spared old
+// container would block the create that follows, turning a considerate refusal
+// into a name collision. Another attached terminal dies with the reload; that
+// is the rule, and reloadCasualties is what makes the loss visible.
+//
+// Force-remove rather than kill-and-let-AutoRemove-reap: the AutoRemove path
+// returns as soon as the SIGKILL lands, which races the new container's name.
+// The wait is subscribed before the removal because the daemon's own worker
+// can finish in between, and a wait started after that never fires.
+func reloadTeardown(ctx context.Context, cli client.APIClient, name string) error {
+	waitRes := cli.ContainerWait(ctx, name, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
+
+	_, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
+	switch {
+	case cerrdefs.IsNotFound(err):
+		// Already gone — an external `toolbox stop`, or a daemon that reaped it
+		// while this process was re-execing. Nothing to wait for.
+		return nil
+	case err != nil && !cerrdefs.IsConflict(err):
+		// Conflict is the daemon's "removal already in progress": redundant,
+		// not an error, and the wait below is exactly how we find out it ended.
+		return fmt.Errorf("reload: failed to remove container %s: %w", name, err)
+	}
+
+	select {
+	case <-waitRes.Result:
+		return nil
+	case werr := <-waitRes.Error:
+		if werr != nil && !cerrdefs.IsNotFound(werr) {
+			return fmt.Errorf("reload: waiting for container %s to be removed: %w", name, werr)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// reloadCasualties lists the container processes the teardown is about to end,
+// baseline removed. The reload gates on nothing here: a dev server, a watcher
+// or a `tail -f` is the normal state of a working shell, so a prompt would
+// fire on nearly every reload. What earns the look is the one thing the
+// developer has forgotten — a Ctrl+Z-suspended agent, a detached job, invisible
+// at the prompt where `toolbox-reload` was typed.
+//
+// ContainerTop rather than a process list from inside the container: under
+// peer messaging the anchor's PID namespace is the whole process table, so an
+// in-container `ps` would list every sibling session. ContainerTop stays
+// cgroup-scoped even then. Best-effort — it answers 409 on a container that is
+// no longer running, and a missing list costs evidence, never the reload.
+func reloadCasualties(ctx context.Context, cli client.APIClient, name string, sessionCmd []string) []string {
+	top, err := cli.ContainerTop(ctx, name, client.ContainerTopOptions{})
+	if err != nil {
+		return nil
+	}
+	return filterCasualties(top.Titles, top.Processes, sessionCmd)
+}
+
+// reloadBaseline is the small known set of processes a healthy idle container
+// always carries, keyed on the first field's basename: tini as PID 1, one
+// socat per published port under -B, the proximo hosts watcher, and the
+// `sleep infinity` a bare image CMD would leave.
+//
+// It does not need to be right, only honest. Because the list is informational
+// a stale entry costs one noisy line and never a wrong decision — the same
+// drift a gate could not have tolerated.
+var reloadBaseline = map[string]bool{
+	"tini":          true,
+	"socat":         true,
+	"proximo-hosts": true,
+	"sleep":         true,
+}
+
+// filterCasualties reduces a ContainerTop result to the command lines worth
+// showing. Pure, so the deny-list is testable without a daemon.
+//
+// The session's own shell command is dropped exactly once: the container's
+// idle main process and a sibling attached pane run the identical command, and
+// the sibling is the loud loss the developer should see. Dropping every match
+// would hide it; dropping none would report the idle shell on every reload.
+func filterCasualties(titles []string, processes [][]string, sessionCmd []string) []string {
+	col := commandColumn(titles)
+	if col < 0 {
+		return nil
+	}
+	mainShell := strings.Join(sessionCmd, " ")
+	mainShellSeen := false
+
+	var out []string
+	for _, p := range processes {
+		if col >= len(p) {
+			continue
+		}
+		cmd := strings.TrimSpace(p[col])
+		if cmd == "" {
+			continue
+		}
+		if cmd == mainShell && !mainShellSeen {
+			mainShellSeen = true
+			continue
+		}
+		fields := strings.Fields(cmd)
+		if reloadBaseline[filepath.Base(fields[0])] {
+			continue
+		}
+		// The watcher's own child, the only two-word entry in the baseline.
+		if len(fields) > 1 && filepath.Base(fields[0]) == "docker" && fields[1] == "events" {
+			continue
+		}
+		out = append(out, cmd)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// commandColumn locates the CMD column in a ContainerTop result. The daemon's
+// default `ps -ef` yields UID PID PPID C STIME TTY TIME CMD, but the title set
+// is the daemon's to choose, so it is read rather than assumed; an unrecognised
+// header yields no list rather than a column of timestamps.
+func commandColumn(titles []string) int {
+	for i, t := range titles {
+		switch strings.ToUpper(strings.TrimSpace(t)) {
+		case "CMD", "COMMAND":
+			return i
+		}
+	}
+	return -1
+}
+
+// printReloadSummary is the only evidence the reload did anything: the command
+// always reloads, including when nothing is newer, so a run that changed
+// nothing and a run that failed silently would otherwise look identical.
+// Printed on host stdout before the attach, never preceded by a screen clear.
+func printReloadSummary(from *reload.From, imageDigest string, casualties []string) {
+	ui.Infof("Reload: image %s", transition(from.ImageDigest, imageDigest))
+	ui.Infof("Reload: CLI %s", transition(from.CLIVersion, version.Version))
+	if len(casualties) == 0 {
+		// An empty list prints nothing: the two lines above already carry the
+		// proof that the reload happened.
+		return
+	}
+	ui.Info("Reload: ended with the old container:")
+	for _, c := range casualties {
+		ui.Info("  " + c)
+	}
+}
+
+// transition renders one before/after pair, saying `unchanged` outright when
+// the two match — the reload always fires, so "same digest" is a result, not
+// an absence of one.
+func transition(before, after string) string {
+	switch {
+	case before == "" && after == "":
+		return "unknown"
+	case before == "":
+		return after
+	case after == "" || before == after:
+		return before + " (unchanged)"
+	default:
+		return before + " → " + after
+	}
+}
+
+// localRepoDigest reports the repo digest the local store holds for ref, or ""
+// when there is none (an image built locally has no repo digest until it is
+// pushed or pulled). Best-effort: the digest is summary text, not a gate.
+func localRepoDigest(ctx context.Context, cli client.APIClient, ref string) string {
+	res, err := cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return ""
+	}
+	return build.RepoDigest(ref, res.RepoDigests)
+}

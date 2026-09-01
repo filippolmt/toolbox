@@ -67,7 +67,7 @@ func TestShellPrefetchUsesTheContainersOwnDigest(t *testing.T) {
 	mock := &mockClient{inspectFn: runningContainer([]string{sessionplan.ImageDigestEnv + "=" + created})}
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	if err := Shell(context.Background(), mock, plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestShellPrefetchRestampsTheDigestOnCreate(t *testing.T) {
 	plan.Env = append(plan.Env, sessionplan.ImageDigestEnv+"=sha256:stale")
 
 	const pulled = "sha256:fresh"
-	if err := Shell(context.Background(), createPathMock(pulled), plan); err != nil {
+	if _, err := Shell(context.Background(), createPathMock(pulled), plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestShellPrefetchDropsTheDigestForALocalBuild(t *testing.T) {
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.Env = append(plan.Env, sessionplan.ImageDigestEnv+"=sha256:stale")
 
-	if err := Shell(context.Background(), createPathMock(""), plan); err != nil {
+	if _, err := Shell(context.Background(), createPathMock(""), plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if len(*got) != 1 || (*got)[0].ContainerDigest != "" {
@@ -182,7 +182,7 @@ func TestShellPrefetchMakesNoClaimWithoutAContainerConfig(t *testing.T) {
 			return container.InspectResponse{ID: "abc123", State: &container.State{Running: true}}, nil
 		},
 	}
-	if err := Shell(context.Background(), mock, plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if len(*got) != 1 || (*got)[0].ContainerDigest != "" {
@@ -208,7 +208,7 @@ func TestShellPrefetchRefusals(t *testing.T) {
 			got, _ := stubPrefetch(t)
 
 			mock := &mockClient{inspectFn: runningContainer(nil)}
-			if err := Shell(context.Background(), mock, testPlanWithCfg(t, tc.cfg, testWorkspace(t), nil)); err != nil {
+			if _, err := Shell(context.Background(), mock, testPlanWithCfg(t, tc.cfg, testWorkspace(t), nil)); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			if len(*got) != 0 {
@@ -228,7 +228,7 @@ func TestShellPrefetchStopsWhenTheShellExits(t *testing.T) {
 	_, ctx := stubPrefetch(t)
 
 	mock := &mockClient{inspectFn: runningContainer(nil)}
-	if err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 

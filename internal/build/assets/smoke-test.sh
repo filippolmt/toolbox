@@ -282,6 +282,22 @@ cli_latest=
         echo "    got: $out"; return 1
     }
 
+    # r. toolbox-reload refuses when the host CLI is too old to have injected
+    # TOOLBOX_RELOAD_MARKER. Both halves matter and only one is obvious: the
+    # refusal text, and that the shell SURVIVES it. A guard that printed and
+    # then exited would reproduce half the harm it exists to prevent — spending
+    # the session for nothing — and that half regresses silently, so the probe
+    # runs a second command and asserts its output arrives.
+    _zsh_reload_refusal_check() {
+        out=$(env -u TOOLBOX_RELOAD_MARKER TOOLBOX_CLI_VERSION=v0.0.0-test \
+              zsh -i -c "toolbox-reload; print STILL_ALIVE" 2>&1)
+        case "$out" in *"does not support reload"*) ;; *)
+            echo "    no refusal in: $out"; return 1 ;;
+        esac
+        case "$out" in *STILL_ALIVE*) return 0 ;; esac
+        echo "    refusal ended the shell: $out"; return 1
+    }
+
     # Run the assertions in order. The per-plugin loop expands to 4 entries.
     _zsh_assert "binary"                       _zsh_binary_check
     _zsh_assert "oh-my-zsh.sh"                 _zsh_omz_sh_check
@@ -307,6 +323,7 @@ cli_latest=
     _zsh_assert "update banner silent"         _zsh_banner_none_check
     _zsh_assert "update banner ready"          _zsh_banner_ready_check
     _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
+    _zsh_assert "toolbox-reload refuses without marker" _zsh_reload_refusal_check
 }
 
 # playwright-cli per-repo skill install (functional, offline). `playwright-cli

@@ -260,6 +260,45 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
     add-zsh-hook precmd _toolbox_update_precmd
 fi
 
+# -- Session reload (session-reload) -----------------------------------------
+# `toolbox-reload` moves this session onto whatever runtime image the host has
+# already downloaded, without exiting and reopening by hand. Docker cannot swap
+# the image of a running container and this command runs inside the very
+# container being replaced, so the work belongs to the host-side `toolbox
+# shell` process: we only signal it. The signal is a marker file the host reads
+# exactly where it already decides whether to tear the session down.
+#
+# A function, not a script in bin/: a child process cannot make its parent
+# shell exit, and the exit is the whole point. That also scopes it to the zsh
+# prompt, which is where it belongs — asking for a reload from inside an agent
+# would be asking the agent to kill itself.
+#
+# $TOOLBOX_RELOAD_MARKER is injected by the host. Its PRESENCE is the
+# capability: an image shipping this function can meet a CLI too old to read
+# the marker (the image is pushed on merge, the CLI released on tag, and
+# `brew upgrade` is yours to run), and that CLI would write nothing, notice
+# nothing, and tear the session down for good. Refusing here costs a message;
+# not refusing costs the session. The refusal deliberately names no required
+# version — presence is all this side ever learns.
+# → docs/update-notification.md
+toolbox-reload() {
+    emulate -L zsh
+    if [ -z "${TOOLBOX_RELOAD_MARKER:-}" ]; then
+        print -u2 -P "%F{yellow}toolbox:%f the toolbox CLI running this session${TOOLBOX_CLI_VERSION:+ ($TOOLBOX_CLI_VERSION)} does not support reload — run %B'brew upgrade toolbox'%b on the host, then exit and reopen this shell once."
+        return 1
+    fi
+    # Atomic: write beside the target and rename over it, so a host reading the
+    # marker never sees a half-written working directory.
+    local tmp="${TOOLBOX_RELOAD_MARKER}.tmp.$$"
+    if ! { print -r -- "$PWD" > "$tmp" && mv -f "$tmp" "$TOOLBOX_RELOAD_MARKER"; } 2>/dev/null; then
+        rm -f "$tmp" 2>/dev/null
+        print -u2 -P "%F{yellow}toolbox:%f could not write the reload marker ($TOOLBOX_RELOAD_MARKER) — the session is unchanged."
+        return 1
+    fi
+    print -P "%F{yellow}toolbox:%f reloading — the container is recreated, this shell ends and a new one opens."
+    exit
+}
+
 # -- User customisation (ZSH-08) — survives image rebuilds -------------------
 # ~/.zshrc lives in the image layer and the Dockerfile truncates it on every
 # rebuild; ~/.toolbox-state is a read-write mount that does not. Sourced last so

@@ -182,6 +182,10 @@ func resolveAgent(flag string) (string, error) {
 // with the `shell` command. What a worktree session *is* — the .git bind and
 // the agent launch — lives behind PlanInput.Worktree.
 func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
+	reloadFrom, err := takeReloadHandover()
+	if err != nil {
+		return err
+	}
 	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Cfg:         cfg,
@@ -189,12 +193,13 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent,
 		ImageDigest: imageDigest,
 		Peer:        cfg.PeerMessaging,
 		Worktree:    &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
+		ReloadFrom:  reloadFrom,
 	})
 	if err != nil {
 		return err
 	}
 	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	return container.Shell(ctx, cli, plan)
+	return runSession(ctx, cli, plan)
 }
 
 // seedWorktreeFiles copies gitignored per-repo working state from the main

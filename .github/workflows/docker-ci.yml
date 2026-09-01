@@ -172,8 +172,11 @@ jobs:
 
       # IMAGE_TAG reaches the gate as the `image:` config override, so the
       # canonical ref lives only in internal/build.
-      - name: Peer messaging mechanism gate
+      # No -run filter: the `dockergate` tag means "needs a real daemon and the
+      # built image", so the tag itself selects the set — peer messaging and
+      # the session reload today, whatever else earns it later.
+      - name: Real-daemon gates (peer messaging, session reload)
         if: ${{ !cancelled() && matrix.load }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}
-        run: go test -tags peergate -count=1 -run TestPeerMessagingMechanism ./internal/container/
+        run: go test -tags dockergate -count=1 ./internal/container/

@@ -69,6 +69,14 @@ equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
 }
 
 func runShell(cmd *cobra.Command, args []string) error {
+	// Consumed and unset before anything builds a container env, so the
+	// host-to-host handover never reaches a container. Nil on an ordinary
+	// shell start; unreadable is a hard error, never a silent degrade.
+	reloadFrom, err := takeReloadHandover()
+	if err != nil {
+		return err
+	}
+
 	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
 	// fails fast before any fs side effects or container creation.
 	publish, bridgeLoopback, err := expandShellOAuth(shellPublish, shellBridgeLoopback, shellOAuth)
@@ -134,6 +142,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 		Name:           shellName,
 		Profile:        profile,
 		Peer:           resolvePeer(cmd, cfg.PeerMessaging, shellPeer),
+		ReloadFrom:     reloadFrom,
 	})
 	if err != nil {
 		return err
@@ -144,7 +153,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return container.Shell(ctx, cli, plan)
+	return runSession(ctx, cli, plan)
 }
 
 // resolveImageDigest returns the resolved repo digest (`sha256:...`) of the

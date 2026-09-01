@@ -440,6 +440,26 @@ func writeResult(stateDir string, res result) {
 	_ = fsx.AtomicWriteFile(filepath.Join(stateDir, cacheFile), []byte(body), 0o644)
 }
 
+// ClearResult drops the published result and the renderer's shown-signature.
+// Called by a session reload, whose container is new while those two files
+// still describe the old one.
+//
+// Deletion, never a rewrite with the digest just landed on: the state mount is
+// shared across every session the user runs, so a rewritten result would tell
+// a sibling still on the old image that it is up to date. Deletion costs one
+// extra probe and stays true for every reader. The attempt stamp is left
+// alone — it records when the registry was last asked, which a reload does not
+// change.
+func ClearResult(stateDir string) {
+	if stateDir == "" {
+		return
+	}
+	for _, name := range []string{cacheFile, cacheFile + ".shown"} {
+		// Best-effort: a stale banner is the whole cost of failing here.
+		_ = os.Remove(filepath.Join(stateDir, name))
+	}
+}
+
 // boolField renders a flag in the cache's 0/1 spelling, which the shell-side
 // renderer compares as a string.
 func boolField(b bool) string {

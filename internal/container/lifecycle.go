@@ -34,6 +34,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
@@ -183,20 +184,36 @@ func NewClient() (client.APIClient, error) {
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
-func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (err error) {
+//
+// Reload: a non-nil first return means the attached shell asked to move onto a
+// newer image (docs/session-reload). Shell does not perform the re-exec —
+// internal/container must not replace the host process, and it has no business
+// constructing argv — so it hands the typed request back and cmd tail-calls.
+// The cycle lives in the sequence of processes, not inside any one of them.
+func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (rl *reload.From, err error) {
 	for _, w := range plan.Warnings {
 		ui.Warning("mount skipped: " + w)
+	}
+
+	// A reload arrives owning a container it must replace, and it must do so
+	// before the inspect below — which would otherwise compute a connect to the
+	// very container being retired. The ordering inside is #834's: refresh and
+	// prove the image, only then destroy.
+	if plan.ReloadFrom != nil {
+		if reloadErr := replaceForReload(ctx, cli, plan); reloadErr != nil {
+			return nil, reloadErr
+		}
 	}
 
 	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
 	inspect := inspectResult.Container
 	op, opErr := runplan.Compute(inspect, inspectErr)
 	if opErr != nil {
-		return fmt.Errorf("failed to inspect container: %w", opErr)
+		return nil, fmt.Errorf("failed to inspect container: %w", opErr)
 	}
 
 	if preflightErr := preflightHostConfig(ctx, cli, plan, inspect, op); preflightErr != nil {
-		return preflightErr
+		return nil, preflightErr
 	}
 
 	// Best-effort registry sync of the base image. Hard guarantee runs in
@@ -212,7 +229,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	baseImage := plan.Image
 	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
 	if overlayErr != nil {
-		return overlayErr
+		return nil, overlayErr
 	}
 	plan.Image = image
 
@@ -224,13 +241,21 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
 	if dispatchErr != nil {
-		return dispatchErr
+		return nil, dispatchErr
 	}
 
 	// Auto-remove on exit, unless another shell is still attached to the
 	// same container. Policy + fresh-context handling owned by teardown.
 	// The shell's own exit error wins over any cleanup error.
+	//
+	// Suppressed on the reload path — the named result *is* the flag. The
+	// reload's teardown belongs to the next host process, after its
+	// verify: destroying the container here would void that gate and leave a
+	// failed re-exec with nothing to go back to.
 	defer func() {
+		if rl != nil {
+			return
+		}
 		if cleanupErr := teardown.OnShellExit(cli, plan.ContainerName); cleanupErr != nil && err == nil {
 			err = cleanupErr
 		}
@@ -250,7 +275,19 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	if plan.ExecCmd != nil {
 		execCmd = plan.ExecCmd
 	}
-	return execShellFn(ctx, cli, containerID, execCmd)
+	execErr := execShellFn(ctx, cli, containerID, execCmd)
+
+	// The shell writes a marker on its way out and exits; this is the moment
+	// the host already decides between teardown and something else, so it is
+	// the moment the marker is read. Read-and-delete, and unconditionally:
+	// a session that asked for a reload and then died leaves the marker on a
+	// mount every later session shares, where it would fire a reload nobody
+	// asked for at the next ordinary exit.
+	requested := takeReloadRequest(plan)
+	if execErr != nil {
+		return nil, execErr
+	}
+	return requested, nil
 }
 
 // prefetchInput assembles the update prefetch's input and reports whether the
