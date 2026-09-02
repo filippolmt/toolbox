@@ -370,6 +370,34 @@ func TestShellStampsADeclinedRefresh(t *testing.T) {
 	}
 }
 
+// A ctrl+c at the start-up prompt is not the "no" it resembles: it stops the
+// command. The prompt has already re-raised the signal raw mode swallowed, but
+// whether the signal context has cancelled by now is a matter of scheduling —
+// so the outcome is read directly, and no session is built in the window where
+// it has not.
+func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	execed, restore := stubExecShell()
+	defer restore()
+	got, _ := stubPrefetch(t)
+	stubRefresh(t, imageplan.Outcome{Interrupted: true})
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err == nil {
+		t.Fatal("Shell() error = nil, want the interrupted start to fail")
+	}
+
+	if *execed {
+		t.Error("a session was started for a command the developer had stopped")
+	}
+	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err == nil {
+		t.Error("an interrupt stamped a postponement: there is no session left to postpone for")
+	}
+	if len(*got) != 0 {
+		t.Errorf("prefetch input = %+v, want no prefetch after an interrupt", *got)
+	}
+}
+
 // The other two outcomes leave no stamp: an accepted download and a store the
 // probe proved current are both "this session has had its turn at the
 // registry", which is what StartSynced says and what stops the poller asking

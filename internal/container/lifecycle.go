@@ -270,6 +270,14 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// probe is a probe, and the background poller must not re-ask the question
 	// this just answered.
 	refresh := offerRefresh(ctx, cli, plan, op)
+	if refresh.Interrupted {
+		// A ctrl+c at the start-up prompt. The prompt has already re-raised
+		// the signal raw mode swallowed, but the answer is reported rather
+		// than left to the signal alone: whether cmd's signal context has
+		// cancelled yet is a matter of scheduling, and a session must not be
+		// built in the window where it has not.
+		return nil, errors.New("interrupted")
+	}
 
 	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
 	// `:local` image on top of the freshened base and run the shell from it.
