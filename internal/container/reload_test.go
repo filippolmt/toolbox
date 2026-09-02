@@ -289,6 +289,7 @@ func TestFilterCasualties(t *testing.T) {
 				row("/usr/bin/tini -g -- /usr/local/bin/entrypoint"),
 				row("/bin/zsh"),
 				row("/bin/sh /usr/local/bin/proximo-hosts --watch"),
+				row("/usr/local/bin/proximo-hosts --watch"),
 				row("docker events --filter type=container"),
 				row("socat TCP-LISTEN:8976,fork TCP:127.0.0.1:8976"),
 			},
@@ -316,28 +317,44 @@ func TestFilterCasualties(t *testing.T) {
 			want:       []string{"claude", "npm run dev"},
 		},
 		{
-			// A pane per tab and a watcher per project make identical lines the
-			// common case, and eight copies of `/bin/zsh` say nothing eight
-			// times. The count is the whole message.
 			name: "identical lines collapse to one, carrying their count",
 			processes: [][]string{
 				row("/bin/zsh"), row("/bin/zsh"), row("/bin/zsh"),
 				row("npm run dev"),
 			},
 			sessionCmd: []string{"/bin/zsh"},
-			want:       []string{"/bin/zsh (\u00d72)", "npm run dev"},
+			want:       []string{"/bin/zsh (×2)", "npm run dev"},
 		},
 		{
-			// A watchdog started with `node -e` carries kilobytes of argv, and
-			// two of them would be the whole summary. The count survives the
-			// cut: it is appended to what is left, not to what was dropped.
-			name: "a long command line is cut, and says so",
+			// Arithmetic, by hand: the line ends at 120 runes, ` (×2)` claims 5
+			// of them and the ellipsis 1, leaving 114 for the command — 8 for
+			// `node -e ` and 106 x's.
+			name: "two long command lines that differ past the cut are one line, counted",
 			processes: [][]string{
-				row("node -e " + strings.Repeat("x", 400)),
-				row("node -e " + strings.Repeat("x", 400)),
+				row("node -e " + strings.Repeat("x", 400) + " --pid 1"),
+				row("node -e " + strings.Repeat("x", 400) + " --pid 2"),
 			},
 			sessionCmd: []string{"/bin/zsh"},
-			want:       []string{"node -e " + strings.Repeat("x", casualtyLineMax-len("node -e ")) + "\u2026 (\u00d72)"},
+			want:       []string{"node -e " + strings.Repeat("x", 106) + "… (×2)"},
+		},
+		{
+			// No suffix to make room for: 119 runes of command, then the ellipsis.
+			name:       "a long command line is cut at the cap",
+			processes:  [][]string{row("node -e " + strings.Repeat("x", 400))},
+			sessionCmd: []string{"/bin/zsh"},
+			want:       []string{"node -e " + strings.Repeat("x", 111) + "…"},
+		},
+		{
+			name:       "a multi-byte command line is cut on character boundaries",
+			processes:  [][]string{row(strings.Repeat("è", 200))},
+			sessionCmd: []string{"/bin/zsh"},
+			want:       []string{strings.Repeat("è", 119) + "…"},
+		},
+		{
+			name:       "a line exactly at the cap is left whole",
+			processes:  [][]string{row(strings.Repeat("y", 120))},
+			sessionCmd: []string{"/bin/zsh"},
+			want:       []string{strings.Repeat("y", 120)},
 		},
 		{
 			name:       "an unrecognised header yields no list rather than a column of timestamps",
@@ -358,6 +375,36 @@ func TestFilterCasualties(t *testing.T) {
 				t.Errorf("filterCasualties = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBaselineKey pins the reduction the deny-list is keyed on. Its whole
+// subtlety is the shebang: ContainerTop names a script by its interpreter, so
+// the key has to look one field further — except where the interpreter is
+// running something of its own, and is the honest name.
+func TestBaselineKey(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		want string
+	}{
+		{"/usr/bin/tini -g -- /usr/local/bin/entrypoint", "tini"},
+		{"/usr/local/bin/proximo-hosts --watch", "proximo-hosts"},
+		{"/bin/sh /usr/local/bin/proximo-hosts --watch", "proximo-hosts"},
+		{"/bin/bash /usr/local/bin/proximo-hosts", "proximo-hosts"},
+		{"/bin/zsh /usr/local/bin/proximo-hosts", "proximo-hosts"},
+		// A flag says the shell is the process, not the launcher of one.
+		{"/bin/sh -c 'npm run dev'", "sh"},
+		{"/bin/zsh", "zsh"},
+		// `docker` alone says nothing: the subcommand is half the name, and it
+		// stays half the name behind an interpreter.
+		{"docker events --filter type=container", "docker events"},
+		{"/bin/sh /usr/bin/docker events --filter type=container", "docker events"},
+		{"docker", "docker"},
+	}
+	for _, tc := range cases {
+		if got := baselineKey(strings.Fields(tc.cmd)); got != tc.want {
+			t.Errorf("baselineKey(%q) = %q, want %q", tc.cmd, got, tc.want)
+		}
 	}
 }
 

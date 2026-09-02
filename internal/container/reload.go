@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -211,8 +212,9 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 
 	// A tab per pane and a watcher per project make identical command lines
 	// the common case, and the same line eight times says nothing eight times.
-	// Counted on the full line, before any shortening, so two long argv that
-	// differ only past the cut stay two entries.
+	// Counted on the cut line rather than the full one, because the cut line
+	// is what the developer reads: two watchdogs whose argv diverges past the
+	// cut would otherwise print as two identical lines carrying no count.
 	counts := map[string]int{}
 	var out []string
 	for _, p := range processes {
@@ -230,38 +232,40 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 		if reloadBaseline[baselineKey(strings.Fields(cmd))] {
 			continue
 		}
-		if counts[cmd] == 0 {
-			out = append(out, cmd)
+		line := cutTo(cmd, casualtyLineMax)
+		if counts[line] == 0 {
+			out = append(out, line)
 		}
-		counts[cmd]++
+		counts[line]++
 	}
 	sort.Strings(out)
-	for i, cmd := range out {
-		short := shortenCasualty(cmd)
-		if n := counts[cmd]; n > 1 {
-			short = fmt.Sprintf("%s (\u00d7%d)", short, n)
+	for i, line := range out {
+		n := counts[line]
+		if n == 1 {
+			continue
 		}
-		out[i] = short
+		// The suffix is part of the line, so it comes out of the same budget:
+		// a cap the count is then appended past would not be a cap.
+		suffix := fmt.Sprintf(" (×%d)", n)
+		out[i] = cutTo(line, casualtyLineMax-utf8.RuneCountInString(suffix)) + suffix
 	}
 	return out
 }
 
-// casualtyLineMax is where a casualty line is cut. The list is evidence a
-// developer scans, not a process dump: a watchdog started with `node -e`
-// carries kilobytes of argv, and two of them would be the entire summary.
+// casualtyLineMax is where a rendered casualty line ends, count suffix
+// included. The list is evidence a developer scans, not a process dump: a
+// watchdog started with `node -e` carries kilobytes of argv, and two of them
+// would be the entire summary.
 const casualtyLineMax = 120
 
-// shortenCasualty cuts an over-long command line, counting runes so a cut
-// never lands inside a multi-byte character.
-func shortenCasualty(cmd string) string {
-	if len(cmd) <= casualtyLineMax {
-		return cmd
+// cutTo shortens s to max runes, ellipsis included, and counts runes rather
+// than bytes so a cut never lands inside a multi-byte character.
+func cutTo(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
 	}
-	r := []rune(cmd)
-	if len(r) <= casualtyLineMax {
-		return cmd
-	}
-	return string(r[:casualtyLineMax]) + "\u2026"
+	return string(r[:max-1]) + "…"
 }
 
 // commandColumn locates the CMD column in a ContainerTop result. The daemon's
