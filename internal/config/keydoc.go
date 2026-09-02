@@ -18,6 +18,12 @@ type KeyDoc struct {
 // no built-in value, not a value that happens to be blank.
 const defaultNone = "(none)"
 
+// defaultAutoOn is the Default rendering shared by every tri-state toggle that
+// is on when the key is absent (bridge, managed_statusline, image_reclaim).
+// One spelling, because the three are one contract: *unset* is not a third
+// behaviour, it is the on behaviour written the shorter way.
+const defaultAutoOn = "auto (on)"
+
 // KeyDocs returns the per-key documentation keyed by the top-level config key
 // (the `mapstructure` tag). Every SchemaKeys() field except the deprecated
 // browser_bridge alias has an entry; keydoc_test asserts that coverage.
@@ -53,15 +59,15 @@ func KeyDocs() map[string]KeyDoc {
 		},
 		"bridge": {
 			Summary: "Host-side forwarder for xdg-open (browser), code/codium (editor) and proximo. Tri-state: unset = auto (on).",
-			Default: "auto (on)",
+			Default: defaultAutoOn,
 		},
 		"managed_statusline": {
 			Summary: "Image-owned Claude Code statusline force-applied to settings.json each shell. Tri-state: unset = auto (on); false keeps your own.",
-			Default: "auto (on)",
+			Default: defaultAutoOn,
 		},
 		"image_reclaim": {
 			Summary: "Reclaim runtime images this CLI pulled that a later `latest` lost its tag to. Tri-state: unset = auto (on).",
-			Default: "auto (on)",
+			Default: defaultAutoOn,
 		},
 		"peer_messaging": {
 			Summary: "Let Claude Code sessions in different toolbox containers see and message each other (shared PID namespace + socket dir).",
