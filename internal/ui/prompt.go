@@ -178,7 +178,9 @@ func erase() { _, _ = fmt.Fprint(promptOut, "\r\x1b[K") }
 // accepted reads the answer. A decisive first key — y or n, either case — is
 // the whole answer and ends the read there, which is what a one-key question
 // promises. Anything else is read to the end of its line and judged by its
-// head, so a pasted word still answers.
+// head, so a pasted word still answers. A terminator is kept and trimmed off
+// rather than branched on: a bare Return is an empty answer, and an empty
+// answer is a yes.
 //
 // Byte at a time rather than through a bufio.Reader: a buffered read-ahead
 // would swallow input typed after the answer, which belongs to the session
@@ -191,17 +193,13 @@ func accepted(r io.Reader) answer {
 		if n > 0 {
 			c := buf[0]
 			if c == keyInterrupt {
-				return answer{yes: false, interrupted: true}
-			}
-			if c == '\n' || c == '\r' {
-				break
-			}
-			if len(line) == 0 && decisive(c) {
-				line = append(line, c)
-				break
+				return answer{interrupted: true}
 			}
 			if len(line) < answerHead {
 				line = append(line, c)
+			}
+			if ends(c, len(line) == 1) {
+				break
 			}
 		}
 		if err != nil {
@@ -212,9 +210,15 @@ func accepted(r io.Reader) answer {
 	return answer{yes: yes}
 }
 
+// ends reports whether c closes the answer: a line terminator always, and a
+// decisive key when it is the first thing read — after that it may be one
+// letter of a longer word, which only its line can settle.
+func ends(c byte, first bool) bool {
+	return c == '\n' || c == '\r' || (first && decisive(c))
+}
+
 // decisive reports whether a key answers the question on its own. Only the two
-// the prompt offers: every other first key may be the start of a longer word,
-// which only its line can settle.
+// the prompt offers.
 func decisive(c byte) bool {
 	switch c {
 	case 'y', 'Y', 'n', 'N':
