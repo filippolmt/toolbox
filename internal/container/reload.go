@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -168,14 +169,28 @@ var reloadBaseline = map[string]bool{
 	"docker events": true,
 }
 
+// scriptInterpreters are the shells a `#!` line puts in front of a script, so
+// that ContainerTop reports the interpreter where the developer would name the
+// script. Keyed by basename, the same reduction baselineKey applies.
+var scriptInterpreters = map[string]bool{"sh": true, "bash": true, "zsh": true}
+
 // baselineKey reduces a command line to the shape reloadBaseline is keyed on:
 // the first field's basename, plus the subcommand when the binary is one whose
 // name alone says nothing (`docker` runs the watcher's event stream, and it
 // also runs whatever the developer typed).
+//
+// A shebang script is named by its interpreter in the process table
+// (`/bin/sh /usr/local/bin/proximo-hosts`), so the key comes off the script
+// instead — unless the next field is a flag, where the interpreter is running
+// something of its own (`sh -c ...`) and is itself the honest name.
 func baselineKey(fields []string) string {
-	base := filepath.Base(fields[0])
-	if base == "docker" && len(fields) > 1 {
-		return base + " " + fields[1]
+	i := 0
+	if scriptInterpreters[filepath.Base(fields[0])] && len(fields) > 1 && !strings.HasPrefix(fields[1], "-") {
+		i = 1
+	}
+	base := filepath.Base(fields[i])
+	if base == "docker" && len(fields) > i+1 {
+		return base + " " + fields[i+1]
 	}
 	return base
 }
@@ -195,6 +210,12 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 	mainShell := strings.Join(sessionCmd, " ")
 	mainShellSeen := false
 
+	// A tab per pane and a watcher per project make identical command lines
+	// the common case, and the same line eight times says nothing eight times.
+	// Counted on the cut line rather than the full one, because the cut line
+	// is what the developer reads: two watchdogs whose argv diverges past the
+	// cut would otherwise print as two identical lines carrying no count.
+	counts := map[string]int{}
 	var out []string
 	for _, p := range processes {
 		if col >= len(p) {
@@ -211,10 +232,45 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 		if reloadBaseline[baselineKey(strings.Fields(cmd))] {
 			continue
 		}
-		out = append(out, cmd)
+		line := cutTo(cmd, casualtyLineMax)
+		if counts[line] == 0 {
+			out = append(out, line)
+		}
+		counts[line]++
 	}
 	sort.Strings(out)
-	return out
+	return countCasualties(out, counts)
+}
+
+// countCasualties appends each line's count to it, in place. The suffix is
+// part of the line, so it comes out of the same budget: a cap the count is
+// then appended past would not be a cap.
+func countCasualties(lines []string, counts map[string]int) []string {
+	for i, line := range lines {
+		n := counts[line]
+		if n == 1 {
+			continue
+		}
+		suffix := fmt.Sprintf(" (×%d)", n)
+		lines[i] = cutTo(line, casualtyLineMax-utf8.RuneCountInString(suffix)) + suffix
+	}
+	return lines
+}
+
+// casualtyLineMax is where a rendered casualty line ends, count suffix
+// included. The list is evidence a developer scans, not a process dump: a
+// watchdog started with `node -e` carries kilobytes of argv, and two of them
+// would be the entire summary.
+const casualtyLineMax = 120
+
+// cutTo shortens s to max runes, ellipsis included, and counts runes rather
+// than bytes so a cut never lands inside a multi-byte character.
+func cutTo(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
 }
 
 // commandColumn locates the CMD column in a ContainerTop result. The daemon's
