@@ -239,17 +239,22 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 		counts[line]++
 	}
 	sort.Strings(out)
-	for i, line := range out {
+	return countCasualties(out, counts)
+}
+
+// countCasualties appends each line's count to it, in place. The suffix is
+// part of the line, so it comes out of the same budget: a cap the count is
+// then appended past would not be a cap.
+func countCasualties(lines []string, counts map[string]int) []string {
+	for i, line := range lines {
 		n := counts[line]
 		if n == 1 {
 			continue
 		}
-		// The suffix is part of the line, so it comes out of the same budget:
-		// a cap the count is then appended past would not be a cap.
 		suffix := fmt.Sprintf(" (×%d)", n)
-		out[i] = cutTo(line, casualtyLineMax-utf8.RuneCountInString(suffix)) + suffix
+		lines[i] = cutTo(line, casualtyLineMax-utf8.RuneCountInString(suffix)) + suffix
 	}
-	return out
+	return lines
 }
 
 // casualtyLineMax is where a rendered casualty line ends, count suffix
