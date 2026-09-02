@@ -115,6 +115,17 @@ type Config struct {
 	//     boot hook skips the rewrite, and the user keeps their own statusLine.
 	// See docs/internals/shell-start.md#managed-statusline.
 	ManagedStatusline *bool `mapstructure:"managed_statusline"`
+	// ImageReclaim gates Image Reclamation — the opportunistic removal of the
+	// runtime images this CLI pulled and a later move of `latest` left
+	// nameless (CONTEXT.md's Superseded Image). Tri-state, like bridge and
+	// proximo: the act runs unless the developer disabled it in so many
+	// words, and an absent key stays distinguishable from a written `false`
+	// so a silent layer cannot re-arm it.
+	//   - omitted (nil) / true → the sweep runs beside every attached session.
+	//   - false → no sweep; the store keeps every generation it holds.
+	// See docs/configuration.md#image_reclaim and ADR 0007 for why the
+	// daemon's refusal is the only in-use check.
+	ImageReclaim *bool `mapstructure:"image_reclaim"`
 	// Env injects arbitrary K=V pairs into every shell spawned by the
 	// container, emitted after the curated TOOLBOX_* / PWD entries by
 	// sessionplan. Hash-neutral (lives outside the removed tools: block) so

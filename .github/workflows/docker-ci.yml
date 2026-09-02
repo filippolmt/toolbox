@@ -27,6 +27,7 @@ on:
       - 'internal/mountplan/**'
       - 'internal/sessionplan/**'
       - 'internal/reload/**'
+      - 'internal/imagereclaim/**'
   # No push: branches: [main] trigger — docker-publish.yml runs the same
   # smoke-test pre-publish on main, so a re-run here would be redundant work
   # (~7min). Pre-merge validation happens on the pull_request event above.
@@ -178,10 +179,12 @@ jobs:
       # IMAGE_TAG reaches the gate as the `image:` config override, so the
       # canonical ref lives only in internal/build.
       # No -run filter: the `dockergate` tag means "needs a real daemon and the
-      # built image", so the tag itself selects the set — peer messaging and
-      # the session reload today, whatever else earns it later.
-      - name: Real-daemon gates (peer messaging, session reload)
+      # built image", so the tag itself selects the set — peer messaging, the
+      # session reload and the image-reclamation refusal today, whatever else
+      # earns it later. Packages are listed because the tag alone cannot find
+      # them: a gate lives beside the code it pins.
+      - name: Real-daemon gates (peer messaging, session reload, image reclamation)
         if: ${{ !cancelled() && matrix.load }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}
-        run: go test -tags dockergate -count=1 ./internal/container/
+        run: go test -tags dockergate -count=1 ./internal/container/ ./internal/imagereclaim/

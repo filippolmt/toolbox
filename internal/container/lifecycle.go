@@ -31,6 +31,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/imagereclaim"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
@@ -51,6 +52,12 @@ var execShellFn = execShell
 // as execShellFn: every lifecycle test would otherwise start a goroutine that
 // talks to a registry.
 var startPrefetch = imageprefetch.Start
+
+// reclaimImages is the Image Reclamation sweep for the lifetime of the
+// attached session. A package-level var for the same reason as startPrefetch:
+// every lifecycle test would otherwise have a second goroutine deleting images
+// out of its own mock.
+var reclaimImages = imagereclaim.Start
 
 // refreshAtStart is the shell-start image refresh, prompt and all. A
 // package-level var for the same reason as startPrefetch: the tree behind it
@@ -305,8 +312,17 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
-	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, createdImageDigest(plan, inspect, op), refresh.Synced)
+	// The digest this session actually runs, read off the container on the
+	// connect path and off the re-stamped plan on the create path. Both
+	// background acts are anchored to it: one asks whether the store has moved
+	// past it, the other must never reclaim it.
+	sessionDigest := createdImageDigest(plan, inspect, op)
+
+	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, sessionDigest, refresh.Synced)
 	defer stopPrefetch()
+
+	stopReclaim := beginReclaim(ctx, cli, plan, baseImage, sessionDigest)
+	defer stopReclaim()
 
 	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())
 
@@ -334,6 +350,27 @@ func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.
 	prefetchCtx, stop := context.WithCancel(ctx)
 	if in, ok := prefetchInput(base, plan, containerDigest, startSynced); ok {
 		startPrefetch(prefetchCtx, cli, in)
+	}
+	return stop
+}
+
+// beginReclaim starts the Image Reclamation sweep for as long as the shell is
+// attached, and returns the func that stops it. Called from Shell *after*
+// dispatchOp and never before: the ordering is the design, because only once
+// this workspace's container exists and references the new image is every
+// surviving reference to the old one somebody else's real reference. Run
+// earlier and the removal is guaranteed to be refused — the session doing the
+// reclaiming would itself be the last holder.
+//
+// The ref tracked is the *base*, never the `:local` overlay tag: the overlay is
+// built rather than pulled, so it carries no repo digest at all, while the base
+// underneath it is what gains a generation per merge. Gated by the plan's
+// resolved `image_reclaim`; the returned stop is always live, so the caller
+// defers one thing unconditionally.
+func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, sessionDigest string) func() {
+	reclaimCtx, stop := context.WithCancel(ctx)
+	if plan.ReclaimImages {
+		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Ref: base.Ref, KeepDigest: sessionDigest})
 	}
 	return stop
 }

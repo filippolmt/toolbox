@@ -296,6 +296,13 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			},
 		},
 		{
+			key:  "image_reclaim",
+			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Bool("image_reclaim", boolPtr(false)))
+			},
+		},
+		{
 			key:  "peer_messaging",
 			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("peer_messaging", boolPtr(true))) },

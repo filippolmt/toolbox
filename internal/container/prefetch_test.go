@@ -13,6 +13,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/imagereclaim"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -32,6 +33,10 @@ const (
 // that assert on the prefetch install their own stub over this one.
 func TestMain(m *testing.M) {
 	startPrefetch = func(context.Context, client.APIClient, imageprefetch.Input) {}
+	// The reclaim sweep is neutralised for the same reason: Shell starts it
+	// just before attaching and it would delete images out of the test's own
+	// mock from a second goroutine.
+	reclaimImages = func(context.Context, client.APIClient, imagereclaim.Input) {}
 	os.Exit(m.Run())
 }
 

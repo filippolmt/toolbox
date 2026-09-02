@@ -109,3 +109,23 @@ func TestOutputDoesNotWriteToStdout(t *testing.T) {
 		t.Errorf("ui functions must not write to stdout, got %q", got.String())
 	}
 }
+
+// A background act prints while an interactive shell may already hold the tty
+// in raw mode, where term.MakeRaw has cleared ONLCR and a bare LF drops a line
+// without returning the carriage — staircasing everything printed after it.
+// InfoAsyncf owns that so no caller has to smuggle a control character into a
+// domain format string.
+func TestInfoAsyncfReturnsTheCarriage(t *testing.T) {
+	out := captureStderr(t, func() { InfoAsyncf("reclaimed %d images", 2) })
+
+	if !strings.Contains(out, "reclaimed 2 images") {
+		t.Errorf("stderr = %q, want to contain the message", out)
+	}
+	body, ok := strings.CutSuffix(out, "\n")
+	if !ok {
+		t.Fatalf("stderr = %q, want a newline-terminated line", out)
+	}
+	if !strings.HasSuffix(body, "\r") {
+		t.Errorf("stderr = %q, want the newline preceded by a carriage return", out)
+	}
+}
