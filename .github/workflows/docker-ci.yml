@@ -11,17 +11,22 @@ on:
       # bump there must rebuild + smoke-test the image even though it leaves
       # internal/build/assets/** untouched.
       - 'go.mod'
-      # The peer-messaging gate at the end of docker-build is a `go test`
-      # driving the host CLI against the image it just built, so it regresses
+      # The real-daemon gates at the end of docker-build are `go test` runs
+      # driving the host CLI against the image it just built, so they regress
       # on host-side changes that touch no image asset at all — and nothing
       # else can catch that: every unit test around this wiring runs on Docker
-      # mocks. Package-wide globs on purpose; the gate goes through
-      # lifecycle.go, mountplan.Plan and sessionplan.Plan, so a file-level list
-      # would drift out of date without anyone noticing. The `detect` job below
-      # still keeps arm64 off these builds — the risk here is not arch-specific.
+      # mocks. Package-wide globs on purpose; the gates go through
+      # lifecycle.go, mountplan.Plan and sessionplan.Plan for peer messaging,
+      # and through reload.go plus the internal/reload payload for the session
+      # reload — so a file-level list would drift out of date without anyone
+      # noticing. Not cmd/**: both gates call container.Shell directly, so no
+      # amount of cmd/ change can reach them, and the glob would buy a ~10 min
+      # image build on every unrelated CLI edit. The `detect` job below still
+      # keeps arm64 off these builds — the risk here is not arch-specific.
       - 'internal/container/**'
       - 'internal/mountplan/**'
       - 'internal/sessionplan/**'
+      - 'internal/reload/**'
   # No push: branches: [main] trigger — docker-publish.yml runs the same
   # smoke-test pre-publish on main, so a re-run here would be redundant work
   # (~7min). Pre-merge validation happens on the pull_request event above.
