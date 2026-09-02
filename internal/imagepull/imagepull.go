@@ -5,11 +5,12 @@
 // network blip doesn't poison the next invocation into staleness.
 //
 // Two seams, both best-effort (callers proceed with the local image
-// regardless): RefreshIfStale(ctx, cli, ref) is the cache-aware default
+// regardless): RefreshIfStale(ctx, cli, ref) is the cache-aware form
 // (cache-hit fast-path, pull on miss, record on success), and ForcePull
-// pulls unconditionally for the "always" policy. UI surfacing (per-layer
-// progress, success/warning lines) stays inside this package so the
-// pull concern owns its own observability end-to-end.
+// pulls unconditionally — for the "always" policy, and for a shell start
+// whose probe already established that the registry is ahead. UI surfacing
+// (per-layer progress, success/warning lines) stays inside this package so
+// the pull concern owns its own observability end-to-end.
 package imagepull
 
 import (
@@ -32,12 +33,15 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// TTL bounds how long we trust a previous successful manifest check
-// before re-asking the registry. One hour is short enough that a freshly
-// pushed image lands on developer machines within the same work block,
-// and long enough that rapid `toolbox shell` cycles (open → exit → open)
-// don't each pay a round-trip to GHCR. Override is intentional fs-only:
-// delete ~/.toolbox/toolbox/state/pull-cache/* to force a fresh pull on next
+// TTL bounds how long a previous successful manifest check is trusted before
+// the registry is asked again. One hour is short enough that a freshly pushed
+// image lands on developer machines within the same work block, and long
+// enough that rapid `toolbox shell` cycles (open → exit → open) don't each
+// pay a round-trip to GHCR. It gates RefreshIfStale, which is the session
+// reload's refresh — a shell start decides from a digest probe instead, and
+// deliberately: a warm cache there is what let a released image go unoffered
+// for up to an hour. Override is intentional fs-only: delete
+// ~/.toolbox/toolbox/state/pull-cache/* to force a fresh pull on next
 // invocation.
 const TTL = 1 * time.Hour
 

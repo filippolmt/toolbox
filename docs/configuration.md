@@ -127,17 +127,42 @@ macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keycha
 - `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `build.SplitRegistryHost`, shared with `imagepull.registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`. **The mirror is also authoritative for the update probe**: detection goes through the daemon (`DistributionInspect`), not to canonical GHCR, because the only probe worth making is the one that leads to a pull — announcing an image the mirror cannot serve would be noise. Perceived latency for a new image is therefore the mirror's. Caveat: a pull-through cache that hasn't ingested the image yet fails the first shell with `manifest unknown` — warm it (or pre-seed locally with `pull: never`), see [troubleshooting](troubleshooting.md#manifest-unknown-with-a-registry-mirror).
 - neither — the canonical default.
 
-The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: the synchronous registry refresh at shell start, and the [background update prefetch](session-reload.md) that runs for as long as the shell is attached.
+The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: the registry refresh at shell start, and the [background update prefetch](session-reload.md) that runs for as long as the shell is attached.
 
 | `pull` | shell start | background prefetch | banner |
 |---|---|---|---|
-| `auto` (default) | `imagepull.RefreshIfStale`, 1 h TTL cache | on, one probe per 30 min shared across your sessions | yes |
-| `always` | `imagepull.ForcePull`, bypasses the TTL | on, **same cadence as `auto`** | yes |
+| `auto` (default) | asks (see below), then `imagepull.ForcePull` | on, one probe per 30 min shared across your sessions | yes |
+| `always` | `imagepull.ForcePull`, no question | on, **same cadence as `auto`** | yes |
 | `never` | no registry round-trip (air-gapped — `Ensure` still hard-requires the image locally) | off | silent |
 
 `always` therefore differs from `auto` at shell start and nowhere else: forcing a pull on every background tick would spend real bandwidth for the whole session, and adoption is a fresh container either way. Cross-cutting: under any policy the prefetch abstains while the resolved ref carries no repo digest — the fingerprint of a local `toolbox build`, so an automatic download never overwrites one you asked for.
 
 Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
+
+### The start-up refresh prompt
+
+Under `auto`, when the registry is ahead of your local image store, `toolbox shell` **asks** before spending your time on the download, with a visible countdown (`promptWindow` in `internal/imageplan`) so a few seconds of silence cannot be mistaken for a hang:
+
+```
+  A newer runtime image is available. Download it now? [Y/n] (Ns)
+```
+
+`N` is the seconds left, redrawn in place until it runs out.
+
+`y`, a bare Return, or letting the countdown run out all download it and start the session on the new image. **`n` is "later", not "no"**: the session starts on the image already in your store while the [background prefetch](session-reload.md) fetches the new one anyway, so `toolbox-reload` moves you onto it whenever you want it. Nothing extra downloads on the "later" path — the prefetch's own first pass is what advances the store — and the moment you declined is stamped on the state mount, so a postponement is legible to the session it postponed rather than lost.
+
+Five cases never reach the question, because the answer is already settled:
+
+| Case | What happens |
+|---|---|
+| The image is missing from your store entirely | Pulled synchronously, no question — there is no session to start otherwise. |
+| `pull: always` | Pulls. A policy that already said yes on every shell cannot coherently be asked again. |
+| `pull: never` | Neither probes nor asks — not talking to the registry is that policy's whole promise. |
+| No tty (a script, a pipeline, CI) | Neither asks nor probes. The default inverts: start now, fetch behind. The interactive default is justified by the work that follows the wait; a script has no work that follows, so the same wait is pure latency times every invocation. |
+| The container already exists (you are attaching a second terminal, or restarting a stopped container) | Nothing is asked. Docker cannot swap a running container's image, so a download offered here is one this session could not adopt; the prefetch fetches it behind you and the banner then offers `toolbox-reload`. |
+
+Knowing whether to ask is itself a registry round-trip, so the question is answered from the [prefetch's shared probe cache](session-reload.md#cache-and-ttl) whenever its stamp is still warm — a sibling session that probed a moment ago has already established the fact. Only a cold stamp probes, and the probe is a `DistributionInspect`: metadata, not a download. Rationale and the options weighed: [ADR 0005](adr/0005-prompted-image-refresh-on-shell-start.md).
+
 
 ### Local overlay Dockerfile
 
@@ -152,7 +177,7 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     && sudo rm -rf /var/lib/apt/lists/*
 ```
 
-**Rebuild triggers.** A marker (base image ID + `sha256` of the Dockerfile bytes) is stored under the toolbox state dir (`~/.toolbox/toolbox/state/local-overlay.marker`, mounts_root-aware — alongside the image-pull cache, so toolbox-managed state stays out of your config dir). The build is skipped when the marker matches **and** `:local` is present locally; otherwise it rebuilds. So a rebuild happens when you edit the Dockerfile, when `imageplan.Refresh` updates the base (its image ID changes), or when the `:local` image is missing. Base freshness stays governed by [`pull`](#image-selection); `:local` carries pull policy `never`, so `Refresh`/`Ensure` never reach a registry for it. The first build streams its output and is unavoidably slower; later shells skip via the marker.
+**Rebuild triggers.** A marker (base image ID + `sha256` of the Dockerfile bytes) is stored under the toolbox state dir (`~/.toolbox/toolbox/state/local-overlay.marker`, mounts_root-aware — alongside the image-pull cache, so toolbox-managed state stays out of your config dir). The build is skipped when the marker matches **and** `:local` is present locally; otherwise it rebuilds. So a rebuild happens when you edit the Dockerfile, when the shell-start refresh updates the base (its image ID changes), or when the `:local` image is missing. Base freshness stays governed by [`pull`](#image-selection); `:local` carries pull policy `never`, so `Refresh`/`Ensure` never reach a registry for it. The first build streams its output and is unavoidably slower; later shells skip via the marker.
 
 **Fail-loud.** A failing overlay build (e.g. a broken `RUN`) aborts the shell and surfaces the build log — Toolbox never silently falls back to the base image.
 

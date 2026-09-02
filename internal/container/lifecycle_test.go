@@ -101,6 +101,15 @@ func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.Im
 	return client.ImageInspectResult{}, fmt.Errorf("ImageInspect not mocked")
 }
 
+// DistributionInspect refuses by default, which is how "the probe did not
+// answer" is spelled: the shell-start refresh then establishes nothing, asks
+// nobody and pulls nothing, so a lifecycle test is never blocked on a
+// registry it did not set up. The tree that reads the probe is imageplan's
+// and is tested there; what this package owns is stubbed at refreshAtStart.
+func (m *mockClient) DistributionInspect(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+	return client.DistributionInspectResult{}, fmt.Errorf("DistributionInspect not mocked")
+}
+
 func (m *mockClient) ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error) {
 	if m.imgPullFn != nil {
 		rc, err := m.imgPullFn(ctx, ref, opts)

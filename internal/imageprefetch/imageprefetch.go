@@ -29,7 +29,7 @@
 // not the success — an offline machine is capped at one failed probe per TTL
 // rather than one per tick — which is why it is a separate file from
 // imagepull's pull-cache marker, whose "successful pulls only" semantics gate
-// a different act (the synchronous refresh at shell start).
+// a different act (the silent refresh a session reload runs).
 package imageprefetch
 
 import (
@@ -119,12 +119,13 @@ type Input struct {
 	// so mounts_root and profiles are honoured; empty disables the whole act,
 	// since there is then nowhere the renderer would read from.
 	StateDir string
-	// StartSynced records that the synchronous refresh at shell start pulled
-	// successfully, so the local store is current with the registry as of a
-	// moment ago. A synchronous probe is a probe: it takes this TTL's turn at
-	// the registry, and the first poll publishes from the store instead of
-	// asking the same question again. False for a cache hit or a failed pull,
-	// neither of which established anything about the remote.
+	// StartSynced records that the refresh at shell start established the
+	// local store to be current with the registry as of a moment ago — a
+	// successful pull, or a probe that found the store already current. A
+	// synchronous probe is a probe: it takes this TTL's turn at the registry,
+	// and the first poll publishes from the store instead of asking the same
+	// question again. False for a failed probe, a failed pull and a declined
+	// download, none of which leave the store provably current.
 	StartSynced bool
 	// CLIVersion is this process's own build version, the "current" half of
 	// the CLI axis. Passed in rather than read from version.Version here: a
@@ -220,6 +221,76 @@ func publishFromStore(ctx context.Context, cli client.APIClient, in Input) {
 	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
 	res.imageState = imageState(in.StateDir, false, res.imageUpdate)
 	writeResult(in.StateDir, res)
+}
+
+// AheadOfStore reports whether the registry holds a newer image than the local
+// store for ref, and whether that could be established at all. It is the
+// question the synchronous start-up refresh has to answer before it can decide
+// whether to ask the developer anything, and it lives here because both ways
+// of answering it already do: the shared probe cache and the probe itself.
+//
+// A warm attempt stamp answers from the published result — a sibling session
+// probed a moment ago and the fact is established, so re-establishing it would
+// reintroduce, one step higher, the latency the prompt exists to remove. Only
+// a cold stamp probes, which is precisely the case where the answer is most
+// likely to be "yes": no session has been open recently, so the store is
+// probably behind.
+//
+// Deliberately does **not** stamp the shared attempt clock the way Poll does.
+// The stamp gates the poller, and the poller's immediate first pass is what
+// fetches the bytes a developer has just postponed: claiming this TTL's turn
+// here would leave a declined download with nobody to download it. The caller
+// says what it established through Input.StartSynced instead, which is a claim
+// about the store rather than about the clock.
+//
+// Not established (false, false) on a store with no repo digest for ref — the
+// fingerprint of a local `toolbox build`, which the prefetch abstains on
+// everywhere — and on a probe that does not answer. Both leave the caller with
+// nothing to offer, which is the honest outcome of a question that was never
+// answered.
+func AheadOfStore(ctx context.Context, cli client.APIClient, ref, stateDir string) StoreState {
+	local, ok := localDigest(ctx, cli, ref)
+	if !ok {
+		return StoreState{}
+	}
+	remote, cached := knownRemote(stateDir)
+	if !cached {
+		var err error
+		if remote, err = remoteDigest(ctx, cli, ref); err != nil {
+			return StoreState{}
+		}
+	}
+	return StoreState{Ahead: remote != local, Known: true, Probed: !cached}
+}
+
+// StoreState is how AheadOfStore answered, and the third field is why the type
+// exists: an answer read from the shared cache says something true about the
+// registry as of that probe, but it establishes nothing *now*, so a caller
+// must not report the store as freshly synced on the strength of it. Doing so
+// would let the poller re-stamp the attempt clock from a cached digest on
+// every shell start, and a developer who opens shells more often than the TTL
+// would never probe the registry again.
+type StoreState struct {
+	// Ahead is true when the registry holds a newer image than the store.
+	Ahead bool
+	// Known is false when the comparison could not be made at all: a probe
+	// that did not answer, or a store with no repo digest for the ref.
+	Known bool
+	// Probed is true only when the remote digest came from a live round-trip
+	// made here, rather than from the shared cache.
+	Probed bool
+}
+
+// knownRemote returns the remote digest the last shared probe published, valid
+// only while that probe's attempt stamp is still inside the TTL. The stamp
+// records the attempt and the cache records the answer, so both are needed: a
+// stamp with no published digest is a probe that failed.
+func knownRemote(stateDir string) (string, bool) {
+	if stateDir == "" || !fsx.MarkerFresh(filepath.Join(stateDir, stampFile), TTL) {
+		return "", false
+	}
+	remote := readResult(stateDir).imageLatest
+	return remote, remote != ""
 }
 
 // Poll runs one gated attempt: it returns without touching the network while

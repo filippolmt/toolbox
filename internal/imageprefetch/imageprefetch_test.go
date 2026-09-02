@@ -752,3 +752,98 @@ func shortenTick(t *testing.T, d time.Duration) {
 	tickInterval = d
 	t.Cleanup(func() { tickInterval = orig })
 }
+
+// AheadOfStore is the question the start-up refresh prompt has to answer
+// before it can ask anything, and the reason it lives here is that both ways
+// of answering it — the shared probe cache and the probe itself — already do.
+// A warm stamp means a sibling session established the fact a moment ago:
+// re-establishing it would reintroduce, one step higher, the latency the
+// prompt exists to remove. The nil-embedded mock panics on any daemon call, so
+// distCalls staying at zero is asserted twice over.
+func TestAheadOfStoreAnswersFromTheWarmStamp(t *testing.T) {
+	dir := stateDir(t)
+	if err := os.WriteFile(filepath.Join(dir, cacheFile),
+		[]byte(cacheBody("0", digestNew, stateNone, "0", "")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsx.TouchMarker(filepath.Join(dir, stampFile)); err != nil {
+		t.Fatal(err)
+	}
+	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
+
+	got := AheadOfStore(context.Background(), mock, testRef, dir)
+	if want := (StoreState{Ahead: true, Known: true}); got != want {
+		t.Errorf("AheadOfStore() = %+v, want %+v", got, want)
+	}
+	if mock.distCalls != 0 {
+		t.Errorf("the registry was probed %d times despite a warm stamp", mock.distCalls)
+	}
+}
+
+// A cold stamp is precisely the case where the question is most likely worth
+// asking — no session has been open recently, so the store is probably behind
+// — so it probes, and the probe is metadata rather than a download.
+func TestAheadOfStoreProbesOnAColdStamp(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		local   string
+		remote  string
+		distErr error
+		want    StoreState
+	}{
+		{name: "registry ahead", local: digestOld, remote: digestNew, want: StoreState{Ahead: true, Known: true, Probed: true}},
+		{name: "store current", local: digestNew, remote: digestNew, want: StoreState{Known: true, Probed: true}},
+		{name: "probe failed", local: digestOld, remote: digestNew, distErr: errors.New("offline"), want: StoreState{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockClient{
+				inspects:  []client.ImageInspectResult{inspectWith(tc.local)},
+				distDigst: tc.remote,
+				distErr:   tc.distErr,
+			}
+			got := AheadOfStore(context.Background(), mock, testRef, stateDir(t))
+			if got != tc.want {
+				t.Errorf("AheadOfStore() = %+v, want %+v", got, tc.want)
+			}
+			if mock.distCalls != 1 {
+				t.Errorf("the registry was probed %d times, want 1", mock.distCalls)
+			}
+		})
+	}
+}
+
+// A ref with no repo digest in the store is the fingerprint of a local
+// `toolbox build`. The prefetch abstains on it everywhere, and the question
+// abstains too: there is nothing a remote digest could be compared against,
+// and an automatic pull must never undo an explicit build.
+func TestAheadOfStoreAbstainsOnALocalBuild(t *testing.T) {
+	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	if got := AheadOfStore(context.Background(), mock, testRef, stateDir(t)); got != (StoreState{}) {
+		t.Errorf("AheadOfStore() = %+v, want nothing established", got)
+	}
+	if mock.distCalls != 0 {
+		t.Errorf("the registry was probed %d times for a locally built image", mock.distCalls)
+	}
+}
+
+// Probed is what keeps a cached answer from being reported as a fresh sync.
+// Without it every shell opened inside the TTL would re-stamp the poller's
+// attempt clock from a digest nobody re-established, and a developer who opens
+// shells more often than the cadence would never probe the registry again.
+func TestAheadOfStoreDoesNotClaimAProbeItReadFromTheCache(t *testing.T) {
+	dir := stateDir(t)
+	if err := os.WriteFile(filepath.Join(dir, cacheFile),
+		[]byte(cacheBody("0", digestOld, stateNone, "0", "")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsx.TouchMarker(filepath.Join(dir, stampFile)); err != nil {
+		t.Fatal(err)
+	}
+	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
+
+	got := AheadOfStore(context.Background(), mock, testRef, dir)
+	if want := (StoreState{Known: true}); got != want {
+		t.Errorf("AheadOfStore() = %+v, want %+v — current, but not established here", got, want)
+	}
+}

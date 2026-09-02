@@ -46,6 +46,11 @@ const FromEnv = "TOOLBOX_RELOAD_FROM"
 // other occupants are the update-check cache and the shell history.
 const markerPrefix = "reload."
 
+// declinedPrefix namespaces the decline stamp in the same directory. A
+// separate prefix rather than a field inside the marker: the marker is deleted
+// on read, and this must outlive every read for as long as the session does.
+const declinedPrefix = "declined."
+
 // From is the payload TOOLBOX_RELOAD_FROM carries. JSON tolerates unknown
 // fields on read and absent fields as zero values, so no version field is
 // needed — and a version check's failure mode (refusing to reload) would be
@@ -108,6 +113,23 @@ func MarkerName(containerName string) string { return markerPrefix + containerNa
 // live on; the basename is what makes it the same file.
 func MarkerPath(stateDir, containerName string) string {
 	return filepath.Join(stateDir, MarkerName(containerName))
+}
+
+// DeclinedPath joins a state directory with this session's decline stamp — the
+// file a "no" at the start-up refresh prompt leaves behind. Keyed on the
+// container name for the same reason MarkerName is, and namespaced apart from
+// the marker because the two are read by different clauses: the marker is a
+// request, this is a timestamp.
+func DeclinedPath(stateDir, containerName string) string {
+	return filepath.Join(stateDir, declinedPrefix+containerName)
+}
+
+// TouchDeclined records that the developer postponed the start-up refresh, so
+// the session can treat the "no" as *later* rather than *never*. The modtime
+// is the whole payload: it is one of the two origins of the window that keeps
+// a session from being recreated moments after it opened.
+func TouchDeclined(stateDir, containerName string) error {
+	return fsx.TouchMarker(DeclinedPath(stateDir, containerName))
 }
 
 // TakeMarker reads the marker at path and deletes it, reporting whether a

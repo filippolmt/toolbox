@@ -292,11 +292,17 @@ pattern.
 The two-phase decision tree that guarantees the image referenced by a
 `SessionPlan.Image` is ready before `ContainerCreate`.
 
-Concretely: `imageplan.Refresh(ctx, cli, image)` runs at the top of
-`container.Shell` and best-effort syncs the image against its registry,
-steered by the Image's pull policy — `never` skips the round-trip,
-`always` forces `imagepull.ForcePull`, `auto` (default) goes through
-the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed. That
+Concretely: `imageplan.RefreshAtStart(ctx, cli, image, stateDir)` runs
+at the top of `container.Shell` and best-effort syncs the image against
+its registry, steered by the Image's pull policy — `never` skips the
+round-trip, `always` forces `imagepull.ForcePull`, `auto` (default)
+probes and then *asks*, see
+[Start-up Refresh Prompt](#start-up-refresh-prompt); errors are
+swallowed. `imageplan.Refresh` is the same act with nothing to ask,
+kept for the [Session Reload](#session-reload), which runs it before it
+destroys anything and whose `auto` branch stays on the TTL-cached
+`imagepull.RefreshIfStale` — a reload adopts what the store holds, and
+the [Image Prefetch](#image-prefetch) is what advanced it. That
 policy steers the **synchronous** refresh only: the background
 [Image Prefetch](#image-prefetch) reads the same key on a two-state
 basis — on under `auto` and `always`, off under `never` — and keeps its
@@ -324,6 +330,63 @@ redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 create-branch guarantee into a single var inside `imageplan`.
 
+### Start-up Refresh Prompt
+
+The one branch of the [Image Plan](#image-plan) that asks: a countdown
+offering the download when the registry is ahead of the local store, and
+treating a "no" as *later*.
+
+Concretely, six settled cases and one question. An image missing from the
+store is pulled without asking (there is no session to start otherwise),
+`pull: always` pulls without asking (a policy that has already said yes on
+every shell cannot coherently be asked again), `pull: never` neither probes
+nor asks (not probing is that policy's whole promise, and a probe is a
+round-trip), no tty neither asks nor probes (the default inverts to
+start-now-fetch-behind: the interactive default is justified by the work that
+follows the wait, and a script has no work that follows), a container that
+already exists is never asked about (`op.Action != ActionCreate` — Docker
+cannot swap a running container's image, so the question could not be
+honoured), and a [Session Reload](#session-reload) skips the act whole
+(it has already refreshed and proved the image, and the same path is what an
+unattended trigger walks). What is left — `auto`, create, image present,
+registry ahead, a tty — is the prompt: `ui.ConfirmCountdown`, where `y`, a
+bare Return and the window elapsing all pull synchronously and `n` starts the
+session on the image already in the store. The countdown is **visible**
+because a few seconds of silence is indistinguishable from a hang, and a
+developer who looks up to find a download running should be able to see why.
+
+Two properties are load-bearing. **Knowing whether to ask is itself a
+round-trip**, so it is answered from the prefetch's shared probe cache
+whenever that stamp is warm (`imageprefetch.AheadOfStore`) — a sibling
+session established the fact a moment ago, and re-establishing it would
+reintroduce, one step higher, the latency this decision is about; only a
+cold stamp probes, which is precisely when the answer is most likely to be
+yes. That reuse has one boundary, carried by `StoreState.Probed`: a cached
+answer may decide the *question* but must never be reported as a sync, or the
+poller's attempt clock would be re-stamped from a cached digest on every
+shell start and a developer opening shells faster than the TTL would stop
+probing altogether. And **a "no" is a postponement**: `reload.TouchDeclined`
+stamps the moment beside the [Reload Marker](#reload-marker), which is one of
+the two origins of the [Session Quiescence](#session-quiescence) window and
+what arms the [Idle Reload](#idle-reload) for that session alone. Nothing new
+downloads on that path — the prefetch already runs an immediate pass when a
+session opens, and a second fetch of the same ref at the same moment is what
+a download started here would be; for the same reason `AheadOfStore`
+deliberately does not stamp the attempt clock, since that clock is what gates
+the pass which fetches the postponed bytes.
+
+Why the term exists: the refresh used to be unconditional and cache-gated, so
+the cost landed unevenly — a cold cache made the developer wait out a pull
+they never asked for, a warm one gave them nothing back for the wait they did
+not have, and either way the shell decided something the developer has an
+opinion about. Naming the *prompt* separates the question from the act it
+guards: the tree above is a set of answers that are already settled, and only
+the case where none of them applies is worth a developer's attention. The
+alternative readings and why they lost are in
+`docs/adr/0005-prompted-image-refresh-on-shell-start.md`. Owned by
+`internal/imageplan` (the tree), `internal/ui` (the countdown) and
+`internal/imageprefetch` (the shared answer).
+
 ### Image Prefetch
 
 The single host-side detector that answers "is there a newer runtime
@@ -345,13 +408,15 @@ bound that lets the act refuse backoff and metering entirely. Cancelling
 is free: a partial ingest is never a blob, it expires on its own, and the
 next pull resumes from what landed.
 
-`StartSynced` closes the cold start. The synchronous `imageplan.Refresh`
-at shell start is itself a probe, so when it actually reached the
-registry it takes that TTL's turn: the poller stamps on its behalf and
-publishes the banner **from the local store** — which that pull has just
-made current — instead of asking the registry the same question seconds
-later. A cache hit or a failed pull sets nothing, and the poller does its
-own probe: neither established anything about the remote. One poll is probe → prefetch → publish:
+`StartSynced` closes the cold start. The refresh at shell start is itself
+a probe, so when it established the store to be current *here and now* — a
+pull that landed, or a live probe that found it current already, never an
+answer read from the shared cache — it takes that TTL's
+turn: the poller stamps on its behalf and publishes the banner **from the
+local store** instead of asking the registry the same question seconds
+later. A failed probe, a failed pull and a declined download set nothing,
+and the poller does its own probe: none of them left the store provably
+current. One poll is probe → prefetch → publish:
 `DistributionInspect` resolves the remote digest through the daemon
 (so a `registry_mirror` is honoured and no registry HTTP lives in this
 repo), `ImagePull` drained with `ImagePullResponse.Wait` fetches it when
@@ -487,6 +552,71 @@ host → container and never leaves it, `TOOLBOX_RELOAD_FROM` travels
 host → host across the exec and never enters one. Owned by
 `internal/reload`; bound to the shell side by
 `TestReloadMarkerContract`.
+
+### Idle Reload
+
+A [Session Reload](#session-reload) nobody typed: the shell asks for it on
+the developer's behalf once the session is provably not in the middle of
+anything.
+
+**Decided, not yet built.** The decision is
+`docs/adr/0006-idle-reload-onto-a-newer-image.md`; what ships today is only
+the producer this entry names last — the decline stamp written by the
+[Start-up Refresh Prompt](#start-up-refresh-prompt). The trigger, the
+`update.idle_reload` key and the clauses below describe the target, and the
+entry stays here so the term means one thing while it is being built.
+
+Concretely: the same act as the typed one, with a different cause. The
+`precmd` hook in `zshrc.sh` writes the [Reload Marker](#reload-marker) and
+exits exactly as `toolbox-reload` would, so the host side — teardown,
+create, re-exec, re-entry form — is reached through one mechanism and not
+two. It fires only while [Session Quiescence](#session-quiescence) holds,
+and only when armed: either `update.idle_reload` is set, or the developer
+declined the start-up refresh prompt, which arms it for that session alone
+because *not now* is a request to postpone rather than to refuse.
+`TOOLBOX_NO_UPDATE_CHECK` disarms it along with the probe and the banner —
+one umbrella, since a session told to say nothing about updates must not
+recreate itself either. Abstention is spoken, not silent: the banner names
+the single clause that failed, in the fixed order sibling → window → job,
+so an automation that is waiting cannot be mistaken for one that is broken.
+
+The typed command is not part of this and survives every switch above,
+because it reloads onto whatever the store holds — useful after a local
+`toolbox build`, where no update check is involved at all. It earns its own
+entry because the reload's own documented rule is that it *gates on nothing
+and confirms nothing*: that rule holds precisely because a human typed it,
+and an automatic trigger is the one thing that could quietly void its
+premise. Owned by `zshrc.sh` (the trigger) and `internal/reload` (the act).
+
+### Session Quiescence
+
+The predicate that authorises an [Idle Reload](#idle-reload) — the property
+of a session that can be destroyed and rebuilt without taking work with it.
+
+**Decided, not yet built**, with its trigger — see the note under
+[Idle Reload](#idle-reload). Of the five clauses, only the window's second
+origin exists today: the decline stamp of the
+[Start-up Refresh Prompt](#start-up-refresh-prompt).
+
+Concretely, five clauses, all evaluated in the `precmd` hook: the shell is
+at the prompt; zsh's `jobs` is empty; exactly one interactive shell holds a
+tty inside the container; the reload window has elapsed; and
+`TOOLBOX_RELOAD_MARKER` is present. The sibling clause is load-bearing
+rather than cautious — attached panes die with the container, so an
+unattended reload would end a session its owner never volunteered. The
+window has a single origin, the most recent of the container's own age
+(PID 1, which *is* the session) and the moment a start-up prompt was
+declined; one clock and one constant, because both express the same fact —
+this session has already had its turn recently. Two of the clauses are
+deliberately shallow: a detached `nohup` is not a job and will not hold the
+reload back, and that limit is documented rather than patched with a
+process heuristic that would misfire in both directions.
+
+It is named for the property and not the mechanism — the sibling of
+[Invalidation Floor](#invalidation-floor) in that respect — because the
+mechanism is the part most likely to be replaced, and every clause is a
+decision about what "safe to destroy" means rather than about how zsh
+happens to detect it. Owned by `zshrc.sh`.
 
 ### Invalidation Floor
 
