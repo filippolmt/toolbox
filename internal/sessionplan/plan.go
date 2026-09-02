@@ -111,6 +111,17 @@ type SessionPlan struct {
 // intent from what the developer happened to be running.
 func (p *SessionPlan) LaunchesAgent() bool { return p.ExecCmd != nil }
 
+// EffectiveCmd is what this session actually runs: the worktree agent launch
+// when the plan carries one, the configured shell otherwise. Both halves are
+// this plan's own fields, so the choice belongs here rather than being
+// re-made at the attach.
+func (p *SessionPlan) EffectiveCmd() []string {
+	if p.ExecCmd != nil {
+		return p.ExecCmd
+	}
+	return p.Cmd
+}
+
 // ReloadMarkerPath is the **host-side** path of this session's reload marker:
 // the state mount's resolved host source plus the basename both sides agree
 // on. Empty when the plan carries no state mount — which is also the only way

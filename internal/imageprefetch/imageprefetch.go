@@ -266,38 +266,64 @@ type result struct {
 // answer standing instead of retracting a banner that is still true. An axis
 // that abstains outright writes nothing at all.
 func collect(ctx context.Context, cli client.APIClient, in Input, res result) (result, bool) {
-	reached := 0
+	res, imageReached := collectImage(ctx, cli, in, res)
+	res, cliReached := collectCLI(ctx, in, res)
+	return res, imageReached || cliReached
+}
 
-	if local, ok := localDigest(ctx, cli, in.Ref); ok {
-		if remote, err := remoteDigest(ctx, cli, in.Ref); err == nil {
-			reached++
-			res.imageLatest = remote
-			if remote != local {
-				// A failed pull, or a store we can no longer read, leaves
-				// `local` as it was: the banner stays silent rather than
-				// announcing bytes that never landed.
-				if pull(ctx, cli, in.Ref) == nil {
-					if fetched, ok := localDigest(ctx, cli, in.Ref); ok {
-						local = fetched
-					}
-				}
-			}
-			// The reload-worthiness comparison: local store against what this
-			// container was created from, not against the remote.
-			res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
-			res.imageState = imageState(in.StateDir, local != remote, res.imageUpdate)
-		}
+// collectImage runs the image axis and reports whether it reached the
+// registry. Two abstentions come first and cost nothing: a store with no repo
+// digest for the ref is a local `toolbox build`, and a probe that does not
+// answer leaves the previous result standing.
+func collectImage(ctx context.Context, cli client.APIClient, in Input, res result) (result, bool) {
+	local, ok := localDigest(ctx, cli, in.Ref)
+	if !ok {
+		return res, false
+	}
+	remote, err := remoteDigest(ctx, cli, in.Ref)
+	if err != nil {
+		return res, false
 	}
 
-	if cur := in.CLIVersion; cur != "" && cur != "dev" {
-		if tag, err := latestRelease(ctx); err == nil {
-			reached++
-			res.cliLatest = tag
-			res.cliUpdate = newerVersion(cur, tag)
-		}
+	res.imageLatest = remote
+	if remote != local {
+		local = fetched(ctx, cli, in.Ref, local)
 	}
+	// The reload-worthiness comparison: local store against what this
+	// container was created from, not against the remote.
+	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
+	res.imageState = imageState(in.StateDir, local != remote, res.imageUpdate)
+	return res, true
+}
 
-	return res, reached > 0
+// fetched pulls ref and reports the digest the local store holds afterwards.
+// A failed pull, or a store that can no longer be read, returns `have`
+// unchanged: the banner stays silent rather than announcing bytes that never
+// landed.
+func fetched(ctx context.Context, cli client.APIClient, ref, have string) string {
+	if pull(ctx, cli, ref) != nil {
+		return have
+	}
+	if landed, ok := localDigest(ctx, cli, ref); ok {
+		return landed
+	}
+	return have
+}
+
+// collectCLI runs the CLI axis and reports whether it reached GitHub. An
+// unstamped build ("dev", or empty in a test binary) has no release to be
+// behind, so it abstains before the network.
+func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
+	if in.CLIVersion == "" || in.CLIVersion == "dev" {
+		return res, false
+	}
+	tag, err := latestRelease(ctx)
+	if err != nil {
+		return res, false
+	}
+	res.cliLatest = tag
+	res.cliUpdate = newerVersion(in.CLIVersion, tag)
+	return res, true
 }
 
 // localDigest reports the repo digest the local store holds for ref. The

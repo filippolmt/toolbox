@@ -264,21 +264,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
-	// One detector, host-side, for as long as the shell is attached: the
-	// probe that decides whether to pull is the same act that knows whether
-	// the bytes landed, which is the fact the prompt banner states. Cancelled
-	// with the session — an interrupted pull leaves no blob behind.
-	prefetchCtx, stopPrefetch := context.WithCancel(ctx)
+	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, createdImageDigest(plan, inspect, op), startSynced)
 	defer stopPrefetch()
-	if in, ok := prefetchInput(baseImage, plan, createdImageDigest(plan, inspect, op), startSynced); ok {
-		startPrefetch(prefetchCtx, cli, in)
-	}
 
-	execCmd := plan.Cmd
-	if plan.ExecCmd != nil {
-		execCmd = plan.ExecCmd
-	}
-	execErr := execShellFn(ctx, cli, containerID, execCmd)
+	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())
 
 	// The shell writes a marker on its way out and exits; this is the moment
 	// the host already decides between teardown and something else, so it is
@@ -291,6 +280,21 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, execErr
 	}
 	return requested, nil
+}
+
+// beginPrefetch starts the host-side update probe for as long as the shell is
+// attached, and returns the func that stops it. One detector: the probe that
+// decides whether to pull is the same act that knows whether the bytes landed,
+// which is the fact the prompt banner states. The returned stop is always
+// live, refusal included, so the caller defers one thing unconditionally —
+// cancelling it with the session leaves no blob behind, an interrupted pull
+// expiring on its own.
+func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, containerDigest string, startSynced bool) func() {
+	prefetchCtx, stop := context.WithCancel(ctx)
+	if in, ok := prefetchInput(base, plan, containerDigest, startSynced); ok {
+		startPrefetch(prefetchCtx, cli, in)
+	}
+	return stop
 }
 
 // prefetchInput assembles the update prefetch's input and reports whether the
