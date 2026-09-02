@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Home resolves the current user's home directory, failing loudly when it
@@ -80,6 +81,49 @@ func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
 	if err := os.Rename(tmpPath, dest); err != nil {
 		cleanup()
 		return fmt.Errorf("rename %s -> %s: %w", tmpPath, dest, err)
+	}
+	return nil
+}
+
+// MarkerFresh reports whether the empty marker file at path was last written
+// within ttl. Any error — missing marker, unreadable directory, no home —
+// reports false, so a caller that gates work on freshness does the work
+// rather than skipping it on uncertainty.
+//
+// Marker contents are never read: the modification time *is* the record. Two
+// packages keep TTL-gated markers on the state mount with different meanings
+// (imagepull stamps only successful pulls, imageprefetch stamps every probe
+// attempt); the mechanism is shared here, the semantics stay theirs.
+func MarkerFresh(path string, ttl time.Duration) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) < ttl
+}
+
+// MarkerOlderThan reports whether the marker at path exists and predates ttl.
+// Deliberately not the negation of MarkerFresh: an absent marker is neither
+// fresh nor old, and the two callers ask opposite questions of it — "may I
+// skip?" versus "has this condition persisted?".
+func MarkerOlderThan(path string, ttl time.Duration) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) >= ttl
+}
+
+// TouchMarker stamps an empty marker at path, creating its directory. Errors
+// are wrapped with the step that failed, because the two causes call for
+// different fixes: a missing directory usually means a mount is not there,
+// an un-writable file means ENOSPC, EROFS or permissions.
+func TouchMarker(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create marker dir for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		return fmt.Errorf("write marker %s: %w", path, err)
 	}
 	return nil
 }

@@ -40,7 +40,7 @@ func KeyDocs() map[string]KeyDoc {
 			Default: defaultNone,
 		},
 		"pull": {
-			Summary: "Registry-sync policy every shell: auto (TTL-cached) | always (force) | never (air-gapped).",
+			Summary: "Registry-sync policy for the shell-start refresh and the background prefetch: auto (TTL-cached) | always (force at start) | never (air-gapped, prefetch off).",
 			Default: PullAuto,
 		},
 		"sdd": {

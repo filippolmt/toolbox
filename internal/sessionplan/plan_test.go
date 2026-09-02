@@ -17,6 +17,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/version"
 )
@@ -90,8 +91,11 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	if named.ContainerName == plain.ContainerName {
 		t.Errorf("named and workspace container names collided: %q", named.ContainerName)
 	}
-	// Only the container name differs; the rest of the plan matches.
+	// Only the container name differs — and the reload marker, which is named
+	// after it on purpose: two sessions on one workspace must not share the
+	// file that says "this one asked to reload".
 	named.ContainerName = plain.ContainerName
+	named.Env = plain.Env
 	if !reflect.DeepEqual(named, plain) {
 		t.Errorf("named plan diverges beyond ContainerName:\n named=%+v\n plain=%+v", named, plain)
 	}
@@ -338,6 +342,7 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
 		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 	}
 	if !slices.Equal(plan.Env, want) {
 		t.Errorf("Env = %v, want %v", plan.Env, want)
@@ -373,7 +378,7 @@ func TestPlanInjectsHostPlatform(t *testing.T) {
 }
 
 // TestPlanInjectsImageIdentity asserts the self-identity contract the
-// in-container update poller depends on: TOOLBOX_CLI_VERSION is always
+// container identity depends on: TOOLBOX_CLI_VERSION is always
 // emitted, and TOOLBOX_IMAGE_DIGEST appears verbatim when a digest is
 // supplied but is omitted entirely (not emitted empty) when it is not.
 func TestPlanInjectsImageIdentity(t *testing.T) {
@@ -499,6 +504,7 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
 		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
 		"ZED=z",
@@ -1069,5 +1075,100 @@ func TestPlanScopesHerdrSessionToWorkspace(t *testing.T) {
 	}
 	if got := herdrSession(t, filepath.Join(tmpHome, "one", "api"), profile); got != a {
 		t.Errorf("HERDR_SESSION under --profile = %q, want %q (workspace identity only)", got, a)
+	}
+}
+
+// TestPlanCarriesTheStateMountPath pins StateDir to the bind it names. The
+// host-side update prefetch writes into that directory and the in-container
+// prompt hook reads it back through the mount, so a StateDir that pointed
+// anywhere else would leave the banner silent with nothing to show for it.
+func TestPlanCarriesTheStateMountPath(t *testing.T) {
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: planWorkspace(t)})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if plan.StateDir == "" {
+		t.Fatal("StateDir is empty")
+	}
+
+	const stateTarget = "/home/toolbox/.toolbox-state"
+	for _, b := range plan.Binds {
+		if b.Target == stateTarget {
+			if b.Source != plan.StateDir {
+				t.Errorf("StateDir = %q, but the %s bind sources %q", plan.StateDir, stateTarget, b.Source)
+			}
+			return
+		}
+	}
+	t.Fatalf("no bind at %s to pin StateDir against", stateTarget)
+}
+
+// TestWithImageDigest covers the re-stamp the container edge performs after
+// the shell-start registry refresh: the digest the host resolved before
+// planning can already be superseded by the time the container is created.
+func TestWithImageDigest(t *testing.T) {
+	const cli = "TOOLBOX_CLI_VERSION=v1.0.0"
+	const digestEnv = "TOOLBOX_IMAGE_DIGEST="
+
+	for _, tc := range []struct {
+		name   string
+		env    []string
+		digest string
+		want   []string
+	}{
+		{
+			name:   "replaces in place",
+			env:    []string{"A=1", cli, digestEnv + "sha256:old", "B=2"},
+			digest: "sha256:new",
+			want:   []string{"A=1", cli, digestEnv + "sha256:new", "B=2"},
+		},
+		{
+			// An entry the planner omitted (unresolvable at plan time) is
+			// inserted where identityEnv would have put it, so the documented
+			// emission order survives the re-stamp.
+			name:   "inserts after the CLI version",
+			env:    []string{"A=1", cli, "B=2"},
+			digest: "sha256:new",
+			want:   []string{"A=1", cli, digestEnv + "sha256:new", "B=2"},
+		},
+		{
+			// An unresolvable digest removes the entry rather than emitting it
+			// empty: a reader must be able to tell "no digest" from "stale".
+			name:   "empty digest removes the entry",
+			env:    []string{"A=1", cli, digestEnv + "sha256:old"},
+			digest: "",
+			want:   []string{"A=1", cli},
+		},
+		{
+			name:   "empty digest with no entry is a no-op",
+			env:    []string{"A=1", cli},
+			digest: "",
+			want:   []string{"A=1", cli},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sessionplan.WithImageDigest(tc.env, tc.digest)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("WithImageDigest = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnvValue pins the duplicate-resolution rule: the daemon lets the last
+// occurrence win, and reading the first would report a value the container is
+// not running under.
+func TestEnvValue(t *testing.T) {
+	env := []string{"A=1", "B=2", "A=3", "MALFORMED", "C="}
+	for _, tc := range []struct{ key, want string }{
+		{"A", "3"},
+		{"B", "2"},
+		{"C", ""},
+		{"MALFORMED", ""},
+		{"MISSING", ""},
+	} {
+		if got := sessionplan.EnvValue(env, tc.key); got != tc.want {
+			t.Errorf("EnvValue(%q) = %q, want %q", tc.key, got, tc.want)
+		}
 	}
 }

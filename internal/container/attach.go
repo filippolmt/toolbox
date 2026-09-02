@@ -107,7 +107,12 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	// not as an ExecCreate/ExecAttach error, so capturing the closing bytes is
 	// the only way to recognize the cause after the copy returns.
 	tail := newTailBuffer(4096)
-	go func() { _, _ = io.Copy(resp.Conn, os.Stdin) }()
+	// stdin is read into a local before the goroutine starts: the copy
+	// outlives this call, and a goroutine still dereferencing the os.Stdin
+	// *variable* races anything that reassigns it afterwards — which is what
+	// a test restoring its pipe does, and what the race detector reports.
+	stdin := os.Stdin
+	go func() { _, _ = io.Copy(resp.Conn, stdin) }()
 	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
 	return diagnoseSessionExit(ctx, cli, containerID, tail.String())

@@ -1,10 +1,15 @@
-//go:build peergate
+//go:build dockergate
 
 // Package-internal integration gate for cross-container peer messaging. It
 // needs a real Docker daemon and the runtime image present locally under its
-// canonical ref, so it sits behind the `peergate` build tag and never runs in
-// `make go-check`. CI runs it inside the docker-build job, where the image it
-// just built is already loaded.
+// canonical ref, so it sits behind the `dockergate` build tag and never runs
+// in `make go-check`. CI runs it inside the docker-build job, where the image
+// it just built is already loaded.
+//
+// The tag names the requirement, not one feature: it selects every test that
+// needs a real daemon and the built image, which is now this one and the
+// session-reload gate beside it (reload_gate_test.go). The workflow therefore
+// passes no -run filter — the tag is the selection.
 //
 // It asserts the MECHANISM, not the feature: the two conditions toolbox
 // builds — the peer's socket directory is shared, and the peer's pid resolves.

@@ -12,7 +12,7 @@ sections.**
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
 | [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
-| [update-notification.md](update-notification.md) | explanation | In-shell "newer image / CLI available" banner |
+| [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
 | [internals/](#internals) | explanation | Maintainer-only material |
@@ -91,12 +91,14 @@ sections.**
 - [Lifecycle from inside the container (bridge shim)](proximo.md#lifecycle-from-inside-the-container-bridge-shim)
 - [Boundaries and caveats](proximo.md#boundaries-and-caveats)
 
-## update-notification.md
+## session-reload.md
 
-- [What you see](update-notification.md#what-you-see)
-- [How it works](update-notification.md#how-it-works)
-- [Cache and TTL](update-notification.md#cache-and-ttl)
-- [Opt out](update-notification.md#opt-out)
+- [What you see](session-reload.md#what-you-see)
+- [toolbox-reload](session-reload.md#toolbox-reload) — [What happens, in order](session-reload.md#what-happens-in-order) · [What survives, and what dies](session-reload.md#what-survives-and-what-dies) · [Your agent](session-reload.md#your-agent) · [Peer sessions and the anchor](session-reload.md#peer-sessions-and-the-anchor) · [Version skew](session-reload.md#version-skew)
+- [How the prefetch works](session-reload.md#how-the-prefetch-works)
+- [Cache and TTL](session-reload.md#cache-and-ttl)
+- [Opt out](session-reload.md#opt-out)
+- [What the prefetch changes about metered connections](session-reload.md#what-the-prefetch-changes-about-metered-connections)
 
 ## sdd.md
 
@@ -144,6 +146,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Image selection mechanics](internals/container-lifecycle.md#image-selection-mechanics)
 - [Codex nested sandbox](internals/container-lifecycle.md#codex-nested-sandbox)
 - [Container teardown](internals/container-lifecycle.md#container-teardown)
+- [Session reload teardown](internals/container-lifecycle.md#session-reload-teardown)
 - [Peer anchor reaping](internals/container-lifecycle.md#peer-anchor-reaping)
 
 ### [internals/shell-start.md](internals/shell-start.md)
@@ -175,7 +178,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 ### [internals/sonarqube.md](internals/sonarqube.md)
 
 - [Private project, public repo](internals/sonarqube.md#private-project-public-repo)
-- [The two coverage numbers](internals/sonarqube.md#the-two-coverage-numbers)
+- [The two coverage denominators](internals/sonarqube.md#the-two-coverage-denominators)
 - [Where the gate is read](internals/sonarqube.md#where-the-gate-is-read)
 - [Cognitive Complexity is off for test files](internals/sonarqube.md#cognitive-complexity-is-off-for-test-files)
 - [Baseline: the 56 → 0 sweep](internals/sonarqube.md#baseline-the-56--0-sweep)

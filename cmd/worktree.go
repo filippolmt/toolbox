@@ -178,23 +178,30 @@ func resolveAgent(flag string) (string, error) {
 // launch). Shared by create (which may pass a prompt) and open (which never
 // does — re-attach only). This is the interactive Docker edge that stays in
 // cmd (see the Worktree entry in CONTEXT.md): the seed gating, the sessionplan
-// call, and the TTY attach in container.Shell, plus resolveImageDigest, shared
-// with the `shell` command. What a worktree session *is* — the .git bind and
+// call, and the TTY attach in container.Shell, plus the image-digest resolve
+// shared with the `shell` command. What a worktree session *is* — the .git bind and
 // the agent launch — lives behind PlanInput.Worktree.
-func openSession(ctx context.Context, cli client.APIClient, root, wtPath, agent, prompt string) error {
-	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
+func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch, agent, prompt string) error {
+	reloadFrom, err := takeReloadHandover()
+	if err != nil {
+		return err
+	}
+	imageDigest, _ := build.LocalRepoDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Cfg:         cfg,
 		Workspace:   wtPath,
 		ImageDigest: imageDigest,
 		Peer:        cfg.PeerMessaging,
 		Worktree:    &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
+		ReloadFrom:  reloadFrom,
 	})
 	if err != nil {
 		return err
 	}
 	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	return container.Shell(ctx, cli, plan)
+	// The re-entry form is normalised, not replayed, and pins the resolved
+	// agent so the reloaded session resumes the conversation this one ran.
+	return runSession(ctx, cli, plan, worktreeReentry(branch, agent))
 }
 
 // seedWorktreeFiles copies gitignored per-repo working state from the main
@@ -415,7 +422,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	// (daemon down, image pull error) the worktree is a valid artifact — point
 	// the user at `open` to re-attach rather than re-`create` (which would
 	// error on the existing branch/directory).
-	if err := openSession(ctx, cli, root, wtPath, agent, prompt); err != nil {
+	if err := openSession(ctx, cli, root, wtPath, branch, agent, prompt); err != nil {
 		return fmt.Errorf("%w\nworktree created at %s — re-attach with 'toolbox worktree open %s' once resolved", err, wtPath, branch)
 	}
 	return nil
@@ -440,7 +447,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 	defer cli.Close()
 	ctx, stop := signalCtx()
 	defer stop()
-	return openSession(ctx, cli, root, wtPath, agent, "") // no prompt on re-attach
+	return openSession(ctx, cli, root, wtPath, branch, agent, "") // no prompt on re-attach
 }
 
 func runWorktreeList(cmd *cobra.Command, _ []string) error {

@@ -33,14 +33,19 @@ import (
 // forces a pull bypassing the TTL cache, "auto"/"" uses the cache-aware
 // default. Errors are swallowed by imagepull (logged as a warning at most);
 // the caller's existing local copy is the fallback.
-func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image) {
+//
+// Reports whether the local store was actually synced against the registry
+// here and now. The background update prefetch reads it as "this shell start
+// already took its turn at the registry" and stamps its own attempt clock
+// accordingly — a synchronous probe is a probe.
+func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image) bool {
 	switch image.PullPolicy {
 	case config.PullNever:
-		return
+		return false
 	case config.PullAlways:
-		imagepull.ForcePull(ctx, cli, image.Ref)
+		return imagepull.ForcePull(ctx, cli, image.Ref)
 	default: // config.PullAuto and the unset zero value
-		imagepull.RefreshIfStale(ctx, cli, image.Ref)
+		return imagepull.RefreshIfStale(ctx, cli, image.Ref)
 	}
 }
 

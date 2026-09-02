@@ -11,17 +11,22 @@ on:
       # bump there must rebuild + smoke-test the image even though it leaves
       # internal/build/assets/** untouched.
       - 'go.mod'
-      # The peer-messaging gate at the end of docker-build is a `go test`
-      # driving the host CLI against the image it just built, so it regresses
+      # The real-daemon gates at the end of docker-build are `go test` runs
+      # driving the host CLI against the image it just built, so they regress
       # on host-side changes that touch no image asset at all — and nothing
       # else can catch that: every unit test around this wiring runs on Docker
-      # mocks. Package-wide globs on purpose; the gate goes through
-      # lifecycle.go, mountplan.Plan and sessionplan.Plan, so a file-level list
-      # would drift out of date without anyone noticing. The `detect` job below
-      # still keeps arm64 off these builds — the risk here is not arch-specific.
+      # mocks. Package-wide globs on purpose; the gates go through
+      # lifecycle.go, mountplan.Plan and sessionplan.Plan for peer messaging,
+      # and through reload.go plus the internal/reload payload for the session
+      # reload — so a file-level list would drift out of date without anyone
+      # noticing. Not cmd/**: both gates call container.Shell directly, so no
+      # amount of cmd/ change can reach them, and the glob would buy a ~10 min
+      # image build on every unrelated CLI edit. The `detect` job below still
+      # keeps arm64 off these builds — the risk here is not arch-specific.
       - 'internal/container/**'
       - 'internal/mountplan/**'
       - 'internal/sessionplan/**'
+      - 'internal/reload/**'
   # No push: branches: [main] trigger — docker-publish.yml runs the same
   # smoke-test pre-publish on main, so a re-run here would be redundant work
   # (~7min). Pre-merge validation happens on the pull_request event above.
@@ -172,8 +177,11 @@ jobs:
 
       # IMAGE_TAG reaches the gate as the `image:` config override, so the
       # canonical ref lives only in internal/build.
-      - name: Peer messaging mechanism gate
+      # No -run filter: the `dockergate` tag means "needs a real daemon and the
+      # built image", so the tag itself selects the set — peer messaging and
+      # the session reload today, whatever else earns it later.
+      - name: Real-daemon gates (peer messaging, session reload)
         if: ${{ !cancelled() && matrix.load }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}
-        run: go test -tags peergate -count=1 -run TestPeerMessagingMechanism ./internal/container/
+        run: go test -tags dockergate -count=1 ./internal/container/

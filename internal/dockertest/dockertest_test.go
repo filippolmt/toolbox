@@ -2,6 +2,7 @@ package dockertest
 
 import (
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,5 +52,29 @@ func TestPullResponseStreamsNothing(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("JSONMessages yielded %d messages, want 0", count)
+	}
+}
+
+// The two result builders exist so no caller hand-rolls an OCI descriptor or
+// a RepoDigests entry. Their shape is the assertion: a probe fake that put
+// the digest in the wrong field would make every prefetch test pass against
+// nothing.
+func TestResultBuilders(t *testing.T) {
+	const digest = "sha256:abc"
+
+	if got := DistributionResult(digest).Descriptor.Digest.String(); got != digest {
+		t.Errorf("DistributionResult digest = %q, want %q", got, digest)
+	}
+
+	got := ImageInspectResult("ghcr.io/filippolmt/toolbox", digest).RepoDigests
+	want := []string{"ghcr.io/filippolmt/toolbox@" + digest}
+	if !slices.Equal(got, want) {
+		t.Errorf("ImageInspectResult RepoDigests = %v, want %v", got, want)
+	}
+
+	// No digest means no entry at all — the fingerprint of an image built
+	// locally and never pushed, which is what makes the prefetch abstain.
+	if got := ImageInspectResult("ghcr.io/filippolmt/toolbox", "").RepoDigests; len(got) != 0 {
+		t.Errorf("RepoDigests = %v, want none for a locally built image", got)
 	}
 }

@@ -256,7 +256,7 @@ to assert image-tag resolution or container-name determinism. The
 "Session Plan" name turns the sequencing into one observable typed plan
 that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
-composition is what the v1.3 milestone calls Architecture Deepening.
+composition is what the Architecture Deepening milestone set out to build.
 
 ### Run Plan
 
@@ -296,10 +296,17 @@ Concretely: `imageplan.Refresh(ctx, cli, image)` runs at the top of
 `container.Shell` and best-effort syncs the image against its registry,
 steered by the Image's pull policy — `never` skips the round-trip,
 `always` forces `imagepull.ForcePull`, `auto` (default) goes through
-the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed.
+the TTL-cached `imagepull.RefreshIfStale`; errors are swallowed. That
+policy steers the **synchronous** refresh only: the background
+[Image Prefetch](#image-prefetch) reads the same key on a two-state
+basis — on under `auto` and `always`, off under `never` — and keeps its
+own cadence under both on-states.
 `imageplan.Ensure(ctx, cli, image)` runs inside the `ActionCreate`
 branch and is a hard guarantee: present in the local store → done;
-otherwise fatal, because the pull already had its chance. **`Ensure`
+otherwise fatal, because the pull already had its chance. A
+[Session Reload](#session-reload) calls the same pair a second time and
+earlier — before it destroys anything — which is what turns "no usable
+image" from a spent session into a no-op. **`Ensure`
 never builds** — `toolbox build` is the explicit user-driven path for a
 local rebuild (the auto-build branch died with the local-hash image
 tag). Owned by `internal/imageplan`. `Ensure` is exposed as a
@@ -316,6 +323,170 @@ in the inline call). Tests of code that exercised the not-found branch
 redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 create-branch guarantee into a single var inside `imageplan`.
+
+### Image Prefetch
+
+The single host-side detector that answers "is there a newer runtime
+image or CLI, and are its bytes already here?" for as long as a shell is
+attached — and downloads them when they are not. The separation it names is
+*when the bytes arrive* from *when a session moves onto them*, which is the
+design rather than an implementation detail.
+
+Concretely: `imageprefetch.Start(ctx, cli, Input{Ref, ContainerDigest,
+StateDir, StartSynced})`, launched from `container.Shell` behind the
+`startPrefetch` var and cancelled with the session. Its ticker is only an
+**alarm**: the "poll now?" decision is a `stat` on an attempt stamp
+(`<state>/update-check.stamp`), so the cadence lives on the state mount,
+is shared across sibling sessions, and would survive a re-exec of the
+host CLI for free. Each tick **cancels the poll it started last time**
+before starting the next, so a registry that accepts the connection and
+then stops talking costs one tick rather than the whole session — the
+bound that lets the act refuse backoff and metering entirely. Cancelling
+is free: a partial ingest is never a blob, it expires on its own, and the
+next pull resumes from what landed.
+
+`StartSynced` closes the cold start. The synchronous `imageplan.Refresh`
+at shell start is itself a probe, so when it actually reached the
+registry it takes that TTL's turn: the poller stamps on its behalf and
+publishes the banner **from the local store** — which that pull has just
+made current — instead of asking the registry the same question seconds
+later. A cache hit or a failed pull sets nothing, and the poller does its
+own probe: neither established anything about the remote. One poll is probe → prefetch → publish:
+`DistributionInspect` resolves the remote digest through the daemon
+(so a `registry_mirror` is honoured and no registry HTTP lives in this
+repo), `ImagePull` drained with `ImagePullResponse.Wait` fetches it when
+the local store's `RepoDigests` entry differs, and the result is written
+to `<state>/update-check` — the cache the in-container zsh `precmd` hook
+has always rendered. Everything is silent: the host process's stdout is
+the attached tty. The cache contract is **additive**: `image_state`
+(`none|ready|unavailable`) is written *alongside* a retained
+`image_update`, so an image predating the field still renders its own
+true sentence instead of going quiet. `unavailable` is earned, not
+reported on sight — a first-failure timestamp beside the attempt stamp
+must be a full cadence old before the word is used, because one failed
+download is a dropped connection and not a broken registry.
+
+**Two comparisons, not one.** *Remote vs local store* decides whether to
+pull; *local store vs the digest the container was created from* decides
+whether the session is behind, which is the fact the banner states. They
+diverge exactly at the moment that matters — right after a successful
+prefetch the first says no and the second says yes. The second baseline
+is read off the running container (`sessionplan.ImageDigestEnv`), never
+recomputed, so it stays true on the connect path. Two refusals: `pull:
+never` silences probe, prefetch and banner as one act (a probe talks to
+the registry), and the prefetch abstains while the resolved ref has no
+repo digest — the fingerprint of a local `toolbox build`, so an explicit
+act by the developer is never undone by an automatic one.
+
+Why the term exists: detection used to be a baked helper
+(`bin/toolbox-update-check`) polling GHCR with `curl` from inside the
+container, while only the host could act on what it found. Two
+detectors over two transports could disagree with nobody to reconcile
+them, the in-container one was `precmd`-driven so a shell left at a
+prompt never re-polled — the multi-day session, which is the case that
+matters — and it could not know whether the bytes had landed, because it
+spoke to a registry and not to the local content store. Collapsing
+detection and prefetch into one host-side act is what lets the banner
+state a fact instead of prescribing an exit. Owned by
+`internal/imageprefetch`; the render half stays in `zshrc.sh`, because
+the image owns the words.
+
+### Session Reload
+
+Moving an attached session onto a newer runtime image, on the
+developer's word, without exiting and reopening by hand. Process
+continuity is not preserved; **conversation** continuity is — history,
+agent transcripts and credentials survive because they already sit on
+bind mounts, not because anything copies them.
+
+Concretely, a reload is a **tail call**, not a loop. `container.Shell`
+returns a typed `*reload.From` when the exiting shell left a
+[Reload Marker](#reload-marker), `cmd.runSession` performs the
+`syscall.Exec` behind the `execSelf` var, and each host process still
+handles exactly one attach. The order is the whole safety argument:
+**re-exec first, verify, then destroy.** The riskiest step is therefore
+also the first, when the old session is still alive; `imageplan.Refresh`
++ `Ensure` gate the teardown, so a reload with no usable image leaves
+the developer exactly where they were. The new binary owns the destroy,
+which means a `brew upgrade` landed meanwhile takes effect on the
+teardown policy too, not just on the create.
+
+`TOOLBOX_RELOAD_FROM` is the handover across the exec: one JSON
+variable, consumed and unset by `reload.Take()` before any container env
+is built. Every field is optional with a safe zero value **except the
+container name** — lose that and nothing destroys the old container, the
+next `toolbox shell` resolves the same deterministic name and reuses it,
+and the developer lands silently back on the old image. So an
+unparseable payload is a hard error printing the re-entry command, never
+a degrade. One item is carried deliberately, the working directory
+(`sessionplan.reloadWorkingDir`, validated against the workspace, silent
+fallback); everything else is **re-derived** by a fresh
+`sessionplan.Plan`, so the `TOOLBOX_*` identity is right for the *new*
+image instead of replaying the old one's `PATH` into it.
+
+The **re-entry form** is the argv the next process runs, and it is
+*normalised, never replayed*: `worktree create` comes back as `worktree
+open <branch>` with the resolved `--agent` pinned, and `shell` drops the
+`--create`/`--path` bootstrap half. Everything else the developer typed
+is carried, because the flags are identity: `--profile` and `--peer`
+feed the container name, `--profile` also moves the mount root, and
+`-p` fixes the port bindings at creation — a form that dropped them
+would have the reloaded process destroy the container the payload names
+and then create a *different* one. `cmd.reentryFlags` walks the Changed
+flags rather than a hand-kept list, so a flag added later is carried
+without anyone remembering; a flag left at its default is never emitted,
+which is what keeps the tri-state `--peer` resolving against config.
+The same form is what a failed reload prints as the way back.
+
+The reload gates on nothing and confirms nothing. It looks once
+(`ContainerTop`, cgroup-scoped even under the shared peer PID namespace)
+and prints what it killed as part of a before/after summary, because a
+dev server or a watcher is the normal state of a working shell and a
+prompt there would fire on nearly every reload. The summary is not
+cosmetic: the command **always** reloads, including when nothing is
+newer, so it is the only thing distinguishing a successful-but-pointless
+reload from one that failed silently. Sibling attached panes die with
+the container — see [Teardown](#teardown).
+
+Why the term exists: the alternative reading was "auto-update", which
+put the decision on the tool and the surprise on the developer, and
+invited an in-place mutation of the live container that would cover
+barely half the update surface while diverging the container from its
+image digest. Naming the act *reload* puts the moment in the
+developer's hands and keeps one mechanism instead of two. Owned by
+`internal/reload` (the two names and the payload), `internal/container`
+(the destructive half), and `cmd` (the exec).
+
+### Reload Marker
+
+The file an exiting shell writes to ask the host for a
+[Session Reload](#session-reload), and the host-injected variable that
+declares the host is able to read it.
+
+Concretely: `TOOLBOX_RELOAD_MARKER` carries the marker's absolute path
+into the container (`sessionplan.reloadMarkerEnv`, under the state
+mount, named after the container); the `toolbox-reload` zsh function
+writes `$PWD` there atomically and exits; `container.Shell` reads and
+**deletes** it exactly where `execShell` returns, which is where the
+teardown decision was already being made. Deleting on read is what stops
+a marker orphaned by a crashed session from firing later.
+
+Two properties are load-bearing and easy to lose. **Presence is the
+capability**: the image ships on merge and the CLI on tag, so a new
+image can meet an old CLI that would write nothing, notice nothing and
+tear the session down for good — `toolbox-reload` therefore refuses *at
+the prompt, without exiting*, naming no required version because a
+presence marker means the image never learns one. And **the value is a
+path**, not a boolean, because the container cannot build the path: it
+would need the state mount's target, the naming convention and its own
+container name, and the hostname it can read is Docker's short id.
+
+It earns its own entry only because two host-injected names share a
+prefix and point in opposite directions: `TOOLBOX_RELOAD_MARKER` travels
+host → container and never leaves it, `TOOLBOX_RELOAD_FROM` travels
+host → host across the exec and never enters one. Owned by
+`internal/reload`; bound to the shell side by
+`TestReloadMarkerContract`.
 
 ### Invalidation Floor
 
@@ -445,6 +616,13 @@ the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
 must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
 `internal/teardown`. Timing constants `DefaultTimeout` (30s) and
 `DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+
+One caller deliberately does **not** use this policy: a
+[Session Reload](#session-reload) needs an unconditional destroy that
+waits for the removal, because skip-if-sibling would spare a container
+still holding the deterministic name the reload's own create is about
+to ask for. Considerate refusal there turns into a name collision, so
+the reload owns `container.reloadTeardown` instead.
 
 Why the term exists: before this concept was named, the policy was a
 4-deep nested defer block inside `Shell`, with the timing constants as
@@ -713,7 +891,12 @@ Because it outlives every session, an anchor can outlive the spec it was
 created from — and one created before the tini override kept a PID 1 that never
 reaped. `ensureAnchor` therefore replaces an anchor whose entrypoint is not the
 current one, but only when no session holds its namespace: Docker does not
-refuse the removal of an in-use anchor, it kills the sessions on it.
+refuse the removal of an in-use anchor, it kills the sessions on it. That
+replacement is **load-bearing for the [Session Reload](#session-reload)**, not
+merely tidy: the reload destroys before it creates, so it is the one moment a
+single-session developer stops holding the anchor — and a legacy anchor's
+failure mode there is not accumulated zombies but the loss of every sibling
+session, which the reload turns from occasional into routine.
 
 Rationale and rejected options:
 `docs/adr/0003-cross-container-peer-messaging.md`.

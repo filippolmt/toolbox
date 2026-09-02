@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/netip"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -26,6 +27,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sdd"
 	"github.com/filippolmt/toolbox/internal/version"
 )
@@ -74,6 +76,13 @@ type SessionPlan struct {
 	// container edge (localimage.Ensure) passes through unchanged when the
 	// file is absent and only builds the derived `:local` image when present.
 	OverlayDockerfile string
+	// StateDir is the resolved host source of the toolbox state mount — the
+	// directory the container sees as ~/.toolbox-state (mounts_root- and
+	// profile-aware, same resolution as OverlayDockerfile). The container edge
+	// hands it to the update prefetch, which writes the cache the in-container
+	// prompt hook reads back through the bind. Empty when the mount was
+	// removed from the plan, which turns the prefetch off.
+	StateDir string
 	// Proximo mirrors cfg.Proximo. When true, the container edge augments
 	// ExtraHosts with the proximo-routed hostnames discovered from running
 	// containers (pinned to host-gateway) just before ContainerCreate — that
@@ -87,6 +96,48 @@ type SessionPlan struct {
 	// Claude Code's pid-keyed session registry resolvable across containers.
 	// The container edge creates the anchor if it is missing.
 	PidMode string
+	// ReloadFrom is the handover from the process that re-exec'd into this one,
+	// nil for an ordinary shell start. The container edge reads it to know
+	// which container to destroy before it creates, and what the "before" half
+	// of the reload summary is. It is deliberately not part of Env: the
+	// variable carrying it never enters a container.
+	ReloadFrom *reload.From
+}
+
+// LaunchesAgent reports whether the session auto-launches an agent in the
+// attached exec rather than dropping the developer at a shell. Only a
+// `toolbox worktree` session does, and that is exactly the launch mode a
+// reload has to reproduce — so the reload asks this rather than inferring
+// intent from what the developer happened to be running.
+func (p *SessionPlan) LaunchesAgent() bool { return p.ExecCmd != nil }
+
+// EffectiveCmd is what this session actually runs: the worktree agent launch
+// when the plan carries one, the configured shell otherwise. Both halves are
+// this plan's own fields, so the choice belongs here rather than being
+// re-made at the attach.
+func (p *SessionPlan) EffectiveCmd() []string {
+	if p.ExecCmd != nil {
+		return p.ExecCmd
+	}
+	return p.Cmd
+}
+
+// ReloadMarkerPath is the **host-side** path of this session's reload marker:
+// the state mount's resolved host source plus the basename both sides agree
+// on. Empty when the plan carries no state mount — which is also the only way
+// the container could not see the marker either, since reloadMarkerEnv
+// withholds the variable in exactly that case.
+//
+// A method rather than a helper in `container`, because both halves of it are
+// this plan's own fields, and the container-side spelling of the same basename
+// is already composed here (reloadMarkerEnv). The two roots differ on purpose:
+// the container writes under the mount target, the host reads under the bind's
+// source.
+func (p *SessionPlan) ReloadMarkerPath() string {
+	if p.StateDir == "" {
+		return ""
+	}
+	return reload.MarkerPath(p.StateDir, p.ContainerName)
 }
 
 // PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
@@ -103,8 +154,8 @@ type PlanInput struct {
 	// supplied host-side by the caller (it needs the Docker client, which the
 	// pure planner does not hold). Empty when unresolvable — e.g. a locally
 	// built untagged image; the identity injection then omits the digest entry
-	// so the in-container poller skips the image check rather than treating an
-	// empty value as a stale digest. See update-notification.
+	// so a reader skips the image comparison rather than treating an empty
+	// value as a stale digest. See session-reload.
 	ImageDigest string
 
 	// Name is the named shell exactly as the user typed it, empty for workspace
@@ -136,6 +187,12 @@ type PlanInput struct {
 	// takes an explicit `peer_messaging: false` or `--peer=false`.
 	// See docs/adr/0003-cross-container-peer-messaging.md.
 	Peer bool
+
+	// ReloadFrom is the payload handed over by the process this one re-exec'd
+	// from, or nil for an ordinary shell start. The reload carries nothing and
+	// re-derives everything, so the only thing it changes here is the working
+	// directory — and only when that directory is still under the workspace.
+	ReloadFrom *reload.From
 }
 
 // WorktreeSession carries the inputs a `toolbox worktree` session adds to a
@@ -149,6 +206,11 @@ type WorktreeSession struct {
 	Agent string
 	// Prompt is the initial task handed to the agent, empty for a bare launch.
 	Prompt string
+	// Resume relaunches the agent on its most recent conversation instead of
+	// starting one. The third launch mode beside prompt and bare, and the only
+	// one a developer never asks for directly: it is set by a reload, whose
+	// whole promise is conversational continuity across the recreate.
+	Resume bool
 }
 
 // gitDir returns the main repo's .git directory for a worktree session, or ""
@@ -236,23 +298,106 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
+	// Host path of the state mount, for the host-side update prefetch.
+	stateDir, err := mountplan.StateDirPath(in.Cfg, in.Profile)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolved before the env is composed: the reload marker is named after the
+	// container, and its path is what declares the capability to the image.
+	name := containerName(workspace, in.Name, in.Profile, in.Peer)
+	workingDir := reloadWorkingDir(mp.WorkingDir, in.ReloadFrom)
+
 	return &SessionPlan{
 		Image:             Image{Ref: ref, PullPolicy: in.Cfg.Pull},
 		Binds:             mp.Binds,
 		Warnings:          mp.Warnings,
-		WorkingDir:        mp.WorkingDir,
+		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, mp.WorkingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds))),
-		ContainerName:     containerName(workspace, in.Name, in.Profile, in.Peer),
+		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
+		ContainerName:     name,
 		Cmd:               cmd,
-		ExecCmd:           worktreeExecCmd(cmd, in.Worktree),
+		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
+		StateDir:          stateDir,
 		Proximo:           proximo.Enabled(in.Cfg),
 		PidMode:           peerPidMode(in.Peer),
+		ReloadFrom:        in.ReloadFrom,
 	}, nil
+}
+
+// reloadMarkerEnv declares the reload capability to the image and hands it the
+// one path it could not build for itself. Presence of the variable is the
+// capability: an image whose `toolbox-reload` finds it absent refuses at the
+// prompt, which is the guard against the silent direction of version skew —
+// a new image under an old CLI, where the marker would be written, ignored,
+// and the session torn down for nothing.
+//
+// Container-side path, because that is the side that writes it. The host edge
+// composes the same basename against the bind's host source.
+//
+// **Emitted only when that bind exists.** A session whose `mounts:` dropped the
+// state mount has nowhere for the two sides to meet, and the container would
+// not notice: the entrypoint creates ~/.toolbox-state either way, so the write
+// succeeds into a container-local directory, the shell exits, and the host
+// reads nothing — the session spent in silence that the capability marker is
+// here to prevent. Withholding the variable turns that into the refusal at the
+// prompt it should have been.
+func reloadMarkerEnv(stateDir, containerName string) []string {
+	if stateDir == "" {
+		return nil
+	}
+	return []string{reload.MarkerEnv + "=" + path.Join(mountplan.StateMountTarget, reload.MarkerName(containerName))}
+}
+
+// resolveWorktreeLaunch reproduces a worktree session's launch mode across a
+// reload, which is deliberately not the same as replaying its intent.
+//
+// Two rules, both from the fact that the original invocation has already run.
+// The prompt is **dropped**: the task that opened this worktree was sent once
+// and completed, and re-sending it would start the work again. The agent
+// **resumes** instead — but only when the carried working directory survived
+// validation, because `claude --continue` is keyed on the cwd and the
+// workspace is mounted twice. On the fallback the agent launches bare:
+// resuming the wrong lineage in silence is worse than not resuming.
+//
+// Returns a copy; the caller's WorktreeSession is an input, not a scratchpad.
+func resolveWorktreeLaunch(wt *WorktreeSession, from *reload.From, workingDir string) *WorktreeSession {
+	if wt == nil || from == nil {
+		return wt
+	}
+	out := *wt
+	out.Prompt = ""
+	out.Resume = from.Resume && from.Cwd != "" && workingDir == from.Cwd
+	return &out
+}
+
+// reloadWorkingDir applies the one piece of in-container process state a
+// reload carries. Anything outside the workspace — `cd /home/toolbox`, a path
+// inside a mount the new session may not have, a directory since deleted —
+// falls back silently to the canonical working directory, because a reload
+// that lands in a directory the new container does not have is worse than one
+// that lands at the top of the workspace.
+//
+// Both spellings of the workspace are accepted: the canonical /workspace and
+// the host-path mirror, which is what mountplan hands back as the working
+// directory whenever the mirror bind exists. They are the same content, and
+// rejecting the one the developer happened to be standing in would make the
+// fallback fire on the common case.
+func reloadWorkingDir(canonical string, from *reload.From) string {
+	if from == nil || from.Cwd == "" {
+		return canonical
+	}
+	for _, root := range []string{canonical, mountplan.WorkspaceTarget} {
+		if root != "" && (from.Cwd == root || strings.HasPrefix(from.Cwd, root+"/")) {
+			return from.Cwd
+		}
+	}
+	return canonical
 }
 
 // Container paths of the two agent homes whose HOST source the bridge daemon
@@ -353,17 +498,86 @@ func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, 
 	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
 }
 
-// identityEnv emits the self-identification env that lets the in-container
-// update poller compare the running toolbox against published releases:
-// TOOLBOX_CLI_VERSION (always, from the host CLI build) and
-// TOOLBOX_IMAGE_DIGEST (only when the host resolved a repo digest). The
-// digest entry is omitted — not emitted empty — when unresolvable so the
-// poller skips the image check instead of reading an empty value as a stale
-// digest and reporting a bogus "update available". See update-notification.
+// ImageDigestEnv names the container's record of the image it was created
+// from. Exported because the container edge reads it back off a running
+// container to answer "is this session behind the local store?" — the pair of
+// writer and reader is the seam, and a literal on each side would drift.
+const ImageDigestEnv = "TOOLBOX_IMAGE_DIGEST"
+
+// CLIVersionEnv records which host CLI created the container. It lost its
+// only consumer when the in-container update poller was retired in favour of
+// a host-side detector — the host *is* the CLI, so it needs no injection — and
+// then gained two: the reload summary reads it back off the plan to say which
+// CLI was left behind, and `toolbox-reload` quotes it in the refusal it prints
+// when the CLI is too old to support a reload at all.
+const CLIVersionEnv = "TOOLBOX_CLI_VERSION"
+
+// NoUpdateCheckEnv opts a session out of the update banner. One name, read on
+// both sides of the bind mount since detection moved host-side: the container
+// edge skips the probe when it arrives through the `env:` passthrough, and
+// zshrc skips the render. Exported so neither side spells it as a literal —
+// a rename on one side alone would quietly half-disable the feature.
+const NoUpdateCheckEnv = "TOOLBOX_NO_UPDATE_CHECK"
+
+// EnvValue reads one variable out of a docker-style KEY=VALUE list, the shape
+// both a composed plan and a ContainerInspect carry. The last occurrence wins,
+// matching how the daemon resolves a duplicated key — which is the reason this
+// is not a one-line loop at the call site: getting that rule wrong reads the
+// value the container is *not* running under.
+func EnvValue(env []string, key string) string {
+	out := ""
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, key+"="); ok {
+			out = v
+		}
+	}
+	return out
+}
+
+// WithImageDigest returns env with the container's image-digest record set to
+// digest — replacing an existing entry, dropping it when digest is empty, and
+// otherwise inserting it in identityEnv's position (immediately after the CLI
+// version) so the documented emission order holds either way.
+//
+// It exists because the host resolves that digest *before* the shell-start
+// registry refresh runs: a refresh that pulls a newer image would otherwise
+// stamp the container with the digest the local store held a moment earlier,
+// and the container's record of what it was created from would be a lie —
+// one that reads, to the update prefetch, as "this session is behind".
+func WithImageDigest(env []string, digest string) []string {
+	out := make([]string, 0, len(env)+1)
+	placed := false
+	for _, e := range env {
+		// An existing entry is the position: replace it, or drop it when the
+		// digest became unresolvable.
+		if strings.HasPrefix(e, ImageDigestEnv+"=") {
+			if digest != "" && !placed {
+				out = append(out, ImageDigestEnv+"="+digest)
+				placed = true
+			}
+			continue
+		}
+		out = append(out, e)
+		// No entry to replace: identityEnv emits the digest right after the
+		// CLI version, so that is where a re-stamp puts it back.
+		if !placed && digest != "" && strings.HasPrefix(e, CLIVersionEnv+"=") {
+			out = append(out, ImageDigestEnv+"="+digest)
+			placed = true
+		}
+	}
+	return out
+}
+
+// identityEnv emits the container's self-identification: CLIVersionEnv
+// (always, from the host CLI build) and ImageDigestEnv (only when the host
+// resolved a repo digest). The digest entry is omitted — not emitted empty —
+// when unresolvable, so a reader distinguishes "created from a local build"
+// from "created from a digest that is now stale" instead of reporting a bogus
+// update. See session-reload.
 func identityEnv(imageDigest string) []string {
-	out := []string{"TOOLBOX_CLI_VERSION=" + version.Version}
+	out := []string{CLIVersionEnv + "=" + version.Version}
 	if imageDigest != "" {
-		out = append(out, "TOOLBOX_IMAGE_DIGEST="+imageDigest)
+		out = append(out, ImageDigestEnv+"="+imageDigest)
 	}
 	return out
 }

@@ -44,11 +44,16 @@ const TTL = 1 * time.Hour
 // RefreshIfStale refreshes the registry image at ref, best-effort, unless
 // a recent successful pull is still within TTL. Errors are logged as
 // warnings and swallowed: the caller proceeds with the local image.
-func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) {
+//
+// Reports whether a registry round trip actually succeeded now. Only that
+// answer lets the background update prefetch skip its own probe: a cache hit
+// did no work at all, and a failed pull leaves the local store possibly
+// behind the registry, which is the one thing the prefetch exists to notice.
+func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) bool {
 	if cached(ref) {
-		return
+		return false
 	}
-	pullAndRecord(ctx, cli, ref)
+	return pullAndRecord(ctx, cli, ref)
 }
 
 // ForcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
@@ -56,16 +61,18 @@ func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) {
 // shell, so a recent cache hit must not short-circuit it. Best-effort like
 // RefreshIfStale — failures are warned and the caller falls back to the local
 // image.
-func ForcePull(ctx context.Context, cli client.APIClient, ref string) {
-	pullAndRecord(ctx, cli, ref)
+func ForcePull(ctx context.Context, cli client.APIClient, ref string) bool {
+	return pullAndRecord(ctx, cli, ref)
 }
 
 // pullAndRecord pulls ref and stamps the cache marker on success — the shared
 // tail of RefreshIfStale (after the cache check) and ForcePull.
-func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) {
-	if pull(ctx, cli, ref) {
-		record(ref)
+func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) bool {
+	if !pull(ctx, cli, ref) {
+		return false
 	}
+	record(ref)
+	return true
 }
 
 // pull attempts to pull the image from its remote registry. The pull
@@ -172,11 +179,7 @@ func cached(ref string) bool {
 	if err != nil {
 		return false
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return time.Since(info.ModTime()) < TTL
+	return fsx.MarkerFresh(path, TTL)
 }
 
 // record stamps a fresh marker after a successful pull. Persist failures
@@ -193,11 +196,7 @@ func record(ref string) {
 		ui.Warning("pull cache: cannot resolve marker path: " + err.Error())
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		ui.Warning("pull cache: cannot create marker dir: " + err.Error())
-		return
-	}
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		ui.Warning("pull cache: cannot write marker: " + err.Error())
+	if err := fsx.TouchMarker(path); err != nil {
+		ui.Warning("pull cache: " + err.Error())
 	}
 }

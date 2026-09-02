@@ -46,17 +46,15 @@ jobs:
       # so on its own it leaves a PR pushed outside working hours with no
       # coverage gate at all. This job always runs, so the floor always holds.
       #
-      # The number is lower because the denominator is different: this is the
-      # whole tree's total, Sonar's is the lines the PR touched. It also sits a
-      # couple of points under the current total on purpose — a floor set to
-      # today's exact figure turns the first sizeable untested addition into a
-      # red required check on an unrelated PR, and the error names the global
-      # total rather than that PR's own code. Raise it as the total climbs;
-      # never lower it to make a red build green.
-      # See docs/internals/sonarqube.md#the-two-coverage-numbers.
+      # Same threshold as Sonar's, over a different denominator: this is the
+      # whole tree's total, Sonar's is the lines the PR touched. One rule —
+      # tests cover at least 80% — so there is nothing to keep in sync as the
+      # total moves. Never lowered to make a red build green: the failing PR
+      # adds the tests, or the untested addition does not land.
+      # See docs/internals/sonarqube.md#the-two-coverage-denominators.
       - name: Enforce the coverage floor
         env:
-          COVERAGE_MIN: '74'
+          COVERAGE_MIN: '80'
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/{print $3}' | tr -d '%')
           echo "total coverage: ${total}% (floor ${COVERAGE_MIN}%)"

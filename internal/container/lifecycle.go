@@ -26,20 +26,31 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
 	"github.com/filippolmt/toolbox/internal/ui"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // execShellFn attaches an interactive shell to a container.
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
+
+// startPrefetch launches the host-side update probe + prefetch for the
+// lifetime of the attached session. A package-level var for the same reason
+// as execShellFn: every lifecycle test would otherwise start a goroutine that
+// talks to a registry.
+var startPrefetch = imageprefetch.Start
 
 // formatPublishMismatch builds the warning string emitted when a reused
 // container does not have every port the user asked for. Returns "" when
@@ -174,25 +185,43 @@ func NewClient() (client.APIClient, error) {
 // Multi-session caveat: if two terminals open a shell into the same
 // workspace, both attach to the same container. When either exits the
 // container is removed and the other session dies with it.
-func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (err error) {
+//
+// Reload: a non-nil first return means the attached shell asked to move onto a
+// newer image (docs/session-reload.md). Shell does not perform the re-exec —
+// internal/container must not replace the host process, and it has no business
+// constructing argv — so it hands the typed request back and cmd tail-calls.
+// The cycle lives in the sequence of processes, not inside any one of them.
+func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (rl *reload.From, err error) {
 	for _, w := range plan.Warnings {
 		ui.Warning("mount skipped: " + w)
+	}
+
+	// A reload arrives owning a container it must replace, and it must do so
+	// before the inspect below — which would otherwise compute a connect to the
+	// very container being retired. The ordering inside is #834's: refresh and
+	// prove the image, only then destroy.
+	if plan.ReloadFrom != nil {
+		if reloadErr := replaceForReload(ctx, cli, plan); reloadErr != nil {
+			return nil, reloadErr
+		}
 	}
 
 	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
 	inspect := inspectResult.Container
 	op, opErr := runplan.Compute(inspect, inspectErr)
 	if opErr != nil {
-		return fmt.Errorf("failed to inspect container: %w", opErr)
+		return nil, fmt.Errorf("failed to inspect container: %w", opErr)
 	}
 
 	if preflightErr := preflightHostConfig(ctx, cli, plan, inspect, op); preflightErr != nil {
-		return preflightErr
+		return nil, preflightErr
 	}
 
 	// Best-effort registry sync of the base image. Hard guarantee runs in
-	// imageplan.Ensure inside createAndStart.
-	imageplan.Refresh(ctx, cli, plan.Image)
+	// imageplan.Ensure inside createAndStart. Whether it reached the registry
+	// is threaded to the prefetch below: a synchronous probe is a probe, and
+	// the background poller must not re-ask the question this just answered.
+	startSynced := imageplan.Refresh(ctx, cli, plan.Image)
 
 	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
 	// `:local` image on top of the freshened base and run the shell from it.
@@ -200,31 +229,143 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// build error so the shell never silently starts from the wrong image.
 	// The returned `:local` carries pull policy "never", so the later
 	// Ensure/Refresh for the create path never touch a registry for it.
+	baseImage := plan.Image
 	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
 	if overlayErr != nil {
-		return overlayErr
+		return nil, overlayErr
 	}
 	plan.Image = image
 
+	// Re-stamp the container's image-digest record from the store as it is
+	// *now*: cmd resolved it before planning, which is before Refresh had the
+	// chance to pull. Only the create path can be wrong — a connect or start
+	// reads the digest off a container that already exists.
+	restampImageDigest(ctx, cli, plan, baseImage, op)
+
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
 	if dispatchErr != nil {
-		return dispatchErr
+		return nil, dispatchErr
 	}
 
 	// Auto-remove on exit, unless another shell is still attached to the
 	// same container. Policy + fresh-context handling owned by teardown.
 	// The shell's own exit error wins over any cleanup error.
+	//
+	// Suppressed on the reload path — the named result *is* the flag. The
+	// reload's teardown belongs to the next host process, after its
+	// verify: destroying the container here would void that gate and leave a
+	// failed re-exec with nothing to go back to.
 	defer func() {
+		if rl != nil {
+			return
+		}
 		if cleanupErr := teardown.OnShellExit(cli, plan.ContainerName); cleanupErr != nil && err == nil {
 			err = cleanupErr
 		}
 	}()
 
-	execCmd := plan.Cmd
-	if plan.ExecCmd != nil {
-		execCmd = plan.ExecCmd
+	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, createdImageDigest(plan, inspect, op), startSynced)
+	defer stopPrefetch()
+
+	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())
+
+	// The shell writes a marker on its way out and exits; this is the moment
+	// the host already decides between teardown and something else, so it is
+	// the moment the marker is read. Read-and-delete, and unconditionally:
+	// a session that asked for a reload and then died leaves the marker on a
+	// mount every later session shares, where it would fire a reload nobody
+	// asked for at the next ordinary exit.
+	requested := takeReloadRequest(plan)
+	if execErr != nil {
+		return nil, execErr
 	}
-	return execShellFn(ctx, cli, containerID, execCmd)
+	return requested, nil
+}
+
+// beginPrefetch starts the host-side update probe for as long as the shell is
+// attached, and returns the func that stops it. One detector: the probe that
+// decides whether to pull is the same act that knows whether the bytes landed,
+// which is the fact the prompt banner states. The returned stop is always
+// live, refusal included, so the caller defers one thing unconditionally —
+// cancelling it with the session leaves no blob behind, an interrupted pull
+// expiring on its own.
+func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, containerDigest string, startSynced bool) func() {
+	prefetchCtx, stop := context.WithCancel(ctx)
+	if in, ok := prefetchInput(base, plan, containerDigest, startSynced); ok {
+		startPrefetch(prefetchCtx, cli, in)
+	}
+	return stop
+}
+
+// prefetchInput assembles the update prefetch's input and reports whether the
+// act runs at all. Two refusals, both settled on the map:
+//
+//   - pull: never means "do not talk to the registry", and a probe talks to
+//     the registry — so it silences probe, prefetch and banner as one act.
+//   - TOOLBOX_NO_UPDATE_CHECK silences the host half here and the render half
+//     in zshrc. Honoured only in its `env:` passthrough form, which is what
+//     reaches the composed plan env; an export typed inside a live shell still
+//     stops the rendering, which is what that variable is now for.
+//
+// The image tracked is the *base* ref, never the `:local` overlay tag: the
+// overlay is built, not pulled, and it is the base moving underneath it that
+// a reload would adopt.
+func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) (imageprefetch.Input, bool) {
+	if base.PullPolicy == config.PullNever {
+		return imageprefetch.Input{}, false
+	}
+	if sessionplan.EnvValue(plan.Env, sessionplan.NoUpdateCheckEnv) != "" {
+		return imageprefetch.Input{}, false
+	}
+	return imageprefetch.Input{
+		Ref:             base.Ref,
+		ContainerDigest: containerDigest,
+		StateDir:        plan.StateDir,
+		StartSynced:     startSynced,
+		CLIVersion:      version.Version,
+	}, true
+}
+
+// restampImageDigest rewrites the plan's TOOLBOX_IMAGE_DIGEST to the repo
+// digest the base image carries in the local store right now — which is what
+// the container about to be created actually runs. Without it, a shell opened
+// on the same morning as a release is stamped with the digest that Refresh
+// has just superseded, and the update prefetch reports it behind an image it
+// is already running. Best-effort and create-only: an unreadable store leaves
+// the plan's own answer in place, and a connect/start reads the container.
+func restampImageDigest(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, op runplan.Op) {
+	if op.Action != runplan.ActionCreate {
+		return
+	}
+	// Only a store that did not answer leaves the plan's own value standing;
+	// a store that answers with no digest is a local build, and stamping its
+	// empty answer is what keeps the prefetch from claiming this session is
+	// behind an image it cannot read a digest for.
+	digest, answered := build.LocalRepoDigest(ctx, cli, base.Ref)
+	if !answered {
+		return
+	}
+	plan.Env = sessionplan.WithImageDigest(plan.Env, digest)
+}
+
+// createdImageDigest returns the repo digest the attached container was
+// created from — the baseline half of "is this session behind the local
+// store?". Read off the container rather than recomputed, so it is right on
+// the connect path too, where this process never resolved a digest of its
+// own. On the create path the container does not exist yet and the plan env
+// about to be written is the same answer by construction.
+func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) string {
+	if op.Action == runplan.ActionCreate {
+		return sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv)
+	}
+	if inspect.Config == nil {
+		// An inspect that carries no Config says nothing about the container.
+		// Substituting the plan's digest would answer with what *this* process
+		// resolved — the very value that makes the comparison come out equal,
+		// hiding a real update instead of admitting the baseline is unknown.
+		return ""
+	}
+	return sessionplan.EnvValue(inspect.Config.Env, sessionplan.ImageDigestEnv)
 }
 
 // preflightHostConfig checks the parts of HostConfig that ContainerCreate
