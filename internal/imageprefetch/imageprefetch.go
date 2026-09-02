@@ -48,7 +48,6 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/fsx"
-	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // TTL bounds how long a previous probe attempt is trusted before the registry
@@ -63,7 +62,10 @@ const TTL = 30 * time.Minute
 // attempt stamp, so the real period is TTL and this only bounds how late a
 // poll can be (TTL + tickInterval worst case). Small enough to keep that
 // bound tight, large enough that a stat per tick is free.
-const tickInterval = 5 * time.Minute
+//
+// A var, not a const, so a tick-driven test runs in milliseconds — the same
+// seam this package uses for releasesURL.
+var tickInterval = 5 * time.Minute
 
 // releasesURL is the GitHub endpoint carrying the newest published CLI tag.
 // The CLI axis moved host-side with the image axis: the host *is* the CLI, so
@@ -82,9 +84,9 @@ const httpTimeout = 10 * time.Second
 // the writer moved to the other side of the bind mount. The stamp is this
 // package's own.
 const (
-	cacheFile  = "update-check"
-	stampFile  = "update-check.stamp"
-	unavailFle = "update-check.unavailable-since"
+	cacheFile       = "update-check"
+	stampFile       = "update-check.stamp"
+	unavailableFile = "update-check.unavailable-since"
 )
 
 // The three states of the image axis, written to the cache's image_state
@@ -117,6 +119,19 @@ type Input struct {
 	// so mounts_root and profiles are honoured; empty disables the whole act,
 	// since there is then nowhere the renderer would read from.
 	StateDir string
+	// StartSynced records that the synchronous refresh at shell start pulled
+	// successfully, so the local store is current with the registry as of a
+	// moment ago. A synchronous probe is a probe: it takes this TTL's turn at
+	// the registry, and the first poll publishes from the store instead of
+	// asking the same question again. False for a cache hit or a failed pull,
+	// neither of which established anything about the remote.
+	StartSynced bool
+	// CLIVersion is this process's own build version, the "current" half of
+	// the CLI axis. Passed in rather than read from version.Version here: a
+	// poll runs on its own goroutine for the life of the shell, and a package
+	// var it dereferences there is a global read racing whoever writes it.
+	// Empty, or "dev", abstains — an unreleased build has no tag to be behind.
+	CLIVersion string
 }
 
 // Start runs the poller for the lifetime of ctx and returns immediately.
@@ -127,24 +142,84 @@ func Start(ctx context.Context, cli client.APIClient, in Input) {
 	if in.Ref == "" || in.StateDir == "" {
 		return
 	}
+	// Read on the caller's goroutine: the alarm period is fixed for the
+	// poller's life, and a poller that kept reading the package var would
+	// race whoever rewinds it.
+	tick := tickInterval
 	go func() {
+		// The shell start's synchronous refresh, when it actually reached the
+		// registry, is this TTL's probe: stamping it here is what stops the
+		// poller re-asking minutes after the shell just asked. The banner is
+		// still published, from the store that pull has just made current —
+		// on a connect the container can be behind a store a sibling session
+		// advanced, and saying so is the whole point of the act.
+		if in.StartSynced && stamp(in.StateDir) {
+			publishFromStore(ctx, cli, in)
+		}
+
 		// Poll straight away rather than waiting out the first tick: a
 		// session shorter than tickInterval would otherwise never refresh the
 		// banner at all. Redundant work is what the shared stamp prevents —
 		// if a sibling probed within the TTL this returns without a syscall.
-		Poll(ctx, cli, in)
+		reissue := newPoller(ctx, cli, in)
+		reissue()
 
-		ticker := time.NewTicker(tickInterval)
+		ticker := time.NewTicker(tick)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				Poll(ctx, cli, in)
+				// Cancel-and-reissue rather than a second concurrent poll: a
+				// registry that accepts the connection and then stops talking
+				// would otherwise hold the only poller goroutine inside
+				// ImagePull for the rest of the session, and no later tick
+				// would ever run. Cancelling is free — a partial ingest is
+				// never a blob, it expires on its own, and the next pull
+				// resumes from what already landed.
+				reissue()
 			}
 		}
 	}()
+}
+
+// newPoller returns a function that cancels the poll it started last time and
+// starts a fresh one. Each poll runs in its own goroutine under its own child
+// context, so a hung one costs exactly one tick instead of the session; the
+// child contexts derive from ctx, so shell exit still cancels whatever is in
+// flight. A reissued poll usually finds the attempt stamp fresh and returns
+// without a syscall — the cancel is the point, the reissue only keeps the
+// alarm and the act on the same clock.
+func newPoller(ctx context.Context, cli client.APIClient, in Input) func() {
+	var cancelPrev context.CancelFunc
+	return func() {
+		if cancelPrev != nil {
+			cancelPrev()
+		}
+		pollCtx, cancel := context.WithCancel(ctx)
+		cancelPrev = cancel
+		go Poll(pollCtx, cli, in)
+	}
+}
+
+// publishFromStore refreshes the banner without asking the registry anything.
+// Sound only straight after a successful synchronous refresh, which has just
+// made the local store current: the sole fact left to compute is whether this
+// session's container is behind that store, and the store cannot be behind
+// the registry at a moment the pull just succeeded.
+func publishFromStore(ctx context.Context, cli client.APIClient, in Input) {
+	local, ok := localDigest(ctx, cli, in.Ref)
+	if !ok {
+		// The fingerprint of a local `toolbox build`: the prefetch abstains
+		// on it everywhere, and this path is no exception.
+		return
+	}
+	res := readResult(in.StateDir)
+	res.imageLatest = local
+	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
+	res.imageState = imageState(in.StateDir, false, res.imageUpdate)
+	writeResult(in.StateDir, res)
 }
 
 // Poll runs one gated attempt: it returns without touching the network while
@@ -214,7 +289,7 @@ func collect(ctx context.Context, cli client.APIClient, in Input, res result) (r
 		}
 	}
 
-	if cur := version.Version; cur != "" && cur != "dev" {
+	if cur := in.CLIVersion; cur != "" && cur != "dev" {
 		if tag, err := latestRelease(ctx); err == nil {
 			reached++
 			res.cliLatest = tag
@@ -233,11 +308,7 @@ func collect(ctx context.Context, cli client.APIClient, in Input, res result) (r
 // automatic pull — and it self-heals, since a manual `docker pull` restores
 // the digest and the prefetch resumes.
 func localDigest(ctx context.Context, cli client.APIClient, ref string) (string, bool) {
-	res, err := cli.ImageInspect(ctx, ref)
-	if err != nil {
-		return "", false
-	}
-	d := build.RepoDigest(ref, res.RepoDigests)
+	d, _ := build.LocalRepoDigest(ctx, cli, ref)
 	return d, d != ""
 }
 
@@ -364,7 +435,7 @@ func stamp(stateDir string) bool {
 // it means; on the state mount beside the attempt stamp, so it is shared
 // across sibling sessions.
 func imageState(stateDir string, storeBehind, sessionBehind bool) string {
-	marker := filepath.Join(stateDir, unavailFle)
+	marker := filepath.Join(stateDir, unavailableFile)
 	if !storeBehind {
 		// The bytes are here: the failure history must not outlive the
 		// condition it describes.

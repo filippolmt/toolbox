@@ -16,7 +16,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockertest"
-	"github.com/filippolmt/toolbox/internal/version"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 const (
@@ -40,6 +40,10 @@ type mockClient struct {
 	distErr   error
 	distDigst string
 	pullErr   error
+	// pullHang makes ImagePull block until its context is cancelled, then
+	// signals on the channel. It is how a registry that accepts the
+	// connection and then stops talking is spelled in a test.
+	pullHang chan struct{}
 
 	distCalls int
 	pullCalls int
@@ -62,8 +66,13 @@ func (m *mockClient) DistributionInspect(context.Context, string, client.Distrib
 	return dockertest.DistributionResult(m.distDigst), nil
 }
 
-func (m *mockClient) ImagePull(context.Context, string, client.ImagePullOptions) (client.ImagePullResponse, error) {
+func (m *mockClient) ImagePull(ctx context.Context, _ string, _ client.ImagePullOptions) (client.ImagePullResponse, error) {
 	m.pullCalls++
+	if m.pullHang != nil {
+		<-ctx.Done()
+		m.pullHang <- struct{}{}
+		return nil, ctx.Err()
+	}
 	if m.pullErr != nil {
 		return nil, m.pullErr
 	}
@@ -352,25 +361,15 @@ func releasesServer(t *testing.T, status int, body string) {
 	t.Cleanup(func() { releasesURL = orig })
 }
 
-// setVersion pins the host CLI build version for one test. It is "dev" in an
-// ordinary test binary, which is precisely the value that skips the CLI axis.
-func setVersion(t *testing.T, v string) {
-	t.Helper()
-	orig := version.Version
-	version.Version = v
-	t.Cleanup(func() { version.Version = orig })
-}
-
 // The CLI axis end to end: a published tag ahead of this build reaches the
 // cache with its version, which is what the banner prints.
 func TestPollReportsANewerCLI(t *testing.T) {
 	dir := stateDir(t)
-	setVersion(t, "v1.0.0")
 	releasesServer(t, 200, `{"tag_name":"v1.2.3"}`)
 
 	// A locally built image abstains on the image axis, isolating the CLI one.
 	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
-	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir})
+	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir, CLIVersion: "v1.0.0"})
 
 	want := cacheBody("0", "", stateNone, "1", "v1.2.3")
 	if got := readCache(t, dir); got != want {
@@ -385,7 +384,6 @@ func TestPollReportsANewerCLI(t *testing.T) {
 // release-built sibling session wrote minutes earlier.
 func TestPollSkipsTheCLIAxisForADevBuild(t *testing.T) {
 	dir := stateDir(t)
-	setVersion(t, "dev")
 	releasesServer(t, 500, "boom")
 
 	seeded := cacheBody("1", digestNew, stateReady, "0", "")
@@ -394,7 +392,7 @@ func TestPollSkipsTheCLIAxisForADevBuild(t *testing.T) {
 	}
 
 	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
-	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir})
+	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir, CLIVersion: "dev"})
 
 	if got := readCache(t, dir); got != seeded {
 		t.Errorf("an abstaining poll rewrote the cache:\ngot  %q\nwant %q", got, seeded)
@@ -406,7 +404,6 @@ func TestPollSkipsTheCLIAxisForADevBuild(t *testing.T) {
 // real banner and re-fires the surviving one.
 func TestPollKeepsTheAxisThatDidNotReach(t *testing.T) {
 	dir := stateDir(t)
-	setVersion(t, "v1.0.0")
 	releasesServer(t, 403, `{"message":"rate limited"}`)
 
 	seeded := cacheBody("0", digestOld, stateNone, "1", "v1.2.3")
@@ -416,7 +413,7 @@ func TestPollKeepsTheAxisThatDidNotReach(t *testing.T) {
 
 	// The image axis reaches and moves; the CLI axis is rate-limited.
 	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigst: digestNew}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir, CLIVersion: "v1.0.0"})
 
 	want := cacheBody("1", digestNew, stateReady, "1", "v1.2.3")
 	if got := readCache(t, dir); got != want {
@@ -477,7 +474,7 @@ func TestLatestRelease(t *testing.T) {
 // either side of the grace window without sleeping.
 func unavailableAge(t *testing.T, dir string, age time.Duration) {
 	t.Helper()
-	path := filepath.Join(dir, unavailFle)
+	path := filepath.Join(dir, unavailableFile)
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +499,7 @@ func TestPollWithholdsUnavailableOnTheFirstFailure(t *testing.T) {
 	if got := readCache(t, dir); got != cacheBody("0", digestNewer, stateNone, "0", "") {
 		t.Errorf("cache: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, unavailFle)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, unavailableFile)); err != nil {
 		t.Errorf("first failure not recorded: %v", err)
 	}
 }
@@ -531,7 +528,7 @@ func TestPollReportsUnavailableOnceTheFailurePersists(t *testing.T) {
 func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 	dir := stateDir(t)
 	unavailableAge(t, dir, 2*TTL)
-	before := mtime(t, filepath.Join(dir, unavailFle))
+	before := mtime(t, filepath.Join(dir, unavailableFile))
 
 	cli := &mockClient{
 		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
@@ -540,7 +537,7 @@ func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 	}
 	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
 
-	if after := mtime(t, filepath.Join(dir, unavailFle)); !after.Equal(before) {
+	if after := mtime(t, filepath.Join(dir, unavailableFile)); !after.Equal(before) {
 		t.Errorf("first-failure marker rewritten: %v -> %v", before, after)
 	}
 }
@@ -560,7 +557,7 @@ func TestPollClearsUnavailableOnceTheBytesLand(t *testing.T) {
 	if got := readCache(t, dir); got != cacheBody("1", digestNew, stateReady, "0", "") {
 		t.Errorf("cache: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, unavailFle)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, unavailableFile)); !os.IsNotExist(err) {
 		t.Errorf("first-failure marker survived a successful pull: %v", err)
 	}
 }
@@ -616,7 +613,7 @@ func TestClearResult(t *testing.T) {
 		return p
 	}
 	gone := []string{seed(cacheFile), seed(cacheFile + ".shown"), seed(stampFile)}
-	kept := seed(unavailFle)
+	kept := seed(unavailableFile)
 
 	ClearResult(dir)
 
@@ -634,4 +631,124 @@ func TestClearResult(t *testing.T) {
 // clear, and joining onto "" would reach for the filesystem root.
 func TestClearResultWithoutAStateDir(t *testing.T) {
 	ClearResult("") // must not panic, must not touch anything
+}
+
+// TestStartPublishesFromTheStoreAfterAShellStartSync is #725's cold start.
+// The synchronous refresh at shell start is a probe, so it takes this TTL's
+// turn at the registry and the poller must not re-ask minutes later. What it
+// must still do is publish: on a connect the container can be behind a store
+// a sibling session just advanced, and that banner is the whole point.
+func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
+	dir := stateDir(t)
+	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+
+	startPoller(t, m, Input{
+		Ref:             testRef,
+		ContainerDigest: digestOld,
+		StateDir:        dir,
+		StartSynced:     true,
+	})
+
+	waitFor(t, func() bool { return readCache(t, dir) != "" })
+
+	if got, want := readCache(t, dir), cacheBody("1", digestNew, stateReady, "0", ""); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+	if m.distCalls != 0 {
+		t.Errorf("DistributionInspect calls = %d, want 0 — the shell start already probed", m.distCalls)
+	}
+	if !fsx.MarkerFresh(filepath.Join(dir, stampFile), TTL) {
+		t.Error("the shell-start sync left no attempt stamp, so the next tick will re-probe")
+	}
+}
+
+// TestStartProbesWhenTheShellStartDidNot is the other half: a cache hit or a
+// failed pull at shell start syncs nothing, so the poller owes the registry
+// its own probe rather than trusting a round trip that did not happen.
+func TestStartProbesWhenTheShellStartDidNot(t *testing.T) {
+	dir := stateDir(t)
+	m := &mockClient{
+		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigst: digestNew,
+	}
+
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	waitFor(t, func() bool { return readCache(t, dir) != "" })
+	if m.distCalls == 0 {
+		t.Error("DistributionInspect calls = 0, want the poller's own probe")
+	}
+}
+
+// TestStartCancelsAHungPollAtTheNextTick is #726's cancel-and-reissue, which
+// #840 leant on when it refused every form of backoff: a registry that
+// accepts the connection and then stops talking must cost one tick, not the
+// session. Without it the poller's single goroutine sits inside ImagePull for
+// as long as the shell lives and no later tick ever runs.
+func TestStartCancelsAHungPollAtTheNextTick(t *testing.T) {
+	shortenTick(t, 20*time.Millisecond)
+
+	dir := stateDir(t)
+	cancelled := make(chan struct{}, 1)
+	m := &mockClient{
+		inspects:  []client.ImageInspectResult{inspectWith(digestOld)},
+		distDigst: digestNew,
+		pullHang:  cancelled,
+	}
+
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hung pull was never cancelled: a stalled registry blocks the poller for the whole session")
+	}
+
+	// The cancelled poll finishes on its own — a cancelled pull is an error
+	// like any other, so it still publishes. Waiting for that last write is
+	// what keeps the goroutine from racing the temp dir's removal.
+	waitFor(t, func() bool { return readCache(t, dir) != "" })
+}
+
+// startPoller runs the poller under a context this test owns and does not let
+// the test finish until its goroutines are gone. Everything a poll reads from
+// package scope — tickInterval, releasesURL, version.Version — is written by
+// some other test's setup, so a poller outliving its own test races the next
+// one rather than merely wasting cycles.
+func startPoller(t *testing.T, cli client.APIClient, in Input) {
+	t.Helper()
+	before := goroutineCount()
+	ctx, cancel := context.WithCancel(t.Context())
+	Start(ctx, cli, in)
+	t.Cleanup(func() {
+		cancel()
+		deadline := time.Now().Add(5 * time.Second)
+		for goroutineCount() > before && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+}
+
+// waitFor polls cond until it holds, failing the test on timeout. The poller
+// is a goroutine, so every assertion about what it wrote is eventual.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition never held within the deadline")
+}
+
+// shortenTick rewinds the poller's alarm so a tick-driven assertion runs in
+// milliseconds. The interval is a var for exactly this reason — the same seam
+// the package uses for releasesURL.
+func shortenTick(t *testing.T, d time.Duration) {
+	t.Helper()
+	orig := tickInterval
+	tickInterval = d
+	t.Cleanup(func() { tickInterval = orig })
 }

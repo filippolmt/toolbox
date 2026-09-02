@@ -111,6 +111,24 @@ type SessionPlan struct {
 // intent from what the developer happened to be running.
 func (p *SessionPlan) LaunchesAgent() bool { return p.ExecCmd != nil }
 
+// ReloadMarkerPath is the **host-side** path of this session's reload marker:
+// the state mount's resolved host source plus the basename both sides agree
+// on. Empty when the plan carries no state mount — which is also the only way
+// the container could not see the marker either, since reloadMarkerEnv
+// withholds the variable in exactly that case.
+//
+// A method rather than a helper in `container`, because both halves of it are
+// this plan's own fields, and the container-side spelling of the same basename
+// is already composed here (reloadMarkerEnv). The two roots differ on purpose:
+// the container writes under the mount target, the host reads under the bind's
+// source.
+func (p *SessionPlan) ReloadMarkerPath() string {
+	if p.StateDir == "" {
+		return ""
+	}
+	return reload.MarkerPath(p.StateDir, p.ContainerName)
+}
+
 // PlanInput is the full set of inputs to Plan. Bundling the inputs keeps the
 // container-name decision — the one field that varies between a workspace
 // session and a named shell — a single Name input rather than a post-planning

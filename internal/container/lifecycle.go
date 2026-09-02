@@ -39,6 +39,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
 	"github.com/filippolmt/toolbox/internal/ui"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // execShellFn attaches an interactive shell to a container.
@@ -217,8 +218,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 
 	// Best-effort registry sync of the base image. Hard guarantee runs in
-	// imageplan.Ensure inside createAndStart.
-	imageplan.Refresh(ctx, cli, plan.Image)
+	// imageplan.Ensure inside createAndStart. Whether it reached the registry
+	// is threaded to the prefetch below: a synchronous probe is a probe, and
+	// the background poller must not re-ask the question this just answered.
+	startSynced := imageplan.Refresh(ctx, cli, plan.Image)
 
 	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
 	// `:local` image on top of the freshened base and run the shell from it.
@@ -267,7 +270,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// with the session — an interrupted pull leaves no blob behind.
 	prefetchCtx, stopPrefetch := context.WithCancel(ctx)
 	defer stopPrefetch()
-	if in, ok := prefetchInput(baseImage, plan, createdImageDigest(plan, inspect, op)); ok {
+	if in, ok := prefetchInput(baseImage, plan, createdImageDigest(plan, inspect, op), startSynced); ok {
 		startPrefetch(prefetchCtx, cli, in)
 	}
 
@@ -303,7 +306,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 // The image tracked is the *base* ref, never the `:local` overlay tag: the
 // overlay is built, not pulled, and it is the base moving underneath it that
 // a reload would adopt.
-func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, containerDigest string) (imageprefetch.Input, bool) {
+func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) (imageprefetch.Input, bool) {
 	if base.PullPolicy == config.PullNever {
 		return imageprefetch.Input{}, false
 	}
@@ -314,6 +317,8 @@ func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, contai
 		Ref:             base.Ref,
 		ContainerDigest: containerDigest,
 		StateDir:        plan.StateDir,
+		StartSynced:     startSynced,
+		CLIVersion:      version.Version,
 	}, true
 }
 
@@ -328,11 +333,15 @@ func restampImageDigest(ctx context.Context, cli client.APIClient, plan *session
 	if op.Action != runplan.ActionCreate {
 		return
 	}
-	res, err := cli.ImageInspect(ctx, base.Ref)
-	if err != nil {
+	// Only a store that did not answer leaves the plan's own value standing;
+	// a store that answers with no digest is a local build, and stamping its
+	// empty answer is what keeps the prefetch from claiming this session is
+	// behind an image it cannot read a digest for.
+	digest, answered := build.LocalRepoDigest(ctx, cli, base.Ref)
+	if !answered {
 		return
 	}
-	plan.Env = sessionplan.WithImageDigest(plan.Env, build.RepoDigest(base.Ref, res.RepoDigests))
+	plan.Env = sessionplan.WithImageDigest(plan.Env, digest)
 }
 
 // createdImageDigest returns the repo digest the attached container was

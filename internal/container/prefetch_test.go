@@ -12,7 +12,15 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+)
+
+// The image the re-stamp tests resolve against: the repo half is what
+// build.RepoDigest matches a RepoDigests entry on, so the two must agree.
+const (
+	prefetchRepo = "ghcr.io/filippolmt/toolbox"
+	prefetchRef  = prefetchRepo + ":latest"
 )
 
 // TestMain neutralises the update prefetch for the whole package. Shell
@@ -239,5 +247,78 @@ func TestShellPrefetchStopsWhenTheShellExits(t *testing.T) {
 	case <-(*ctx).Done():
 	default:
 		t.Error("prefetch context still live after Shell returned")
+	}
+}
+
+// restampPlan is a create-path plan carrying the digest cmd resolved before
+// planning — the value the re-stamp is there to correct.
+func restampPlan(digest string) *sessionplan.SessionPlan {
+	env := []string{"TOOLBOX_CLI_VERSION=1.2.3"}
+	if digest != "" {
+		env = append(env, sessionplan.ImageDigestEnv+"="+digest)
+	}
+	return &sessionplan.SessionPlan{Env: env, Image: sessionplan.Image{Ref: prefetchRef}}
+}
+
+// TestRestampImageDigest covers the three answers the local store can give a
+// shell that is about to create a container. cmd resolves the digest *before*
+// planning, which is before Refresh has had its chance to pull, so a shell
+// opened on the morning of a release would otherwise be stamped with the
+// digest Refresh has just superseded — and the prefetch would report the
+// session behind an image it is already running.
+func TestRestampImageDigest(t *testing.T) {
+	const stale = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	const fresh = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+
+	tests := []struct {
+		name string
+		res  client.ImageInspectResult
+		err  error
+		op   runplan.Op
+		want string
+	}{
+		{
+			name: "the store's answer wins on the create path",
+			res:  dockertest.ImageInspectResult(prefetchRepo, fresh),
+			op:   runplan.Op{Action: runplan.ActionCreate},
+			want: fresh,
+		},
+		{
+			// A `toolbox build` retags the canonical ref onto an image with no
+			// RepoDigests. Dropping the stamp is the honest answer: the
+			// prefetch then makes no reload-worthiness claim at all, rather
+			// than comparing the store against a digest this image never had.
+			name: "a local build clears the stamp",
+			res:  client.ImageInspectResult{},
+			op:   runplan.Op{Action: runplan.ActionCreate},
+		},
+		{
+			name: "an unreadable store leaves the plan's own answer alone",
+			err:  os.ErrNotExist,
+			op:   runplan.Op{Action: runplan.ActionCreate},
+			want: stale,
+		},
+		{
+			// Connect and start read the digest off the container that
+			// already exists, so there is nothing here to correct.
+			name: "connect is not re-stamped",
+			op:   runplan.Op{Action: runplan.ActionConnect},
+			want: stale,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := restampPlan(stale)
+			cli := &mockClient{imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+				return tc.res, tc.err
+			}}
+
+			restampImageDigest(t.Context(), cli, plan, plan.Image, tc.op)
+
+			if got := sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv); got != tc.want {
+				t.Errorf("%s = %q, want %q", sessionplan.ImageDigestEnv, got, tc.want)
+			}
+		})
 	}
 }

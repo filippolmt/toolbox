@@ -20,17 +20,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/version"
 )
 
-// reloadMarkerPath is the host-side path of this session's reload marker: the
-// state mount's resolved host source plus the basename both sides agree on.
-// Empty when the plan carries no state mount, which is also the only way the
-// container could not see the marker either.
-func reloadMarkerPath(plan *sessionplan.SessionPlan) string {
-	if plan.StateDir == "" {
-		return ""
-	}
-	return reload.MarkerPath(plan.StateDir, plan.ContainerName)
-}
-
 // takeReloadRequest reads the marker the exiting shell may have written and
 // composes the handover for the next host process. Called exactly where
 // execShell returns, which is where the teardown decision is already made.
@@ -39,7 +28,7 @@ func reloadMarkerPath(plan *sessionplan.SessionPlan) string {
 // not recomputed: the new binary needs to state what was left, and by the time
 // it runs, the container that could have been asked is gone.
 func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
-	marker := reloadMarkerPath(plan)
+	marker := plan.ReloadMarkerPath()
 	if marker == "" {
 		return nil
 	}
@@ -90,7 +79,11 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 	// The container is new; the banner's cache still describes the old one.
 	imageprefetch.ClearResult(plan.StateDir)
 
-	printReloadSummary(from, localRepoDigest(ctx, cli, plan.Image.Ref), casualties)
+	// A store that cannot be read and one carrying no digest (a local build)
+	// collapse to the same "" here on purpose: the digest is summary text, not
+	// a gate, and printReloadSummary renders "unknown" for either.
+	after, _ := build.LocalRepoDigest(ctx, cli, plan.Image.Ref)
+	printReloadSummary(from, after, casualties)
 	return nil
 }
 
@@ -270,15 +263,4 @@ func transition(before, after string) string {
 	default:
 		return before + " → " + after
 	}
-}
-
-// localRepoDigest reports the repo digest the local store holds for ref, or ""
-// when there is none (an image built locally has no repo digest until it is
-// pushed or pulled). Best-effort: the digest is summary text, not a gate.
-func localRepoDigest(ctx context.Context, cli client.APIClient, ref string) string {
-	res, err := cli.ImageInspect(ctx, ref)
-	if err != nil {
-		return ""
-	}
-	return build.RepoDigest(ref, res.RepoDigests)
 }

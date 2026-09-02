@@ -25,7 +25,7 @@ func stubExecShellWritingMarker(t *testing.T, plan *sessionplan.SessionPlan, cwd
 	t.Helper()
 	orig := execShellFn
 	execShellFn = func(context.Context, client.APIClient, string, []string) error {
-		return reload.WriteMarker(reloadMarkerPath(plan), cwd)
+		return reload.WriteMarker(plan.ReloadMarkerPath(), cwd)
 	}
 	t.Cleanup(func() { execShellFn = orig })
 }
@@ -361,8 +361,8 @@ func TestReloadMarkerPathNeedsTheStateMount(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.StateDir = ""
-	if got := reloadMarkerPath(plan); got != "" {
-		t.Errorf("reloadMarkerPath = %q with no state mount, want \"\"", got)
+	if got := plan.ReloadMarkerPath(); got != "" {
+		t.Errorf("ReloadMarkerPath = %q with no state mount, want \"\"", got)
 	}
 	if got := takeReloadRequest(plan); got != nil {
 		t.Errorf("takeReloadRequest = %+v with no state mount, want nil", got)
@@ -511,7 +511,7 @@ func TestShellConsumesTheMarkerEvenWhenTheSessionFails(t *testing.T) {
 	plan := testPlan(t, testWorkspace(t), nil)
 	orig := execShellFn
 	execShellFn = func(context.Context, client.APIClient, string, []string) error {
-		if err := reload.WriteMarker(reloadMarkerPath(plan), "/workspace"); err != nil {
+		if err := reload.WriteMarker(plan.ReloadMarkerPath(), "/workspace"); err != nil {
 			return err
 		}
 		return errors.New("shell session ended: the container is gone")
@@ -526,7 +526,7 @@ func TestShellConsumesTheMarkerEvenWhenTheSessionFails(t *testing.T) {
 	if rl != nil {
 		t.Errorf("a failed session still asked for a reload: %+v", rl)
 	}
-	if _, requested := reload.TakeMarker(reloadMarkerPath(plan)); requested {
+	if _, requested := reload.TakeMarker(plan.ReloadMarkerPath()); requested {
 		t.Error("the marker outlived the session that wrote it")
 	}
 	if !slices.Contains(mock.calls, "ContainerRemove") {

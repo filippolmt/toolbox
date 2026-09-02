@@ -178,15 +178,15 @@ func resolveAgent(flag string) (string, error) {
 // launch). Shared by create (which may pass a prompt) and open (which never
 // does — re-attach only). This is the interactive Docker edge that stays in
 // cmd (see the Worktree entry in CONTEXT.md): the seed gating, the sessionplan
-// call, and the TTY attach in container.Shell, plus resolveImageDigest, shared
-// with the `shell` command. What a worktree session *is* — the .git bind and
+// call, and the TTY attach in container.Shell, plus the image-digest resolve
+// shared with the `shell` command. What a worktree session *is* — the .git bind and
 // the agent launch — lives behind PlanInput.Worktree.
 func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch, agent, prompt string) error {
 	reloadFrom, err := takeReloadHandover()
 	if err != nil {
 		return err
 	}
-	imageDigest := resolveImageDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
+	imageDigest, _ := build.LocalRepoDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Cfg:         cfg,
 		Workspace:   wtPath,
@@ -199,10 +199,9 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch
 		return err
 	}
 	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	// The re-entry form is normalised, not replayed: `create` would fail on a
-	// branch that now exists and would re-send a prompt the agent already
-	// completed, while `open` is idempotent and promptless by construction.
-	return runSession(ctx, cli, plan, []string{"worktree", "open", branch})
+	// The re-entry form is normalised, not replayed, and pins the resolved
+	// agent so the reloaded session resumes the conversation this one ran.
+	return runSession(ctx, cli, plan, worktreeReentry(branch, agent))
 }
 
 // seedWorktreeFiles copies gitignored per-repo working state from the main

@@ -84,7 +84,7 @@ func TestReloadReplacesTheContainer(t *testing.T) {
 	// writes, at the same host path the host reads.
 	origExec := execShellFn
 	execShellFn = func(context.Context, client.APIClient, string, []string) error {
-		return reload.WriteMarker(reloadMarkerPath(first), "")
+		return reload.WriteMarker(first.ReloadMarkerPath(), "")
 	}
 	handover, err := Shell(ctx, cli, first)
 	execShellFn = origExec

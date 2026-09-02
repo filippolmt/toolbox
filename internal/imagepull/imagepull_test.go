@@ -1,7 +1,9 @@
 package imagepull
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,9 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
 
 // markerPath stability + HOME-based rooting is load-bearing for the TTL
@@ -130,5 +135,73 @@ func TestRegistryOf(t *testing.T) {
 		if got := registryOf(ref); got != want {
 			t.Errorf("registryOf(%q) = %q, want %q", ref, got, want)
 		}
+	}
+}
+
+// pullMock is a daemon that answers ImagePull and nothing else: the refresh
+// seam touches no other endpoint, and an embedded nil APIClient turns any
+// other call into a panic that names the drift.
+type pullMock struct {
+	client.APIClient
+	err   error
+	calls int
+}
+
+func (m *pullMock) ImagePull(context.Context, string, client.ImagePullOptions) (client.ImagePullResponse, error) {
+	m.calls++
+	if m.err != nil {
+		return nil, m.err
+	}
+	return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
+}
+
+// TestRefreshIfStaleReportsTheRegistryRoundTrip pins the fact the update
+// prefetch reads: whether this shell start actually synced against the
+// registry. Only a successful round trip counts — a cache hit did no work,
+// and a failed pull leaves the local store possibly behind, so neither may
+// let the background poller skip its own probe.
+func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
+	ref := "ghcr.io/foo/bar:latest"
+
+	t.Run("successful pull", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		if !RefreshIfStale(t.Context(), &pullMock{}, ref) {
+			t.Error("RefreshIfStale = false after a successful pull, want true")
+		}
+	})
+
+	t.Run("cache hit does no round trip", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		record(ref)
+		m := &pullMock{}
+		if RefreshIfStale(t.Context(), m, ref) {
+			t.Error("RefreshIfStale = true on a cache hit, want false")
+		}
+		if m.calls != 0 {
+			t.Errorf("ImagePull calls = %d on a cache hit, want 0", m.calls)
+		}
+	})
+
+	t.Run("failed pull is not a sync", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		if RefreshIfStale(t.Context(), &pullMock{err: errors.New("boom")}, ref) {
+			t.Error("RefreshIfStale = true after a failed pull, want false")
+		}
+	})
+}
+
+// TestForcePullReportsTheRegistryRoundTrip covers the `pull: always` path,
+// which bypasses the cache but owes the caller the same fact.
+func TestForcePullReportsTheRegistryRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ref := "ghcr.io/foo/bar:latest"
+	record(ref) // a fresh marker ForcePull must ignore
+
+	m := &pullMock{}
+	if !ForcePull(t.Context(), m, ref) {
+		t.Error("ForcePull = false after a successful pull, want true")
+	}
+	if m.calls != 1 {
+		t.Errorf("ImagePull calls = %d, want 1", m.calls)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
@@ -125,7 +124,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
 	// the env entry. See session-reload.
-	imageDigest := resolveImageDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
+	imageDigest, _ := build.LocalRepoDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 
 	// Plan after the Docker client is constructed so a failed client init
 	// (env parse / socket misconfig) does not leave behind mountplan.Plan
@@ -153,25 +152,11 @@ func runShell(cmd *cobra.Command, args []string) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	// A plain shell's re-entry form is its own invocation: `toolbox shell` and
-	// `toolbox shell <name>` are both idempotent and promptless, so there is
-	// nothing to normalise away — unlike `worktree create`.
-	return runSession(ctx, cli, plan, append([]string{"shell"}, args...))
-}
-
-// resolveImageDigest returns the resolved repo digest (`sha256:...`) of the
-// image at ref, read from the local daemon's RepoDigests. Best-effort: any
-// inspect failure (image absent, daemon error) or a locally built image with
-// no repo digest returns "" so the caller threads an empty identity rather
-// than failing the shell. The digest becomes the container's TOOLBOX_IMAGE_DIGEST,
-// which the update prefetch reads back to tell whether the session is behind
-// what the local image store now holds.
-func resolveImageDigest(ctx context.Context, cli client.APIClient, ref string) string {
-	res, err := cli.ImageInspect(ctx, ref)
-	if err != nil {
-		return ""
-	}
-	return build.RepoDigest(ref, res.RepoDigests)
+	// The re-entry form carries the flags as typed, not just the positional:
+	// --profile and --peer feed the container name and -p its port bindings,
+	// so a form without them would reload the session into a different
+	// container than the one the payload names for teardown.
+	return runSession(ctx, cli, plan, shellReentry(cmd.Flags(), args))
 }
 
 // expandShellOAuth merges --oauth recipe expansion into the explicit -p/-B

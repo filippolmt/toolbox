@@ -1,6 +1,11 @@
 package build
 
-import "strings"
+import (
+	"context"
+	"strings"
+
+	"github.com/moby/moby/client"
+)
 
 // DefaultRegistryImage is the canonical reference every toolbox shell lands
 // on when no override is configured. The image content is identical across
@@ -86,4 +91,23 @@ func SplitRegistryHost(ref string) (host, rest string) {
 		return head, tail
 	}
 	return "", ref
+}
+
+// LocalRepoDigest reports the repo digest the local Docker store holds for
+// ref. The second return says whether the store answered at all, which is not
+// the same as carrying a digest: an image built locally exists and has none
+// until it is pushed or pulled, and the callers split on exactly that
+// difference — the update prefetch abstains when there is no digest, while a
+// container's own digest record is rewritten to whatever the store says,
+// empty included.
+//
+// The one place ImageInspect is turned into a repo digest. It was four,
+// spelled four ways, before three of them disagreed about what an empty
+// answer meant.
+func LocalRepoDigest(ctx context.Context, cli client.APIClient, ref string) (string, bool) {
+	res, err := cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return "", false
+	}
+	return RepoDigest(ref, res.RepoDigests), true
 }
