@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -62,7 +61,7 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	defer resp.Close()
 
 	fd := int(os.Stdin.Fd())
-	restoreTerm, isTTY, err := rawTerminal(fd)
+	restoreTerm, isTTY, err := ui.RawTerminal(fd)
 	if err != nil {
 		return err
 	}
@@ -116,33 +115,6 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
 	return diagnoseSessionExit(ctx, cli, containerID, tail.String())
-}
-
-// rawTerminal puts stdin in raw mode so every keypress is captured and
-// forwarded to the container, and returns the func that restores it. If stdin
-// is not a terminal (e.g. piped), isTTY is false and restore is a no-op.
-// Restore runs at most once, so the caller's defer and the signal handler can
-// both call it.
-func rawTerminal(fd int) (restore func(), isTTY bool, err error) {
-	if !term.IsTerminal(fd) {
-		noop := func() {
-			// Stdin was never put in raw mode, so there is nothing to restore —
-			// callers defer this unconditionally.
-		}
-		return noop, false, nil
-	}
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		return nil, false, fmt.Errorf("set stdin to raw mode: %w", err)
-	}
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			if rerr := term.Restore(fd, oldState); rerr != nil {
-				ui.Warning("terminal restore failed: " + rerr.Error())
-			}
-		})
-	}, true, nil
 }
 
 // forwardResize keeps the container exec's terminal size in sync with the local

@@ -138,20 +138,21 @@ func storeWith(t *testing.T, repoDigest, remote string) *mockClient {
 
 // answering stands in for the developer at the prompt, recording that the
 // question was put at all — which is half of what every case asserts.
-func answering(answer bool) func(*int) func(string, time.Duration) bool {
-	return func(asked *int) func(string, time.Duration) bool {
-		return func(string, time.Duration) bool { *asked++; return answer }
+func answering(yes, interrupted bool) func(*int) prompt {
+	return func(asked *int) prompt {
+		return func(string, time.Duration) (bool, bool) { *asked++; return yes, interrupted }
 	}
 }
 
 var (
-	askedYes = answering(true)
-	askedNo  = answering(false)
+	askedYes        = answering(true, false)
+	askedNo         = answering(false, false)
+	askedAndStopped = answering(false, true)
 )
 
 // withPrompt swaps the two prompt seams — is there anyone to ask, and what did
 // they answer — for the duration of one test.
-func withPrompt(t *testing.T, tty bool, answer func(string, time.Duration) bool) {
+func withPrompt(t *testing.T, tty bool, answer prompt) {
 	t.Helper()
 	oldAskable, oldConfirm := askable, confirm
 	askable, confirm = func() bool { return tty }, answer
@@ -194,7 +195,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 		absent     bool
 		warm       string
 		tty        bool
-		answer     func(*int) func(string, time.Duration) bool
+		answer     func(*int) prompt
 		wantAsked  int
 		wantPulls  int
 		wantProbes int
@@ -266,6 +267,17 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedNo,
 			wantAsked: 1, wantProbes: 1, want: Outcome{Declined: true},
+		},
+		{
+			// A ctrl+c is not the "no" it looks like from here: the developer
+			// stopped the command, so there is no session left to postpone a
+			// download for. Declined must stay false or the caller stamps a
+			// postponement and arms an idle reload for a session that will
+			// never idle.
+			name:   "ctrl+c stops the command rather than postponing",
+			policy: "auto", repoDgst: local, remote: remote,
+			tty: true, answer: askedAndStopped,
+			wantAsked: 1, wantProbes: 1, want: Outcome{Interrupted: true},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

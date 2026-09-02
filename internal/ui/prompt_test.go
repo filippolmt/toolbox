@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"os/signal"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestConfirmCountdownAnswers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := promptPipes(t, tc.typed)
-			if got := ConfirmCountdown("Download now?", time.Minute); got != tc.want {
+			if got, _ := ConfirmCountdown("Download now?", time.Minute); got != tc.want {
 				t.Errorf("ConfirmCountdown() = %v, want %v", got, tc.want)
 			}
 			if !strings.Contains(out.String(), "Download now?") {
@@ -74,7 +75,7 @@ func TestConfirmCountdownTimesOutIntoYes(t *testing.T) {
 	t.Cleanup(func() { countdownTick = oldTick })
 
 	out := promptPipes(t, "")
-	if !ConfirmCountdown("Download now?", 20*time.Millisecond) {
+	if yes, _ := ConfirmCountdown("Download now?", 20*time.Millisecond); !yes {
 		t.Error("a timed-out prompt must answer yes")
 	}
 	if strings.Count(out.String(), "\r") < 2 {
@@ -114,12 +115,60 @@ func TestConfirmCountdownRaisesAnInterrupt(t *testing.T) {
 	t.Cleanup(func() { interrupt = old })
 
 	promptPipes(t, "\x03")
-	if ConfirmCountdown("Download now?", time.Minute) {
+	yes, interrupted := ConfirmCountdown("Download now?", time.Minute)
+	if yes {
 		t.Error("a ctrl+c must not be read as a yes")
+	}
+	if !interrupted {
+		t.Error("a ctrl+c must be reported to the caller: it stops the command, not just the download")
 	}
 	select {
 	case <-raised:
 	default:
 		t.Error("ctrl+c was swallowed: no interrupt was raised")
+	}
+}
+
+// A developer who has answered a hundred prompts types the Return out of habit,
+// behind a key that had already decided. Whatever the prompt leaves on stdin
+// becomes the first keystrokes of the session that attaches to it a moment
+// later, so the tail of an answer has to die with the question.
+func TestConfirmCountdownSwallowsWhatFollowsTheAnswer(t *testing.T) {
+	promptPipes(t, "y\rand this too")
+	if yes, _ := ConfirmCountdown("Download now?", time.Minute); !yes {
+		t.Fatal("ConfirmCountdown() = false, want true")
+	}
+
+	// A read that never returns is the pass: there is nothing left to read.
+	// The cleanup closes both ends, which is what releases it.
+	leftover := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 32)
+		if n, err := promptIn.Read(buf); err == nil && n > 0 {
+			leftover <- buf[:n]
+		}
+	}()
+	select {
+	case tail := <-leftover:
+		t.Errorf("left %q behind for the session to inherit", tail)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// interrupt is stubbed everywhere else, so its real body — the one that runs in
+// front of a developer — would otherwise never be executed. Notify keeps the
+// signal from being fatal to the test binary, which is what cmd's signal
+// context does to it in production.
+func TestInterruptRaisesASignalTheProcessCanCatch(t *testing.T) {
+	caught := make(chan os.Signal, 1)
+	signal.Notify(caught, os.Interrupt)
+	t.Cleanup(func() { signal.Stop(caught) })
+
+	interrupt()
+
+	select {
+	case <-caught:
+	case <-time.After(2 * time.Second):
+		t.Error("interrupt() raised no signal")
 	}
 }

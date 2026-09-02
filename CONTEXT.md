@@ -354,11 +354,16 @@ bare Return and the window elapsing all pull synchronously and `n` starts the
 session on the image already in the store. The question owns the terminal in
 raw mode for as long as it is asked, so a single `y` or `n` answers it on the
 keystroke — a question with a countdown on it cannot also wait for a Return,
-or the developer watches a clock they have already stopped. Raw mode also
-takes `ctrl+c` from the terminal driver, so the prompt raises the interrupt
-itself: declining this download and stopping the command behind it are
-different asks, and the question must not be the one place in the session
-where the second one goes nowhere. The countdown is **visible**
+or the developer watches a clock they have already stopped. What is typed
+behind that key is swallowed before stdin is let go, because the session
+attaches to the same stdin a moment later and would otherwise receive the tail
+of an answer as its first keystrokes. Raw mode also takes `ctrl+c` from the
+terminal driver, so the prompt raises the interrupt itself **and reports it**:
+declining this download and stopping the command behind it are different asks,
+and `Outcome.Interrupted` is what keeps the second from being recorded as the
+first — a ctrl+c stamps no postponement, announces nothing, and the session is
+abandoned rather than built, because whether the signal context has cancelled
+by then is a matter of scheduling. The countdown is **visible**
 because a few seconds of silence is indistinguishable from a hang, and a
 developer who looks up to find a download running should be able to see why.
 

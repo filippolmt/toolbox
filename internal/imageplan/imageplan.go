@@ -70,16 +70,20 @@ func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image)
 // hang.
 const promptWindow = 5 * time.Second
 
+// prompt is the shape of the question: what was answered, and whether the
+// developer interrupted the command instead of answering it.
+type prompt func(question string, window time.Duration) (yes, interrupted bool)
+
 // askable and confirm are the prompt seams: whether there is a developer to
 // ask, and what they answered. Package-level vars for the reason Ensure is
 // one — a test of the decision tree must not depend on a terminal.
 var (
-	askable = ui.Askable
-	confirm = ui.ConfirmCountdown
+	askable        = ui.Askable
+	confirm prompt = ui.ConfirmCountdown
 )
 
-// Outcome is what the start-up refresh established, and both fields are read
-// by a different consumer.
+// Outcome is what the start-up refresh established, and each field is read by
+// a different consumer.
 type Outcome struct {
 	// Synced records that the local store is current with the registry as of
 	// a moment ago — a successful pull, or a probe that proved the store was
@@ -91,6 +95,11 @@ type Outcome struct {
 	// postponement rather than a refusal, so the session arms the idle reload
 	// that will adopt the image the background prefetch is fetching anyway.
 	Declined bool
+	// Interrupted records a ctrl+c at the prompt, which is neither an answer
+	// nor a postponement: the developer stopped the command. Nothing is
+	// stamped and nothing is announced — there is no session left to postpone
+	// anything for — and the caller abandons the start.
+	Interrupted bool
 }
 
 // RefreshAtStart runs the shell-start refresh and, in the one case where the
@@ -144,7 +153,17 @@ func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan
 		return Outcome{}
 	case !store.Ahead:
 		return Outcome{Synced: store.Probed}
-	case !confirm("A newer runtime image is available. Download it now?", promptWindow):
+	}
+
+	yes, interrupted := confirm("A newer runtime image is available. Download it now?", promptWindow)
+	switch {
+	case interrupted:
+		// A ctrl+c is not an answer to this question, it is the end of the
+		// command asking it. Saying anything here would announce a session
+		// that is being torn down, and stamping a postponement would arm an
+		// idle reload for a session that will never idle.
+		return Outcome{Interrupted: true}
+	case !yes:
 		// Nothing new downloads here: the background prefetch already runs an
 		// immediate pass when the session opens, and a second fetch of the
 		// same ref at the same moment is what that would be. Said out loud,

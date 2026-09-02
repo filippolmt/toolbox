@@ -60,7 +60,10 @@ func TestConfirmCountdownAnswersOnOneKeypress(t *testing.T) {
 			master, _ := promptPTY(t)
 
 			done := make(chan bool, 1)
-			go func() { done <- ConfirmCountdown("Download now?", 3*time.Second) }()
+			go func() {
+				yes, _ := ConfirmCountdown("Download now?", 3*time.Second)
+				done <- yes
+			}()
 
 			// The keystroke has to land after the prompt has taken the
 			// terminal, the way a developer's does.
