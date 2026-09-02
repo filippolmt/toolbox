@@ -162,7 +162,7 @@ Under `auto`, when the registry is ahead of your local image store, `toolbox she
 
 `N` is the seconds left, redrawn in place until it runs out.
 
-`y`, a bare Return, or letting the countdown run out all download it and start the session on the new image. **`n` is "later", not "no"**: the session starts on the image already in your store while the [background prefetch](session-reload.md) fetches the new one anyway, so `toolbox-reload` moves you onto it whenever you want it. Nothing extra downloads on the "later" path — the prefetch's own first pass is what advances the store — and the moment you declined is stamped on the state mount, so a postponement is legible to the session it postponed rather than lost.
+One keypress is the whole answer — the terminal is in raw mode for the length of the question, so nothing waits on a Return behind it, and `ctrl+c` still stops `toolbox shell` outright rather than only declining the download. `y`, a bare Return, or letting the countdown run out all download it and start the session on the new image. **`n` is "later", not "no"**: the session starts on the image already in your store while the [background prefetch](session-reload.md) fetches the new one anyway, so `toolbox-reload` moves you onto it whenever you want it. Nothing extra downloads on the "later" path — the prefetch's own first pass is what advances the store — and the moment you declined is stamped on the state mount, so a postponement is legible to the session it postponed rather than lost.
 
 Five cases never reach the question, because the answer is already settled:
 

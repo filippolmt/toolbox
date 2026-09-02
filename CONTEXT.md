@@ -351,7 +351,14 @@ honoured), and a [Session Reload](#session-reload) skips the act whole
 unattended trigger walks). What is left — `auto`, create, image present,
 registry ahead, a tty — is the prompt: `ui.ConfirmCountdown`, where `y`, a
 bare Return and the window elapsing all pull synchronously and `n` starts the
-session on the image already in the store. The countdown is **visible**
+session on the image already in the store. The question owns the terminal in
+raw mode for as long as it is asked, so a single `y` or `n` answers it on the
+keystroke — a question with a countdown on it cannot also wait for a Return,
+or the developer watches a clock they have already stopped. Raw mode also
+takes `ctrl+c` from the terminal driver, so the prompt raises the interrupt
+itself: declining this download and stopping the command behind it are
+different asks, and the question must not be the one place in the session
+where the second one goes nowhere. The countdown is **visible**
 because a few seconds of silence is indistinguishable from a hang, and a
 developer who looks up to find a download running should be able to see why.
 

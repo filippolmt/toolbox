@@ -31,14 +31,38 @@ var countdownTick = time.Second
 // so a pasted paragraph is read to its newline and remembered no further.
 const answerHead = 16
 
+// keyInterrupt is the byte a ctrl+c becomes once raw mode has taken the signal
+// away from the terminal driver. Raising it again by hand is what keeps the
+// question from being the one place in the session where ctrl+c does nothing.
+const keyInterrupt = 0x03
+
+// interrupt re-raises what raw mode swallowed. A var so a test can watch it
+// fire without the test binary taking a SIGINT of its own.
+var interrupt = func() {
+	if p, err := os.FindProcess(os.Getpid()); err == nil {
+		_ = p.Signal(os.Interrupt)
+	}
+}
+
+// answer is one read of stdin: whether the download was accepted, and whether
+// the developer asked for the whole command to stop rather than just this
+// download. The two are separate because a ctrl+c has to do both — decline the
+// download it is standing in front of, and abort the command behind it.
+type answer struct{ yes, interrupted bool }
+
 // Askable reports whether there is a developer at the other end to ask. False
 // under a pipe, a CI runner or any other tty-less invocation, where a question
 // has no answer and waiting for one is pure latency.
 func Askable() bool { return term.IsTerminal(int(promptIn.Fd())) }
 
 // ConfirmCountdown asks question and answers yes for a developer who is not
-// looking: an explicit "n" declines, a bare Return accepts, and so does the
-// window elapsing. The remaining seconds are redrawn on their own line
+// looking: a single "n" declines, a single "y", a bare Return and the window
+// elapsing all accept. One keypress is the whole answer — no Return behind it,
+// which is why the terminal spends the question in raw mode, and why the
+// ctrl+c that mode swallows is raised again by hand: declining the download
+// and stopping the command are different asks, and both have to work.
+//
+// The remaining seconds are redrawn on their own line
 // because silence is indistinguishable from a hang — a developer who looks up
 // to find a download already running should be able to see why.
 //
@@ -46,13 +70,16 @@ func Askable() bool { return term.IsTerminal(int(promptIn.Fd())) }
 // nobody can parse): the caller only asks when it is about to do something it
 // would otherwise have done unconditionally.
 func ConfirmCountdown(question string, window time.Duration) bool {
+	restore := unraw(promptIn)
+	defer restore()
+
 	reader, err := cancelreader.NewReader(promptIn)
 	if err != nil {
 		return true
 	}
 	defer func() { _ = reader.Close() }()
 
-	answered := make(chan bool, 1)
+	answered := make(chan answer, 1)
 	go func() { answered <- accepted(reader) }()
 
 	deadline := time.NewTimer(window)
@@ -64,9 +91,16 @@ func ConfirmCountdown(question string, window time.Duration) bool {
 	render(question, left)
 	for {
 		select {
-		case answer := <-answered:
+		case a := <-answered:
 			erase()
-			return answer
+			if a.interrupted {
+				// Restore before raising: nothing guarantees the signal is
+				// handled rather than fatal, and a process that dies here
+				// would leave the developer's terminal in raw mode.
+				restore()
+				interrupt()
+			}
+			return a.yes
 		case <-ticker.C:
 			left -= countdownTick
 			render(question, left)
@@ -78,6 +112,23 @@ func ConfirmCountdown(question string, window time.Duration) bool {
 			return true
 		}
 	}
+}
+
+// unraw puts the terminal in raw mode for the life of the question and returns
+// the func that restores it — idempotent, because the ctrl+c path restores
+// early and the defer still runs. Raw is what makes a single keypress an answer:
+// under the terminal's default line discipline the key is held in the driver
+// until Return, so a developer who answered would sit there watching a
+// countdown they had already stopped. Off a terminal there is nothing to set,
+// and a terminal that refuses is left as it is — the read below still works,
+// one Return later.
+func unraw(f *os.File) func() {
+	fd := int(f.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return func() {}
+	}
+	return func() { _ = term.Restore(fd, state) }
 }
 
 // render redraws the question in place. Carriage return rather than a fresh
@@ -96,30 +147,50 @@ func render(question string, left time.Duration) {
 // scroll — the prompt occupies one line for its whole life.
 func erase() { _, _ = fmt.Fprint(promptOut, "\r\x1b[K") }
 
-// accepted reads one line and reports whether it is a yes. Byte at a time
-// rather than through a bufio.Reader: a buffered read-ahead would swallow
-// input typed after the answer, which belongs to the session that is about to
-// attach to the same stdin.
+// accepted reads the answer. A decisive first key — y or n, either case — is
+// the whole answer and ends the read there, which is what a one-key question
+// promises. Anything else is read to the end
+// of its line and judged by its head, so a pasted word still answers.
 //
-// The whole line is consumed even though only its head decides — leaving the
-// tail on stdin would hand the session a fragment of an answer as its first
-// keystrokes, which is the same leak read-ahead would cause.
-func accepted(r io.Reader) bool {
+// Byte at a time rather than through a bufio.Reader: a buffered read-ahead
+// would swallow input typed after the answer, which belongs to the session
+// that is about to attach to the same stdin.
+func accepted(r io.Reader) answer {
 	var line []byte
 	buf := make([]byte, 1)
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			if buf[0] == '\n' {
+			c := buf[0]
+			if c == keyInterrupt {
+				return answer{yes: false, interrupted: true}
+			}
+			if c == '\n' || c == '\r' {
+				break
+			}
+			if len(line) == 0 && decisive(c) {
+				line = append(line, c)
 				break
 			}
 			if len(line) < answerHead {
-				line = append(line, buf[0])
+				line = append(line, c)
 			}
 		}
 		if err != nil {
 			break
 		}
 	}
-	return !strings.HasPrefix(strings.ToLower(strings.TrimSpace(string(line))), "n")
+	yes := !strings.HasPrefix(strings.ToLower(strings.TrimSpace(string(line))), "n")
+	return answer{yes: yes}
+}
+
+// decisive reports whether a key answers the question on its own. Only the two
+// the prompt offers: every other first key may be the start of a longer word,
+// which only its line can settle.
+func decisive(c byte) bool {
+	switch c {
+	case 'y', 'Y', 'n', 'N':
+		return true
+	}
+	return false
 }

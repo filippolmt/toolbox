@@ -35,8 +35,9 @@ func promptPipes(t *testing.T, typed string) *strings.Builder {
 	return &out
 }
 
-// TestConfirmCountdownAnswers pins the three answers the start-up refresh
-// prompt has to tell apart. Only an explicit "n" declines; a bare Return is a
+// TestConfirmCountdownAnswers pins the answers the start-up refresh prompt has
+// to tell apart. A decisive key ends the read on its own, with or without the
+// Return the terminal used to require. Only an explicit "n" declines; a bare Return is a
 // yes, because the visible default is what a developer who is not reading the
 // question ends up choosing either way.
 func TestConfirmCountdownAnswers(t *testing.T) {
@@ -46,6 +47,8 @@ func TestConfirmCountdownAnswers(t *testing.T) {
 		want  bool
 	}{
 		{"declined", "n\n", false},
+		{"declined on the key alone", "n", false},
+		{"accepted on the key alone", "y", true},
 		{"declined spelled out", "No\n", false},
 		{"bare return", "\n", true},
 		{"accepted", "y\n", true},
@@ -97,5 +100,26 @@ func TestRenderClampsAnExpiredCountdown(t *testing.T) {
 	render("Download now?", -2*time.Second)
 	if !strings.Contains(out.String(), "(0s)") {
 		t.Errorf("render() = %q, want a clamped (0s)", out.String())
+	}
+}
+
+// Raw mode takes ctrl+c away from the terminal driver, which would make the
+// question the one moment in the session where ctrl+c does nothing. It has to
+// mean both things it means everywhere else: this download is off, and the
+// command behind it stops.
+func TestConfirmCountdownRaisesAnInterrupt(t *testing.T) {
+	raised := make(chan struct{}, 1)
+	old := interrupt
+	interrupt = func() { raised <- struct{}{} }
+	t.Cleanup(func() { interrupt = old })
+
+	promptPipes(t, "\x03")
+	if ConfirmCountdown("Download now?", time.Minute) {
+		t.Error("a ctrl+c must not be read as a yes")
+	}
+	select {
+	case <-raised:
+	default:
+		t.Error("ctrl+c was swallowed: no interrupt was raised")
 	}
 }
