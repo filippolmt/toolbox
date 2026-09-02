@@ -830,7 +830,8 @@ One caller deliberately does **not** use this policy: a
 waits for the removal, because skip-if-sibling would spare a container
 still holding the deterministic name the reload's own create is about
 to ask for. Considerate refusal there turns into a name collision, so
-the reload owns `container.reloadTeardown` instead.
+the reload owns `container.removeAndWait` instead, which names the
+caller in its error through an `act` argument.
 
 Why the term exists: before this concept was named, the policy was a
 4-deep nested defer block inside `Shell`, with the timing constants as

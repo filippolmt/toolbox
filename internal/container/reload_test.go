@@ -500,9 +500,9 @@ func TestReloadTeardownOutcomes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := reloadTeardown(context.Background(), tc.mock(), "toolbox-old-1234abcd")
+			err := removeAndWait(context.Background(), tc.mock(), "toolbox-old-1234abcd", "reload")
 			if (err != nil) != tc.wantErr {
-				t.Errorf("reloadTeardown() error = %v, wantErr %v", err, tc.wantErr)
+				t.Errorf("removeAndWait() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
