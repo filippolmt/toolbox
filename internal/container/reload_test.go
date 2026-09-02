@@ -617,12 +617,12 @@ func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	calls := stubRefresh(t, imageplan.Outcome{})
+	stakes := stubRefresh(t, imageplan.Outcome{})
 
 	if _, err := Shell(context.Background(), createAfterReloadMock(), reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
 		t.Fatalf("Shell(): %v", err)
 	}
-	if *calls != 0 {
-		t.Errorf("the reload path ran the start-up refresh %d times, want 0", *calls)
+	if len(*stakes) != 0 {
+		t.Errorf("the reload path ran the start-up refresh %d times, want 0", len(*stakes))
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/ui"
 )
 
 // mockClient implements the subset of client.APIClient used by Ensure.
@@ -136,11 +137,23 @@ func storeWith(t *testing.T, repoDigest, remote string) *mockClient {
 	}
 }
 
+// asked is how the prompt was put: how many times, and which way its
+// unattended default pointed — the second being what keeps a window nobody
+// answered from destroying a container.
+type asked struct {
+	times   int
+	elapsed ui.Elapsed
+}
+
 // answering stands in for the developer at the prompt, recording that the
 // question was put at all — which is half of what every case asserts.
-func answering(yes, interrupted bool) func(*int) prompt {
-	return func(asked *int) prompt {
-		return func(string, time.Duration) (bool, bool) { *asked++; return yes, interrupted }
+func answering(yes, interrupted bool) func(*asked) prompt {
+	return func(q *asked) prompt {
+		return func(_ string, _ time.Duration, elapsed ui.Elapsed) (bool, bool) {
+			q.times++
+			q.elapsed = elapsed
+			return yes, interrupted
+		}
 	}
 }
 
@@ -188,18 +201,21 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 		remote = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	)
 	for _, tc := range []struct {
-		name       string
-		policy     string
-		repoDgst   string
-		remote     string
-		absent     bool
-		warm       string
-		tty        bool
-		answer     func(*int) prompt
-		wantAsked  int
-		wantPulls  int
-		wantProbes int
-		want       Outcome
+		name        string
+		policy      string
+		stake       Stake
+		repoDgst    string
+		remote      string
+		absent      bool
+		pullFails   bool
+		warm        string
+		tty         bool
+		answer      func(*asked) prompt
+		wantAsked   int
+		wantElapsed ui.Elapsed
+		wantPulls   int
+		wantProbes  int
+		want        Outcome
 	}{
 		{
 			// Not probing is that policy's whole promise, and a probe is a
@@ -260,13 +276,14 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "yes pulls synchronously",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
-			wantAsked: 1, wantPulls: 1, wantProbes: 1, want: Outcome{Synced: true},
+			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantPulls: 1, wantProbes: 1,
+			want: Outcome{Synced: true, Accepted: true},
 		},
 		{
 			name:   "no starts on the image already in the store",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedNo,
-			wantAsked: 1, wantProbes: 1, want: Outcome{Declined: true},
+			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: Outcome{Declined: true},
 		},
 		{
 			// A ctrl+c is not the "no" it looks like from here: the developer
@@ -277,18 +294,59 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "ctrl+c stops the command rather than postponing",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedAndStopped,
-			wantAsked: 1, wantProbes: 1, want: Outcome{Interrupted: true},
+			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: Outcome{Interrupted: true},
+		},
+		{
+			// The same question where a yes also discards the container the
+			// developer would otherwise have started: the window may not
+			// answer it, and the answer is reported as an answer rather than
+			// as a sync, because only a developer's yes may cost a container.
+			name:   "a yes where a container is at stake is reported as accepted",
+			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote,
+			tty: true, answer: askedYes,
+			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
+			want: Outcome{Synced: true, Accepted: true},
+		},
+		{
+			// The answer stands, the download did not: acting on it would
+			// destroy the container in exchange for an image that never
+			// arrived, so nothing is reported for the caller to act on.
+			name:   "a yes the registry could not honour is not an acceptance",
+			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote, pullFails: true,
+			tty: true, answer: askedYes,
+			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
+			want: Outcome{},
+		},
+		{
+			name:   "a no where a container is at stake postpones like any other",
+			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote,
+			tty: true, answer: askedNo,
+			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantProbes: 1,
+			want: Outcome{Declined: true},
+		},
+		{
+			// `always` still pulls without asking, and still rebuilds nothing:
+			// a policy about downloads has never said anything about
+			// destroying a container, so nothing here is accepted on the
+			// developer's behalf.
+			name:   "pull always spends no container it was not asked about",
+			policy: "always", stake: StakeRecreate, repoDgst: local, remote: remote,
+			tty: true, answer: askedYes,
+			wantPulls: 1, want: Outcome{Synced: true},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := storeWith(t, tc.repoDgst, tc.remote)
+			if tc.pullFails {
+				mock.pullFn = func() (io.ReadCloser, error) { return nil, errors.New("unauthorized") }
+			}
 			if tc.absent {
 				mock.imgInspFn = func(context.Context, string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, errors.New("no such image")
 				}
 			}
-			asked := 0
-			withPrompt(t, tc.tty, tc.answer(&asked))
+			var put asked
+			withPrompt(t, tc.tty, tc.answer(&put))
 
 			stateDir := t.TempDir()
 			if tc.warm != "" {
@@ -298,13 +356,16 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			got := RefreshAtStart(context.Background(), mock, sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tc.policy,
-			}, stateDir)
+			}, stateDir, tc.stake)
 
 			if got != tc.want {
 				t.Errorf("RefreshAtStart() = %+v, want %+v", got, tc.want)
 			}
-			if asked != tc.wantAsked {
-				t.Errorf("the developer was asked %d times, want %d", asked, tc.wantAsked)
+			if put.times != tc.wantAsked {
+				t.Errorf("the developer was asked %d times, want %d", put.times, tc.wantAsked)
+			}
+			if tc.wantAsked > 0 && put.elapsed != tc.wantElapsed {
+				t.Errorf("the unanswered window would have answered %v, want %v", put.elapsed, tc.wantElapsed)
 			}
 			if mock.pullCount != tc.wantPulls {
 				t.Errorf("ImagePull called %d times, want %d", mock.pullCount, tc.wantPulls)
@@ -322,18 +383,18 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 func TestRefreshAtStartStaysSilentWhenTheProbeFails(t *testing.T) {
 	mock := storeWith(t, "sha256:1111", "")
 	mock.distErr = errors.New("offline")
-	asked := 0
-	withPrompt(t, true, askedYes(&asked))
+	var put asked
+	withPrompt(t, true, askedYes(&put))
 
 	got := RefreshAtStart(context.Background(), mock, sessionplan.Image{
 		Ref:        "ghcr.io/example:latest",
 		PullPolicy: "auto",
-	}, t.TempDir())
+	}, t.TempDir(), StakeDownload)
 
 	if got != (Outcome{}) {
 		t.Errorf("RefreshAtStart() = %+v, want the zero outcome", got)
 	}
-	if asked != 0 || mock.pullCount != 0 {
-		t.Errorf("asked %d times and pulled %d times, want neither", asked, mock.pullCount)
+	if put.times != 0 || mock.pullCount != 0 {
+		t.Errorf("asked %d times and pulled %d times, want neither", put.times, mock.pullCount)
 	}
 }

@@ -90,7 +90,8 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 
 // removeAndWait destroys the container a create is about to replace and does
 // not return until the name is free again. act names the caller in the error,
-// which is the only thing that differs between callers.
+// which is the only thing that differs between them: a session reload, and a
+// start-up refresh whose yes was a yes to rebuilding a stopped container.
 //
 // Deliberately not teardown.OnShellExit, and the reason is structural rather
 // than a preference: that policy declines while a sibling shell is attached,

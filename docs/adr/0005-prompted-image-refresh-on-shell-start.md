@@ -1,6 +1,8 @@
 # Prompted Image Refresh on Shell Start: ask before spending the developer's time, and treat "no" as "later"
 
-Status: accepted
+Status: accepted — which branches reach the prompt is superseded by
+[ADR 0008](0008-refresh-prompt-on-a-stopped-container.md), which extends it to
+a stopped container and inverts the countdown there.
 
 `toolbox shell` refreshes the runtime image against its registry on the way
 in. The refresh is synchronous and cache-gated, so the cost lands unevenly:
@@ -30,6 +32,12 @@ promise. Without a tty there is no prompt either, and the default inverts:
 start now, fetch behind. The interactive default is justified by the work
 that follows the wait; a script has no work that follows, so the same wait is
 pure latency multiplied by every invocation in a pipeline.
+
+A container that already exists is **not** among these cases, and it is not
+settled by the same argument: the answer there is not already known, it is
+paid for differently — a yes costs the container as well as the wait. Which
+branches may be asked, and what the countdown may answer on each, is settled
+by [ADR 0008](0008-refresh-prompt-on-a-stopped-container.md).
 
 Knowing whether to ask is itself a registry round-trip, so the question is
 answered from the update prefetch's shared cache whenever its stamp is warm —
