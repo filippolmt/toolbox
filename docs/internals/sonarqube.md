@@ -28,18 +28,19 @@ normalised forms GitHub's own redaction does not match.
 This rationale belongs here and nowhere else. The workflow header and the
 script header each carry one line and a pointer back.
 
-## The two coverage numbers
+## The two coverage denominators
 
-They measure different things, and the difference is not a bug:
+One threshold, measured over two different denominators. The difference is not
+a bug:
 
 | | Denominator | Threshold | Enforced by |
 |---|---|---|---|
-| **Sonar** ~80.5% | lines the PR touched (*new code*) | 80% | server-side Quality Gate |
-| **Local** ~75.6% | every statement in the tree | 74% | `ci.yml`, `Enforce the coverage floor` |
+| **Sonar** | lines the PR touched (*new code*) | 80% | server-side Quality Gate |
+| **Local** | every statement in the tree | 80% | `ci.yml`, `COVERAGE_MIN` |
 
 `go test ./... -coverprofile` counts every package, including ones with no test
 file at all; Sonar scores only new code, against the exclusions in
-`sonar-project.properties`. Comparing the two numbers directly means nothing.
+`sonar-project.properties`. Comparing the two figures directly means nothing.
 
 **Why both exist.** `analyze` is a required check on `main` and goes red when
 the gate does, which is what makes 80%-on-new-code a merge blocker. But
@@ -49,11 +50,10 @@ never blocks a merge. On its own that leaves a PR pushed at 3am with no
 coverage gate whatsoever. The floor in `ci.yml` closes that hole: it needs no
 server, runs on every PR, and always reports.
 
-The floor sits a couple of points under the current total deliberately. Pinned
-to today's exact figure it would go red on the first sizeable untested
-addition — on whichever PR happens to make it, with an error naming the global
-total rather than that PR's own code. Raise it as the total climbs. Never lower
-it to turn a red build green.
+The floor is the same 80% Sonar asks for, so there is one number to remember
+and one rule to state: **tests must cover at least 80%.** It is never lowered
+to turn a red build green — the failing PR adds the tests, or the untested
+addition does not land.
 
 The 80% itself cannot be pinned repo-side — Quality Gate conditions are server
 state, and `sonar-project.properties` has no key for them. The floor is the

@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
+
 The Dockerfile's build-strategy header promised that "a Renovate bump of one
 tool re-runs only that stage + its COPY — never the tail". Measured against the
 published GHCR manifests, it does not hold: `0.83.0` → `sha-08ef69b`, whose only

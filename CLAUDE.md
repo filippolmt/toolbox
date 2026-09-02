@@ -6,7 +6,7 @@
 
 ## Dev commands
 
-**Go is not installed on the host** — reach every Go command through the `make` targets, which run `golang:1.26` (cache volume `toolbox-gomod`). `make help` lists them; what the target comments can't carry:
+**Go is not installed on the host** — reach every Go command through the `make` targets, which run the `golang` image pinned by `GO_IMAGE_VERSION` in the `Makefile` (cache volume `toolbox-gomod`). `make help` lists them; what the target comments can't carry:
 
 - `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. → [image selection](docs/configuration.md#image-selection)
@@ -18,21 +18,21 @@
 |---|---|---|
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
-| `internal/{container,mountplan,sessionplan}/**` | `make go-check` — the extra CI gate has no local equivalent | `docker-ci.yml` (build + smoke + peer gate) |
+| `internal/{container,mountplan,sessionplan,reload}/**` | `make go-check` — the extra CI gates have no local equivalent | `docker-ci.yml` (build + smoke + real-daemon gates) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
 
-The real-daemon gates `docker-ci.yml` runs for those three packages (`go test -tags dockergate` — peer messaging and the session reload) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place it runs.
+The real-daemon gates `docker-ci.yml` runs for those paths (`go test -tags dockergate` — peer messaging and the session reload) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place it runs.
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 
-**Two gates block a merge on coverage**, and `make go-check` only mirrors one of them:
+**Coverage must be at least 80%**, and two gates enforce it — `make go-check` mirrors neither:
 
-- `ci.yml` (`test`) enforces a **74% floor on total statement coverage**, pinned in the workflow — deliberately a couple of points under the current total (~75.6%), so the first sizeable untested addition doesn't turn an unrelated PR red. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
-- `sonar.yml` (`analyze`) is a required check on `main` and goes red on a failing Quality Gate — **80% on new code**, a server-side threshold. Skipped, and therefore silently satisfied, whenever the SonarQube server is powered down (it runs 09:00–19:00 Europe/Rome, Mon–Fri).
+- `ci.yml` (`test`) enforces the 80% floor on **total statement coverage**, pinned as `COVERAGE_MIN` in the workflow. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
+- `sonar.yml` (`analyze`) is a required check on `main` and goes red on a failing Quality Gate — the same 80%, on **new code**, as a server-side threshold. Skipped, and therefore silently satisfied, whenever the SonarQube server is powered down (it runs 09:00–19:00 Europe/Rome, Mon–Fri).
 
-The two numbers use different denominators on purpose. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-numbers)
+One threshold, two denominators on purpose. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-denominators)
 
 ## Architecture
 
@@ -45,6 +45,7 @@ Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` gua
 ## Code & language
 
 - **Repo content English; chat with user Italian.**
+- **Never write a version number, and never a current-state figure.** Renovate bumps the pinned tools continuously, so a version in prose is wrong by the next merge — name the thing that pins it (`GO_IMAGE_VERSION` in the `Makefile`, the `toolchain` directive in `go.mod`, the `*_VERSION` ARGs in the Dockerfile) and let the reader look. The same holds for any value that lives elsewhere and moves: a coverage total, a tool count, a timing. This includes "since vX" and "on vX+" boundaries — describe the behaviour, not the release it changed in. Two things stay: a **threshold the repo enforces**, because writing it *is* the rule, and a **dated measurement in an ADR**, whose header says its figures are as-of the decision. Everywhere else, explain the mechanism and drop the figure it was observed at — a post-mortem reads better as "upstream relocated the tree" than as a version that means nothing a year later.
 - `AGENTS.md` is a symlink to this file (Codex CLI). Keep the symlink while Codex is in use.
 - Test-first changes: use the `tdd` skill — Specify-Encode-Fulfill, one test at a time; a behavior change and a refactor stay in separate steps.
 

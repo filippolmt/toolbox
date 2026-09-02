@@ -256,7 +256,7 @@ to assert image-tag resolution or container-name determinism. The
 "Session Plan" name turns the sequencing into one observable typed plan
 that tests construct without Docker — the SESS-05 acceptance heart.
 Together with Mount Plan, Tool Catalog, and Config Plan, the four-Seam
-composition is what the v1.3 milestone calls Architecture Deepening.
+composition is what the Architecture Deepening milestone set out to build.
 
 ### Run Plan
 
@@ -333,12 +333,25 @@ attached — and downloads them when they are not. The separation it names is
 design rather than an implementation detail.
 
 Concretely: `imageprefetch.Start(ctx, cli, Input{Ref, ContainerDigest,
-StateDir})`, launched from `container.Shell` behind the `startPrefetch`
-var and cancelled with the session. Its ticker is only an **alarm**: the
-"poll now?" decision is a `stat` on an attempt stamp
+StateDir, StartSynced})`, launched from `container.Shell` behind the
+`startPrefetch` var and cancelled with the session. Its ticker is only an
+**alarm**: the "poll now?" decision is a `stat` on an attempt stamp
 (`<state>/update-check.stamp`), so the cadence lives on the state mount,
 is shared across sibling sessions, and would survive a re-exec of the
-host CLI for free. One poll is probe → prefetch → publish:
+host CLI for free. Each tick **cancels the poll it started last time**
+before starting the next, so a registry that accepts the connection and
+then stops talking costs one tick rather than the whole session — the
+bound that lets the act refuse backoff and metering entirely. Cancelling
+is free: a partial ingest is never a blob, it expires on its own, and the
+next pull resumes from what landed.
+
+`StartSynced` closes the cold start. The synchronous `imageplan.Refresh`
+at shell start is itself a probe, so when it actually reached the
+registry it takes that TTL's turn: the poller stamps on its behalf and
+publishes the banner **from the local store** — which that pull has just
+made current — instead of asking the registry the same question seconds
+later. A cache hit or a failed pull sets nothing, and the poller does its
+own probe: neither established anything about the remote. One poll is probe → prefetch → publish:
 `DistributionInspect` resolves the remote digest through the daemon
 (so a `registry_mirror` is honoured and no registry HTTP lives in this
 repo), `ImagePull` drained with `ImagePullResponse.Wait` fetches it when
@@ -410,6 +423,20 @@ a degrade. One item is carried deliberately, the working directory
 fallback); everything else is **re-derived** by a fresh
 `sessionplan.Plan`, so the `TOOLBOX_*` identity is right for the *new*
 image instead of replaying the old one's `PATH` into it.
+
+The **re-entry form** is the argv the next process runs, and it is
+*normalised, never replayed*: `worktree create` comes back as `worktree
+open <branch>` with the resolved `--agent` pinned, and `shell` drops the
+`--create`/`--path` bootstrap half. Everything else the developer typed
+is carried, because the flags are identity: `--profile` and `--peer`
+feed the container name, `--profile` also moves the mount root, and
+`-p` fixes the port bindings at creation — a form that dropped them
+would have the reloaded process destroy the container the payload names
+and then create a *different* one. `cmd.reentryFlags` walks the Changed
+flags rather than a hand-kept list, so a flag added later is carried
+without anyone remembering; a flag left at its default is never emitted,
+which is what keeps the tri-state `--peer` resolving against config.
+The same form is what a failed reload prints as the way back.
 
 The reload gates on nothing and confirms nothing. It looks once
 (`ContainerTop`, cgroup-scoped even under the shared peer PID namespace)

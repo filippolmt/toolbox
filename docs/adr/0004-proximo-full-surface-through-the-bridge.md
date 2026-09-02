@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
+
 Proximo (<https://github.com/filippolmt/proximo>) runs on the host: it terminates
 TLS there, installs a host resolver, and its stack bind-mounts host paths. Toolbox
 already carries the two ingredients that make routed `.test` names reachable from

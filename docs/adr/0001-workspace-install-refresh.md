@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
+
 Three Init Sequence scripts — `30-graphify.sh`, `31-codegraph.sh` and
 `40-playwright-cli.sh` — re-ran their tool's per-repo installer on every shell,
 gated only on the opt-in artefact already existing in the workspace

@@ -31,7 +31,7 @@ brew install filippolmt/tap/toolbox
 
 ### From source
 
-Requires Go 1.26+:
+Requires the Go version named by the `toolchain` directive in `go.mod` (or newer):
 
 ```bash
 go install github.com/filippolmt/toolbox@latest

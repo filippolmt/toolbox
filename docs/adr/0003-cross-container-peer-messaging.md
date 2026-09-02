@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
+
 Claude Code's cross-session messaging (`ListAgents` / `SendMessage`) lets one
 session deliver a message to another on the same machine. Toolbox gives each
 workspace its own container, and upstream states the consequence plainly: *"A

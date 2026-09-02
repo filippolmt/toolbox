@@ -140,6 +140,19 @@ and **resumes** the most recent conversation (`claude --continue`,
 reload reproduces how the session was started, it does not guess what you were
 doing.
 
+"How the session was started" includes the flags you typed. A session opened
+with `--profile work -p 7171 --peer=false` reloads with all three: `--profile`
+and `--peer` decide the container's name, `--profile` also decides which
+credential root is mounted, and `-p` bindings are fixed at creation — so
+dropping any of them would land you in a *different* container from the one
+the reload just destroyed. Two things are deliberately not replayed: `--create`
+and `--path`, whose work is already done (the named shell is in your config by
+then), and `worktree create`, which comes back as `worktree open <branch>` so a
+branch that now exists is not re-created and a prompt your agent has already
+completed is not re-sent. The agent is pinned as *resolved*, so the session
+comes back on the agent it actually ran even if you change the default
+meanwhile.
+
 The resume is conditional on your working directory having been carried:
 `claude --continue` is keyed on the directory, and the workspace is mounted
 twice. When the directory falls back, the agent launches bare — resuming the

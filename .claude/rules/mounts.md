@@ -14,7 +14,7 @@ paths:
 
 ### The shadow
 
-the [`npm-global` mount](../../docs/mounts.md) is the global npm prefix and `PATH` puts `~/.npm-global/bin` ahead of `/usr/local/bin`, so a volume seeded pre-baking can shadow image-pinned `/usr/local` tools with stale duplicates (observed: runtime `pyright 1.1.409` vs image `1.1.410`).
+the [`npm-global` mount](../../docs/mounts.md) is the global npm prefix and `PATH` puts `~/.npm-global/bin` ahead of `/usr/local/bin`, so a volume seeded pre-baking can shadow image-pinned `/usr/local` tools with stale duplicates — observed with `pyright`, where the volume's older copy won over the image's newer one.
 
 ### The healer
 
