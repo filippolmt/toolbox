@@ -46,6 +46,7 @@ func TestEffectiveValueCoversSchema(t *testing.T) {
 		"bridge":             "tri-state, resolved host-side at runtime",
 		"proximo":            "tri-state, resolved host-side at runtime",
 		"managed_statusline": "tri-state, resolved host-side at runtime",
+		"image_reclaim":      "tri-state, resolved host-side at runtime",
 		"peer_messaging":     "plain bool: the default lives in Merge's viper seed",
 		"mounts":             "collection: structured per-entry rendering",
 		"inherit_host_auth":  "collection: structured per-entry rendering",

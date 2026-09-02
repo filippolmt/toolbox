@@ -107,6 +107,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | [`browser_bridge`](docs/configuration.md#browser_bridge-deprecated) | **Deprecated** alias of `bridge`. |
 | [`proximo`](docs/proximo.md) | `.test` apps + CA trust inside the container; omitted = auto-detect. |
 | [`managed_statusline`](docs/configuration.md#managed_statusline) | Image-owned Claude Code statusline re-applied each shell start; `false` to keep your own. |
+| [`image_reclaim`](docs/configuration.md#image_reclaim) | Reclaim runtime images an image update left nameless; default on, set `false` to keep every generation. |
 | [`peer_messaging`](docs/configuration.md#peer_messaging) | Let Claude Code sessions in different toolbox containers see and message each other; default on, set `false` to opt out. |
 | [`env`](docs/configuration.md#env-passthrough) | Arbitrary env vars injected into the in-container shell (global or per-shell). |
 | [`worktree`](docs/configuration.md#worktree) | Extra gitignored paths to seed from the main repo into a new `toolbox worktree`. |

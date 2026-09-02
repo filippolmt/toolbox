@@ -14,7 +14,7 @@ func TestSchemaKeys(t *testing.T) {
 	want := []string{
 		"mounts", "inherit_host_auth", "shells", "shell", "agent",
 		"image", "registry_mirror", "pull", "mounts_root", "sdd",
-		"bridge", "browser_bridge", "proximo", "managed_statusline",
+		"bridge", "browser_bridge", "proximo", "managed_statusline", "image_reclaim",
 		"env", "peer_messaging", "worktree",
 	}
 	if got := SchemaKeys(); !slices.Equal(got, want) {

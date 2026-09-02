@@ -456,6 +456,72 @@ state a fact instead of prescribing an exit. Owned by
 `internal/imageprefetch`; the render half stays in `zshrc.sh`, because
 the image owns the words.
 
+### Superseded Image
+
+An image in the local store that carries a `RepoDigests` entry for the
+toolbox repo the config resolves to and **no** `RepoTags`: this CLI
+pulled it, and a later move of `latest` took its name away.
+
+Concretely: the selection predicate of Image Reclamation, read off
+`ImageList`. The repo constraint is what keeps the act inside its own
+perimeter — an image this project never pulled carries no digest for
+this repo and is therefore never a candidate, whatever else is true of
+it. The digest the current session runs is excluded by name rather than
+left to inference: a config that pins `image:` to a digest instead of a
+tag produces a running image with no tags at all, so the predicate on
+its own would nominate the very image the shell just started from.
+
+Why the term exists: the obvious word for these is *dangling*, and it is
+not merely imprecise but false. Docker's `dangling=true` filter does not
+match them, because losing a tag leaves the repo digest behind — an image
+is dangling only when it has neither. A reader who believes these are
+dangling images concludes `ImagesPrune` covers the case, writes three
+lines instead of a package, and reclaims nothing; the same filter would
+meanwhile sweep images belonging to other projects on the machine. The
+name exists to put the wrong word out of reach.
+
+### Image Reclamation
+
+The opportunistic sweep that removes Superseded Images once the session
+is already anchored to the new one. What it names is a contract, not a
+mechanism: **the daemon is the arbiter of use** — the sweep asks, and a
+refusal is an answer rather than a failure.
+
+Concretely: `imagereclaim.Start(ctx, cli, Input{Repo, KeepDigest})`,
+launched from `container.Shell` behind the `reclaimImages` var and
+cancelled with the session — after `dispatchOp`, never before. The
+ordering is the design and not an optimisation: only once this
+workspace's container exists and references the new image is every
+surviving reference to the old one somebody else's real reference. Run
+any earlier and the removal is guaranteed to be refused, because the
+session doing the reclaiming is itself the last holder. `ImageRemove`
+runs with neither `force` nor `PruneChildren`; the summary line appears
+only when something was actually removed, and a refusal says nothing at
+all. Cancellation is safe because the act is idempotent — a candidate
+the sweep did not reach is still a candidate at the next shell. Gated by
+`image_reclaim`, a tri-state `*bool` like `bridge` and `proximo`: the
+act runs unless the developer disabled it in so many words, and an
+absent key must stay distinguishable from a written `false` or a
+merged config layer would silently re-arm it.
+
+**Zero generations are retained.** Every Superseded Image is a
+candidate, with no keep-the-previous-one rule and no grace window. The
+only use for a retained generation would be rolling back onto it, and
+no such path exists — Session Reload moves forward only. A grace window
+would not help either: the single real race is a sibling session that
+resolved the old digest and is creating its container right now, and
+that is measured in milliseconds, so an hours-long window would hold
+gigabytes for a window it does not cover.
+
+Why the term exists: *prune* was the available word and carries the
+wrong scope, because `docker system prune` is a sweep of the machine and
+this is a sweep of what one CLI downloaded. Naming the act apart from
+Superseded Image also splits two readers: the predicate is read by
+whoever changes what counts as a candidate, the daemon contract by
+whoever changes how one is removed. Why no container census stands in
+front of the removal, and what that costs, is
+[ADR 0007](docs/adr/0007-daemon-refusal-as-in-use-check.md).
+
 ### Session Reload
 
 Moving an attached session onto a newer runtime image, on the

@@ -104,6 +104,13 @@ func Render() string {
 	b.WriteString("# managed_statusline: false\n")
 	b.WriteString("\n")
 
+	b.WriteString("# image_reclaim — remove the runtime images this CLI pulled that a later\n")
+	b.WriteString("# `latest` took the tag from. Tri-state, default AUTO (on): the sweep runs\n")
+	b.WriteString("# beside every session and the daemon refuses any image a container still\n")
+	b.WriteString("# references, stopped ones included. Set false to keep every generation.\n")
+	b.WriteString("# image_reclaim: false\n")
+	b.WriteString("\n")
+
 	b.WriteString("# peer_messaging — let Claude Code sessions in DIFFERENT toolbox containers\n")
 	b.WriteString("# see and message each other (ListAgents / SendMessage). Participating\n")
 	b.WriteString("# containers join one toolbox-owned PID namespace, which also means they\n")

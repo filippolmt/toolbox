@@ -91,6 +91,12 @@ type SessionPlan struct {
 	// holds. The CA bind + NODE_EXTRA_CA_CERTS/TOOLBOX_PROXIMO_CA env are
 	// already resolved into Binds/Env here (pure, host-side).
 	Proximo bool
+	// ReclaimImages mirrors `image_reclaim`, resolved from its tri-state:
+	// absent means on, since Image Reclamation runs unless the developer
+	// disabled it in so many words. The container edge starts the sweep with
+	// it — the act needs the Docker client and the digest the created
+	// container actually runs, neither of which exists here.
+	ReclaimImages bool
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes
@@ -326,6 +332,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		OverlayDockerfile: overlayDockerfile,
 		StateDir:          stateDir,
 		Proximo:           proximo.Enabled(in.Cfg),
+		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
 	}, nil

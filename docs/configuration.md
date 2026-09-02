@@ -42,6 +42,7 @@ Configuration is loaded from (highest priority first):
 | [`browser_bridge`](#browser_bridge-deprecated) | bool | – | **Deprecated** alias of `bridge`. |
 | [`proximo`](proximo.md) | bool | auto | `.test` reachability + CA trust; omitted = auto-detect (on iff proximo's CA exists on the host). |
 | [`managed_statusline`](#managed_statusline) | bool | `true` | Image-owned Claude Code statusline, re-applied every shell start; `false` keeps your own. |
+| [`image_reclaim`](#image_reclaim) | bool | `true` | Remove the runtime images this CLI pulled that a later image update left nameless; `false` keeps every generation. |
 | [`peer_messaging`](#peer_messaging) | bool | `true` | Let Claude Code sessions in different toolbox containers see and message each other. |
 | [`env`](#env-passthrough) | map | – | Arbitrary env vars injected into the in-container shell. |
 | [`worktree`](#worktree) | map | – | Tune `toolbox worktree` sessions; `seed` adds extra gitignored paths to carry into a new worktree. |
@@ -72,6 +73,18 @@ Left to right: working directory, `repo:branch` with dirty/ahead/behind markers 
 ![The managed statusline rendered in a toolbox shell, in colour with Nerd Font glyphs.](img/statusline.png)
 
 Set `managed_statusline: false` to opt out — the boot hook then leaves your own `statusLine` untouched. Default (omitted or `true`) is managed-on. Mechanics in [shell-start internals](internals/shell-start.md#managed-statusline).
+
+## `image_reclaim`
+
+Every merge to `main` publishes a runtime image, so a developer who keeps up accumulates a local store of images that lost the `latest` tag and nothing else. `image_reclaim` removes them: on every shell start, once the session's own container exists and references the current image, a background sweep deletes each image in the local store that carries a repo digest for the toolbox repo, has no tag left, and is not the digest this session runs.
+
+Three properties are worth knowing before you leave it on, which is the default:
+
+- **Nothing in use is ever removed, and toolbox does not decide what "in use" means.** The sweep calls Docker's own unforced image removal and treats a refusal as the answer. The daemon refuses to delete an image any container references — *including a stopped one* — so a container of another workspace, waiting for you to come back to it tomorrow, keeps its image. The corollary is the common surprise: with many workspaces whose containers still exist, the sweep reclaims little or nothing, and that is correct rather than broken. Same for a `~/.toolbox/Dockerfile` overlay — your `:local` image is built on top of the base, so the base has a child and stays.
+- **No generations are kept.** Every untagged generation goes; there is no keep-the-previous-one rule and no grace window. Nothing rolls back onto an old image — [session reload](session-reload.md) moves forward only — so a retained generation has no use, and the current image is excluded by name.
+- **It is silent unless it removed something.** One summary line when it did, nothing at all when the daemon refused or there was nothing to sweep.
+
+Set `image_reclaim: false` to keep every image the CLI ever pulled; a disk-space cleanup is then yours to run (`docker image prune`, which sweeps the whole machine and not just toolbox). Reasoning and the two consequences in full: [ADR 0007](adr/0007-daemon-refusal-as-in-use-check.md).
 
 ## `peer_messaging`
 

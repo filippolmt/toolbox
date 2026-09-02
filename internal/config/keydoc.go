@@ -59,6 +59,10 @@ func KeyDocs() map[string]KeyDoc {
 			Summary: "Image-owned Claude Code statusline force-applied to settings.json each shell. Tri-state: unset = auto (on); false keeps your own.",
 			Default: "auto (on)",
 		},
+		"image_reclaim": {
+			Summary: "Reclaim runtime images this CLI pulled that a later `latest` lost its tag to. Tri-state: unset = auto (on).",
+			Default: "auto (on)",
+		},
 		"peer_messaging": {
 			Summary: "Let Claude Code sessions in different toolbox containers see and message each other (shared PID namespace + socket dir).",
 			Default: "true (on)",

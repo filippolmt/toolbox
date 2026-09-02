@@ -158,6 +158,7 @@ func writeToggles(e *errWriter, c *config.Config, ann func(string) string) {
 	e.printf("bridge: %s%s\n", boolPtrStr(c.Bridge), ann("bridge"))
 	e.printf("proximo: %s%s\n", boolPtrStr(c.Proximo), ann("proximo"))
 	e.printf("managed_statusline: %s%s\n", boolPtrStr(c.ManagedStatusline), ann("managed_statusline"))
+	e.printf("image_reclaim: %s%s\n", boolPtrStr(c.ImageReclaim), ann("image_reclaim"))
 	e.printf("peer_messaging: %t%s\n", c.PeerMessaging, ann("peer_messaging"))
 }
 

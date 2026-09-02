@@ -44,6 +44,7 @@ sections.**
 - [agent](configuration.md#agent)
 - [managed_statusline](configuration.md#managed_statusline)
 - [peer_messaging](configuration.md#peer_messaging)
+- [image_reclaim](configuration.md#image_reclaim)
 - [inherit-host-auth](configuration.md#inherit-host-auth)
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)
@@ -147,6 +148,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Codex nested sandbox](internals/container-lifecycle.md#codex-nested-sandbox)
 - [Container teardown](internals/container-lifecycle.md#container-teardown)
 - [Session reload teardown](internals/container-lifecycle.md#session-reload-teardown)
+- [Image reclamation](internals/container-lifecycle.md#image-reclamation)
 - [Peer anchor reaping](internals/container-lifecycle.md#peer-anchor-reaping)
 
 ### [internals/shell-start.md](internals/shell-start.md)
