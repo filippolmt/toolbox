@@ -370,7 +370,7 @@ func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.
 func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, sessionDigest string) func() {
 	reclaimCtx, stop := context.WithCancel(ctx)
 	if plan.ReclaimImages {
-		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Repo: base.Ref, KeepDigest: sessionDigest})
+		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Ref: base.Ref, KeepDigest: sessionDigest})
 	}
 	return stop
 }

@@ -42,7 +42,10 @@ func TestDaemonRefusesToRemoveAStoppedContainersImage(t *testing.T) {
 	subject := buildSubject(ctx, t, cli)
 
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{Image: subject, Cmd: []string{"/bin/sh", "-c", "exit 0"}},
+		// The image's own ENTRYPOINT is a full shell start that never exits, so
+		// it is overridden with something that returns immediately — this
+		// container exists to hold a reference, not to run a session.
+		Config: &container.Config{Image: subject, Entrypoint: []string{"/bin/true"}},
 		Name:   "toolbox-reclaim-gate-" + strconv.FormatInt(time.Now().UnixNano(), 36),
 	})
 	if err != nil {
@@ -57,10 +60,13 @@ func TestDaemonRefusesToRemoveAStoppedContainersImage(t *testing.T) {
 		_, _ = cli.ImageRemove(context.Background(), subject, client.ImageRemoveOptions{Force: true})
 	})
 
-	// Created and never started is the sharpest form of "merely stopped": no
-	// process ever ran, and the daemon must still treat the reference as real.
-	// It is also the state a toolbox container of another workspace sits in
-	// while its developer is away, which is the case the ADR is about.
+	// Run to completion first, so the container is genuinely `exited` rather
+	// than `created`. The distinction is the whole point: `created` would only
+	// show that an unstarted record counts, while the consequence the ADR is
+	// written about — "A stopped container pins its image indefinitely" — is
+	// about a container whose developer ran a shell in it and walked away.
+	runToExit(ctx, t, cli, holder)
+
 	if _, err := cli.ImageRemove(ctx, subject, client.ImageRemoveOptions{}); err == nil {
 		t.Fatal("the daemon removed an image a stopped container references — Image Reclamation's only in-use check does not hold")
 	}
@@ -72,6 +78,38 @@ func TestDaemonRefusesToRemoveAStoppedContainersImage(t *testing.T) {
 
 	if _, err := cli.ImageRemove(ctx, subject, client.ImageRemoveOptions{}); err != nil {
 		t.Fatalf("the refusal above was not the container after all: unforced ImageRemove still fails with no holder: %v", err)
+	}
+}
+
+// runToExit starts the container and waits for it to stop, then asserts the
+// daemon agrees it is in `exited` — the state under test, established rather
+// than assumed.
+func runToExit(ctx context.Context, t *testing.T, cli client.APIClient, id string) {
+	t.Helper()
+	// Start first, then wait — the reverse of the usual "subscribe before the
+	// event" rule, and for a reason: `created` already satisfies
+	// WaitConditionNotRunning, so a wait registered beforehand is answered
+	// instantly and proves nothing. Registering it after the start is safe
+	// here because the daemon answers a wait on an already-exited container
+	// from its record, so a process that has finished by now is not missed.
+	if _, err := cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+		t.Fatalf("ContainerStart: %v", err)
+	}
+	wait := cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case err := <-wait.Error:
+		t.Fatalf("ContainerWait: %v", err)
+	case <-wait.Result:
+	case <-ctx.Done():
+		t.Fatalf("the container never stopped: %v", ctx.Err())
+	}
+
+	res, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatalf("ContainerInspect: %v", err)
+	}
+	if state := res.Container.State; state == nil || state.Status != "exited" {
+		t.Fatalf("container status = %+v, want exited — the gate would pin the wrong state", state)
 	}
 }
 

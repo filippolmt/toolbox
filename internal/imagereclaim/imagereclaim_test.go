@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
-
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/ui"
 )
 
 const (
@@ -32,6 +34,9 @@ type mockClient struct {
 	items    []image.Summary
 	listErr  error
 	removeBy map[string]error
+	// onRemove runs inside ImageRemove, before it answers — the seam for a
+	// session that ends while an unlink is in flight.
+	onRemove func(id string)
 
 	listCalls int
 	removed   []string
@@ -53,6 +58,9 @@ func (m *mockClient) ImageRemove(_ context.Context, id string, opts client.Image
 	defer m.mu.Unlock()
 	m.removed = append(m.removed, id)
 	m.opts = append(m.opts, opts)
+	if m.onRemove != nil {
+		m.onRemove(id)
+	}
 	if err := m.removeBy[id]; err != nil {
 		return client.ImageRemoveResult{}, err
 	}
@@ -82,7 +90,7 @@ func TestSweepRemovesASupersededImage(t *testing.T) {
 		summary("sha256:aaa", nil, staleDigest),
 	}}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 1 || got[0] != "sha256:aaa" {
 		t.Fatalf("removed %v, want [sha256:aaa]", got)
@@ -102,7 +110,7 @@ func TestSweepLeavesEverythingElseAlone(t *testing.T) {
 		foreign,
 	}}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 0 {
 		t.Fatalf("removed %v, want nothing", got)
@@ -117,7 +125,7 @@ func TestSweepLeavesEverythingElseAlone(t *testing.T) {
 func TestSweepNeverForcesAndNeverPrunesChildren(t *testing.T) {
 	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	cli.mu.Lock()
 	defer cli.mu.Unlock()
@@ -163,7 +171,7 @@ func TestSweepStaysSilentWhenTheDaemonRefuses(t *testing.T) {
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete (must be forced)")},
 	}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if lines := said(); len(lines) != 0 {
 		t.Fatalf("summary said %q, want silence", lines)
@@ -183,7 +191,7 @@ func TestSweepKeepsGoingPastARefusal(t *testing.T) {
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete")},
 	}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 2 {
 		t.Fatalf("attempted %v, want both candidates", got)
@@ -203,7 +211,7 @@ func TestSweepSummarisesOnlyWhatItRemoved(t *testing.T) {
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete")},
 	}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	lines := said()
 	if len(lines) != 1 {
@@ -227,7 +235,7 @@ func TestStartSweepsBesideTheSession(t *testing.T) {
 	// scoped to the process would outlive the test — reading the announce seam
 	// that Cleanup is restoring underneath it, and printing through a later
 	// test's capture.
-	Start(t.Context(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	Start(t.Context(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	// Waiting on the summary rather than on the removal is what makes the
 	// goroutine finished rather than merely started: the announce is its last
@@ -250,7 +258,7 @@ func TestSweepStaysSilentWhenTheStoreCannotBeListed(t *testing.T) {
 	said := captureAnnounce(t)
 	cli := &mockClient{listErr: errors.New("dial unix /var/run/docker.sock: connect: permission denied")}
 
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if lines := said(); len(lines) != 0 {
 		t.Fatalf("summary said %q, want silence", lines)
@@ -260,23 +268,13 @@ func TestSweepStaysSilentWhenTheStoreCannotBeListed(t *testing.T) {
 	}
 }
 
-// The summary lands on a tty the attached shell has already put in raw mode
-// (term.MakeRaw clears ONLCR), where a bare LF drops a line without returning
-// the carriage and staircases everything printed after it. Unlinking a
-// multi-gigabyte image takes seconds, so this is the normal case rather than a
-// race: by the time the sweep has something to say, the shell is attached.
-func TestSweepSummaryIsSafeOnARawModeTty(t *testing.T) {
-	said := captureAnnounce(t)
-	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
-
-	sweep(context.Background(), cli, Input{Repo: testRepo, KeepDigest: keptDigest})
-
-	lines := said()
-	if len(lines) != 1 {
-		t.Fatalf("summary said %q, want one line", lines)
-	}
-	if !strings.HasSuffix(lines[0], "\r") {
-		t.Errorf("summary %q is not carriage-return terminated — it will staircase the attached shell", lines[0])
+// The summary is emitted through ui.InfoAsyncf and not ui.Infof, because by
+// the time a removal finishes the attached shell has put the tty in raw mode.
+// That terminator is ui's invariant, pinned by TestInfoAsyncfReturnsTheCarriage;
+// what this package owes is only that it reaches for the background writer.
+func TestSweepAnnouncesThroughTheBackgroundWriter(t *testing.T) {
+	if reflect.ValueOf(announce).Pointer() != reflect.ValueOf(ui.InfoAsyncf).Pointer() {
+		t.Error("announce is not ui.InfoAsyncf — a summary printed with Infof staircases the attached shell")
 	}
 }
 
@@ -292,9 +290,59 @@ func TestSweepStopsAskingOnceCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sweep(ctx, cli, Input{Repo: testRepo, KeepDigest: keptDigest})
+	sweep(ctx, cli, Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 0 {
 		t.Fatalf("attempted %v on a cancelled context, want nothing", got)
 	}
+}
+
+// Cancellation stops the work, not the accounting: a session that exits
+// mid-sweep has already freed whatever it freed, and dropping the summary
+// would leave the developer with gigabytes gone and no line saying so.
+func TestSweepStillReportsWhatACancelledRunRemoved(t *testing.T) {
+	said := captureAnnounce(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cli := &mockClient{
+		items: []image.Summary{
+			summary("sha256:first", nil, staleDigest),
+			summary("sha256:second", nil, otherDigest),
+		},
+		// The session exits while the first unlink is in flight.
+		onRemove: func(string) { cancel() },
+	}
+
+	sweep(ctx, cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+
+	if got := cli.removals(); len(got) != 1 {
+		t.Fatalf("attempted %v, want to stop after the cancellation", got)
+	}
+	lines := said()
+	if len(lines) != 1 {
+		t.Fatalf("summary said %q, want the one image it did remove reported", lines)
+	}
+}
+
+// An empty ref is not a wildcard: build.RepoDigest compares the bare registry
+// path, and the empty path matches a malformed `@sha256:…` RepoDigests entry —
+// which would nominate an image from a project that is not this one. The
+// sibling prefetch refuses its own empty input for the same reason.
+func TestStartRefusesAnEmptyRef(t *testing.T) {
+	captureAnnounce(t)
+	// The nil-embedded APIClient is the assertion: reaching the daemon panics.
+	Start(t.Context(), &mockClient{}, Input{Ref: "", KeepDigest: keptDigest})
+
+	if got := sweepRefused(t, Input{KeepDigest: keptDigest}); !got {
+		t.Error("an empty Ref reached the daemon")
+	}
+}
+
+// sweepRefused reports whether sweep abstained before touching the client.
+func sweepRefused(t *testing.T, in Input) bool {
+	t.Helper()
+	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
+	sweep(context.Background(), cli, in)
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
+	return cli.listCalls == 0
 }

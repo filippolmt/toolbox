@@ -7,7 +7,10 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
+	"github.com/filippolmt/toolbox/internal/localimage"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // reclaimCall is what one Shell hands Image Reclamation, plus the two facts
@@ -32,34 +35,50 @@ func stubReclaim(t *testing.T, mock *mockClient) *[]reclaimCall {
 	return &got
 }
 
+// reclaimFixture is the create-path session every test here drives: a
+// throwaway HOME, the exec seam stubbed, a not-found -> create mock whose local
+// store reports sessionDigest, and the reclaim captured instead of run. Folded
+// into one helper because the four tests differ only in what they assert about
+// the single captured call.
+func reclaimFixture(t *testing.T, sessionDigest string) (*mockClient, *sessionplan.SessionPlan, *[]reclaimCall) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	_, restore := stubExecShell()
+	t.Cleanup(restore)
+
+	mock := createPathMock(sessionDigest)
+	return mock, testPlan(t, testWorkspace(t), nil), stubReclaim(t, mock)
+}
+
+// oneReclaim runs the session and returns the single call it started.
+func oneReclaim(t *testing.T, mock *mockClient, plan *sessionplan.SessionPlan, got *[]reclaimCall) reclaimCall {
+	t.Helper()
+	if _, err := Shell(t.Context(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if len(*got) != 1 {
+		t.Fatalf("reclaim started %d times, want 1", len(*got))
+	}
+	return (*got)[0]
+}
+
 // The ordering is the design and not an optimisation: only once this
 // workspace's container exists and references the new image is every surviving
 // reference to the old one somebody else's real reference. Run any earlier and
 // the removal is guaranteed to be refused, because the session doing the
 // reclaiming is itself the last holder.
 func TestShellReclaimsOnlyOnceTheContainerReferencesTheImage(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	_, restore := stubExecShell()
-	defer restore()
-
 	const pulled = "sha256:fresh"
-	mock := createPathMock(pulled)
-	got := stubReclaim(t, mock)
+	mock, plan, got := reclaimFixture(t, pulled)
+	base := plan.Image.Ref
 
-	plan := testPlan(t, testWorkspace(t), nil)
-	if _, err := Shell(context.Background(), mock, plan); err != nil {
-		t.Fatalf("Shell() error: %v", err)
-	}
+	call := oneReclaim(t, mock, plan, got)
 
-	if len(*got) != 1 {
-		t.Fatalf("reclaim started %d times, want 1", len(*got))
-	}
-	call := (*got)[0]
 	if !slices.Contains(call.before, "ContainerCreate") {
 		t.Errorf("reclaim started before ContainerCreate (calls so far: %v)", call.before)
 	}
-	if call.in.Repo != plan.Image.Ref {
-		t.Errorf("Repo = %q, want the resolved base ref %q", call.in.Repo, plan.Image.Ref)
+	if call.in.Ref != base {
+		t.Errorf("Ref = %q, want the resolved base ref %q", call.in.Ref, base)
 	}
 	if call.in.KeepDigest != pulled {
 		t.Errorf("KeepDigest = %q, want the digest this session runs %q", call.in.KeepDigest, pulled)
@@ -69,22 +88,12 @@ func TestShellReclaimsOnlyOnceTheContainerReferencesTheImage(t *testing.T) {
 // Cancelled with the session, which is safe rather than merely tolerated: a
 // candidate the sweep did not reach is still a candidate at the next shell.
 func TestShellReclaimDiesWithTheSession(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	_, restore := stubExecShell()
-	defer restore()
+	mock, plan, got := reclaimFixture(t, "sha256:fresh")
 
-	mock := createPathMock("sha256:fresh")
-	got := stubReclaim(t, mock)
+	call := oneReclaim(t, mock, plan, got)
 
-	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
-		t.Fatalf("Shell() error: %v", err)
-	}
-
-	if len(*got) != 1 {
-		t.Fatalf("reclaim started %d times, want 1", len(*got))
-	}
 	select {
-	case <-(*got)[0].ctx.Done():
+	case <-call.ctx.Done():
 	default:
 		t.Error("the reclaim context outlived the session")
 	}
@@ -93,16 +102,10 @@ func TestShellReclaimDiesWithTheSession(t *testing.T) {
 // `image_reclaim: false` is the developer disabling the act in so many words,
 // and nothing else may.
 func TestShellSkipsTheReclaimWhenTheDeveloperOptedOut(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	_, restore := stubExecShell()
-	defer restore()
-
-	mock := createPathMock("sha256:fresh")
-	got := stubReclaim(t, mock)
-
-	plan := testPlan(t, testWorkspace(t), nil)
+	mock, plan, got := reclaimFixture(t, "sha256:fresh")
 	plan.ReclaimImages = false
-	if _, err := Shell(context.Background(), mock, plan); err != nil {
+
+	if _, err := Shell(t.Context(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -115,24 +118,34 @@ func TestShellSkipsTheReclaimWhenTheDeveloperOptedOut(t *testing.T) {
 // than pulled, so it carries no repo digest for this repo and the sweep would
 // nominate nothing at all — while the base underneath it is what accumulates
 // a generation per merge.
-func TestShellReclaimTracksTheBaseRefNotTheOverlay(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	_, restore := stubExecShell()
-	defer restore()
+//
+// Driven at beginReclaim rather than through Shell, because the divergence
+// only exists once an overlay was actually built: on every ordinary session
+// localimage.Ensure is a passthrough and plan.Image *is* the base, so a
+// Shell-level assertion would compare the base against itself and could not
+// fail. Here the two differ, which is what makes reading the wrong one visible.
+func TestReclaimTracksTheBaseRefNotTheOverlay(t *testing.T) {
+	var got []reclaimCall
+	orig := reclaimImages
+	reclaimImages = func(c context.Context, _ client.APIClient, in imagereclaim.Input) {
+		got = append(got, reclaimCall{in: in, ctx: c})
+	}
+	t.Cleanup(func() { reclaimImages = orig })
 
-	mock := createPathMock("sha256:fresh")
-	got := stubReclaim(t, mock)
-
-	plan := testPlan(t, testWorkspace(t), nil)
-	base := plan.Image.Ref
-	if _, err := Shell(context.Background(), mock, plan); err != nil {
-		t.Fatalf("Shell() error: %v", err)
+	base := sessionplan.Image{Ref: "ghcr.io/filippolmt/toolbox:latest"}
+	// What Shell holds after localimage.Ensure built an overlay.
+	plan := &sessionplan.SessionPlan{
+		Image:         sessionplan.Image{Ref: localimage.LocalRef, PullPolicy: config.PullNever},
+		ReclaimImages: true,
 	}
 
-	if len(*got) != 1 {
-		t.Fatalf("reclaim started %d times, want 1", len(*got))
+	stop := beginReclaim(t.Context(), nil, plan, base, "sha256:fresh")
+	defer stop()
+
+	if len(got) != 1 {
+		t.Fatalf("reclaim started %d times, want 1", len(got))
 	}
-	if repo := (*got)[0].in.Repo; repo != base {
-		t.Errorf("Repo = %q, want the base ref %q (plan.Image is now %q)", repo, base, plan.Image.Ref)
+	if ref := got[0].in.Ref; ref != base.Ref {
+		t.Errorf("Ref = %q, want the base ref %q, not the overlay %q", ref, base.Ref, plan.Image.Ref)
 	}
 }

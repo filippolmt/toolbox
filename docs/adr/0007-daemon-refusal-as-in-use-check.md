@@ -64,6 +64,12 @@ The argument above rests on a claim about Docker's behaviour, not about our
 code: that the daemon refuses to remove an image referenced by a container
 that is merely stopped. A fake client cannot testify to it — it would only
 confirm that the fake does what we told it. The claim is therefore pinned by
-a real-daemon gate (`-tags dockergate`, CI-only like the other gates) that
-creates a container, stops it, and asserts that an unforced `ImageRemove`
-fails. Without that test this document asserts something nobody has checked.
+a real-daemon gate (`-tags dockergate`, run in CI alongside the other gates)
+that creates a container, runs it to exit, and asserts that an unforced
+`ImageRemove` fails while that stopped container still references the image —
+then succeeds once it is gone, which is what attributes the refusal to the
+container rather than to anything else about the image. Unlike its two
+neighbours it needs no bind mounts, so it is also runnable on a developer's
+machine with the socket and `IMAGE_TAG` in hand; the container's own
+`created` state is deliberately not what is asserted, since `created` and
+`exited` are distinct to the daemon and the consequence below is the latter. Without that test this document asserts something nobody has checked.

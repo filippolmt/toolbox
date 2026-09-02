@@ -487,7 +487,7 @@ is already anchored to the new one. What it names is a contract, not a
 mechanism: **the daemon is the arbiter of use** — the sweep asks, and a
 refusal is an answer rather than a failure.
 
-Concretely: `imagereclaim.Start(ctx, cli, Input{Repo, KeepDigest})`,
+Concretely: `imagereclaim.Start(ctx, cli, Input{Ref, KeepDigest})`,
 launched from `container.Shell` behind the `reclaimImages` var and
 cancelled with the session — after `dispatchOp`, never before. The
 ordering is the design and not an optimisation: only once this

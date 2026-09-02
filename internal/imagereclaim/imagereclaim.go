@@ -20,16 +20,22 @@ import (
 
 // announce writes the sweep's one summary line. A package-level var so a test
 // can read what was said: the real writer is the attached tty, which is also
-// why there is only ever one line and why a refusal produces none.
-var announce = ui.Infof
+// why there is only ever one line and why a refusal produces none. The async
+// writer, not Infof — ui owns why (the shell holds the tty in raw mode by the
+// time a removal finishes).
+var announce = ui.InfoAsyncf
 
 // Input is everything one sweep needs, resolved by the caller at the
 // container edge.
 type Input struct {
-	// Repo is the toolbox image reference the config resolves to. Any tag or
-	// digest suffix is ignored — only the registry path is compared, which is
-	// what keeps the sweep inside its own perimeter.
-	Repo string
+	// Ref is the resolved base image reference (config `image` override or
+	// `registry_mirror` host swap already applied) — the same value
+	// imageprefetch.Input.Ref carries, spelled the same way on purpose, since
+	// both are populated from the one base ref at the one call site. Only its
+	// registry path is compared, which is what keeps the sweep inside its own
+	// perimeter; any tag or digest suffix is ignored. Never the `:local`
+	// overlay tag: that one is built, not pulled.
+	Ref string
 	// KeepDigest is the repo digest the current session runs. Excluded by
 	// name rather than left to inference: a config pinning `image:` to a
 	// digest produces a running image with no tags at all, so the predicate
@@ -50,7 +56,13 @@ func Start(ctx context.Context, cli client.APIClient, in Input) {
 	go sweep(ctx, cli, in)
 }
 
-// sweep removes every Superseded Image the local store holds for in.Repo. A
+// abstains reports whether there is no sweep to run. An empty ref is not a
+// wildcard but worse than one: build.RepoDigest compares the bare registry
+// path, and the empty path matches a malformed `@sha256:…` entry, which would
+// nominate an image belonging to a project that is not this one.
+func (in Input) abstains() bool { return in.Ref == "" }
+
+// sweep removes every Superseded Image the local store holds for in.Ref. A
 // store the daemon will not enumerate costs nothing: the act is opportunistic,
 // and the next shell asks again.
 //
@@ -60,6 +72,9 @@ func Start(ctx context.Context, cli client.APIClient, in Input) {
 // belonging to every other project on the machine. The default listing is
 // heads-only, which is what keeps intermediate layers out of the candidate set.
 func sweep(ctx context.Context, cli client.APIClient, in Input) {
+	if in.abstains() {
+		return
+	}
 	res, err := cli.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return
@@ -71,7 +86,7 @@ func sweep(ctx context.Context, cli client.APIClient, in Input) {
 		// doomed daemon round-trip whose error is indistinguishable from the
 		// refusal that means "some container still needs this".
 		if ctx.Err() != nil {
-			return
+			break
 		}
 		// The three clauses of the predicate, in the order they cost least:
 		// no digest for this repo means this project never pulled the image
@@ -84,7 +99,7 @@ func sweep(ctx context.Context, cli client.APIClient, in Input) {
 		// abstain: a locally built image is not a candidate either (no repo
 		// digest, first clause), and this session's container already exists
 		// and references whatever it runs, so the daemon refuses it for us.
-		digest := build.RepoDigest(in.Repo, img.RepoDigests)
+		digest := build.RepoDigest(in.Ref, img.RepoDigests)
 		if digest == "" || digest == in.KeepDigest || len(img.RepoTags) > 0 {
 			continue
 		}
@@ -97,12 +112,10 @@ func sweep(ctx context.Context, cli client.APIClient, in Input) {
 		}
 		removed++
 	}
+	// Reached on the cancellation path too, deliberately: a session that exits
+	// mid-sweep has already freed whatever it freed, and the summary is the
+	// developer's only sign that gigabytes went away.
 	if removed > 0 {
-		// CR-terminated on purpose: by the time a removal finishes, the
-		// attached shell has put the tty in raw mode (term.MakeRaw clears
-		// ONLCR), where the bare LF ui writes drops a line without returning
-		// the carriage and staircases everything after it. Harmless on a
-		// cooked tty, which is the only other case.
-		announce("reclaimed %d superseded runtime image(s)\r", removed)
+		announce("reclaimed %d superseded runtime image(s)", removed)
 	}
 }
