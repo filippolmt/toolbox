@@ -71,8 +71,9 @@ func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image)
 const promptWindow = 5 * time.Second
 
 // prompt is the shape of the question: what was answered, and whether the
-// developer interrupted the command instead of answering it.
-type prompt func(question string, window time.Duration) (yes, interrupted bool)
+// developer interrupted the command instead of answering it. The elapsed
+// answer rides along because it is per-question here — see Stake.
+type prompt func(question string, window time.Duration, elapsed ui.Elapsed) (yes, interrupted bool)
 
 // askable and confirm are the prompt seams: whether there is a developer to
 // ask, and what they answered. Package-level vars for the reason Ensure is
@@ -81,6 +82,56 @@ var (
 	askable        = ui.Askable
 	confirm prompt = ui.ConfirmCountdown
 )
+
+// Stake is what a yes to the prompt spends besides the wait, which is the one
+// thing the caller knows and this tree does not. It decides how the question
+// is worded and — load-bearing — which way an unanswered window answers.
+type Stake int
+
+const (
+	// StakeDownload: no container exists yet, so a yes buys the newer image
+	// and costs only the download. An elapsed window may answer it, because
+	// what it starts is the pull that would otherwise have been unconditional.
+	StakeDownload Stake = iota
+	// StakeRecreate: a container already exists and a yes replaces it, which
+	// discards whatever was written inside it outside the bind mounts. No
+	// clock may choose that, so the window answers no.
+	StakeRecreate
+)
+
+// offer is one stake's whole side of the conversation: how the question is
+// put, what an unanswered window answers, and what a decline says out loud.
+// The three travel together because they are one editorial decision — a
+// question worded around a container that a clock could accept, or a
+// postponement that named the wrong thing, would each be a bug on their own.
+type offer struct {
+	question  string
+	elapsed   ui.Elapsed
+	postponed string
+}
+
+// The two forms of the same offer. Each question is kept short enough to share
+// one terminal line with the countdown: the prompt owns exactly one line for
+// its whole life — it redraws with a carriage return and erases with one clear
+// — so a question that wrapped would leave half of itself on screen.
+//
+// A stake this does not know is worded as the download, which is the form that
+// spends nothing but time: an unknown stake must not be handed the wording, or
+// the default, of the one that discards a container.
+func (s Stake) offer() offer {
+	if s == StakeRecreate {
+		return offer{
+			question:  "A newer runtime image is available. Recreate this container on it?",
+			elapsed:   ui.ElapsedNo,
+			postponed: "Starting the container as it is — the newer image downloads in the background.",
+		}
+	}
+	return offer{
+		question:  "A newer runtime image is available. Download it now?",
+		elapsed:   ui.ElapsedYes,
+		postponed: "Starting on the image already in the store — the newer one downloads in the background.",
+	}
+}
 
 // Outcome is what the start-up refresh established, and each field is read by
 // a different consumer.
@@ -95,6 +146,13 @@ type Outcome struct {
 	// postponement rather than a refusal, so the session arms the idle reload
 	// that will adopt the image the background prefetch is fetching anyway.
 	Declined bool
+	// Accepted records that the developer answered the question with a yes
+	// *and* that the download it asked for landed. Not the answer alone: a
+	// yes the registry could not honour has bought nothing, and the caller
+	// reads this field on the branch where acting on it destroys a container
+	// — which would then be spent for an image that never arrived. Not Synced
+	// either, which every settled case can reach with nobody asked.
+	Accepted bool
 	// Interrupted records a ctrl+c at the prompt, which is neither an answer
 	// nor a postponement: the developer stopped the command. Nothing is
 	// stamped and nothing is announced — there is no session left to postpone
@@ -123,9 +181,16 @@ type Outcome struct {
 //     re-stamped from a cached digest on every shell start.
 //   - what is left — a registry ahead of the store — is the prompt.
 //
+// The stake is the caller's answer to "and what does a yes cost here besides
+// the wait": it words the question and points the unanswered window, and it
+// never adds a case to the tree above. Every settled case stays settled under
+// either stake — in particular `always`, which has said yes to downloads and
+// nothing at all about containers, so it pulls without asking and reports no
+// acceptance for a caller to act on.
+//
 // Best-effort throughout, like Refresh: every failure path leaves the caller
 // with the local image and Ensure with the last word.
-func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string) Outcome {
+func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, stake Stake) Outcome {
 	switch image.PullPolicy {
 	case config.PullNever:
 		return Outcome{}
@@ -155,7 +220,8 @@ func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan
 		return Outcome{Synced: store.Probed}
 	}
 
-	yes, interrupted := confirm("A newer runtime image is available. Download it now?", promptWindow)
+	ask := stake.offer()
+	yes, interrupted := confirm(ask.question, promptWindow, ask.elapsed)
 	switch {
 	case interrupted:
 		// A ctrl+c is not an answer to this question, it is the end of the
@@ -169,10 +235,14 @@ func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan
 		// same ref at the same moment is what that would be. Said out loud,
 		// because the question has just erased itself and a postponement the
 		// developer cannot see reads like one that was ignored.
-		ui.Info("Starting on the image already in the store — the newer one downloads in the background.")
+		ui.Info(ask.postponed)
 		return Outcome{Declined: true}
 	}
-	return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref)}
+	// One value, read twice: the pull that landed is what makes the answer
+	// honourable, and a pull that failed leaves the developer where they
+	// already were rather than spending a container on nothing.
+	synced := imagepull.ForcePull(ctx, cli, image.Ref)
+	return Outcome{Synced: synced, Accepted: synced}
 }
 
 // Ensure guarantees the image referenced by `image.Ref` exists in the

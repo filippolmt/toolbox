@@ -73,7 +73,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 	// casualties that never died.
 	casualties := reloadCasualties(ctx, cli, from.Container, plan.Cmd)
 
-	if err := reloadTeardown(ctx, cli, from.Container); err != nil {
+	if err := removeAndWait(ctx, cli, from.Container, "reload"); err != nil {
 		return err
 	}
 
@@ -88,8 +88,10 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 	return nil
 }
 
-// reloadTeardown destroys the container the reload is replacing and does not
-// return until the name is free again.
+// removeAndWait destroys the container a create is about to replace and does
+// not return until the name is free again. act names the caller in the error,
+// which is the only thing that differs between them: a session reload, and a
+// start-up refresh whose yes was a yes to rebuilding a stopped container.
 //
 // Deliberately not teardown.OnShellExit, and the reason is structural rather
 // than a preference: that policy declines while a sibling shell is attached,
@@ -102,7 +104,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 // returns as soon as the SIGKILL lands, which races the new container's name.
 // The wait is subscribed before the removal because the daemon's own worker
 // can finish in between, and a wait started after that never fires.
-func reloadTeardown(ctx context.Context, cli client.APIClient, name string) error {
+func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) error {
 	waitRes := cli.ContainerWait(ctx, name, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
 
 	_, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
@@ -114,7 +116,7 @@ func reloadTeardown(ctx context.Context, cli client.APIClient, name string) erro
 	case err != nil && !cerrdefs.IsConflict(err):
 		// Conflict is the daemon's "removal already in progress": redundant,
 		// not an error, and the wait below is exactly how we find out it ended.
-		return fmt.Errorf("reload: failed to remove container %s: %w", name, err)
+		return fmt.Errorf("%s: failed to remove container %s: %w", act, name, err)
 	}
 
 	select {
@@ -122,7 +124,7 @@ func reloadTeardown(ctx context.Context, cli client.APIClient, name string) erro
 		return nil
 	case werr := <-waitRes.Error:
 		if werr != nil && !cerrdefs.IsNotFound(werr) {
-			return fmt.Errorf("reload: waiting for container %s to be removed: %w", name, werr)
+			return fmt.Errorf("%s: waiting for container %s to be removed: %w", act, name, werr)
 		}
 		return nil
 	case <-ctx.Done():

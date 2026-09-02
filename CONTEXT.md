@@ -292,13 +292,17 @@ pattern.
 The two-phase decision tree that guarantees the image referenced by a
 `SessionPlan.Image` is ready before `ContainerCreate`.
 
-Concretely: `imageplan.RefreshAtStart(ctx, cli, image, stateDir)` runs
-at the top of `container.Shell` and best-effort syncs the image against
-its registry, steered by the Image's pull policy — `never` skips the
-round-trip, `always` forces `imagepull.ForcePull`, `auto` (default)
+Concretely: `imageplan.RefreshAtStart(ctx, cli, image, stateDir, stake)`
+runs at the top of `container.Shell` and best-effort syncs the image
+against its registry, steered by the Image's pull policy — `never` skips
+the round-trip, `always` forces `imagepull.ForcePull`, `auto` (default)
 probes and then *asks*, see
 [Start-up Refresh Prompt](#start-up-refresh-prompt); errors are
-swallowed. `imageplan.Refresh` is the same act with nothing to ask,
+swallowed. The `imageplan.Stake` is the caller's answer to *what does a
+yes cost here besides the wait* — `StakeDownload` on a create,
+`StakeRecreate` on a stopped container the yes would replace — and it
+adds no case to the tree: it words the question and points the
+unanswered window. `imageplan.Refresh` is the same act with nothing to ask,
 kept for the [Session Reload](#session-reload), which runs it before it
 destroys anything and whose `auto` branch stays on the TTL-cached
 `imagepull.RefreshIfStale` — a reload adopts what the store holds, and
@@ -339,19 +343,44 @@ treating a "no" as *later*.
 Concretely, six settled cases and one question. An image missing from the
 store is pulled without asking (there is no session to start otherwise),
 `pull: always` pulls without asking (a policy that has already said yes on
-every shell cannot coherently be asked again), `pull: never` neither probes
-nor asks (not probing is that policy's whole promise, and a probe is a
-round-trip), no tty neither asks nor probes (the default inverts to
+every shell cannot coherently be asked again, and one about downloads has
+said nothing about containers, so it recreates nothing either), `pull: never`
+neither probes nor asks (not probing is that policy's whole promise, and a
+probe is a round-trip), no tty neither asks nor probes (the default inverts to
 start-now-fetch-behind: the interactive default is justified by the work that
-follows the wait, and a script has no work that follows), a container that
-already exists is never asked about (`op.Action != ActionCreate` — Docker
-cannot swap a running container's image, so the question could not be
-honoured), and a [Session Reload](#session-reload) skips the act whole
-(it has already refreshed and proved the image, and the same path is what an
-unattended trigger walks). What is left — `auto`, create, image present,
-registry ahead, a tty — is the prompt: `ui.ConfirmCountdown`, where `y`, a
-bare Return and the window elapsing all pull synchronously and `n` starts the
-session on the image already in the store. The question owns the terminal in
+follows the wait, and a script has no work that follows), a *running*
+container is never asked about (`op.Action == ActionConnect` — Docker cannot
+swap the image under it, and replacing it would end whatever else is attached;
+the [Idle Reload](#idle-reload) is the accepted answer there), and a
+[Session Reload](#session-reload) skips the act whole (it has already
+refreshed and proved the image, and the same path is what an unattended
+trigger walks). What is left — `auto`, image present, registry ahead, a tty,
+and a container that is either absent or stopped — is the prompt:
+`ui.ConfirmCountdown`, where `y` pulls synchronously and `n` starts the
+session on what is already there.
+
+What a yes costs beyond the wait is the [Prompt Stake](#prompt-stake), and it
+is what selects the [Elapsed Answer](#elapsed-answer) — the two entries carry
+that rule and why it inverts here. Honouring a yes is `Outcome.Accepted`, which
+is the answer *and* the pull that landed, and is deliberately distinct from
+`Synced` in both directions: a pull happens on cases nobody was asked about,
+and a yes the registry could not honour would spend a container on an image
+that never arrived. `container.replaceForRefresh` then destroys the stopped container and
+the branch becomes the `ActionCreate` that already pulls, creates and starts —
+not the reload, which exists to replace a *live* session and carries a
+handover payload there is nothing here to fill. Two rules guard the teardown.
+**Everything that can fail runs first**: the pull (in `Accepted`), the
+`:local` overlay build, and the create's own port pre-flight, since no removal
+can undo a host port another container holds — each of the three fails the
+shell with the container intact. And **the container is read a second time**,
+because the answer describes the moment it was given and the question held the
+terminal for seconds: `runplan.Compute` on the fresh inspect decides, so a
+sibling shell that started it meanwhile keeps it and this session joins it
+(the collateral connect is never asked about), one already removed leaves the
+name free, and an unreadable answer destroys nothing. The removal itself is
+`removeAndWait`, shared with the reload, and it is followed by
+`imageprefetch.ClearResult` for the reload's own reason — the banner's cache
+describes the container that was just replaced. The question owns the terminal in
 raw mode for as long as it is asked, so a single `y` or `n` answers it on the
 keystroke — a question with a countdown on it cannot also wait for a Return,
 or the developer watches a clock they have already stopped. What is typed
@@ -395,9 +424,68 @@ opinion about. Naming the *prompt* separates the question from the act it
 guards: the tree above is a set of answers that are already settled, and only
 the case where none of them applies is worth a developer's attention. The
 alternative readings and why they lost are in
-`docs/adr/0005-prompted-image-refresh-on-shell-start.md`. Owned by
-`internal/imageplan` (the tree), `internal/ui` (the countdown) and
+`docs/adr/0005-prompted-image-refresh-on-shell-start.md`, and which branches
+reach the question at all in
+`docs/adr/0008-refresh-prompt-on-a-stopped-container.md` — which supersedes
+0005 on that one clause, the create-only rule having rested on a
+justification that was only ever true of a running container. Owned by
+`internal/imageplan` (the tree), `internal/ui` (the countdown),
+`internal/container` (which branch, and honouring a yes) and
 `internal/imageprefetch` (the shared answer).
+
+### Prompt Stake
+
+What a yes to the [Start-up Refresh Prompt](#start-up-refresh-prompt) spends
+besides the developer's time — the one thing the caller knows and the
+[Image Plan](#image-plan)'s tree does not.
+
+Concretely: `imageplan.Stake`, either `StakeDownload` (nothing exists yet, so
+a yes buys the image and costs only the wait) or `StakeRecreate` (a container
+already exists and a yes replaces it, discarding whatever was written inside
+it outside the bind mounts). `Stake.offer()` returns the question, the
+[Elapsed Answer](#elapsed-answer) and the postponement line as one value: the
+three are one editorial decision, and a question worded around a container
+that a clock could accept would be a bug on its own. A stake the method does
+not know is worded as the download — the form that spends nothing but time.
+`container.offerRefresh` derives it and returns it alongside the outcome, and
+that is the **only** place the branch is classified: honouring a yes reads the
+stake rather than re-deriving from the [Run Plan](#run-plan)'s `Op` what a yes
+meant. Owned by `internal/imageplan`; the branch that supplies it by
+`internal/container`.
+
+Why the term exists: while the prompt fired on a fresh create alone, what a
+yes cost was a constant — a download — and needed no name. Extending the
+question to a stopped container gave the same tree a second caller whose yes
+also destroys something, and the choice was between a second case inside the
+tree (which is about the registry and the store, and has no business knowing
+which container branch it was reached from) or an input. Naming the stake is
+what keeps the branch out of the tree while still letting the wording, the
+countdown's default and the postponement line differ by branch. The decision
+is `docs/adr/0008-refresh-prompt-on-a-stopped-container.md`.
+
+### Elapsed Answer
+
+The answer a countdown gives for a developer who is not looking, and the
+default it shows on screen while it runs.
+
+Concretely: `ui.Elapsed`, `ElapsedYes` or `ElapsedNo`, passed to
+`ui.ConfirmCountdown` by the caller and selected by the
+[Prompt Stake](#prompt-stake). It decides four things at once, which is why it
+is one value and not a flag on the render: the window running out, a stdin
+that cannot be read, a bare Return, and an answer nobody can parse — every
+form of *nothing was said*. It also renders, as `[Y/n]` against `[y/N]`, so
+the default is legible to the developer it will answer for. The rule it
+encodes: **an unattended window may answer only what the caller would have
+done anyway.** A download the shell would once have started unconditionally
+qualifies; discarding a container never does. Owned by `internal/ui`.
+
+Why the term exists: the countdown answered yes on every uncertainty, and the
+justification lived in a comment about its one caller — the caller only asks
+when it is about to do something it would otherwise have done unconditionally.
+A second caller, whose yes also destroys a container, made that comment true
+of one site and false of the other. Naming the default turns it from a
+property of the prompt into a decision each caller has to make and be read
+against, and puts the rule where the type is rather than beside one call.
 
 ### Image Prefetch
 
@@ -830,7 +918,10 @@ One caller deliberately does **not** use this policy: a
 waits for the removal, because skip-if-sibling would spare a container
 still holding the deterministic name the reload's own create is about
 to ask for. Considerate refusal there turns into a name collision, so
-the reload owns `container.reloadTeardown` instead.
+the reload owns `container.removeAndWait` instead — shared since with
+the [Start-up Refresh Prompt](#start-up-refresh-prompt)'s recreate,
+which destroys a stopped container for the same reason and names
+itself in the error through the same `act` argument.
 
 Why the term exists: before this concept was named, the policy was a
 4-deep nested defer block inside `Shell`, with the timing constants as

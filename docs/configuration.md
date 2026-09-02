@@ -172,7 +172,15 @@ Five cases never reach the question, because the answer is already settled:
 | `pull: always` | Pulls. A policy that already said yes on every shell cannot coherently be asked again. |
 | `pull: never` | Neither probes nor asks — not talking to the registry is that policy's whole promise. |
 | No tty (a script, a pipeline, CI) | Neither asks nor probes. The default inverts: start now, fetch behind. The interactive default is justified by the work that follows the wait; a script has no work that follows, so the same wait is pure latency times every invocation. |
-| The container already exists (you are attaching a second terminal, or restarting a stopped container) | Nothing is asked. Docker cannot swap a running container's image, so a download offered here is one this session could not adopt; the prefetch fetches it behind you and the banner then offers `toolbox-reload`. |
+| A container for this workspace is already **running** (you are attaching a second terminal) | Nothing is asked. Docker cannot swap the image under a running container, and replacing it would end whatever else is attached to it — panes, agents, another shell. The prefetch fetches it behind you and the banner then offers `toolbox-reload`. |
+
+A container that exists but is **stopped** — after a daemon or host restart, or a hand-typed `docker stop` — *is* asked about, and the question is a different one, because there a yes can be honoured: nothing runs inside it and nobody's session is attached, so the download is followed by a rebuild.
+
+```
+  A newer runtime image is available. Recreate this container on it? [y/N] (Ns)
+```
+
+Note the default. **Letting the countdown run out declines here**: a window nobody answered may start a download, it may not discard a container. A `y` downloads the image, destroys the stopped container and rebuilds it on the new one — anything written inside it outside the `~/.toolbox/` mounts goes with it, which is the same trade [`toolbox-reload`](session-reload.md) makes. `n` starts the container as it is. A download that fails (an expired registry token, a dropped connection) rebuilds nothing: the container is left exactly where it was, since a yes the registry could not honour has bought nothing to trade it for. `pull: always` recreates nothing either, for the same reason it is never asked: a policy about downloads has said nothing about containers. Rationale and the options weighed: [ADR 0008](adr/0008-refresh-prompt-on-a-stopped-container.md).
 
 Knowing whether to ask is itself a registry round-trip, so the question is answered from the [prefetch's shared probe cache](session-reload.md#cache-and-ttl) whenever its stamp is still warm — a sibling session that probed a moment ago has already established the fact. Only a cold stamp probes, and the probe is a `DistributionInspect`: metadata, not a download. Rationale and the options weighed: [ADR 0005](adr/0005-prompted-image-refresh-on-shell-start.md).
 

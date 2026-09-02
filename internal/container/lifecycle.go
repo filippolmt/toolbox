@@ -66,16 +66,25 @@ var reclaimImages = imagereclaim.Start
 var refreshAtStart = imageplan.RefreshAtStart
 
 // offerRefresh runs the shell-start image refresh — prompt and all — on the
-// one path that can honour its answer, and records a "no" as the
-// postponement it is.
+// paths that can honour its answer, and records a "no" as the postponement it
+// is.
 //
 // Two paths skip the act whole. A reload has already refreshed and proved the
 // image in replaceForReload, and its premise is that the move onto the newer
 // image was asked for — so there is nothing left to ask, and the same path is
-// what an unattended trigger walks. A container that already exists keeps the
-// image it was created from, so on connect and start the question could not be
-// honoured: the wait would buy this session nothing and the prefetch fetches
-// behind it either way.
+// what an unattended trigger walks. A *running* container is the case where
+// the answer could not be honoured: Docker cannot swap the image under it, and
+// replacing it would end whatever else is attached to it — panes, agents, a
+// sibling shell — none of which volunteered. The Idle Reload is the accepted
+// answer there (ADR 0006), and the prefetch fetches behind either way.
+//
+// What is left is create and start, and the two differ in what a yes costs:
+// on create it buys the image, on start it also spends the stopped container
+// the developer was about to reuse. That is the Stake handed to the tree,
+// which words the question and — the part no clock may decide — points the
+// unanswered window. It is returned alongside the outcome, and it is the only
+// place this branch is classified: honouring a yes reads the stake rather than
+// re-deriving what a yes meant from the op.
 //
 // The stamp a decline leaves is the moment, and it is what arms the Idle
 // Reload for this session alone — even where that is otherwise off, because
@@ -84,17 +93,79 @@ var refreshAtStart = imageplan.RefreshAtStart
 // an unwritable state mount costs the postponement, not the shell, and a
 // stamp older than the container it names is inert by construction, so
 // nothing has to clear it.
-func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) imageplan.Outcome {
-	if plan.ReloadFrom != nil || op.Action != runplan.ActionCreate {
-		return imageplan.Outcome{}
+func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) (imageplan.Outcome, imageplan.Stake) {
+	stake := imageplan.StakeDownload
+	if op.Action == runplan.ActionStart {
+		stake = imageplan.StakeRecreate
 	}
-	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir)
+	if plan.ReloadFrom != nil || op.Action == runplan.ActionConnect {
+		return imageplan.Outcome{}, stake
+	}
+	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir, stake)
 	if refresh.Declined && plan.StateDir != "" {
 		if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
 			ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
 		}
 	}
-	return refresh
+	return refresh, stake
+}
+
+// replaceForRefresh honours a yes given on the start branch, by destroying the
+// stopped container the question was about so the create that follows can take
+// its name and its place. Nothing new is needed to finish the job: the caller
+// turns the branch into the create that already pulls, creates and starts.
+// Reports whether that name is now free — a "no" leaves the branch as the
+// start it was.
+//
+// Everything that can still fail runs before anything is destroyed, which is
+// the property the whole act rests on: the pull is already behind us
+// (`Outcome.Accepted` is a pull that landed), the overlay is built by the
+// caller before it gets here, and preflightCreate is the last of the three —
+// a host port another container holds can never be bound by the create that
+// follows, and learning that after the removal would cost the developer the
+// container they were asked about and leave them with the daemon's opaque
+// refusal in its place.
+//
+// Then the container is read a second time, because the question held the
+// terminal for seconds and the answer describes what was true when it was
+// asked. What the second read finds decides:
+//
+//   - still stopped: the case the developer answered about — removed.
+//   - already gone (a `toolbox stop`, a `docker rm`): the name is free, which
+//     is all the removal was for.
+//   - running again: a sibling shell started it while the question stood, and
+//     force-removing it now would end a session whose owner never volunteered
+//     — the collateral a running container is never asked about in the first
+//     place. This session attaches to it instead.
+//   - unreadable: nothing is destroyed on an answer the daemon would not give.
+func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (nameFree bool, err error) {
+	if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
+		return false, preflightErr
+	}
+
+	res, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
+	fresh, computeErr := runplan.Compute(res.Container, inspectErr)
+	switch {
+	case computeErr != nil:
+		ui.Warning("start-up refresh: cannot re-read " + plan.ContainerName + " before replacing it (" +
+			computeErr.Error() + ") — starting it as it is")
+		return false, nil
+	case fresh.Action == runplan.ActionConnect:
+		ui.Warning("start-up refresh: another shell started " + plan.ContainerName +
+			" while the question stood — keeping it, and this session joins it")
+		return false, nil
+	case fresh.Action == runplan.ActionStart:
+		ui.Info("Recreating container " + plan.ContainerName + " on the newer image...")
+		if removeErr := removeAndWait(ctx, cli, plan.ContainerName, "start-up refresh"); removeErr != nil {
+			return false, removeErr
+		}
+	}
+	// Reached by the removal above and by a container someone else had already
+	// removed: either way the container the banner's cache was published about
+	// is gone, and left in place that cache would announce an update this
+	// session has adopted. Same call, same reason, as the reload's own.
+	imageprefetch.ClearResult(plan.StateDir)
+	return true, nil
 }
 
 // formatPublishMismatch builds the warning string emitted when a reused
@@ -258,8 +329,14 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, fmt.Errorf("failed to inspect container: %w", opErr)
 	}
 
-	if preflightErr := preflightHostConfig(ctx, cli, plan, inspect, op); preflightErr != nil {
-		return nil, preflightErr
+	// The half of the host-config check that can fail, and only a create can:
+	// before any image work, so a known-fatal port conflict costs no pull.
+	// The half that only warns runs once the branch has settled — see
+	// warnReattachMismatch.
+	if op.Action == runplan.ActionCreate {
+		if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
+			return nil, preflightErr
+		}
 	}
 
 	// Best-effort registry sync of the base image, which on the one case that
@@ -269,7 +346,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// established current is threaded to the prefetch below: a synchronous
 	// probe is a probe, and the background poller must not re-ask the question
 	// this just answered.
-	refresh := offerRefresh(ctx, cli, plan, op)
+	refresh, stake := offerRefresh(ctx, cli, plan, op)
 	if refresh.Interrupted {
 		// A ctrl+c at the start-up prompt. The prompt has already re-raised
 		// the signal raw mode swallowed, but the answer is reported rather
@@ -291,6 +368,34 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, overlayErr
 	}
 	plan.Image = image
+
+	// A yes at the recreate stake was a yes to this: the stopped container
+	// goes, and the branch becomes the create that knows how to build its
+	// replacement. The stake is what is read, not the op — it is what the
+	// question was put at, and it is where that branch was already decided.
+	// Only an answer counts: Accepted is the developer's own and a pull that
+	// landed, never a policy's and never an elapsed window's, because no
+	// container may be spent by anything else.
+	//
+	// After the overlay, not before: a `:local` build that will not build is
+	// the other way this start can still fail, and failing it once the
+	// container is gone would leave the developer with neither a session nor
+	// the container they were asked about.
+	if refresh.Accepted && stake == imageplan.StakeRecreate {
+		nameFree, replaceErr := replaceForRefresh(ctx, cli, plan)
+		if replaceErr != nil {
+			return nil, replaceErr
+		}
+		if nameFree {
+			op = runplan.Op{Action: runplan.ActionCreate}
+		}
+	}
+
+	// Now that the branch has settled: what this session asked for and cannot
+	// have on the container it is joining. Silent on a create, which is
+	// getting exactly what it asked for — including a create this refresh has
+	// just turned a start into.
+	warnReattachMismatch(ctx, cli, plan, inspect, op)
 
 	// Re-stamp the container's image-digest record from the store as it is
 	// *now*: cmd resolved it before planning, which is before Refresh had the
@@ -454,36 +559,49 @@ func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.Inspect
 	return sessionplan.EnvValue(inspect.Config.Env, sessionplan.ImageDigestEnv)
 }
 
-// preflightHostConfig checks the parts of HostConfig that ContainerCreate
-// fixes for the container's lifetime — published ports and the peer-messaging
-// PID namespace — against what this session asks for. It runs before any image
-// work: neither check depends on the image, and a known-fatal port conflict
-// should not cost the user a registry pull or an overlay build first.
+// preflightCreate is the half of the host-config check that can fail: a host
+// port another container already publishes can never be bound by the create
+// that follows, and the daemon's own refusal names neither the port set nor
+// the holder. Only a create can conflict — connecting to or starting an
+// existing container publishes nothing new — so this is the create path's
+// gate, called before any image work by Shell and again by
+// replaceForRefresh, which turns a start into a create.
 //
-// Only a conflicting create is fatal. Publish ports are only ever bound by a
-// create, so connecting to a live container publishes nothing new and can only
-// be short of what was asked for; the peer namespace is the same story. Hence
-// the split — a pre-flight error on the create path, a warning everywhere else.
-func preflightHostConfig(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) error {
-	if op.Action == runplan.ActionCreate {
-		if len(plan.PortBindings) > 0 {
-			return preflightPortConflicts(ctx, cli, plan)
-		}
+// Deliberately before the start-up refresh in Shell: a known-fatal conflict
+// must not cost the user a registry pull or an overlay build first. Skipped
+// when this session publishes nothing, which is the only reason the check ever
+// reaches the daemon.
+func preflightCreate(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+	if len(plan.PortBindings) == 0 {
 		return nil
 	}
+	return preflightPortConflicts(ctx, cli, plan)
+}
 
+// warnReattachMismatch is the half that cannot fail: what this session asked
+// for and cannot have, because `ContainerCreate` fixed it for the lifetime of
+// the container being joined — published ports and the peer-messaging PID
+// namespace. Both prescribe the same targeted recreate, and at most one is
+// emitted: a container whose namespace is already wrong says nothing new by
+// also reporting the mount.
+//
+// Read after the start-up refresh has settled the branch, not before, and the
+// create guard is why: on the start branch an accepted recreate *is* the
+// `toolbox stop` and retry these warnings prescribe, applied — so warning
+// first would prescribe a fix seconds before performing it, about a container
+// that no longer exists.
+func warnReattachMismatch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) {
+	if op.Action == runplan.ActionCreate {
+		return
+	}
 	if missing := sessionplan.MissingPublishPorts(plan.PortBindings, inspect); len(missing) > 0 {
 		ui.Warning(formatPublishMismatch(plan, inspect, missing))
 	}
-	// One warning at a time: both prescribe the same targeted recreate, and a
-	// container whose namespace is already wrong says nothing new by also
-	// reporting the mount.
 	if w := peerMismatchWarning(ctx, cli, plan, inspect); w != "" {
 		ui.Warning(w)
 	} else if w := peerSocketMountWarning(plan, inspect); w != "" {
 		ui.Warning(w)
 	}
-	return nil
 }
 
 // dispatchOp executes the runplan.Op against the Docker daemon and returns

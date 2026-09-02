@@ -18,6 +18,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -414,6 +415,11 @@ func TestShellExecInRunningContainer(t *testing.T) {
 func TestShellStartsStoppedContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
+	// The start branch asks about a newer image before it dispatches; this
+	// test is about the dispatch, and an unstubbed refresh would pull out of
+	// the mock and stamp the pull cache in the developer's own home.
+	t.Setenv("HOME", t.TempDir())
+	stubRefresh(t, imageplan.Outcome{})
 
 	startCalled := false
 	mock := &mockClient{

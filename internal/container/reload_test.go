@@ -500,9 +500,9 @@ func TestReloadTeardownOutcomes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := reloadTeardown(context.Background(), tc.mock(), "toolbox-old-1234abcd")
+			err := removeAndWait(context.Background(), tc.mock(), "toolbox-old-1234abcd", "reload")
 			if (err != nil) != tc.wantErr {
-				t.Errorf("reloadTeardown() error = %v, wantErr %v", err, tc.wantErr)
+				t.Errorf("removeAndWait() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
@@ -617,12 +617,12 @@ func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	calls := stubRefresh(t, imageplan.Outcome{})
+	stakes := stubRefresh(t, imageplan.Outcome{})
 
 	if _, err := Shell(context.Background(), createAfterReloadMock(), reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
 		t.Fatalf("Shell(): %v", err)
 	}
-	if *calls != 0 {
-		t.Errorf("the reload path ran the start-up refresh %d times, want 0", *calls)
+	if len(*stakes) != 0 {
+		t.Errorf("the reload path ran the start-up refresh %d times, want 0", len(*stakes))
 	}
 }

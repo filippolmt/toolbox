@@ -61,7 +61,7 @@ func TestConfirmCountdownAnswersOnOneKeypress(t *testing.T) {
 
 			done := make(chan bool, 1)
 			go func() {
-				yes, _ := ConfirmCountdown("Download now?", 3*time.Second)
+				yes, _ := ConfirmCountdown("Download now?", 3*time.Second, ElapsedYes)
 				done <- yes
 			}()
 

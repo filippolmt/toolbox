@@ -63,23 +63,51 @@ type answer struct{ yes, interrupted bool }
 // has no answer and waiting for one is pure latency.
 func Askable() bool { return term.IsTerminal(int(promptIn.Fd())) }
 
-// ConfirmCountdown asks question and answers yes for a developer who is not
-// looking: a single "n" declines, a single "y", a bare Return and the window
-// elapsing all accept. One keypress is the whole answer — no Return behind it,
-// which is why the terminal spends the question in raw mode. Reports the
-// answer, and separately whether the developer interrupted: raw mode takes
-// ctrl+c from the terminal driver, so the prompt raises it again itself and
-// tells the caller, which has a session to abandon rather than a download to
-// postpone.
+// Elapsed is the answer a window that runs out gives, and the default the
+// question shows while it runs. It belongs to the caller because only the
+// caller knows what a yes costs there: a download nobody objected to may
+// start on its own, while an answer that also destroys something may not be
+// given by a clock.
+type Elapsed bool
+
+const (
+	// ElapsedYes: an unanswered window accepts, which a caller may nominate
+	// only when it is offering something it would otherwise have done
+	// unconditionally.
+	ElapsedYes Elapsed = true
+	// ElapsedNo: an unanswered window declines, for a yes whose cost nobody
+	// but a developer may accept.
+	ElapsedNo Elapsed = false
+)
+
+// hint renders the default as the pair of letters the question offers, the
+// capital one being what the elapsing window will choose.
+func (e Elapsed) hint() string {
+	if e == ElapsedYes {
+		return "[Y/n]"
+	}
+	return "[y/N]"
+}
+
+// ConfirmCountdown asks question and answers for a developer who is not
+// looking: a single "y" accepts, a single "n" declines, and everything else —
+// a bare Return, an answer nobody can parse, the window elapsing — takes the
+// caller's nominated default. One keypress is the whole answer — no Return
+// behind it, which is why the terminal spends the question in raw mode.
+// Reports the answer, and separately whether the developer interrupted: raw
+// mode takes ctrl+c from the terminal driver, so the prompt raises it again
+// itself and tells the caller, which has a session to abandon rather than a
+// download to postpone.
 //
 // The remaining seconds are redrawn on their own line because silence is
 // indistinguishable from a hang — a developer who looks up to find a download
-// already running should be able to see why.
+// already running should be able to see why. The default is shown with them,
+// because a developer who answers by walking away has to be able to read what
+// that does.
 //
-// Yes on every uncertainty (an unreadable stdin, a closed one, an answer
-// nobody can parse): the caller only asks when it is about to do something it
-// would otherwise have done unconditionally.
-func ConfirmCountdown(question string, window time.Duration) (yes, interrupted bool) {
+// The default on every uncertainty too (an unreadable stdin, a closed one),
+// which is the same rule as the elapsed window: nothing there is an answer.
+func ConfirmCountdown(question string, window time.Duration, elapsed Elapsed) (yes, interrupted bool) {
 	// Raw is what makes a single keypress an answer: under the terminal's
 	// default line discipline the key is held in the driver until Return, so a
 	// developer who answered would sit there watching a countdown they had
@@ -91,14 +119,14 @@ func ConfirmCountdown(question string, window time.Duration) (yes, interrupted b
 
 	reader, err := cancelreader.NewReader(promptIn)
 	if err != nil {
-		return true, false
+		return bool(elapsed), false
 	}
 
 	reading := make(chan struct{})
 	answered := make(chan answer, 1)
 	go func() {
 		defer close(reading)
-		answered <- accepted(reader)
+		answered <- accepted(reader, elapsed)
 		// Past the answer, every byte is the tail of it. Swallow them rather
 		// than leave them on stdin — see drainWindow for whose keystrokes they
 		// would otherwise become — until stopReading takes the reader away.
@@ -112,7 +140,7 @@ func ConfirmCountdown(question string, window time.Duration) (yes, interrupted b
 	defer ticker.Stop()
 
 	left := window
-	render(question, left)
+	render(question, left, elapsed)
 	for {
 		select {
 		case a := <-answered:
@@ -133,10 +161,10 @@ func ConfirmCountdown(question string, window time.Duration) (yes, interrupted b
 			return a.yes, false
 		case <-ticker.C:
 			left -= countdownTick
-			render(question, left)
+			render(question, left, elapsed)
 		case <-deadline.C:
 			erase()
-			return true, false
+			return bool(elapsed), false
 		}
 	}
 }
@@ -162,11 +190,11 @@ func stopReading(r cancelreader.CancelReader, reading <-chan struct{}) {
 // render redraws the question in place. Carriage return rather than a fresh
 // line, so a five-second countdown does not scroll five lines past whatever
 // the developer was reading.
-func render(question string, left time.Duration) {
+func render(question string, left time.Duration, elapsed Elapsed) {
 	if left < 0 {
 		left = 0
 	}
-	_, _ = fmt.Fprintf(promptOut, "\r  %s [Y/n] (%ds) ", question, int(left/time.Second))
+	_, _ = fmt.Fprintf(promptOut, "\r  %s %s (%ds) ", question, elapsed.hint(), int(left/time.Second))
 }
 
 // erase clears the countdown line once it has been answered, so a question
@@ -180,12 +208,13 @@ func erase() { _, _ = fmt.Fprint(promptOut, "\r\x1b[K") }
 // promises. Anything else is read to the end of its line and judged by its
 // head, so a pasted word still answers. A terminator is kept and trimmed off
 // rather than branched on: a bare Return is an empty answer, and an empty
-// answer is a yes.
+// answer is the default — the same one the elapsing window gives, since
+// neither is a developer saying anything.
 //
 // Byte at a time rather than through a bufio.Reader: a buffered read-ahead
 // would swallow input typed after the answer, which belongs to the session
 // that is about to attach to the same stdin.
-func accepted(r io.Reader) answer {
+func accepted(r io.Reader, elapsed Elapsed) answer {
 	var line []byte
 	buf := make([]byte, 1)
 	for {
@@ -206,7 +235,15 @@ func accepted(r io.Reader) answer {
 			break
 		}
 	}
-	yes := !strings.HasPrefix(strings.ToLower(strings.TrimSpace(string(line))), "n")
+	// Only the two letters the question offers decide; everything else,
+	// emptiness included, leaves the default standing.
+	yes := bool(elapsed)
+	switch head := strings.ToLower(strings.TrimSpace(string(line))); {
+	case strings.HasPrefix(head, "y"):
+		yes = true
+	case strings.HasPrefix(head, "n"):
+		yes = false
+	}
 	return answer{yes: yes}
 }
 
