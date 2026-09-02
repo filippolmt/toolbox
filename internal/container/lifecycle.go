@@ -58,22 +58,36 @@ var startPrefetch = imageprefetch.Start
 // with the answer.
 var refreshAtStart = imageplan.RefreshAtStart
 
-// armIdleReload records a postponed download, which is what a "no" at the
-// start-up prompt is. The stamp is the moment, and it is what arms the Idle
+// offerRefresh runs the shell-start image refresh — prompt and all — on the
+// one path that can honour its answer, and records a "no" as the
+// postponement it is.
+//
+// Two paths skip the act whole. A reload has already refreshed and proved the
+// image in replaceForReload, and its premise is that the move onto the newer
+// image was asked for — so there is nothing left to ask, and the same path is
+// what an unattended trigger walks. A container that already exists keeps the
+// image it was created from, so on connect and start the question could not be
+// honoured: the wait would buy this session nothing and the prefetch fetches
+// behind it either way.
+//
+// The stamp a decline leaves is the moment, and it is what arms the Idle
 // Reload for this session alone — even where that is otherwise off, because
 // *not now* is a request to postpone rather than to refuse. See CONTEXT.md's
-// Idle Reload and Session Quiescence entries for what reads it.
-//
-// Best-effort: an unwritable state mount costs the postponement, not the
-// shell. A stamp older than the container it names is inert by construction,
-// so nothing has to clear it.
-func armIdleReload(plan *sessionplan.SessionPlan, refresh imageplan.Outcome) {
-	if !refresh.Declined || plan.StateDir == "" {
-		return
+// Idle Reload and Session Quiescence entries for what reads it. Best-effort:
+// an unwritable state mount costs the postponement, not the shell, and a
+// stamp older than the container it names is inert by construction, so
+// nothing has to clear it.
+func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) imageplan.Outcome {
+	if plan.ReloadFrom != nil || op.Action != runplan.ActionCreate {
+		return imageplan.Outcome{}
 	}
-	if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
-		ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
+	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir)
+	if refresh.Declined && plan.StateDir != "" {
+		if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
+			ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
+		}
 	}
+	return refresh
 }
 
 // formatPublishMismatch builds the warning string emitted when a reused
@@ -242,24 +256,13 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 
 	// Best-effort registry sync of the base image, which on the one case that
-	// is not already settled *asks* — see the Image Plan's own tree. Hard
-	// guarantee runs in imageplan.Ensure inside createAndStart. Whether the
-	// store was established current is threaded to the prefetch below: a
-	// synchronous probe is a probe, and the background poller must not re-ask
-	// the question this just answered.
-	//
-	// Two paths skip it whole. A reload has already refreshed and proved the
-	// image in replaceForReload above, and its premise is that the move onto
-	// the newer image was asked for — so there is nothing left to ask, and the
-	// same path is what an unattended trigger walks. A container that already
-	// exists keeps the image it was created from, so on connect and start the
-	// question could not be honoured: the wait would buy this session nothing
-	// and the prefetch fetches behind it either way.
-	var refresh imageplan.Outcome
-	if plan.ReloadFrom == nil && op.Action == runplan.ActionCreate {
-		refresh = refreshAtStart(ctx, cli, plan.Image, plan.StateDir)
-		armIdleReload(plan, refresh)
-	}
+	// is not already settled *asks* — see the Image Plan's own tree, and
+	// offerRefresh for the two paths that skip the act whole. Hard guarantee
+	// runs in imageplan.Ensure inside createAndStart. Whether the store was
+	// established current is threaded to the prefetch below: a synchronous
+	// probe is a probe, and the background poller must not re-ask the question
+	// this just answered.
+	refresh := offerRefresh(ctx, cli, plan, op)
 
 	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
 	// `:local` image on top of the freshened base and run the shell from it.
