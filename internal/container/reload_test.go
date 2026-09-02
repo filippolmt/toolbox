@@ -288,7 +288,7 @@ func TestFilterCasualties(t *testing.T) {
 			processes: [][]string{
 				row("/usr/bin/tini -g -- /usr/local/bin/entrypoint"),
 				row("/bin/zsh"),
-				row("/usr/local/bin/proximo-hosts --watch"),
+				row("/bin/sh /usr/local/bin/proximo-hosts --watch"),
 				row("docker events --filter type=container"),
 				row("socat TCP-LISTEN:8976,fork TCP:127.0.0.1:8976"),
 			},
@@ -314,6 +314,30 @@ func TestFilterCasualties(t *testing.T) {
 			},
 			sessionCmd: []string{"/bin/zsh"},
 			want:       []string{"claude", "npm run dev"},
+		},
+		{
+			// A pane per tab and a watcher per project make identical lines the
+			// common case, and eight copies of `/bin/zsh` say nothing eight
+			// times. The count is the whole message.
+			name: "identical lines collapse to one, carrying their count",
+			processes: [][]string{
+				row("/bin/zsh"), row("/bin/zsh"), row("/bin/zsh"),
+				row("npm run dev"),
+			},
+			sessionCmd: []string{"/bin/zsh"},
+			want:       []string{"/bin/zsh (\u00d72)", "npm run dev"},
+		},
+		{
+			// A watchdog started with `node -e` carries kilobytes of argv, and
+			// two of them would be the whole summary. The count survives the
+			// cut: it is appended to what is left, not to what was dropped.
+			name: "a long command line is cut, and says so",
+			processes: [][]string{
+				row("node -e " + strings.Repeat("x", 400)),
+				row("node -e " + strings.Repeat("x", 400)),
+			},
+			sessionCmd: []string{"/bin/zsh"},
+			want:       []string{"node -e " + strings.Repeat("x", casualtyLineMax-len("node -e ")) + "\u2026 (\u00d72)"},
 		},
 		{
 			name:       "an unrecognised header yields no list rather than a column of timestamps",

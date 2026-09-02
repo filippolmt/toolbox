@@ -168,14 +168,28 @@ var reloadBaseline = map[string]bool{
 	"docker events": true,
 }
 
+// scriptInterpreters are the shells a `#!` line puts in front of a script, so
+// that ContainerTop reports the interpreter where the developer would name the
+// script. Keyed by basename, the same reduction baselineKey applies.
+var scriptInterpreters = map[string]bool{"sh": true, "bash": true, "zsh": true}
+
 // baselineKey reduces a command line to the shape reloadBaseline is keyed on:
 // the first field's basename, plus the subcommand when the binary is one whose
 // name alone says nothing (`docker` runs the watcher's event stream, and it
 // also runs whatever the developer typed).
+//
+// A shebang script is named by its interpreter in the process table
+// (`/bin/sh /usr/local/bin/proximo-hosts`), so the key comes off the script
+// instead — unless the next field is a flag, where the interpreter is running
+// something of its own (`sh -c ...`) and is itself the honest name.
 func baselineKey(fields []string) string {
-	base := filepath.Base(fields[0])
-	if base == "docker" && len(fields) > 1 {
-		return base + " " + fields[1]
+	i := 0
+	if scriptInterpreters[filepath.Base(fields[0])] && len(fields) > 1 && !strings.HasPrefix(fields[1], "-") {
+		i = 1
+	}
+	base := filepath.Base(fields[i])
+	if base == "docker" && len(fields) > i+1 {
+		return base + " " + fields[i+1]
 	}
 	return base
 }
@@ -195,6 +209,11 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 	mainShell := strings.Join(sessionCmd, " ")
 	mainShellSeen := false
 
+	// A tab per pane and a watcher per project make identical command lines
+	// the common case, and the same line eight times says nothing eight times.
+	// Counted on the full line, before any shortening, so two long argv that
+	// differ only past the cut stay two entries.
+	counts := map[string]int{}
 	var out []string
 	for _, p := range processes {
 		if col >= len(p) {
@@ -211,10 +230,38 @@ func filterCasualties(titles []string, processes [][]string, sessionCmd []string
 		if reloadBaseline[baselineKey(strings.Fields(cmd))] {
 			continue
 		}
-		out = append(out, cmd)
+		if counts[cmd] == 0 {
+			out = append(out, cmd)
+		}
+		counts[cmd]++
 	}
 	sort.Strings(out)
+	for i, cmd := range out {
+		short := shortenCasualty(cmd)
+		if n := counts[cmd]; n > 1 {
+			short = fmt.Sprintf("%s (\u00d7%d)", short, n)
+		}
+		out[i] = short
+	}
 	return out
+}
+
+// casualtyLineMax is where a casualty line is cut. The list is evidence a
+// developer scans, not a process dump: a watchdog started with `node -e`
+// carries kilobytes of argv, and two of them would be the entire summary.
+const casualtyLineMax = 120
+
+// shortenCasualty cuts an over-long command line, counting runes so a cut
+// never lands inside a multi-byte character.
+func shortenCasualty(cmd string) string {
+	if len(cmd) <= casualtyLineMax {
+		return cmd
+	}
+	r := []rune(cmd)
+	if len(r) <= casualtyLineMax {
+		return cmd
+	}
+	return string(r[:casualtyLineMax]) + "\u2026"
 }
 
 // commandColumn locates the CMD column in a ContainerTop result. The daemon's
