@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/filippolmt/toolbox/internal/reload"
 )
@@ -219,5 +220,37 @@ func TestReentryCommand(t *testing.T) {
 				t.Errorf("ReentryCommand() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The decline stamp is the one thing a "no" at the start-up refresh prompt
+// leaves behind: a postponement has to be legible to the session it postponed,
+// and the moment it happened is the whole payload — hence a modtime and an
+// empty body. Keyed on the container name for the same reason the marker is:
+// the path is computed before the container exists and must be identical on
+// the connect path.
+func TestTouchDeclinedStampsBesideTheMarker(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := reload.TouchDeclined(dir, "toolbox-abc123"); err != nil {
+		t.Fatalf("TouchDeclined: %v", err)
+	}
+
+	path := reload.DeclinedPath(dir, "toolbox-abc123")
+	if got := filepath.Dir(path); got != dir {
+		t.Errorf("stamp landed in %q, want %q", got, dir)
+	}
+	if path == reload.MarkerPath(dir, "toolbox-abc123") {
+		t.Error("the decline stamp must not collide with the reload marker")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat stamp: %v", err)
+	}
+	if time.Since(info.ModTime()) > time.Minute {
+		t.Errorf("stamp modtime is %v, want the moment of the decline", info.ModTime())
+	}
+	if info.Size() != 0 {
+		t.Errorf("stamp carries %d bytes, want an empty file", info.Size())
 	}
 }

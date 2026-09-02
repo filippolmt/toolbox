@@ -34,7 +34,8 @@ import (
 )
 
 // LocalRef is the tag applied to the derived overlay image. Carries pull
-// policy "never" so imageplan.Refresh/Ensure never reach a registry for it.
+// policy "never" so imageplan's refresh and Ensure never reach a registry for
+// it — and so the start-up prompt never offers a download of a built image.
 const LocalRef = "ghcr.io/filippolmt/toolbox:local"
 
 // buildOverlay is the injection seam: a package-level var overridden in tests

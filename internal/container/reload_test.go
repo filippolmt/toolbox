@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -531,5 +532,26 @@ func TestShellConsumesTheMarkerEvenWhenTheSessionFails(t *testing.T) {
 	}
 	if !slices.Contains(mock.calls, "ContainerRemove") {
 		t.Errorf("a failed session did not tear down: %v", mock.calls)
+	}
+}
+
+// A reload never reaches the start-up prompt. It has already refreshed and
+// proved the image before it destroyed anything, and its whole premise is
+// that the move onto the newer image was asked for — by a developer typing
+// the command or by a session that had already been asked and said "later".
+// Asking again here would also mean asking with nobody watching, since the
+// same path is what an unattended trigger walks.
+func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, restore := stubExecShell()
+	defer restore()
+	stubPrefetch(t)
+	calls := stubRefresh(t, imageplan.Outcome{})
+
+	if _, err := Shell(context.Background(), createAfterReloadMock(), reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
+		t.Fatalf("Shell(): %v", err)
+	}
+	if *calls != 0 {
+		t.Errorf("the reload path ran the start-up refresh %d times, want 0", *calls)
 	}
 }

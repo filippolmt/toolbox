@@ -52,6 +52,30 @@ var execShellFn = execShell
 // talks to a registry.
 var startPrefetch = imageprefetch.Start
 
+// refreshAtStart is the shell-start image refresh, prompt and all. A
+// package-level var for the same reason as startPrefetch: the tree behind it
+// asks a question on a terminal, and what Shell owns is only what it does
+// with the answer.
+var refreshAtStart = imageplan.RefreshAtStart
+
+// armIdleReload records a postponed download, which is what a "no" at the
+// start-up prompt is. The stamp is the moment, and it is what arms the Idle
+// Reload for this session alone — even where that is otherwise off, because
+// *not now* is a request to postpone rather than to refuse. See CONTEXT.md's
+// Idle Reload and Session Quiescence entries for what reads it.
+//
+// Best-effort: an unwritable state mount costs the postponement, not the
+// shell. A stamp older than the container it names is inert by construction,
+// so nothing has to clear it.
+func armIdleReload(plan *sessionplan.SessionPlan, refresh imageplan.Outcome) {
+	if !refresh.Declined || plan.StateDir == "" {
+		return
+	}
+	if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
+		ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
+	}
+}
+
 // formatPublishMismatch builds the warning string emitted when a reused
 // container does not have every port the user asked for. Returns "" when
 // every wanted port is already bound on the existing container, signalling
@@ -217,11 +241,25 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, preflightErr
 	}
 
-	// Best-effort registry sync of the base image. Hard guarantee runs in
-	// imageplan.Ensure inside createAndStart. Whether it reached the registry
-	// is threaded to the prefetch below: a synchronous probe is a probe, and
-	// the background poller must not re-ask the question this just answered.
-	startSynced := imageplan.Refresh(ctx, cli, plan.Image)
+	// Best-effort registry sync of the base image, which on the one case that
+	// is not already settled *asks* — see the Image Plan's own tree. Hard
+	// guarantee runs in imageplan.Ensure inside createAndStart. Whether the
+	// store was established current is threaded to the prefetch below: a
+	// synchronous probe is a probe, and the background poller must not re-ask
+	// the question this just answered.
+	//
+	// Two paths skip it whole. A reload has already refreshed and proved the
+	// image in replaceForReload above, and its premise is that the move onto
+	// the newer image was asked for — so there is nothing left to ask, and the
+	// same path is what an unattended trigger walks. A container that already
+	// exists keeps the image it was created from, so on connect and start the
+	// question could not be honoured: the wait would buy this session nothing
+	// and the prefetch fetches behind it either way.
+	var refresh imageplan.Outcome
+	if plan.ReloadFrom == nil && op.Action == runplan.ActionCreate {
+		refresh = refreshAtStart(ctx, cli, plan.Image, plan.StateDir)
+		armIdleReload(plan, refresh)
+	}
 
 	// Local overlay: when ~/.toolbox/Dockerfile exists, build a derived
 	// `:local` image on top of the freshened base and run the shell from it.
@@ -264,7 +302,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}()
 
-	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, createdImageDigest(plan, inspect, op), startSynced)
+	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, createdImageDigest(plan, inspect, op), refresh.Synced)
 	defer stopPrefetch()
 
 	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())

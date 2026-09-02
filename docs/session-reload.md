@@ -278,9 +278,11 @@ detection has never gone through it.
 ## What the prefetch changes about metered connections
 
 There is no metered-network detection and no size threshold — deliberately.
-The transfer itself is not new: under `pull: auto` those bytes already arrive
-synchronously at shell start. What moves is **who is present when they move** —
-from a developer who just opened a shell to one already sitting in it. The
+The transfer itself is not new: under `pull: auto` those bytes arrive at shell
+start too, and there you are [asked
+first](configuration.md#the-start-up-refresh-prompt). What moves is **who is
+present when they move** — from a developer who just opened a shell to one
+already sitting in it. The
 download is also strictly rarer than the ticker, because a pull only follows a
 probe that found a new digest, so its rate is the repo's merge rate. If that
 is not acceptable on a given connection, `pull: never` is the answer, and

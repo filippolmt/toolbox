@@ -11,7 +11,9 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -320,5 +322,88 @@ func TestRestampImageDigest(t *testing.T) {
 				t.Errorf("%s = %q, want %q", sessionplan.ImageDigestEnv, got, tc.want)
 			}
 		})
+	}
+}
+
+// stubRefresh replaces the shell-start refresh with a fixed outcome. The
+// decision tree it stands for is imageplan's and is tested there; what Shell
+// owns is what it does with the answer, which is the one thing a terminal
+// would otherwise be needed to reach.
+func stubRefresh(t *testing.T, out imageplan.Outcome) *int {
+	t.Helper()
+	calls := 0
+	orig := refreshAtStart
+	refreshAtStart = func(context.Context, client.APIClient, sessionplan.Image, string) imageplan.Outcome {
+		calls++
+		return out
+	}
+	t.Cleanup(func() { refreshAtStart = orig })
+	return &calls
+}
+
+// A "no" at the start-up prompt is a postponement, not a refusal, and the
+// stamp is what makes it one: it is the origin of the window a session gets
+// before it may recreate itself onto the image the prefetch is fetching
+// anyway. Nothing is claimed about the registry — the store is still behind it.
+func TestShellStampsADeclinedRefresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, restore := stubExecShell()
+	defer restore()
+	got, _ := stubPrefetch(t)
+	stubRefresh(t, imageplan.Outcome{Declined: true})
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err != nil {
+		t.Errorf("a declined refresh left no stamp: %v", err)
+	}
+	if len(*got) != 1 || (*got)[0].StartSynced {
+		t.Errorf("prefetch input = %+v, want StartSynced false after a decline", *got)
+	}
+}
+
+// The other two outcomes leave no stamp: an accepted download and a store the
+// probe proved current are both "this session has had its turn at the
+// registry", which is what StartSynced says and what stops the poller asking
+// the same question seconds later.
+func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, restore := stubExecShell()
+	defer restore()
+	got, _ := stubPrefetch(t)
+	stubRefresh(t, imageplan.Outcome{Synced: true})
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err == nil {
+		t.Error("a synced refresh must leave no decline stamp")
+	}
+	if len(*got) != 1 || !(*got)[0].StartSynced {
+		t.Errorf("prefetch input = %+v, want StartSynced true", *got)
+	}
+}
+
+// A container that already exists keeps the image it was created from, so a
+// download offered on connect or start is one this session could not adopt: the
+// wait would buy nothing and the prefetch fetches behind it either way.
+func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, restore := stubExecShell()
+	defer restore()
+	stubPrefetch(t)
+	calls := stubRefresh(t, imageplan.Outcome{})
+
+	mock := &mockClient{inspectFn: runningContainer(nil)}
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if *calls != 0 {
+		t.Errorf("the connect path ran the start-up refresh %d times, want 0", *calls)
 	}
 }
