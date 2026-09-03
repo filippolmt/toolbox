@@ -3,6 +3,13 @@ set -e
 
 IMAGE="${1:-ghcr.io/filippolmt/toolbox:latest}"
 
+# pipefail: the check block is piped into `tee` so the sentinel assertion below
+# can read it back, and without this the pipeline would report tee's status and
+# swallow a failing block.
+set -o pipefail
+SMOKE_LOG="$(mktemp)"
+trap 'rm -f "${SMOKE_LOG}"' EXIT
+
 echo "=== Toolbox Smoke Test ==="
 echo "Image: ${IMAGE}"
 echo ""
@@ -408,7 +415,14 @@ check_required "npm"        npm --version
 # through the IPv4-only loopback bridge. See docs/commands.md#loopback-bridge.
 # This whole body runs inside `docker run ... bash -c '...'` (single-quoted), so
 # this line must use only escaped double quotes — a literal single quote would
-# close that block (do not "simplify" the quoting).
+# close that block (do not "simplify" the quoting). That applies to the comments
+# too, apostrophes included: two of them a few words apart do not balance out,
+# they hand the words between them to the host shell, which splits them and
+# truncates the body at that point. Nothing warns you — `bash -n` passes, the
+# checks below the break silently never run, and the FAIL gate at the end of the
+# body goes with them, so the whole thing exits 0. Phrase around it: write "the
+# response of github" and never the possessive form. The sentinel check after
+# the body catches it either way.
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
@@ -541,7 +555,15 @@ check_zsh
 echo ""
 echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 [ "$FAIL" -eq 0 ] || exit 1
-'
+' | tee "${SMOKE_LOG}"
+
+# The body above is one single-quoted argument, and anything that closes that
+# quoting early truncates it — an apostrophe in a comment is enough (see the
+# note next to the node check). A truncated body still exits 0, taking its own
+# FAIL gate with it, so a broken image would smoke-test green. Assert the body
+# reached its last line instead of trusting its exit code.
+grep -q "^=== Results:" "${SMOKE_LOG}" \
+  || { echo "FAILED: the check block ended before its own Results line — its single-quoted body was truncated, so an unknown number of checks and the FAIL gate never ran"; exit 1; }
 
 echo ""
 echo "=== Signal handling check (SIGTERM propagates via tini) ==="
