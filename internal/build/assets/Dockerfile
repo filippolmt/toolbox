@@ -141,6 +141,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
 # Shared parent for the fetch-* stages: curl + CA bundle + git. tar/gzip/awk/
 # sha256sum ship with the slim base. Children inherit the SHELL config.
 #
+# Pins http.version for the same reason the final stage does, and it has to be
+# pinned in both: this git mis-reads github.com's HTTP/2 response to protocol
+# v2's POST /git-upload-pack, so `fetch-omz` and `fetch-brew` — the only stages
+# that clone rather than curl — die with "expected flush after ref listing".
+# Per-request odds of about three in four make a stage that clones six times
+# effectively certain to fail, while leaving a retry able to pass by luck. Two
+# things kept this latent: the registry build cache, which only rebuilds these
+# stages when it is cold, and that luck. → docs/internals/image-build.md#system-git-settings
+#
 # Also installs `freeze-mtimes`, which every fetch stage runs as its last command.
 # `COPY --link` folds mtime into the layer digest, and a downloaded artefact
 # carries the wall-clock time of the build that fetched it — so without this the
@@ -158,6 +167,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends ca-certificates curl git; \
     mkdir -p /out/usr/local/bin /out/usr/share/zsh/vendor-completions; \
+    git config --system http.version HTTP/1.1; \
     printf '%s\n' '#!/bin/sh' 'set -eu' 'find /out -exec touch -h -d @1 {} +' \
       > /usr/local/bin/freeze-mtimes; \
     chmod 0755 /usr/local/bin/freeze-mtimes
@@ -1310,10 +1320,35 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
 RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
     set -eux; \
     tic -x -o /usr/share/terminfo /tmp/xterm-ghostty.src
-# System-level safe.directory for the root-owned Homebrew clone (variable
-# host UID; ~/.gitconfig may be a RO host mount — must not be edited).
+# System-level git settings that are properties of the git this image ships,
+# not of any runtime mount — so they belong here rather than in entrypoint.sh
+# (which registers what only the running container knows: safe.directory for
+# bind mounts, the bridge credential helper). System scope, never --global:
+# ~/.gitconfig is a host mount and must not be edited.
+#
+# safe.directory: the Homebrew clone is root-owned while the runtime UID is
+# arbitrary. The entrypoint also registers the wildcard, which subsumes this —
+# kept because that registration is deliberately non-fatal, and brew is the one
+# thing in the image that breaks on every git call when it does not land.
+#
+# http.version: git's protocol v2 does a POST /git-upload-pack, and the git
+# apt ships here mis-reads github.com's HTTP/2 response to it — the ref listing
+# comes back truncated or as a 401, surfacing as "expected flush after ref
+# listing" or "could not read Username". It fails per request rather than
+# always: 15 of 20 `ls-remote` runs over h2, 0 of 20 with this pin, so a clone
+# is overwhelmingly likely to die and a retry can always get lucky. Measured to
+# be git's own bug, not this image's and not the network: bare debian:bookworm-slim with no config of ours fails identically,
+# a much newer git succeeds over the same Docker network, and curl reproduces
+# nothing — the same POST over h2 returns 200. Pinned globally rather than per
+# host because the trigger is on git's side, so github is where it was found
+# rather than the only place it can happen; gitlab.com and codeberg.org
+# negotiate h2 too and merely happen to survive it. Costs git nothing
+# measurable (it opens one or two connections, so h2 multiplexing buys it
+# little) and becomes dead weight, not a hazard, once the base image carries a
+# git that reads h2 correctly. → docs/internals/image-build.md#system-git-settings
 RUN set -eux; \
-    git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew
+    git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew; \
+    git config --system http.version HTTP/1.1
 
 # User setup. Container runs --user <host-uid>:<host-gid>, so /home/toolbox
 # made world-writable. Pre-create .cache/.config/.local/share so Docker

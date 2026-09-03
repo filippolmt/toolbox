@@ -136,6 +136,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Rust base image tag scheme](internals/image-build.md#rust-base-image-tag-scheme)
 - [Slim Rust images ship no curl / ca-certificates](internals/image-build.md#slim-rust-images-ship-no-curl--ca-certificates)
 - [Homebrew](internals/image-build.md#homebrew)
+- [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
 - [Tools removal](internals/image-build.md#tools-removal)

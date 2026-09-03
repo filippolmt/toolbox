@@ -460,6 +460,17 @@ check_required "git credential helper wired" sh -c "grep -q 'credential.helper' 
 # ships, only an exact path or the wildcard matches there; a grep for a named
 # path would pass while that case still failed.
 check_required "safe.directory covers an unenumerated foreign-uid repo" sh -c "d=\$(mktemp -d)/temp_subdir_probe.clone; mkdir -p \"\$d\" && git init -q \"\$d\" && sudo chown 0:0 \"\$d\" && git -C \"\$d\" rev-parse --is-inside-work-tree"
+# The Dockerfile pins http.version because the git apt ships here mis-reads
+# the HTTP/2 response github.com returns to the POST /git-upload-pack that
+# protocol v2 issues, so HTTPS clones and fetches from github fail most of the
+# time (15 of 20 ls-remote runs over h2, 0 of 20 with the pin). Asserted as a
+# config read and not behaviourally, unlike the check above: the failure needs a real HTTP/2 peer,
+# this smoke test makes no network calls at all — a deliberate property worth
+# more than one behavioural check — and a per-request failure would make the
+# check pass on the lucky runs. Reproduce by hand instead, from a shell with
+# every GIT_CONFIG_* cleared:
+#   git -c http.version=HTTP/2 ls-remote https://github.com/git/git
+check_required "git http.version pinned" sh -c "test \"\$(git config --system --get http.version)\" = HTTP/1.1 && echo HTTP/1.1"
 # Host-only credential-helper names alias to the bridge shim so a host
 # ~/.gitconfig naming osxkeychain/manager/libsecret resolves with no warning.
 # Must be symlinks to git-credential-toolbox — NEVER shadow the built-in

@@ -66,7 +66,7 @@ The base image can't move to Debian trixie yet because the Microsoft Azure CLI a
 
 Installed via shallow tag clone (`ARG HOMEBREW_VERSION`) at the **default Linux prefix** `/home/linuxbrew/.linuxbrew` — bottles (pre-built binaries) only work there; any other prefix forces source builds, explicitly unsupported upstream ("pick another prefix at your peril"). The official installer script is unusable in a Dockerfile `RUN`: it refuses root and clones unpinned `main`. The layer reproduces the installer's layout manually (repo at `…/Homebrew` + `bin/brew` symlink) and ships the pre-built `_brew` zsh completion from the clone.
 
-Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) so the entry stays container-local and out of the user's host-synced `~/.gitconfig`.
+Variable host UID handling follows the `/home/toolbox` pattern: `chmod -R a+rwX /home/linuxbrew` so any runtime UID can write the prefix, plus `git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew` — the clone is root-owned and the runtime UID is arbitrary, so without it every git-touching brew op dies with "dubious ownership". System gitconfig (not `--global`) so the entry stays container-local and out of the user's host-synced `~/.gitconfig` — see [System git settings](#system-git-settings) for the layer it shares and for why it survives the entrypoint's wildcard registration.
 
 Runtime semantics:
 
@@ -77,6 +77,41 @@ Runtime semantics:
 - The clone is shallow: `brew update` instructs `git fetch --unshallow` first. Acceptable — the version is image-pinned and auto-update is off; the message is self-explanatory for users who insist.
 
 PATH: image `ENV` prepends `…/.linuxbrew/bin:…/.linuxbrew/sbin` (covers non-interactive `docker exec`); interactive zsh additionally evals `brew shellenv` for `HOMEBREW_PREFIX`/`MANPATH`/`INFOPATH` (idempotent w.r.t. the ENV PATH entry). Private GitLab taps authenticate via the glab credential helper — see [GitLab git credential helper (glab)](shell-start.md#gitlab-git-credential-helper-glab).
+
+## System git settings
+
+One layer writes `/etc/gitconfig` at build time, for git settings that are properties of **the git this image ships** rather than of anything a running container knows. The runtime counterpart is `entrypoint.sh`, which registers what only the container can know — `safe.directory` for the bind mounts, the bridge credential helper. System scope in both places, never `--global`: `~/.gitconfig` is a host mount. → [git safe.directory](shell-start.md#git-safedirectory-dubious-ownership)
+
+- `safe.directory` for the root-owned Homebrew clone, described under [Homebrew](#homebrew). The entrypoint's wildcard entry subsumes it; it stays because that registration is deliberately non-fatal, and brew is the one thing in the image that breaks on *every* git call when it does not land.
+- `http.version = HTTP/1.1`, without which HTTPS clones and fetches from github.com fail most of the time — pinned here **and** in `fetch-base`, where the build's own clones need it.
+
+That second one deserves its measurement, because the obvious readings of it are all wrong. git's protocol v2 issues a `POST /git-upload-pack`, and the git apt ships here mis-reads github.com's HTTP/2 response to it: the ref listing comes back truncated or as a 401, so the command dies with `fatal: expected flush after ref listing` or `fatal: could not read Username for 'https://github.com'` — the second of which sends you hunting for a credential problem that does not exist.
+
+**It fails per request, not always**, which is the first thing to know before testing anything here: 15 of 20 `ls-remote` runs against github over h2, against 0 of 20 with the pin. So a single green run proves nothing, a clone that issues several requests is nearly certain to die somewhere, and a retry can always get lucky — the shape that makes this look like a network problem. Isolated one axis at a time, from a shell with every `GIT_CONFIG_*` cleared:
+
+| what | result |
+|---|---|
+| github, git defaults (v2 + h2) | fails |
+| github, v2 forced onto HTTP/1.1 | works |
+| github, protocol v0 over h2 | works |
+| gitlab.com, git defaults | works |
+| **bare `debian:bookworm-slim`, no config of ours, github defaults** | fails identically |
+| **a much newer git, same Docker network, github defaults** | works |
+| **curl, same POST with git's headers, over h2** | 200 |
+
+So it is neither this image's network nor a github outage nor anything the container does to h2 — it is git's own handling of that response, and the base image's git is simply old enough to have it. That also settles the scope: the trigger is on git's side, so github is where it was found rather than the only place it can happen — gitlab.com and codeberg.org negotiate h2 as well and merely happen to survive it. Hence a global pin rather than a `[http "https://github.com"]` section. It costs git nothing measurable, which is why it is not worth narrowing: git opens one or two connections per operation, so h2 multiplexing buys it almost nothing. Once the base image carries a git that reads h2 correctly the entry is dead weight rather than a hazard, and it can go.
+
+### The same pin is needed twice
+
+`fetch-base` carries it too, and that half is the one that bites hardest: `fetch-omz` and `fetch-brew` are the only stages that *clone* rather than curl a release artefact, and between them they fetch six times — at three-in-four per request, **the build effectively cannot complete** without the pin. Both died on `expected flush after ref listing` when it was found. Two things kept it latent: the registry build cache, since the failure surfaces only on a run cold enough to rebuild those stages — so a warm CI and a warm laptop agree that everything is fine right up until neither is warm — and the per-request odds, which leave a re-run able to pass and send you looking for flakiness. It was found by pruning the local build cache for unrelated reasons.
+
+`fetch-base` is also the layer that installs git, which makes it the honest home for the one thing this git gets wrong. Adding to that `RUN` invalidates every fetch stage once; it lowers no [Invalidation Floor](../adr/0002-layer-ordering-by-invalidation-floor.md), since that stage already sits at the bottom of the graph and changes about as rarely as anything in the file.
+
+Both pins are held by `TestGitHTTPVersionPinned` (`internal/build/git_http_version_test.go`), bracketed per stage so that two pins in the final stage cannot stand in for a missing one in `fetch-base`.
+
+### Why the assertions are needle-shaped here
+
+`smoke-test.sh` asserts the value rather than the behaviour, which is the weaker kind of assertion — deliberately. Reproducing the failure needs a real HTTP/2 peer, and that smoke test makes no network calls at all; that property is worth more than one behavioural check. Same for the Go test. Reproduce by hand instead, from a shell with every `GIT_CONFIG_*` cleared: `git -c http.version=HTTP/2 ls-remote https://github.com/git/git`.
 
 ## DO_NOT_TRACK + claude wrapper
 
