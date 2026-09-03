@@ -292,6 +292,88 @@ func NewClient() (client.APIClient, error) {
 //   - ActionStart   -> start the stopped container, then exec
 //   - ActionCreate  -> ensure image, create + start + exec
 //
+// resolveOp settles what this session is going to do to the container, before
+// any image work happens: retire a container a reload owns, read what is
+// actually there, compute the action from it, and run the half of the
+// host-config check that can fail.
+//
+// A reload arrives owning a container it must replace, and it must do so
+// before the inspect — which would otherwise compute a connect to the very
+// container being retired. The ordering inside replaceForReload is #834's:
+// refresh and prove the image, only then destroy.
+//
+// The host-config check is create-only and runs here so that a known-fatal
+// port conflict costs no pull. The half of that check which only warns runs
+// once the branch has settled — see warnReattachMismatch.
+func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (container.InspectResponse, runplan.Op, error) {
+	if plan.ReloadFrom != nil {
+		if reloadErr := replaceForReload(ctx, cli, plan); reloadErr != nil {
+			return container.InspectResponse{}, runplan.Op{}, reloadErr
+		}
+	}
+
+	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
+	inspect := inspectResult.Container
+	op, opErr := runplan.Compute(inspect, inspectErr)
+	if opErr != nil {
+		return container.InspectResponse{}, runplan.Op{}, fmt.Errorf("failed to inspect container: %w", opErr)
+	}
+
+	if op.Action == runplan.ActionCreate {
+		if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
+			return container.InspectResponse{}, runplan.Op{}, preflightErr
+		}
+	}
+	return inspect, op, nil
+}
+
+// opAfterRefresh is the op once the start-up refresh has been answered.
+//
+// A yes at the recreate stake was a yes to this: the stopped container goes,
+// and the branch becomes the create that knows how to build its replacement.
+// The stake is what is read, not the op — it is what the question was put at,
+// and it is where that branch was already decided. Only an answer counts:
+// Accepted is the developer's own and a pull that landed, never a policy's and
+// never an elapsed window's, because no container may be spent by anything
+// else.
+//
+// Called after the overlay, not before: a `:local` build that will not build is
+// the other way this start can still fail, and failing it once the container is
+// gone would leave the developer with neither a session nor the container they
+// were asked about.
+func opAfterRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, refresh imageplan.Outcome, stake imageplan.Stake) (runplan.Op, error) {
+	if !refresh.Accepted || stake != imageplan.StakeRecreate {
+		return op, nil
+	}
+	nameFree, replaceErr := replaceForRefresh(ctx, cli, plan)
+	if replaceErr != nil {
+		return op, replaceErr
+	}
+	if nameFree {
+		return runplan.Op{Action: runplan.ActionCreate}, nil
+	}
+	return op, nil
+}
+
+// shellTeardown is the exit decision Shell defers: auto-remove the container
+// unless another shell is still attached to it, with the shell's own exit error
+// winning over any cleanup error. Policy and fresh-context handling are owned
+// by teardown.
+//
+// Suppressed on the reload path — a non-nil rl *is* the flag. The reload's
+// teardown belongs to the next host process, after its verify: destroying the
+// container here would void that gate and leave a failed re-exec with nothing
+// to go back to.
+func shellTeardown(cli client.APIClient, name string, rl *reload.From, err error) error {
+	if rl != nil {
+		return err
+	}
+	if cleanupErr := teardown.OnShellExit(cli, name); cleanupErr != nil && err == nil {
+		return cleanupErr
+	}
+	return err
+}
+
 // Image ensure: the image ref defaults to the canonical GHCR tag but can be
 // relocated opt-in (config Image / RegistryMirror). Refresh attempts a
 // best-effort registry sync steered by the pull policy (auto/always/never),
@@ -312,31 +394,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning("mount skipped: " + w)
 	}
 
-	// A reload arrives owning a container it must replace, and it must do so
-	// before the inspect below — which would otherwise compute a connect to the
-	// very container being retired. The ordering inside is #834's: refresh and
-	// prove the image, only then destroy.
-	if plan.ReloadFrom != nil {
-		if reloadErr := replaceForReload(ctx, cli, plan); reloadErr != nil {
-			return nil, reloadErr
-		}
-	}
-
-	inspectResult, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
-	inspect := inspectResult.Container
-	op, opErr := runplan.Compute(inspect, inspectErr)
-	if opErr != nil {
-		return nil, fmt.Errorf("failed to inspect container: %w", opErr)
-	}
-
-	// The half of the host-config check that can fail, and only a create can:
-	// before any image work, so a known-fatal port conflict costs no pull.
-	// The half that only warns runs once the branch has settled — see
-	// warnReattachMismatch.
-	if op.Action == runplan.ActionCreate {
-		if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
-			return nil, preflightErr
-		}
+	// What this session does to the container, decided before any image work.
+	inspect, op, resolveErr := resolveOp(ctx, cli, plan)
+	if resolveErr != nil {
+		return nil, resolveErr
 	}
 
 	// Best-effort registry sync of the base image, which on the one case that
@@ -369,26 +430,15 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	}
 	plan.Image = image
 
-	// A yes at the recreate stake was a yes to this: the stopped container
-	// goes, and the branch becomes the create that knows how to build its
-	// replacement. The stake is what is read, not the op — it is what the
-	// question was put at, and it is where that branch was already decided.
-	// Only an answer counts: Accepted is the developer's own and a pull that
-	// landed, never a policy's and never an elapsed window's, because no
-	// container may be spent by anything else.
-	//
 	// After the overlay, not before: a `:local` build that will not build is
 	// the other way this start can still fail, and failing it once the
 	// container is gone would leave the developer with neither a session nor
-	// the container they were asked about.
-	if refresh.Accepted && stake == imageplan.StakeRecreate {
-		nameFree, replaceErr := replaceForRefresh(ctx, cli, plan)
-		if replaceErr != nil {
-			return nil, replaceErr
-		}
-		if nameFree {
-			op = runplan.Op{Action: runplan.ActionCreate}
-		}
+	// the container they were asked about. Why a yes at the recreate stake
+	// spends the container, and why the stake is what is read rather than the
+	// op, is on opAfterRefresh.
+	op, stakeErr := opAfterRefresh(ctx, cli, plan, op, refresh, stake)
+	if stakeErr != nil {
+		return nil, stakeErr
 	}
 
 	// Now that the branch has settled: what this session asked for and cannot
@@ -408,22 +458,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, dispatchErr
 	}
 
-	// Auto-remove on exit, unless another shell is still attached to the
-	// same container. Policy + fresh-context handling owned by teardown.
-	// The shell's own exit error wins over any cleanup error.
-	//
-	// Suppressed on the reload path — the named result *is* the flag. The
-	// reload's teardown belongs to the next host process, after its
-	// verify: destroying the container here would void that gate and leave a
-	// failed re-exec with nothing to go back to.
-	defer func() {
-		if rl != nil {
-			return
-		}
-		if cleanupErr := teardown.OnShellExit(cli, plan.ContainerName); cleanupErr != nil && err == nil {
-			err = cleanupErr
-		}
-	}()
+	// Auto-remove on exit, suppressed on the reload path — see shellTeardown.
+	// Deferred from here, so it covers every return below this point and none
+	// of the failures above it, which have no container to remove.
+	defer func() { err = shellTeardown(cli, plan.ContainerName, rl, err) }()
 
 	// The digest this session actually runs, read off the container on the
 	// connect path and off the re-stamped plan on the create path. Both
