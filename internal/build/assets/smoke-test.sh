@@ -493,6 +493,14 @@ check_required "global CA trust wired" sh -c "grep -q /etc/toolbox/certs /usr/lo
 # forwards the git credential protocol to the host store; a dropped COPY fails
 # here too.
 check_required "git-credential-toolbox shim" sh -c "test -x /usr/local/bin/git-credential-toolbox && grep -q bridge-lib.sh /usr/local/bin/git-credential-toolbox && echo present"
+# Sound shim: `paplay` is the name herdr probes for, and nothing calls it — so
+# the only thing that can testify it is the bridge wrapper (and not a real
+# PulseAudio client, which the image must never grow) is this check.
+check_required "paplay shim" sh -c "test -x /usr/local/bin/paplay && grep -q bridge-lib.sh /usr/local/bin/paplay && echo present"
+# ...and that it still refuses an argv herdr would never send. `paplay <file>`
+# is the whole surface; anything else is a usage error, which is the one
+# message this shim is allowed to print.
+check_required "paplay usage error" sh -c "/usr/local/bin/paplay one two >/dev/null 2>&1; test \$? -eq 2 && echo exit2"
 # entrypoint registers the credential helper in the system gitconfig when the
 # bridge is installed — assert the wiring is present.
 check_required "git credential helper wired" sh -c "grep -q 'credential.helper' /usr/local/bin/entrypoint && grep -q git-credential-toolbox /usr/local/bin/entrypoint && echo present"

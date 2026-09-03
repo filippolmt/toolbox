@@ -18,6 +18,7 @@ const (
 	RouteEdit       = "/edit"
 	RouteProximo    = "/proximo"
 	RouteCredential = "/credential"
+	RouteSound      = "/sound"
 	RouteHealth     = "/healthz"
 )
 
@@ -36,6 +37,8 @@ const (
 	FieldCodexHome = "codex_home" // proximoRequest
 	FieldOp        = "op"         // credentialRequest
 	FieldInput     = "input"      // credentialRequest
+	FieldName      = "name"       // soundRequest
+	FieldData      = "data"       // soundRequest
 
 	// Container env carrying the two agent homes the proximo shim forwards as
 	// FieldHome / FieldCodexHome. Emitted host-side by sessionplan (the only

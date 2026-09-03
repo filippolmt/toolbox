@@ -1,6 +1,6 @@
 # Bridge
 
-A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, and `proximo up|down|status|errors|skill` (arguments included) to the host proximo binary. Opt-in: nothing runs on the host until `toolbox bridge install`.
+A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, `proximo up|down|status|errors|skill` (arguments included) to the host proximo binary, and herdr's agent-state chimes to the host's audio output. Opt-in: nothing runs on the host until `toolbox bridge install`.
 
 ## Quick start
 
@@ -16,20 +16,21 @@ The `bridge:` config key (default on) controls whether the container gets the br
 
 ## Architecture
 
-The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium:
+The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium, and herdr's agent chimes to the host's audio output — the container has no player for those either:
 
 ```
 container                                          host
 ─────────                                          ────
 xdg-open <url>                                     toolbox bridge daemon
 code/codium <path>                                   │ listens on 127.0.0.1:<port>
-  └─ wrappers at tail of Dockerfile                  │ + (Linux) unix run/bridge.sock
-       │  read /home/toolbox/.toolbox/bridge/       │ (port + token read from
-       │  {port,token} (RO bind-mount)               │  ~/.toolbox/toolbox/bridge/)
-       ├─ POST /open  body: { "url": "..." }         ├─ open / xdg-open <url>
-       └─ POST /edit  body: { "editor": …, "path": … }
-                                                     └─ code / codium <path>
-              (both: Authorization: Bearer <token>)
+paplay <file>  (herdr probes for it)                 │ + (Linux) unix run/bridge.sock
+  └─ wrappers at tail of Dockerfile                  │ (port + token read from
+       │  read /home/toolbox/.toolbox/bridge/        │  ~/.toolbox/toolbox/bridge/)
+       │  {port,token} (RO bind-mount)               │
+       ├─ POST /open   { "url": … }                  ├─ open / xdg-open <url>
+       ├─ POST /edit   { "editor": …, "path": … }    ├─ code / codium <path>
+       └─ POST /sound  { "name": …, "data": … }      └─ afplay / probed player
+            (all three: Authorization: Bearer <token>)
 ```
 
 ### Transport
@@ -70,15 +71,15 @@ The daemon refuses anything that isn't:
 
 1. Bound to `127.0.0.1` (no LAN exposure — checked at listen time); the Linux unix socket is `0600` inside a `0700` dir owned by the same UID the container runs as (`--user`), so it adds no principal beyond the user themselves. The bearer token is required on both transports.
 2. Authenticated with the exact bearer token from `~/.toolbox/toolbox/bridge/token` (constant-time compare).
-3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400. `/proximo`: subcommand in the fixed allowlist (`up`, `down`, `status`, `errors`, `skill`), otherwise 400 — its **arguments** are then forwarded verbatim, with one exception: `--out`/`-o` is rejected, because through the bridge it would write to the *host* filesystem (redirect the shim's stdout in the container instead), and `errors dom` is refused outright because it writes a host file with or without the flag.
-4. Below the URL length cap.
-5. Within the rate limit. `/open`, `/edit` and `/proximo` share one bucket (10/s, burst 5); `/credential` has its own, more generous bucket (30/s, burst 15) so a `git clone` with many HTTPS submodules — a rapid burst of credential lookups — is not throttled into failure.
+3. `/open`: scheme `http` or `https` only — `file://`, `javascript:`, `data:` etc. are rejected with 400. `/edit`: editor in the fixed allowlist (`code`, `codium` — a client-supplied name never reaches exec) and an absolute, existing host path after `filepath.Clean`, otherwise 400. `/credential`: op in the fixed allowlist (`get`, `store`, `erase` → `git credential fill|approve|reject`), otherwise 400. `/proximo`: subcommand in the fixed allowlist (`up`, `down`, `status`, `errors`, `skill`), otherwise 400 — its **arguments** are then forwarded verbatim, with one exception: `--out`/`-o` is rejected, because through the bridge it would write to the *host* filesystem (redirect the shim's stdout in the container instead), and `errors dom` is refused outright because it writes a host file with or without the flag. `/sound`: a non-empty base64 payload, otherwise 400 — the request carries the MP3 **bytes**, never a path, and the daemon picks both the temp file and the player itself (`afplay` on macOS, a fixed probe chain on Linux), so nothing a caller sends reaches exec.
+4. Below the route's body cap — the URL length cap on `/open`/`/edit`, 512 KiB on `/sound` (`413` past it), sized for a developer's own chime rather than for herdr's built-in ones.
+5. Within the rate limit. `/open`, `/edit` and `/proximo` share one bucket (10/s, burst 5); `/credential` has its own, more generous bucket (30/s, burst 15) so a `git clone` with many HTTPS submodules — a rapid burst of credential lookups — is not throttled into failure. `/sound` has its own bucket too — the same 10/s, burst 5, so the point is separation and not headroom: a run of chimes cannot spend the budget an OAuth redirect needs, and vice versa.
 
-The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell). `/proximo` widens that last sentence in one direction only: arbitrary *arguments* reach one known binary, on a gated verb. Argv is passed as a slice to `exec.CommandContext`, so an argument never reaches a word-splitting or globbing context, and the argument-shaped risk that remains — writing to a host path — is what the `--out`/`-o` rule closes. See [ADR-0004](adr/0004-proximo-full-surface-through-the-bridge.md).
+The container side can read `token` because the mount is RO; an attacker who lands shell-equivalent privileges inside the container can therefore *open URLs* on the host browser and *open existing host paths* in an allowlisted editor (non-executing: the editor renders file contents), but cannot exfiltrate the token to a different network namespace (the daemon only accepts `127.0.0.1`, and the container's `127.0.0.1` is a different namespace) and cannot make the daemon exec an arbitrary binary (fixed allowlist, direct exec, no shell). `/proximo` widens that last sentence in one direction only: arbitrary *arguments* reach one known binary, on a gated verb. Argv is passed as a slice to `exec.CommandContext`, so an argument never reaches a word-splitting or globbing context, and the argument-shaped risk that remains — writing to a host path — is what the `--out`/`-o` rule closes. See [ADR-0004](adr/0004-proximo-full-surface-through-the-bridge.md). `/sound` moves the residual risk to the content axis instead of the path axis: any process in the container can make the host play arbitrary audio up to the body cap. That is annoyance, not escalation, and it stays under the ceiling ADR-0004 already declares — the token is readable in the container by design, and the daemon cannot tell which workspace a request came from. See [ADR-0009](adr/0009-sound-handoff-through-the-bridge.md).
 
 ## Editor shims
 
-`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the bridge-lib marker in both so a dropped COPY or a shadowing real binary fails the image build. All bridge shims (`xdg-open`, `code`/`codium`, `proximo`, `git-credential-toolbox`) source `/usr/local/lib/toolbox/bridge-lib.sh` for the shared transport (state-dir location, readiness checks, curl POST — `TestShimPathsMatchGoConstants` pins the state dir there against `bridge.ContainerDir`); each shim keeps only its own validation, messages, and exit policy. Behaviour:
+`/usr/local/bin/code` (+ `codium` symlink) is a bridge shim, not a real editor — the smoke test asserts the bridge-lib marker in both so a dropped COPY or a shadowing real binary fails the image build. All bridge shims (`xdg-open`, `code`/`codium`, `proximo`, `git-credential-toolbox`, `paplay`) source `/usr/local/lib/toolbox/bridge-lib.sh` for the shared transport (state-dir location, readiness checks, curl POST — `TestShimPathsMatchGoConstants` pins the state dir there against `bridge.ContainerDir`); each shim keeps only its own validation, messages, and exit policy. Behaviour:
 
 - No args → `.`. Each path arg is resolved to absolute (`realpath -m` against `$PWD`) and must land under one of the workspace's two mount points, which the shim translates differently: under `/workspace` the prefix is swapped for `$TOOLBOX_HOST_WORKSPACE` (injected by `sessionplan` in every shell); under the **host-path mirror** — `mountplan.WorkspaceMirrorPath`, which is also the shell's `WorkingDir` whenever a mirror is allowed, so it's the common case for a bare `code .` — the path already *is* a host path and passes through unchanged. One `POST /edit` per path. The daemon stays workspace-agnostic: it receives host paths only.
 - Paths under neither mount point are rejected locally (the host cannot see them); flags (`-g`, `--diff`, …) are rejected honestly rather than silently dropped. Both exit 1 with no POST.
@@ -98,6 +99,32 @@ The container side can read `token` because the mount is RO; an attacker who lan
 - First clone: enter the credential once; git's `store` writes it into the host keychain. Subsequent clones (even from a fresh shell) get it back silently via `get`.
 - Host prerequisite: the forwarding only persists credentials if the **host** git has a working `credential.helper` (macOS `osxkeychain`; Linux `libsecret`, which needs `git-credential-libsecret` installed). Without one, `git credential fill` returns nothing and every clone re-prompts. `toolbox bridge install` and `toolbox config doctor` warn when no helper is configured, or when a configured plain-name helper's `git-credential-<name>` binary is nowhere git would find it (`bridge.CheckHostCredentialHelper`). The lookup mirrors git's own resolution order — `git --exec-path` first, then `PATH` — because both Apple git and Homebrew git ship `git-credential-osxkeychain` under `libexec/git-core` and never in a `bin/` dir on `PATH`: a `PATH`-only check warned on every macOS host about a helper that already worked.
 - Opt out without uninstalling the bridge: set `GIT_CREDENTIAL_BRIDGE=0` via the [`env:` passthrough](configuration.md#env-passthrough) in `.toolbox.yaml` — the shim and the entrypoint registration both honor it. (The key is un-prefixed on purpose: `config.ValidateEnv` reserves the `TOOLBOX_` prefix, so a `TOOLBOX_*` opt-out couldn't travel through `env:`.)
+
+## Agent sounds
+
+herdr runs inside the container, and its agent-state chimes never played: the Linux build carries no audio backend and spawns an external player instead (`paplay`, `pw-play`, `ffplay`, `mpg123`, `mpv`, in that order), while the image has none of the five, no `/dev/snd` and no sound-server socket. `/sound` moves the **playback** to the host and leaves herdr as the source of the signal — which sound, for which agent, and when all stay its decision.
+
+- Container-side: `/usr/local/bin/paplay` is a bridge shim, not a PulseAudio client — it answers to the **first name herdr probes for**, which is what selects it out of that chain (glossary: [Probed Shim](../CONTEXT.md#probed-shim)). Nothing calls it. It POSTs `{name, data}` — the MP3 **bytes**, base64-encoded, because the temp file herdr wrote lives in the container's `/tmp` where the host cannot read it (glossary: [Sound Handoff](../CONTEXT.md#sound-handoff)).
+- It exits **non-zero and silent** when the bridge is unreachable, on purpose: herdr then tries the other four names, finds them missing, and writes its own `no mp3-capable audio player available` line — the same log that diagnosed the original defect. The one human-facing hint stays the install tip `toolbox shell` prints.
+- Daemon-side: `playSound` writes the bytes to a temp file it names itself and spawns `afplay` (macOS) or the first installed player of the same chain (Linux) **detached**, answering `200` immediately. Blocking would queue two completions moments apart, where overlapping them is what herdr does natively; the cost is that a failing player cannot be reported back. A spawned player gets a deadline (`soundTimeout`), and the goroutine that reaps it removes the temp file.
+- Not delivered here: **when** a sound fires. That predicate is herdr's and is hardcoded — `Request` (an agent waiting on a human) always, `Done` only when the pane's tab is inactive or the terminal window unfocused. See [ADR-0009](adr/0009-sound-handoff-through-the-bridge.md).
+
+### The herdr side
+
+Two keys in `~/.config/herdr/config.toml` complete the channel, and **the image writes neither** — that path is one host-global RW bind shared by every toolbox container, so an `init.d` script writing it would edit the developer's own file on behalf of every project. Set them once, by hand:
+
+```toml
+[ui.sound]
+enabled = true          # upstream default; explicit so a default flip can't mute the channel
+
+[ui.toast]
+delivery = "terminal"   # optional banner: OSC 9 on the client's stdout, which is the docker exec TTY
+```
+
+- `ui.sound.enabled` is **already the upstream default** — which is why the original defect was silent rather than absent: herdr was firing the sound and losing it, warning into `herdr-client.log` where nobody looks. Pinning it in the file is a statement of intent, not a fix.
+- `ui.toast.delivery` defaults to `off` and gates only the banner. Sound and toast are independent `ServerMessage`s, so leaving it `off` costs no chime. On macOS the banner is additionally suppressed while the terminal surface is focused, by a hardcoded upstream default — the two gates happen to compose, since `Done` is emitted only when the window is unfocused, which is when the banner shows.
+- `herdr config check` validates the file; a running server picks the change up on `herdr server reload-config` (or the `reload_config` keybind), not before.
+- Outside herdr entirely: `bell-features = system` in the host terminal's own config is a net that always sounds, with no `Done`/`Request` distinction and the wrong predicate (it is the bell of the program in the pane). A net, not a solution.
 
 ## Mount gating
 

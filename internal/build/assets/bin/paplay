@@ -1,0 +1,46 @@
+#!/bin/sh
+# toolbox bridge sound shim — NOT a PulseAudio client, and PulseAudio is not in
+# this image. herdr *probes* for an external player by name (paplay, pw-play,
+# ffplay, mpg123, mpv — its src/sound.rs spawns them in that order) and the
+# container has none of the five, no /dev/snd and no sound-server socket, so
+# this file's name is what selects it out of that chain: nobody calls `paplay`
+# (glossary: Probed Shim). It reads the MP3 herdr just wrote and hands the
+# BYTES to the host daemon's /sound endpoint — the temp file lives in the
+# container's /tmp, which the host cannot read — and the host plays them
+# (ADR-0009). Taking the first name in the chain costs no failed exec; a later
+# one would burn four per sound.
+#
+# Usage: paplay <file>. Exits non-zero and prints nothing when the bridge is
+# unreachable: herdr then tries the other four, finds them missing, and writes
+# its own aggregate "no mp3-capable audio player available" line, so the defect
+# stays self-diagnosing without a second message. The one human-facing hint is
+# the bridge-install tip `toolbox shell` already prints.
+
+set -eu
+
+. /usr/local/lib/toolbox/bridge-lib.sh
+
+if [ "$#" -ne 1 ]; then
+    echo "paplay: usage: paplay <file> (toolbox bridge sound shim)" >&2
+    exit 2
+fi
+FILE="$1"
+
+[ -r "${FILE}" ] || exit 1
+bridge_ready || exit 1
+command -v python3 >/dev/null 2>&1 || exit 1
+
+# python3 base64-encodes the MP3 and builds the JSON, as bin/code does for
+# paths — the payload is binary, so nothing here can be printf'd by hand.
+PAYLOAD=$(FILE="${FILE}" python3 -c '
+import base64, json, os
+path = os.environ["FILE"]
+with open(path, "rb") as f:
+    print(json.dumps({"name": os.path.basename(path), "data": base64.b64encode(f.read()).decode("ascii")}))
+')
+
+STATUS=$(bridge_post /sound "${PAYLOAD}" /dev/null 5)
+case "${STATUS}" in
+2??) ;;
+*) exit 1 ;;
+esac

@@ -235,7 +235,7 @@ func printBridgeTipIfNeeded() {
 	if a.IsInstalled() {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs to your host browser")
+	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs, editor opens and agent sounds to the host")
 }
 
 func init() {

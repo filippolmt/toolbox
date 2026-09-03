@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,23 +29,34 @@ import (
 // to the wrapper instead of hanging the in-container CLI.
 const requestTimeout = 5 * time.Second
 
-// rateLimit is the maximum number of /open + /edit requests served per
-// rolling second (one shared bucket). Enough headroom for legitimate bursts
-// (e.g. a CLI opening a few URLs back-to-back) while still containing a
-// buggy or hostile loop.
-const rateLimit = 10
+// rateBudget is one token bucket's allowance: the sustained requests per
+// rolling second, plus the burst layered on top. The two are meaningless apart
+// — a rate with no burst throttles the first legitimate pair of requests — so
+// they travel as one value, and each route's budget is named once below.
+type rateBudget struct {
+	perSecond int
+	burst     int
+}
 
-// rateBurst is the token bucket burst capacity layered on top of rateLimit.
-const rateBurst = 5
+// sharedBudget is the one bucket /open, /edit and /proximo draw from. Enough
+// headroom for legitimate bursts (a CLI opening a few URLs back-to-back) while
+// still containing a buggy or hostile loop.
+var sharedBudget = rateBudget{perSecond: 10, burst: 5}
 
-// credRateLimit / credRateBurst give /credential its own, more generous token
-// bucket separate from the /open+/edit+/proximo one. A single `git clone` with
-// many HTTPS submodules fires a rapid burst of credential lookups (each
-// submodule is a separate git process → get + store); sharing the 5-burst
-// bucket would 429 them and break the clone. Still bounded so a runaway loop
-// can't hammer the host credential store unchecked.
-const credRateLimit = 30
-const credRateBurst = 15
+// credBudget gives /credential its own, more generous bucket. A single `git
+// clone` with many HTTPS submodules fires a rapid burst of credential lookups
+// (each submodule is a separate git process → get + store); sharing
+// sharedBudget would 429 them and break the clone. Still bounded so a runaway
+// loop can't hammer the host credential store unchecked.
+var credBudget = rateBudget{perSecond: 30, burst: 15}
+
+// soundBudget gives /sound its own bucket too. Same shape as sharedBudget, and
+// that is the whole point: separation, not headroom — a run of chimes must not
+// spend the budget an OAuth redirect on /open needs, and vice versa. Unlike
+// /credential this route earns no extra room; herdr brakes upstream
+// (ui.toast.delay_seconds, and a new state on a pane cancels that pane's
+// pending notification), so a burst here is short by construction.
+var soundBudget = rateBudget{perSecond: 10, burst: 5}
 
 // DaemonOptions tunes a Run call. Zero values are valid for the production
 // path; tests override Listener to inject a pre-bound listener.
@@ -71,6 +83,11 @@ type DaemonOptions struct {
 	// git. Tests override; production callers leave it nil to use
 	// runHostCredential.
 	Credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
+	// Sound plays an MP3 payload on the host. It takes no context: the player
+	// outlives the request by design (fire-and-forget), so its deadline is the
+	// implementation's own. Tests override; production callers leave it nil to
+	// use playSound.
+	Sound func(data []byte) error
 }
 
 // Run starts the bridge HTTP server in the foreground. It returns
@@ -136,7 +153,7 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	if now == nil {
 		now = time.Now
 	}
-	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential}
+	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential, sound: opts.Sound}
 
 	srv := &http.Server{
 		Handler:           newHandler(token, fns.withHostDefaults(), logger, now),
@@ -185,6 +202,9 @@ func (f handlerFns) withHostDefaults() handlerFns {
 	if f.credential == nil {
 		f.credential = runHostCredential
 	}
+	if f.sound == nil {
+		f.sound = playSound
+	}
 	return f
 }
 
@@ -221,32 +241,36 @@ type handlerFns struct {
 	edit       func(ctx context.Context, editor, path string) error
 	proximo    func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
 	credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
+	sound      func(data []byte) error
 }
 
 // handler is the single HTTP handler the daemon mounts its endpoints on.
 // Extracted so tests can drive it through net/http/httptest without
 // re-binding a real socket on every case.
 type handler struct {
-	token       string
-	fns         handlerFns
-	logger      *log.Logger
-	limiter     *rateLimiter
-	credLimiter *rateLimiter
+	token        string
+	fns          handlerFns
+	logger       *log.Logger
+	limiter      *rateLimiter
+	credLimiter  *rateLimiter
+	soundLimiter *rateLimiter
 }
 
 func newHandler(token string, fns handlerFns, logger *log.Logger, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
 	h := &handler{
-		token:       token,
-		fns:         fns,
-		logger:      logger,
-		limiter:     newRateLimiter(rateLimit, rateBurst, now),
-		credLimiter: newRateLimiter(credRateLimit, credRateBurst, now),
+		token:        token,
+		fns:          fns,
+		logger:       logger,
+		limiter:      newRateLimiter(sharedBudget, now),
+		credLimiter:  newRateLimiter(credBudget, now),
+		soundLimiter: newRateLimiter(soundBudget, now),
 	}
 	mux.HandleFunc(RouteOpen, h.handleOpen)
 	mux.HandleFunc(RouteEdit, h.handleEdit)
 	mux.HandleFunc(RouteProximo, h.handleProximo)
 	mux.HandleFunc(RouteCredential, h.handleCredential)
+	mux.HandleFunc(RouteSound, h.handleSound)
 	mux.HandleFunc(RouteHealth, h.handleHealth)
 	return mux
 }
@@ -506,6 +530,55 @@ func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, credentialResponse{Exit: exit, Output: string(out)})
 }
 
+// maxSoundBody caps a /sound request body at 512 KiB. herdr's built-in chimes
+// are tens of kilobytes, so roughly a third of that base64-encoded; the cap is
+// sized for a developer's own ui.sound.*_path override rather than for the
+// smallest payload observed, because a tighter one would be discovered as a
+// 413 from a daemon nobody is watching.
+const maxSoundBody = 512 << 10
+
+// soundRequest is the body the paplay shim POSTs to /sound. Data is the MP3
+// content, base64-encoded: the container temp file herdr wrote is unreadable
+// from the host, so the bytes travel and the daemon picks the path itself
+// (ADR-0009). Name is the container-side basename, carried for the audit log
+// alone and never used to build a path.
+type soundRequest struct {
+	Name string `json:"name"`
+	Data string `json:"data"`
+}
+
+func (h *handler) handleSound(w http.ResponseWriter, r *http.Request) {
+	if !h.gateLimited("sound", h.soundLimiter, w, r) {
+		return
+	}
+	var req soundRequest
+	if !h.decodeJSON(w, r, maxSoundBody, &req) {
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(req.Data)
+	if err != nil || len(data) == 0 {
+		h.logger.Printf("sound: rejected (payload not non-empty base64) name=%q", truncate(req.Name, 128))
+		http.Error(w, "sound payload must be non-empty base64", http.StatusBadRequest)
+		return
+	}
+	// Fire-and-forget: the player is spawned detached and the 200 goes out
+	// now. Waiting for playback would block herdr's client for the length of
+	// the chime and queue two completions moments apart, where overlapping
+	// them is what herdr does natively on a host.
+	if err := h.fns.sound(data); err != nil {
+		h.logger.Printf("sound: handler failed: %v name=%q bytes=%d", err, truncate(req.Name, 128), len(data))
+		http.Error(w, "sound handler failed", http.StatusBadGateway)
+		return
+	}
+	// Follows the /credential discipline: the verb, the size and the file,
+	// never the bytes. The name is herdr's own temp-file basename
+	// (herdr-sound-<pid>-<n>.mp3), so it correlates a line here with a line in
+	// herdr-client.log; which of the two chimes it was stays herdr's secret,
+	// the payload carrying no such field.
+	h.logger.Printf("sound: ok name=%q bytes=%d", truncate(req.Name, 128), len(data))
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *handler) authOK(r *http.Request) bool {
 	got := r.Header.Get("Authorization")
 	const prefix = "Bearer "
@@ -588,11 +661,11 @@ type rateLimiter struct {
 	now       func() time.Time
 }
 
-func newRateLimiter(rate, burst int, now func() time.Time) *rateLimiter {
+func newRateLimiter(b rateBudget, now func() time.Time) *rateLimiter {
 	return &rateLimiter{
-		tokens:    float64(burst),
-		maxTokens: float64(burst),
-		refill:    float64(rate),
+		tokens:    float64(b.burst),
+		maxTokens: float64(b.burst),
+		refill:    float64(b.perSecond),
 		last:      now(),
 		now:       now,
 	}

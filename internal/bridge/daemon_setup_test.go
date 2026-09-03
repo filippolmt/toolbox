@@ -75,7 +75,7 @@ func TestWithHostDefaultsFillsOnlyTheGaps(t *testing.T) {
 
 	fns := handlerFns{open: supplied}.withHostDefaults()
 
-	if fns.edit == nil || fns.proximo == nil || fns.credential == nil {
+	if fns.edit == nil || fns.proximo == nil || fns.credential == nil || fns.sound == nil {
 		t.Fatal("withHostDefaults left a callback nil")
 	}
 	if err := fns.open(context.Background(), "https://example.test"); err != nil {

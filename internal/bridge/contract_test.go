@@ -79,6 +79,11 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 			// the gate silently stops gating.
 			{"proximo.CATarget", proximo.CATarget},
 		}},
+		{"paplay", []struct{ name, literal string }{
+			{"RouteSound", post(RouteSound)},
+			{"FieldName", field(FieldName)},
+			{"FieldData", field(FieldData)},
+		}},
 		{"git-credential-toolbox", []struct{ name, literal string }{
 			{"RouteCredential", post(RouteCredential)},
 			{"FieldOp", field(FieldOp)},
@@ -169,6 +174,7 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[proximoResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput}},
 		{reflect.TypeFor[credentialResponse](), []string{FieldExit, FieldOutput}},
+		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
 	} {
 		t.Run(tc.typ.Name(), func(t *testing.T) {
 			if got := tc.typ.NumField(); got != len(tc.tags) {
