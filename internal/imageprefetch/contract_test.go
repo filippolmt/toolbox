@@ -35,8 +35,8 @@ func TestUpdateCheckCacheContract(t *testing.T) {
 		}
 	}
 	// The four the renderer actually reads back. image_latest is written but
-	// never parsed: it is what makes the `.shown` signature change when a new
-	// digest lands, which is what re-fires the banner.
+	// never parsed: it is what makes the rendered body change when a new
+	// digest lands, which is what re-fires a banner the shell already showed.
 	for _, field := range []string{"image_update", "image_state", "cli_update", "cli_latest"} {
 		if !strings.Contains(zshrc, field+"=*)") {
 			t.Errorf("zshrc.sh does not parse %q", field)
@@ -50,11 +50,18 @@ func TestUpdateCheckCacheContract(t *testing.T) {
 		t.Errorf("zshrc.sh renders nothing for image_state=%s", stateUnavailable)
 	}
 
-	// The file names, likewise spelled on both sides.
-	for _, path := range []string{cacheFile, cacheFile + ".shown"} {
-		if !strings.Contains(zshrc, "/.toolbox-state/"+path) {
-			t.Errorf("zshrc.sh does not read $HOME/.toolbox-state/%s", path)
-		}
+	// The file name, likewise spelled on both sides.
+	if !strings.Contains(zshrc, "/.toolbox-state/"+cacheFile) {
+		t.Errorf("zshrc.sh does not read $HOME/.toolbox-state/%s", cacheFile)
+	}
+
+	// The cache is the ONLY thing the renderer shares with the host. What a
+	// shell has already displayed is that shell's own state, and a signature
+	// file on the state mount made it every session's: one session's banner
+	// muted every session opened after it, which on the connect branch — the
+	// branch that is never offered the start-up refresh — is the whole channel.
+	if strings.Contains(zshrc, cacheFile+".shown") {
+		t.Errorf("zshrc.sh keeps the shown-signature on the shared state mount (%s.shown)", cacheFile)
 	}
 
 	// The opt-out is one name read on two sides: the host edge skips the

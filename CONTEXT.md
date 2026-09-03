@@ -516,7 +516,27 @@ turn: the poller stamps on its behalf and publishes the banner **from the
 local store** instead of asking the registry the same question seconds
 later. A failed probe, a failed pull and a declined download set nothing,
 and the poller does its own probe: none of them left the store provably
-current. One poll is probe → prefetch → publish:
+current.
+
+**The gate stops the registry, not the banner.** One state mount serves
+every workspace, so the published result is whichever session wrote it
+last — and `image_update` is computed against *that* session's
+container. A sibling already on the new image publishes a `0` that is
+true only for it, and keeps warm the very stamp that holds the gate
+shut; a session whose own container is older would render the sibling's
+answer for as long as that lasts. So every poll turned away at the gate
+still publishes from the store: the session axis is a local comparison
+and owes the registry nothing. Every pass, not just the first — a
+session outlives many ticks, and fixing only the first would hand the
+sibling all of them. It
+restates that axis and nothing else — `image_latest` is the *registry's*
+digest, which `knownRemote` reads back for `AheadOfStore`, and
+`image_state`'s `unavailable` rides a first-failure clock that a
+groundless "the store is current" would reset forever. On the connect
+branch, where the start-up refresh is never offered, that publish is what
+keeps the banner a channel at all.
+
+One poll is probe → prefetch → publish:
 `DistributionInspect` resolves the remote digest through the daemon
 (so a `registry_mirror` is honoured and no registry HTTP lives in this
 repo), `ImagePull` drained with `ImagePullResponse.Wait` fetches it when

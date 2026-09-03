@@ -79,10 +79,11 @@ var releasesURL = "https://api.github.com/repos/filippolmt/toolbox/releases/late
 // has no such owner, so it carries its own deadline.
 const httpTimeout = 10 * time.Second
 
-// Cache file names under the state mount. The result file and its `.shown`
-// sibling are the pre-existing contract with the zsh precmd renderer — only
-// the writer moved to the other side of the bind mount. The stamp is this
-// package's own.
+// Cache file names under the state mount. The result file is the pre-existing
+// contract with the zsh precmd renderer — only the writer moved to the other
+// side of the bind mount. The stamp is this package's own. Nothing here
+// records what a shell has been shown: that is per-session state and lives in
+// the shell, never on a mount every session shares.
 const (
 	cacheFile       = "update-check"
 	stampFile       = "update-check.stamp"
@@ -151,12 +152,16 @@ func Start(ctx context.Context, cli client.APIClient, in Input) {
 		// The shell start's synchronous refresh, when it actually reached the
 		// registry, is this TTL's probe: stamping it here is what stops the
 		// poller re-asking minutes after the shell just asked. The banner is
-		// still published, from the store that pull has just made current —
-		// on a connect the container can be behind a store a sibling session
-		// advanced, and saying so is the whole point of the act.
+		// published straight away, from the store that refresh has just made
+		// current, because it is the only moment image_latest may be restated
+		// without a probe of our own.
 		if in.StartSynced && stamp(in.StateDir) {
-			publishFromStore(ctx, cli, in)
+			publishFromStore(ctx, cli, in, true)
 		}
+		// Consumed: it describes the shell start, not the ticks that follow,
+		// and a poll that kept reading it would re-stamp the attempt clock
+		// from a digest nobody re-established.
+		in.StartSynced = false
 
 		// Poll straight away rather than waiting out the first tick: a
 		// session shorter than tickInterval would otherwise never refresh the
@@ -205,11 +210,28 @@ func newPoller(ctx context.Context, cli client.APIClient, in Input) func() {
 }
 
 // publishFromStore refreshes the banner without asking the registry anything.
-// Sound only straight after a successful synchronous refresh, which has just
-// made the local store current: the sole fact left to compute is whether this
-// session's container is behind that store, and the store cannot be behind
-// the registry at a moment the pull just succeeded.
-func publishFromStore(ctx context.Context, cli client.APIClient, in Input) {
+// The session axis is always this session's to state — whether the container
+// is behind the local store is a local comparison, and the published result
+// carries whoever wrote it last, which on a state mount shared by every
+// workspace need not be a session running this container.
+//
+// synced says the shell start's refresh has just made the store current with
+// the registry. It governs the two claims that are about the *registry* and
+// therefore cannot be made from the store alone:
+//
+//   - image_latest is the digest the registry serves, and knownRemote reads it
+//     back as exactly that for AheadOfStore. Only a sync may restate it — with
+//     the store's digest, which at that moment is the registry's. Overwritten
+//     without one, the start-up prompt would stop offering a refresh that is
+//     genuinely available, for the rest of the TTL.
+//   - imageState's "unavailable" verdict rides a first-failure clock that
+//     imageState clears whenever the store is not behind. Saying "not behind"
+//     on nothing established would restart that clock on every shell start,
+//     and the word would never be earned. So the store's standing verdict is
+//     asked for when a probe published one, and otherwise left alone — except
+//     that an adoptable image still outranks it, which is imageState's own
+//     rule and the one the renderer relies on to never print both lines.
+func publishFromStore(ctx context.Context, cli client.APIClient, in Input, synced bool) {
 	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
 		// The fingerprint of a local `toolbox build`: the prefetch abstains
@@ -217,9 +239,18 @@ func publishFromStore(ctx context.Context, cli client.APIClient, in Input) {
 		return
 	}
 	res := readResult(in.StateDir)
-	res.imageLatest = local
 	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
-	res.imageState = imageState(in.StateDir, false, res.imageUpdate)
+
+	remote, known := knownRemote(in.StateDir)
+	switch {
+	case synced:
+		res.imageLatest = local
+		res.imageState = imageState(in.StateDir, false, res.imageUpdate)
+	case known:
+		res.imageState = imageState(in.StateDir, remote != local, res.imageUpdate)
+	case res.imageUpdate:
+		res.imageState = stateReady
+	}
 	writeResult(in.StateDir, res)
 }
 
@@ -281,26 +312,45 @@ type StoreState struct {
 	Probed bool
 }
 
+// attemptFresh reports whether the shared attempt stamp is still inside the
+// TTL — the one gate two callers read: the poll it turns away from the
+// registry, and the cached remote digest it keeps valid.
+func attemptFresh(stateDir string) bool {
+	return fsx.MarkerFresh(filepath.Join(stateDir, stampFile), TTL)
+}
+
 // knownRemote returns the remote digest the last shared probe published, valid
 // only while that probe's attempt stamp is still inside the TTL. The stamp
 // records the attempt and the cache records the answer, so both are needed: a
 // stamp with no published digest is a probe that failed.
 func knownRemote(stateDir string) (string, bool) {
-	if stateDir == "" || !fsx.MarkerFresh(filepath.Join(stateDir, stampFile), TTL) {
+	if stateDir == "" || !attemptFresh(stateDir) {
 		return "", false
 	}
 	remote := readResult(stateDir).imageLatest
 	return remote, remote != ""
 }
 
-// Poll runs one gated attempt: it returns without touching the network while
-// the shared attempt stamp is younger than TTL. Exported because it, and not
-// the ticker, is the unit under test — the alarm carries no decision.
+// Poll runs one gated attempt: it asks the registry nothing while the shared
+// attempt stamp is younger than TTL. Exported because it, and not the ticker,
+// is the unit under test — the alarm carries no decision.
+//
+// The gate stops the *registry*, not the banner. One state mount serves every
+// workspace while image_update is computed against the publishing session's
+// container, so the result on disk may be a sibling's — true for its container
+// and false for this one — and the sibling keeping the stamp warm is exactly
+// what holds this gate shut. Every gated pass therefore restates the session
+// axis from the local store, which is a comparison the registry has no part
+// in. Doing it here rather than once at start-up is the point: a session
+// outlives many ticks, and a sibling that keeps probing would otherwise own
+// the banner for the rest of that session — silently, on the connect branch,
+// where the start-up refresh is never offered and the banner is all there is.
 //
 // Every failure path is silent and leaves the previous cached result in
 // place. A banner is an advisory, and this runs beside a developer's cursor.
 func Poll(ctx context.Context, cli client.APIClient, in Input) {
-	if fsx.MarkerFresh(filepath.Join(in.StateDir, stampFile), TTL) {
+	if attemptFresh(in.StateDir) {
+		publishFromStore(ctx, cli, in, false)
 		return
 	}
 	// Stamp before the network, so a persistently failing probe is capped at
@@ -560,8 +610,8 @@ func imageState(stateDir string, storeBehind, sessionBehind bool) string {
 // readResult returns the currently published result, or the zero value when
 // there is none. Parsed rather than assumed so an axis that could not reach
 // its registry carries its previous answer forward instead of retracting it —
-// the renderer's `.shown` signature is the whole file, so a blanked field
-// would both hide a true banner and re-fire the remaining one.
+// the renderer keys its show-once on the whole file, so a blanked field would
+// both hide a true banner and re-fire the remaining one.
 func readResult(stateDir string) result {
 	var res result
 	raw, err := os.ReadFile(filepath.Join(stateDir, cacheFile))
@@ -608,9 +658,9 @@ func writeResult(stateDir string, res result) {
 	_ = fsx.AtomicWriteFile(filepath.Join(stateDir, cacheFile), []byte(body), 0o644)
 }
 
-// ClearResult drops the published result, the renderer's shown-signature and
-// the attempt stamp. Called by a session reload, whose container is new while
-// all three still describe the old one.
+// ClearResult drops the published result, the attempt stamp and the legacy
+// shown-signature. Called by a session reload, whose container is new while
+// all of them still describe the old one.
 //
 // Deletion, never a rewrite with the digest just landed on: the state mount is
 // shared across every session the user runs, so a rewritten result would tell
@@ -625,6 +675,10 @@ func ClearResult(stateDir string) {
 	if stateDir == "" {
 		return
 	}
+	// The `.shown` sibling is no longer written by this image's renderer, which
+	// keeps its signature in the shell. It is still removed: a new CLI driving
+	// an older image is skew this repo supports, that renderer does read the
+	// file, and the removal also retires the orphan left on existing mounts.
 	for _, name := range []string{cacheFile, cacheFile + ".shown", stampFile} {
 		// Best-effort: a stale banner is the whole cost of failing here.
 		_ = os.Remove(filepath.Join(stateDir, name))

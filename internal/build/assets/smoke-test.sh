@@ -242,17 +242,20 @@ check_zsh() {
     # the host-written update-check cache, and it has no Go coverage at all —
     # its behaviour is provable only here. Drive the precmd hook directly:
     # zsh -i -c never draws a prompt, so the hook would not fire on its own.
-    # Each state seeds the cache and clears the shown-signature, because the
-    # renderer prints once per distinct result. No apostrophes or single
-    # quotes below — this body lives inside a single-quoted bash -c.
+    # Each state seeds the cache and runs a fresh zsh, which is all the reset
+    # the renderer needs: it prints once per distinct result per shell, and
+    # the signature lives in the shell. No apostrophes or single quotes below
+    # — this body lives inside a single-quoted bash -c.
     # $2, when given, is exported as TOOLBOX_RELOAD_MARKER: its presence is how
     # the renderer decides between advising the reload and advising the old
     # exit-and-reopen, so both halves have to be drivable from here.
-    _zsh_banner_render() {
+    _zsh_banner_seed() {
         local d=/home/toolbox/.toolbox-state
         mkdir -p "$d" || return 1
-        printf "%s" "$1" > "$d/update-check" || return 1
-        rm -f "$d/update-check.shown"
+        printf "%s" "$1" > "$d/update-check"
+    }
+    _zsh_banner_render() {
+        _zsh_banner_seed "$1" || return 1
         if [ -n "${2:-}" ]; then
             TOOLBOX_RELOAD_MARKER="$2" zsh -i -c "_toolbox_update_precmd" 2>/dev/null
         else
@@ -260,8 +263,7 @@ check_zsh() {
         fi
     }
     _zsh_banner_cleanup() {
-        rm -f /home/toolbox/.toolbox-state/update-check \
-              /home/toolbox/.toolbox-state/update-check.shown
+        rm -f /home/toolbox/.toolbox-state/update-check
     }
 
     # q1. Nothing to report renders nothing. The silent state is the one a
@@ -350,6 +352,27 @@ cli_latest=
         echo "    got: $out"; return 1
     }
 
+    # q4. Show-once is scoped to the shell and nowhere wider. Both halves are
+    # the bug that scoping fixed: inside one shell a stable cache must not
+    # re-nag at every prompt, and a NEW shell must still be told, because on
+    # the connect branch the start-up refresh is never offered and the banner
+    # is the only channel left. A signature parked on the shared state mount
+    # satisfied the first half by breaking the second.
+    _zsh_banner_scope_check() {
+        local once again
+        _zsh_banner_seed "image_update=1
+image_latest=sha256:ddd
+image_state=ready
+cli_update=0
+cli_latest=
+" || return 1
+        once=$(env -u TOOLBOX_RELOAD_MARKER zsh -i -c "_toolbox_update_precmd; _toolbox_update_precmd" 2>/dev/null | grep -c "toolbox:" || true)
+        again=$(env -u TOOLBOX_RELOAD_MARKER zsh -i -c "_toolbox_update_precmd" 2>/dev/null | grep -c "toolbox:" || true)
+        _zsh_banner_cleanup
+        [ "$once" = "1" ] || { echo "    one shell rendered $once times, want 1"; return 1; }
+        [ "$again" = "1" ] || { echo "    a new shell rendered $again times, want 1"; return 1; }
+    }
+
     # r. toolbox-reload refuses when the host CLI is too old to have injected
     # TOOLBOX_RELOAD_MARKER. Both halves matter and only one is obvious: the
     # refusal text, and that the shell SURVIVES it. A guard that printed and
@@ -393,6 +416,7 @@ cli_latest=
     _zsh_assert "update banner ready, old CLI" _zsh_banner_ready_old_cli_check
     _zsh_assert "update banner both axes"      _zsh_banner_both_axes_check
     _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
+    _zsh_assert "update banner shown per shell" _zsh_banner_scope_check
     _zsh_assert "toolbox-reload refuses without marker" _zsh_reload_refusal_check
 }
 
