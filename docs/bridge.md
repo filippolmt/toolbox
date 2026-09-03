@@ -106,7 +106,24 @@ herdr runs inside the container, and its agent-state chimes never played: the Li
 - Container-side: `/usr/local/bin/paplay` is a bridge shim, not a PulseAudio client — it answers to the **first name herdr probes for**, which is what selects it out of that chain (glossary: [Probed Shim](../CONTEXT.md#probed-shim)). Nothing calls it. It POSTs `{name, data}` — the MP3 **bytes**, base64-encoded, because the temp file herdr wrote lives in the container's `/tmp` where the host cannot read it (glossary: [Sound Handoff](../CONTEXT.md#sound-handoff)).
 - It exits **non-zero and silent** when the bridge is unreachable, on purpose: herdr then tries the other four names, finds them missing, and writes its own `no mp3-capable audio player available` line — the same log that diagnosed the original defect. The one human-facing hint stays the install tip `toolbox shell` prints.
 - Daemon-side: `playSound` writes the bytes to a temp file it names itself and spawns `afplay` (macOS) or the first installed player of the same chain (Linux) **detached**, answering `200` immediately. Blocking would queue two completions moments apart, where overlapping them is what herdr does natively; the cost is that a failing player cannot be reported back. A spawned player gets a deadline (`soundTimeout`), and the goroutine that reaps it removes the temp file.
-- Not delivered here: **when** a sound fires. That predicate is herdr's and is hardcoded — `Request` (an agent waiting on a human) always, `Done` only when the pane's tab is inactive or the terminal window unfocused. Turning the chimes on at all is herdr's own `ui.sound.*` configuration, which lives in the developer's `~/.config/herdr` and not in this image. See [ADR-0009](adr/0009-sound-handoff-through-the-bridge.md).
+- Not delivered here: **when** a sound fires. That predicate is herdr's and is hardcoded — `Request` (an agent waiting on a human) always, `Done` only when the pane's tab is inactive or the terminal window unfocused. See [ADR-0009](adr/0009-sound-handoff-through-the-bridge.md).
+
+### The herdr side
+
+Two keys in `~/.config/herdr/config.toml` complete the channel, and **the image writes neither** — that path is one host-global RW bind shared by every toolbox container, so an `init.d` script writing it would edit the developer's own file on behalf of every project. Set them once, by hand:
+
+```toml
+[ui.sound]
+enabled = true          # upstream default; explicit so a default flip can't mute the channel
+
+[ui.toast]
+delivery = "terminal"   # optional banner: OSC 9 on the client's stdout, which is the docker exec TTY
+```
+
+- `ui.sound.enabled` is **already the upstream default** — which is why the original defect was silent rather than absent: herdr was firing the sound and losing it, warning into `herdr-client.log` where nobody looks. Pinning it in the file is a statement of intent, not a fix.
+- `ui.toast.delivery` defaults to `off` and gates only the banner. Sound and toast are independent `ServerMessage`s, so leaving it `off` costs no chime. On macOS the banner is additionally suppressed while the terminal surface is focused, by a hardcoded upstream default — the two gates happen to compose, since `Done` is emitted only when the window is unfocused, which is when the banner shows.
+- `herdr config check` validates the file; a running server picks the change up on `herdr server reload-config` (or the `reload_config` keybind), not before.
+- Outside herdr entirely: `bell-features = system` in the host terminal's own config is a net that always sounds, with no `Done`/`Request` distinction and the wrong predicate (it is the bell of the program in the pane). A net, not a solution.
 
 ## Mount gating
 
