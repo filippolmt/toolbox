@@ -52,7 +52,9 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 
 // replaceForReload runs the destructive half of a session reload, in the one
 // order that makes a failed reload harmless: refresh, prove the image is
-// present, only then destroy.
+// present, only then destroy. A no-op for a session that is not a reload, so
+// the caller can name the act unconditionally rather than hide it behind a
+// condition.
 //
 // imageplan.Ensure is a local-presence check that never pulls, so the gate
 // needs no new code and gives the contract outright — a reload that finds no
@@ -62,6 +64,9 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 // re-entry command, because the shell that would have printed it is gone.
 func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
 	from := plan.ReloadFrom
+	if from == nil {
+		return nil
+	}
 
 	imageplan.Refresh(ctx, cli, plan.Image)
 	if err := imageplan.Ensure(ctx, cli, plan.Image); err != nil {
