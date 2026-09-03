@@ -8,7 +8,15 @@ IMAGE="${1:-ghcr.io/filippolmt/toolbox:latest}"
 # swallow a failing block.
 set -o pipefail
 SMOKE_LOG="$(mktemp)"
-trap 'rm -f "${SMOKE_LOG}"' EXIT
+# One EXIT handler for the whole script: `trap` replaces rather than appends, so
+# a second `trap … EXIT` anywhere below would silently drop this cleanup. The
+# sections that start their own containers set CLEANUP_CID instead of trapping.
+CLEANUP_CID=""
+cleanup() {
+    rm -f "${SMOKE_LOG}"
+    [ -z "${CLEANUP_CID}" ] || docker rm -f "${CLEANUP_CID}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
 echo "=== Toolbox Smoke Test ==="
 echo "Image: ${IMAGE}"
@@ -572,7 +580,7 @@ echo "=== Signal handling check (SIGTERM propagates via tini) ==="
 # PID-1 init (tini) the shell only dies via SIGKILL fallback. tini -g forwards
 # signals to the process group so the shell exits clean.
 cid=$(docker run -d "${IMAGE}" sleep 3600)
-trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+CLEANUP_CID="$cid"
 start=$(date +%s)
 docker stop -t 10 "$cid" >/dev/null
 elapsed=$(( $(date +%s) - start ))
@@ -583,7 +591,7 @@ else
     exit 1
 fi
 docker rm -f "$cid" >/dev/null 2>&1 || true
-trap - EXIT
+CLEANUP_CID=""
 
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
