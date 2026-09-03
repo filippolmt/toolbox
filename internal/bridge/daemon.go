@@ -29,32 +29,34 @@ import (
 // to the wrapper instead of hanging the in-container CLI.
 const requestTimeout = 5 * time.Second
 
-// rateLimit is the maximum number of /open + /edit requests served per
-// rolling second (one shared bucket). Enough headroom for legitimate bursts
-// (e.g. a CLI opening a few URLs back-to-back) while still containing a
-// buggy or hostile loop.
-const rateLimit = 10
+// rateBudget is one token bucket's allowance: the sustained requests per
+// rolling second, plus the burst layered on top. The two are meaningless apart
+// — a rate with no burst throttles the first legitimate pair of requests — so
+// they travel as one value, and each route's budget is named once below.
+type rateBudget struct {
+	perSecond int
+	burst     int
+}
 
-// rateBurst is the token bucket burst capacity layered on top of rateLimit.
-const rateBurst = 5
+// sharedBudget is the one bucket /open, /edit and /proximo draw from. Enough
+// headroom for legitimate bursts (a CLI opening a few URLs back-to-back) while
+// still containing a buggy or hostile loop.
+var sharedBudget = rateBudget{perSecond: 10, burst: 5}
 
-// credRateLimit / credRateBurst give /credential its own, more generous token
-// bucket separate from the /open+/edit+/proximo one. A single `git clone` with
-// many HTTPS submodules fires a rapid burst of credential lookups (each
-// submodule is a separate git process → get + store); sharing the 5-burst
-// bucket would 429 them and break the clone. Still bounded so a runaway loop
-// can't hammer the host credential store unchecked.
-const credRateLimit = 30
-const credRateBurst = 15
+// credBudget gives /credential its own, more generous bucket. A single `git
+// clone` with many HTTPS submodules fires a rapid burst of credential lookups
+// (each submodule is a separate git process → get + store); sharing
+// sharedBudget would 429 them and break the clone. Still bounded so a runaway
+// loop can't hammer the host credential store unchecked.
+var credBudget = rateBudget{perSecond: 30, burst: 15}
 
-// soundRateLimit / soundRateBurst give /sound its own bucket too. Same shape
-// as the shared one, and that is the whole point: separation, not headroom —
-// a run of chimes must not spend the budget an OAuth redirect on /open needs,
-// and vice versa. Unlike /credential this route earns no extra room; herdr
-// brakes upstream (ui.toast.delay_seconds, and a new state on a pane cancels
-// that pane's pending notification), so a burst here is short by construction.
-const soundRateLimit = 10
-const soundRateBurst = 5
+// soundBudget gives /sound its own bucket too. Same shape as sharedBudget, and
+// that is the whole point: separation, not headroom — a run of chimes must not
+// spend the budget an OAuth redirect on /open needs, and vice versa. Unlike
+// /credential this route earns no extra room; herdr brakes upstream
+// (ui.toast.delay_seconds, and a new state on a pane cancels that pane's
+// pending notification), so a burst here is short by construction.
+var soundBudget = rateBudget{perSecond: 10, burst: 5}
 
 // DaemonOptions tunes a Run call. Zero values are valid for the production
 // path; tests override Listener to inject a pre-bound listener.
@@ -260,9 +262,9 @@ func newHandler(token string, fns handlerFns, logger *log.Logger, now func() tim
 		token:        token,
 		fns:          fns,
 		logger:       logger,
-		limiter:      newRateLimiter(rateLimit, rateBurst, now),
-		credLimiter:  newRateLimiter(credRateLimit, credRateBurst, now),
-		soundLimiter: newRateLimiter(soundRateLimit, soundRateBurst, now),
+		limiter:      newRateLimiter(sharedBudget, now),
+		credLimiter:  newRateLimiter(credBudget, now),
+		soundLimiter: newRateLimiter(soundBudget, now),
 	}
 	mux.HandleFunc(RouteOpen, h.handleOpen)
 	mux.HandleFunc(RouteEdit, h.handleEdit)
@@ -659,11 +661,11 @@ type rateLimiter struct {
 	now       func() time.Time
 }
 
-func newRateLimiter(rate, burst int, now func() time.Time) *rateLimiter {
+func newRateLimiter(b rateBudget, now func() time.Time) *rateLimiter {
 	return &rateLimiter{
-		tokens:    float64(burst),
-		maxTokens: float64(burst),
-		refill:    float64(rate),
+		tokens:    float64(b.burst),
+		maxTokens: float64(b.burst),
+		refill:    float64(b.perSecond),
 		last:      now(),
 		now:       now,
 	}

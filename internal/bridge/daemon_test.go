@@ -610,8 +610,8 @@ func TestHandler_CredentialRateLimited(t *testing.T) {
 	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
 		return nil, 0, nil
 	})
-	// Own burst is 15 (fixed test clock → no refill); the 16th is throttled.
-	for i := range 15 {
+	// Own burst (fixed test clock → no refill); the next one is throttled.
+	for i := range credBudget.burst {
 		if rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", "")); rr.Code != http.StatusOK {
 			t.Fatalf("credential burst[%d] code = %d", i, rr.Code)
 		}
@@ -711,7 +711,7 @@ func TestHandler_SoundRejectsUnusablePayload(t *testing.T) {
 // redirect on /open, and a burst of URL opens must not swallow a chime.
 func TestHandler_SoundRidesItsOwnBucket(t *testing.T) {
 	h := buildTestHandler(t, handlerFns{})
-	for i := range rateBurst {
+	for i := range sharedBudget.burst {
 		if rr := doPost(t, h, "tok", `{"url":"https://example.com"}`); rr.Code != http.StatusNoContent {
 			t.Fatalf("open burst[%d] code = %d", i, rr.Code)
 		}
@@ -722,7 +722,7 @@ func TestHandler_SoundRidesItsOwnBucket(t *testing.T) {
 
 	// Fixed test clock → no refill, so the sound bucket drains on its own
 	// burst and only then throttles.
-	for i := range soundRateBurst {
+	for i := range soundBudget.burst {
 		if rr := doPostTo(t, h, RouteSound, "tok", soundBody("a.mp3", []byte("x"))); rr.Code != http.StatusOK {
 			t.Fatalf("sound burst[%d] code = %d — throttled by the shared bucket", i, rr.Code)
 		}
