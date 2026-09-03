@@ -166,7 +166,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
 - [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
-- [Workspace safe.directory ("dubious ownership")](internals/shell-start.md#workspace-safedirectory-dubious-ownership)
+- [git safe.directory ("dubious ownership")](internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ### [internals/privacy.md](internals/privacy.md)
 

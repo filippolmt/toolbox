@@ -17,46 +17,52 @@ if ! getent group "${_gid}" >/dev/null 2>&1; then
 fi
 unset _uid _gid
 
-# Workspace safe.directory
-# (docs/internals/shell-start.md#workspace-safedirectory-dubious-ownership).
-# The workspace mount point transiently reports uid 0 while its own contents
-# keep the host uid, and git checks the worktree rather than the files in it, so
-# it refuses a workspace that is in fact ours with "dubious ownership".
-# Captured by a 2s probe: 95 failures, 91 of them with euid=501 and mount point
-# uid=0 in the same instant (the other 4 had already closed the window before
-# the probe's own stat), while .git one level down kept uid 501 throughout.
-# Often, but not always, a second container is mounting the same host path at
-# the time (45 of the 95), so the trigger is not pinned down — but the wrong uid
+# git safe.directory
+# (docs/internals/shell-start.md#git-safedirectory-dubious-ownership).
+# A bind-mounted directory transiently reports uid 0 while its own contents keep
+# the host uid, and git checks the worktree rather than the files in it, so it
+# refuses a repository that is in fact ours with "dubious ownership". Captured on
+# the workspace by a 2s probe: 95 failures, 91 of them with euid=501 and mount
+# point uid=0 in the same instant (the other 4 had already closed the window
+# before the probe's own stat), while .git one level down kept uid 501 throughout.
+# Often, but not always, a second container is mounting the same host path at the
+# time (45 of the 95), so the trigger is not pinned down — but the wrong uid
 # arrives from Docker Desktop's file sharing either way, not from anything this
-# image can correct. Registering the mount points makes the question moot: git consults
-# safe.directory whenever the ownership check does not pass. Runs before the
-# init sequence, because 30-graphify.sh asks git whether the workspace is a work
-# tree with output suppressed, so an ownership fatal there skips the hook
-# install in silence. System scope only, same discipline as the git credential
-# helper further down and init.d/60-glab.sh: the host ~/.gitconfig is a RW mount
-# and must not be polluted, /etc/gitconfig dies with the AutoRemove container.
-# --global, which git's own message suggests, could not work here anyway — that
-# mount is a bind mount of a single file, so git's rename-in-place write fails
-# with EBUSY. sessionplan always sets TOOLBOX_HOST_WORKSPACE, independently of
-# whether the mirror bind exists (mountplan.WorkspaceMirrorPath drops it for
-# reserved prefixes); with no mirror the entry names nothing in this container
-# and is inert. The emptiness guard covers a bare `docker run` of this image,
-# where nothing sets the variable. Idempotent because ActionStart re-runs the
-# entrypoint on a restarted container. The gitconfig lock is the house discipline
-# for /etc/gitconfig rather than a live race here — running above the init
-# sequence is what keeps this clear of 60-glab.sh, which writes the same file
-# from init scripts that do run in parallel; the lock is what would keep it
-# correct if this block ever moved below them. Non-fatal: a failed registration
-# warns and boots on.
-for _ws in /workspace "${TOOLBOX_HOST_WORKSPACE:-}"; do
-    [ -n "$_ws" ] || continue
-    sudo flock /tmp/toolbox-gitconfig.lock sh -c '
-        git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$1" \
-          || git config --system --add safe.directory "$1"
-    ' _ "$_ws" \
-      || echo "toolbox: git safe.directory registration for $_ws failed (non-fatal — git may report dubious ownership on the workspace)"
-done
-unset _ws
+# image can correct. Registering makes the question moot: git consults
+# safe.directory whenever the ownership check does not pass.
+#
+# Registered as the wildcard rather than as a list of paths, because the affected
+# repositories cannot be enumerated here. ~/.claude is a bind mount of the same
+# kind as the workspace, and `claude plugin update` clones every git-subdir plugin
+# into a randomly named directory under ~/.claude/plugins/cache — so the worktree
+# git discovers has a name that does not exist yet at boot. git matches
+# safe.directory against that discovered root, and on the git this image ships
+# (unpinned, from the base apt block) only an exact path or the wildcard matches:
+# no glob form does, the trailing `/*` that a newer git accepts recursively
+# included. The wildcard gives up nothing here — the container runs as a single
+# uid with passwordless sudo, so an ownership check draws no boundary inside it,
+# and the paths this replaces (/workspace, $TOOLBOX_HOST_WORKSPACE) were trusted
+# unconditionally already.
+#
+# Runs before the init sequence, because 30-graphify.sh asks git whether the
+# workspace is a work tree with output suppressed, so an ownership fatal there
+# skips the hook install in silence. System scope only, same discipline as the git
+# credential helper further down and init.d/60-glab.sh: the host ~/.gitconfig is a
+# RW mount and must not be polluted, /etc/gitconfig dies with the AutoRemove
+# container. --global, which git's own message suggests, could not work here
+# anyway — that mount is a bind mount of a single file, so git's rename-in-place
+# write fails with EBUSY. Idempotent because ActionStart re-runs the entrypoint on
+# a restarted container. The gitconfig lock is the house discipline for
+# /etc/gitconfig rather than a live race here — running above the init sequence is
+# what keeps this clear of 60-glab.sh, which writes the same file from init
+# scripts that do run in parallel; the lock is what would keep it correct if this
+# block ever moved below them. Non-fatal: a failed registration warns and boots
+# on.
+sudo flock /tmp/toolbox-gitconfig.lock sh -c '
+    git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$1" \
+      || git config --system --add safe.directory "$1"
+' _ '*' \
+  || echo "toolbox: git safe.directory registration failed (non-fatal — git may report dubious ownership on any bind-mounted repository)"
 
 # Init Sequence (CONTEXT.md). Stderr → ~/.toolbox-state/init/<name>.log;
 # on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`

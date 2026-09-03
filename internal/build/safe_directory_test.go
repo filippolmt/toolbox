@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// The workspace safe.directory registration lives in entrypoint.sh as a loop
-// over the workspace mount points. These markers bracket it.
+// The safe.directory registration lives in entrypoint.sh as a single locked
+// git-config call. These markers bracket it.
 const (
-	safeDirBlockStart = "for _ws in /workspace"
-	safeDirBlockEnd   = "unset _ws"
+	safeDirBlockStart = "sudo flock /tmp/toolbox-gitconfig.lock sh -c '"
+	safeDirBlockEnd   = "on any bind-mounted repository)\""
 )
 
-// extractSafeDirectoryBlock lifts the registration loop out of the embedded
+// extractSafeDirectoryBlock lifts the registration out of the embedded
 // entrypoint.
 //
 // Needle-matching the asset cannot hold this block: the three ways it can
@@ -31,13 +31,20 @@ func extractSafeDirectoryBlock(t *testing.T) string {
 
 	_, rest, found := strings.Cut(body, safeDirBlockStart)
 	if !found {
-		t.Fatalf("entrypoint.sh: cannot find the workspace safe.directory loop (%q) — it was renamed or removed", safeDirBlockStart)
+		t.Fatalf("entrypoint.sh: cannot find the safe.directory registration (%q) — it was renamed or removed", safeDirBlockStart)
 	}
 	block, _, found := strings.Cut(rest, safeDirBlockEnd)
 	if !found {
-		t.Fatalf("entrypoint.sh: safe.directory loop has no %q — cannot tell where the block ends", safeDirBlockEnd)
+		t.Fatalf("entrypoint.sh: safe.directory registration has no %q — cannot tell where the block ends", safeDirBlockEnd)
 	}
-	return safeDirBlockStart + block + safeDirBlockEnd + "\n"
+	block = safeDirBlockStart + block + safeDirBlockEnd + "\n"
+	// The start marker is shared with the credential-helper registration further
+	// down, which takes the same lock. Extracting that one instead would leave
+	// every subtest below asserting on the wrong block, silently.
+	if !strings.Contains(block, "safe.directory") {
+		t.Fatalf("extracted the wrong locked block — it mentions no safe.directory:\n%s", block)
+	}
+	return block
 }
 
 // gitStub answers the two git invocations the block makes and records every
@@ -93,14 +100,13 @@ func newSafeDirHarness(t *testing.T) *safeDirHarness {
 	}
 }
 
-func (h *safeDirHarness) run(t *testing.T, hostWorkspace string, extraEnv ...string) (output string, exitCode int) {
+func (h *safeDirHarness) run(t *testing.T, extraEnv ...string) (output string, exitCode int) {
 	t.Helper()
 	env := []string{
 		"PATH=" + filepath.Join(h.dir, "bin") + ":/usr/bin:/bin",
 		"HOME=" + h.dir,
 		"SAFE_DIR_DB=" + h.db,
 		"SAFE_DIR_ARGV=" + h.argv,
-		"TOOLBOX_HOST_WORKSPACE=" + hostWorkspace,
 	}
 	cmd := exec.Command("/bin/sh", h.script)
 	cmd.Env = append(env, extraEnv...)
@@ -141,39 +147,47 @@ func readLines(t *testing.T, path string) []string {
 	return strings.Split(trimmed, "\n")
 }
 
-// TestWorkspaceSafeDirectoryRegistration covers why the block exists at all.
+// TestSafeDirectoryRegistration covers why the block exists at all.
 //
-// The workspace mount point transiently reports uid 0 while its own contents
-// keep the host uid, and git checks the worktree rather than the files in it, so
-// it refuses a workspace that is ours with "dubious ownership". Captured with a
-// 2s probe: of 95 failures, 91 showed euid=501 against a mount point at uid=0 in
-// the same instant, .git one level down staying at 501. Registering the mount
-// points makes
-// the question moot, because git consults safe.directory whenever the ownership
-// check does not pass — which also covers the other two roads to that same
-// fatal: a genuinely foreign-uid repo, and an ownership question git could not
-// answer at all (is_path_owned_by_current_uid() reads "not mine" from any
-// lstat() failure).
-func TestWorkspaceSafeDirectoryRegistration(t *testing.T) {
+// A bind-mounted directory transiently reports uid 0 while its own contents
+// keep the host uid, and git checks the worktree rather than the files in it,
+// so it refuses a repository that is ours with "dubious ownership". Captured on
+// the workspace with a 2s probe: of 95 failures, 91 showed euid=501 against a
+// mount point at uid=0 in the same instant, .git one level down staying at 501.
+// Registering makes the question moot, because git consults safe.directory
+// whenever the ownership check does not pass — which also covers the other two
+// roads to that same fatal: a genuinely foreign-uid repo, and an ownership
+// question git could not answer at all (is_path_owned_by_current_uid() reads
+// "not mine" from any lstat() failure).
+func TestSafeDirectoryRegistration(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
-	const host = "/Users/someone/projects/repo"
 
-	t.Run("registers both workspace mount points", func(t *testing.T) {
+	// The entry is the wildcard rather than a list of paths because the affected
+	// repositories cannot be enumerated at boot: ~/.claude is a bind mount of
+	// the same kind as the workspace, and `claude plugin update` clones each
+	// git-subdir plugin into a randomly named directory under
+	// ~/.claude/plugins/cache. git matches safe.directory against the worktree
+	// root it discovered, so a path that does not exist yet when this runs can
+	// never be covered by naming it — and on the git this image ships, only an
+	// exact path or the wildcard matches at all: no glob form does, the trailing
+	// `/*` a newer git accepts recursively included. Tightening this back to a
+	// path (or to that glob) reopens the reported failure.
+	t.Run("registers the wildcard, never an enumerated path", func(t *testing.T) {
 		h := newSafeDirHarness(t)
-		if out, code := h.run(t, host); code != 0 {
+		if out, code := h.run(t); code != 0 {
 			t.Fatalf("block exited %d, want 0 (output %q)", code, out)
 		}
-		want := []string{"/workspace", host}
+		want := []string{"*"}
 		if got := h.registered(t); !slices.Equal(got, want) {
-			t.Errorf("registered %q, want %q", got, want)
+			t.Errorf("registered %q, want %q — a named path cannot cover a worktree whose name is generated after boot", got, want)
 		}
 	})
 
 	t.Run("never touches the host gitconfig", func(t *testing.T) {
 		h := newSafeDirHarness(t)
-		h.run(t, host)
+		h.run(t)
 		argv := h.gitArgv(t)
 		if len(argv) == 0 {
 			t.Fatal("git was never called — the block registered nothing")
@@ -190,32 +204,18 @@ func TestWorkspaceSafeDirectoryRegistration(t *testing.T) {
 
 	t.Run("adds nothing on a re-run", func(t *testing.T) {
 		h := newSafeDirHarness(t)
-		h.run(t, host)
+		h.run(t)
 		first := h.registered(t)
 		// The entrypoint runs once per container start, not per shell: a second
 		// `toolbox shell` arrives via ExecCreate on the resolved shell command,
 		// never through the entrypoint. So what re-runs this is
 		// runplan.ActionStart on a stopped container, against the /etc/gitconfig
 		// the first boot already wrote.
-		if out, code := h.run(t, host); code != 0 {
+		if out, code := h.run(t); code != 0 {
 			t.Fatalf("second run exited %d, want 0 (output %q)", code, out)
 		}
 		if got := h.registered(t); !slices.Equal(got, first) {
 			t.Errorf("re-run changed the registrations: %q, want %q", got, first)
-		}
-	})
-
-	// sessionplan always sets TOOLBOX_HOST_WORKSPACE, so an empty value is not
-	// the unmirrored workspace (that one still gets registered, harmlessly —
-	// the path names nothing in the container) but a bare `docker run` of this
-	// image, where nothing sets the variable at all.
-	t.Run("skips an unset host workspace", func(t *testing.T) {
-		h := newSafeDirHarness(t)
-		if out, code := h.run(t, ""); code != 0 {
-			t.Fatalf("block exited %d, want 0 (output %q)", code, out)
-		}
-		if got := h.registered(t); !slices.Equal(got, []string{"/workspace"}) {
-			t.Errorf("registered %q, want only the container mount point", got)
 		}
 	})
 
@@ -236,7 +236,7 @@ func TestWorkspaceSafeDirectoryRegistration(t *testing.T) {
 
 	t.Run("a failing git never aborts the boot", func(t *testing.T) {
 		h := newSafeDirHarness(t)
-		out, code := h.run(t, host, "GIT_STUB_FAIL=1")
+		out, code := h.run(t, "GIT_STUB_FAIL=1")
 		if code != 0 {
 			t.Fatalf("block exited %d on a failing git, want 0 — a registration failure must not block the shell (output %q)", code, out)
 		}

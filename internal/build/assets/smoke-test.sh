@@ -450,11 +450,16 @@ check_required "git-credential-toolbox shim" sh -c "test -x /usr/local/bin/git-c
 # entrypoint registers the credential helper in the system gitconfig when the
 # bridge is installed — assert the wiring is present.
 check_required "git credential helper wired" sh -c "grep -q 'credential.helper' /usr/local/bin/entrypoint && grep -q git-credential-toolbox /usr/local/bin/entrypoint && echo present"
-# entrypoint registers the workspace mount points as git safe.directory — a
-# runtime check, not a grep: the mount point transiently reports uid 0 and git
-# then refuses the worktree. /workspace always exists, so this holds with no
-# workspace bind.
-check_required "workspace safe.directory registered" sh -c "git config --system --get-all safe.directory | grep -qx /workspace && echo present"
+# entrypoint registers git safe.directory — a runtime check, not a grep, and
+# behavioural rather than a config read: a bind-mounted directory transiently
+# reports uid 0 while its contents keep the host uid, and git then refuses the
+# worktree. Asserted against a worktree root that is BOTH foreign-uid and at a
+# path nothing could have enumerated at boot, because the repositories that need
+# covering are created after it — `claude plugin update` clones each git-subdir
+# plugin under a generated name in ~/.claude/plugins/cache. On the git this image
+# ships, only an exact path or the wildcard matches there; a grep for a named
+# path would pass while that case still failed.
+check_required "safe.directory covers an unenumerated foreign-uid repo" sh -c "d=\$(mktemp -d)/temp_subdir_probe.clone; mkdir -p \"\$d\" && git init -q \"\$d\" && sudo chown 0:0 \"\$d\" && git -C \"\$d\" rev-parse --is-inside-work-tree"
 # Host-only credential-helper names alias to the bridge shim so a host
 # ~/.gitconfig naming osxkeychain/manager/libsecret resolves with no warning.
 # Must be symlinks to git-credential-toolbox — NEVER shadow the built-in
