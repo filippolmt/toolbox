@@ -141,14 +141,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
 # Shared parent for the fetch-* stages: curl + CA bundle + git. tar/gzip/awk/
 # sha256sum ship with the slim base. Children inherit the SHELL config.
 #
-# Pins http.version for the same reason the final stage does, and it has to be
-# pinned in both: this git mis-reads github.com's HTTP/2 response to protocol
-# v2's POST /git-upload-pack, so `fetch-omz` and `fetch-brew` — the only stages
-# that clone rather than curl — die with "expected flush after ref listing".
-# Per-request odds of about three in four make a stage that clones six times
-# effectively certain to fail, while leaving a retry able to pass by luck. Two
-# things kept this latent: the registry build cache, which only rebuilds these
-# stages when it is cold, and that luck. → docs/internals/image-build.md#system-git-settings
+# Pins http.version because `fetch-omz` and `fetch-brew` are the only stages that
+# clone rather than curl a release artefact, and this git fails most of the
+# requests protocol v2 makes to github over HTTP/2 — so without the pin the build
+# does not complete. Do not drop it here on the grounds that the final stage has
+# one: these stages run long before that layer.
+# → docs/internals/image-build.md#system-git-settings
 #
 # Also installs `freeze-mtimes`, which every fetch stage runs as its last command.
 # `COPY --link` folds mtime into the layer digest, and a downloaded artefact
@@ -1331,21 +1329,15 @@ RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
 # kept because that registration is deliberately non-fatal, and brew is the one
 # thing in the image that breaks on every git call when it does not land.
 #
-# http.version: git's protocol v2 does a POST /git-upload-pack, and the git
-# apt ships here mis-reads github.com's HTTP/2 response to it — the ref listing
-# comes back truncated or as a 401, surfacing as "expected flush after ref
-# listing" or "could not read Username". It fails per request rather than
-# always: 15 of 20 `ls-remote` runs over h2, 0 of 20 with this pin, so a clone
-# is overwhelmingly likely to die and a retry can always get lucky. Measured to
-# be git's own bug, not this image's and not the network: bare debian:bookworm-slim with no config of ours fails identically,
-# a much newer git succeeds over the same Docker network, and curl reproduces
-# nothing — the same POST over h2 returns 200. Pinned globally rather than per
-# host because the trigger is on git's side, so github is where it was found
-# rather than the only place it can happen; gitlab.com and codeberg.org
-# negotiate h2 too and merely happen to survive it. Costs git nothing
-# measurable (it opens one or two connections, so h2 multiplexing buys it
-# little) and becomes dead weight, not a hazard, once the base image carries a
-# git that reads h2 correctly. → docs/internals/image-build.md#system-git-settings
+# http.version: this git mis-reads the HTTP/2 response github returns to the
+# POST /git-upload-pack that protocol v2 issues, so most HTTPS clones and
+# fetches from github fail — reported as "expected flush after ref listing" or,
+# misleadingly, as "could not read Username". Global rather than per host, and
+# not to be narrowed: the fault is on git's side, so github is where it was
+# found rather than the only place it can happen. Droppable once the base image
+# carries a git that reads h2 correctly. The measurements behind all of that,
+# including why it is pinned in fetch-base as well:
+# → docs/internals/image-build.md#system-git-settings
 RUN set -eux; \
     git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew; \
     git config --system http.version HTTP/1.1

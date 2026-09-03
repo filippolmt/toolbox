@@ -138,7 +138,7 @@ Worth knowing when reading that fatal: it covers three different situations, and
 
 `/workspace` plus `$TOOLBOX_HOST_WORKSPACE` were the original entries, and enumerating is what made them insufficient. `~/.claude` is a bind mount of the same kind, and `claude plugin update` clones every `git-subdir` plugin into a **randomly named** directory under `~/.claude/plugins/cache`, then fetches the pinned commit inside that clone. git matches `safe.directory` against the worktree root it *discovered*, and that root does not exist yet when the entrypoint runs — so no list written at boot can name it. Each failed update leaves its clone behind, so the symptom is a per-plugin `Failed to fetch commit …: fatal: detected dubious ownership` plus a cache that keeps growing. It looks bursty in the same way the workspace flake is — consecutive updates fail, one then succeeds with no config change, while a manual `git` in the same directory works throughout — but that is an observation from a handful of sessions, not a probe of the shape the workspace got.
 
-Naming the cache directory does not reach it either, and neither does a glob. Measured against the git this image ships (unpinned, from the base apt block), on a worktree root chowned to uid 0 under the real plugin cache while its contents keep the runtime uid:
+Naming the cache directory does not reach it either, and neither does a glob. Measured as of 2026-09-03 against the git this image ships (unpinned, from the base apt block), on a worktree root chowned to uid 0 under the real plugin cache while its contents keep the runtime uid:
 
 | entry | covers the clone |
 |---|---|
@@ -151,7 +151,9 @@ Naming the cache directory does not reach it either, and neither does a glob. Me
 
 Only an exact path or the wildcard matches. A newer git *does* honour a trailing `/*`, recursively at any depth — which is why enumerating looked plausible, and why a glob entry lifted from current git documentation fails **silently** here rather than erroring. That also removes the one gap the earlier per-path registration left open: a nested repo, submodule or worktree under the workspace no longer needs an entry of its own.
 
-The wildcard gives up nothing inside this container: it runs as a single uid with passwordless sudo, so an ownership check draws no boundary an attacker would have to cross, and the paths it replaces were trusted unconditionally anyway. The root-owned Homebrew clone keeps its own system entry from the [image build](image-build.md#homebrew) — redundant at runtime now, still the thing that describes why that clone is special.
+What the wildcard costs, stated rather than waved away: it trusts more than the paths it replaces. git will honour the config and hooks — `core.fsmonitor`, `core.hooksPath` — of a repository owned by *some other uid* that reaches the container through any mount, where before only the workspace root was trusted blanket and a foreign-uid repository under it was still refused. Three things make that a reasonable price rather than no price at all: enumeration cannot cover the failure this fixes, at all, so the alternative is not a narrower entry but a broken `claude plugin update`; the check never protected against a hostile repository the user cloned themselves, since that one already carries their own uid; and a container that runs as a single uid with passwordless sudo is not a boundary anything inside it would have to cross. What remains is the narrow case of a foreign-uid repository arriving through a mount that the user then runs git inside.
+
+The root-owned Homebrew clone keeps its own system entry from the [image build](image-build.md#homebrew) — redundant at runtime now, still the thing that describes why that clone is special.
 
 Four properties, held by `TestSafeDirectoryRegistration` (`internal/build/safe_directory_test.go`, which reassembles the block from the embedded entrypoint and **runs** it against stub `sudo`/`flock`/`git`):
 

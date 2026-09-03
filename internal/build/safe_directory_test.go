@@ -13,7 +13,12 @@ import (
 // git-config call. These markers bracket it.
 const (
 	safeDirBlockStart = "sudo flock /tmp/toolbox-gitconfig.lock sh -c '"
-	safeDirBlockEnd   = "on any bind-mounted repository)\""
+	// The block ends with its non-fatal warning. Anchored on the stable prefix
+	// of that echo rather than on the full sentence: the tail is user-facing
+	// prose and will be reworded, and this test has no business breaking when it
+	// is. extractSafeDirectoryBlock takes the rest of the line, so what it hands
+	// back is still a complete statement.
+	safeDirBlockEnd = `|| echo "toolbox: git safe.directory registration failed`
 )
 
 // extractSafeDirectoryBlock lifts the registration out of the embedded
@@ -33,11 +38,15 @@ func extractSafeDirectoryBlock(t *testing.T) string {
 	if !found {
 		t.Fatalf("entrypoint.sh: cannot find the safe.directory registration (%q) — it was renamed or removed", safeDirBlockStart)
 	}
-	block, _, found := strings.Cut(rest, safeDirBlockEnd)
-	if !found {
+	end := strings.Index(rest, safeDirBlockEnd)
+	if end < 0 {
 		t.Fatalf("entrypoint.sh: safe.directory registration has no %q — cannot tell where the block ends", safeDirBlockEnd)
 	}
-	block = safeDirBlockStart + block + safeDirBlockEnd + "\n"
+	warning := rest[end:]
+	if nl := strings.Index(warning, "\n"); nl >= 0 {
+		warning = warning[:nl]
+	}
+	block := safeDirBlockStart + rest[:end] + warning + "\n"
 	// The start marker is shared with the credential-helper registration further
 	// down, which takes the same lock. Extracting that one instead would leave
 	// every subtest below asserting on the wrong block, silently.

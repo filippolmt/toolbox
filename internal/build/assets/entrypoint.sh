@@ -39,10 +39,14 @@ unset _uid _gid
 # safe.directory against that discovered root, and on the git this image ships
 # (unpinned, from the base apt block) only an exact path or the wildcard matches:
 # no glob form does, the trailing `/*` that a newer git accepts recursively
-# included. The wildcard gives up nothing here — the container runs as a single
-# uid with passwordless sudo, so an ownership check draws no boundary inside it,
-# and the paths this replaces (/workspace, $TOOLBOX_HOST_WORKSPACE) were trusted
-# unconditionally already.
+# included. The wildcard does trust more than the paths it replaces: git will
+# honour the config and hooks of a repository owned by some other uid that
+# arrives through any mount, where before only the workspace root was trusted
+# blanket. Three things make that acceptable rather than free — enumeration
+# cannot cover the case this fixes at all, the check never applied to a hostile
+# repository the user cloned themselves (that one already carries their own
+# uid), and a container running as a single uid with passwordless sudo is not a
+# boundary anything in it would have to cross.
 #
 # Runs before the init sequence, because 30-graphify.sh asks git whether the
 # workspace is a work tree with output suppressed, so an ownership fatal there

@@ -7,32 +7,27 @@ import (
 
 // TestGitHTTPVersionPinned holds the pin in both places the Dockerfile needs it.
 //
-// The git this base image ships mis-reads github.com's HTTP/2 response to
-// protocol v2's POST /git-upload-pack: the ref listing comes back truncated or
-// as a 401, so the command dies with "expected flush after ref listing" or a
-// bogus "could not read Username". It fails per request rather than always (15
-// of 20 ls-remote runs over h2, 0 of 20 with the pin), so a clone issuing
-// several requests is nearly certain to die while any single retry can pass by
-// luck. Measured to be git's own bug rather than this image's or the network's — bare debian:bookworm-slim with none of our
-// config fails identically, a much newer git succeeds over the same Docker
-// network, and curl reproduces nothing (the same POST over h2 returns 200).
+// This git mis-reads the HTTP/2 response github returns to the POST
+// /git-upload-pack that protocol v2 issues, and fails most of those requests.
+// Why that is git's own fault rather than the image's or the network's, and the
+// numbers behind it, live in docs/internals/image-build.md#system-git-settings.
 //
-// Two independent pins, because the failure has two independent blast radii:
+// What this test is for is that the pin has two independent blast radii, so one
+// pin cannot cover for the other:
 //
 //   - fetch-base, for the build itself. fetch-omz and fetch-brew clone from
-//     github instead of curling a release artefact, six fetches between them,
-//     so without the pin the build effectively cannot complete.
-//   - the final stage, for the container. Without it HTTPS clones and fetches
-//     from github fail most of the time inside a toolbox shell.
+//     github instead of curling a release artefact, several times over, so
+//     without the pin the build does not complete.
+//   - the final stage, for the container. Without it, clones and fetches from
+//     github fail inside a toolbox shell.
 //
 // A needle test rather than a behavioural one on purpose: reproducing the
-// failure needs a real HTTP/2 peer, and neither `go test` nor smoke-test.sh
-// makes network calls — and a behavioural check on a per-request failure would
-// be flaky in the one direction that matters, passing on the runs that get
-// lucky. What makes the needle worth having is that the registry build cache
-// masks the build-time half: a dropped pin surfaces only on a cold cache, on
-// whichever unlucky run rebuilds fetch-base, which is exactly how it stayed
-// latent before it was found.
+// failure needs a real HTTP/2 peer, neither `go test` nor smoke-test.sh makes
+// network calls, and a behavioural check on a failure this intermittent would
+// pass on the runs that get lucky. What makes the needle worth having is that
+// the registry build cache masks the build-time half: a dropped pin surfaces
+// only on a cold cache, on whichever unlucky run rebuilds fetch-base, which is
+// exactly how it stayed latent before it was found.
 func TestGitHTTPVersionPinned(t *testing.T) {
 	const pin = "git config --system http.version HTTP/1.1"
 	body := readAsset(t, "Dockerfile")

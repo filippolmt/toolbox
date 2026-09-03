@@ -87,7 +87,7 @@ One layer writes `/etc/gitconfig` at build time, for git settings that are prope
 
 That second one deserves its measurement, because the obvious readings of it are all wrong. git's protocol v2 issues a `POST /git-upload-pack`, and the git apt ships here mis-reads github.com's HTTP/2 response to it: the ref listing comes back truncated or as a 401, so the command dies with `fatal: expected flush after ref listing` or `fatal: could not read Username for 'https://github.com'` — the second of which sends you hunting for a credential problem that does not exist.
 
-**It fails per request, not always**, which is the first thing to know before testing anything here: 15 of 20 `ls-remote` runs against github over h2, against 0 of 20 with the pin. So a single green run proves nothing, a clone that issues several requests is nearly certain to die somewhere, and a retry can always get lucky — the shape that makes this look like a network problem. Isolated one axis at a time, from a shell with every `GIT_CONFIG_*` cleared:
+**It fails per request, not always**, which is the first thing to know before testing anything here: as of 2026-09-03, 15 of 20 `ls-remote` runs against github over h2, against 0 of 20 with the pin. So a single green run proves nothing, a clone that issues several requests is nearly certain to die somewhere, and a retry can always get lucky — the shape that makes this look like a network problem. Isolated one axis at a time, from a shell with every `GIT_CONFIG_*` cleared:
 
 | what | result |
 |---|---|
@@ -95,7 +95,7 @@ That second one deserves its measurement, because the obvious readings of it are
 | github, v2 forced onto HTTP/1.1 | works |
 | github, protocol v0 over h2 | works |
 | gitlab.com, git defaults | works |
-| **bare `debian:bookworm-slim`, no config of ours, github defaults** | fails identically |
+| **a bare container off the same base image, no config of ours, github defaults** | fails identically |
 | **a much newer git, same Docker network, github defaults** | works |
 | **curl, same POST with git's headers, over h2** | 200 |
 

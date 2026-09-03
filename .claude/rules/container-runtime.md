@@ -108,7 +108,7 @@ Measured cause: a bind-mounted directory transiently reports **uid 0 while its c
 
 ### Why not a list of paths
 
-**Never tighten this back to named paths.** `~/.claude` is a bind mount of the same kind, and `claude plugin update` clones each `git-subdir` plugin into a randomly named directory under `~/.claude/plugins/cache`; git matches the entry against the worktree root it *discovered*, which does not exist at boot. Measured on the git this image ships (unpinned, base apt block): only an exact path or `*` matches — the mount root, the cache dir, `<cache>/*`, `<mount>/*`, `/**` and `/*/` all fail. A newer git honours a trailing `/*` recursively, so a glob copied from current git docs fails *silently* here. The wildcard also closes the nested-repo/submodule/worktree gap the per-path version left open, and gives up nothing: single runtime uid + passwordless sudo means the ownership check draws no boundary inside the container.
+**Never tighten this back to named paths, and never to a glob.** The repositories that need covering get their names generated after boot (the `claude plugin update` clones under `~/.claude/plugins/cache`), and on the git this image ships only an exact path or `*` matches at all — a glob copied from current git docs fails *silently* here. The wildcard is a real widening of trust, not a free one; the doc states what it costs and why it is still the right call. → [git-safe-directory](../../docs/internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ### What the fatal hides
 
@@ -120,7 +120,7 @@ Four invariants, held by `TestSafeDirectoryRegistration` (`safe_directory_test.g
 
 ### Escape hatch
 
-Per-command escape hatch that writes no config: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` — **dead under Claude Code**. The numbered vars are one flat set indexed from zero, not a stack, so any later `GIT_CONFIG_COUNT` + `KEY_0` replaces the caller's instead of extending it, and Claude Code hands every git subprocess it drives its own hardening set. `GIT_CONFIG_GLOBAL` at a file that `include`s the user's config composes instead. Debugging note: `env` in the session's shell cannot answer what a spawned CLI injects — it also shows what the session merely inherited from the `~/.claude/settings.json` `env` block, which outlives its own deletion for the life of the shell and will make a deterministic failure look bursty. Use a `git` shim on `PATH` that logs each subprocess's env, from a shell with the numbered set `env -u`'d. → [git-safe-directory](../../docs/internals/shell-start.md#git-safedirectory-dubious-ownership)
+Per-command escape hatch that writes no config: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` — **dead under Claude Code**, which replaces the caller's numbered set with its own. `GIT_CONFIG_GLOBAL` at a file that `include`s the user's config composes instead. **Debugging guardrail: `env` in the session's own shell cannot answer what a spawned CLI injects** — use a `git` shim on `PATH` that logs each subprocess's env, from a shell with the numbered set `env -u`'d. → [escape-hatch](../../docs/internals/shell-start.md#escape-hatch-and-the-trap-in-it) → [git-safe-directory](../../docs/internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ## Proximo integration
 
