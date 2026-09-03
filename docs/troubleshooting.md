@@ -38,6 +38,16 @@ Symptoms, causes, and fixes for the failure modes users actually hit. Bridge-spe
 
 See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are the bridge daemon not installed (`toolbox bridge install`), not running (`toolbox bridge status`), or a version-skewed host CLI. For OAuth callbacks that never reach the in-container CLI, see the [loopback bridge](commands.md#loopback-bridge).
 
+## herdr plays no sound when an agent finishes
+
+**Symptom:** herdr's agent-state chimes never sound, with nothing on screen to say why. `~/.config/herdr/herdr-client.log` carries `sound playback failed … no mp3-capable audio player available`, naming all five players it tried.
+
+**Cause:** the container has no audio backend and none of the five players herdr spawns, no `/dev/snd` and no sound-server socket. The playback is handed to the host instead, over the bridge.
+
+**Fix:** install the bridge (`toolbox bridge install` on the host — `toolbox bridge status` if it is already installed), and make sure the host CLI is new enough to serve `/sound`: an older daemon answers 404 and the shim fails through exactly as if no player existed. Then check the herdr side, `ui.sound.enabled` and the optional `ui.toast.delivery` banner — [agent sounds](bridge.md#agent-sounds) documents both, and a running herdr server needs `herdr server reload-config` before it sees a config edit.
+
+**Sounds still only sometimes?** That is by design and it is herdr's rule, not the bridge's: `Request` (an agent waiting on a human) always fires, while `Done` fires only when the pane's tab is inactive or the terminal window is unfocused. Panes in the same tab share that state, so a single-tab split layout stays quiet on `Done` while you are looking at it.
+
 ## Stale local branches pile up after merges
 
 **Symptom:** `git branch` lists many local branches whose PRs were already merged — squash-merged branches (the local copy isn't recognised as merged) and leftover `worktree-agent-*` branches from agent worktrees.

@@ -80,7 +80,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox config`](docs/commands.md#toolbox-config) | Inspect and scaffold configuration (`show`, `example`, `path`, `edit`, `set`, `doctor`, `ui`) |
 | [`toolbox mounts`](docs/mounts.md#mounts-cli) | Manage bind-mount entries (`list`, `add`, `disable`, `remove`, `root`) |
 | [`toolbox shells`](docs/shells.md) | Manage named shell shortcuts (`list`, `get`, `add`, `set`, `remove`) |
-| [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo calls (`install`, `uninstall`, `status`) |
+| [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo/sound calls (`install`, `uninstall`, `status`) |
 | [`toolbox sdd`](docs/sdd.md) | Manage repo-local Spec-Driven-Development skill packs (`list`, `init`) |
 | [`toolbox completion [bash\|zsh\|fish]`](docs/commands.md#toolbox-completion) | Generate shell completions |
 | [`--config <file>`](docs/commands.md#global-flag---config) | Global flag on every command: load exactly this config file |
@@ -118,7 +118,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Publishing ports & OAuth callbacks.** `toolbox shell -p <port>` forwards host ports docker-style; `--oauth <tool>` expands the documented recipe for CLIs with OAuth callback listeners (`-B` bridges container-loopback binds). → [docs/commands.md](docs/commands.md#publishing-ports)
 
-**Bridge (browser / editor / proximo).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and `proximo up|down|status` reach the host's browser, editor, and proximo binary — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
+**Bridge (browser / editor / proximo / sound).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and `proximo up|down|status` reach the host's browser, editor, and proximo binary, and herdr's agent chimes reach the host's audio output — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
 
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 

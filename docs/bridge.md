@@ -16,20 +16,21 @@ The `bridge:` config key (default on) controls whether the container gets the br
 
 ## Architecture
 
-The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium:
+The container has no display server. CLIs inside `toolbox shell` that invoke `xdg-open <url>`, set `$BROWSER`, or expect an OAuth redirect to land somewhere clickable have no fallback by default. The bridge plumbs URL opens out to the host's real browser; the same channel carries editor opens (`code .`, `codium <file>`) to the host's VS Code / VSCodium, and herdr's agent chimes to the host's audio output — the container has no player for those either:
 
 ```
 container                                          host
 ─────────                                          ────
 xdg-open <url>                                     toolbox bridge daemon
 code/codium <path>                                   │ listens on 127.0.0.1:<port>
-  └─ wrappers at tail of Dockerfile                  │ + (Linux) unix run/bridge.sock
-       │  read /home/toolbox/.toolbox/bridge/       │ (port + token read from
-       │  {port,token} (RO bind-mount)               │  ~/.toolbox/toolbox/bridge/)
-       ├─ POST /open  body: { "url": "..." }         ├─ open / xdg-open <url>
-       └─ POST /edit  body: { "editor": …, "path": … }
-                                                     └─ code / codium <path>
-              (both: Authorization: Bearer <token>)
+paplay <file>  (herdr probes for it)                 │ + (Linux) unix run/bridge.sock
+  └─ wrappers at tail of Dockerfile                  │ (port + token read from
+       │  read /home/toolbox/.toolbox/bridge/        │  ~/.toolbox/toolbox/bridge/)
+       │  {port,token} (RO bind-mount)               │
+       ├─ POST /open   { "url": … }                  ├─ open / xdg-open <url>
+       ├─ POST /edit   { "editor": …, "path": … }    ├─ code / codium <path>
+       └─ POST /sound  { "name": …, "data": … }      └─ afplay / probed player
+            (all three: Authorization: Bearer <token>)
 ```
 
 ### Transport
