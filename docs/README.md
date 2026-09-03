@@ -136,6 +136,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Rust base image tag scheme](internals/image-build.md#rust-base-image-tag-scheme)
 - [Slim Rust images ship no curl / ca-certificates](internals/image-build.md#slim-rust-images-ship-no-curl--ca-certificates)
 - [Homebrew](internals/image-build.md#homebrew)
+- [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
 - [Tools removal](internals/image-build.md#tools-removal)
@@ -166,7 +167,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
 - [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
-- [Workspace safe.directory ("dubious ownership")](internals/shell-start.md#workspace-safedirectory-dubious-ownership)
+- [git safe.directory ("dubious ownership")](internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ### [internals/privacy.md](internals/privacy.md)
 

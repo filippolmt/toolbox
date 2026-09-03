@@ -96,15 +96,19 @@ A plain-name `credential.helper` is resolved **the way git resolves it — `git 
 
 `bridge install|uninstall` refuse at euid 0 (`EnsureUserContext` → pure `checkNotRoot`/`rootServiceAdvice`, `TestCheckNotRoot` + `TestEnsureUserContext`). Both supervisors are per-user — LaunchAgent in the caller's GUI domain, systemd unit on their user bus — and root has neither, so `sudo` could only fail *after* writing the plist/unit and a root-owned token into whatever `HOME` sudo passed through (`launchctl bootstrap gui/0` → `Bootstrap failed: 125: Domain does not support specified action`; `systemctl --user` → `Failed to connect to bus`). The guard sits in `cmd/bridge.go`, not in `bridge.Install`: `make go-test` runs the suite as root inside the `golang` container, so a guard inside the package would fail locally and pass in CI. `status` is unguarded — a read needs no domain.
 
-## Workspace `safe.directory` is registered at boot, and the cause is not ownership
+## `safe.directory` is registered at boot as the wildcard, and the cause is not ownership
 
 ### What is registered
 
-`entrypoint.sh` adds `/workspace` + `$TOOLBOX_HOST_WORKSPACE` to the **system** gitconfig, before the init sequence (sessionplan always sets that var, whether or not the mirror bind exists — with no mirror the entry is inert; a container predating the block needs a rebuild **and** a recreate, the entrypoint being baked in).
+`entrypoint.sh` adds **one** entry, `*`, to the **system** gitconfig, before the init sequence (a container predating a change here needs a rebuild **and** a recreate, the entrypoint being baked in).
 
 ### Measured cause
 
-Measured cause: the workspace mount point transiently reports **uid 0 while its contents keep the host uid** (a 2s probe caught 95 failures: 91 with euid=501 and mount point uid=0 in the same instant, `.git` one level down at 501 throughout; the other 4 had recovered before the probe's own stat), and git checks the *worktree*, not the files in it. A second container mounting the same host path was present in 45 of the 95 — a hint, not a proven trigger, and an undercount since those containers exit fast. Either way the wrong uid comes from Docker Desktop's file sharing, not from this image. Don't chase it in the entrypoint.
+Measured cause: a bind-mounted directory transiently reports **uid 0 while its contents keep the host uid** (a 2s probe caught 95 failures on the workspace: 91 with euid=501 and mount point uid=0 in the same instant, `.git` one level down at 501 throughout; the other 4 had recovered before the probe's own stat), and git checks the *worktree*, not the files in it. A second container mounting the same host path was present in 45 of the 95 — a hint, not a proven trigger, and an undercount since those containers exit fast. Either way the wrong uid comes from Docker Desktop's file sharing, not from this image. Don't chase it in the entrypoint.
+
+### Why not a list of paths
+
+**Never tighten this back to named paths, and never to a glob.** The repositories that need covering get their names generated after boot (the `claude plugin update` clones under `~/.claude/plugins/cache`), and on the git this image ships only an exact path or `*` matches at all — a glob copied from current git docs fails *silently* here. The wildcard is a real widening of trust, not a free one; the doc states what it costs and why it is still the right call. → [git-safe-directory](../../docs/internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ### What the fatal hides
 
@@ -112,11 +116,11 @@ That fatal covers three situations and names none: foreign-uid repo, wrong-uid m
 
 ### Four invariants
 
-Four invariants, held by `TestWorkspaceSafeDirectoryRegistration` (reassembles the block from the embedded entrypoint and runs it against stub sudo/flock/git): **system scope only** (host `~/.gitconfig` is a RW bind mount of a *single file* — `--global`, which git itself suggests, fails with `Device or resource busy` and pollutes the host config when it lands), **before the init sequence** (offset-checked: `30-graphify.sh` asks git about the workspace with output suppressed, so a fatal there skips the hook install silently), **idempotent** (`--get-all` before `--add` — the entrypoint runs once per container *start*, not per shell — sibling shells arrive via `ExecCreate`, not the entrypoint — so the re-runner is `ActionStart` on a stopped container; the shared `/tmp/toolbox-gitconfig.lock` is house discipline for `/etc/gitconfig`, not a live race: running above the init sequence is what keeps this clear of the parallel `60-glab.sh`), **non-fatal**, plus a runtime `smoke-test.sh` assertion on the registered entry.
+Four invariants, held by `TestSafeDirectoryRegistration` (`safe_directory_test.go` beside the assets — reassembles the block from the embedded entrypoint and runs it against stub sudo/flock/git): **system scope only** (host `~/.gitconfig` is a RW bind mount of a *single file* — `--global`, which git itself suggests, fails with `Device or resource busy` and pollutes the host config when it lands), **before the init sequence** (offset-checked: `30-graphify.sh` asks git about the workspace with output suppressed, so a fatal there skips the hook install silently), **idempotent** (`--get-all` before `--add` — the entrypoint runs once per container *start*, not per shell — sibling shells arrive via `ExecCreate`, not the entrypoint — so the re-runner is `ActionStart` on a stopped container; the shared `/tmp/toolbox-gitconfig.lock` is house discipline for `/etc/gitconfig`, not a live race: running above the init sequence is what keeps this clear of the parallel `60-glab.sh`), **non-fatal**. `smoke-test.sh` adds the behavioural half: a foreign-uid worktree at an unenumerable path must be accepted — a grep for a named entry passes while the real failure stands.
 
-### Scope and escape hatch
+### Escape hatch
 
-Only the exact worktree is covered — a nested repo/submodule needs its own entry. Per-command escape hatch that writes no config: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=…`. → [workspace-safe-directory](../../docs/internals/shell-start.md#workspace-safedirectory-dubious-ownership)
+Per-command escape hatch that writes no config: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` — **dead under Claude Code**, which replaces the caller's numbered set with its own. `GIT_CONFIG_GLOBAL` at a file that `include`s the user's config composes instead. **Debugging guardrail: `env` in the session's own shell cannot answer what a spawned CLI injects** — use a `git` shim on `PATH` that logs each subprocess's env, from a shell with the numbered set `env -u`'d. → [escape-hatch](../../docs/internals/shell-start.md#escape-hatch-and-the-trap-in-it) → [git-safe-directory](../../docs/internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ## Proximo integration
 

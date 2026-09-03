@@ -3,6 +3,21 @@ set -e
 
 IMAGE="${1:-ghcr.io/filippolmt/toolbox:latest}"
 
+# pipefail: the check block is piped into `tee` so the sentinel assertion below
+# can read it back, and without this the pipeline would report tee's status and
+# swallow a failing block.
+set -o pipefail
+SMOKE_LOG="$(mktemp)"
+# One EXIT handler for the whole script: `trap` replaces rather than appends, so
+# a second `trap … EXIT` anywhere below would silently drop this cleanup. The
+# sections that start their own containers set CLEANUP_CID instead of trapping.
+CLEANUP_CID=""
+cleanup() {
+    rm -f "${SMOKE_LOG}"
+    [ -z "${CLEANUP_CID}" ] || docker rm -f "${CLEANUP_CID}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 echo "=== Toolbox Smoke Test ==="
 echo "Image: ${IMAGE}"
 echo ""
@@ -408,7 +423,14 @@ check_required "npm"        npm --version
 # through the IPv4-only loopback bridge. See docs/commands.md#loopback-bridge.
 # This whole body runs inside `docker run ... bash -c '...'` (single-quoted), so
 # this line must use only escaped double quotes — a literal single quote would
-# close that block (do not "simplify" the quoting).
+# close that block (do not "simplify" the quoting). That applies to the comments
+# too, apostrophes included: two of them a few words apart do not balance out,
+# they hand the words between them to the host shell, which splits them and
+# truncates the body at that point. Nothing warns you — `bash -n` passes, the
+# checks below the break silently never run, and the FAIL gate at the end of the
+# body goes with them, so the whole thing exits 0. Phrase around it: write "the
+# response of github" and never the possessive form. The sentinel check after
+# the body catches it either way.
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
@@ -450,11 +472,25 @@ check_required "git-credential-toolbox shim" sh -c "test -x /usr/local/bin/git-c
 # entrypoint registers the credential helper in the system gitconfig when the
 # bridge is installed — assert the wiring is present.
 check_required "git credential helper wired" sh -c "grep -q 'credential.helper' /usr/local/bin/entrypoint && grep -q git-credential-toolbox /usr/local/bin/entrypoint && echo present"
-# entrypoint registers the workspace mount points as git safe.directory — a
-# runtime check, not a grep: the mount point transiently reports uid 0 and git
-# then refuses the worktree. /workspace always exists, so this holds with no
-# workspace bind.
-check_required "workspace safe.directory registered" sh -c "git config --system --get-all safe.directory | grep -qx /workspace && echo present"
+# entrypoint registers git safe.directory — a runtime check, not a grep, and
+# behavioural rather than a config read: a bind-mounted directory transiently
+# reports uid 0 while its contents keep the host uid, and git then refuses the
+# worktree. Asserted against a worktree root that is BOTH foreign-uid and at a
+# path nothing could have enumerated at boot, because the repositories that need
+# covering are created after it — `claude plugin update` clones each git-subdir
+# plugin under a generated name in ~/.claude/plugins/cache. On the git this image
+# ships, only an exact path or the wildcard matches there; a grep for a named
+# path would pass while that case still failed.
+check_required "safe.directory covers an unenumerated foreign-uid repo" sh -c "d=\$(mktemp -d)/temp_subdir_probe.clone; mkdir -p \"\$d\" && git init -q \"\$d\" && sudo chown 0:0 \"\$d\" && git -C \"\$d\" rev-parse --is-inside-work-tree"
+# The Dockerfile pins http.version, without which most clones and fetches from
+# github fail (docs/internals/image-build.md#system-git-settings). Asserted as a
+# config read and not behaviourally, unlike the check above: the failure needs a
+# real HTTP/2 peer, this smoke test makes no network calls at all — a deliberate
+# property worth more than one behavioural check — and the failure is
+# intermittent enough that a behavioural check would pass on the lucky runs.
+# Reproduce by hand instead, from a shell with every GIT_CONFIG_* cleared:
+#   git -c http.version=HTTP/2 ls-remote https://github.com/git/git
+check_required "git http.version pinned" sh -c "test \"\$(git config --system --get http.version)\" = HTTP/1.1 && echo HTTP/1.1"
 # Host-only credential-helper names alias to the bridge shim so a host
 # ~/.gitconfig naming osxkeychain/manager/libsecret resolves with no warning.
 # Must be symlinks to git-credential-toolbox — NEVER shadow the built-in
@@ -525,7 +561,15 @@ check_zsh
 echo ""
 echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 [ "$FAIL" -eq 0 ] || exit 1
-'
+' | tee "${SMOKE_LOG}"
+
+# The body above is one single-quoted argument, and anything that closes that
+# quoting early truncates it — an apostrophe in a comment is enough (see the
+# note next to the node check). A truncated body still exits 0, taking its own
+# FAIL gate with it, so a broken image would smoke-test green. Assert the body
+# reached its last line instead of trusting its exit code.
+grep -q "^=== Results:" "${SMOKE_LOG}" \
+  || { echo "FAILED: the check block ended before its own Results line — its single-quoted body was truncated, so an unknown number of checks and the FAIL gate never ran"; exit 1; }
 
 echo ""
 echo "=== Signal handling check (SIGTERM propagates via tini) ==="
@@ -534,7 +578,7 @@ echo "=== Signal handling check (SIGTERM propagates via tini) ==="
 # PID-1 init (tini) the shell only dies via SIGKILL fallback. tini -g forwards
 # signals to the process group so the shell exits clean.
 cid=$(docker run -d "${IMAGE}" sleep 3600)
-trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+CLEANUP_CID="$cid"
 start=$(date +%s)
 docker stop -t 10 "$cid" >/dev/null
 elapsed=$(( $(date +%s) - start ))
@@ -545,7 +589,7 @@ else
     exit 1
 fi
 docker rm -f "$cid" >/dev/null 2>&1 || true
-trap - EXIT
+CLEANUP_CID=""
 
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
