@@ -211,7 +211,8 @@ fi
 # Nothing here touches the network — the host CLI is the single detector and
 # owns the probe, the download and this cache (internal/imageprefetch), which
 # reaches us through the ~/.toolbox-state bind mount. The banner shows once
-# per distinct result (keyed on a shown-signature file). Opt out by exporting
+# per distinct result, in each shell — "has been told" is a property of a
+# session, so its signature is held here and nowhere else. Opt out by exporting
 # TOOLBOX_NO_UPDATE_CHECK — no banner. Set in `env:` it also stops the
 # host-side probe; typed inside a live shell it only stops the rendering.
 #
@@ -229,20 +230,25 @@ fi
 # act cover both axes, and both-axes therefore renders as a single line.
 # → docs/session-reload.md
 if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
-    _toolbox_update_cache="${HOME}/.toolbox-state/update-check"
-    _toolbox_update_shown="${HOME}/.toolbox-state/update-check.shown"
+    typeset -g _toolbox_update_cache="${HOME}/.toolbox-state/update-check"
+    # The last result THIS shell displayed. A shell variable, never a file on
+    # the state mount: parked there it was every session's, and one session's
+    # banner muted every session opened after it — on the connect branch,
+    # where the start-up refresh is deliberately never offered, that left the
+    # new session with no channel at all. → docs/session-reload.md
+    typeset -g _toolbox_update_shown=""
 
     _toolbox_update_precmd() {
         emulate -L zsh
-        # Render from the cache, once per distinct result. The shown-signature
-        # file records the last result we displayed (including "nothing to
+        # Render from the cache, once per distinct result. The signature
+        # records the last result this shell displayed (including "nothing to
         # report"), so a stable cache never re-nags on every prompt.
         [[ -r $_toolbox_update_cache ]] || return 0
-        local sig shown=""
+        local sig
         sig=$(<$_toolbox_update_cache) 2>/dev/null || return 0
         [[ -z $sig ]] && return 0
-        [[ -r $_toolbox_update_shown ]] && shown=$(<$_toolbox_update_shown) 2>/dev/null
-        [[ $sig == $shown ]] && return 0
+        # Quoted: the right-hand side of == is a glob pattern, not a literal.
+        [[ $sig == "$_toolbox_update_shown" ]] && return 0
 
         local image_update=0 image_state=none cli_update=0 cli_latest="" line
         while IFS= read -r line; do
@@ -287,7 +293,7 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
 
         # Mark this result shown even when nothing surfaced, so the comparison
         # above short-circuits until the cached result actually changes.
-        print -r -- "$sig" > $_toolbox_update_shown 2>/dev/null || true
+        _toolbox_update_shown=$sig
     }
     autoload -Uz add-zsh-hook
     add-zsh-hook precmd _toolbox_update_precmd

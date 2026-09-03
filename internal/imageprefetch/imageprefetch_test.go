@@ -112,22 +112,60 @@ func readCache(t *testing.T, dir string) string {
 }
 
 // A stamp younger than the TTL is the whole cadence: the ticker is only an
-// alarm, so a tick that fires inside the window must not reach the daemon at
-// all. The nil-embedded mock panics on any call, which is the assertion.
-func TestPollSkipsWhileStampIsFresh(t *testing.T) {
+// alarm, so a tick that fires inside the window must not reach the registry.
+// The nil-embedded mock panics on any call it does not stub, which is what
+// makes the unasked question fail loudly.
+func TestPollAsksTheRegistryNothingWhileStampIsFresh(t *testing.T) {
 	dir := stateDir(t)
 	if err := os.WriteFile(filepath.Join(dir, stampFile), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cli := &mockClient{}
+	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
 	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if cli.distCalls != 0 {
 		t.Errorf("DistributionInspect called %d times, want 0 inside the TTL", cli.distCalls)
 	}
-	if got := readCache(t, dir); got != "" {
-		t.Errorf("cache written inside the TTL: %q", got)
+	if cli.pullCalls != 0 {
+		t.Errorf("pulled %d times inside the TTL, want 0", cli.pullCalls)
+	}
+}
+
+// The gate stops the registry, not the banner. #864: the published result is
+// whichever session wrote last, and image_update is computed against *that*
+// session's container — so a sibling already on the new image publishes a 0
+// that is true only for it, while keeping the very stamp that holds this gate
+// shut. Every gated pass restates the session axis from the local store, a
+// comparison the registry has no part in, so the sibling never owns this
+// session's banner. Repeated because a session outlives many ticks: fixing
+// only the first pass would hand the sibling every one after it.
+func TestPollRestatesTheSessionAxisOnEveryGatedPass(t *testing.T) {
+	dir := stateDir(t)
+	sibling := func() {
+		t.Helper()
+		// A workspace whose container already runs digestNew: true for it.
+		writeResult(dir, result{imageLatest: digestNew, imageState: stateNone})
+	}
+	sibling()
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	cli := &mockClient{inspects: []client.ImageInspectResult{
+		inspectWith(digestNew), inspectWith(digestNew),
+	}}
+	in := Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir}
+
+	want := cacheBody("1", digestNew, stateReady, "0", "")
+	for pass := 1; pass <= 2; pass++ {
+		Poll(t.Context(), cli, in)
+		if got := readCache(t, dir); got != want {
+			t.Fatalf("pass %d: cache = %q, want %q", pass, got, want)
+		}
+		sibling() // the sibling polls too, and publishes its own truth again
+	}
+	if cli.distCalls != 0 {
+		t.Errorf("DistributionInspect called %d times, want 0 — the gate still holds", cli.distCalls)
 	}
 }
 
@@ -593,11 +631,12 @@ func mtime(t *testing.T, path string) time.Time {
 }
 
 // TestClearResult pins exactly which files a session reload drops, because
-// #834 settled it as a named set rather than a sweep. The result and the shown
-// signature describe the container the reload just retired; the attempt stamp
-// gates the next probe behind up to a full cadence, and the reload has just
-// invalidated the answer that cadence was throttling — deleting it is what
-// makes the documented "costs one extra probe" true.
+// #834 settled it as a named set rather than a sweep. The result and the
+// legacy shown-signature — written by no renderer this image ships, still read
+// by an older one — describe the container the reload just retired; the
+// attempt stamp gates the next probe behind up to a full cadence, and the
+// reload has just invalidated the answer that cadence was throttling —
+// deleting it is what makes the documented "costs one extra probe" true.
 //
 // The unavailable-since marker stays: it records whether the registry can be
 // reached, which a reload does not change, and resetting it would restart a
@@ -640,7 +679,12 @@ func TestClearResultWithoutAStateDir(t *testing.T) {
 // a sibling session just advanced, and that banner is the whole point.
 func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
 	dir := stateDir(t)
-	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+	// Two inspects: the sync publishes, and the first poll — gated by the
+	// stamp the sync just left — restates the same session axis from the same
+	// store. Idempotent, and the second one is what proves it.
+	m := &mockClient{inspects: []client.ImageInspectResult{
+		inspectWith(digestNew), inspectWith(digestNew),
+	}}
 
 	startPoller(t, m, Input{
 		Ref:             testRef,
@@ -677,6 +721,134 @@ func TestStartProbesWhenTheShellStartDidNot(t *testing.T) {
 	waitFor(t, func() bool { return readCache(t, dir) != "" })
 	if m.distCalls == 0 {
 		t.Error("DistributionInspect calls = 0, want the poller's own probe")
+	}
+}
+
+// TestStartPublishesTheSessionAxisWhileThePollIsGated is #864's never-case.
+// One state mount serves every workspace, so the published result is whatever
+// session wrote last — and image_update is computed against *that* session's
+// container. A sibling already running the new image publishes image_update=0
+// and keeps the shared attempt stamp warm; this session's container is older,
+// its first poll returns at the gate, and it would render the sibling's answer
+// for as long as the sibling keeps probing. On the connect branch the banner
+// is the only channel there is, so that silence has nothing to break it.
+//
+// The comparison this session owes itself — the local store against the digest
+// its own container was created from — costs no registry round trip, so the
+// gate is no reason to skip it. Two things must hold: the session axis is
+// restated, and image_latest is left exactly as the last real probe published
+// it, because knownRemote reads that field back as the *registry's* digest and
+// AheadOfStore decides the start-up prompt on it.
+func TestStartPublishesTheSessionAxisWhileThePollIsGated(t *testing.T) {
+	dir := stateDir(t)
+	// A sibling on the new image published a moment ago, and claimed the turn.
+	writeResult(dir, result{imageLatest: digestNew, imageState: stateNone})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	// distDigst is left unset on purpose: the mock panics on nothing, but a
+	// probe would show up as a DistributionInspect call, asserted below.
+	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	want := cacheBody("1", digestNew, stateReady, "0", "")
+	waitFor(t, func() bool { return readCache(t, dir) == want })
+	if m.distCalls != 0 {
+		t.Errorf("DistributionInspect calls = %d, want 0 — the gate still holds, only the local comparison was redone", m.distCalls)
+	}
+}
+
+// TestStartLeavesTheRegistryDigestAloneWhileGated guards the other half of the
+// same publish: an ungated re-statement that overwrote image_latest with the
+// *store's* digest would make knownRemote answer "the registry serves what we
+// already have", and AheadOfStore would stop offering the start-up refresh for
+// the rest of the TTL.
+func TestStartLeavesTheRegistryDigestAloneWhileGated(t *testing.T) {
+	dir := stateDir(t)
+	// The registry is ahead of the store, and the last probe said so.
+	writeResult(dir, result{imageLatest: digestNewer, imageState: stateNone})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	want := cacheBody("1", digestNewer, stateReady, "0", "")
+	waitFor(t, func() bool { return readCache(t, dir) == want })
+
+	store := AheadOfStore(t.Context(), &mockClient{
+		inspects: []client.ImageInspectResult{inspectWith(digestNew)},
+	}, testRef, dir)
+	if !store.Ahead {
+		t.Error("AheadOfStore stopped seeing the registry ahead — image_latest was overwritten with the store digest")
+	}
+}
+
+// TestStartKeepsTheFailureClockWhenNoProbeAnswered is the third branch of the
+// gated publish, and the one with a clock behind it. A warm stamp with no
+// published digest is a probe that *failed*: nothing is established about the
+// registry, so the store-only publish may state the session axis and must
+// state nothing else. Routing it through imageState would take the not-behind
+// branch, clear the first-failure marker, and restart the window that has to
+// elapse before a persistently failing download is ever called unavailable —
+// on every shell start, which means never.
+func TestStartKeepsTheFailureClockWhenNoProbeAnswered(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{imageState: stateNone}) // a probe that answered nothing
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	marker := filepath.Join(dir, unavailableFile)
+	if err := fsx.TouchMarker(marker); err != nil {
+		t.Fatalf("seed the failure clock: %v", err)
+	}
+	started := mtime(t, marker)
+
+	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	// The bytes in the store are adoptable whatever the registry is doing, and
+	// the renderer never prints "ready" beside "unavailable".
+	want := cacheBody("1", "", stateReady, "0", "")
+	waitFor(t, func() bool { return readCache(t, dir) == want })
+
+	if got, err := os.Stat(marker); err != nil {
+		t.Fatalf("the failure clock was cleared on an answer nobody gave: %v", err)
+	} else if !got.ModTime().Equal(started) {
+		t.Error("the failure clock was restarted, so `unavailable` would never be earned")
+	}
+}
+
+// TestStartPublishesNothingForALocallyBuiltImage holds the abstention on the
+// new path too. A store with no repo digest for the ref is the fingerprint of
+// a `toolbox build`, and the prefetch says nothing about one anywhere — a
+// store-only publish is still a publish, and inventing an image_update for an
+// image the developer built by hand would advise a reload onto their own work.
+func TestStartPublishesNothingForALocallyBuiltImage(t *testing.T) {
+	dir := stateDir(t)
+	seeded := cacheBody("0", digestNew, stateNone, "0", "")
+	if err := os.WriteFile(filepath.Join(dir, cacheFile), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+
+	// The poll is gated and the publish abstains, so nothing may move. Give
+	// the goroutine a tick's worth of chances to prove otherwise.
+	for range 20 {
+		if got := readCache(t, dir); got != seeded {
+			t.Fatalf("cache = %q, want it untouched %q", got, seeded)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if m.distCalls != 0 {
+		t.Errorf("the registry was probed %d times for a locally built image", m.distCalls)
 	}
 }
 

@@ -242,6 +242,9 @@ func TestShellReloadClearsTheBannerCache(t *testing.T) {
 	plan := reloadPlan(t, "toolbox-old-1234abcd")
 	stale := []string{
 		filepath.Join(plan.StateDir, "update-check"),
+		// Written by no renderer this image ships — the signature moved into
+		// the shell — but still read by an older one, which is skew the repo
+		// supports, and still an orphan on every existing mount.
 		filepath.Join(plan.StateDir, "update-check.shown"),
 		// The attempt stamp goes too: it gates the next probe behind up to a
 		// full cadence, and the reload has just invalidated the answer that

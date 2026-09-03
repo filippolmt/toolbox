@@ -31,9 +31,10 @@ the next time it redraws:
   outlasted a full probe cadence, so a dropped Wi-Fi connection never accuses
   the registry.
 
-The banner shows once per distinct result. It will not reappear on every
-prompt; it only shows again when the detected result changes. A download you
-can already use outranks one that failed.
+The banner shows once per distinct result, in each shell. It will not reappear
+on every prompt; it shows again when the detected result changes, and once in
+every shell you open afterwards. A download you can already use outranks one
+that failed.
 
 The line names the cost — *recreates the container* — because the reload asks
 for no confirmation, so this is the only place the price is stated before the
@@ -233,13 +234,19 @@ profile-aware), which is how the two ends meet:
 | `update-check` | Latest comparison result the prompt renders. Written host-side, atomically. |
 | `update-check.stamp` | Records each poll attempt (success *or* failure) so the cadence throttles retries even while offline. |
 | `update-check.unavailable-since` | When the download *first* started failing. Removed as soon as the bytes land. |
-| `update-check.shown` | The last result the banner displayed, so a stable result doesn't re-nag. |
+
+Nothing records what a shell has already displayed: each shell keeps that in a
+variable of its own, so a stable cache never re-nags at the prompt and a shell
+opened later is still told. That scoping is deliberate — attaching to a
+container another terminal already runs (the connect branch) is never offered
+the start-up refresh, so the banner is the only way that session can learn it
+is behind.
 
 The result file is `key=value`, one per line:
 
 | Field | Meaning |
 |---|---|
-| `image_update` | `1` when this session is behind the local store. |
+| `image_update` | `1` when this session is behind the local store. Per-session, and the cache is shared — so each session restates it for itself. |
 | `image_latest` | The digest the registry currently serves. |
 | `image_state` | `none` / `ready` / `unavailable` — added *alongside* `image_update`, never replacing it, so an older image still renders its own (still true) sentence. |
 | `cli_update`, `cli_latest` | The CLI axis. |
@@ -250,8 +257,14 @@ stamp lives on the shared state mount, that is one probe per half hour *for
 you* rather than one per open shell — best effort, since two sessions whose
 ticks coincide can both find the stamp stale and both probe; the daemon
 deduplicates the pull that follows, so the cost is a second manifest lookup.
-The first poll runs as soon as a shell attaches, subject to the same gate.
-Delete the cache files to force a check on the next tick.
+The first poll runs as soon as a shell attaches, subject to the same gate —
+but a poll turned away by it still republishes `image_update` from the local
+store, on every pass, because that field says whether *your* container is
+behind while the one cache is shared by every workspace: the result on disk
+may have been written by a sibling session whose container is already on the
+new image, and that sibling is what keeps the gate shut. The restatement is
+local-only; `image_latest` stays as the last real probe left it. Delete the
+cache files to force a check on the next tick.
 
 If the registry cannot be reached, the previous (still valid) result is left
 alone rather than blanked, and the stamp still advances — an offline machine
