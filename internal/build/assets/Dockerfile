@@ -1525,7 +1525,7 @@ RUN grep -qxF 'Include /etc/ssh/ssh_config.d/*.conf' /etc/ssh/ssh_config \
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
-# Bridge shim transport, sourced by the xdg-open/code/proximo shims
+# Bridge shim transport, sourced by the xdg-open/code/proximo/paplay shims
 # below (state-dir location + readiness checks + curl POST in one place).
 COPY --link --chmod=0644 bin/bridge-lib.sh /usr/local/lib/toolbox/bridge-lib.sh
 # Browser-bridge wrapper. Shadows /usr/bin/xdg-open (+synonyms) so URL
@@ -1551,6 +1551,12 @@ COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
 # system gitconfig by entrypoint.sh when the bridge is installed; exits 0 when
 # absent so git falls back to prompting.
 COPY --link --chmod=0755 bin/git-credential-toolbox /usr/local/bin/git-credential-toolbox
+# Bridge sound shim. herdr runs in here but the image carries no audio backend
+# and no player, so it answers to the first name herdr probes for (`paplay`,
+# which nothing calls) and POSTs the MP3 bytes to the daemon's /sound endpoint,
+# where the host plays them. Not a PulseAudio client — see the file header and
+# ADR-0009.
+COPY --link --chmod=0755 bin/paplay /usr/local/bin/paplay
 # Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
 # invoked as `git prune-dead`: deletes local branches whose PR/MR the forge
 # reports as merged (gh or glab, whichever is logged in to origin's host) +

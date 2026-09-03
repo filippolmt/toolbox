@@ -1,7 +1,9 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
@@ -34,6 +36,9 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 	}
 	if fns.credential == nil {
 		fns.credential = func(_ context.Context, _ string, _ []byte) ([]byte, int, error) { return nil, 0, nil }
+	}
+	if fns.sound == nil {
+		fns.sound = func(_ []byte) error { return nil }
 	}
 	var logBuf strings.Builder
 	logger := log.New(&logBuf, "", 0)
@@ -623,5 +628,119 @@ func TestHandler_HealthZ(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("code = %d", rr.Code)
+	}
+}
+
+// newSoundTestHandler builds a handler whose /sound player is the given fake;
+// every other endpoint stays inert.
+func newSoundTestHandler(t *testing.T, fn func(data []byte) error) http.Handler {
+	t.Helper()
+	return buildTestHandler(t, handlerFns{sound: fn})
+}
+
+// soundBody is the body the paplay shim POSTs: the MP3 bytes base64-encoded,
+// plus the temp-file name herdr chose (audit log only).
+func soundBody(name string, data []byte) string {
+	b, _ := json.Marshal(map[string]string{"name": name, "data": base64.StdEncoding.EncodeToString(data)})
+	return string(b)
+}
+
+// The payload carries content, not a path (ADR-0009): the daemon must hand the
+// player exactly the bytes the container wrote, and answer 200 without waiting
+// for playback.
+func TestHandler_SoundPlaysTheDecodedBytes(t *testing.T) {
+	var got []byte
+	h := newSoundTestHandler(t, func(data []byte) error {
+		got = data
+		return nil
+	})
+
+	rr := doPostTo(t, h, RouteSound, "tok", soundBody("herdr-sound-42-1.mp3", []byte("ID3\x04mp3-bytes")))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, body = %q", rr.Code, rr.Body.String())
+	}
+	if string(got) != "ID3\x04mp3-bytes" {
+		t.Errorf("player received %q, want the decoded MP3 bytes", got)
+	}
+}
+
+// The cap is the ADR's number rather than the 4 KiB the URL routes reuse: a
+// developer's own ui.sound.*_path override must fit, and only a payload past
+// it is refused.
+func TestHandler_SoundBodyCap(t *testing.T) {
+	h := newSoundTestHandler(t, func([]byte) error { return nil })
+
+	custom := soundBody("custom.mp3", bytes.Repeat([]byte("x"), 200<<10))
+	if rr := doPostTo(t, h, RouteSound, "tok", custom); rr.Code != http.StatusOK {
+		t.Errorf("a 200 KiB chime was refused: code = %d", rr.Code)
+	}
+	over := `{"name":"a.mp3","data":"` + strings.Repeat("A", maxSoundBody) + `"}`
+	if rr := doPostTo(t, h, RouteSound, "tok", over); rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("code = %d, want 413 past the %d-byte cap", rr.Code, maxSoundBody)
+	}
+}
+
+// A payload that is not decodable base64, or decodes to nothing, must never
+// reach the player: the daemon would otherwise write an empty temp file and
+// spawn a process on it.
+func TestHandler_SoundRejectsUnusablePayload(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"not base64", `{"name":"a.mp3","data":"not base64!!"}`},
+		{"empty", `{"name":"a.mp3","data":""}`},
+		{"absent", `{"name":"a.mp3"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			h := newSoundTestHandler(t, func([]byte) error {
+				calls.Add(1)
+				return nil
+			})
+			rr := doPostTo(t, h, RouteSound, "tok", tc.body)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("code = %d, want 400", rr.Code)
+			}
+			if calls.Load() != 0 {
+				t.Error("player was called on an unusable payload")
+			}
+		})
+	}
+}
+
+// /sound has its own token bucket: a burst of chimes must not starve an OAuth
+// redirect on /open, and a burst of URL opens must not swallow a chime.
+func TestHandler_SoundRidesItsOwnBucket(t *testing.T) {
+	h := buildTestHandler(t, handlerFns{})
+	for i := range rateBurst {
+		if rr := doPost(t, h, "tok", `{"url":"https://example.com"}`); rr.Code != http.StatusNoContent {
+			t.Fatalf("open burst[%d] code = %d", i, rr.Code)
+		}
+	}
+	if rr := doPost(t, h, "tok", `{"url":"https://example.com"}`); rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("shared bucket not exhausted: code = %d", rr.Code)
+	}
+
+	// Fixed test clock → no refill, so the sound bucket drains on its own
+	// burst and only then throttles.
+	for i := range soundRateBurst {
+		if rr := doPostTo(t, h, RouteSound, "tok", soundBody("a.mp3", []byte("x"))); rr.Code != http.StatusOK {
+			t.Fatalf("sound burst[%d] code = %d — throttled by the shared bucket", i, rr.Code)
+		}
+	}
+	if rr := doPostTo(t, h, RouteSound, "tok", soundBody("a.mp3", []byte("x"))); rr.Code != http.StatusTooManyRequests {
+		t.Errorf("post-burst sound code = %d, want 429", rr.Code)
+	}
+}
+
+// A player that cannot start is the one failure the daemon can still report —
+// the shim turns the non-2xx into a non-zero exit, so herdr falls through its
+// own chain and logs the aggregate warning.
+func TestHandler_SoundReportsAPlayerThatCannotStart(t *testing.T) {
+	h := newSoundTestHandler(t, func([]byte) error { return ErrNoSoundPlayer })
+
+	rr := doPostTo(t, h, RouteSound, "tok", soundBody("a.mp3", []byte("x")))
+
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("code = %d, want 502", rr.Code)
 	}
 }

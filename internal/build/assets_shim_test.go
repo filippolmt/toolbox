@@ -38,6 +38,7 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 		}},
 		{"bin/proximo", []string{sourceLib}},
 		{"bin/git-credential-toolbox", []string{sourceLib}},
+		{"bin/paplay", []string{sourceLib}},
 	}
 	for _, tc := range cases {
 		body, err := fs.ReadFile(Assets, AssetDir+"/"+tc.shim)

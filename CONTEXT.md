@@ -1044,6 +1044,52 @@ vocabulary, so the next reader of that message looks for an open shell instead
 of for a `chmod`, and does not go hunting on Linux for a warning that host
 cannot produce.
 
+### Sound Handoff
+
+The container→host transfer of a sound to play: the bridge's `/sound` route,
+carrying the MP3's **content** rather than a path to it.
+
+Concretely: herdr runs in the container and spawns an external player; the
+image has none, so `internal/build/assets/bin/paplay` reads the file herdr just
+wrote and POSTs its bytes base64-encoded, and `bridge.playSound` writes them to
+a temp file the **daemon** names before spawning the host's player detached
+(`afplay` on macOS, the first installed entry of `soundPlayers` on Linux). The
+response is `200` before playback starts: nothing waits for a chime, and two
+completions moments apart overlap instead of queueing. Decided in
+[ADR 0009](docs/adr/0009-sound-handoff-through-the-bridge.md).
+
+Why the term exists: "play a sound on the host" hides the one decision that
+matters, which is *what the request is allowed to name*. A caller-supplied host
+path is precisely what `internal/bridge/allowlist.go` refuses for `/open`, and
+what [ADR 0004](docs/adr/0004-proximo-full-surface-through-the-bridge.md) had to
+justify for `/proximo` — there the daemon cannot derive the path, here it can,
+so it does. Naming the handoff after what it carries keeps the next route from
+reintroducing the path axis by habit, and puts the residual risk where it
+actually is: on the content, where a hostile container process can make the
+host play arbitrary audio, which is annoyance under a ceiling the bridge token
+already sets.
+
+### Probed Shim
+
+An image shim that answers to a name **another tool probes for** — as opposed
+to a name a human or a script calls.
+
+Concretely: `internal/build/assets/bin/paplay` is the only one. herdr walks a
+fixed chain of player names and spawns the first that exists, so the shim's
+*name* is what selects it; taking the first name in the chain costs no failed
+`exec`, while a later one would burn one per skipped name, invisibly. Nothing
+in this tree calls it, and nothing should: its caller is upstream's probe.
+
+Why the term exists: every other shim in the image shadows a binary someone
+types (`xdg-open`, `code`, `proximo`) or that git resolves by configuration
+(`git-credential-toolbox`), so "find the callers" is how a reader establishes
+what a shim is for. Here that search returns nothing, which reads as dead code
+— and a rename or a deletion would be silently correct at review time and
+silently broken at runtime, since herdr logs only when *all* the names fail.
+The term also carries the honesty cost the name itself imposes: `paplay` never
+speaks to PulseAudio, and the mitigation is the reason in the file header plus
+the fact that PulseAudio is not in the image and is not coming.
+
 ### Proximo Execution Modes
 
 The two ways the bridge daemon runs the **host** proximo binary on behalf of a
