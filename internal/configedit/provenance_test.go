@@ -6,11 +6,16 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // writeLayeredFixture seeds a global ~/.toolbox.yaml and a project
 // .toolbox.yaml in a fresh cwd, returning the cwd. HOME is faked per test.
-func writeLayeredFixture(t *testing.T, globalYAML, projectYAML string) string {
+// writeLayeredFixture materialises a global + project config pair and returns
+// the host they belong to alongside the project cwd. The $HOME override stays
+// for now: config.LoadLayers still finds the global layer through
+// configio.GlobalConfigPath, which has not been threaded a Host yet.
+func writeLayeredFixture(t *testing.T, globalYAML, projectYAML string) (fsx.Host, string) {
 	t.Helper()
 	home := t.TempDir()
 	if globalYAML != "" {
@@ -25,11 +30,11 @@ func writeLayeredFixture(t *testing.T, globalYAML, projectYAML string) string {
 			t.Fatalf("write project: %v", err)
 		}
 	}
-	return cwd
+	return fsx.Host{Home: home}, cwd
 }
 
 func TestComputeLayeredOrigins(t *testing.T) {
-	cwd := writeLayeredFixture(t,
+	_, cwd := writeLayeredFixture(t,
 		"inherit_host_auth: [gh]\nshells:\n  infra:\n    path: /tmp/infra\n",
 		"mounts_root: /tmp/root\nmounts:\n  - name: scratch\n    source: ~/s\n    target: /s\n")
 
@@ -100,7 +105,7 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 }
 
 func TestComputeProjectOverridesGlobal(t *testing.T) {
-	cwd := writeLayeredFixture(t,
+	_, cwd := writeLayeredFixture(t,
 		"mounts_root: /tmp/from-global\n",
 		"mounts_root: /tmp/from-project\n")
 
@@ -114,7 +119,7 @@ func TestComputeProjectOverridesGlobal(t *testing.T) {
 }
 
 func TestComputeExplicitShortCircuits(t *testing.T) {
-	cwd := writeLayeredFixture(t,
+	_, cwd := writeLayeredFixture(t,
 		"mounts_root: /tmp/from-global\n",
 		"inherit_host_auth: [gh]\n")
 	explicit := filepath.Join(t.TempDir(), "custom.yaml")

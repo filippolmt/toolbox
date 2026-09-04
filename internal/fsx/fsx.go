@@ -11,6 +11,7 @@ package fsx
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -126,4 +127,67 @@ func TouchMarker(path string) error {
 		return fmt.Errorf("write marker %s: %w", path, err)
 	}
 	return nil
+}
+
+// Host is the ambient host state a toolbox run reads, turned into a value a
+// caller declares and passes. Both fields are process-wide inputs no
+// signature used to mention: the home directory every ~/.toolbox path hangs
+// off, and the PATH lookup that finds host binaries. Resolved once at the
+// cmd edge by CurrentHost and threaded through the planning seams, so a
+// package downstream reads the field instead of the process — which is what
+// lets a test construct a Host rather than mutate $HOME for the whole
+// binary.
+//
+// Neither field falls back to the process. Home is a plain string precisely
+// so a zero-valued Host is a visible bug (an empty base path) rather than a
+// silent read of the real home, and a nil LookPath means this host resolves
+// no binaries at all — not "ask the process PATH". A convenience fallback
+// there would reinstate the ambient read the type exists to remove, in the
+// one place nothing would notice: a caller that declared only a home would
+// keep probing the real machine, and a test written against it would pass
+// for whatever happens to be installed.
+type Host struct {
+	Home     string
+	LookPath func(name string) (string, error)
+}
+
+// CurrentHost resolves the real host: the strict Home above plus the process
+// PATH. The single place the ambient read still happens — call it at the cmd
+// edge and pass the result down.
+func CurrentHost() (Host, error) {
+	home, err := Home()
+	if err != nil {
+		return Host{}, err
+	}
+	return Host{Home: home, LookPath: exec.LookPath}, nil
+}
+
+// Validate rejects a Host with no home. The strictness fsx.Home enforces on
+// the ambient read has to be enforced again where the resolved value enters
+// a package, or a zero-valued Host would join every ~/.toolbox path onto ""
+// and stat, create or bind the wrong tree.
+func (h Host) Validate() error {
+	if h.Home == "" {
+		return fmt.Errorf("resolve home directory: host home not set")
+	}
+	return nil
+}
+
+// Expand is ExpandTilde against this host's home.
+func (h Host) Expand(p string) string { return ExpandTilde(p, h.Home) }
+
+// Join builds a path under this host's home. Callers that would have written
+// filepath.Join(home, …) after resolving home themselves write h.Join(…).
+func (h Host) Join(elem ...string) string {
+	return filepath.Join(append([]string{h.Home}, elem...)...)
+}
+
+// Look resolves a binary on this host's PATH. A Host that declares no
+// resolver has an empty PATH: every lookup fails with exec.ErrNotFound, which
+// is what a caller probing for an optional tool already handles.
+func (h Host) Look(name string) (string, error) {
+	if h.LookPath == nil {
+		return "", exec.ErrNotFound
+	}
+	return h.LookPath(name)
 }

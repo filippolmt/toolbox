@@ -39,7 +39,7 @@ const toolsRemovalDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/in
 // block, empty / missing shells.<name>.path, mount-merge failures, and
 // duplicate resolved mount targets. Strictly a read-only superset of the
 // load path — it never changes merge behaviour.
-func Doctor(searchFrom, explicitOverride string) []Finding {
+func Doctor(host fsx.Host, searchFrom, explicitOverride string) []Finding {
 	var findings []Finding
 
 	global, project, explicit, projectPath, err := config.LoadLayers(searchFrom, explicitOverride)
@@ -57,8 +57,8 @@ func Doctor(searchFrom, explicitOverride string) []Finding {
 		return append(findings, Finding{SeverityError, err.Error()})
 	}
 
-	findings = append(findings, lintShellPaths(cfg)...)
-	findings = append(findings, lintMounts(cfg)...)
+	findings = append(findings, lintShellPaths(host, cfg)...)
+	findings = append(findings, lintMounts(host, cfg)...)
 	return findings
 }
 
@@ -104,8 +104,7 @@ func lintLayerKeys(label string, b []byte) []Finding {
 // lintShellPaths checks every shells.<name>.path: empty is an error (the
 // shell can never start); a non-existent directory is only a warning (it
 // may be created later, e.g. via `toolbox shell <name> --create`).
-func lintShellPaths(cfg *config.Config) []Finding {
-	home, _ := fsx.Home()
+func lintShellPaths(host fsx.Host, cfg *config.Config) []Finding {
 	var findings []Finding
 	for _, name := range slices.Sorted(maps.Keys(cfg.Shells)) {
 		path := strings.TrimSpace(cfg.Shells[name].Path)
@@ -113,7 +112,7 @@ func lintShellPaths(cfg *config.Config) []Finding {
 			findings = append(findings, Finding{SeverityError, fmt.Sprintf("shells.%s.path is empty", name)})
 			continue
 		}
-		if _, err := os.Stat(fsx.ExpandTilde(path, home)); os.IsNotExist(err) {
+		if _, err := os.Stat(host.Expand(path)); os.IsNotExist(err) {
 			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
 				"shells.%s.path %s does not exist (created on first 'toolbox shell %s --create')",
 				name, path, name)})
@@ -125,8 +124,8 @@ func lintShellPaths(cfg *config.Config) []Finding {
 // lintMounts surfaces mount-merge failures as errors and duplicate resolved
 // targets as warnings (mountplan does not dedupe today; the last bind wins
 // silently at the Docker layer).
-func lintMounts(cfg *config.Config) []Finding {
-	resolved, err := mountplan.Merge(cfg, nil)
+func lintMounts(host fsx.Host, cfg *config.Config) []Finding {
+	resolved, err := mountplan.Merge(host, cfg, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}

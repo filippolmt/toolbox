@@ -30,7 +30,7 @@ func TestClassifyAssignsEveryOrigin(t *testing.T) {
 		},
 	}
 
-	got, err := Classify(&cfg)
+	got, err := Classify(testHost(t), &cfg)
 	if err != nil {
 		t.Fatalf("Classify: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestClassifyDisabledByFeatureToggle(t *testing.T) {
 	off := false
 	cfg := config.Config{Bridge: &off}
 
-	got, err := Classify(&cfg)
+	got, err := Classify(testHost(t), &cfg)
 	if err != nil {
 		t.Fatalf("Classify: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestClassifyDisabledByFeatureToggle(t *testing.T) {
 // (unknown patch name) must surface as an error, not a partial set.
 func TestClassifyPropagatesMergeError(t *testing.T) {
 	cfg := config.Config{Mounts: []config.Mount{{Name: "nonexistent", Source: "/tmp/x"}}}
-	if _, err := Classify(&cfg); err == nil {
+	if _, err := Classify(testHost(t), &cfg); err == nil {
 		t.Fatal("Classify should propagate Merge's unknown-name error")
 	}
 }
@@ -111,7 +111,7 @@ func TestNamesReturnsSortedUnion(t *testing.T) {
 		},
 	}
 
-	got, err := Names(&cfg)
+	got, err := Names(testHost(t), &cfg)
 	if err != nil {
 		t.Fatalf("Names: %v", err)
 	}

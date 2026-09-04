@@ -13,8 +13,8 @@ import (
 )
 
 func TestBindUnixListener_CreatesSocket(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -44,8 +44,8 @@ func TestBindUnixListener_CreatesSocket(t *testing.T) {
 }
 
 func TestBindUnixListener_RemovesStaleSocket(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -68,13 +68,13 @@ func TestBindUnixListener_RemovesStaleSocket(t *testing.T) {
 }
 
 func TestStatus_ReportsSocket(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
 
-	rep, err := Status(&fakeAgent{})
+	rep, err := Status(host, &fakeAgent{})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestStatus_ReportsSocket(t *testing.T) {
 		t.Fatalf("bindUnixListener: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	rep, err = Status(&fakeAgent{})
+	rep, err = Status(host, &fakeAgent{})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -104,8 +104,8 @@ func TestStatus_ReportsSocket(t *testing.T) {
 // TCP), a unix-dialing client exercises /healthz and an authenticated /open,
 // and shutdown must unlink the socket.
 func TestRun_ServesOverUnixSocket(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -119,6 +119,7 @@ func TestRun_ServesOverUnixSocket(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, DaemonOptions{
+			Host:     host,
 			Listener: tcpLn,
 			Open: func(_ context.Context, url string) error {
 				opened <- url

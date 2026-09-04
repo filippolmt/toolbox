@@ -15,7 +15,6 @@
 package mountplan
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -76,6 +75,11 @@ type PlanInput struct {
 	// (see peerSocketBind); the PID namespace half, and the volume's
 	// one-time ownership init, live in sessionplan + internal/container.
 	Peer bool
+	// Host is the resolved host this plan is for. Every ~/.toolbox default
+	// hangs off Host.Home, so the pipeline reads it here instead of the
+	// process — the plan says which home it planned against, and a test names
+	// one rather than rewriting $HOME for the whole binary.
+	Host fsx.Host
 }
 
 // Plan walks the full mount pipeline for in.Cfg and returns the bind set + the
@@ -88,13 +92,15 @@ type PlanInput struct {
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
 func Plan(in PlanInput) (Result, error) {
-	merged, err := Merge(in.Cfg, in.Profile)
+	merged, err := Merge(in.Host, in.Cfg, in.Profile)
 	if err != nil {
 		return Result{}, err
 	}
 
-	home, err := fsx.Home()
-	if err != nil {
+	// After Merge, which is where the home resolution used to sit: a config
+	// with both a rejected mount list and an unresolvable home reports the
+	// merge error, the way it always did.
+	if err := in.Host.Validate(); err != nil {
 		return Result{}, err
 	}
 
@@ -108,7 +114,7 @@ func Plan(in PlanInput) (Result, error) {
 		})
 	}
 
-	binds, warnings := resolveAll(merged, home)
+	binds, warnings := resolveAll(merged, in.Host.Home)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
 
 	// The peer socket mount joins the set after resolveAll: its source is a
@@ -130,11 +136,12 @@ func Plan(in PlanInput) (Result, error) {
 }
 
 // Merge returns the post-merge mount list (defaults retargeted by
-// MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts).
+// MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts) for the
+// given host.
 // Pure: no filesystem side-effects, no workspace bind. Used by tests
 // asserting merge contracts and by callers that want to inspect the
 // resolved set without materialising sources.
-func Merge(cfg *config.Config, profile *Profile) ([]config.Mount, error) {
+func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount, error) {
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
@@ -149,12 +156,17 @@ func Merge(cfg *config.Config, profile *Profile) ([]config.Mount, error) {
 	if err := validateShare(defaults(), shared); err != nil {
 		return nil, err
 	}
-	// HOME for inherit_host_auth's pre-stat. UserHomeDir failure leaves home
-	// empty, in which case applyInheritHostAuth treats ~/ paths as-is and
-	// os.Stat reports them missing — surfaces the misconfiguration loudly.
-	home, _ := os.UserHomeDir()
+	// Two things behind this function read host.Home: the inherit_host_auth
+	// pre-stat below, and proximo.CAMount's ~/.proximo fallback further down.
+	// A caller with no home to declare leaves it empty, and both degrade
+	// rather than fail — applyInheritHostAuth treats ~/ paths as-is so os.Stat
+	// reports them missing, and the CA bind drops out of the set. That is why
+	// Merge takes a Host without validating it where Plan does: the merge
+	// contract itself (patch, replace, disable, mounts_root) is answerable
+	// without a home, and the two probes that are not degrade the way the
+	// discarded os.UserHomeDir error used to make them degrade.
 	base := applyMountsRoot(defaults(), root, shared)
-	base, err := applyInheritHostAuth(base, cfg.InheritHostAuth, home)
+	base, err := applyInheritHostAuth(base, cfg.InheritHostAuth, host.Home)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +178,7 @@ func Merge(cfg *config.Config, profile *Profile) ([]config.Mount, error) {
 	// proximo CA bind is injected here (not in defaults()) because its source
 	// is host-specific and only relevant when `proximo: true`. resolveAll
 	// soft-skips it with a warning when proximo is not installed.
-	if m, ok := proximo.CAMount(cfg); ok {
+	if m, ok := proximo.CAMount(host, cfg); ok {
 		base = append(base, m)
 	}
 	return mergeMounts(base, cfg.Mounts)
@@ -199,16 +211,15 @@ func Defaults() []config.Mount { return defaults() }
 // file lives beside the retargeted credential dirs. The file itself is not a
 // mount; the path is resolved here so the root-resolution rule lives in one
 // place.
-func OverlayDockerfilePath(cfg *config.Config, profile *Profile) (string, error) {
-	home, err := fsx.Home()
-	if err != nil {
+func OverlayDockerfilePath(host fsx.Host, cfg *config.Config, profile *Profile) (string, error) {
+	if err := host.Validate(); err != nil {
 		return "", err
 	}
 	root := cfg.MountsRoot
 	if r := profile.Root(); r != "" {
 		root = r
 	}
-	return filepath.Clean(fsx.ExpandTilde(mountsRootJoin(root, "Dockerfile"), home)), nil
+	return filepath.Clean(host.Expand(mountsRootJoin(root, "Dockerfile"))), nil
 }
 
 // StateDirPath returns the resolved host path of the toolbox state mount —
@@ -224,18 +235,17 @@ func OverlayDockerfilePath(cfg *config.Config, profile *Profile) (string, error)
 // The mount source is needed as a *path* (not a bind) by the host-side update
 // prefetch, which writes the cache the in-container prompt hook reads: the
 // two ends must address the same directory or the banner never fires.
-func StateDirPath(cfg *config.Config, profile *Profile) (string, error) {
-	home, err := fsx.Home()
-	if err != nil {
+func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile) (string, error) {
+	if err := host.Validate(); err != nil {
 		return "", err
 	}
-	merged, err := Merge(cfg, profile)
+	merged, err := Merge(host, cfg, profile)
 	if err != nil {
 		return "", err
 	}
 	for _, m := range merged {
 		if m.Target == StateMountTarget {
-			return filepath.Clean(fsx.ExpandTilde(m.Source, home)), nil
+			return filepath.Clean(host.Expand(m.Source)), nil
 		}
 	}
 	return "", nil

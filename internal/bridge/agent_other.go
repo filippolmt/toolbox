@@ -2,4 +2,6 @@
 
 package bridge
 
-func NewAgent() (Agent, error) { return nil, ErrUnsupported }
+import "github.com/filippolmt/toolbox/internal/fsx"
+
+func NewAgent(fsx.Host) (Agent, error) { return nil, ErrUnsupported }

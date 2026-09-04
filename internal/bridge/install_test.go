@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 type fakeAgent struct {
@@ -25,12 +27,12 @@ func (f *fakeAgent) Status() (AgentStatus, error) {
 func (f *fakeAgent) IsInstalled() bool { return f.status.Installed }
 
 func TestInstall_WritesTokenAndCallsAgent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	host := testHost(t)
 	fa := &fakeAgent{}
-	if err := Install(fa, "/usr/local/bin/toolbox"); err != nil {
+	if err := Install(host, fa, "/usr/local/bin/toolbox"); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	s, err := ResolveHostState()
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -43,12 +45,12 @@ func TestInstall_WritesTokenAndCallsAgent(t *testing.T) {
 }
 
 func TestUninstall_RemovesStateAndCallsAgent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	host := testHost(t)
 	fa := &fakeAgent{}
-	if err := Install(fa, "/x"); err != nil {
+	if err := Install(host, fa, "/x"); err != nil {
 		t.Fatal(err)
 	}
-	warning, err := Uninstall(fa)
+	warning, err := Uninstall(host, fa)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestUninstall_RemovesStateAndCallsAgent(t *testing.T) {
 	if !fa.uninstallCalled {
 		t.Error("agent.Uninstall not called")
 	}
-	s, err := ResolveHostState()
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -69,7 +71,7 @@ func TestUninstall_RemovesStateAndCallsAgent(t *testing.T) {
 
 func TestInstall_MigratesLegacyStateDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	host := fsx.Host{Home: home}
 	legacy := filepath.Join(home, LegacyHostDir)
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
 		t.Fatal(err)
@@ -77,7 +79,7 @@ func TestInstall_MigratesLegacyStateDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, "token"), []byte("tok-legacy"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(&fakeAgent{}, "/x"); err != nil {
+	if err := Install(host, &fakeAgent{}, "/x"); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(home, HostDir, "token"))
@@ -94,8 +96,8 @@ func TestInstall_MigratesLegacyStateDir(t *testing.T) {
 
 func TestInstall_StaleLegacyDirRemovedWhenNewExists(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := Install(&fakeAgent{}, "/x"); err != nil {
+	host := fsx.Host{Home: home}
+	if err := Install(host, &fakeAgent{}, "/x"); err != nil {
 		t.Fatal(err)
 	}
 	newTok, err := os.ReadFile(filepath.Join(home, HostDir, "token"))
@@ -109,7 +111,7 @@ func TestInstall_StaleLegacyDirRemovedWhenNewExists(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, "token"), []byte("tok-stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install(&fakeAgent{}, "/x"); err != nil {
+	if err := Install(host, &fakeAgent{}, "/x"); err != nil {
 		t.Fatalf("second Install: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(home, HostDir, "token"))
@@ -126,15 +128,15 @@ func TestInstall_StaleLegacyDirRemovedWhenNewExists(t *testing.T) {
 
 func TestUninstall_RemovesLegacyDirToo(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := Install(&fakeAgent{}, "/x"); err != nil {
+	host := fsx.Host{Home: home}
+	if err := Install(host, &fakeAgent{}, "/x"); err != nil {
 		t.Fatal(err)
 	}
 	legacy := filepath.Join(home, LegacyHostDir)
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Uninstall(&fakeAgent{}); err != nil {
+	if _, err := Uninstall(host, &fakeAgent{}); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
@@ -143,12 +145,12 @@ func TestUninstall_RemovesLegacyDirToo(t *testing.T) {
 }
 
 func TestStatus_BridgeAndAgent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	host := testHost(t)
 	fa := &fakeAgent{status: AgentStatus{Installed: true, Running: true, Detail: "ok"}}
-	if err := Install(fa, "/x"); err != nil {
+	if err := Install(host, fa, "/x"); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	rep, err := Status(fa)
+	rep, err := Status(host, fa)
 	if err != nil {
 		t.Fatal(err)
 	}

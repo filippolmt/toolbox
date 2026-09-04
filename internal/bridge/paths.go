@@ -76,17 +76,20 @@ type HostState struct {
 	PID    string // <Dir>/pid
 	RunDir string // <Dir>/run — the only RW-mounted subdir in the container
 	Socket string // <RunDir>/bridge.sock — bound by the daemon on Linux only
+	// Legacy is ~/<LegacyHostDir>, the pre-rename location Install migrates
+	// from and Uninstall wipes. Resolved here with the rest so no caller has
+	// to re-resolve a home just to name the directory it is removing.
+	Legacy string
 }
 
-// ResolveHostState returns the absolute host paths for bridge state.
-// It does NOT create any files — callers that need the dir to exist must
-// call EnsureHostDir.
-func ResolveHostState() (HostState, error) {
-	home, err := fsx.Home()
-	if err != nil {
+// ResolveHostState returns the absolute host paths for bridge state on the
+// given host. It does NOT create any files — callers that need the dir to
+// exist must call EnsureHostDir.
+func ResolveHostState(host fsx.Host) (HostState, error) {
+	if err := host.Validate(); err != nil {
 		return HostState{}, err
 	}
-	dir := filepath.Join(home, HostDir)
+	dir := host.Join(HostDir)
 	return HostState{
 		Dir:    dir,
 		Token:  filepath.Join(dir, tokenFile),
@@ -95,6 +98,7 @@ func ResolveHostState() (HostState, error) {
 		PID:    filepath.Join(dir, pidFile),
 		RunDir: filepath.Join(dir, runDirName),
 		Socket: filepath.Join(dir, runDirName, socketFile),
+		Legacy: host.Join(LegacyHostDir),
 	}, nil
 }
 

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"time"
 )
 
@@ -30,8 +33,7 @@ func fakeProximo(t *testing.T, script string) string {
 
 func TestLaunchProximo_OutputAndZeroExit(t *testing.T) {
 	dir := fakeProximo(t, `echo "stack is up"; exit 0`)
-	t.Setenv("PATH", dir)
-	out, exit, err := launchProximo(context.Background(), "status", nil, proximoAgentHome{})
+	out, exit, err := launchProximo(context.Background(), proximoHost(t, dir), "status", nil, proximoAgentHome{})
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -45,8 +47,7 @@ func TestLaunchProximo_OutputAndZeroExit(t *testing.T) {
 
 func TestLaunchProximo_NonZeroExitIsNotAnError(t *testing.T) {
 	dir := fakeProximo(t, `echo "boom" >&2; exit 3`)
-	t.Setenv("PATH", dir)
-	out, exit, err := launchProximo(context.Background(), "up", nil, proximoAgentHome{})
+	out, exit, err := launchProximo(context.Background(), proximoHost(t, dir), "up", nil, proximoAgentHome{})
 	if err != nil {
 		t.Fatalf("non-zero exit must not be an error, got %v", err)
 	}
@@ -63,13 +64,11 @@ func TestLaunchProximo_NonZeroExitIsNotAnError(t *testing.T) {
 // list is emptied rather than pointed at a temp dir — the well-known paths are
 // absolute, and one of them exists in the toolbox image the suite runs in.
 func TestLaunchProximo_MissingBinary(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
 	orig := proximoFallbackCandidates
 	t.Cleanup(func() { proximoFallbackCandidates = orig })
-	proximoFallbackCandidates = func() []string { return nil }
+	proximoFallbackCandidates = func(fsx.Host) []string { return nil }
 
-	_, _, err := launchProximo(context.Background(), "status", nil, proximoAgentHome{})
+	_, _, err := launchProximo(context.Background(), proximoHost(t, ""), "status", nil, proximoAgentHome{})
 	if err == nil {
 		t.Fatal("want error when proximo is not installed")
 	}
@@ -79,14 +78,13 @@ func TestLaunchProximo_MissingBinary(t *testing.T) {
 }
 
 func TestLaunchProximo_ContextTimeout(t *testing.T) {
-	// Absolute path: t.Setenv below replaces PATH, which the script inherits.
+	// Absolute path: the child inherits the daemon's PATH, not the fake's dir.
 	// exec: the deadline kill must hit the pipe holder itself, or a surviving
 	// sleep child keeps CombinedOutput waiting through the whole WaitDelay.
 	dir := fakeProximo(t, `exec /bin/sleep 10`)
-	t.Setenv("PATH", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	out, exit, err := launchProximo(ctx, "up", nil, proximoAgentHome{})
+	out, exit, err := launchProximo(ctx, proximoHost(t, dir), "up", nil, proximoAgentHome{})
 	if err == nil {
 		t.Fatalf("want error on context timeout, got exit=%d out=%q", exit, out)
 	}
@@ -94,10 +92,9 @@ func TestLaunchProximo_ContextTimeout(t *testing.T) {
 
 func TestResolveProximoBinary_FallbackProbes(t *testing.T) {
 	// PATH lookup fails; a fallback candidate exists.
-	t.Setenv("PATH", t.TempDir())
 	dir := fakeProximo(t, "exit 0")
 	bin := filepath.Join(dir, "proximo")
-	got, err := resolveProximoBinary([]string{filepath.Join(t.TempDir(), "absent"), bin})
+	got, err := resolveProximoBinary(proximoHost(t, ""), []string{filepath.Join(t.TempDir(), "absent"), bin})
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -119,8 +116,7 @@ func TestErrProximoNotInstalled_NamesTheHostCommand(t *testing.T) {
 }
 
 func TestResolveProximoBinary_NotFound(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	_, err := resolveProximoBinary([]string{filepath.Join(t.TempDir(), "absent")})
+	_, err := resolveProximoBinary(proximoHost(t, ""), []string{filepath.Join(t.TempDir(), "absent")})
 	if err == nil {
 		t.Fatal("want error when nothing resolves")
 	}
@@ -191,15 +187,14 @@ func TestAppendPathDirs(t *testing.T) {
 }
 
 func TestProximoChildPathDirs_IncludesBinDir(t *testing.T) {
-	dirs := proximoChildPathDirs("/somewhere/bin")
+	dirs := proximoChildPathDirs(proximoHost(t, ""), "/somewhere/bin")
 	if len(dirs) == 0 || dirs[0] != "/somewhere/bin" {
 		t.Errorf("binDir must lead the result, got %q", dirs)
 	}
 }
 
 func TestProximoChildPathDirs_SkipEmptyHome(t *testing.T) {
-	t.Setenv("HOME", "")
-	for _, d := range proximoChildPathDirs("/somewhere/bin") {
+	for _, d := range proximoChildPathDirs(fsx.Host{}, "/somewhere/bin") {
 		if !filepath.IsAbs(d) {
 			t.Errorf("empty HOME must not yield a relative dir, got %q", d)
 		}
@@ -208,8 +203,7 @@ func TestProximoChildPathDirs_SkipEmptyHome(t *testing.T) {
 
 func TestLaunchProximo_ChildPATHAugmented(t *testing.T) {
 	dir := fakeProximo(t, `echo "$PATH"`)
-	t.Setenv("PATH", dir)
-	out, exit, err := launchProximo(context.Background(), "status", nil, proximoAgentHome{})
+	out, exit, err := launchProximo(context.Background(), proximoHost(t, dir), "status", nil, proximoAgentHome{})
 	if err != nil || exit != 0 {
 		t.Fatalf("err = %v, exit = %d", err, exit)
 	}
@@ -222,8 +216,7 @@ func TestLaunchProximo_ChildPATHAugmented(t *testing.T) {
 }
 
 func TestProximoFallbackCandidates_SkipEmptyHome(t *testing.T) {
-	t.Setenv("HOME", "")
-	for _, c := range proximoFallbackCandidates() {
+	for _, c := range proximoFallbackCandidates(fsx.Host{}) {
 		if c == filepath.Join("go", "bin", "proximo") || c == "/go/bin/proximo" {
 			t.Errorf("empty HOME must not yield a bogus go/bin candidate, got %q", c)
 		}
@@ -232,8 +225,7 @@ func TestProximoFallbackCandidates_SkipEmptyHome(t *testing.T) {
 
 func TestLaunchProximo_ForwardsArgs(t *testing.T) {
 	dir := fakeProximo(t, `printf '[%s]' "$@"`)
-	t.Setenv("PATH", dir)
-	out, exit, err := launchProximo(context.Background(), "errors", []string{"--since", "5m", "with space"}, proximoAgentHome{})
+	out, exit, err := launchProximo(context.Background(), proximoHost(t, dir), "errors", []string{"--since", "5m", "with space"}, proximoAgentHome{})
 	if err != nil || exit != 0 {
 		t.Fatalf("err = %v, exit = %d", err, exit)
 	}
@@ -267,9 +259,7 @@ func TestIsProximoOutputFlag(t *testing.T) {
 func TestLaunchProximo_SkillRunsInAgentHome(t *testing.T) {
 	dir := fakeProximo(t, `printf 'HOME=%s CODEX_HOME=%s ARGV=%s' "$HOME" "$CODEX_HOME" "$*"`)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("PATH", dir)
-	out, exit, err := launchProximo(context.Background(), "skill", []string{"install"}, proximoAgentHome{})
+	out, exit, err := launchProximo(context.Background(), proximoHostAt(t, home, dir), "skill", []string{"install"}, proximoAgentHome{})
 	if err != nil || exit != 0 {
 		t.Fatalf("err = %v, exit = %d", err, exit)
 	}
@@ -286,14 +276,13 @@ func TestLaunchProximo_SkillRunsInAgentHome(t *testing.T) {
 // daemon's ~/.toolbox guess.
 func TestLaunchProximo_SkillUsesCallerAgentHome(t *testing.T) {
 	dir := fakeProximo(t, `printf 'HOME=%s CODEX_HOME=%s' "$HOME" "$CODEX_HOME"`)
-	t.Setenv("PATH", dir)
-	t.Setenv("HOME", t.TempDir()) // the default the caller's paths must override
+	host := proximoHost(t, dir) // its home is the default the caller's paths must override
 	profile := t.TempDir()
 	codex := filepath.Join(profile, ".codex")
 	if err := os.MkdirAll(codex, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := launchProximo(context.Background(), "skill", []string{"install"},
+	out, _, err := launchProximo(context.Background(), host, "skill", []string{"install"},
 		proximoAgentHome{Home: profile, CodexHome: codex})
 	if err != nil {
 		t.Fatal(err)
@@ -307,16 +296,14 @@ func TestLaunchProximo_SkillUsesCallerAgentHome(t *testing.T) {
 // container, so a path that is not an existing host directory fails the
 // request loudly instead of quietly installing somewhere else.
 func TestLaunchProximo_SkillRejectsBadAgentHome(t *testing.T) {
-	dir := fakeProximo(t, `exit 0`)
-	t.Setenv("PATH", dir)
-	t.Setenv("HOME", t.TempDir())
+	host := proximoHost(t, fakeProximo(t, `exit 0`))
 	for _, agent := range []proximoAgentHome{
 		{Home: "relative/path"},
 		{Home: filepath.Join(t.TempDir(), "absent")},
 		{Home: "/etc/hosts"},                                   // a file, not a directory
 		{Home: t.TempDir(), CodexHome: "/tmp/../tmp/unclean/"}, // codex_home checked too
 	} {
-		if _, _, err := launchProximo(context.Background(), "skill", []string{"install"}, agent); err == nil {
+		if _, _, err := launchProximo(context.Background(), host, "skill", []string{"install"}, agent); err == nil {
 			t.Errorf("agent %+v: want error", agent)
 		}
 	}
@@ -352,11 +339,13 @@ func TestProximoSkillArgs(t *testing.T) {
 // TestLaunchProximo_PlainVerbKeepsHostHome is the other half of the pair:
 // every verb but `skill` acts on the host, so it must see the host's own home.
 func TestLaunchProximo_PlainVerbKeepsHostHome(t *testing.T) {
+	// The child inherits the daemon process's own environment, so this one
+	// keeps rewriting $HOME: it asserts on what the process exports, not on
+	// what the Host declares.
 	dir := fakeProximo(t, `printf 'HOME=%s ARGV=%s' "$HOME" "$*"`)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATH", dir)
-	out, _, err := launchProximo(context.Background(), "errors", []string{"transcript"}, proximoAgentHome{})
+	out, _, err := launchProximo(context.Background(), proximoHostAt(t, home, dir), "errors", []string{"transcript"}, proximoAgentHome{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,10 +355,34 @@ func TestLaunchProximo_PlainVerbKeepsHostHome(t *testing.T) {
 }
 
 func TestLaunchProximo_SkillRequiresHome(t *testing.T) {
-	dir := fakeProximo(t, `exit 0`)
-	t.Setenv("PATH", dir)
-	t.Setenv("HOME", "")
-	if _, _, err := launchProximo(context.Background(), "skill", []string{"install"}, proximoAgentHome{}); err == nil {
-		t.Fatal("an empty HOME must fail the request, not install into /.toolbox")
+	host := proximoHostAt(t, "", fakeProximo(t, `exit 0`))
+	if _, _, err := launchProximo(context.Background(), host, "skill", []string{"install"}, proximoAgentHome{}); err == nil {
+		t.Fatal("a host with no home must fail the request, not install into /.toolbox")
 	}
+}
+
+// proximoHost returns a Host with a home of its own whose PATH resolves the
+// fake proximo in binDir — or nothing at all when binDir is empty. Declaring
+// the host is what keeps these deterministic: this project's own image ships
+// a real proximo at /usr/local/bin, so a PATH scrub alone never proved the
+// refusal branch was reachable.
+func proximoHost(t *testing.T, binDir string) fsx.Host {
+	t.Helper()
+	return proximoHostAt(t, t.TempDir(), binDir)
+}
+
+// proximoHostAt is proximoHost with the home named by the caller, for the
+// tests that assert on a path derived from it.
+func proximoHostAt(t *testing.T, home, binDir string) fsx.Host {
+	t.Helper()
+	return fsx.Host{Home: home, LookPath: func(name string) (string, error) {
+		if binDir == "" || name != "proximo" {
+			return "", exec.ErrNotFound
+		}
+		bin := filepath.Join(binDir, name)
+		if _, err := os.Stat(bin); err != nil {
+			return "", exec.ErrNotFound
+		}
+		return bin, nil
+	}}
 }

@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // Origin is the provenance of a mount in the merged set: where it came from
@@ -45,8 +46,8 @@ type ClassifiedMount struct {
 // filesystem side-effects. This is the single seam callers cross to reason
 // about mount provenance — the classification that used to be re-derived per
 // cmd handler.
-func Classify(cfg *config.Config) ([]ClassifiedMount, error) {
-	merged, err := Merge(cfg, nil)
+func Classify(host fsx.Host, cfg *config.Config) ([]ClassifiedMount, error) {
+	merged, err := Merge(host, cfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +78,10 @@ func Classify(cfg *config.Config) ([]ClassifiedMount, error) {
 // defaults plus named user entries — sorted and deduplicated, anonymous
 // entries excluded. This is the universe a disable patch may legally
 // reference; an unknown name breaks the next config load.
-func Names(cfg *config.Config) ([]string, error) {
+func Names(host fsx.Host, cfg *config.Config) ([]string, error) {
 	// Validate the user list the same way Merge would, so Names never reports a
 	// name that Merge itself would reject.
-	if _, err := Merge(cfg, nil); err != nil {
+	if _, err := Merge(host, cfg, nil); err != nil {
 		return nil, err
 	}
 	names := []string{}

@@ -13,10 +13,10 @@ import (
 // profile+workspace yields a different container — mounts are fixed at
 // ContainerCreate.
 func TestPlanProfileContainerNaming(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	base := func(name string, p *mountplan.Profile) string {
 		t.Helper()
-		plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 			Cfg: testConfig(), Workspace: workspace, Name: name, Profile: p,
 		})
 		if err != nil {

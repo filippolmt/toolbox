@@ -130,13 +130,12 @@ func proximoSkillArgs(args []string) []string {
 // rather than silently replaced with a default, which is what would turn a
 // misdirected install into a no-op the caller never hears about. A caller that
 // sends neither (an older image) falls back to the default mounts root.
-func proximoAgentHomeEnv(env []string, agent proximoAgentHome) ([]string, error) {
+func proximoAgentHomeEnv(host fsx.Host, env []string, agent proximoAgentHome) ([]string, error) {
 	if agent.Home == "" && agent.CodexHome == "" {
-		base, err := fsx.Home()
-		if err != nil {
+		if err := host.Validate(); err != nil {
 			return nil, err
 		}
-		agent = proximoAgentHome{Home: filepath.Join(base, ".toolbox")}
+		agent = proximoAgentHome{Home: host.Join(".toolbox")}
 		agent.CodexHome = filepath.Join(agent.Home, ".codex")
 		return setEnv(setEnv(env, "HOME", agent.Home), "CODEX_HOME", agent.CodexHome), nil
 	}
@@ -216,13 +215,13 @@ var ErrProximoNotInstalled = errors.New("proximo not installed on host — insta
 // a host with proximo installed, or this project's own toolbox image, which
 // bundles it at /usr/local/bin/proximo and is where the suite runs — the
 // binary resolves and launchProximo's refusal branch is unreachable.
-var proximoFallbackCandidates = func() []string {
+var proximoFallbackCandidates = func(host fsx.Host) []string {
 	candidates := []string{
 		"/opt/homebrew/bin/proximo",
 		"/usr/local/bin/proximo",
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		candidates = append(candidates, filepath.Join(home, "go", "bin", "proximo"))
+	if host.Home != "" {
+		candidates = append(candidates, host.Join("go", "bin", "proximo"))
 	}
 	return candidates
 }
@@ -233,17 +232,17 @@ var proximoFallbackCandidates = func() []string {
 // resolveProximoBinary solves for the proximo binary itself. binDir (dir of
 // the resolved binary) leads; home-relative entries are skipped when home is
 // empty.
-func proximoChildPathDirs(binDir string) []string {
+func proximoChildPathDirs(host fsx.Host, binDir string) []string {
 	dirs := []string{
 		binDir,
 		"/opt/homebrew/bin",
 		"/usr/local/bin",
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
+	if host.Home != "" {
 		dirs = append(dirs,
-			filepath.Join(home, "go", "bin"),
-			filepath.Join(home, ".docker", "bin"),
-			filepath.Join(home, ".orbstack", "bin"),
+			host.Join("go", "bin"),
+			host.Join(".docker", "bin"),
+			host.Join(".orbstack", "bin"),
 		)
 	}
 	return dirs
@@ -288,8 +287,8 @@ func appendPathDirs(env []string, dirs []string) []string {
 
 // resolveProximoBinary returns the proximo binary to exec: PATH lookup first,
 // then the given fallback candidates in order.
-func resolveProximoBinary(candidates []string) (string, error) {
-	if p, err := exec.LookPath("proximo"); err == nil {
+func resolveProximoBinary(host fsx.Host, candidates []string) (string, error) {
+	if p, err := host.Look("proximo"); err == nil {
 		return p, nil
 	}
 	for _, c := range candidates {
@@ -306,16 +305,16 @@ func resolveProximoBinary(candidates []string) (string, error) {
 // is reserved for infrastructure failures (binary missing, context deadline).
 // Direct exec, no shell — argv is passed as a slice, so an argument never
 // reaches a word-splitting or globbing context.
-func launchProximo(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error) {
-	bin, err := resolveProximoBinary(proximoFallbackCandidates())
+func launchProximo(ctx context.Context, host fsx.Host, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error) {
+	bin, err := resolveProximoBinary(host, proximoFallbackCandidates(host))
 	if err != nil {
 		return nil, 0, err
 	}
 	// Child PATH augmented so proximo's own lookups (docker, compose) survive
 	// the minimal service PATH — see proximoChildPathDirs.
-	env := appendPathDirs(os.Environ(), proximoChildPathDirs(filepath.Dir(bin)))
+	env := appendPathDirs(os.Environ(), proximoChildPathDirs(host, filepath.Dir(bin)))
 	if command == proximoSkillCommand {
-		agentEnv, err := proximoAgentHomeEnv(env, agent)
+		agentEnv, err := proximoAgentHomeEnv(host, env, agent)
 		if err != nil {
 			return nil, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
 		}

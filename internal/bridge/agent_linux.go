@@ -37,12 +37,11 @@ type linuxAgent struct {
 	legacyUnitPath string
 }
 
-func NewAgent() (Agent, error) {
-	home, err := fsx.Home()
-	if err != nil {
+func NewAgent(host fsx.Host) (Agent, error) {
+	if err := host.Validate(); err != nil {
 		return nil, err
 	}
-	units := filepath.Join(home, ".config", "systemd", "user")
+	units := host.Join(".config", "systemd", "user")
 	return &linuxAgent{
 		unitPath:       filepath.Join(units, unitName),
 		legacyUnitPath: filepath.Join(units, legacyUnitName),

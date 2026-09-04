@@ -53,13 +53,12 @@ type darwinAgent struct {
 	legacyLogPath   string
 }
 
-func NewAgent() (Agent, error) {
-	home, err := fsx.Home()
-	if err != nil {
+func NewAgent(host fsx.Host) (Agent, error) {
+	if err := host.Validate(); err != nil {
 		return nil, err
 	}
-	agents := filepath.Join(home, "Library", "LaunchAgents")
-	logs := filepath.Join(home, "Library", "Logs")
+	agents := host.Join("Library", "LaunchAgents")
+	logs := host.Join("Library", "Logs")
 	return &darwinAgent{
 		plistPath:       filepath.Join(agents, launchLabel+".plist"),
 		legacyPlistPath: filepath.Join(agents, legacyLaunchLabel+".plist"),

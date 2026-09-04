@@ -25,9 +25,9 @@ func TestPlanResolvesImageReclaim(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			workspace := planWorkspace(t)
+			planHost, workspace := planWorkspace(t)
 			cfg := &config.Config{Shell: "zsh", ImageReclaim: tc.set}
-			plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 			if err != nil {
 				t.Fatalf("Plan: %v", err)
 			}

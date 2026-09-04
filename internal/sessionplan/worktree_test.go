@@ -30,13 +30,13 @@ func TestPlanWorktreeSession(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			workspace := planWorkspace(t)
+			planHost, workspace := planWorkspace(t)
 			repoRoot := filepath.Dir(workspace)
 			if err := mkdirAll(t, filepath.Join(repoRoot, ".git")); err != nil {
 				t.Fatalf("setup: %v", err)
 			}
 
-			plan, err := sessionplan.Plan(sessionplan.PlanInput{
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 				Cfg:       testConfig(),
 				Workspace: workspace,
 				Worktree: &sessionplan.WorktreeSession{
@@ -72,10 +72,10 @@ func TestPlanWorktreeSession(t *testing.T) {
 // mount pipeline means an absent source warns instead of producing a bind
 // ContainerCreate would reject.
 func TestPlanWorktreeMissingGitDirIsASoftSkip(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	repoRoot := filepath.Dir(workspace) // no .git created
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 		Cfg:       testConfig(),
 		Workspace: workspace,
 		Worktree:  &sessionplan.WorktreeSession{RepoRoot: repoRoot, Agent: "claude"},
@@ -97,9 +97,9 @@ func TestPlanWorktreeMissingGitDirIsASoftSkip(t *testing.T) {
 // TestPlanWithoutWorktreeLeavesExecCmdAndGitBindAlone: a plain session must not
 // pick up either half of the worktree shape.
 func TestPlanWithoutWorktreeLeavesExecCmdAndGitBindAlone(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

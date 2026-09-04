@@ -135,7 +135,7 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 	if cfg == nil {
 		return errConfigNotLoaded
 	}
-	classified, err := mountplan.Classify(cfg)
+	classified, err := mountplan.Classify(hostBestEffort(), cfg)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 	// A {name, disabled: true} patch referencing a name unknown to the merge
 	// fails the next config load — validate against defaults + user entries
 	// before writing.
-	known, err := mountplan.Names(cfg)
+	known, err := mountplan.Names(hostBestEffort(), cfg)
 	if err != nil {
 		return err
 	}

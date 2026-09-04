@@ -253,3 +253,26 @@ func TestMountsListDefaultsOnly(t *testing.T) {
 		t.Errorf("--defaults-only must list the canonical defaults:\n%s", got)
 	}
 }
+
+// TestMountsListDegradesOnAnUnresolvableHome pins hostBestEffort's contract at
+// the surface it exists for: the listing is read-only, so a $HOME the process
+// cannot resolve must still print the mount set the config declares. Refusing
+// would hide exactly what a reader with a broken home came to look at, and the
+// pre-hostBestEffort code degraded here too (mountplan.Merge discarded the same
+// os.UserHomeDir error).
+func TestMountsListDegradesOnAnUnresolvableHome(t *testing.T) {
+	resetMountsFlags(t)
+	t.Setenv("HOME", "")
+	withCfg(t, &config.Config{Mounts: []config.Mount{
+		{Name: "scratch", Source: "/abs/s", Target: "/s"},
+	}})
+
+	out := &bytes.Buffer{}
+	mountsListCmd.SetOut(out)
+	if err := runMountsList(mountsListCmd, nil); err != nil {
+		t.Fatalf("runMountsList must not refuse an unresolvable home: %v", err)
+	}
+	if !strings.Contains(out.String(), "scratch") {
+		t.Errorf("listing lost the user mount: %q", out.String())
+	}
+}

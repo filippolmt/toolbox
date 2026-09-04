@@ -7,6 +7,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // ApplyChecked is the one write path in this package: it renders the candidate
@@ -94,6 +95,20 @@ func ApplyChecked(target, cwd string, mutate Mutator) (changed bool, err error) 
 // every lintLayerKeys finding is a warning, so the unknown-key lint stays where
 // it can be acted on: `toolbox config doctor`.
 func doctorCandidate(cwd, target string, candidate []byte) []Finding {
+	// The one ambient read left on the write path, and deliberately so: the
+	// gate lints the candidate against the host the write is actually for,
+	// and the alternative is threading a Host through every ApplyChecked
+	// wrapper and the configui model — a seam that owes its own change.
+	//
+	// Best-effort, because an error here is not the candidate's fault and
+	// this gate decides whether a write happens. The two lints it feeds
+	// already tolerate a host with no home (lintShellPaths leaves ~/ paths
+	// unexpanded, lintMounts' Merge drops the host-auth pre-stat), which is
+	// what the discarded os.UserHomeDir error used to give them — so an
+	// unresolvable home must not turn `config set --where local`, a write to
+	// a project file that needs no home at all, into a refusal.
+	host, _ := fsx.CurrentHost()
+
 	global, project, _, _, err := config.LoadLayers(cwd, "")
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
@@ -103,14 +118,14 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 		filepath.Clean(target) == filepath.Clean(globalPath) {
 		other = project
 	}
-	withCandidate := lintStack(other, candidate)
+	withCandidate := lintStack(host, other, candidate)
 	if !HasErrors(withCandidate) {
 		// Nothing to attribute, and subtraction only ever removes — so the
 		// baseline stack (a second full merge + lint) is not worth resolving.
 		// This is the path every accepted write takes.
 		return nil
 	}
-	return subtractFindings(withCandidate, lintStack(other, nil))
+	return subtractFindings(withCandidate, lintStack(host, other, nil))
 }
 
 // lintStack resolves two config layers — lower, then higher — and returns what
@@ -123,12 +138,12 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 // overriding it" by putting it second, whichever layer it really belongs to.
 // The explicit slot cannot serve here — Merge documents it as short-circuiting
 // the other two, so it would discard the stack instead of sitting above it.
-func lintStack(lower, higher []byte) []Finding {
+func lintStack(host fsx.Host, lower, higher []byte) []Finding {
 	cfg, err := config.Merge(lower, higher, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}
-	return append(lintShellPaths(cfg), lintMounts(cfg)...)
+	return append(lintShellPaths(host, cfg), lintMounts(host, cfg)...)
 }
 
 // subtractFindings returns the findings of a that do not appear in b, compared

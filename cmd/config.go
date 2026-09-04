@@ -297,7 +297,7 @@ func runConfigEdit(cmd *cobra.Command, _ []string) error {
 	// no machine-made candidate to fall back to. Same findings `config doctor`
 	// would print, on stderr so a redirected stdout stays clean.
 	cwd, _ := os.Getwd()
-	if errCount := reportFindings(cmd.ErrOrStderr(), configedit.Doctor(cwd, cfgFile)); errCount > 0 {
+	if errCount := reportFindings(cmd.ErrOrStderr(), configedit.Doctor(hostBestEffort(), cwd, cfgFile)); errCount > 0 {
 		return fmt.Errorf("%s: %d error finding(s) — the file was left as you saved it", path, errCount)
 	}
 	return nil
@@ -329,7 +329,7 @@ func resolveEditTarget() (path string, created bool, err error) {
 
 func runConfigDoctor(cmd *cobra.Command, _ []string) error {
 	cwd, _ := os.Getwd()
-	findings := configedit.Doctor(cwd, cfgFile)
+	findings := configedit.Doctor(hostBestEffort(), cwd, cfgFile)
 	if ok, advice := bridge.CheckHostCredentialHelper(); !ok {
 		findings = append(findings, configedit.Finding{Severity: configedit.SeverityWarning, Message: advice})
 	}

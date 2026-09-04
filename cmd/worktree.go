@@ -16,6 +16,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/worktree"
 )
@@ -186,8 +187,13 @@ func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch
 	if err != nil {
 		return err
 	}
+	host, err := fsx.CurrentHost()
+	if err != nil {
+		return err
+	}
 	imageDigest, _ := build.LocalRepoDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:        host,
 		Cfg:         cfg,
 		Workspace:   wtPath,
 		ImageDigest: imageDigest,

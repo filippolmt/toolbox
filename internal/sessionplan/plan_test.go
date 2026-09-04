@@ -16,6 +16,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -28,18 +29,17 @@ func testConfig() *config.Config {
 	return &config.Config{Shell: "zsh"}
 }
 
-// planWorkspace installs a temp HOME plus an existing workspace directory —
-// the fixture the mount stage's filesystem side effects need — and returns
-// the workspace path.
-func planWorkspace(t *testing.T) string {
+// planWorkspace returns a declared host plus an existing workspace directory
+// under its home — the fixture the mount stage's filesystem side effects need.
+// Nothing is set on the process: the plan is built for the host it is handed.
+func planWorkspace(t *testing.T) (fsx.Host, string) {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	ws := filepath.Join(home, "ws")
+	host := fsx.Host{Home: t.TempDir()}
+	ws := host.Join("ws")
 	if err := mkdirAll(t, ws); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	return ws
+	return host, ws
 }
 
 // --- Plan tier (fs side effects) ---
@@ -48,14 +48,9 @@ func planWorkspace(t *testing.T) string {
 // registry tag (single canonical image — no per-tool opt-out, no local
 // hash fallback).
 func TestPlanComposesImage(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -69,14 +64,9 @@ func TestPlanComposesImage(t *testing.T) {
 // (toolbox-named-<name>), while the same workspace with no Name yields the
 // path-hash form. Everything else in the plan is identical.
 func TestPlanNameDecidesContainerName(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	named, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Name: "web"})
+	named, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: "web"})
 	if err != nil {
 		t.Fatalf("Plan (named): %v", err)
 	}
@@ -84,7 +74,7 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 		t.Errorf("ContainerName = %q, want %q", named.ContainerName, want)
 	}
 
-	plain, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plain, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan (workspace): %v", err)
 	}
@@ -106,10 +96,10 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 // surrounding blanks reach the same container as the canonical spelling, and a
 // blanks-only name falls back to the workspace-hash form.
 func TestPlanNameIsRawAndSanitizedHere(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	name := func(n string) string {
 		t.Helper()
-		plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Name: n})
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: n})
 		if err != nil {
 			t.Fatalf("Plan(%q): %v", n, err)
 		}
@@ -130,14 +120,14 @@ func TestPlanNameIsRawAndSanitizedHere(t *testing.T) {
 // seam — Plan resolves it from the raw Name — and that resolving it leaves the
 // caller's Config untouched (the top-level env: used to be overwritten in cmd).
 func TestPlanOverlaysNamedShellEnv(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	cfg := testConfig()
 	cfg.Env = map[string]string{"SHARED": "global", "GLOBAL_ONLY": "g"}
 	cfg.Shells = map[string]config.NamedShell{
 		"infra": {Path: "/tmp/infra", Env: map[string]string{"SHARED": "shell", "SHELL_ONLY": "s"}},
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace, Name: "Infra"})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace, Name: "Infra"})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -153,7 +143,7 @@ func TestPlanOverlaysNamedShellEnv(t *testing.T) {
 	}
 
 	// A workspace session sees the top-level layer only.
-	plain, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plain, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan (workspace): %v", err)
 	}
@@ -165,9 +155,9 @@ func TestPlanOverlaysNamedShellEnv(t *testing.T) {
 // TestPlanImageSelectionAndPullPolicy asserts registry_mirror relocates the
 // host (path+tag preserved) and the pull policy propagates onto the Image.
 func TestPlanImageSelectionAndPullPolicy(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	cfg := &config.Config{Shell: "zsh", RegistryMirror: "harbor.corp.io/ghcr-proxy", Pull: "never"}
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -182,9 +172,9 @@ func TestPlanImageSelectionAndPullPolicy(t *testing.T) {
 // TestPlanFullImageOverrideWins asserts an explicit image: ref beats a
 // configured registry_mirror.
 func TestPlanFullImageOverrideWins(t *testing.T) {
-	workspace := planWorkspace(t)
+	planHost, workspace := planWorkspace(t)
 	cfg := &config.Config{Shell: "zsh", Image: "ghcr.io/x/y:dev", RegistryMirror: "ignored.example/proxy"}
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -197,13 +187,13 @@ func TestPlanFullImageOverrideWins(t *testing.T) {
 // mountplan.Plan and propagates Binds + WorkingDir.
 func TestPlanComposesMounts(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	planHost := fsx.Host{Home: tmpHome}
 	workspace := filepath.Join(tmpHome, "projects", "demo")
 	if err := mkdirAll(t, workspace); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -235,14 +225,9 @@ func TestPlanComposesMounts(t *testing.T) {
 // TestPlanComposesPorts asserts the port stage parses --publish specs into
 // typed ExposedPorts + PortBindings with 127.0.0.1 default HostIP.
 func TestPlanComposesPorts(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"7171:7171", "8080:8080"}})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"7171:7171", "8080:8080"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -268,14 +253,9 @@ func TestPlanComposesPorts(t *testing.T) {
 // TestPlanComputesContainerName asserts plan.ContainerName equals the
 // standalone ContainerNameFor helper byte-for-byte.
 func TestPlanComputesContainerName(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -290,18 +270,13 @@ func TestPlanComputesContainerName(t *testing.T) {
 }
 
 func TestPlanContainerNameDeterministic(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	a, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	a, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan a: %v", err)
 	}
-	b, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	b, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan b: %v", err)
 	}
@@ -320,14 +295,9 @@ func TestPlanContainerNameDeterministic(t *testing.T) {
 }
 
 func TestPlanComputesEnv(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -340,8 +310,8 @@ func TestPlanComputesEnv(t *testing.T) {
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
-		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
-		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		bridge.HostAgentHomeEnv + "=" + filepath.Join(planHost.Home, ".toolbox"),
+		bridge.HostCodexHomeEnv + "=" + filepath.Join(planHost.Home, ".toolbox", ".codex"),
 		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 	}
 	if !slices.Equal(plan.Env, want) {
@@ -355,14 +325,9 @@ func TestPlanComputesEnv(t *testing.T) {
 // container, so a build driven from a toolbox shell would silently target
 // linux. Emitted for every session, not just a mirrored or opted-in one.
 func TestPlanInjectsHostPlatform(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -382,15 +347,10 @@ func TestPlanInjectsHostPlatform(t *testing.T) {
 // emitted, and TOOLBOX_IMAGE_DIGEST appears verbatim when a digest is
 // supplied but is omitted entirely (not emitted empty) when it is not.
 func TestPlanInjectsImageIdentity(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	digest := "sha256:" + strings.Repeat("a", 64)
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, ImageDigest: digest})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, ImageDigest: digest})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -401,7 +361,7 @@ func TestPlanInjectsImageIdentity(t *testing.T) {
 		t.Errorf("Env missing TOOLBOX_CLI_VERSION=%s; got %v", version.Version, plan.Env)
 	}
 
-	bare, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	bare, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan (no digest): %v", err)
 	}
@@ -420,12 +380,7 @@ func TestPlanInjectsImageIdentity(t *testing.T) {
 // emitted only when managed_statusline is explicitly false; nil (default) and
 // true emit nothing so the boot hook's default-on path runs.
 func TestPlanManagedStatuslineOptOut(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	hasOptOut := func(env []string) bool {
 		return slices.Contains(env, "TOOLBOX_MANAGED_STATUSLINE=0")
@@ -445,7 +400,7 @@ func TestPlanManagedStatuslineOptOut(t *testing.T) {
 	for _, tc := range cases {
 		cfg := testConfig()
 		cfg.ManagedStatusline = tc.managed
-		plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 		if err != nil {
 			t.Fatalf("%s: Plan: %v", tc.name, err)
 		}
@@ -460,13 +415,13 @@ func TestPlanManagedStatuslineOptOut(t *testing.T) {
 // instead of forwarding the raw basename.
 func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	planHost := fsx.Host{Home: tmpHome}
 	workspace := filepath.Join(tmpHome, "My Project!")
 	if err := mkdirAll(t, workspace); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -479,17 +434,12 @@ func TestPlanSanitizesRemoteControlPrefix(t *testing.T) {
 // TestPlanUserEnvAppendedAfterCurated asserts cfg.Env pairs are emitted after
 // the curated TOOLBOX_*/PWD entries, sorted by key for deterministic output.
 func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.Env = map[string]string{"ZED": "z", "CLAUDE_CODE_WORKFLOWS": "1", "EMPTY": ""}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -502,8 +452,8 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 		"TOOLBOX_CLI_VERSION=" + version.Version,
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
-		bridge.HostAgentHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox"),
-		bridge.HostCodexHomeEnv + "=" + filepath.Join(tmpHome, ".toolbox", ".codex"),
+		bridge.HostAgentHomeEnv + "=" + filepath.Join(planHost.Home, ".toolbox"),
+		bridge.HostCodexHomeEnv + "=" + filepath.Join(planHost.Home, ".toolbox", ".codex"),
 		reload.MarkerEnv + "=/home/toolbox/.toolbox-state/" + reload.MarkerName(plan.ContainerName),
 		"CLAUDE_CODE_WORKFLOWS=1",
 		"EMPTY=",
@@ -518,17 +468,12 @@ func TestPlanUserEnvAppendedAfterCurated(t *testing.T) {
 // each enabled skill emits a TOOLBOX_SDD_<KEY>_{PKG,VERSION,BIN,STEPS,MARKER}
 // quintet on top of TOOLBOX_SDD_ENABLED + TOOLBOX_SDD_WORKSPACE_HASH.
 func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gsd": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -564,17 +509,12 @@ func TestPlanSDDEnvAppendedWhenEnabled(t *testing.T) {
 
 // TestPlanSDDEnvCarriesBMADMarker locks in the bmad-specific gate.
 func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"bmad": {Enabled: true}}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -588,16 +528,11 @@ func TestPlanSDDEnvCarriesBMADMarker(t *testing.T) {
 // TestPlanSDDEnvOpenSpec locks in the static install steps for openspec
 // (claude + codex are always installed, no per-tool opt-out).
 func TestPlanSDDEnvOpenSpec(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"openspec": {Enabled: true}}
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -611,17 +546,12 @@ func TestPlanSDDEnvOpenSpec(t *testing.T) {
 
 // TestPlanSDDEnvDropsUnknownKeys covers the silent-drop contract for typos.
 func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gds": {Enabled: true}, "gsd": {Enabled: false}}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -638,12 +568,7 @@ func TestPlanSDDEnvDropsUnknownKeys(t *testing.T) {
 // in the emitted STEPS env var, while the rest of the quintet stays
 // registry-sourced.
 func TestPlanSDDEnvStepsOverride(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.SDD = map[string]config.SDDSkill{"gsd": {
@@ -651,7 +576,7 @@ func TestPlanSDDEnvStepsOverride(t *testing.T) {
 		Steps:   [][]string{{"--claude", "--local"}},
 	}}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -666,14 +591,9 @@ func TestPlanSDDEnvStepsOverride(t *testing.T) {
 }
 
 func TestPlanRejectsBadPort(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	_, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"not-a-port"}})
+	_, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"not-a-port"}})
 	if err == nil {
 		t.Fatal("Plan should reject malformed --publish spec")
 	}
@@ -683,9 +603,10 @@ func TestPlanRejectsBadPort(t *testing.T) {
 }
 
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
+	planHost, _ := planWorkspace(t)
 	cfg := testConfig()
 	cfg.MountsRoot = "~"
-	_, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: "/workspace"})
+	_, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
@@ -693,14 +614,14 @@ func TestPlanRejectsBadMountsRoot(t *testing.T) {
 
 func TestPlanWorkspaceNormalizationOnce(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	planHost := fsx.Host{Home: tmpHome}
 	canonical := filepath.Join(tmpHome, "bar")
 	if err := mkdirAll(t, canonical); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	dirty := filepath.Join(tmpHome, "foo", "..", "bar")
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: dirty})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: dirty})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -869,16 +790,11 @@ func TestConflictingPublishPortsTable(t *testing.T) {
 // --- Cmd / SecurityOpt ---
 
 func TestPlanComputesCmd(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
 	cfg := testConfig()
 	cfg.Shell = "zsh"
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -890,14 +806,9 @@ func TestPlanComputesCmd(t *testing.T) {
 // TestPlanComputesSecurityOpt: codex is always installed → always
 // returns seccomp=unconfined.
 func TestPlanComputesSecurityOpt(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -909,14 +820,9 @@ func TestPlanComputesSecurityOpt(t *testing.T) {
 // --- Loopback bridge env emission ---
 
 func TestPlanLoopbackBridgeOff(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -929,14 +835,9 @@ func TestPlanLoopbackBridgeOff(t *testing.T) {
 }
 
 func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}, BridgeLoopback: true})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -950,14 +851,9 @@ func TestPlanLoopbackBridgeSinglePort(t *testing.T) {
 }
 
 func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "8976:8976"}, BridgeLoopback: true})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "8976:8976"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -968,14 +864,9 @@ func TestPlanLoopbackBridgeMultiPortPreservesOrder(t *testing.T) {
 }
 
 func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "9999:13387"}, BridgeLoopback: true})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Ports: []string{"13387:13387", "9999:13387"}, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -986,14 +877,9 @@ func TestPlanLoopbackBridgeDeduplicatesContainerPorts(t *testing.T) {
 }
 
 func TestPlanLoopbackBridgeEmptyPublish(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	workspace := filepath.Join(tmpHome, "ws")
-	if err := mkdirAll(t, workspace); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	planHost, workspace := planWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, BridgeLoopback: true})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, BridgeLoopback: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -1039,14 +925,14 @@ func mkdirAll(t *testing.T, path string) error {
 // which forks the container name over the same workspace, keeps the session.
 func TestPlanScopesHerdrSessionToWorkspace(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	planHost := fsx.Host{Home: tmpHome}
 
 	herdrSession := func(t *testing.T, workspace string, profile *mountplan.Profile) string {
 		t.Helper()
 		if err := mkdirAll(t, workspace); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
-		plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 			Cfg: testConfig(), Workspace: workspace, Profile: profile,
 		})
 		if err != nil {
@@ -1083,7 +969,8 @@ func TestPlanScopesHerdrSessionToWorkspace(t *testing.T) {
 // prompt hook reads it back through the mount, so a StateDir that pointed
 // anywhere else would leave the banner silent with nothing to show for it.
 func TestPlanCarriesTheStateMountPath(t *testing.T) {
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: planWorkspace(t)})
+	planHost, workspace := planWorkspace(t)
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

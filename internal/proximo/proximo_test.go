@@ -2,11 +2,13 @@ package proximo_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
@@ -44,43 +46,45 @@ func TestExtraHostsEmpty(t *testing.T) {
 // TestEnabledTristate covers the three Proximo states against both CA presences.
 // Explicit true/false win regardless of the CA; nil auto-detects on CA presence.
 func TestEnabledTristate(t *testing.T) {
-	if proximo.Enabled(nil) {
+	noCA, _ := setupCA(t, false)
+	if proximo.Enabled(noCA, nil) {
 		t.Error("Enabled(nil) must be false")
 	}
 
 	// No CA on host: auto → off; explicit true → on; explicit false → off.
-	setupCA(t, false)
-	if proximo.Enabled(autoCfg()) {
+	if proximo.Enabled(noCA, autoCfg()) {
 		t.Error("auto-detect with no CA must be off")
 	}
-	if !proximo.Enabled(forceOnCfg()) {
+	if !proximo.Enabled(noCA, forceOnCfg()) {
 		t.Error("explicit true must be on even without a CA")
 	}
-	if proximo.Enabled(forceOffCfg()) {
+	if proximo.Enabled(noCA, forceOffCfg()) {
 		t.Error("explicit false must be off")
 	}
 
 	// CA present: auto → on; explicit false still wins (off).
-	setupCA(t, true)
-	if !proximo.Enabled(autoCfg()) {
+	withCA, _ := setupCA(t, true)
+	if !proximo.Enabled(withCA, autoCfg()) {
 		t.Error("auto-detect with CA present must be on")
 	}
-	if proximo.Enabled(forceOffCfg()) {
+	if proximo.Enabled(withCA, forceOffCfg()) {
 		t.Error("explicit false must beat an installed CA")
 	}
 }
 
-// setupCA points os.UserHomeDir at a temp dir, scrubs PATH (so a proximo
-// binary on the test host can't answer the CA-path query), and optionally
-// writes the CA file at the fallback location. Returns the host CA path.
-// Linux resolves os.UserHomeDir from $HOME, so the override is deterministic
-// in the test container.
-func setupCA(t *testing.T, write bool) string {
+// setupCA returns a Host with a home of its own and a PATH that resolves
+// nothing — a machine with no proximo installed — optionally writing the CA
+// file at the state-home fallback. The returned path is where the CA is (or
+// would be).
+//
+// Nothing here rewrites $HOME or $PATH: declaring the host is the whole point
+// of fsx.Host, and it is also what makes the answer deterministic on a
+// developer machine (or this project's own image) that really does ship a
+// proximo binary.
+func setupCA(t *testing.T, write bool) (fsx.Host, string) {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	t.Setenv("PATH", t.TempDir())
-	caPath := filepath.Join(dir, ".proximo", "tls", "ca.pem")
+	host := fsx.Host{Home: t.TempDir()} // no resolver → nothing on this host's PATH
+	caPath := host.Join(".proximo", "tls", "ca.pem")
 	if write {
 		if err := os.MkdirAll(filepath.Dir(caPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
@@ -89,19 +93,24 @@ func setupCA(t *testing.T, write bool) string {
 			t.Fatalf("write CA: %v", err)
 		}
 	}
-	return caPath
+	return host, caPath
 }
 
-// fakeProximo installs an executable `proximo` stub on PATH with the given
-// shell body, simulating a host with proximo on PATH.
-func fakeProximo(t *testing.T, script string) {
+// fakeProximo returns a copy of host whose PATH resolves an executable
+// `proximo` stub with the given shell body — a host with proximo installed.
+func fakeProximo(t *testing.T, host fsx.Host, script string) fsx.Host {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "proximo")
+	bin := filepath.Join(t.TempDir(), "proximo")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
 		t.Fatalf("write fake proximo: %v", err)
 	}
-	t.Setenv("PATH", dir)
+	host.LookPath = func(name string) (string, error) {
+		if name != "proximo" {
+			return "", exec.ErrNotFound
+		}
+		return bin, nil
+	}
+	return host
 }
 
 // TestEnabledAutoDetectViaQuery pins auto-detect against the queried CA path:
@@ -110,11 +119,11 @@ func fakeProximo(t *testing.T, script string) {
 // and once the CA exists at the path proximo reports, auto-detect turns on
 // even though nothing sits at the ~/.proximo fallback.
 func TestEnabledAutoDetectViaQuery(t *testing.T) {
-	setupCA(t, false) // temp HOME: nothing at the fallback location
+	host, _ := setupCA(t, false) // own home: nothing at the fallback location
 	caPath := filepath.Join(t.TempDir(), "tls", "ca.pem")
-	fakeProximo(t, "echo "+caPath)
+	host = fakeProximo(t, host, "echo "+caPath)
 
-	if proximo.Enabled(autoCfg()) {
+	if proximo.Enabled(host, autoCfg()) {
 		t.Error("binary on PATH but CA absent: auto-detect must stay off")
 	}
 
@@ -124,7 +133,7 @@ func TestEnabledAutoDetectViaQuery(t *testing.T) {
 	if err := os.WriteFile(caPath, []byte("-----BEGIN CERTIFICATE-----\n"), 0o600); err != nil {
 		t.Fatalf("write CA: %v", err)
 	}
-	if !proximo.Enabled(autoCfg()) {
+	if !proximo.Enabled(host, autoCfg()) {
 		t.Error("CA present at queried path: auto-detect must turn on")
 	}
 }
@@ -133,9 +142,9 @@ func TestEnabledAutoDetectViaQuery(t *testing.T) {
 // filippolmt/proximo#20: when `proximo config ca-path` answers, its output
 // wins over the hardcoded state-home fallback.
 func TestCAPathPrefersProximoQuery(t *testing.T) {
-	setupCA(t, false)
-	fakeProximo(t, "echo /custom/state/tls/ca.pem")
-	path, ok := proximo.CAPath()
+	host, _ := setupCA(t, false)
+	host = fakeProximo(t, host, "echo /custom/state/tls/ca.pem")
+	path, ok := proximo.CAPath(host)
 	if !ok || path != "/custom/state/tls/ca.pem" {
 		t.Errorf("CAPath = %q, %v; want query result /custom/state/tls/ca.pem, true", path, ok)
 	}
@@ -154,11 +163,11 @@ func TestCAPathFallback(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			want := setupCA(t, false)
+			host, want := setupCA(t, false)
 			if tc.script != "" {
-				fakeProximo(t, tc.script)
+				host = fakeProximo(t, host, tc.script)
 			}
-			path, ok := proximo.CAPath()
+			path, ok := proximo.CAPath(host)
 			if !ok || path != want {
 				t.Errorf("CAPath = %q, %v; want fallback %q, true", path, ok, want)
 			}
@@ -167,8 +176,8 @@ func TestCAPathFallback(t *testing.T) {
 }
 
 func TestCAMountForceOffEvenWithCA(t *testing.T) {
-	setupCA(t, true)
-	if _, ok := proximo.CAMount(forceOffCfg()); ok {
+	host, _ := setupCA(t, true)
+	if _, ok := proximo.CAMount(host, forceOffCfg()); ok {
 		t.Error("CAMount must be absent when proximo is force-disabled")
 	}
 }
@@ -176,8 +185,8 @@ func TestCAMountForceOffEvenWithCA(t *testing.T) {
 func TestCAMountPresentEvenWithoutFile(t *testing.T) {
 	// CAMount does not stat the source: the mount resolver soft-skips a
 	// missing file with a warning, which is more informative than silence.
-	caPath := setupCA(t, false)
-	m, ok := proximo.CAMount(forceOnCfg())
+	host, caPath := setupCA(t, false)
+	m, ok := proximo.CAMount(host, forceOnCfg())
 	if !ok {
 		t.Fatal("CAMount should be present when enabled")
 	}
@@ -193,17 +202,17 @@ func TestCAMountPresentEvenWithoutFile(t *testing.T) {
 }
 
 func TestEnvGatedOnExistence(t *testing.T) {
-	if got := proximo.Env(forceOffCfg()); got != nil {
+	noCA, _ := setupCA(t, false)
+	if got := proximo.Env(noCA, forceOffCfg()); got != nil {
 		t.Errorf("Env(force-off) = %v, want nil", got)
 	}
 
-	setupCA(t, false)
-	if got := proximo.Env(forceOnCfg()); got != nil {
+	if got := proximo.Env(noCA, forceOnCfg()); got != nil {
 		t.Errorf("Env(force-on, no CA file) = %v, want nil", got)
 	}
 
-	setupCA(t, true)
-	got := proximo.Env(forceOnCfg())
+	withCA, _ := setupCA(t, true)
+	got := proximo.Env(withCA, forceOnCfg())
 	wantNode := "NODE_EXTRA_CA_CERTS=" + proximo.CATarget
 	wantCurl := "TOOLBOX_PROXIMO_CA=" + proximo.CATarget
 	if !slices.Contains(got, wantNode) {
