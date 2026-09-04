@@ -67,10 +67,11 @@ type registry interface {
 // did no work at all, and a failed pull leaves the local store possibly
 // behind the registry, which is the one thing the prefetch exists to notice.
 func RefreshIfStale(ctx context.Context, cli registry, ref, stateDir string) bool {
-	if cached(ref, stateDir) {
+	c := cache{dir: stateDir}
+	if c.fresh(ref) {
 		return false
 	}
-	return pullAndRecord(ctx, cli, ref, stateDir)
+	return pullAndRecord(ctx, cli, ref, c)
 }
 
 // ForcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
@@ -79,16 +80,16 @@ func RefreshIfStale(ctx context.Context, cli registry, ref, stateDir string) boo
 // RefreshIfStale — failures are warned and the caller falls back to the local
 // image.
 func ForcePull(ctx context.Context, cli registry, ref, stateDir string) bool {
-	return pullAndRecord(ctx, cli, ref, stateDir)
+	return pullAndRecord(ctx, cli, ref, cache{dir: stateDir})
 }
 
 // pullAndRecord pulls ref and stamps the cache marker on success — the shared
 // tail of RefreshIfStale (after the cache check) and ForcePull.
-func pullAndRecord(ctx context.Context, cli registry, ref, stateDir string) bool {
+func pullAndRecord(ctx context.Context, cli registry, ref string, c cache) bool {
 	if !pull(ctx, cli, ref) {
 		return false
 	}
-	record(ref, stateDir)
+	c.stamp(ref)
 	return true
 }
 
@@ -173,36 +174,46 @@ func registryOf(ref string) string {
 	return "docker.io"
 }
 
-// markerPath returns the cache marker path for a given image ref under
-// stateDir. The ref is hashed because tags can contain characters that are
-// awkward in filenames (digests, registry paths with ":" / "/").
+// cache is the TTL marker store under one session's resolved state dir. The
+// dir travelled beside every ref through six signatures before it was a type;
+// naming it puts the "which cache" question in one place and leaves the
+// functions asking only about the ref.
 //
-// An empty stateDir is an error, not a fallback to the default location: it
+// The zero value is the honest representation of a session that resolved no
+// state mount: there is nowhere to keep markers, so nothing is fresh and
+// nothing records. See markerPath.
+type cache struct{ dir string }
+
+// markerPath returns the marker path for ref in this cache. The ref is hashed
+// because tags can contain characters that are awkward in filenames (digests,
+// registry paths with ":" / "/").
+//
+// A cache with no dir is an error, not a fallback to the default location: it
 // means the session resolved no state mount (the user disabled it), and the
 // callers read that as "no cache" — one registry round-trip per invocation
 // instead of one per TTL. Guessing a path the session does not use would put
 // the cache somewhere nothing else looks, and the container could not see it.
-func markerPath(ref, stateDir string) (string, error) {
-	if stateDir == "" {
+func (c cache) markerPath(ref string) (string, error) {
+	if c.dir == "" {
 		return "", errors.New("no toolbox state dir resolved for this session")
 	}
 	sum := sha256.Sum256([]byte(ref))
-	return filepath.Join(stateDir, "pull-cache", hex.EncodeToString(sum[:])), nil
+	return filepath.Join(c.dir, "pull-cache", hex.EncodeToString(sum[:])), nil
 }
 
-// cached reports whether a successful pull of ref happened within the
+// fresh reports whether a successful pull of ref happened within the
 // last TTL. Any error (no state dir, missing marker, stat failure)
 // returns false so the caller falls through to a real pull — never
 // silently skip on uncertainty.
-func cached(ref, stateDir string) bool {
-	path, err := markerPath(ref, stateDir)
+func (c cache) fresh(ref string) bool {
+	path, err := c.markerPath(ref)
 	if err != nil {
 		return false
 	}
 	return fsx.MarkerFresh(path, TTL)
 }
 
-// record stamps a fresh marker after a successful pull. Persist failures
+// stamp writes a fresh marker after a successful pull. Persist failures
 // (mkdir/write rejection from ENOSPC / EROFS / permissions) don't break the
 // user — the next invocation just pulls again — but a permanently un-writable
 // cache silently turns every shell into a full registry round-trip, which adds
@@ -212,14 +223,14 @@ func cached(ref, stateDir string) bool {
 //
 // A session with no state dir is not such a failure and is silent: there is
 // nowhere to keep a cache because the user disabled the state mount, and
-// "fix the underlying issue" names nothing they did wrong. cached answers the
+// "fix the underlying issue" names nothing they did wrong. fresh answers the
 // same input the same way, and imageprefetch.Start returns early on it.
 // Marker contents are intentionally empty — modtime is the timestamp.
-func record(ref, stateDir string) {
-	if stateDir == "" {
+func (c cache) stamp(ref string) {
+	if c.dir == "" {
 		return
 	}
-	path, err := markerPath(ref, stateDir)
+	path, err := c.markerPath(ref)
 	if err != nil {
 		ui.Warning("pull cache: cannot resolve marker path: " + err.Error())
 		return

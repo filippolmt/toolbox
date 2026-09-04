@@ -23,7 +23,7 @@ import (
 func TestMarkerPath(t *testing.T) {
 	stateDir := t.TempDir()
 
-	p1, err := markerPath("ghcr.io/filippolmt/toolbox:latest", stateDir)
+	p1, err := cache{dir: stateDir}.markerPath("ghcr.io/filippolmt/toolbox:latest")
 	if err != nil {
 		t.Fatalf("markerPath: unexpected error: %v", err)
 	}
@@ -33,12 +33,12 @@ func TestMarkerPath(t *testing.T) {
 		t.Errorf("markerPath root = %q, want prefix %q", p1, want)
 	}
 
-	p2, _ := markerPath("ghcr.io/filippolmt/toolbox:latest", stateDir)
+	p2, _ := cache{dir: stateDir}.markerPath("ghcr.io/filippolmt/toolbox:latest")
 	if p1 != p2 {
 		t.Errorf("markerPath not stable: %q != %q", p1, p2)
 	}
 
-	p3, _ := markerPath("ghcr.io/filippolmt/toolbox:edge", stateDir)
+	p3, _ := cache{dir: stateDir}.markerPath("ghcr.io/filippolmt/toolbox:edge")
 	if p1 == p3 {
 		t.Errorf("distinct refs collided to same marker path: %q", p1)
 	}
@@ -49,7 +49,7 @@ func TestMarkerPath(t *testing.T) {
 // "no cache" and pay one round-trip per invocation, which is the honest cost
 // of having disabled the mount.
 func TestMarkerPathWithoutAStateDir(t *testing.T) {
-	got, err := markerPath("ghcr.io/foo/bar:latest", "")
+	got, err := cache{dir: ""}.markerPath("ghcr.io/foo/bar:latest")
 	if err == nil {
 		t.Fatalf("markerPath returned %q for an unresolved state dir, want an error", got)
 	}
@@ -58,45 +58,46 @@ func TestMarkerPathWithoutAStateDir(t *testing.T) {
 	}
 }
 
-func TestCachedMissingMarker(t *testing.T) {
-	if cached("ghcr.io/foo/bar:latest", t.TempDir()) {
-		t.Error("cached returned true for missing marker")
+func TestFreshMissingMarker(t *testing.T) {
+	c := cache{dir: t.TempDir()}
+	if c.fresh("ghcr.io/foo/bar:latest") {
+		t.Error("fresh returned true for a missing marker")
 	}
 }
 
-func TestCachedFreshMarker(t *testing.T) {
-	stateDir := t.TempDir()
+func TestFreshMarkerIsACacheHit(t *testing.T) {
+	c := cache{dir: t.TempDir()}
 	ref := "ghcr.io/foo/bar:latest"
-	record(ref, stateDir)
-	if !cached(ref, stateDir) {
-		t.Error("cached returned false for freshly recorded marker")
+	c.stamp(ref)
+	if !c.fresh(ref) {
+		t.Error("fresh returned false for a freshly stamped marker")
 	}
 }
 
 // Marker older than TTL must NOT be treated as a cache hit: skipping the
 // manifest check past the trust window is the exact bug the TTL guard is
 // meant to prevent.
-func TestCachedStaleMarker(t *testing.T) {
-	stateDir := t.TempDir()
+func TestFreshStaleMarker(t *testing.T) {
+	c := cache{dir: t.TempDir()}
 	ref := "ghcr.io/foo/bar:latest"
-	record(ref, stateDir)
+	c.stamp(ref)
 
-	p, _ := markerPath(ref, stateDir)
+	p, _ := c.markerPath(ref)
 	old := time.Now().Add(-2 * TTL)
 	if err := os.Chtimes(p, old, old); err != nil {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	if cached(ref, stateDir) {
-		t.Error("cached returned true for marker older than TTL")
+	if c.fresh(ref) {
+		t.Error("fresh returned true for marker older than TTL")
 	}
 }
 
-func TestRecordCreatesMissingDirs(t *testing.T) {
+func TestStampCreatesMissingDirs(t *testing.T) {
 	// Nested, because a retargeted state dir need not exist yet.
 	stateDir := filepath.Join(t.TempDir(), "custom-root", "toolbox", "state")
 
-	record("ghcr.io/foo/bar:latest", stateDir)
+	cache{dir: stateDir}.stamp("ghcr.io/foo/bar:latest")
 
 	dir := filepath.Join(stateDir, "pull-cache")
 	info, err := os.Stat(dir)
@@ -180,7 +181,7 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 
 	t.Run("cache hit does no round trip", func(t *testing.T) {
 		stateDir := t.TempDir()
-		record(ref, stateDir)
+		cache{dir: stateDir}.stamp(ref)
 		m := pulling(nil)
 		if RefreshIfStale(t.Context(), m, ref, stateDir) {
 			t.Error("RefreshIfStale = true on a cache hit, want false")
@@ -202,7 +203,7 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 func TestForcePullReportsTheRegistryRoundTrip(t *testing.T) {
 	ref := "ghcr.io/foo/bar:latest"
 	stateDir := t.TempDir()
-	record(ref, stateDir) // a fresh marker ForcePull must ignore
+	cache{dir: stateDir}.stamp(ref) // a fresh marker ForcePull must ignore
 
 	m := pulling(nil)
 	if !ForcePull(t.Context(), m, ref, stateDir) {
@@ -255,7 +256,7 @@ func TestRefreshIfStaleCachesUnderTheGivenStateDir(t *testing.T) {
 	}
 }
 
-// TestRecordWithoutAStateDirIsSilent: a session that resolved no state mount
+// TestStampWithoutAStateDirIsSilent: a session that resolved no state mount
 // has nowhere to keep the cache, and that is a configuration the user chose —
 // `mountplan.StateDirPath` documents "" as a supported answer. record's
 // warning exists for a cache that *should* work and does not (ENOSPC, EROFS,
@@ -263,23 +264,23 @@ func TestRefreshIfStaleCachesUnderTheGivenStateDir(t *testing.T) {
 // stops" holds. Here there is no issue to fix, so warning on every successful
 // pull would be noise for the life of the setting. cached is already silent on
 // the same input; imageprefetch.Start returns early on it too.
-func TestRecordWithoutAStateDirIsSilent(t *testing.T) {
-	got := captureStderr(t, func() { record("ghcr.io/foo/bar:latest", "") })
+func TestStampWithoutAStateDirIsSilent(t *testing.T) {
+	got := captureStderr(t, func() { cache{dir: ""}.stamp("ghcr.io/foo/bar:latest") })
 	if got != "" {
-		t.Errorf("record wrote %q for a session with no state dir, want silence", got)
+		t.Errorf("stamp wrote %q for a session with no state dir, want silence", got)
 	}
 }
 
 // The warning must survive for the failure it was written for: a state dir
 // that resolves but cannot be written.
-func TestRecordWarnsWhenTheCacheIsUnwritable(t *testing.T) {
+func TestStampWarnsWhenTheCacheIsUnwritable(t *testing.T) {
 	blocked := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	got := captureStderr(t, func() { record("ghcr.io/foo/bar:latest", blocked) })
+	got := captureStderr(t, func() { cache{dir: blocked}.stamp("ghcr.io/foo/bar:latest") })
 	if !strings.Contains(got, "pull cache") {
-		t.Errorf("record stayed quiet about an unwritable cache; stderr = %q", got)
+		t.Errorf("stamp stayed quiet about an unwritable cache; stderr = %q", got)
 	}
 }
 
