@@ -53,7 +53,7 @@ ARG JQ_VERSION=1.8.2
 ARG YQ_VERSION=4.53.6
 ARG STARSHIP_VERSION=1.26.0
 ARG PNPM_VERSION=11.25.0
-ARG BUN_VERSION=1.4.0
+ARG BUN_VERSION=1.4.1
 ARG UV_VERSION=0.12.9
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
@@ -87,7 +87,7 @@ ARG EZA_VERSION=0.23.5
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=9112b53fa8b5ab556c7c893aa8be8a247ac512a0
+ARG OMZ_COMMIT=3f84a2ae4ab63343890ff90efca6d18b7292dd0f
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
 ARG ZSH_COMPLETIONS_COMMIT=8cd3bd78e8b1f17271cfdd8269074e5557d8d7b8
