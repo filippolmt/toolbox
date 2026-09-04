@@ -39,8 +39,9 @@ import (
 // canonical registry image (`toolbox build` overwrites its local cache) but
 // can be relocated, opt-in, via config Image / RegistryMirror —
 // build.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
-// ("auto" | "always" | "never") and drives imageplan.RefreshAtStart, plus
-// imageplan.Refresh on the session-reload path.
+// ("auto" | "always" | "never") and steers imageplan.Sync, on the shell-start
+// and the session-reload path alike — those differ by the imageplan.Reason
+// the caller passes, not by the policy.
 type Image struct {
 	Ref        string
 	PullPolicy string

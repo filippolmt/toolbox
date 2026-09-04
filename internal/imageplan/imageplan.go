@@ -1,15 +1,13 @@
 // Package imageplan owns the "is the image ready for ContainerCreate?"
-// decision tree. Two phases, three seams:
+// decision tree. Two phases, two seams:
 //
-//   - RefreshAtStart: the registry sync a shell start runs, which on the one
-//     case that is not already settled — an `auto` policy, the image in the
-//     store, the registry ahead of it, a tty to ask on — *asks*, because that
-//     is the case where the cost lands on a developer who has an opinion
-//     about it. Reports what it established, and whether a "no" postponed it.
-//   - Refresh: the same sync with nothing to ask, run by a session reload
-//     before it destroys anything. A reload's premise is that the move onto
-//     the newer image was asked for, and its own rule is that it gates on
-//     nothing and confirms nothing.
+//   - Sync: the registry sync, best-effort. Policy in — the Pull policy the
+//     Image carries — plus a Reason, the caller's answer to *why this sync is
+//     running*; Outcome out. The reason is what decides whether a developer is
+//     asked, and it is the only thing about the calling branch this tree
+//     learns. There is no second entry point for "the same sync but silent":
+//     that was two functions differing by a prompt and a cache check, and a
+//     caller choosing between them by name could pick the wrong one.
 //   - Ensure: hard guarantee called before ContainerCreate. If the image
 //     is already in the local store, done. Otherwise the registry pull
 //     already had its chance and we fail fatally.
@@ -18,9 +16,9 @@
 // opt-in (config Image / RegistryMirror; build.ResolveImage owns the
 // precedence). Ensure never builds — `toolbox build` is the explicit
 // user-driven path for a local rebuild. The Pull policy carried on the
-// Image steers Refresh: "auto" (default) is cache-aware, "always" forces a
-// pull, "never" skips the registry entirely (Ensure still hard-requires the
-// image locally).
+// Image steers Sync: "auto" (default) probes or reads the cache depending on
+// the reason, "always" forces a pull, "never" skips the registry entirely
+// (Ensure still hard-requires the image locally).
 package imageplan
 
 import (
@@ -49,31 +47,6 @@ type imageSource interface {
 	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
 }
 
-// Refresh best-effort syncs the image against its registry without asking
-// anything, steered by the Image's pull policy: "never" skips the registry
-// round-trip entirely (the local copy is authoritative — Ensure still guards
-// presence), "always" forces a pull bypassing the TTL cache, "auto"/"" uses
-// the cache-aware default. Errors are swallowed by the pull half (logged as
-// a warning at most); the caller's existing local copy is the fallback.
-//
-// This is the session reload's form. A shell start calls RefreshAtStart
-// instead: the TTL cache is the very unevenness that decision removes, and a
-// reload keeps it because a reload adopts what the store holds and the
-// background prefetch is what advanced it.
-//
-// Reports whether the local store was actually synced against the registry
-// here and now.
-func Refresh(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string) bool {
-	switch image.PullPolicy {
-	case config.PullNever:
-		return false
-	case config.PullAlways:
-		return forcePull(ctx, cli, image.Ref, stateDir)
-	default: // config.PullAuto and the unset zero value
-		return refreshIfStale(ctx, cli, image.Ref, stateDir)
-	}
-}
-
 // promptWindow is how long the start-up prompt waits for an answer. Long
 // enough to read the question and reach for a key, short enough that a
 // developer who walked away has not lost their morning to it — and visible
@@ -83,7 +56,7 @@ const promptWindow = 5 * time.Second
 
 // prompt is the shape of the question: what was answered, and whether the
 // developer interrupted the command instead of answering it. The elapsed
-// answer rides along because it is per-question here — see Stake.
+// answer rides along because it is per-question here — see Reason.stake.
 type prompt func(question string, window time.Duration, elapsed ui.Elapsed) (yes, interrupted bool)
 
 // askable and confirm are the prompt seams: whether there is a developer to
@@ -94,21 +67,59 @@ var (
 	confirm prompt = ui.ConfirmCountdown
 )
 
-// Stake is what a yes to the prompt spends besides the wait, which is the one
-// thing the caller knows and this tree does not. It decides how the question
-// is worded and — load-bearing — which way an unanswered window answers.
-type Stake int
+// Reason is why a Sync is running — the one thing about the calling branch
+// this tree is told, and the whole of it. It decides two things that used to
+// be decided by which of two functions the caller named: whether a developer
+// is asked at all, and what a yes would cost besides the wait.
+type Reason int
+
+// The zero value is ReasonCreate, and that is load-bearing in two directions:
+// a reason this package is not given must not silently skip the question the
+// way a reload does, and it must not be handed the wording, or the unanswered
+// default, of the one that discards a container.
+const (
+	// ReasonCreate: a shell start with no container yet, so a yes buys the
+	// newer image and costs only the download. An elapsed window may answer
+	// it, because what it starts is the pull that would otherwise have been
+	// unconditional.
+	ReasonCreate Reason = iota
+	// ReasonStart: a shell start on a stopped container, which a yes replaces
+	// — discarding whatever was written inside it outside the bind mounts. No
+	// clock may choose that, so the window answers no.
+	ReasonStart
+	// ReasonReload: a session reload, run before it destroys anything. Asks
+	// nothing and confirms nothing — its premise is that the move onto the
+	// newer image was asked for, and the same path is what an unattended
+	// trigger walks. It is also the one reason that trusts the pull cache: a
+	// reload adopts what the store holds, and the background prefetch is what
+	// advanced it.
+	ReasonReload
+)
+
+// asks reports whether this reason may put the question to a developer. Only
+// the reload may not, and that is its defining property rather than a
+// configuration of it.
+func (r Reason) asks() bool { return r != ReasonReload }
+
+// stake is what a yes costs besides the wait — the [Prompt Stake], derived
+// from the reason rather than passed in beside it. The caller knows which
+// branch it is on; that a stopped container makes a yes destructive is this
+// package's own conclusion, and one it must not be able to be told wrongly.
+//
+// [Prompt Stake]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#prompt-stake
+type stake int
 
 const (
-	// StakeDownload: no container exists yet, so a yes buys the newer image
-	// and costs only the download. An elapsed window may answer it, because
-	// what it starts is the pull that would otherwise have been unconditional.
-	StakeDownload Stake = iota
-	// StakeRecreate: a container already exists and a yes replaces it, which
-	// discards whatever was written inside it outside the bind mounts. No
-	// clock may choose that, so the window answers no.
-	StakeRecreate
+	stakeDownload stake = iota
+	stakeRecreate
 )
+
+func (r Reason) stake() stake {
+	if r == ReasonStart {
+		return stakeRecreate
+	}
+	return stakeDownload
+}
 
 // offer is one stake's whole side of the conversation: how the question is
 // put, what an unanswered window answers, and what a decline says out loud.
@@ -129,8 +140,8 @@ type offer struct {
 // A stake this does not know is worded as the download, which is the form that
 // spends nothing but time: an unknown stake must not be handed the wording, or
 // the default, of the one that discards a container.
-func (s Stake) offer() offer {
-	if s == StakeRecreate {
+func (s stake) offer() offer {
+	if s == stakeRecreate {
 		return offer{
 			question:  "A newer runtime image is available. Recreate this container on it?",
 			elapsed:   ui.ElapsedNo,
@@ -171,8 +182,9 @@ type Outcome struct {
 	Interrupted bool
 }
 
-// RefreshAtStart runs the shell-start refresh and, in the one case where the
-// answer is not already settled, asks. The tree is ADR 0005:
+// Sync best-effort syncs the image against its registry and, in the one case
+// where the answer is not already settled, asks. Policy in, reason in,
+// Outcome out. The tree is ADR 0005:
 //
 //   - `never` neither probes nor prompts — not probing is that policy's whole
 //     promise, and a probe is a registry round-trip.
@@ -192,21 +204,31 @@ type Outcome struct {
 //     re-stamped from a cached digest on every shell start.
 //   - what is left — a registry ahead of the store — is the prompt.
 //
-// The stake is the caller's answer to "and what does a yes cost here besides
-// the wait": it words the question and points the unanswered window, and it
-// never adds a case to the tree above. Every settled case stays settled under
-// either stake — in particular `always`, which has said yes to downloads and
-// nothing at all about containers, so it pulls without asking and reports no
-// acceptance for a caller to act on.
+// The reason adds exactly one case to that tree — the reload, which skips the
+// probe and the question both and reads the TTL cache instead. Past that it
+// only supplies the [stake]: what a yes costs besides the wait, which words
+// the question and points the unanswered window. Every settled case above
+// stays settled under every reason — in particular `always`, which has said
+// yes to downloads and nothing at all about containers, so it pulls without
+// asking and reports no acceptance for a caller to act on.
 //
-// Best-effort throughout, like Refresh: every failure path leaves the caller
-// with the local image and Ensure with the last word.
-func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string, stake Stake) Outcome {
+// Best-effort throughout: every failure path leaves the caller with the local
+// image and Ensure with the last word.
+func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string, reason Reason) Outcome {
 	switch image.PullPolicy {
 	case config.PullNever:
 		return Outcome{}
 	case config.PullAlways:
 		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
+	}
+
+	// The reload's whole branch, and the only place the TTL cache is trusted:
+	// it gates on nothing and confirms nothing, because its premise is that
+	// the move onto the newer image was already asked for. A shell start
+	// declines that cache deliberately — a warm one there is what let a
+	// released image go unoffered for a whole window.
+	if !reason.asks() {
+		return Outcome{Synced: refreshIfStale(ctx, cli, image.Ref, stateDir)}
 	}
 
 	// Presence, not currency: an image the store does not hold at all leaves
@@ -231,7 +253,7 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 		return Outcome{Synced: store.Probed}
 	}
 
-	ask := stake.offer()
+	ask := reason.stake().offer()
 	yes, interrupted := confirm(ask.question, promptWindow, ask.elapsed)
 	switch {
 	case interrupted:

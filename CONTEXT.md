@@ -292,23 +292,28 @@ pattern.
 The two-phase decision tree that guarantees the image referenced by a
 `SessionPlan.Image` is ready before `ContainerCreate`.
 
-Concretely: `imageplan.RefreshAtStart(ctx, cli, image, stateDir, stake)`
-runs at the top of `container.Shell` and best-effort syncs the image
+Concretely: `imageplan.Sync(ctx, cli, image, stateDir, reason)` —
+policy in, reason in, `Outcome` out. It runs at the top of
+`container.Shell` and, on the [Session Reload](#session-reload) path,
+before that reload destroys anything; it best-effort syncs the image
 against its registry, steered by the Image's pull policy — `never` skips
 the round-trip, `always` forces an unconditional pull, `auto` (default)
 probes and then *asks*, see
 [Start-up Refresh Prompt](#start-up-refresh-prompt); errors are
-swallowed. The `imageplan.Stake` is the caller's answer to *what does a
-yes cost here besides the wait* — `StakeDownload` on a create,
-`StakeRecreate` on a stopped container the yes would replace — and it
-adds no case to the tree: it words the question and points the
-unanswered window. `imageplan.Refresh` is the same act with nothing to ask,
-kept for the [Session Reload](#session-reload), which runs it before it
-destroys anything and whose `auto` branch stays on the TTL-cached form —
-a reload adopts what the store holds, and the
-[Image Prefetch](#image-prefetch) is what advanced it.
+swallowed.
 
-Both entry points take the session's resolved state dir, because that is
+The `imageplan.Reason` is the caller's answer to *why is this sync
+running*, and the only thing about the calling branch the tree learns.
+`ReasonCreate` and `ReasonStart` are the two shell-start forms and differ
+only in the [Prompt Stake](#prompt-stake) they imply; `ReasonReload` is
+the one that asks nothing and confirms nothing — and the only one that
+trusts the TTL cache, because a reload adopts what the store holds and
+the [Image Prefetch](#image-prefetch) is what advanced it. There is
+deliberately no second entry point for that: a silent form reachable by
+naming a different function is a form a caller can reach by mistake,
+whereas a reason is a value the branch already has.
+
+Sync takes the session's resolved state dir, because that is
 where the TTL marker lives: `<state dir>/pull-cache/<sha256-of-ref>`. It
 used to be derived from `$HOME`, which pinned it to the *default* state
 location while every other toolbox-managed marker followed a
@@ -469,19 +474,23 @@ What a yes to the [Start-up Refresh Prompt](#start-up-refresh-prompt) spends
 besides the developer's time — the one thing the caller knows and the
 [Image Plan](#image-plan)'s tree does not.
 
-Concretely: `imageplan.Stake`, either `StakeDownload` (nothing exists yet, so
-a yes buys the image and costs only the wait) or `StakeRecreate` (a container
-already exists and a yes replaces it, discarding whatever was written inside
-it outside the bind mounts). `Stake.offer()` returns the question, the
+Concretely: `imageplan`'s unexported `stake`, either `stakeDownload` (nothing
+exists yet, so a yes buys the image and costs only the wait) or
+`stakeRecreate` (a container already exists and a yes replaces it, discarding
+whatever was written inside it outside the bind mounts). It is *derived* from
+the [Image Plan](#image-plan)'s `Reason` — `ReasonStart` is the destructive
+one — rather than passed in beside it: the caller knows which branch it is on,
+and that a stopped container makes a yes destructive is the tree's own
+conclusion, not something it may be told wrongly. `stake.offer()` returns the question, the
 [Elapsed Answer](#elapsed-answer) and the postponement line as one value: the
 three are one editorial decision, and a question worded around a container
 that a clock could accept would be a bug on its own. A stake the method does
 not know is worded as the download — the form that spends nothing but time.
-`container.offerRefresh` derives it and returns it alongside the outcome, and
-that is the **only** place the branch is classified: honouring a yes reads the
-stake rather than re-deriving from the [Run Plan](#run-plan)'s `Op` what a yes
-meant. Owned by `internal/imageplan`; the branch that supplies it by
-`internal/container`.
+`container.offerRefresh` derives the reason and returns it alongside the
+outcome, and that is the **only** place the branch is classified: honouring a
+yes reads the reason rather than re-deriving from the [Run Plan](#run-plan)'s
+`Op` what a yes meant. Owned by `internal/imageplan`; the branch that supplies
+it by `internal/container`.
 
 Why the term exists: while the prompt fired on a fresh create alone, what a
 yes cost was a constant — a download — and needed no name. Extending the
@@ -490,7 +499,10 @@ also destroys something, and the choice was between a second case inside the
 tree (which is about the registry and the store, and has no business knowing
 which container branch it was reached from) or an input. Naming the stake is
 what keeps the branch out of the tree while still letting the wording, the
-countdown's default and the postponement line differ by branch. The decision
+countdown's default and the postponement line differ by branch. It later
+stopped being the input itself and became what the `Reason` implies, when
+folding the silent form into one entry point gave the tree a reason to be told
+anyway. The decision
 is `docs/adr/0008-refresh-prompt-on-a-stopped-container.md`.
 
 ### Elapsed Answer
@@ -686,8 +698,8 @@ returns a typed `*reload.From` when the exiting shell left a
 `syscall.Exec` behind the `execSelf` var, and each host process still
 handles exactly one attach. The order is the whole safety argument:
 **re-exec first, verify, then destroy.** The riskiest step is therefore
-also the first, when the old session is still alive; `imageplan.Refresh`
-+ `Ensure` gate the teardown, so a reload with no usable image leaves
+also the first, when the old session is still alive; `imageplan.Sync`
+(under `ReasonReload`) + `Ensure` gate the teardown, so a reload with no usable image leaves
 the developer exactly where they were. The new binary owns the destroy,
 which means a `brew upgrade` landed meanwhile takes effect on the
 teardown policy too, not just on the create.

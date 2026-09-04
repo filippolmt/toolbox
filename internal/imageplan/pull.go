@@ -59,7 +59,8 @@ type registry interface {
 // pay a round-trip to GHCR. It gates refreshIfStale, which is the session
 // reload's refresh — a shell start decides from a digest probe instead, and
 // deliberately: a warm cache there is what let a released image go unoffered
-// for up to an hour. Override is intentional fs-only: delete
+// for a whole window. Not to be confused with imageprefetch's `probeTTL`,
+// which paces the background probe. Override is intentional fs-only: delete
 // <state dir>/pull-cache/* to force a fresh pull on next invocation — the
 // session's resolved state dir, which a mounts_root or a --profile moves
 // (~/.toolbox/toolbox/state only when neither does).

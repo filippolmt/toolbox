@@ -109,7 +109,7 @@ func readCache(t *testing.T, dir string) string {
 	return string(raw)
 }
 
-// A stamp younger than the TTL is the whole cadence: the ticker is only an
+// A stamp younger than probeTTL is the whole cadence: the ticker is only an
 // alarm, so a tick that fires inside the window must not reach the registry.
 // The fake stubs the three endpoints a poll may reach and panics on the
 // method a fourth would name, and a probe that did happen would show up as a
@@ -125,10 +125,10 @@ func TestPollAsksTheRegistryNothingWhileStampIsFresh(t *testing.T) {
 	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if cli.docker().DistributionInspectCalls() != 0 {
-		t.Errorf("DistributionInspect called %d times, want 0 inside the TTL", cli.docker().DistributionInspectCalls())
+		t.Errorf("DistributionInspect called %d times, want 0 inside probeTTL", cli.docker().DistributionInspectCalls())
 	}
 	if cli.docker().ImagePullCalls() != 0 {
-		t.Errorf("pulled %d times inside the TTL, want 0", cli.docker().ImagePullCalls())
+		t.Errorf("pulled %d times inside probeTTL, want 0", cli.docker().ImagePullCalls())
 	}
 }
 
@@ -169,14 +169,14 @@ func TestPollRestatesTheSessionAxisOnEveryGatedPass(t *testing.T) {
 	}
 }
 
-// A stamp older than the TTL opens the window again.
+// A stamp older than probeTTL opens the window again.
 func TestPollRunsOnceTheStampIsStale(t *testing.T) {
 	dir := stateDir(t)
 	path := filepath.Join(dir, stampFile)
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * TTL)
+	old := time.Now().Add(-2 * probeTTL)
 	if err := os.Chtimes(path, old, old); err != nil {
 		t.Fatal(err)
 	}
@@ -185,12 +185,12 @@ func TestPollRunsOnceTheStampIsStale(t *testing.T) {
 	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if cli.docker().DistributionInspectCalls() != 1 {
-		t.Errorf("DistributionInspect called %d times, want 1 past the TTL", cli.docker().DistributionInspectCalls())
+		t.Errorf("DistributionInspect called %d times, want 1 past probeTTL", cli.docker().DistributionInspectCalls())
 	}
 }
 
 // The stamp records the attempt, not the success: an offline machine must be
-// capped at one failed probe per TTL, not one per tick. A failed probe also
+// capped at one failed probe per probeTTL, not one per tick. A failed probe also
 // leaves a previously valid result alone rather than blanking the banner.
 func TestPollStampsAndPreservesCacheWhenTheProbeFails(t *testing.T) {
 	dir := stateDir(t)
@@ -548,7 +548,7 @@ func TestPollWithholdsUnavailableOnTheFirstFailure(t *testing.T) {
 // other way: its stdout is the attached tty.
 func TestPollReportsUnavailableOnceTheFailurePersists(t *testing.T) {
 	dir := stateDir(t)
-	unavailableAge(t, dir, 2*TTL)
+	unavailableAge(t, dir, 2*probeTTL)
 	cli := &pollStub{
 		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
 		distDigest: digestNewer,
@@ -566,7 +566,7 @@ func TestPollReportsUnavailableOnceTheFailurePersists(t *testing.T) {
 // the grace window never elapses and `unavailable` never fires.
 func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 	dir := stateDir(t)
-	unavailableAge(t, dir, 2*TTL)
+	unavailableAge(t, dir, 2*probeTTL)
 	before := mtime(t, filepath.Join(dir, unavailableFile))
 
 	cli := &pollStub{
@@ -585,7 +585,7 @@ func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 // the condition it describes.
 func TestPollClearsUnavailableOnceTheBytesLand(t *testing.T) {
 	dir := stateDir(t)
-	unavailableAge(t, dir, 2*TTL)
+	unavailableAge(t, dir, 2*probeTTL)
 	cli := &pollStub{
 		inspects:   []client.ImageInspectResult{inspectWith(digestOld), inspectWith(digestNew)},
 		distDigest: digestNew,
@@ -605,7 +605,7 @@ func TestPollClearsUnavailableOnceTheBytesLand(t *testing.T) {
 // developer can act on now, and one line is all the renderer prints.
 func TestPollPrefersReadyOverUnavailable(t *testing.T) {
 	dir := stateDir(t)
-	unavailableAge(t, dir, 2*TTL)
+	unavailableAge(t, dir, 2*probeTTL)
 	// The store holds digestNew, the session is on digestOld, the registry has
 	// moved on to digestNewer and the pull for it fails.
 	cli := &pollStub{
@@ -674,7 +674,7 @@ func TestClearResultWithoutAStateDir(t *testing.T) {
 }
 
 // TestStartPublishesFromTheStoreAfterAShellStartSync is #725's cold start.
-// The synchronous refresh at shell start is a probe, so it takes this TTL's
+// The synchronous refresh at shell start is a probe, so it takes this probeTTL's
 // turn at the registry and the poller must not re-ask minutes later. What it
 // must still do is publish: on a connect the container can be behind a store
 // a sibling session just advanced, and that banner is the whole point.
@@ -702,7 +702,7 @@ func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
 	if m.docker().DistributionInspectCalls() != 0 {
 		t.Errorf("DistributionInspect calls = %d, want 0 — the shell start already probed", m.docker().DistributionInspectCalls())
 	}
-	if !fsx.MarkerFresh(filepath.Join(dir, stampFile), TTL) {
+	if !fsx.MarkerFresh(filepath.Join(dir, stampFile), probeTTL) {
 		t.Error("the shell-start sync left no attempt stamp, so the next tick will re-probe")
 	}
 }
@@ -765,7 +765,7 @@ func TestStartPublishesTheSessionAxisWhileThePollIsGated(t *testing.T) {
 // same publish: an ungated re-statement that overwrote image_latest with the
 // *store's* digest would make knownRemote answer "the registry serves what we
 // already have", and AheadOfStore would stop offering the start-up refresh for
-// the rest of the TTL.
+// the rest of probeTTL.
 func TestStartLeavesTheRegistryDigestAloneWhileGated(t *testing.T) {
 	dir := stateDir(t)
 	// The registry is ahead of the store, and the last probe said so.
@@ -1002,7 +1002,7 @@ func TestAheadOfStoreAbstainsOnALocalBuild(t *testing.T) {
 }
 
 // Probed is what keeps a cached answer from being reported as a fresh sync.
-// Without it every shell opened inside the TTL would re-stamp the poller's
+// Without it every shell opened inside probeTTL would re-stamp the poller's
 // attempt clock from a digest nobody re-established, and a developer who opens
 // shells more often than the cadence would never probe the registry again.
 func TestAheadOfStoreDoesNotClaimAProbeItReadFromTheCache(t *testing.T) {

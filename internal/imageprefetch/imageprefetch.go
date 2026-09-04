@@ -24,12 +24,11 @@
 //
 // Cadence lives on the filesystem, not in the process: the ticker is only an
 // alarm and every tick re-decides by stat'ing an attempt stamp on the state
-// mount, so sibling sessions share one probe per TTL and the cadence survives
-// a future re-exec of the host CLI for free. The stamp records the attempt,
-// not the success — an offline machine is capped at one failed probe per TTL
-// rather than one per tick — which is why it is a separate file from the
-// Image Plan's pull-cache marker, whose "successful pulls only" semantics
-// gate a different act (the silent refresh a session reload runs).
+// mount, so sibling sessions share one probe per probeTTL and the cadence
+// survives a future re-exec of the host CLI for free. The stamp records the
+// attempt, not the success — an offline machine is capped at one failed probe
+// per probeTTL rather than one per tick — which is why it is a separate file
+// from the Image Plan's pull-cache marker, which stamps successes only.
 package imageprefetch
 
 import (
@@ -50,18 +49,20 @@ import (
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
-// TTL bounds how long a previous probe attempt is trusted before the registry
-// is asked again. Half an hour is the map's target cadence: short enough that
-// an image merged this morning is downloaded before the afternoon of a
-// multi-day session, long enough that the probe is invisible. Deliberately
-// not the Image Plan's `pullTTL`, which gates the synchronous refresh on
-// every shell start — retuning that one would re-probe every ordinary shell
-// twice as often.
-const TTL = 30 * time.Minute
+// probeTTL bounds how long a previous probe attempt is trusted before the
+// registry is asked again. Half an hour is the map's target cadence: short
+// enough that an image merged this morning is downloaded before the afternoon
+// of a multi-day session, long enough that the probe is invisible.
+//
+// Named rather than called TTL because it is not the only one: the Image
+// Plan's `pullTTL` gates the pull cache, and the two used to need a paragraph
+// apiece to say which was which. Retuning this one re-probes; retuning that
+// one re-pulls.
+const probeTTL = 30 * time.Minute
 
 // tickInterval is the alarm, not the cadence. Every tick re-reads the shared
-// attempt stamp, so the real period is TTL and this only bounds how late a
-// poll can be (TTL + tickInterval worst case). Small enough to keep that
+// attempt stamp, so the real period is probeTTL and this only bounds how late a
+// poll can be (probeTTL + tickInterval worst case). Small enough to keep that
 // bound tight, large enough that a stat per tick is free.
 //
 // A var, not a const, so a tick-driven test runs in milliseconds — the same
@@ -124,7 +125,7 @@ type Input struct {
 	// StartSynced records that the refresh at shell start established the
 	// local store to be current with the registry as of a moment ago — a
 	// successful pull, or a probe that found the store already current. A
-	// synchronous probe is a probe: it takes this TTL's turn at the registry,
+	// synchronous probe is a probe: it takes this probeTTL's turn at the registry,
 	// and the first poll publishes from the store instead of asking the same
 	// question again. False for a failed probe, a failed pull and a declined
 	// download, none of which leave the store provably current.
@@ -162,7 +163,7 @@ func Start(ctx context.Context, cli registryStore, in Input) {
 	tick := tickInterval
 	go func() {
 		// The shell start's synchronous refresh, when it actually reached the
-		// registry, is this TTL's probe: stamping it here is what stops the
+		// registry, is this probeTTL's probe: stamping it here is what stops the
 		// poller re-asking minutes after the shell just asked. The banner is
 		// published straight away, from the store that refresh has just made
 		// current, because it is the only moment image_latest may be restated
@@ -178,7 +179,7 @@ func Start(ctx context.Context, cli registryStore, in Input) {
 		// Poll straight away rather than waiting out the first tick: a
 		// session shorter than tickInterval would otherwise never refresh the
 		// banner at all. Redundant work is what the shared stamp prevents —
-		// if a sibling probed within the TTL this returns without a syscall.
+		// if a sibling probed within probeTTL this returns without a syscall.
 		reissue := newPoller(ctx, cli, in)
 		reissue()
 
@@ -235,7 +236,7 @@ func newPoller(ctx context.Context, cli registryStore, in Input) func() {
 //     back as exactly that for AheadOfStore. Only a sync may restate it — with
 //     the store's digest, which at that moment is the registry's. Overwritten
 //     without one, the start-up prompt would stop offering a refresh that is
-//     genuinely available, for the rest of the TTL.
+//     genuinely available, for the rest of probeTTL.
 //   - imageState's "unavailable" verdict rides a first-failure clock that
 //     imageState clears whenever the store is not behind. Saying "not behind"
 //     on nothing established would restart that clock on every shell start,
@@ -281,7 +282,7 @@ func publishFromStore(ctx context.Context, cli registryStore, in Input, synced b
 //
 // Deliberately does **not** stamp the shared attempt clock the way Poll does.
 // The stamp gates the poller, and the poller's immediate first pass is what
-// fetches the bytes a developer has just postponed: claiming this TTL's turn
+// fetches the bytes a developer has just postponed: claiming this probeTTL's turn
 // here would leave a declined download with nobody to download it. The caller
 // says what it established through Input.StartSynced instead, which is a claim
 // about the store rather than about the clock.
@@ -311,7 +312,7 @@ func AheadOfStore(ctx context.Context, cli registryStore, ref, stateDir string) 
 // registry as of that probe, but it establishes nothing *now*, so a caller
 // must not report the store as freshly synced on the strength of it. Doing so
 // would let the poller re-stamp the attempt clock from a cached digest on
-// every shell start, and a developer who opens shells more often than the TTL
+// every shell start, and a developer who opens shells more often than probeTTL
 // would never probe the registry again.
 type StoreState struct {
 	// Ahead is true when the registry holds a newer image than the store.
@@ -324,15 +325,15 @@ type StoreState struct {
 	Probed bool
 }
 
-// attemptFresh reports whether the shared attempt stamp is still inside the
-// TTL — the one gate two callers read: the poll it turns away from the
+// attemptFresh reports whether the shared attempt stamp is still inside
+// probeTTL — the one gate two callers read: the poll it turns away from the
 // registry, and the cached remote digest it keeps valid.
 func attemptFresh(stateDir string) bool {
-	return fsx.MarkerFresh(filepath.Join(stateDir, stampFile), TTL)
+	return fsx.MarkerFresh(filepath.Join(stateDir, stampFile), probeTTL)
 }
 
 // knownRemote returns the remote digest the last shared probe published, valid
-// only while that probe's attempt stamp is still inside the TTL. The stamp
+// only while that probe's attempt stamp is still inside probeTTL. The stamp
 // records the attempt and the cache records the answer, so both are needed: a
 // stamp with no published digest is a probe that failed.
 func knownRemote(stateDir string) (string, bool) {
@@ -344,7 +345,7 @@ func knownRemote(stateDir string) (string, bool) {
 }
 
 // Poll runs one gated attempt: it asks the registry nothing while the shared
-// attempt stamp is younger than TTL. Exported because it, and not the ticker,
+// attempt stamp is younger than probeTTL. Exported because it, and not the ticker,
 // is the unit under test — the alarm carries no decision.
 //
 // The gate stops the *registry*, not the banner. One state mount serves every
@@ -366,7 +367,7 @@ func Poll(ctx context.Context, cli registryStore, in Input) {
 		return
 	}
 	// Stamp before the network, so a persistently failing probe is capped at
-	// one attempt per TTL instead of one per tick.
+	// one attempt per probeTTL instead of one per tick.
 	if !stamp(in.StateDir) {
 		return
 	}
@@ -608,7 +609,7 @@ func imageState(stateDir string, storeBehind, sessionBehind bool) string {
 		// Older bytes are still adoptable; say the useful thing.
 		return stateReady
 	}
-	if fsx.MarkerOlderThan(marker, TTL) {
+	if fsx.MarkerOlderThan(marker, probeTTL) {
 		return stateUnavailable
 	}
 	// First sight of the failure — start the clock without resetting it on
@@ -679,7 +680,7 @@ func writeResult(stateDir string, res result) {
 // a sibling still on the old image that it is up to date. Deletion stays true
 // for every reader, and it costs exactly one extra probe — which is the point
 // of clearing the stamp too rather than leaving the next poll gated behind up
-// to a full TTL of a cadence the reload has just invalidated.
+// to a full probeTTL of a cadence the reload has just invalidated.
 //
 // The unavailable-since marker is deliberately left: it records whether the
 // registry can be reached, which a reload does not change.

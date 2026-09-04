@@ -68,7 +68,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 		return nil
 	}
 
-	imageplan.Refresh(ctx, cli, plan.Image, plan.StateDir)
+	imageplan.Sync(ctx, cli, plan.Image, plan.StateDir, imageplan.ReasonReload)
 	if err := imageplan.Ensure(ctx, cli, plan.Image); err != nil {
 		return fmt.Errorf("reload aborted, session left as it was: %w", err)
 	}
