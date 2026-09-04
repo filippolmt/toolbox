@@ -9,24 +9,23 @@ import (
 	"testing"
 
 	"github.com/moby/moby/client"
+
+	"github.com/filippolmt/toolbox/internal/dockertest"
 )
 
-// overlayBuildClient captures the build context handed to ImageBuild and
-// replays a caller-supplied JSON build stream, so BuildOverlay can be
-// exercised without a real Docker daemon.
-type overlayBuildClient struct {
-	client.APIClient
-	captured []byte
-	stream   string
-	buildErr error
-}
-
-func (c *overlayBuildClient) ImageBuild(_ context.Context, buildContext io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
-	c.captured, _ = io.ReadAll(buildContext)
-	if c.buildErr != nil {
-		return client.ImageBuildResult{}, c.buildErr
+// buildingOverlay returns a builder that replays stream, or fails with
+// buildErr — so BuildOverlay can be exercised without a real Docker daemon.
+// It ignores the build context; the one test that asserts on it stubs
+// ImageBuild itself.
+func buildingOverlay(stream string, buildErr error) *dockertest.Fake {
+	return &dockertest.Fake{
+		ImageBuildFn: func(context.Context, io.Reader, client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			if buildErr != nil {
+				return client.ImageBuildResult{}, buildErr
+			}
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(stream))}, nil
+		},
 	}
-	return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(c.stream))}, nil
 }
 
 // firstDockerfileLine reads the single "Dockerfile" entry out of the captured
@@ -52,17 +51,23 @@ func firstDockerfileLine(t *testing.T, tarball []byte) string {
 }
 
 func TestBuildOverlayComposesFromBaseImageID(t *testing.T) {
-	c := &overlayBuildClient{stream: `{"stream":"Successfully built abc\n"}`}
+	var captured []byte
+	c := &dockertest.Fake{
+		ImageBuildFn: func(_ context.Context, buildContext io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			captured, _ = io.ReadAll(buildContext)
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"Successfully built abc\n"}`))}, nil
+		},
+	}
 	if err := BuildOverlay(context.Background(), c, "sha256:deadbeef", []byte("RUN echo hi\n"), "ghcr.io/example:local"); err != nil {
 		t.Fatalf("BuildOverlay: %v", err)
 	}
-	if got := firstDockerfileLine(t, c.captured); got != "FROM sha256:deadbeef" {
+	if got := firstDockerfileLine(t, captured); got != "FROM sha256:deadbeef" {
 		t.Errorf("first Dockerfile line = %q, want %q", got, "FROM sha256:deadbeef")
 	}
 }
 
 func TestBuildOverlayPropagatesStreamError(t *testing.T) {
-	c := &overlayBuildClient{stream: `{"error":"RUN failed with exit code 1"}`}
+	c := buildingOverlay(`{"error":"RUN failed with exit code 1"}`, nil)
 	err := BuildOverlay(context.Background(), c, "sha256:deadbeef", []byte("RUN false\n"), "ghcr.io/example:local")
 	if err == nil {
 		t.Fatal("expected error from failing build stream, got nil")
@@ -73,7 +78,7 @@ func TestBuildOverlayPropagatesStreamError(t *testing.T) {
 }
 
 func TestBuildOverlayPropagatesStartError(t *testing.T) {
-	c := &overlayBuildClient{buildErr: errors.New("daemon unreachable")}
+	c := buildingOverlay("", errors.New("daemon unreachable"))
 	err := BuildOverlay(context.Background(), c, "sha256:deadbeef", []byte("RUN true\n"), "ghcr.io/example:local")
 	if err == nil {
 		t.Fatal("expected error when ImageBuild fails to start, got nil")

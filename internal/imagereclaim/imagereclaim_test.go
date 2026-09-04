@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -23,13 +24,12 @@ const (
 	otherDigest = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 )
 
-// mockClient implements the two Docker calls one sweep can make. The embedded
-// nil client.APIClient is the point: an unstubbed call panics, so a sweep that
-// reached for anything else fails the test loudly instead of returning a
-// silent zero value.
-type mockClient struct {
-	client.APIClient
-
+// storeStub is the store one sweep works over and the record of what it did.
+// It implements no Docker method of its own: docker() wires the shared fake to
+// this state, stubbing the two endpoints a sweep may reach and no others, so a
+// sweep that reached for anything else panics on the method it named instead
+// of returning a silent zero value.
+type storeStub struct {
 	mu       sync.Mutex
 	items    []image.Summary
 	listErr  error
@@ -38,36 +38,45 @@ type mockClient struct {
 	// session that ends while an unlink is in flight.
 	onRemove func(id string)
 
-	listCalls int
-	removed   []string
-	opts      []client.ImageRemoveOptions
+	fake    *dockertest.Fake
+	removed []string
+	opts    []client.ImageRemoveOptions
 }
 
-func (m *mockClient) ImageList(context.Context, client.ImageListOptions) (client.ImageListResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.listCalls++
-	if m.listErr != nil {
-		return client.ImageListResult{}, m.listErr
+// docker returns the daemon a sweep sees, built once and reused so the call
+// counters survive across the sweep and the assertions that read them. Called
+// from the test goroutine only, before the sweep it hands the fake to runs.
+func (m *storeStub) docker() *dockertest.Fake {
+	if m.fake != nil {
+		return m.fake
 	}
-	return client.ImageListResult{Items: m.items}, nil
+	m.fake = &dockertest.Fake{
+		ImageListFn: func(context.Context) (client.ImageListResult, error) {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if m.listErr != nil {
+				return client.ImageListResult{}, m.listErr
+			}
+			return client.ImageListResult{Items: m.items}, nil
+		},
+		ImageRemoveFn: func(_ context.Context, id string, opts client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			m.removed = append(m.removed, id)
+			m.opts = append(m.opts, opts)
+			if m.onRemove != nil {
+				m.onRemove(id)
+			}
+			if err := m.removeBy[id]; err != nil {
+				return client.ImageRemoveResult{}, err
+			}
+			return client.ImageRemoveResult{}, nil
+		},
+	}
+	return m.fake
 }
 
-func (m *mockClient) ImageRemove(_ context.Context, id string, opts client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.removed = append(m.removed, id)
-	m.opts = append(m.opts, opts)
-	if m.onRemove != nil {
-		m.onRemove(id)
-	}
-	if err := m.removeBy[id]; err != nil {
-		return client.ImageRemoveResult{}, err
-	}
-	return client.ImageRemoveResult{}, nil
-}
-
-func (m *mockClient) removals() []string {
+func (m *storeStub) removals() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.removed...)
@@ -86,11 +95,11 @@ func summary(id string, tags []string, digests ...string) image.Summary {
 // An image carrying this repo's digest and no tag is the whole predicate: this
 // CLI pulled it and a later move of `latest` took its name away.
 func TestSweepRemovesASupersededImage(t *testing.T) {
-	cli := &mockClient{items: []image.Summary{
+	cli := &storeStub{items: []image.Summary{
 		summary("sha256:aaa", nil, staleDigest),
 	}}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 1 || got[0] != "sha256:aaa" {
 		t.Fatalf("removed %v, want [sha256:aaa]", got)
@@ -104,13 +113,13 @@ func TestSweepRemovesASupersededImage(t *testing.T) {
 // would have got wrong in the other direction.
 func TestSweepLeavesEverythingElseAlone(t *testing.T) {
 	foreign := image.Summary{ID: "sha256:foreign", RepoDigests: []string{"docker.io/library/postgres@" + otherDigest}}
-	cli := &mockClient{items: []image.Summary{
+	cli := &storeStub{items: []image.Summary{
 		summary("sha256:tagged", []string{testRepo + ":latest"}, otherDigest),
 		summary("sha256:running", nil, keptDigest),
 		foreign,
 	}}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 0 {
 		t.Fatalf("removed %v, want nothing", got)
@@ -123,9 +132,9 @@ func TestSweepLeavesEverythingElseAlone(t *testing.T) {
 // waiting for, and `PruneChildren` reaches into the `:local` overlay built on
 // top of the candidate, which no registry can reproduce.
 func TestSweepNeverForcesAndNeverPrunesChildren(t *testing.T) {
-	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
+	cli := &storeStub{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	cli.mu.Lock()
 	defer cli.mu.Unlock()
@@ -166,12 +175,12 @@ func captureAnnounce(t *testing.T) func() []string {
 // train the developer to ignore the one line that matters.
 func TestSweepStaysSilentWhenTheDaemonRefuses(t *testing.T) {
 	said := captureAnnounce(t)
-	cli := &mockClient{
+	cli := &storeStub{
 		items:    []image.Summary{summary("sha256:held", nil, staleDigest)},
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete (must be forced)")},
 	}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if lines := said(); len(lines) != 0 {
 		t.Fatalf("summary said %q, want silence", lines)
@@ -183,7 +192,7 @@ func TestSweepStaysSilentWhenTheDaemonRefuses(t *testing.T) {
 // later candidate.
 func TestSweepKeepsGoingPastARefusal(t *testing.T) {
 	captureAnnounce(t)
-	cli := &mockClient{
+	cli := &storeStub{
 		items: []image.Summary{
 			summary("sha256:held", nil, staleDigest),
 			summary("sha256:free", nil, otherDigest),
@@ -191,7 +200,7 @@ func TestSweepKeepsGoingPastARefusal(t *testing.T) {
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete")},
 	}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 2 {
 		t.Fatalf("attempted %v, want both candidates", got)
@@ -202,7 +211,7 @@ func TestSweepKeepsGoingPastARefusal(t *testing.T) {
 // rather than what was attempted.
 func TestSweepSummarisesOnlyWhatItRemoved(t *testing.T) {
 	said := captureAnnounce(t)
-	cli := &mockClient{
+	cli := &storeStub{
 		items: []image.Summary{
 			summary("sha256:held", nil, keptDigest+"x"),
 			summary("sha256:free", nil, staleDigest),
@@ -211,7 +220,7 @@ func TestSweepSummarisesOnlyWhatItRemoved(t *testing.T) {
 		removeBy: map[string]error{"sha256:held": errors.New("conflict: unable to delete")},
 	}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	lines := said()
 	if len(lines) != 1 {
@@ -229,13 +238,13 @@ func TestSweepSummarisesOnlyWhatItRemoved(t *testing.T) {
 // the next shell.
 func TestStartSweepsBesideTheSession(t *testing.T) {
 	said := captureAnnounce(t)
-	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
+	cli := &storeStub{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
 
 	// t.Context(), not context.Background(): the sweep is a goroutine, and one
 	// scoped to the process would outlive the test — reading the announce seam
 	// that Cleanup is restoring underneath it, and printing through a later
 	// test's capture.
-	Start(t.Context(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	Start(t.Context(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	// Waiting on the summary rather than on the removal is what makes the
 	// goroutine finished rather than merely started: the announce is its last
@@ -256,9 +265,9 @@ func TestStartSweepsBesideTheSession(t *testing.T) {
 // is opportunistic, and the next shell asks again.
 func TestSweepStaysSilentWhenTheStoreCannotBeListed(t *testing.T) {
 	said := captureAnnounce(t)
-	cli := &mockClient{listErr: errors.New("dial unix /var/run/docker.sock: connect: permission denied")}
+	cli := &storeStub{listErr: errors.New("dial unix /var/run/docker.sock: connect: permission denied")}
 
-	sweep(context.Background(), cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(context.Background(), cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if lines := said(); len(lines) != 0 {
 		t.Fatalf("summary said %q, want silence", lines)
@@ -283,14 +292,14 @@ func TestSweepAnnouncesThroughTheBackgroundWriter(t *testing.T) {
 // from the refusal that means "some container still needs this".
 func TestSweepStopsAskingOnceCancelled(t *testing.T) {
 	captureAnnounce(t)
-	cli := &mockClient{items: []image.Summary{
+	cli := &storeStub{items: []image.Summary{
 		summary("sha256:a", nil, staleDigest),
 		summary("sha256:b", nil, otherDigest),
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sweep(ctx, cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(ctx, cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 0 {
 		t.Fatalf("attempted %v on a cancelled context, want nothing", got)
@@ -303,7 +312,7 @@ func TestSweepStopsAskingOnceCancelled(t *testing.T) {
 func TestSweepStillReportsWhatACancelledRunRemoved(t *testing.T) {
 	said := captureAnnounce(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	cli := &mockClient{
+	cli := &storeStub{
 		items: []image.Summary{
 			summary("sha256:first", nil, staleDigest),
 			summary("sha256:second", nil, otherDigest),
@@ -312,7 +321,7 @@ func TestSweepStillReportsWhatACancelledRunRemoved(t *testing.T) {
 		onRemove: func(string) { cancel() },
 	}
 
-	sweep(ctx, cli, Input{Ref: testRepo, KeepDigest: keptDigest})
+	sweep(ctx, cli.docker(), Input{Ref: testRepo, KeepDigest: keptDigest})
 
 	if got := cli.removals(); len(got) != 1 {
 		t.Fatalf("attempted %v, want to stop after the cancellation", got)
@@ -329,8 +338,9 @@ func TestSweepStillReportsWhatACancelledRunRemoved(t *testing.T) {
 // sibling prefetch refuses its own empty input for the same reason.
 func TestStartRefusesAnEmptyRef(t *testing.T) {
 	captureAnnounce(t)
-	// The nil-embedded APIClient is the assertion: reaching the daemon panics.
-	Start(t.Context(), &mockClient{}, Input{Ref: "", KeepDigest: keptDigest})
+	// The unstubbed endpoints are the assertion: reaching anything but the
+	// listing or a removal panics on the method it asked for.
+	Start(t.Context(), (&storeStub{}).docker(), Input{Ref: "", KeepDigest: keptDigest})
 
 	if got := sweepRefused(t, Input{KeepDigest: keptDigest}); !got {
 		t.Error("an empty Ref reached the daemon")
@@ -340,9 +350,7 @@ func TestStartRefusesAnEmptyRef(t *testing.T) {
 // sweepRefused reports whether sweep abstained before touching the client.
 func sweepRefused(t *testing.T, in Input) bool {
 	t.Helper()
-	cli := &mockClient{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
-	sweep(context.Background(), cli, in)
-	cli.mu.Lock()
-	defer cli.mu.Unlock()
-	return cli.listCalls == 0
+	cli := &storeStub{items: []image.Summary{summary("sha256:aaa", nil, staleDigest)}}
+	sweep(context.Background(), cli.docker(), in)
+	return cli.docker().ImageListCalls() == 0
 }

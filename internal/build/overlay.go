@@ -18,7 +18,14 @@ import (
 // `:latest` tag moving mid-build. No build args are injected: the overlay is
 // RUN-only over an already-built base and would only emit "unused build arg"
 // warnings. Build output is streamed via the shared streamBuildOutput.
-func BuildOverlay(ctx context.Context, cli client.APIClient, baseImageID string, dockerfileBytes []byte, tag string) error {
+// imageBuilder is the daemon's build endpoint, the one thing BuildOverlay
+// needs. Narrow so the overlay's caller can stay narrow too: localimage passes
+// its own interface straight through. → CONTEXT.md, Declared Docker Surface.
+type imageBuilder interface {
+	ImageBuild(ctx context.Context, buildContext io.Reader, opts client.ImageBuildOptions) (client.ImageBuildResult, error)
+}
+
+func BuildOverlay(ctx context.Context, cli imageBuilder, baseImageID string, dockerfileBytes []byte, tag string) error {
 	composed := "FROM " + baseImageID + "\n" + string(dockerfileBytes)
 
 	buildCtx, err := tarSingleDockerfile([]byte(composed))

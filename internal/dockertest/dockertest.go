@@ -1,10 +1,19 @@
-// Package dockertest provides Docker-client test doubles shared across the
-// packages that drive the moby client SDK (container, teardown, runplan,
-// imageplan). Each of those packages still defines its own mockClient — the
-// fakes differ in which methods they exercise — but the leaf types that were
-// byte-identical across packages (the errdefs "not found" error and the
-// ImagePullResponse adapter) live here so there is a single copy to update
-// when the SDK shifts.
+// Package dockertest provides the Docker-client test doubles shared across the
+// packages that drive the moby client SDK.
+//
+// Fake is the double for the modules that declare their own Docker surface —
+// the image family and the two internal/build functions pulled in with it (see
+// CONTEXT.md, Declared Docker Surface). One function field per method those
+// interfaces hold, and structural satisfaction is what lets it stand in for an
+// interface it cannot name because that interface is unexported in its own
+// package.
+//
+// The packages still holding the whole client (container, teardown, runplan,
+// worktree) define their own mockClient — those fakes differ in which methods
+// they exercise, and narrowing them is a later slice. The leaf types that were
+// byte-identical across packages (the errdefs "not found" error, the
+// ImagePullResponse adapter, the two result builders) live here either way, so
+// there is a single copy to update when the SDK shifts.
 package dockertest
 
 import (

@@ -10,17 +10,15 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 )
 
-// inspectClient answers ImageInspect and nothing else. The embedded nil
-// APIClient turns any other call into a panic, so a helper that grew a second
-// daemon round trip fails loudly instead of passing quietly.
-type inspectClient struct {
-	client.APIClient
-	res client.ImageInspectResult
-	err error
-}
-
-func (c inspectClient) ImageInspect(context.Context, string, ...client.ImageInspectOption) (client.ImageInspectResult, error) {
-	return c.res, c.err
+// inspecting builds a store answering every inspect with res and err. The
+// shared fake stubs nothing else, so a helper that grew a second daemon round
+// trip panics on the method it reached for instead of passing quietly.
+func inspecting(res client.ImageInspectResult, err error) *dockertest.Fake {
+	return &dockertest.Fake{
+		ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			return res, err
+		},
+	}
 }
 
 // TestLocalRepoDigest pins the distinction four call sites depend on: a store
@@ -35,24 +33,24 @@ func TestLocalRepoDigest(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		cli    inspectClient
+		cli    *dockertest.Fake
 		want   string
 		wantOk bool
 	}{
 		{
 			name:   "pulled image carries its repo digest",
-			cli:    inspectClient{res: dockertest.ImageInspectResult("ghcr.io/filippolmt/toolbox", digest)},
+			cli:    inspecting(dockertest.ImageInspectResult("ghcr.io/filippolmt/toolbox", digest), nil),
 			want:   digest,
 			wantOk: true,
 		},
 		{
 			name:   "locally built image answers with no digest",
-			cli:    inspectClient{res: client.ImageInspectResult{}},
+			cli:    inspecting(client.ImageInspectResult{}, nil),
 			wantOk: true,
 		},
 		{
 			name: "absent image does not answer at all",
-			cli:  inspectClient{err: errors.New("no such image")},
+			cli:  inspecting(client.ImageInspectResult{}, errors.New("no such image")),
 		},
 	}
 	for _, tc := range tests {

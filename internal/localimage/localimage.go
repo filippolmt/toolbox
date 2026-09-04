@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,10 +39,23 @@ import (
 // it — and so the start-up prompt never offers a download of a built image.
 const LocalRef = "ghcr.io/filippolmt/toolbox:local"
 
+// overlayBuilder is the daemon this package needs: the base image's ID to pin
+// the overlay's FROM, and the build itself — which build.BuildOverlay performs
+// with this very value, since its own interface is a subset of this one.
+// → CONTEXT.md, Declared Docker Surface.
+type overlayBuilder interface {
+	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
+	ImageBuild(ctx context.Context, buildContext io.Reader, opts client.ImageBuildOptions) (client.ImageBuildResult, error)
+}
+
 // buildOverlay is the injection seam: a package-level var overridden in tests
 // so they exercise the real marker/inspect/skip logic while stubbing only the
-// Docker build (the one part that needs a daemon).
-var buildOverlay = build.BuildOverlay
+// Docker build (the one part that needs a daemon). Wrapped rather than
+// assigned so the seam is spelled in this package's own interface — build's is
+// unexported there, and a test could not name it to write a stub.
+var buildOverlay = func(ctx context.Context, cli overlayBuilder, baseImageID string, dockerfileBytes []byte, tag string) error {
+	return build.BuildOverlay(ctx, cli, baseImageID, dockerfileBytes, tag)
+}
 
 // Ensure returns the image the shell should run from. When dockerfilePath is
 // absent it returns base unchanged (no build attempted). When present it
@@ -51,7 +65,7 @@ var buildOverlay = build.BuildOverlay
 // is skipped. On the overlay path it returns the `:local` image with pull
 // policy "never". A build or marker-write failure is returned as an error so
 // the caller can fail loud.
-func Ensure(ctx context.Context, cli client.APIClient, base sessionplan.Image, dockerfilePath string) (sessionplan.Image, error) {
+func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, dockerfilePath string) (sessionplan.Image, error) {
 	if dockerfilePath == "" {
 		return base, nil
 	}
@@ -109,7 +123,7 @@ func markerPath(dockerfilePath string) string {
 // localImagePresent reports whether the derived `:local` image is in the local
 // store (an inspect that succeeds). A rebuild is forced when it is absent even
 // if the marker matches.
-func localImagePresent(ctx context.Context, cli client.APIClient) bool {
+func localImagePresent(ctx context.Context, cli overlayBuilder) bool {
 	_, err := cli.ImageInspect(ctx, LocalRef)
 	return err == nil
 }

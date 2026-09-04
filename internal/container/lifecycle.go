@@ -47,23 +47,37 @@ import (
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
 
+// The three seams into the image family are wrapped rather than assigned. Each
+// leaf declares its own Docker surface, unexported in its own package, so a
+// bare `var x = leaf.F` would take the type of that unnameable interface and
+// no test in *this* package could write a stub for it. The wrapper restates
+// the parameter as what this package holds anyway — the whole client, since
+// internal/container is the Docker edge and does not narrow.
+// → CONTEXT.md, Declared Docker Surface.
+
 // startPrefetch launches the host-side update probe + prefetch for the
 // lifetime of the attached session. A package-level var for the same reason
 // as execShellFn: every lifecycle test would otherwise start a goroutine that
 // talks to a registry.
-var startPrefetch = imageprefetch.Start
+var startPrefetch = func(ctx context.Context, cli client.APIClient, in imageprefetch.Input) {
+	imageprefetch.Start(ctx, cli, in)
+}
 
 // reclaimImages is the Image Reclamation sweep for the lifetime of the
 // attached session. A package-level var for the same reason as startPrefetch:
 // every lifecycle test would otherwise have a second goroutine deleting images
 // out of its own mock.
-var reclaimImages = imagereclaim.Start
+var reclaimImages = func(ctx context.Context, cli client.APIClient, in imagereclaim.Input) {
+	imagereclaim.Start(ctx, cli, in)
+}
 
 // refreshAtStart is the shell-start image refresh, prompt and all. A
 // package-level var for the same reason as startPrefetch: the tree behind it
 // asks a question on a terminal, and what Shell owns is only what it does
 // with the answer.
-var refreshAtStart = imageplan.RefreshAtStart
+var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, stake imageplan.Stake) imageplan.Outcome {
+	return imageplan.RefreshAtStart(ctx, cli, image, stateDir, stake)
+}
 
 // refreshAnswer is what the start-up refresh settled: the outcome, and what a
 // yes to it was staked on. offerRefresh establishes the two together and every
