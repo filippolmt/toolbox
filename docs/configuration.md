@@ -142,6 +142,8 @@ macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keycha
 
 The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: the registry refresh at shell start, and the [background update prefetch](session-reload.md) that runs for as long as the shell is attached.
 
+**Where the pull cache lives.** A successful pull stamps a marker under the resolved toolbox state dir (`<state dir>/pull-cache/`), so it follows a [`mounts_root`](mounts.md#mounts_root-retarget) retarget or a `--profile` the same way every other toolbox-managed marker does — `~/.toolbox/toolbox/state/pull-cache/` only when neither moves it. Deleting that directory forces a fresh pull on the next invocation; it is the only override. A session that disables the `state` mount entirely has nowhere to keep the marker, and then every invocation pays a registry round-trip instead of one per cache window.
+
 | `pull` | shell start | background prefetch | banner |
 |---|---|---|---|
 | `auto` (default) | asks (see below), then `imagepull.ForcePull` | on, one probe per 30 min shared across your sessions | yes |

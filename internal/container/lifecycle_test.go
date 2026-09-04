@@ -215,7 +215,7 @@ func testWorkspace(t *testing.T) string {
 // every test body.
 func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: sandboxHome(t), Cfg: testConfig(), Workspace: workspace, Ports: publish})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost(t), Cfg: testConfig(), Workspace: workspace, Ports: publish})
 	if err != nil {
 		t.Fatalf("testPlan: %v", err)
 	}
@@ -226,7 +226,7 @@ func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.Ses
 // (e.g. custom shell selection).
 func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: sandboxHome(t), Cfg: cfg, Workspace: workspace, Ports: publish})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost(t), Cfg: cfg, Workspace: workspace, Ports: publish})
 	if err != nil {
 		t.Fatalf("testPlanWithCfg: %v", err)
 	}
@@ -252,11 +252,8 @@ func stubExecShell() (called *bool, restore func()) {
 // is observed only through Shell, never by calling containerNameFor
 // directly.
 func TestShellContainerNaming(t *testing.T) {
-	// Sandbox HOME so any filesystem touch by mountplan.Plan lands in tmp,
-	// not the real ~/.toolbox/. Mirrors internal/mountplan/plan_test.go.
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
+	// The plan helpers declare the host, so mountplan.Plan's filesystem
+	// touches land under a temp home without the process being told about it.
 	cases := []struct {
 		name       string
 		workspace  string
@@ -418,7 +415,6 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 	// The start branch asks about a newer image before it dispatches; this
 	// test is about the dispatch, and an unstubbed refresh would pull out of
 	// the mock and stamp the pull cache in the developer's own home.
-	t.Setenv("HOME", t.TempDir())
 	stubRefresh(t, imageplan.Outcome{})
 
 	startCalled := false
@@ -1280,10 +1276,6 @@ func TestShellInspectZeroValueResponse(t *testing.T) {
 	// Stub the real exec — no Docker attach during the test.
 	_, restore := stubExecShell()
 	defer restore()
-
-	// Sandbox HOME so mountplan.Plan's filesystem touches (~/.toolbox/...)
-	// land in tmp. Mirrors TestShellContainerNaming.
-	t.Setenv("HOME", t.TempDir())
 
 	ws := testWorkspace(t)
 

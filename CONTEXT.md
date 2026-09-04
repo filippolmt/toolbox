@@ -306,8 +306,21 @@ unanswered window. `imageplan.Refresh` is the same act with nothing to ask,
 kept for the [Session Reload](#session-reload), which runs it before it
 destroys anything and whose `auto` branch stays on the TTL-cached
 `imagepull.RefreshIfStale` — a reload adopts what the store holds, and
-the [Image Prefetch](#image-prefetch) is what advanced it. That
-policy steers the **synchronous** refresh only: the background
+the [Image Prefetch](#image-prefetch) is what advanced it.
+
+Both entry points take the session's resolved state dir, because that is
+where the TTL marker lives: `<state dir>/pull-cache/<sha256-of-ref>`. It
+used to be derived from `$HOME`, which pinned it to the *default* state
+location while every other toolbox-managed marker followed a
+`mounts_root` or `--profile` retarget — `localimage` derives the overlay
+marker from the overlay Dockerfile's root, `imageprefetch` takes
+`StateDir` as a declared input, and `docs/configuration.md` already
+described the pull cache as mounts_root-aware. A session that resolves no
+state mount at all resolves no cache either: one round-trip per
+invocation instead of one per TTL, which is the honest cost of having
+disabled the mount, and better than a cache the container cannot see.
+
+The pull policy steers the **synchronous** refresh only: the background
 [Image Prefetch](#image-prefetch) reads the same key on a two-state
 basis — on under `auto` and `always`, off under `never` — and keeps its
 own cadence under both on-states.
@@ -1001,15 +1014,28 @@ that reach it (`mounts list`, `mounts disable`'s validation, `config
 doctor`) keep that tolerance through `hostBestEffort`; the writers behind
 them still fail loud on their own.
 
-Not everything is threaded yet. `imagepull`'s pull-cache marker and
-`configio.GlobalConfigPath` still resolve their own home, and
-`configedit`'s write gate calls `fsx.CurrentHost()` at one named seam
-rather than threading a Host through every `ApplyChecked` wrapper and the
-`configui` model — one named read where the lints behind it previously
-took two unnamed ones. Their callers reach them through packages this concept
-has not crossed; until they do, a test that exercises those paths still
-sandboxes `$HOME` — which is why `internal/container`'s `sandboxHome`
-helper sets the process home *and* returns the matching Host.
+Not everything is threaded yet. `configio.GlobalConfigPath` still
+resolves its own home, and `configedit`'s write gate calls
+`fsx.CurrentHost()` at one named seam rather than threading a Host
+through every `ApplyChecked` wrapper and the `configui` model — one named
+read where the lints behind it previously took two unnamed ones. Their
+callers reach them through packages this concept has not crossed; until
+they do, a test that exercises those paths still sandboxes `$HOME`.
+
+`imagepull` was on that list and came off it differently: its pull-cache
+marker never wanted a home, it wanted the session's resolved state dir,
+which `SessionPlan.StateDir` already carries. Taking that instead removed
+the ambient read *and* put the cache where `docs/configuration.md` always
+said it was — mounts_root-aware, beside the overlay marker. See the
+[Image Plan](#image-plan) entry.
+
+That was the last ambient home read on `internal/container`'s path, so
+the helper that used to set the process `$HOME` *and* return a matching
+Host is now plainly `planHost`, and the per-test guards are gone. What
+keeps them gone is that package's `TestMain`: it points `$HOME` at an
+empty directory and fails the run if anything lands in it, so a
+regression to an ambient read is a failing gate rather than a quiet write
+into a home nobody inspects.
 
 ### Docker Identity
 

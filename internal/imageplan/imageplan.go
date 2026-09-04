@@ -64,14 +64,14 @@ type imageSource interface {
 //
 // Reports whether the local store was actually synced against the registry
 // here and now.
-func Refresh(ctx context.Context, cli imageSource, image sessionplan.Image) bool {
+func Refresh(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string) bool {
 	switch image.PullPolicy {
 	case config.PullNever:
 		return false
 	case config.PullAlways:
-		return imagepull.ForcePull(ctx, cli, image.Ref)
+		return imagepull.ForcePull(ctx, cli, image.Ref, stateDir)
 	default: // config.PullAuto and the unset zero value
-		return imagepull.RefreshIfStale(ctx, cli, image.Ref)
+		return imagepull.RefreshIfStale(ctx, cli, image.Ref, stateDir)
 	}
 }
 
@@ -207,13 +207,13 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 	case config.PullNever:
 		return Outcome{}
 	case config.PullAlways:
-		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref)}
+		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref, stateDir)}
 	}
 
 	// Presence, not currency: an image the store does not hold at all leaves
 	// nothing to ask about and nothing to start.
 	if _, present := build.LocalRepoDigest(ctx, cli, image.Ref); !present {
-		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref)}
+		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref, stateDir)}
 	}
 
 	// Before the probe, not after: knowing the answer is a registry round-trip
@@ -253,7 +253,7 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 	// One value, read twice: the pull that landed is what makes the answer
 	// honourable, and a pull that failed leaves the developer where they
 	// already were rather than spending a container on nothing.
-	synced := imagepull.ForcePull(ctx, cli, image.Ref)
+	synced := imagepull.ForcePull(ctx, cli, image.Ref, stateDir)
 	return Outcome{Synced: synced, Accepted: synced}
 }
 

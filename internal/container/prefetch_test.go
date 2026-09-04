@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,7 +41,54 @@ func TestMain(m *testing.M) {
 	// just before attaching and it would delete images out of the test's own
 	// mock from a second goroutine.
 	reclaimImages = func(context.Context, client.APIClient, imagereclaim.Input) {}
-	os.Exit(m.Run())
+	os.Exit(runWithoutAnAmbientHome(m))
+}
+
+// runWithoutAnAmbientHome points $HOME at an empty directory for the whole
+// package run and fails the run if anything lands in it.
+//
+// This package's tests used to sandbox $HOME one by one, because the plans
+// they build reached imagepull, whose pull-cache marker resolved its own home
+// — unsandboxed, a run wrote under the developer's real ~/.toolbox. imagepull
+// now takes the session's resolved state dir and every path here declares its
+// host, so those 34 guards are gone. This is what keeps them gone: a
+// regression to an ambient read shows up as a file in a directory nothing is
+// supposed to write to, rather than as a quiet write into a real home nobody
+// checks.
+//
+// os.Setenv, not t.Setenv: the latter forbids t.Parallel in any test that
+// calls it, and the point of removing the per-test guards was to leave this
+// package parallelisable.
+func runWithoutAnAmbientHome(m *testing.M) int {
+	home, err := os.MkdirTemp("", "toolbox-ambient-home")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: %v\n", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(home) }()
+	if err := os.Setenv("HOME", home); err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: %v\n", err)
+		return 1
+	}
+
+	code := m.Run()
+
+	strays, err := os.ReadDir(home)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: %v\n", err)
+		return 1
+	}
+	if len(strays) > 0 {
+		names := make([]string, 0, len(strays))
+		for _, e := range strays {
+			names = append(names, e.Name())
+		}
+		fmt.Fprintf(os.Stderr,
+			"TestMain: something wrote %v into the ambient $HOME — a package on this path went back to resolving its own home instead of taking the declared one\n",
+			names)
+		return 1
+	}
+	return code
 }
 
 // stubPrefetch captures what Shell hands the update prefetch instead of
@@ -76,7 +124,6 @@ func runningContainer(env []string) func(context.Context, string) (container.Ins
 // its own, and the digest this process would resolve now is precisely the
 // newer one the session is behind.
 func TestShellPrefetchUsesTheContainersOwnDigest(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -136,7 +183,6 @@ func repoOf(ref string) string {
 // image carries the old digest and the prefetch reports it behind an image it
 // is already running.
 func TestShellPrefetchRestampsTheDigestOnCreate(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -163,7 +209,6 @@ func TestShellPrefetchRestampsTheDigestOnCreate(t *testing.T) {
 // A store with no repo digest for the base — a local `toolbox build` — leaves
 // no baseline to claim, and the entry is dropped rather than left stale.
 func TestShellPrefetchDropsTheDigestForALocalBuild(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -187,7 +232,6 @@ func TestShellPrefetchDropsTheDigestForALocalBuild(t *testing.T) {
 // comparison come out equal, hiding a real update instead of admitting the
 // baseline is unknown.
 func TestShellPrefetchMakesNoClaimWithoutAContainerConfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -220,7 +264,6 @@ func TestShellPrefetchRefusals(t *testing.T) {
 		{"opted out", &config.Config{Shell: "zsh", Env: map[string]string{sessionplan.NoUpdateCheckEnv: "1"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
 			_, restore := stubExecShell()
 			defer restore()
 			got, _ := stubPrefetch(t)
@@ -240,7 +283,6 @@ func TestShellPrefetchRefusals(t *testing.T) {
 // hands it is cancelled on return, which is also what cancels an in-flight
 // pull.
 func TestShellPrefetchStopsWhenTheShellExits(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	_, ctx := stubPrefetch(t)
@@ -376,7 +418,6 @@ func startPathMock(repoDigest string) *mockClient {
 // before it may recreate itself onto the image the prefetch is fetching
 // anyway. Nothing is claimed about the registry — the store is still behind it.
 func TestShellStampsADeclinedRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -401,7 +442,6 @@ func TestShellStampsADeclinedRefresh(t *testing.T) {
 // so the outcome is read directly, and no session is built in the window where
 // it has not.
 func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	execed, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -428,7 +468,6 @@ func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
 // registry", which is what StartSynced says and what stops the poller asking
 // the same question seconds later.
 func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
@@ -452,7 +491,6 @@ func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
 // wait would buy this session nothing and the prefetch fetches behind it
 // either way. The idle reload is the answer for that case.
 func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
@@ -472,7 +510,6 @@ func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
 // is asked with the container at stake: what a yes costs is not the download
 // alone, and the tree wording it has no way of knowing that.
 func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
@@ -492,7 +529,6 @@ func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
 // create it just turned into. Removal before the create, or the create would
 // ask for a name the daemon has not released.
 func TestShellStartRecreatesOnAnAcceptedRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
@@ -534,7 +570,6 @@ func TestShellStartRecreatesOnAnAcceptedRefresh(t *testing.T) {
 // there. Learning it afterwards would cost them that container and hand them
 // the daemon's opaque refusal in its place.
 func TestShellStartKeepsTheContainerWhenTheRecreateCannotSucceed(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
@@ -565,7 +600,6 @@ func TestShellStartKeepsTheContainerWhenTheRecreateCannotSucceed(t *testing.T) {
 // container is gone would leave the developer with neither a session nor the
 // container they were asked about. Everything that can fail runs first.
 func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
@@ -664,7 +698,6 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
 			prefetched, _ := stubPrefetch(t)
 			stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
 
@@ -745,7 +778,6 @@ func TestShellStartWarnsAboutAContainerItIsActuallyJoining(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
 			_, restore := stubExecShell()
 			defer restore()
 			stubPrefetch(t)
@@ -782,7 +814,6 @@ func TestShellStartWarnsAboutAContainerItIsActuallyJoining(t *testing.T) {
 // this session. The alternative would turn a "later" into the very
 // destruction the developer just declined.
 func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
