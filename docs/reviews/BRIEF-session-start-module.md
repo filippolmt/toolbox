@@ -3,6 +3,9 @@
 Source: [`architecture-review-2026-09-04.html`](architecture-review-2026-09-04.html), candidate 08
 (`#c8`). **Read the candidate itself, not only this brief.**
 
+Written 2026-09-04, and frozen as written: every figure and file state below is
+as of that date, not a claim about the tree today.
+
 ## Repo state when this brief was written
 
 `docs/reviews/` is **untracked** — three new files, nothing staged. The review
