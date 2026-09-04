@@ -597,11 +597,20 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 // what that read finds decides — through the same runplan.Compute that chose
 // the branch in the first place.
 func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
+	// The digest the question was put about, carried by the container the first
+	// read finds. What the second read carries instead is how each case is told
+	// apart on the baseline axis as well as on the ID.
+	const askedAbout = "sha256:the-image-it-was-created-from"
+	digestEnv := func(digest string) *container.Config {
+		return &container.Config{Env: []string{sessionplan.ImageDigestEnv + "=" + digest}}
+	}
+
 	for _, tc := range []struct {
 		name       string
 		second     func(context.Context, string) (container.InspectResponse, error)
 		wantCreate bool
 		wantExec   string
+		wantDigest string
 	}{
 		{
 			// A sibling shell started it: that session's owner never
@@ -609,31 +618,54 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			// container is never asked about. This one joins it.
 			name: "running again: the sibling's session is joined, not killed",
 			second: func(context.Context, string) (container.InspectResponse, error) {
-				return container.InspectResponse{ID: "stopped123", State: &container.State{Running: true}}, nil
+				return container.InspectResponse{
+					ID:     "stopped123",
+					State:  &container.State{Running: true},
+					Config: digestEnv(askedAbout),
+				}, nil
 			},
-			wantExec: "stopped123",
+			wantExec: "stopped123", wantDigest: askedAbout,
+		},
+		{
+			// A sibling shell answered the same question yes, so what carries
+			// the name now is a *different* container, built from a *different*
+			// image. The answer was about one that no longer exists, and both
+			// the ID the caller dispatches and the digest its prefetch is
+			// baselined on have to come off the container that is there now.
+			name: "recreated by a sibling: the session joins the container that is there now",
+			second: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{
+					ID:     "recreated456",
+					State:  &container.State{Running: true},
+					Config: digestEnv("sha256:the-image-the-sibling-built-it-from"),
+				}, nil
+			},
+			wantExec: "recreated456", wantDigest: "sha256:the-image-the-sibling-built-it-from",
 		},
 		{
 			// A `toolbox stop` or a `docker rm` got there first: the name is
-			// free, which is all the removal was for.
+			// free, which is all the removal was for. No container to read a
+			// baseline off, so it comes from the re-stamped plan.
 			name: "already gone: the name is free and the create takes it",
 			second: func(context.Context, string) (container.InspectResponse, error) {
 				return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 			},
-			wantCreate: true, wantExec: "new123",
+			wantCreate: true, wantExec: "new123", wantDigest: "sha256:fresh",
 		},
 		{
-			// Nothing is destroyed on an answer the daemon would not give.
+			// Nothing is destroyed on an answer the daemon would not give, and
+			// nothing is learned from it either: the start stays exactly the
+			// one the question was put about.
 			name: "unreadable: the container the answer was about is left alone",
 			second: func(context.Context, string) (container.InspectResponse, error) {
 				return container.InspectResponse{}, errors.New("daemon unreachable")
 			},
-			wantExec: "stopped123",
+			wantExec: "stopped123", wantDigest: askedAbout,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
-			stubPrefetch(t)
+			prefetched, _ := stubPrefetch(t)
 			stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
 
 			execedID := ""
@@ -649,7 +681,7 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			mock.inspectFn = func(ctx context.Context, name string) (container.InspectResponse, error) {
 				reads++
 				if reads == 1 {
-					return stoppedContainer(nil)(ctx, name)
+					return stoppedContainer([]string{sessionplan.ImageDigestEnv + "=" + askedAbout})(ctx, name)
 				}
 				return tc.second(ctx, name)
 			}
@@ -667,13 +699,23 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			if got := slices.Contains(mock.calls, "ContainerCreate"); got != tc.wantCreate {
 				t.Errorf("a container was created = %v, want %v: %v", got, tc.wantCreate, mock.calls)
 			}
-			// None of the three reads is the container the answer was about,
-			// so none of them may be destroyed by the recreate.
+			// No second read here finds the container the answer was about,
+			// so none of these cases may destroy one.
 			if destroyed {
 				t.Errorf("a container was destroyed for a recreate that stood down: %v", mock.calls)
 			}
 			if execedID != tc.wantExec {
 				t.Errorf("the session attached to %q, want %q", execedID, tc.wantExec)
+			}
+			// The ID is not the only thing the second read settles: the
+			// prefetch is baselined on the digest of the container this
+			// session is actually attached to, and a baseline read off one
+			// that is gone announces an update the session has adopted.
+			if len(*prefetched) != 1 {
+				t.Fatalf("the prefetch was started %d times, want once", len(*prefetched))
+			}
+			if got := (*prefetched)[0].ContainerDigest; got != tc.wantDigest {
+				t.Errorf("the prefetch was baselined on %q, want %q", got, tc.wantDigest)
 			}
 		})
 	}
