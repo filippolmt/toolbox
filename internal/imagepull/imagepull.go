@@ -1,11 +1,16 @@
 // Package imagepull owns the "refresh canonical image, best-effort, with
 // a TTL cache" concern that used to live inline in container.Shell. The
-// cache marker file lives at ~/.toolbox/toolbox/state/pull-cache/<sha256-of-ref>
-// so it survives across CLI runs; only successful pulls record, so a
-// network blip doesn't poison the next invocation into staleness.
+// cache marker file lives at <state dir>/pull-cache/<sha256-of-ref> so it
+// survives across CLI runs; only successful pulls record, so a network blip
+// doesn't poison the next invocation into staleness.
+//
+// The state dir is passed in, not resolved here: it is the host source of the
+// toolbox state mount, which a mounts_root or a --profile retargets. Deriving
+// it from $HOME would pin the cache to the default location while every other
+// toolbox-managed marker followed the retarget — see markerPath.
 //
 // Two seams, both best-effort (callers proceed with the local image
-// regardless): RefreshIfStale(ctx, cli, ref) is the cache-aware form
+// regardless): RefreshIfStale(ctx, cli, ref, stateDir) is the cache-aware form
 // (cache-hit fast-path, pull on miss, record on success), and ForcePull
 // pulls unconditionally — for the "always" policy, and for a shell start
 // whose probe already established that the registry is ahead. UI surfacing
@@ -41,8 +46,9 @@ import (
 // reload's refresh — a shell start decides from a digest probe instead, and
 // deliberately: a warm cache there is what let a released image go unoffered
 // for up to an hour. Override is intentional fs-only: delete
-// ~/.toolbox/toolbox/state/pull-cache/* to force a fresh pull on next
-// invocation.
+// <state dir>/pull-cache/* to force a fresh pull on next invocation — the
+// session's resolved state dir, which a mounts_root or a --profile moves
+// (~/.toolbox/toolbox/state only when neither does).
 const TTL = 1 * time.Hour
 
 // registry is the registry this package pulls from, as narrow as the act: one
@@ -60,11 +66,11 @@ type registry interface {
 // answer lets the background update prefetch skip its own probe: a cache hit
 // did no work at all, and a failed pull leaves the local store possibly
 // behind the registry, which is the one thing the prefetch exists to notice.
-func RefreshIfStale(ctx context.Context, cli registry, ref string) bool {
-	if cached(ref) {
+func RefreshIfStale(ctx context.Context, cli registry, ref, stateDir string) bool {
+	if cached(ref, stateDir) {
 		return false
 	}
-	return pullAndRecord(ctx, cli, ref)
+	return pullAndRecord(ctx, cli, ref, stateDir)
 }
 
 // ForcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
@@ -72,17 +78,17 @@ func RefreshIfStale(ctx context.Context, cli registry, ref string) bool {
 // shell, so a recent cache hit must not short-circuit it. Best-effort like
 // RefreshIfStale — failures are warned and the caller falls back to the local
 // image.
-func ForcePull(ctx context.Context, cli registry, ref string) bool {
-	return pullAndRecord(ctx, cli, ref)
+func ForcePull(ctx context.Context, cli registry, ref, stateDir string) bool {
+	return pullAndRecord(ctx, cli, ref, stateDir)
 }
 
 // pullAndRecord pulls ref and stamps the cache marker on success — the shared
 // tail of RefreshIfStale (after the cache check) and ForcePull.
-func pullAndRecord(ctx context.Context, cli registry, ref string) bool {
+func pullAndRecord(ctx context.Context, cli registry, ref, stateDir string) bool {
 	if !pull(ctx, cli, ref) {
 		return false
 	}
-	record(ref)
+	record(ref, stateDir)
 	return true
 }
 
@@ -167,26 +173,29 @@ func registryOf(ref string) string {
 	return "docker.io"
 }
 
-// markerPath returns the cache marker path for a given image ref. The
-// ref is hashed because tags can contain characters that are awkward in
-// filenames (digests, registry paths with ":" / "/"). os.UserHomeDir
-// errors are surfaced so the caller treats them as "no cache" rather
-// than writing to an unexpected location.
-func markerPath(ref string) (string, error) {
-	home, err := fsx.Home()
-	if err != nil {
-		return "", err
+// markerPath returns the cache marker path for a given image ref under
+// stateDir. The ref is hashed because tags can contain characters that are
+// awkward in filenames (digests, registry paths with ":" / "/").
+//
+// An empty stateDir is an error, not a fallback to the default location: it
+// means the session resolved no state mount (the user disabled it), and the
+// callers read that as "no cache" — one registry round-trip per invocation
+// instead of one per TTL. Guessing a path the session does not use would put
+// the cache somewhere nothing else looks, and the container could not see it.
+func markerPath(ref, stateDir string) (string, error) {
+	if stateDir == "" {
+		return "", errors.New("no toolbox state dir resolved for this session")
 	}
 	sum := sha256.Sum256([]byte(ref))
-	return filepath.Join(home, ".toolbox", "toolbox", "state", "pull-cache", hex.EncodeToString(sum[:])), nil
+	return filepath.Join(stateDir, "pull-cache", hex.EncodeToString(sum[:])), nil
 }
 
 // cached reports whether a successful pull of ref happened within the
-// last TTL. Any error (no home dir, missing marker, stat failure)
+// last TTL. Any error (no state dir, missing marker, stat failure)
 // returns false so the caller falls through to a real pull — never
 // silently skip on uncertainty.
-func cached(ref string) bool {
-	path, err := markerPath(ref)
+func cached(ref, stateDir string) bool {
+	path, err := markerPath(ref, stateDir)
 	if err != nil {
 		return false
 	}
@@ -194,15 +203,23 @@ func cached(ref string) bool {
 }
 
 // record stamps a fresh marker after a successful pull. Persist failures
-// (no home dir, mkdir/write rejection from ENOSPC / EROFS / permissions)
-// don't break the user — the next invocation just pulls again — but a
-// permanently un-writable cache silently turns every shell into a full
-// registry round-trip, which adds latency and consumes GHCR rate budget.
-// One warning per failure surfaces the root cause without spamming: once
-// the underlying issue is fixed the warning stops on its own.
+// (mkdir/write rejection from ENOSPC / EROFS / permissions) don't break the
+// user — the next invocation just pulls again — but a permanently un-writable
+// cache silently turns every shell into a full registry round-trip, which adds
+// latency and consumes GHCR rate budget. One warning per failure surfaces the
+// root cause without spamming: once the underlying issue is fixed the warning
+// stops on its own.
+//
+// A session with no state dir is not such a failure and is silent: there is
+// nowhere to keep a cache because the user disabled the state mount, and
+// "fix the underlying issue" names nothing they did wrong. cached answers the
+// same input the same way, and imageprefetch.Start returns early on it.
 // Marker contents are intentionally empty — modtime is the timestamp.
-func record(ref string) {
-	path, err := markerPath(ref)
+func record(ref, stateDir string) {
+	if stateDir == "" {
+		return
+	}
+	path, err := markerPath(ref, stateDir)
 	if err != nil {
 		ui.Warning("pull cache: cannot resolve marker path: " + err.Error())
 		return

@@ -48,7 +48,6 @@ func runningContainerMock() *mockClient {
 // has a usable image to move onto — which voids the whole safety gate and
 // leaves a failed re-exec with nothing to go back to.
 func TestShellReloadSuppressesTeardown(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	stubExecShellWritingMarker(t, plan, "")
@@ -72,7 +71,6 @@ func TestShellReloadSuppressesTeardown(t *testing.T) {
 // name is the load-bearing field — the next process cannot safely recompute it
 // — and the "before" pair is what turns a summary into evidence.
 func TestShellReloadComposesTheHandover(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.Env = append(plan.Env, sessionplan.ImageDigestEnv+"=sha256:old", sessionplan.CLIVersionEnv+"=v0.1.0")
@@ -96,7 +94,6 @@ func TestShellReloadComposesTheHandover(t *testing.T) {
 // An ordinary exit must stay an ordinary exit: no marker, no reload, and the
 // teardown the container has always had.
 func TestShellWithoutMarkerTearsDownAsBefore(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -152,7 +149,6 @@ func createAfterReloadMock() *mockClient {
 // fails in the direction that costs a session — a teardown before the verify
 // leaves a developer with neither the old container nor a new one.
 func TestShellReloadVerifiesBeforeItDestroys(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -182,7 +178,6 @@ func TestShellReloadVerifiesBeforeItDestroys(t *testing.T) {
 // is not a failed reload, it is a no-op that leaves the session alive. The
 // test is written against the observable half — nothing was destroyed.
 func TestShellReloadWithNoUsableImageDestroysNothing(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -205,7 +200,6 @@ func TestShellReloadWithNoUsableImageDestroysNothing(t *testing.T) {
 // name the create is about to ask for — turning a considerate refusal into a
 // name collision. So the reload's teardown must ignore running execs.
 func TestShellReloadKillsThroughAnAttachedSibling(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -235,7 +229,6 @@ func TestShellReloadKillsThroughAnAttachedSibling(t *testing.T) {
 // rewrite would tell a sibling session still on the old image that it is up to
 // date.
 func TestShellReloadClearsTheBannerCache(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -433,7 +426,6 @@ func TestTransition(t *testing.T) {
 // would see no ~/.toolbox-state either. Reporting a reload from a path built
 // on an empty state dir would key the marker off the filesystem root.
 func TestReloadMarkerPathNeedsTheStateMount(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.StateDir = ""
 	if got := plan.ReloadMarkerPath(); got != "" {
@@ -525,7 +517,6 @@ func (conflictErr) Conflict() {
 // was typed. So it has to actually reach the developer, past a filter that
 // throws most of the process table away.
 func TestShellReloadReportsWhatItKilled(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -563,7 +554,6 @@ func TestShellReloadReportsWhatItKilled(t *testing.T) {
 // ContainerTop answers 409 on a container that is no longer running. The look
 // is informational, so losing it costs evidence and never the reload.
 func TestShellReloadSurvivesAnUnreadableProcessList(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -581,7 +571,6 @@ func TestShellReloadSurvivesAnUnreadableProcessList(t *testing.T) {
 // unconsumed marker would fire a reload nobody asked for at the next ordinary
 // exit. The failing session itself tears down as any failing session does.
 func TestShellConsumesTheMarkerEvenWhenTheSessionFails(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	orig := execShellFn
@@ -616,7 +605,6 @@ func TestShellConsumesTheMarkerEvenWhenTheSessionFails(t *testing.T) {
 // Asking again here would also mean asking with nobody watching, since the
 // same path is what an unattended trigger walks.
 func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)

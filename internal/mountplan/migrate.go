@@ -16,6 +16,11 @@ import (
 // the regenerable pull cache. Callers treat failures as a warning:
 // CreateIfMissing rebuilds an empty state dir and the pull cache regenerates
 // on the next pull.
+// The home-derived path is deliberate and stays: this moves the *legacy
+// default* tree, which by definition sat under ~. The live pull cache no
+// longer lives there — imagepull resolves it from the session's state dir —
+// so this is a one-time relocation of what an older CLI left behind, not a
+// second opinion about where the cache belongs.
 func MigrateLegacyToolboxState(home string) error {
 	legacy := filepath.Join(home, ".toolbox", "state")
 	if _, err := os.Stat(legacy); err != nil {

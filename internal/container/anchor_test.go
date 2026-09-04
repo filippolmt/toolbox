@@ -34,7 +34,7 @@ func hasPeerSocketBind(binds []string) bool {
 func peerPlan(t *testing.T, workspace string) *sessionplan.SessionPlan {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
-		Host:      sandboxHome(t),
+		Host:      planHost(t),
 		Cfg:       &config.Config{Shell: "zsh"},
 		Workspace: workspace,
 		Peer:      true,
@@ -384,7 +384,7 @@ func TestShellReattachUnwantedNamespaceWarns(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
-		Host:      sandboxHome(t),
+		Host:      planHost(t),
 		Cfg:       &config.Config{Shell: "zsh"},
 		Workspace: testWorkspace(t),
 	})

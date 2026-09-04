@@ -96,7 +96,6 @@ func TestRefreshPullPolicy(t *testing.T) {
 		{"", 1}, // empty normalises to auto behaviour
 	} {
 		t.Run("policy="+tt.policy, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir()) // isolate the pull-cache marker dir
 			mock := &sourceStub{
 				pullFn: func() (io.ReadCloser, error) {
 					return io.NopCloser(strings.NewReader("")), nil
@@ -105,7 +104,7 @@ func TestRefreshPullPolicy(t *testing.T) {
 			Refresh(context.Background(), mock.docker(), sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tt.policy,
-			})
+			}, t.TempDir()) // a state dir of its own isolates the TTL marker
 			if mock.docker().ImagePullCalls() != tt.wantPulls {
 				t.Errorf("policy %q: ImagePull called %d times, want %d", tt.policy, mock.docker().ImagePullCalls(), tt.wantPulls)
 			}
@@ -135,7 +134,6 @@ func TestEnsureRegistryMissingErrors(t *testing.T) {
 // locally built image) and whose registry answers remote.
 func storeWith(t *testing.T, repoDigest, remote string) *sourceStub {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir()) // isolate imagepull's TTL marker dir
 	return &sourceStub{
 		inspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
 			return dockertest.ImageInspectResult("ghcr.io/example", repoDigest), nil

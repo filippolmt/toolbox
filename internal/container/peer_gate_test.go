@@ -133,7 +133,7 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	// A throwaway home keeps the run off the developer's own ~/.toolbox. The
 	// socket directory is shared through the toolbox-cc-socks volume rather
 	// than through it, so both sessions land in it regardless.
-	host := sandboxHome(t)
+	host := planHost(t)
 
 	// The anchor outlives sessions by design, so it is torn down explicitly.
 	t.Cleanup(func() {

@@ -42,7 +42,6 @@ func stubReclaim(t *testing.T, mock *mockClient) *[]reclaimCall {
 // the single captured call.
 func reclaimFixture(t *testing.T, sessionDigest string) (*mockClient, *sessionplan.SessionPlan, *[]reclaimCall) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
 	_, restore := stubExecShell()
 	t.Cleanup(restore)
 

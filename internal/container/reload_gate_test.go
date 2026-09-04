@@ -73,7 +73,7 @@ func TestReloadReplacesTheContainer(t *testing.T) {
 
 	// A throwaway HOME keeps the run off the developer's own ~/.toolbox; the
 	// workspace under it is what the container name hashes.
-	host := sandboxHome(t)
+	host := planHost(t)
 	reloadGateWorkspace = t.TempDir()
 
 	first := reloadSessionPlan(t, host, nil)

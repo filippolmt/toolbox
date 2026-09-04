@@ -6,18 +6,15 @@ import (
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
-// sandboxHome returns a Host rooted at a fresh temp dir and points the
-// process home at the same directory.
+// planHost returns a Host rooted at a fresh temp dir.
 //
-// The $HOME half is still load-bearing and will stay until the image seam is
-// threaded too: this package's plans reach imagepull, whose pull-cache marker
-// resolves its own home, and an unsandboxed run would write it under the
-// developer's real ~/.toolbox. The Host half is what the planner reads, so
-// both must name the same directory or a test would assert against one home
-// while the plan was built for another.
-func sandboxHome(t *testing.T) fsx.Host {
+// It used to point the process $HOME at the same directory too: this package's
+// plans reach imagepull, whose pull-cache marker resolved its own home, so an
+// unsandboxed run wrote under the developer's real ~/.toolbox. imagepull now
+// takes the session's resolved state dir, and nothing this package reaches
+// reads the environment for a home any more — so the declared Host is the
+// whole fixture.
+func planHost(t *testing.T) fsx.Host {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	return fsx.Host{Home: home}
+	return fsx.Host{Home: t.TempDir()}
 }
