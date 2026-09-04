@@ -396,8 +396,9 @@ type result struct {
 }
 
 // collect runs both axes over the currently published result and reports
-// whether either of them reached its registry. The axes are independent — either can
-// fire, fail or abstain without the other — so each one overwrites only its
+// whether either of them reached its registry. The axes are independent —
+// either can fire, fail or abstain without the other — so each one overwrites
+// only its
 // own fields, and one that did not reach its registry leaves the previous
 // answer standing instead of retracting a banner that is still true. An axis
 // that abstains outright writes nothing at all.

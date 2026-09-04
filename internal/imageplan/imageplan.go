@@ -107,11 +107,11 @@ type offer struct {
 	postponed string
 }
 
-// offer is the [Prompt Stake] made concrete: what a yes costs besides the wait
-// decides all three fields, and it hangs off the reason because the reason is
-// what implies it. The caller knows which branch it is on; that a stopped
-// container makes a yes destructive is this package's own conclusion, and one
-// it must not be able to be told wrongly.
+// offer is what a yes costs besides the wait, made concrete: that decides all
+// three fields, and it hangs off the reason because the reason is what implies
+// it. The caller knows which branch it is on; that a stopped container makes a
+// yes destructive is this package's own conclusion, and one it must not be
+// able to be told wrongly. → CONTEXT.md, Prompt Stake.
 //
 // Each question is kept short enough to share one terminal line with the
 // countdown: the prompt owns exactly one line for its whole life — it redraws
@@ -122,8 +122,6 @@ type offer struct {
 // unanswered window. Every other reason is worded as the download, the form
 // that spends nothing but time — including the zero value, which must never be
 // handed the wording, or the default, of the one that destroys something.
-//
-// [Prompt Stake]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#prompt-stake
 func (r Reason) offer() offer {
 	if r == ReasonStart {
 		return offer{
