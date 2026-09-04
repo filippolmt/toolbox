@@ -101,6 +101,15 @@ func TestFakeZeroValueRefusesEveryCall(t *testing.T) {
 		{"ImageBuild", func(f *Fake) {
 			_, _ = f.ImageBuild(t.Context(), strings.NewReader(""), client.ImageBuildOptions{})
 		}},
+		{"ContainerInspect", func(f *Fake) {
+			_, _ = f.ContainerInspect(t.Context(), "c", client.ContainerInspectOptions{})
+		}},
+		{"ContainerStop", func(f *Fake) { _, _ = f.ContainerStop(t.Context(), "c", client.ContainerStopOptions{}) }},
+		{"ContainerRemove", func(f *Fake) {
+			_, _ = f.ContainerRemove(t.Context(), "c", client.ContainerRemoveOptions{})
+		}},
+		{"ContainerKill", func(f *Fake) { _, _ = f.ContainerKill(t.Context(), "c", client.ContainerKillOptions{}) }},
+		{"ExecInspect", func(f *Fake) { _, _ = f.ExecInspect(t.Context(), "e", client.ExecInspectOptions{}) }},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
 			defer func() {
@@ -140,6 +149,21 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 		ImageBuildFn: func(context.Context, io.Reader, client.ImageBuildOptions) (client.ImageBuildResult, error) {
 			return client.ImageBuildResult{}, nil
 		},
+		ContainerInspectFn: func(context.Context, string) (client.ContainerInspectResult, error) {
+			return client.ContainerInspectResult{}, nil
+		},
+		ContainerStopFn: func(context.Context, string, client.ContainerStopOptions) (client.ContainerStopResult, error) {
+			return client.ContainerStopResult{}, nil
+		},
+		ContainerRemoveFn: func(context.Context, string, client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+			return client.ContainerRemoveResult{}, nil
+		},
+		ContainerKillFn: func(context.Context, string, client.ContainerKillOptions) (client.ContainerKillResult, error) {
+			return client.ContainerKillResult{}, nil
+		},
+		ExecInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{}, nil
+		},
 	}
 
 	res, err := f.ImageInspect(t.Context(), "ref")
@@ -164,6 +188,21 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 	if _, err := f.ImageBuild(t.Context(), strings.NewReader(""), client.ImageBuildOptions{}); err != nil {
 		t.Errorf("ImageBuild = %v, want nil", err)
 	}
+	if _, err := f.ContainerInspect(t.Context(), "c", client.ContainerInspectOptions{}); err != nil {
+		t.Errorf("ContainerInspect = %v, want nil", err)
+	}
+	if _, err := f.ContainerStop(t.Context(), "c", client.ContainerStopOptions{}); err != nil {
+		t.Errorf("ContainerStop = %v, want nil", err)
+	}
+	if _, err := f.ContainerRemove(t.Context(), "c", client.ContainerRemoveOptions{}); err != nil {
+		t.Errorf("ContainerRemove = %v, want nil", err)
+	}
+	if _, err := f.ContainerKill(t.Context(), "c", client.ContainerKillOptions{}); err != nil {
+		t.Errorf("ContainerKill = %v, want nil", err)
+	}
+	if _, err := f.ExecInspect(t.Context(), "e", client.ExecInspectOptions{}); err != nil {
+		t.Errorf("ExecInspect = %v, want nil", err)
+	}
 
 	for _, tc := range []struct {
 		method string
@@ -176,6 +215,11 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 		{"ImageList", f.ImageListCalls(), 1},
 		{"ImageRemove", f.ImageRemoveCalls(), 1},
 		{"ImageBuild", f.ImageBuildCalls(), 1},
+		{"ContainerInspect", f.ContainerInspectCalls(), 1},
+		{"ContainerStop", f.ContainerStopCalls(), 1},
+		{"ContainerRemove", f.ContainerRemoveCalls(), 1},
+		{"ContainerKill", f.ContainerKillCalls(), 1},
+		{"ExecInspect", f.ExecInspectCalls(), 1},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%sCalls() = %d, want %d", tc.method, tc.got, tc.want)

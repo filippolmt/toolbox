@@ -27,9 +27,10 @@ import (
 // silently, the only thing the narrowing buys in tests.
 // TestFakeIsNotAnAPIClient is the guard.
 //
-// The option arguments the SDK carries are dropped from the fields the tests
-// never assert on, and kept on the two they do (ImageRemove's flags, the
-// ImageBuild context and options).
+// The option arguments the SDK carries are dropped from the fields no test
+// asserts on, and kept on the ones tests do read: ImageRemove's flags, the
+// ImageBuild context and options, and the stop grace / remove force / kill
+// signal the teardown is pinned on.
 type Fake struct {
 	ImageInspectFn        func(ctx context.Context, ref string) (client.ImageInspectResult, error)
 	ImagePullFn           func(ctx context.Context, ref string) (client.ImagePullResponse, error)
@@ -37,6 +38,11 @@ type Fake struct {
 	ImageListFn           func(ctx context.Context) (client.ImageListResult, error)
 	ImageRemoveFn         func(ctx context.Context, id string, opts client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 	ImageBuildFn          func(ctx context.Context, buildContext io.Reader, opts client.ImageBuildOptions) (client.ImageBuildResult, error)
+	ContainerInspectFn    func(ctx context.Context, name string) (client.ContainerInspectResult, error)
+	ContainerStopFn       func(ctx context.Context, name string, opts client.ContainerStopOptions) (client.ContainerStopResult, error)
+	ContainerRemoveFn     func(ctx context.Context, name string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	ContainerKillFn       func(ctx context.Context, name string, opts client.ContainerKillOptions) (client.ContainerKillResult, error)
+	ExecInspectFn         func(ctx context.Context, execID string) (client.ExecInspectResult, error)
 
 	// mu guards the counters alone: a poll runs on its own goroutine, and a
 	// test that reads a count while one is in flight would otherwise race.
@@ -96,6 +102,31 @@ func (f *Fake) ImageBuild(ctx context.Context, buildContext io.Reader, opts clie
 	return f.ImageBuildFn(ctx, buildContext, opts)
 }
 
+func (f *Fake) ContainerInspect(ctx context.Context, name string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	f.record("ContainerInspect", f.ContainerInspectFn != nil)
+	return f.ContainerInspectFn(ctx, name)
+}
+
+func (f *Fake) ContainerStop(ctx context.Context, name string, opts client.ContainerStopOptions) (client.ContainerStopResult, error) {
+	f.record("ContainerStop", f.ContainerStopFn != nil)
+	return f.ContainerStopFn(ctx, name, opts)
+}
+
+func (f *Fake) ContainerRemove(ctx context.Context, name string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+	f.record("ContainerRemove", f.ContainerRemoveFn != nil)
+	return f.ContainerRemoveFn(ctx, name, opts)
+}
+
+func (f *Fake) ContainerKill(ctx context.Context, name string, opts client.ContainerKillOptions) (client.ContainerKillResult, error) {
+	f.record("ContainerKill", f.ContainerKillFn != nil)
+	return f.ContainerKillFn(ctx, name, opts)
+}
+
+func (f *Fake) ExecInspect(ctx context.Context, execID string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
+	f.record("ExecInspect", f.ExecInspectFn != nil)
+	return f.ExecInspectFn(ctx, execID)
+}
+
 // The call counters. Separate methods rather than one string-keyed accessor:
 // a mistyped method name is then a compile error rather than a count of zero
 // that quietly passes.
@@ -106,6 +137,11 @@ func (f *Fake) DistributionInspectCalls() int { return f.count("DistributionInsp
 func (f *Fake) ImageListCalls() int           { return f.count("ImageList") }
 func (f *Fake) ImageRemoveCalls() int         { return f.count("ImageRemove") }
 func (f *Fake) ImageBuildCalls() int          { return f.count("ImageBuild") }
+func (f *Fake) ContainerInspectCalls() int    { return f.count("ContainerInspect") }
+func (f *Fake) ContainerStopCalls() int       { return f.count("ContainerStop") }
+func (f *Fake) ContainerRemoveCalls() int     { return f.count("ContainerRemove") }
+func (f *Fake) ContainerKillCalls() int       { return f.count("ContainerKill") }
+func (f *Fake) ExecInspectCalls() int         { return f.count("ExecInspect") }
 
 // InspectSeq builds an ImageInspectFn that answers one queued result per call
 // and then reports the image missing. Shared because two packages need the

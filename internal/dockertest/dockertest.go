@@ -1,19 +1,20 @@
 // Package dockertest provides the Docker-client test doubles shared across the
 // packages that drive the moby client SDK.
 //
-// Fake is the double for the modules that declare their own Docker surface —
-// the image family and the two internal/build functions pulled in with it (see
-// CONTEXT.md, Declared Docker Surface). One function field per method those
-// interfaces hold, and structural satisfaction is what lets it stand in for an
-// interface it cannot name because that interface is unexported in its own
-// package.
+// Fake is the double for every module that declares its own Docker surface —
+// the image family, internal/build and the teardown (see CONTEXT.md, Declared
+// Docker Surface). One function field per method those interfaces hold, and
+// structural satisfaction is what lets it stand in for an interface it cannot
+// name because that interface is unexported in its own package.
 //
-// The packages still holding the whole client (container, teardown, runplan,
-// worktree) define their own mockClient — those fakes differ in which methods
-// they exercise, and narrowing them is a later slice. The leaf types that were
-// byte-identical across packages (the errdefs "not found" error, the
-// ImagePullResponse adapter, the two result builders) live here either way, so
-// there is a single copy to update when the SDK shifts.
+// Two packages still hold the whole client and keep their own hand-rolled
+// adapter, and both are structural rather than pending: internal/container is
+// the Docker edge, and internal/worktree hands its client to container.Stop.
+// Their functions take client.APIClient, which this Fake deliberately does not
+// satisfy, so it could not stand in there even if it grew the methods. The
+// leaf types that were byte-identical across packages (the errdefs "not found"
+// error, the ImagePullResponse adapter, the two result builders) live here
+// either way, so there is a single copy to update when the SDK shifts.
 package dockertest
 
 import (

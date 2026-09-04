@@ -18,9 +18,10 @@ import (
 // `:latest` tag moving mid-build. No build args are injected: the overlay is
 // RUN-only over an already-built base and would only emit "unused build arg"
 // warnings. Build output is streamed via the shared streamBuildOutput.
-// imageBuilder is the daemon's build endpoint, the one thing BuildOverlay
-// needs. Narrow so the overlay's caller can stay narrow too: localimage passes
-// its own interface straight through. → CONTEXT.md, Declared Docker Surface.
+// imageBuilder is the daemon's build endpoint — the only thing either build in
+// this package needs, BuildImage included. Narrow so the overlay's caller can
+// stay narrow too: localimage passes its own interface straight through.
+// → CONTEXT.md, Declared Docker Surface.
 type imageBuilder interface {
 	ImageBuild(ctx context.Context, buildContext io.Reader, opts client.ImageBuildOptions) (client.ImageBuildResult, error)
 }

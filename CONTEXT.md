@@ -887,18 +887,19 @@ named for the role the daemon plays there rather than for Docker.
 
 Concretely: `imagepull.registry` (`ImagePull`), `imagereclaim.imageStore`
 (`ImageList` + `ImageRemove`), `localimage.overlayBuilder`,
-`imageprefetch.registryStore`, `imageplan.imageSource`, plus the two
-`internal/build` functions the subset rule pulled in with them —
-`LocalRepoDigest`'s `localStore` and `BuildOverlay`'s `imageBuilder`. No
-one package owns the concept: each module owns the interface it declares,
-and `internal/dockertest` owns the shared half — the double all of them
-are tested through. Exported functions take these unexported types: a
-caller passes a value that satisfies one and never needs to name it. Go assigns interface to
-interface only when the target's method set is a subset of the source's,
-so a module's declared surface is the union of its own calls and those of
-every callee it hands the value to — which is what pulled those two
-`build` functions into the same slice as `imageprefetch` and
-`localimage`.
+`imageprefetch.registryStore`, `imageplan.imageSource`,
+`teardown.containerRuntime` (the container it inspects, stops, removes or
+kills, plus the execs it asks about), and in `internal/build` both
+`LocalRepoDigest`'s `localStore` and the `imageBuilder` its two build
+functions share. No one package owns the concept: each module owns the
+interface it declares, and `internal/dockertest` owns the shared half —
+the double all of them are tested through. Exported functions take these
+unexported types: a caller passes a value that satisfies one and never
+needs to name it. Go assigns interface to interface only when the
+target's method set is a subset of the source's, so a module's declared
+surface is the union of its own calls and those of every callee it hands
+the value to — which is what pulled `build`'s two image functions into
+the same slice as `imageprefetch` and `localimage`.
 
 `internal/container` is exempt and keeps `client.APIClient`. It *is* the
 Docker edge, it calls the daemon directly on many endpoints and passes
@@ -910,6 +911,15 @@ family (`startPrefetch`, `reclaimImages`, `refreshAtStart`) are therefore
 wrappers rather than plain assignments: a bare `var x = leaf.F` would
 take the type of an interface no other package can spell, and no test
 there could write a stub for it.
+
+`internal/worktree` keeps `client.APIClient` for the same reason, one
+level removed: it hands its client to `container.Stop`, so its own
+declared surface would have to be a superset of that parameter, which is
+the edge's. Both packages therefore keep a hand-rolled adapter in their
+tests, and will as long as the edge holds the concrete client —
+`dockertest.Fake` cannot stand in where the parameter is
+`client.APIClient`, by the same design that makes it useful everywhere
+else.
 
 The shared test double is `dockertest.Fake`: one function field per
 method the narrowed modules call, a nil field panicking with the method's
@@ -932,9 +942,9 @@ cost. `internal/dockertest` states the concept's shared half, the
 interfaces state the per-module half, and the name says what is being
 declared and by whom. Reasoning and consequences: [ADR
 0010](docs/adr/0010-each-module-declares-the-docker-methods-it-calls.md).
-Modules outside the first slice (`teardown`, `worktree`,
-`internal/build`'s remaining functions) still declare `client.APIClient`
-and keep their own adapters.
+The two packages still on
+`client.APIClient` are the two that cannot leave it, not a remainder
+waiting for a later slice.
 
 ### Docker Identity
 

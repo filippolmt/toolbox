@@ -1,6 +1,7 @@
 # Each module declares the Docker methods it calls; the edge keeps the full client
 
-Status: accepted
+Status: accepted, amended below
+Date: 2026-09-04
 
 Figures in this document are measurements taken when the decision was made,
 not claims about the tree as it stands.
@@ -19,7 +20,7 @@ panics. `ImageInspect` is implemented five times, `ImagePull` four,
 `ContainerInspect` and `ContainerStop` and `ContainerRemove` three each. The
 field naming has already drifted between copies. `internal/dockertest` exists,
 states the position out loud — the fakes differ in which methods they exercise
-— and holds three leaf helpers instead of a fake.
+— and holds leaf helpers instead of a fake.
 
 That embedding is not merely a shortcut. Two of the sharpest assertions in the
 image family are assertions of *absence* — that `ImageRemove` takes neither
@@ -124,3 +125,41 @@ hand-rolled adapters, so `ContainerInspect` stays implemented three times until
 the second slice lands. A partial answer is the point of slicing, but a reader
 who greps for the pattern will find it still there and may conclude the decision
 was not carried out.
+
+## Amendment: the second slice landed in the same work
+
+The slicing above held for the length of one review. Asked to finish the job,
+the same change went on to narrow `teardown` and `build.BuildImage`, and the
+answer for `worktree` turned out not to be the one this ADR assumed.
+
+**`teardown` declares `containerRuntime`** — inspect, stop, remove, kill, and
+the exec inspect behind the sibling-terminal question. Its adapter moved onto
+the shared fake, which grew the five container-side fields. The move is not
+only deduplication: the hand-rolled adapter answered an unstubbed stop, kill or
+remove with success, so three of its five endpoints could be reached by a
+teardown nobody had asked to reach them. Under the shared fake they panic, and
+three tests gained the stub they had been silently borrowing.
+
+**`build` no longer holds two conventions.** `BuildImage` needs `ImageBuild`
+and nothing else, so it takes the same `imageBuilder` the overlay does. The
+consequence recorded above — "`internal/build` becomes untidy before it becomes
+tidy" — never had to be paid, and the package's own split is still a separate
+decision.
+
+**`worktree` cannot narrow, and its one method was a miscount.** It calls
+`ImageInspect`… of a container: one method of its own. But it also hands its
+client to `container.Stop`, whose parameter is `client.APIClient` — so the
+subset rule makes `worktree`'s declared surface a superset of the edge's, and
+narrowing it means narrowing the edge. Narrowing `Stop` alone would be cheap
+(it is a one-line delegation to `teardown.StopOne`, so its need is exactly
+`containerRuntime`), and it was rejected for the reason this ADR already gives
+for exempting the edge: a daemon call added inside that tree would then have to
+be widened in three packages, with the compile error landing in `worktree`,
+which did not change.
+
+So the standing consequence is narrower than the one recorded above. The two
+packages still declaring `client.APIClient` — `internal/container` and
+`internal/worktree` — are the two that cannot stop, and each keeps a
+hand-rolled adapter because `dockertest.Fake` deliberately does not satisfy
+`client.APIClient` and so cannot stand in where that is the parameter. What is
+left is not a later slice. It is the shape of the edge.

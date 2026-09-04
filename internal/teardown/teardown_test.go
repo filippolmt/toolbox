@@ -3,7 +3,6 @@ package teardown
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -20,59 +19,62 @@ func (e *conflictErr) Error() string { return e.msg }
 func (e *conflictErr) Conflict()     {}
 func (e *conflictErr) Unwrap() error { return nil }
 
-// mockClient implements the subset of client.APIClient used by teardown.
-type mockClient struct {
-	client.APIClient
+// exitStub is what one teardown's daemon answers with. It implements no Docker
+// method of its own: docker() wires the shared fake to the fields a test set,
+// and leaves the rest unstubbed — so an endpoint this teardown had no business
+// reaching panics on the method it named instead of answering a silent zero
+// value. The inspect field is spelled in container.InspectResponse, the shape
+// every caller here actually reads.
+type exitStub struct {
 	stopFn        func(ctx context.Context, id string, opts client.ContainerStopOptions) error
 	removeFn      func(ctx context.Context, id string, opts client.ContainerRemoveOptions) error
 	killFn        func(ctx context.Context, id string, signal string) error
 	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
 	execInspectFn func(ctx context.Context, execID string) (client.ExecInspectResult, error)
+
+	fake *dockertest.Fake
 }
 
-func (m *mockClient) ContainerStop(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error) {
+// docker returns the daemon the teardown sees, built once and reused so the
+// call counters survive the run and the assertions that read them. Called from
+// the test goroutine only.
+func (m *exitStub) docker() *dockertest.Fake {
+	if m.fake != nil {
+		return m.fake
+	}
+	m.fake = &dockertest.Fake{}
 	if m.stopFn != nil {
-		return client.ContainerStopResult{}, m.stopFn(ctx, id, opts)
+		m.fake.ContainerStopFn = func(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error) {
+			return client.ContainerStopResult{}, m.stopFn(ctx, id, opts)
+		}
 	}
-	return client.ContainerStopResult{}, nil
-}
-
-func (m *mockClient) ContainerKill(ctx context.Context, id string, opts client.ContainerKillOptions) (client.ContainerKillResult, error) {
-	if m.killFn != nil {
-		return client.ContainerKillResult{}, m.killFn(ctx, id, opts.Signal)
-	}
-	return client.ContainerKillResult{}, nil
-}
-
-func (m *mockClient) ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	if m.removeFn != nil {
-		return client.ContainerRemoveResult{}, m.removeFn(ctx, id, opts)
+		m.fake.ContainerRemoveFn = func(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+			return client.ContainerRemoveResult{}, m.removeFn(ctx, id, opts)
+		}
 	}
-	return client.ContainerRemoveResult{}, nil
-}
-
-func (m *mockClient) ContainerInspect(ctx context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	if m.killFn != nil {
+		m.fake.ContainerKillFn = func(ctx context.Context, id string, opts client.ContainerKillOptions) (client.ContainerKillResult, error) {
+			return client.ContainerKillResult{}, m.killFn(ctx, id, opts.Signal)
+		}
+	}
 	if m.inspectFn != nil {
-		inspect, err := m.inspectFn(ctx, id)
-		return client.ContainerInspectResult{Container: inspect}, err
+		m.fake.ContainerInspectFn = func(ctx context.Context, id string) (client.ContainerInspectResult, error) {
+			inspect, err := m.inspectFn(ctx, id)
+			return client.ContainerInspectResult{Container: inspect}, err
+		}
 	}
-	return client.ContainerInspectResult{}, fmt.Errorf("ContainerInspect not mocked")
-}
-
-func (m *mockClient) ExecInspect(ctx context.Context, execID string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
 	if m.execInspectFn != nil {
-		return m.execInspectFn(ctx, execID)
+		m.fake.ExecInspectFn = m.execInspectFn
 	}
-	return client.ExecInspectResult{}, fmt.Errorf("ExecInspect not mocked")
+	return m.fake
 }
-
-func (m *mockClient) Close() error { return nil }
 
 func TestStopOneStopsAndRemoves(t *testing.T) {
 	stopCalled := false
 	removeCalled := false
 	var capturedRemoveOpts client.ContainerRemoveOptions
-	mock := &mockClient{
+	mock := &exitStub{
 		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			stopCalled = true
 			return nil
@@ -83,7 +85,7 @@ func TestStopOneStopsAndRemoves(t *testing.T) {
 			return nil
 		},
 	}
-	if err := StopOne(context.Background(), mock, "toolbox-x", DefaultStopGrace); err != nil {
+	if err := StopOne(context.Background(), mock.docker(), "toolbox-x", DefaultStopGrace); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !stopCalled || !removeCalled {
@@ -95,25 +97,28 @@ func TestStopOneStopsAndRemoves(t *testing.T) {
 }
 
 func TestStopOneSwallowsNotFound(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		stopFn: func(_ context.Context, _ string, _ client.ContainerStopOptions) error {
 			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
-	if err := StopOne(context.Background(), mock, "missing", DefaultStopGrace); err != nil {
+	if err := StopOne(context.Background(), mock.docker(), "missing", DefaultStopGrace); err != nil {
 		t.Fatalf("StopOne should swallow NotFound, got: %v", err)
 	}
 }
 
 func TestStopOnePassesGraceTimeout(t *testing.T) {
 	var capturedTimeout *int
-	mock := &mockClient{
+	mock := &exitStub{
 		stopFn: func(_ context.Context, _ string, opts client.ContainerStopOptions) error {
 			capturedTimeout = opts.Timeout
 			return nil
 		},
+		// Reached and not asserted here, stated anyway: an unstubbed endpoint
+		// panics, which is what keeps the assertions of absence honest.
+		removeFn: func(context.Context, string, client.ContainerRemoveOptions) error { return nil },
 	}
-	if err := StopOne(context.Background(), mock, "toolbox-x", 7); err != nil {
+	if err := StopOne(context.Background(), mock.docker(), "toolbox-x", 7); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if capturedTimeout == nil || *capturedTimeout != 7 {
@@ -122,7 +127,7 @@ func TestStopOnePassesGraceTimeout(t *testing.T) {
 }
 
 func TestHasActiveExecsTrueOnRunningSibling(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:      "x",
@@ -133,36 +138,36 @@ func TestHasActiveExecsTrueOnRunningSibling(t *testing.T) {
 			return client.ExecInspectResult{Running: true}, nil
 		},
 	}
-	if !HasActiveExecs(context.Background(), mock, "toolbox-x") {
+	if !HasActiveExecs(context.Background(), mock.docker(), "toolbox-x") {
 		t.Fatal("expected HasActiveExecs=true when a sibling exec is Running")
 	}
 }
 
 func TestHasActiveExecsFalseOnInspectError(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, errors.New("daemon hiccup")
 		},
 	}
-	if HasActiveExecs(context.Background(), mock, "toolbox-x") {
+	if HasActiveExecs(context.Background(), mock.docker(), "toolbox-x") {
 		t.Fatal("inspect errors must be treated as no-active-execs")
 	}
 }
 
 func TestHasActiveExecsFalseOnEmptyInspect(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, nil
 		},
 	}
-	if HasActiveExecs(context.Background(), mock, "toolbox-x") {
+	if HasActiveExecs(context.Background(), mock.docker(), "toolbox-x") {
 		t.Fatal("empty inspect must yield false")
 	}
 }
 
 func TestOnShellExitSkipsStopWhenSiblingExecRunning(t *testing.T) {
 	stopCalled := false
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:      "x",
@@ -177,7 +182,7 @@ func TestOnShellExitSkipsStopWhenSiblingExecRunning(t *testing.T) {
 			return nil
 		},
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if stopCalled {
@@ -187,7 +192,7 @@ func TestOnShellExitSkipsStopWhenSiblingExecRunning(t *testing.T) {
 
 func TestOnShellExitStopsWhenNoSiblingExec(t *testing.T) {
 	stopCalled := false
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{
 				ID:      "x",
@@ -201,8 +206,10 @@ func TestOnShellExitStopsWhenNoSiblingExec(t *testing.T) {
 			stopCalled = true
 			return nil
 		},
+		// The legacy path is a full StopOne: the remove follows the stop.
+		removeFn: func(context.Context, string, client.ContainerRemoveOptions) error { return nil },
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !stopCalled {
@@ -222,7 +229,7 @@ func autoRemoveInspect() container.InspectResponse {
 
 func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
 	killCalled := false
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return autoRemoveInspect(), nil
 		},
@@ -245,7 +252,7 @@ func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
 			return nil
 		},
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !killCalled {
@@ -254,7 +261,7 @@ func TestOnShellExitKillsAutoRemoveWithoutStop(t *testing.T) {
 }
 
 func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return autoRemoveInspect(), nil
 		},
@@ -265,13 +272,13 @@ func TestOnShellExitKillSwallowsNotFound(t *testing.T) {
 			return &dockertest.NotFoundError{Msg: "no such container"}
 		},
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("kill NotFound must be swallowed, got: %v", err)
 	}
 }
 
 func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
 		},
@@ -284,7 +291,7 @@ func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 			return nil
 		},
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -295,7 +302,7 @@ func TestOnShellExitNoOpWhenInspectFails(t *testing.T) {
 // the stopped AutoRemove container regardless — so the noisy kill error never
 // masks the real (disk) failure the shell surfaces.
 func TestOnShellExitKillSwallowsConflict(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 			return autoRemoveInspect(), nil
 		},
@@ -306,18 +313,20 @@ func TestOnShellExitKillSwallowsConflict(t *testing.T) {
 			return &conflictErr{msg: "cannot kill container: toolbox-x is not running"}
 		},
 	}
-	if err := OnShellExit(mock, "toolbox-x"); err != nil {
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
 		t.Fatalf("kill Conflict must be swallowed, got: %v", err)
 	}
 }
 
 func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
-	mock := &mockClient{
+	mock := &exitStub{
+		// The stop comes first and must succeed for the remove to be reached.
+		stopFn: func(context.Context, string, client.ContainerStopOptions) error { return nil },
 		removeFn: func(_ context.Context, _ string, _ client.ContainerRemoveOptions) error {
 			return &conflictErr{msg: "removal of container is already in progress"}
 		},
 	}
-	if err := StopOne(context.Background(), mock, "toolbox-x", DefaultStopGrace); err != nil {
+	if err := StopOne(context.Background(), mock.docker(), "toolbox-x", DefaultStopGrace); err != nil {
 		t.Fatalf("StopOne should swallow Conflict (AutoRemove race), got: %v", err)
 	}
 }

@@ -127,6 +127,12 @@ func (f *fakeGit) ranAny(substr string) bool {
 // force-remove), recording the stop into the shared log so prune's ordering
 // against the git commands is observable. Unmocked methods fall through to the
 // embedded nil interface and would panic, surfacing any unexpected Docker call.
+//
+// Hand-rolled rather than dockertest.Fake, and it has to be: this package
+// hands its client to container.Stop, whose parameter is client.APIClient, so
+// the parameter here is client.APIClient too and the shared fake — which
+// deliberately does not satisfy that interface — cannot stand in.
+// → CONTEXT.md, Declared Docker Surface.
 type fakeDocker struct {
 	client.APIClient
 	log *fakeGit
