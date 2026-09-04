@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — toolbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 5 4; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .lbl { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+      .hatch {
+        background-image: repeating-linear-gradient(45deg, #fecaca 0, #fecaca 3px, transparent 3px, transparent 8px);
+      }
+      .hatch-ok {
+        background-image: repeating-linear-gradient(45deg, #a7f3d0 0, #a7f3d0 3px, transparent 3px, transparent 8px);
+      }
+      pre.mermaid { text-align: center; }
+      .diagram { min-height: 300px; }
+      h2 a.anchor { opacity: 0; }
+      h2:hover a.anchor { opacity: .4; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-6xl mx-auto px-6 py-12 space-y-12">
+
+      <!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+      <header class="border-b border-slate-300 pb-8">
+        <p class="lbl text-slate-500 mb-2">Architecture review · deepening opportunities</p>
+        <h1 class="font-serif text-4xl tracking-tight">toolbox</h1>
+        <p class="mt-2 text-sm text-slate-600">
+          4 September 2026 · <span class="font-mono">main</span> at <span class="font-mono">5bde363</span> ·
+          49&nbsp;046 lines of Go across 29 packages
+        </p>
+
+        <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div class="rounded border border-slate-200 bg-white px-3 py-2">
+            <div class="lbl text-slate-500">hand-rolled Docker adapters</div>
+            <div class="font-mono text-2xl">11</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white px-3 py-2">
+            <div class="lbl text-slate-500">declared narrow interfaces</div>
+            <div class="font-mono text-2xl">2</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white px-3 py-2">
+            <div class="lbl text-slate-500"><span class="font-mono">t.Setenv("HOME")</span></div>
+            <div class="font-mono text-2xl">204</div>
+          </div>
+          <div class="rounded border border-slate-200 bg-white px-3 py-2">
+            <div class="lbl text-slate-500"><span class="font-mono">t.Parallel()</span> / 902 tests</div>
+            <div class="font-mono text-2xl">0</div>
+          </div>
+        </div>
+
+        <div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-600">
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 border-2 border-slate-700 bg-white"></span> module</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line class="seam" x1="0" y1="4" x2="26" y2="4" stroke="#475569" stroke-width="2"/></svg> seam</span>
+          <span class="flex items-center gap-2"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#dc2626" stroke-width="2"/><path d="M20 1 L26 4 L20 7" fill="#dc2626"/></svg> leakage</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 deep"></span> deep module</span>
+          <span class="flex items-center gap-2"><span class="inline-block w-5 h-3 hatch border border-red-300"></span> untested through the interface</span>
+        </div>
+
+        <p class="mt-6 text-sm text-slate-700 max-w-3xl">
+          This tree has already been deepened once, deliberately — Mount&nbsp;Plan, Session&nbsp;Plan, Run&nbsp;Plan, Config&nbsp;Plan,
+          Image&nbsp;Plan, Tool&nbsp;Catalog are real deep modules and <span class="font-mono text-xs">CONTEXT.md</span> records why each
+          exists. What follows is the friction the last round left: three seams declared at the wrong width, one plan mutated
+          mid-flight, and two places where a pure function was extracted for testability while the decision it serves stayed
+          untested at the call site.
+        </p>
+        <p class="mt-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 max-w-3xl">
+          <strong>Suite is red as measured.</strong> <span class="font-mono text-xs">TestLaunchProximo_MissingBinary</span>
+          (<span class="font-mono text-xs">internal/bridge/proximo_test.go:66</span>) fails inside a toolbox shell — see candidate 3.
+        </p>
+      </header>
+
+      <!-- ═══════════════════════════ CANDIDATES ═══════════════════════════ -->
+      <section id="candidates" class="space-y-14">
+
+        <!-- ─────────── 1 ─────────── -->
+        <article id="c1" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">01</span>
+            <h2 class="font-serif text-2xl">Narrow the Docker seam to what each module calls<a class="anchor ml-2 no-underline" href="#c1">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">ports &amp; adapters</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/{imageplan,imageprefetch,imagepull,imagereclaim,localimage,container,teardown,worktree,build}/*.go ·
+            internal/dockertest/dockertest.go · 11 <span class="text-slate-400">*_test.go</span> mock definitions
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <!-- BEFORE -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — one interface, ~90 methods wide</p>
+              <div class="relative">
+                <div class="border-2 border-red-400 bg-red-50 rounded px-3 py-2 text-center">
+                  <div class="lbl text-red-800">interface</div>
+                  <div class="font-mono text-sm mt-1">client.APIClient</div>
+                  <div class="text-[10px] text-red-700 mt-1">Container·Image·Network·Volume·Swarm·Plugin·Secret…</div>
+                </div>
+                <svg class="w-full h-6"><line x1="50%" y1="0" x2="50%" y2="24" class="seam" stroke="#475569" stroke-width="2"/></svg>
+                <div class="grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">imagereclaim<br><span class="text-slate-500">calls 2</span></div>
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">imagepull<br><span class="text-slate-500">calls 2</span></div>
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">localimage<br><span class="text-slate-500">calls 2</span></div>
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">imageplan<br><span class="text-slate-500">calls 1</span></div>
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">imageprefetch<br><span class="text-slate-500">calls 3</span></div>
+                  <div class="border border-slate-300 rounded px-1 py-1 text-center bg-slate-50">teardown<br><span class="text-slate-500">calls 6</span></div>
+                </div>
+                <p class="mt-3 text-xs text-red-800">
+                  Real surface hidden: <span class="font-mono">imagereclaim.sweep</span> declares the whole daemon,
+                  calls <span class="font-mono">ImageList</span>&nbsp;+&nbsp;<span class="font-mono">ImageRemove</span>.
+                </p>
+              </div>
+            </div>
+            <!-- AFTER -->
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one interface per module, 2–4 methods</p>
+              <div class="space-y-1.5 font-mono text-[11px]">
+                <div class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 text-slate-600">imagereclaim</span>
+                  <span class="deep text-emerald-200 rounded px-2 py-1 whitespace-nowrap">ImageList · ImageRemove</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 text-slate-600">imageprefetch</span>
+                  <span class="deep text-emerald-200 rounded px-2 py-1 whitespace-nowrap">ImageInspect · DistributionInspect · ImagePull</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 text-slate-600">imageplan</span>
+                  <span class="deep text-emerald-200 rounded px-2 py-1 whitespace-nowrap">ImageInspect</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 text-slate-600">localimage</span>
+                  <span class="deep text-emerald-200 rounded px-2 py-1 whitespace-nowrap">ImageInspect · ImageBuild</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-24 shrink-0 text-slate-600">teardown</span>
+                  <span class="deep text-emerald-200 rounded px-2 py-1 whitespace-nowrap">ContainerInspect · Stop · Remove · Kill · Top</span>
+                </div>
+              </div>
+              <svg class="w-full h-7 mt-3"><line x1="8%" y1="0" x2="8%" y2="28" class="seam" stroke="#475569" stroke-width="2"/><line x1="8%" y1="14" x2="92%" y2="14" class="seam" stroke="#475569" stroke-width="2"/><line x1="92%" y1="0" x2="92%" y2="28" class="seam" stroke="#475569" stroke-width="2"/></svg>
+              <div class="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <div class="border-2 border-slate-700 rounded px-2 py-1.5 text-center">real client<br><span class="text-slate-500 text-[10px]">1 adapter</span></div>
+                <div class="border-2 border-slate-700 rounded px-2 py-1.5 text-center">dockertest fakes<br><span class="text-slate-500 text-[10px]">1 family, not 11</span></div>
+              </div>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">Every module declares the entire Docker API and calls two to six methods of it, so the daemon surface lives in prose and in eleven per-package adapters instead of in the signature.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">Each module declares the interface it actually calls; the real client and one shared fake family satisfy them at the seam.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Interface shrinks; daemon surface becomes a signature</li>
+                  <li>Locality: <span class="font-mono text-xs">ImageInspect</span> faked once, not five times</li>
+                  <li>Leverage: one fake family, N test packages</li>
+                  <li>Delete 11 adapters</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — the per-package mocks <em>cannot</em> be deleted today: there is no narrow interface for a
+            shared fake to implement, which is exactly why eleven exist. <span class="font-mono">ImageInspect</span> is implemented 5×,
+            <span class="font-mono">ImagePull</span> 4×, <span class="font-mono">ContainerInspect</span>/<span class="font-mono">Stop</span>/<span class="font-mono">Remove</span> 3× each; field naming has already drifted
+            (<span class="font-mono">distDigst</span> vs <span class="font-mono">distDigest</span>). The seam is real — real client plus fakes — it is declared at the wrong width.
+            <span class="font-mono">internal/dockertest</span> states the position out loud and then holds only three leaf helpers.
+          </div>
+          <div class="mt-2 text-xs text-slate-600">
+            <strong>Test surface today:</strong> the invariants that matter are asserted <em>by absence</em> — “<span class="font-mono">ImageRemove</span> takes neither
+            <span class="font-mono">force</span> nor <span class="font-mono">PruneChildren</span>”, “the registry is asked nothing while the stamp is fresh” — expressed as a panic on an
+            unstubbed nil embed. That works, and it is unnameable in the interface.
+          </div>
+        </article>
+
+        <!-- ─────────── 2 ─────────── -->
+        <article id="c2" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">02</span>
+            <h2 class="font-serif text-2xl">Give the Session Plan one immutable image value<a class="anchor ml-2 no-underline" href="#c2">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/container/lifecycle.go:362-367,509,530,551,574,673,693 · internal/container/anchor.go:216-218 ·
+            internal/container/peer_volume.go:32,80 · internal/sessionplan/plan.go
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="lbl text-slate-500 mb-3">before — <span class="font-mono normal-case">plan.Image</span> means two things</p>
+              <pre class="mermaid">
+flowchart TB
+  A["plan.Image = base ref"] --> B["baseImage := plan.Image"]
+  B --> C["localimage.Ensure"]
+  C --> D["plan.Image = :local overlay"]
+  D --> E["restampImageDigest(base)"]
+  D --> F["beginPrefetch(base)"]
+  D --> G["beginReclaim(base)"]
+  D --> H["ensureAnchor(plan.Image)"]
+  D --> I["ensurePeerSocketVolume(plan.Image)"]
+  classDef fix fill:#fef3c7,stroke:#d97706,stroke-width:1px;
+  classDef bad fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
+  classDef mut fill:#fecaca,stroke:#dc2626,stroke-width:2px;
+  class E,F,G fix
+  class H,I bad
+  class D mut
+              </pre>
+              <p class="mt-2 text-xs text-red-800">
+                Three signatures carry a corrective <span class="font-mono">base</span> parameter. Two callers forgot to, and read the overlay.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4">
+              <p class="lbl text-slate-500 mb-3">after — resolved once, named, immutable</p>
+              <pre class="mermaid">
+flowchart TB
+  A["SessionImage{Base, Run}"] --> B["restampImageDigest(img.Base)"]
+  A --> C["beginPrefetch(img.Base)"]
+  A --> D["beginReclaim(img.Base)"]
+  A --> E["ensureAnchor(img.Base)"]
+  A --> F["ensurePeerSocketVolume(img.Base)"]
+  A --> G["createAndStart(img.Run)"]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#a7f3d0,stroke-width:2px;
+  class A deep
+              </pre>
+              <p class="mt-2 text-xs text-emerald-800">
+                No corrective parameter. No callee can pick the wrong ref, because the wrong ref no longer has the same name.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1"><span class="font-mono text-xs">SessionPlan.Image</span> means the base ref above <span class="font-mono text-xs">lifecycle.go:367</span> and the <span class="font-mono text-xs">:local</span> overlay below it, so three signatures exist only to undo one assignment.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One immutable value with two named fields — the ref this session was planned from, and the ref it runs — resolved before dispatch.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Locality: one rule, held by a type</li>
+                  <li>Interface shrinks by three parameters</li>
+                  <li>A plan becomes a value again</li>
+                  <li>Removes a documented-but-unenforced invariant</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-red-900 bg-red-50 border border-red-200 rounded px-3 py-2">
+            <strong>Verified on the code.</strong> <span class="font-mono">anchor.go:37</span> states “the anchor runs the toolbox runtime image”, and
+            <span class="font-mono">ensureAnchor(ctx, cli, plan.Image)</span> at <span class="font-mono">anchor.go:216</span> runs after the reassignment — so the host-global
+            <span class="font-mono">toolbox-peer-anchor</span> is created from whichever session's <span class="font-mono">:local</span> overlay started first.
+            It works (the overlay is <span class="font-mono">FROM</span> the base, so <span class="font-mono">tini</span> is present and <span class="font-mono">isCurrentAnchor</span>
+            compares only the entrypoint) and nothing would notice — which is the point.
+            <span class="font-mono">ensurePeerSocketVolume</span> at <span class="font-mono">lifecycle.go:673</span> and <span class="font-mono">anchor.go:218</span> reads the overlay too.
+          </div>
+          <div class="mt-2 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — delete the <span class="font-mono">base</span> parameters and complexity does not vanish: it becomes five wrong answers
+            instead of a threading chore. That is a missing type, not a removable module. The tree already knows:
+            <span class="font-mono">beginReclaim</span>'s comment has to restate “the ref tracked is the <em>base</em>, never the <span class="font-mono">:local</span> overlay tag”, and
+            <span class="font-mono">TestReclaimTracksTheBaseRefNotTheOverlay</span> pins one of the five by hand. No test asserts which image the anchor
+            or the socket-volume initialiser is created from when an overlay exists.
+          </div>
+        </article>
+
+        <!-- ─────────── 3 ─────────── -->
+        <article id="c3" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">03</span>
+            <h2 class="font-serif text-2xl">Make the ambient host the declared half of the interface<a class="anchor ml-2 no-underline" href="#c3">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">local-substitutable</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/fsx/fsx.go · internal/mountplan/plan.go:96,203,228 · internal/bridge/{paths,install,proximo,agent_*}.go ·
+            internal/imagepull/imagepull.go:169 · internal/configio/configio.go:47 · internal/bridge/proximo.go:213-224 ·
+            17 mutable package-var seams
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — the process is the parameter</p>
+              <div class="relative">
+                <div class="hatch border-2 border-red-400 rounded px-3 py-2 text-center">
+                  <div class="lbl text-red-800">process-global state</div>
+                  <div class="font-mono text-xs mt-1">$HOME · $PATH · package vars</div>
+                </div>
+                <svg class="w-full h-8">
+                  <line x1="50%" y1="0" x2="12%" y2="32" stroke="#dc2626" stroke-width="1.5"/><path d="M0 0" />
+                  <line x1="50%" y1="0" x2="30%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                  <line x1="50%" y1="0" x2="50%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                  <line x1="50%" y1="0" x2="70%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                  <line x1="50%" y1="0" x2="88%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                </svg>
+                <div class="grid grid-cols-5 gap-1 text-[9px] font-mono text-center">
+                  <div class="border border-slate-300 rounded py-1">mountplan</div>
+                  <div class="border border-slate-300 rounded py-1">bridge</div>
+                  <div class="border border-slate-300 rounded py-1">imagepull</div>
+                  <div class="border border-slate-300 rounded py-1">configio</div>
+                  <div class="border border-slate-300 rounded py-1">configedit</div>
+                </div>
+                <div class="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <div class="bg-red-50 border border-red-200 rounded py-1.5"><div class="font-mono text-lg">204</div><div class="text-[9px] text-red-800 uppercase tracking-wide">t.Setenv HOME</div></div>
+                  <div class="bg-red-50 border border-red-200 rounded py-1.5"><div class="font-mono text-lg">46</div><div class="text-[9px] text-red-800 uppercase tracking-wide">var save/restore</div></div>
+                  <div class="bg-red-50 border border-red-200 rounded py-1.5"><div class="font-mono text-lg">0</div><div class="text-[9px] text-red-800 uppercase tracking-wide">t.Parallel</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — the host is a value handed in</p>
+              <div class="relative">
+                <div class="deep rounded px-3 py-3 text-center">
+                  <div class="lbl text-emerald-300">deep module</div>
+                  <div class="font-mono text-sm text-emerald-100 mt-1">fsx.Host{Home, LookPath}</div>
+                  <div class="text-[10px] text-slate-400 mt-1">resolved once at the cmd edge</div>
+                </div>
+                <svg class="w-full h-8">
+                  <line x1="50%" y1="0" x2="20%" y2="32" stroke="#059669" stroke-width="1.5"/>
+                  <line x1="50%" y1="0" x2="50%" y2="32" stroke="#059669" stroke-width="1.5"/>
+                  <line x1="50%" y1="0" x2="80%" y2="32" stroke="#059669" stroke-width="1.5"/>
+                </svg>
+                <div class="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-center">
+                  <div class="border-2 border-slate-700 rounded py-1.5">PlanInput.Host</div>
+                  <div class="border-2 border-slate-700 rounded py-1.5">Input.Host</div>
+                  <div class="border-2 border-slate-700 rounded py-1.5">Deps.Host</div>
+                </div>
+                <div class="mt-4 hatch-ok border border-emerald-300 rounded px-3 py-2 text-center text-xs text-emerald-900">
+                  Tests construct a host; nothing mutates the process.<br>
+                  <span class="font-mono">t.Parallel()</span> becomes legal.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">The home directory, <span class="font-mono text-xs">$PATH</span> and twelve function vars are inputs no signature declares, so a test configures a module by mutating the process — and 902 tests run serially because of it.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One resolved host value, threaded through the plan seams that already exist (<span class="font-mono text-xs">PlanInput</span>, <span class="font-mono text-xs">Input</span>), replacing the ambient reads behind them.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Interface states what it needs</li>
+                  <li>Locality: host resolution in one module</li>
+                  <li>Tests stop configuring the process</li>
+                  <li>Unblocks <span class="font-mono text-xs">t.Parallel()</span></li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-red-900 bg-red-50 border border-red-200 rounded px-3 py-2">
+            <strong>The red test is this candidate, live.</strong> <span class="font-mono">TestLaunchProximo_MissingBinary</span> sets
+            <span class="font-mono">PATH</span> and <span class="font-mono">HOME</span> to temp dirs and expects a resolution failure — but
+            <span class="font-mono">proximoFallbackCandidates()</span> hardcodes <span class="font-mono">/usr/local/bin/proximo</span>, which
+            <em>exists in the toolbox image itself</em>. Nobody working in a toolbox shell can get a green suite. The resolver
+            <span class="font-mono">resolveProximoBinary(candidates)</span> already takes the list as a parameter — the seam is one level too deep for
+            its only production caller, so the tested path is one production cannot enter and the composed path is untestable.
+          </div>
+          <div class="mt-2 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — nothing to delete; a rule with no owner. The 17 package-var seams are the same shape in miniature:
+            14 have exactly one adapter (the test stub), so they are hypothetical seams held open by global mutable state.
+            <span class="font-mono">internal/container</span>'s four are load-bearing (22 reassignments) and earn their keep.
+            <span class="font-mono">imageplan.Ensure</span> is the extreme: an <em>exported</em> mutable func var whose stated reason is “so lifecycle tests can swap it”,
+            and <strong>no test reassigns it</strong> — a hypothetical seam with zero adapters, four lines of implementation behind an interface
+            strictly more complex than the body. Verified by grep across the repo.
+          </div>
+        </article>
+
+        <!-- ─────────── 4 ─────────── -->
+        <article id="c4" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">04</span>
+            <h2 class="font-serif text-2xl">Turn the Config Schema into a per-key declaration<a class="anchor ml-2 no-underline" href="#c4">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/config/{schema.go:12,keydoc.go:31,plan.go:441,466,488,effective.go:22} ·
+            internal/configrender/render.go:126-231 · internal/configexample/render.go:18-192 · internal/configui/descriptor.go:76-244
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — one key, six tables, eight guards</p>
+              <div class="space-y-1">
+                <div class="border-l-4 border-slate-700 bg-slate-50 px-3 py-1.5 text-xs font-mono">Config struct field <span class="text-slate-400">— mapstructure tag</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">fieldValidators <span class="text-slate-400">key → func</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">ValidateKey <span class="text-slate-400">the same map, as a switch</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">KeyDocs <span class="text-slate-400">prose + default</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">configexample <span class="text-slate-400">the same prose, again</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">configrender <span class="text-slate-400">one printf per field</span></div>
+                <div class="border-l-4 border-red-400 bg-red-50 px-3 py-1.5 text-xs font-mono">keyDescriptors <span class="text-slate-400">editor kind</span></div>
+              </div>
+              <div class="mt-3 flex items-center gap-2 text-xs">
+                <span class="rounded bg-amber-100 text-amber-900 px-2 py-1 font-mono">8 coverage guards</span>
+                <span class="text-slate-500">hold the fan-out red instead of collapsing it</span>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one row, four readers</p>
+              <div class="deep rounded px-3 py-3">
+                <div class="lbl text-emerald-300">deep module</div>
+                <div class="font-mono text-[11px] text-emerald-100 mt-1.5 leading-relaxed">
+                  KeyRow{<br>
+                  &nbsp;&nbsp;Key · Doc · Default<br>
+                  &nbsp;&nbsp;Validate · Effective<br>
+                  &nbsp;&nbsp;RenderShape · EditorKind<br>
+                  }
+                </div>
+                <div class="text-[10px] text-slate-400 mt-1.5">reflected off the struct tags</div>
+              </div>
+              <svg class="w-full h-7"><line x1="10%" y1="0" x2="10%" y2="28" class="seam" stroke="#475569" stroke-width="2"/><line x1="10%" y1="14" x2="90%" y2="14" class="seam" stroke="#475569" stroke-width="2"/><line x1="90%" y1="0" x2="90%" y2="28" class="seam" stroke="#475569" stroke-width="2"/></svg>
+              <div class="grid grid-cols-4 gap-1.5 text-[10px] font-mono text-center">
+                <div class="border-2 border-slate-700 rounded py-1.5">config&nbsp;show</div>
+                <div class="border-2 border-slate-700 rounded py-1.5">config&nbsp;ui</div>
+                <div class="border-2 border-slate-700 rounded py-1.5">example</div>
+                <div class="border-2 border-slate-700 rounded py-1.5">validate</div>
+              </div>
+              <p class="mt-3 text-xs text-emerald-800">Adding a key edits one row. The eight guards collapse to one.</p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">The reflected key list made drift loud but left the fan-out intact: <span class="font-mono text-xs">image_reclaim</span> — one tri-state bool — touches six production sites in five packages, each held by its own coverage guard.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One declaration per key carrying doc, default, validator, effective fallback, render shape and editor kind; the four surfaces read rows instead of restating them.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Leverage: one row, four surfaces</li>
+                  <li>Locality: a key's meaning in one place</li>
+                  <li>Eight presence tests become one</li>
+                  <li>Tests assert behaviour, not row presence</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — each <em>package</em> survives, but two declarations fail as declarations:
+            <span class="font-mono">fieldValidators</span> and <span class="font-mono">ValidateKey</span> are the same key→validator mapping written twice and reconciled by a test;
+            <span class="font-mono">config.KeyDocs</span> and <span class="font-mono">configexample</span>'s prose describe the same keys twice — and
+            <span class="font-mono">keydoc.go:8-12</span> already admits it. Only two consumers derive from the reflected list today
+            (<span class="font-mono">configedit.diffLayer</span> and <span class="font-mono">SchemaKeys</span> itself) and they need no per-key edit at all: the proof reflection was the right axis.
+          </div>
+          <div class="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            <strong>A false rationale to retire with it.</strong> <span class="font-mono">configrender/render.go:23</span> says the renderer is
+            “hand-rolled to avoid promoting the yaml v3 module to a direct dependency”. <span class="font-mono">gopkg.in/yaml.v3</span> is a
+            direct require in <span class="font-mono">go.mod:24</span> and is imported by eight files across <span class="font-mono">config</span>,
+            <span class="font-mono">configio</span>, <span class="font-mono">configedit</span> and <span class="font-mono">configui</span>. Verified.
+          </div>
+        </article>
+
+        <!-- ─────────── 5 ─────────── -->
+        <article id="c5" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">05</span>
+            <h2 class="font-serif text-2xl">Put a seam in front of the config editor's decisions<a class="anchor ml-2 no-underline" href="#c5">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/configui/{model.go,view.go,rows.go} — 817 lines, 0.0% ·
+            internal/configui/{adapter.go,descriptor.go,preview.go} — 802 lines, near-exhaustive ·
+            internal/configui/view_test.go — 439 lines that test <span class="text-slate-400">previewDiff</span>
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — mass diagram, coverage shaded</p>
+              <div class="flex items-end gap-6 h-52">
+                <div class="flex-1 flex flex-col justify-end items-center">
+                  <div class="w-full hatch border-2 border-red-400 rounded-t" style="height:82%"></div>
+                  <div class="w-full text-center text-[10px] font-mono border-x-2 border-b-2 border-red-400 py-1 bg-red-50">817 lines · 0.0%</div>
+                  <div class="lbl text-slate-600 mt-1.5">tea half</div>
+                </div>
+                <div class="flex-1 flex flex-col justify-end items-center">
+                  <div class="w-full hatch-ok border-2 border-emerald-500 rounded-t" style="height:80%"></div>
+                  <div class="w-full text-center text-[10px] font-mono border-x-2 border-b-2 border-emerald-500 py-1 bg-emerald-50">802 lines · high</div>
+                  <div class="lbl text-slate-600 mt-1.5">adapter half</div>
+                </div>
+              </div>
+              <p class="mt-3 text-xs text-red-800">
+                The rule says “the tea layer stays thin over the pure adapter funcs”. Measured, it is the larger half — and
+                <span class="font-mono">View()</span> is never called by any test.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — drive the model through its own interface</p>
+              <pre class="mermaid">
+flowchart LR
+  T["test: keypress sequence"] --> U["Model.Update"]
+  U --> S["Model state"]
+  S --> V["Model.View"]
+  V --> A["asserted string"]
+  U --> D["Key Descriptor row"]
+  D --> W["configedit.ApplyChecked"]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#a7f3d0,stroke-width:2px;
+  class U,V deep
+              </pre>
+              <p class="mt-2 text-xs text-emerald-800">
+                <span class="font-mono">tea.Model</span> is already the seam bubbletea crosses. Cross it in tests too and the untested half disappears.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">Real decisions — reset-to-default, the read-only/env messaging, a second <span class="font-mono text-xs">switch d.kind</span> that re-dispatches what the Key Descriptor already declares — sit in the half no test reaches, while tests hand-construct <span class="font-mono text-xs">Model{…}</span> and call private methods.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">Test through <span class="font-mono text-xs">Update</span>/<span class="font-mono text-xs">View</span> — the interface bubbletea drives — and move the yaml-node reads out of <span class="font-mono text-xs">configui</span> into the module that already answers provenance.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>The interface becomes the test surface</li>
+                  <li>Locality: no third copy of the alias fold</li>
+                  <li><span class="font-mono text-xs">configui</span> stops holding <span class="font-mono text-xs">*yaml.Node</span></li>
+                  <li>59.3% → the package's real behaviour</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — <span class="font-mono">descriptor.go</span> passes decisively (delete it and ten switches come back: the deepest module
+            in the family). <span class="font-mono">adapter.go</span>'s <span class="font-mono">ScopeStates</span>/<span class="font-mono">scopeNode</span> fail: “does this layer's file set key K”
+            is a provenance question <span class="font-mono">configedit</span> already answers, and the comment at <span class="font-mono">adapter.go:158-161</span> says so out loud —
+            “folding a deprecated alias into its live key <em>the same way</em> <span class="font-mono">config.Merge</span> does”. “The same way as” is the tell: a third
+            implementation of one fold.
+          </div>
+        </article>
+
+        <!-- ─────────── 6 ─────────── -->
+        <article id="c6" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">06</span>
+            <h2 class="font-serif text-2xl">Resolve the Proximo Availability Gate once, as a value<a class="anchor ml-2 no-underline" href="#c6">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">local-substitutable</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/proximo/proximo.go:76,99,119,131,139,162 · internal/mountplan/plan.go:169 ·
+            internal/sessionplan/plan.go:326,334
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — three derivations, three spawns</p>
+              <pre class="mermaid">
+sequenceDiagram
+  participant S as toolbox shell
+  participant M as mountplan
+  participant P as sessionplan
+  participant X as proximo binary
+  S->>M: Plan
+  M->>X: exec config ca-path
+  X-->>M: path
+  S->>P: Plan
+  P->>X: exec config ca-path
+  X-->>P: path
+  P->>X: exec config ca-path
+  X-->>P: path
+              </pre>
+              <p class="mt-2 text-xs text-red-800">
+                Up to three subprocess spawns plus three stats per shell start, for one boolean. No memoisation.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one resolved state, threaded</p>
+              <pre class="mermaid">
+sequenceDiagram
+  participant S as toolbox shell
+  participant G as proximo.State
+  participant X as proximo binary
+  participant M as mountplan
+  participant P as sessionplan
+  S->>G: Resolve(cfg)
+  G->>X: exec config ca-path
+  X-->>G: path
+  G-->>S: State{On, CAPath}
+  S->>M: PlanInput.Proximo
+  S->>P: PlanInput.Proximo
+              </pre>
+              <p class="mt-2 text-xs text-emerald-800">
+                One derivation, one spawn, and the gate becomes a value the plan seams already know how to carry.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1"><span class="font-mono text-xs">CONTEXT.md</span> calls this “the single predicate”, but <span class="font-mono text-xs">Enabled</span>, <span class="font-mono text-xs">CAMount</span> and <span class="font-mono text-xs">Env</span> each re-derive it with subtly different rules and each pays the exec.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One resolved state value — gate decision plus CA path — computed once per invocation and handed to <span class="font-mono text-xs">mountplan</span> and <span class="font-mono text-xs">sessionplan</span> through <span class="font-mono text-xs">PlanInput</span>.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>One derivation, not three</li>
+                  <li>Two spawns off the hot path</li>
+                  <li>Locality: the gate's rules in one body</li>
+                  <li>Tests set a value, not a <span class="font-mono text-xs">$PATH</span></li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — <span class="font-mono">forcedOff</span> passes (one rule, three readers). The three entry points each pass individually and
+            overlap in substance, so the <em>gate</em> fails as three separate derivations. The internal comment is precise and still not
+            enough: <span class="font-mono">caStatus</span> is “the single internal seam that pays the CAPath query… so every public entry point execs at most once” —
+            once <em>per entry point</em>, and there are three on one shell start. Verified: <span class="font-mono">CAPath</span> execs
+            <span class="font-mono">proximo config ca-path</span> with a 2s timeout and no cache.
+          </div>
+        </article>
+
+        <!-- ─────────── 7 ─────────── -->
+        <article id="c7" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">07</span>
+            <h2 class="font-serif text-2xl">Fold <span class="font-mono text-xl">imagepull</span> in, and hand it a resolved state dir<a class="anchor ml-2 no-underline" href="#c7">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/imagepull/imagepull.go:46,56,68,74,168-175 · internal/imageplan/imageplan.go:55-64 ·
+            internal/localimage/localimage.go:104-107 · internal/mountplan/plan.go:227
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — a switch, a file wearing a package, three state roots</p>
+              <pre class="mermaid">
+flowchart TB
+  C["container.Shell"] --> IP["imageplan.Refresh<br/>9-line policy switch"]
+  IP --> A["imagepull.ForcePull"]
+  IP --> B["imagepull.RefreshIfStale"]
+  A -.stamps marker.-> MK[("pull-cache")]
+  B -.reads marker.-> MK
+  MK --> H1["fsx.Home()/.toolbox/toolbox/state<br/>hardcoded"]
+  LO["localimage marker"] --> H2["dir(dockerfilePath)/toolbox/state<br/>re-derived from a sibling"]
+  PF["imageprefetch stamps"] --> H3["Input.StateDir<br/>resolved via mountplan"]
+  classDef leak fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
+  classDef ok fill:#d1fae5,stroke:#059669;
+  class H1,H2 leak
+  class H3 ok
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one image-sync module, state handed in</p>
+              <pre class="mermaid">
+flowchart TB
+  C["container.Shell"] --> S["image sync<br/>policy · pull · both TTLs · cache"]
+  MP["mountplan.StateDirPath"] --> SD["plan.StateDir"]
+  SD --> S
+  SD --> PF["imageprefetch"]
+  SD --> LO["localimage"]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#a7f3d0,stroke-width:2px;
+  class S deep
+              </pre>
+              <p class="mt-2 text-xs text-emerald-800">
+                No caller chooses between a cached and an uncached pull. One rule decides where state lives.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1"><span class="font-mono text-xs">imagepull</span>'s whole interface is two functions differing by one <span class="font-mono text-xs">if cached()</span>, and two image modules re-derive the state root the Mount Plan already resolves — profile-blind and <span class="font-mono text-xs">mounts_root</span>-blind.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One image-sync module whose interface is a policy plus a reason, with the pull cache and both TTLs as private state — and every state path handed in already resolved.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Interface shrinks: policy in, result out</li>
+                  <li>Locality: two TTLs in one body</li>
+                  <li>Root-resolution rule stops being copied</li>
+                  <li>A profile stops sharing one pull cache</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — fold <span class="font-mono">imagepull</span> into <span class="font-mono">imageplan</span> and <em>no code outside <span class="font-mono">imageplan</span> learns anything new</em>,
+            because no code outside <span class="font-mono">imageplan</span> imports it. A module whose deletion is invisible to every caller is a file.
+            The leverage is worse than zero: the interface leaks a reader/writer asymmetry across paths —
+            <span class="font-mono">ForcePull</span> (shell start) stamps a marker only <span class="font-mono">RefreshIfStale</span> (reload) ever reads — invisible in either signature and
+            costing three doc paragraphs to disambiguate the two TTLs.
+          </div>
+          <div class="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            <strong>A test that locks the bug in.</strong> <span class="font-mono">TestMarkerPath</span> pins the <em>hardcoded</em> pull-cache path.
+            <span class="font-mono">localimage</span>'s marker location has no test at all — its six tests all drive <span class="font-mono">Ensure</span> against a
+            <span class="font-mono">t.TempDir()</span> Dockerfile, so the divergence from the real state mount is unobservable through the test surface.
+          </div>
+        </article>
+
+        <!-- ─────────── 8 ─────────── -->
+        <article id="c8" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">08</span>
+            <h2 class="font-serif text-2xl">One module for “start a session”, two intents<a class="anchor ml-2 no-underline" href="#c8">#</a></h2>
+            <span class="rounded-full bg-emerald-100 text-emerald-900 text-xs font-semibold px-3 py-1">Strong</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            cmd/shell.go:70-160 <span class="text-red-600">(0.0%)</span> · cmd/worktree.go:184-205 <span class="text-red-600">(0.0%)</span> ·
+            against cmd/shell.go:{166,179,193} <span class="text-emerald-700">(100%)</span>
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — two roots, already diverged</p>
+              <table class="w-full text-[11px] font-mono border-collapse">
+                <thead>
+                  <tr class="text-left lbl text-slate-500">
+                    <th class="py-1"></th><th class="py-1">runShell</th><th class="py-1">openSession</th>
+                  </tr>
+                </thead>
+                <tbody class="align-top">
+                  <tr class="border-t border-slate-200"><td class="py-1 pr-2">takeReloadHandover first</td><td class="text-emerald-700">yes</td><td class="text-emerald-700">yes</td></tr>
+                  <tr class="border-t border-slate-200"><td class="py-1 pr-2">LocalRepoDigest</td><td class="text-amber-700">:127</td><td class="text-amber-700">:189 dup</td></tr>
+                  <tr class="border-t border-slate-200 bg-red-50"><td class="py-1 pr-2">MigrateLegacyToolboxState</td><td class="text-emerald-700">yes</td><td class="text-red-700">absent</td></tr>
+                  <tr class="border-t border-slate-200 bg-red-50"><td class="py-1 pr-2">bridge tip</td><td class="text-emerald-700">yes</td><td class="text-red-700">absent</td></tr>
+                  <tr class="border-t border-slate-200 bg-red-50"><td class="py-1 pr-2">profile / --share</td><td class="text-emerald-700">yes</td><td class="text-red-700">absent</td></tr>
+                  <tr class="border-t border-slate-200 bg-red-50"><td class="py-1 pr-2">peer resolution</td><td class="text-emerald-700">resolvePeer</td><td class="text-red-700">cfg raw</td></tr>
+                </tbody>
+              </table>
+              <p class="mt-3 text-xs text-red-800">
+                Pure helpers at 100%; the assembly that calls them at 0%. <span class="font-mono">runShell</span> reads eight package-level flag
+                vars, so no test can call it without mutating globals.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one assembly, two intents</p>
+              <pre class="mermaid">
+flowchart TB
+  A["cmd shell: SessionIntent"] --> S["session start module"]
+  B["cmd worktree: SessionIntent"] --> S
+  S --> H["consume reload handover"]
+  S --> D["resolve image digest"]
+  S --> M["migrate legacy state"]
+  S --> P["sessionplan.Plan"]
+  S --> R["runSession"]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#a7f3d0,stroke-width:2px;
+  class S deep
+              </pre>
+              <p class="mt-2 text-xs text-emerald-800">
+                Two callers differ only in the intent they build — and a test can build one.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">The pure-functions-for-testability pattern in textbook form: the bugs live in how they are called, and both composition roots must honour an ordering invariant stated only in a comment.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One “start a session” module taking the typed intent and owning handover consumption, digest resolution, migration and dispatch.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Locality: the assembly stops being copied</li>
+                  <li>Six divergences become impossible</li>
+                  <li>The interface becomes the test surface</li>
+                  <li>Flag globals stay in cobra</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — inverted: there is no module here to delete. The complexity is already spread across two call sites in
+            two files, and a third entry point would make three.
+          </div>
+        </article>
+
+        <!-- ─────────── 9 ─────────── -->
+        <article id="c9" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">09</span>
+            <h2 class="font-serif text-2xl">Lift image identity out of <span class="font-mono text-xl">internal/build</span><a class="anchor ml-2 no-underline" href="#c9">#</a></h2>
+            <span class="rounded-full bg-amber-100 text-amber-900 text-xs font-semibold px-3 py-1">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/build/{tag.go:32,51,85,107 · build.go · overlay.go · embed.go:10} ·
+            internal/build/*_test.go — ~1&nbsp;550 lines that regex the embedded Dockerfile and shell assets
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — two modules, one package name</p>
+              <div class="border-2 border-red-400 rounded p-3">
+                <div class="lbl text-red-800 mb-2">package build</div>
+                <div class="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                  <div class="border border-slate-400 rounded p-2 bg-white">
+                    <div class="font-semibold">daemon driver</div>
+                    <div class="text-slate-500 mt-1">BuildImage · BuildOverlay<br>tarEmbeddedContext<br>//go:embed assets</div>
+                  </div>
+                  <div class="border border-slate-400 rounded p-2 bg-white">
+                    <div class="font-semibold">image identity</div>
+                    <div class="text-slate-500 mt-1">ResolveImage · RepoDigest<br>SplitRegistryHost<br>LocalRepoDigest</div>
+                  </div>
+                </div>
+                <div class="mt-2 text-[10px] text-slate-500 italic">joined only by <span class="font-mono">//go:embed</span></div>
+              </div>
+              <svg class="w-full h-8">
+                <line x1="25%" y1="0" x2="25%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                <line x1="42%" y1="0" x2="42%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                <line x1="58%" y1="0" x2="58%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+                <line x1="75%" y1="0" x2="75%" y2="32" stroke="#dc2626" stroke-width="1.5"/>
+              </svg>
+              <div class="grid grid-cols-4 gap-1 text-[9px] font-mono text-center">
+                <div class="border border-slate-300 rounded py-1">imagepull</div>
+                <div class="border border-slate-300 rounded py-1">imageprefetch</div>
+                <div class="border border-slate-300 rounded py-1">imagereclaim</div>
+                <div class="border border-slate-300 rounded py-1">localimage</div>
+              </div>
+              <p class="mt-2 text-xs text-red-800">
+                Four image modules depend on the embedded build context and the Dockerfile-lint suite to get three pure string functions.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — identity as its own leaf</p>
+              <div class="deep rounded px-3 py-3 mb-3">
+                <div class="lbl text-emerald-300">deep module</div>
+                <div class="font-mono text-xs text-emerald-100 mt-1">image ref identity</div>
+                <div class="text-[10px] text-slate-400 mt-1">stdlib + client · no embed</div>
+              </div>
+              <div class="grid grid-cols-4 gap-1 text-[9px] font-mono text-center mb-3">
+                <div class="border-2 border-slate-700 rounded py-1">imagepull</div>
+                <div class="border-2 border-slate-700 rounded py-1">imageprefetch</div>
+                <div class="border-2 border-slate-700 rounded py-1">imagereclaim</div>
+                <div class="border-2 border-slate-700 rounded py-1">localimage</div>
+              </div>
+              <div class="border-2 border-slate-400 rounded px-3 py-2 text-[11px] font-mono bg-slate-50">
+                package build — driver + assets + the suite that lints them
+              </div>
+              <p class="mt-2 text-xs text-emerald-800">One import rename in five packages; the embed dependency leaves four of them.</p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">The family's best module — <span class="font-mono text-xs">LocalRepoDigest</span>, whose two-return contract distinguishes “the store answered” from “there is a digest” — is buried in a package whose tests are overwhelmingly about <span class="font-mono text-xs">apt-get</span> ordering.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">Image-ref identity becomes its own dependency-light leaf, the same reasoning <span class="font-mono text-xs">dockeridentity</span> already applies.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Locality: identity beside its callers</li>
+                  <li>Four modules drop the embed dependency</li>
+                  <li>Asset-lint suite stops sharing a name</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — the asset-lint tests pass loudly: deleting them changes no Go behaviour but unpins ADR&nbsp;0002's
+            Invalidation Floor, the <span class="font-mono">safe.directory</span> wildcard and the glab flock shim. High-value tests in the wrong home —
+            they live there because <span class="font-mono">embed.FS</span> does. <span class="font-mono">tag.go</span> passes as a module and fails as a <em>resident</em>.
+            Its own doc records the history: “<span class="font-mono">LocalRepoDigest</span> … was four, spelled four ways, before three of them disagreed
+            about what an empty answer meant.”
+          </div>
+        </article>
+
+        <!-- ─────────── 10 ─────────── -->
+        <article id="c10" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">10</span>
+            <h2 class="font-serif text-2xl">Collapse the two Pending Mutation families into one<a class="anchor ml-2 no-underline" href="#c10">#</a></h2>
+            <span class="rounded-full bg-amber-100 text-amber-900 text-xs font-semibold px-3 py-1">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/configedit/write.go:88-217 (8 typed writers) · internal/configedit/mutate.go:37-273 (10 Mutator constructors) ·
+            internal/configedit/apply.go:33 · cmd/{config.go:263,mounts.go:175,210,260,shells.go:201,235}
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — the same node, built twice</p>
+              <div class="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <div class="border border-red-300 bg-red-50 rounded p-2">
+                  <div class="lbl text-red-800 mb-1">write.go</div>
+                  DisableMount<br>writeShellEnv<br>SetScalars<br><span class="text-slate-500">file-scoped, writes now</span>
+                </div>
+                <div class="border border-red-300 bg-red-50 rounded p-2">
+                  <div class="lbl text-red-800 mb-1">mutate.go</div>
+                  MountsDisabled<br>writeShellEntry<br>Scalar<br><span class="text-slate-500">doc-scoped, describable</span>
+                </div>
+              </div>
+              <svg class="w-full h-10">
+                <line x1="25%" y1="4" x2="75%" y2="4" stroke="#dc2626" stroke-width="1.5" class="seam"/>
+                <line x1="25%" y1="20" x2="75%" y2="20" stroke="#dc2626" stroke-width="1.5" class="seam"/>
+                <line x1="25%" y1="36" x2="75%" y2="36" stroke="#dc2626" stroke-width="1.5" class="seam"/>
+              </svg>
+              <p class="text-xs text-red-800">
+                Identical <span class="font-mono">{name, disabled: true}</span> node. Identical sorted <span class="font-mono">env:</span> block. Same empty-value-removes rule, two spellings.
+                Only <span class="font-mono">mutate.go</span>'s family can be previewed, so no CLI writer can grow a <span class="font-mono">--dry-run</span> without being ported.
+              </p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one family, one write call</p>
+              <div class="deep rounded px-3 py-3">
+                <div class="lbl text-emerald-300">deep module</div>
+                <div class="font-mono text-xs text-emerald-100 mt-1">Mutator constructors</div>
+                <div class="text-[10px] text-slate-400 mt-1">one value · write it or render it</div>
+              </div>
+              <svg class="w-full h-7"><line x1="50%" y1="0" x2="50%" y2="28" class="seam" stroke="#475569" stroke-width="2"/></svg>
+              <div class="grid grid-cols-2 gap-2 text-[11px] font-mono text-center">
+                <div class="border-2 border-slate-700 rounded py-2">ApplyChecked<br><span class="text-[10px] text-slate-500">{Changed, Created}</span></div>
+                <div class="border-2 border-slate-700 rounded py-2">Render<br><span class="text-[10px] text-slate-500">preview / --dry-run</span></div>
+              </div>
+              <p class="mt-3 text-xs text-emerald-800">
+                <span class="font-mono">cmd</span> stops re-stating the edit, and stops re-stating the file's existence.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">Pending Mutation exists so a caller holds one object instead of describing an edit twice — and the same package describes six edits twice, on the honest axis of write-now vs describable, badly expressed as two vocabularies.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">One <span class="font-mono text-xs">Mutator</span> family; <span class="font-mono text-xs">write.go</span>'s writers become named constructors plus one <span class="font-mono text-xs">ApplyChecked</span> call at the <span class="font-mono text-xs">cmd</span> edge, returning the <span class="font-mono text-xs">existed</span> bit it already holds.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>The mounts-writers rule checked once</li>
+                  <li>Every writer gains <span class="font-mono text-xs">--dry-run</span> free</li>
+                  <li>Six re-stats and a TOCTOU window gone</li>
+                  <li>Duplication stops being paid for in tests too</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — <span class="font-mono">write.go</span>'s typed writers fail in the interesting way: each is 3–8 lines of
+            <span class="font-mono">ApplyChecked(path, cwd, &lt;mutator&gt;)</span>, and deleting them costs only a name. <span class="font-mono">SetShell</span> is the exception —
+            its “both halves of one command or neither” commitment is real behaviour. Verified separately:
+            <span class="font-mono">ApplyChecked</span> receives <span class="font-mono">existed</span> from <span class="font-mono">configio.ReadMaybe</span> and throws it away, and six
+            <span class="font-mono">cmd</span> sites re-ask the filesystem the same question with a window in between.
+          </div>
+        </article>
+
+        <!-- ─────────── 11 ─────────── -->
+        <article id="c11" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">11</span>
+            <h2 class="font-serif text-2xl">Return the <span class="font-mono text-xl">Op</span> the refresh already recomputed<a class="anchor ml-2 no-underline" href="#c11">#</a></h2>
+            <span class="rounded-full bg-amber-100 text-amber-900 text-xs font-semibold px-3 py-1">Worth exploring</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/container/lifecycle.go:152-180 · consumed at :465-479 · dispatched at :658-688 ·
+            internal/container/prefetch_test.go:606-615
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — computes the answer, returns a bool</p>
+              <pre class="mermaid">
+flowchart TB
+  R["replaceForRefresh"] --> I["ContainerInspect again"]
+  I --> F["fresh := runplan.Compute"]
+  F --> X["discard fresh<br/>return nameFree bool"]
+  X --> C["caller keeps the ORIGINAL op"]
+  C --> D["dispatchOp: ActionStart"]
+  D --> S["ContainerStart(stale ExistingID)"]
+  S --> E["failed to start container"]
+  classDef bad fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
+  class X,S,E bad
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — one value, dispatched</p>
+              <pre class="mermaid">
+flowchart TB
+  R["replaceForRefresh"] --> I["ContainerInspect again"]
+  I --> F["fresh := runplan.Compute"]
+  F --> Y["return fresh Op"]
+  Y --> D["dispatchOp"]
+  D --> A["Connect: join it"]
+  D --> B["Start: fresh ExistingID"]
+  D --> N["Create: name is free"]
+  classDef deep fill:#0f172a,stroke:#0f172a,color:#a7f3d0,stroke-width:2px;
+  class Y deep
+              </pre>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1">On the <span class="font-mono text-xs">ActionConnect</span> branch the warning says “this session joins it”, but the caller keeps the original <span class="font-mono text-xs">Op</span>, so dispatch prints “Starting stopped container…” for a running one and starts an ID read seconds earlier.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">Return the recomputed <span class="font-mono text-xs">Op</span> instead of a boolean, so “the branch after the question” is one value the caller dispatches.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Removes a stale-ID failure window</li>
+                  <li>The banner stops contradicting dispatch</li>
+                  <li>Interface returns what it computed</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-red-900 bg-red-50 border border-red-200 rounded px-3 py-2">
+            <strong>Verified, and the test hides it.</strong> If a sibling shell <em>recreated</em> rather than started the container while the question
+            stood, the stale <span class="font-mono">ExistingID</span> no longer exists and the session fails with “failed to start container” after the developer
+            said yes. <span class="font-mono">prefetch_test.go:606-615</span> returns the <em>same</em> ID (<span class="font-mono">"stopped123"</span>) for the second read — the one case
+            where the stale ID happens to be correct — so the window is invisible. This is narrow enough to fix as a defect rather
+            than as a refactor.
+          </div>
+        </article>
+
+        <!-- ─────────── 12 ─────────── -->
+        <article id="c12" class="scroll-mt-8">
+          <div class="flex items-baseline gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-400">12</span>
+            <h2 class="font-serif text-2xl">Make <span class="font-mono text-xl">Shell</span>'s ordering a type, not twelve comments<a class="anchor ml-2 no-underline" href="#c12">#</a></h2>
+            <span class="rounded-full bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1">Speculative</span>
+            <span class="rounded-full bg-slate-100 text-slate-700 text-xs px-3 py-1">in-process</span>
+          </div>
+
+          <p class="mt-3 font-mono text-xs text-slate-600 leading-relaxed">
+            internal/container/lifecycle.go:321-424 · the four single-caller helpers at :107, :434, :465, :492 ·
+            internal/container/reload.go:65 · commit f101375
+          </p>
+
+          <div class="mt-5 grid md:grid-cols-2 gap-5">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">before — a cross-section of prose</p>
+              <div class="space-y-px text-[10px] font-mono">
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">1 · replaceForReload before the inspect</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">2 · preflight before any image work</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">3 · refresh skipped on reload / connect</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">4 · Interrupted abandons before a session exists</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">5 · overlay after the refresh</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">6 · recreate after the overlay</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">7 · reattach warnings once the branch settled</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">8 · restamp before create, create-only</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">9 · teardown defer after dispatchOp</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">10 · digest read after the restamp</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">11 · reclaim after dispatchOp, never before</div>
+                <div class="border-l-4 border-amber-400 bg-amber-50 px-2 py-1">12 · marker read-and-deleted unconditionally</div>
+              </div>
+              <p class="mt-2 text-xs text-slate-700">Twelve constraints in ~100 lines, each held by a comment and at best one named test.</p>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 diagram">
+              <p class="lbl text-slate-500 mb-3">after — a phase cannot read what is not set yet</p>
+              <div class="space-y-1.5">
+                <div class="deep rounded px-3 py-2 text-[11px] font-mono text-emerald-100">phase 1 — resolve <span class="text-slate-400">→ sets op, inspect</span></div>
+                <div class="deep rounded px-3 py-2 text-[11px] font-mono text-emerald-100">phase 2 — settle image <span class="text-slate-400">→ needs op; sets image</span></div>
+                <div class="deep rounded px-3 py-2 text-[11px] font-mono text-emerald-100">phase 3 — commit branch <span class="text-slate-400">→ needs image; sets final op</span></div>
+                <div class="deep rounded px-3 py-2 text-[11px] font-mono text-emerald-100">phase 4 — dispatch <span class="text-slate-400">→ needs final op; sets id</span></div>
+                <div class="deep rounded px-3 py-2 text-[11px] font-mono text-emerald-100">phase 5 — attach &amp; background <span class="text-slate-400">→ needs id</span></div>
+              </div>
+              <p class="mt-3 text-xs text-emerald-800">
+                Twelve comments become five preconditions the compiler checks.
+              </p>
+            </div>
+          </div>
+
+          <dl class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <dt class="lbl text-slate-500">Problem</dt>
+              <dd class="mt-1"><span class="font-mono text-xs">Shell</span>'s real interface is its ordering, and commit <span class="font-mono text-xs">f101375</span> did not touch it: the four extractions have one caller each, no adapter, no seam, and no test of their own.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Solution</dt>
+              <dd class="mt-1">An explicit phase sequence over one session state, where each phase's precondition is a field it cannot read before the previous phase sets it.</dd>
+            </div>
+            <div>
+              <dt class="lbl text-slate-500">Wins</dt>
+              <dd class="mt-1">
+                <ul class="list-disc pl-4 space-y-0.5">
+                  <li>Ordering becomes compile-time</li>
+                  <li>Composes with candidate 02's image value</li>
+                  <li>Locality: one state, five bodies</li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-4 text-xs text-slate-600 bg-slate-100 rounded px-3 py-2">
+            <strong>Deletion test</strong> — inline all four helpers and <span class="font-mono">Shell</span> returns to ~120 lines and gocognit 23. Complexity neither
+            vanishes nor reappears across N callers; it moves. Verdict: <em>paragraph names</em>. That is not an argument against the
+            commit — the follow-ups are the interesting part, where a reviewer caught that <span class="font-mono">resolveOp</span> and
+            <span class="font-mono">opAfterRefresh</span> “read as pure computations while both destroyed containers”, and the fix pushed the nil check into
+            <span class="font-mono">replaceForReload</span> so <span class="font-mono">Shell</span> could name the destructive act at its own call site. Honest, and cheap
+            (same file, immediately below). Just not depth.
+          </div>
+          <div class="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            <strong>Marked Speculative on purpose.</strong> The phase-state shape is a large change to the tree's most-tested hot path, and the
+            existing tests are the right shape already — they drive real <span class="font-mono">Shell</span> calls and assert on an ordered daemon-call log
+            <em>because the sequence is the contract</em>. Worth reopening only after candidates 01 and 02 land, which shrink what a phase
+            has to carry.
+          </div>
+        </article>
+
+      </section>
+
+      <!-- ═══════════════════════════ BELOW THE CUT ═══════════════════════════ -->
+      <section class="border-t border-slate-300 pt-8">
+        <h2 class="font-serif text-xl mb-4">Below the cut</h2>
+        <p class="text-sm text-slate-600 mb-4">Real, small, or downstream of a card above. Listed so they are not rediscovered.</p>
+        <ul class="space-y-2.5 text-sm text-slate-700">
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">leakage</span> <span class="font-mono text-xs">sessionplan.MissingPublishPorts</span> is a 12-line map lookup with one caller, and the formatter it feeds re-reads the same record — so the stated pure/format split is not where the code is cut. It drags <span class="font-mono text-xs">moby/api/types/container.InspectResponse</span> into the package <span class="font-mono text-xs">CONTEXT.md</span> describes as resolving design-time inputs <em>before any Docker call</em>.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">shallow</span> Three enums and four label vocabularies for one two-layer axis: <span class="font-mono text-xs">configedit.Where{Global,Local}</span>, <span class="font-mono text-xs">configui.Scope{Global,Repo}</span>, <span class="font-mono text-xs">configedit.Origin{…,Global,Project,…}</span>, plus <span class="font-mono text-xs">"global ~/.toolbox.yaml"</span> in <span class="font-mono text-xs">cmd</span>. <span class="font-mono text-xs">Scope.where()</span> is a two-line adapter between two of them — one adapter, hypothetical seam.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">bug-shaped</span> A fourth config-targeting rule: <span class="font-mono text-xs">cmd/sdd.go:69</span> writes <span class="font-mono text-xs">cwd/.toolbox.yaml</span> directly, while <span class="font-mono text-xs">configui.SaveSDD</span> writes the yaml to the <em>scope-resolved</em> target and the fence always to <span class="font-mono text-xs">cwd/.gitignore</span>. With the TUI on Global scope, <span class="font-mono text-xs">.claude/rules/sdd.md</span>'s “identical state” claim does not hold.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">shallow</span> <span class="font-mono text-xs">configio.GlobalConfigDir</span> and <span class="font-mono text-xs">configio.AtomicWriteFile</span> are pure pass-throughs to <span class="font-mono text-xs">fsx</span> — “retained so <span class="font-mono text-xs">configio</span> callers keep a config-scoped entry point”, i.e. depth of zero at a name. The node primitives beside them pass the deletion test decisively.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">shape</span> <span class="font-mono text-xs">imageplan.Outcome</span> is four independent bools — 16 states, ~5 legal, legality in 24 lines of prose — and <span class="font-mono text-xs">container.refreshAnswer</span> embeds it and adds a fifth. One state value with a currency bit would carry it.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">untested</span> <span class="font-mono text-xs">reload.WriteMarker</span> exists “rather than a second spelling that could drift from <span class="font-mono text-xs">TakeMarker</span>” — but <span class="font-mono text-xs">assets/zshrc.sh:323-339</span> <em>is</em> the second spelling and the only one that runs in production. Nothing asserts the zsh writer produces bytes <span class="font-mono text-xs">TakeMarker</span> accepts.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">coverage</span> <span class="font-mono text-xs">internal/workspace</span> at 12.0%: <span class="font-mono text-xs">Resolve</span>, <span class="font-mono text-xs">ResolveExplicit</span> and <span class="font-mono text-xs">ValidateAbsolute</span> untested, despite being the seam <span class="font-mono text-xs">shell</span>/<span class="font-mono text-xs">stop</span>/<span class="font-mono text-xs">shells</span> share.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">naming</span> <span class="font-mono text-xs">internal/container/prefetch_test.go</span> — 12 of its 19 tests are refresh-prompt tests, not prefetch tests. Cheap locality win. Same file family: two unrelated <span class="font-mono text-xs">Origin</span> enums (<span class="font-mono text-xs">configedit</span> vs <span class="font-mono text-xs">mountplan</span>) both surfaced under a column called origin.</li>
+          <li><span class="font-mono text-xs bg-slate-200 rounded px-1.5 py-0.5">docs</span> Stale comments that will mislead: <span class="font-mono text-xs">sdd/registry.go:10</span> points at a <span class="font-mono text-xs">cmd/sdd.go</span> function that no longer exists; <span class="font-mono text-xs">container-runtime.md:149</span> states the proximo allowlist as three verbs where the code allows five; <span class="font-mono text-xs">config.md:19</span> says four env-bound keys where <span class="font-mono text-xs">EnvBoundKeys</span> lists five. No rule's <span class="font-mono text-xs">paths:</span> frontmatter claims <span class="font-mono text-xs">internal/{configexample,worktree,fsx}</span>.</li>
+        </ul>
+        <p class="mt-5 text-sm text-slate-600">
+          Counter-examples worth protecting: <span class="font-mono text-xs">internal/dockeridentity</span> (106 lines, one function, real policy behind it, a bijection test
+          pinning a duplicated literal rather than importing it) and <span class="font-mono text-xs">container.ensurePeerRuntime</span> (two returns hiding anchor
+          create/start/stale-replacement plus volume creation, degrading both halves together on purpose). Both are what depth looks like here.
+        </p>
+      </section>
+
+      <!-- ═══════════════════════════ TOP RECOMMENDATION ═══════════════════════════ -->
+      <section id="top-recommendation" class="border-t border-slate-300 pt-8">
+        <div class="rounded-xl deep text-slate-100 p-8">
+          <p class="lbl text-emerald-300 mb-2">Top recommendation</p>
+          <h2 class="font-serif text-3xl">01 — Narrow the Docker seam</h2>
+          <p class="mt-4 text-slate-300 max-w-3xl">
+            It is the only candidate that is simultaneously the widest interface in the tree, mechanical to change, and a
+            precondition for two others. Eleven adapters exist because there is nothing narrow for a shared fake to satisfy;
+            declaring what each module calls makes the daemon surface part of the signature, collapses
+            <span class="font-mono text-sm text-emerald-200">ImageInspect</span> from five fakes to one, and turns the
+            invariants currently asserted by a nil-embed panic into things the interface can say.
+          </p>
+          <p class="mt-4 text-slate-300 max-w-3xl">
+            Then <a class="text-emerald-300 underline" href="#c3">03</a> (the ambient host), which the narrow interfaces make
+            tractable and which is what stands between 902 tests and <span class="font-mono text-sm text-emerald-200">t.Parallel()</span>;
+            then <a class="text-emerald-300 underline" href="#c2">02</a> (one image value), which removes a class of wrong answers
+            rather than a class of chores.
+          </p>
+          <p class="mt-6 text-sm text-amber-200 border-t border-slate-700 pt-4 max-w-3xl">
+            Two things to do first, independent of any refactor: fix the red
+            <span class="font-mono">TestLaunchProximo_MissingBinary</span> (<a class="underline" href="#c3">03</a>) so the suite is green in a
+            toolbox shell, and close the stale-<span class="font-mono">ExistingID</span> window in
+            <span class="font-mono">replaceForRefresh</span> (<a class="underline" href="#c11">11</a>). Both are defects, not designs.
+          </p>
+        </div>
+
+        <p class="mt-6 text-xs text-slate-500">
+          Vocabulary per <span class="font-mono">/codebase-design</span>: module, interface, implementation, depth, deep, shallow, seam,
+          adapter, leverage, locality. Domain terms per <span class="font-mono">CONTEXT.md</span>. Coverage figures measured with
+          <span class="font-mono">go test ./... -coverprofile</span> on the commit named in the header; counts measured by grep over the same tree.
+        </p>
+      </section>
+
+    </main>
+  </body>
+</html>
