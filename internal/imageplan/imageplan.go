@@ -258,9 +258,8 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 }
 
 // Ensure guarantees the image referenced by `image.Ref` exists in the
-// local Docker store. Exposed as a package-level variable so tests can
-// substitute without spinning up a real build context.
-var Ensure = func(ctx context.Context, cli imageSource, image sessionplan.Image) error {
+// local Docker store.
+func Ensure(ctx context.Context, cli imageSource, image sessionplan.Image) error {
 	if _, err := cli.ImageInspect(ctx, image.Ref); err == nil {
 		return nil
 	}
