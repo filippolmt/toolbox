@@ -138,21 +138,18 @@ func TestRegistryOf(t *testing.T) {
 	}
 }
 
-// pullMock is a daemon that answers ImagePull and nothing else: the refresh
-// seam touches no other endpoint, and an embedded nil APIClient turns any
-// other call into a panic that names the drift.
-type pullMock struct {
-	client.APIClient
-	err   error
-	calls int
-}
-
-func (m *pullMock) ImagePull(context.Context, string, client.ImagePullOptions) (client.ImagePullResponse, error) {
-	m.calls++
-	if m.err != nil {
-		return nil, m.err
+// pulling builds a daemon that answers ImagePull and nothing else: the refresh
+// seam touches no other endpoint, so the shared fake panics on any other call
+// and names the drift.
+func pulling(err error) *dockertest.Fake {
+	return &dockertest.Fake{
+		ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
+			if err != nil {
+				return nil, err
+			}
+			return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
+		},
 	}
-	return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
 }
 
 // TestRefreshIfStaleReportsTheRegistryRoundTrip pins the fact the update
@@ -165,7 +162,7 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 
 	t.Run("successful pull", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
-		if !RefreshIfStale(t.Context(), &pullMock{}, ref) {
+		if !RefreshIfStale(t.Context(), pulling(nil), ref) {
 			t.Error("RefreshIfStale = false after a successful pull, want true")
 		}
 	})
@@ -173,18 +170,18 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 	t.Run("cache hit does no round trip", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		record(ref)
-		m := &pullMock{}
+		m := pulling(nil)
 		if RefreshIfStale(t.Context(), m, ref) {
 			t.Error("RefreshIfStale = true on a cache hit, want false")
 		}
-		if m.calls != 0 {
-			t.Errorf("ImagePull calls = %d on a cache hit, want 0", m.calls)
+		if m.ImagePullCalls() != 0 {
+			t.Errorf("ImagePull calls = %d on a cache hit, want 0", m.ImagePullCalls())
 		}
 	})
 
 	t.Run("failed pull is not a sync", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
-		if RefreshIfStale(t.Context(), &pullMock{err: errors.New("boom")}, ref) {
+		if RefreshIfStale(t.Context(), pulling(errors.New("boom")), ref) {
 			t.Error("RefreshIfStale = true after a failed pull, want false")
 		}
 	})
@@ -197,11 +194,11 @@ func TestForcePullReportsTheRegistryRoundTrip(t *testing.T) {
 	ref := "ghcr.io/foo/bar:latest"
 	record(ref) // a fresh marker ForcePull must ignore
 
-	m := &pullMock{}
+	m := pulling(nil)
 	if !ForcePull(t.Context(), m, ref) {
 		t.Error("ForcePull = false after a successful pull, want true")
 	}
-	if m.calls != 1 {
-		t.Errorf("ImagePull calls = %d, want 1", m.calls)
+	if m.ImagePullCalls() != 1 {
+		t.Errorf("ImagePull calls = %d, want 1", m.ImagePullCalls())
 	}
 }

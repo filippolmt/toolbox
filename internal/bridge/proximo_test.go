@@ -58,12 +58,23 @@ func TestLaunchProximo_NonZeroExitIsNotAnError(t *testing.T) {
 	}
 }
 
+// TestLaunchProximo_MissingBinary pins the composed refusal: resolution fails
+// and launchProximo returns it rather than execing something. The candidate
+// list is emptied rather than pointed at a temp dir — the well-known paths are
+// absolute, and one of them exists in the toolbox image the suite runs in.
 func TestLaunchProximo_MissingBinary(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	orig := proximoFallbackCandidates
+	t.Cleanup(func() { proximoFallbackCandidates = orig })
+	proximoFallbackCandidates = func() []string { return nil }
+
 	_, _, err := launchProximo(context.Background(), "status", nil, proximoAgentHome{})
 	if err == nil {
 		t.Fatal("want error when proximo is not installed")
+	}
+	if !errors.Is(err, ErrProximoNotInstalled) {
+		t.Errorf("err = %v, want ErrProximoNotInstalled", err)
 	}
 }
 

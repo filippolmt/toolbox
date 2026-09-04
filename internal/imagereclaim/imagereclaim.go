@@ -43,6 +43,14 @@ type Input struct {
 	KeepDigest string
 }
 
+// imageStore is the local image store a sweep works over: it enumerates the
+// heads and asks for a removal, and the daemon's refusal of the second is the
+// arbitration this package leans on. → CONTEXT.md, Declared Docker Surface.
+type imageStore interface {
+	ImageList(ctx context.Context, opts client.ImageListOptions) (client.ImageListResult, error)
+	ImageRemove(ctx context.Context, id string, opts client.ImageRemoveOptions) (client.ImageRemoveResult, error)
+}
+
 // Start runs one Image Reclamation sweep beside the attached session and
 // returns immediately. Background because a store holding a generation per
 // merge would otherwise delay the prompt by however long the daemon takes to
@@ -52,7 +60,7 @@ type Input struct {
 // The caller cancels it with the session, and that is safe rather than merely
 // tolerated: the act is idempotent, so a candidate this sweep did not reach is
 // still a candidate at the next shell.
-func Start(ctx context.Context, cli client.APIClient, in Input) {
+func Start(ctx context.Context, cli imageStore, in Input) {
 	go sweep(ctx, cli, in)
 }
 
@@ -71,7 +79,7 @@ func (in Input) abstains() bool { return in.Ref == "" }
 // an image is dangling only when it has neither), and it would match images
 // belonging to every other project on the machine. The default listing is
 // heads-only, which is what keeps intermediate layers out of the candidate set.
-func sweep(ctx context.Context, cli client.APIClient, in Input) {
+func sweep(ctx context.Context, cli imageStore, in Input) {
 	if in.abstains() {
 		return
 	}

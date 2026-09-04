@@ -104,7 +104,13 @@ func SplitRegistryHost(ref string) (host, rest string) {
 // The one place ImageInspect is turned into a repo digest. It was four,
 // spelled four ways, before three of them disagreed about what an empty
 // answer meant.
-func LocalRepoDigest(ctx context.Context, cli client.APIClient, ref string) (string, bool) {
+// localStore is the local image store LocalRepoDigest reads, declared here at
+// the width the read actually uses. → CONTEXT.md, Declared Docker Surface.
+type localStore interface {
+	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
+}
+
+func LocalRepoDigest(ctx context.Context, cli localStore, ref string) (string, bool) {
 	res, err := cli.ImageInspect(ctx, ref)
 	if err != nil {
 		return "", false

@@ -210,7 +210,13 @@ var ErrProximoNotInstalled = errors.New("proximo not installed on host — insta
 // daemon typically has a minimal PATH without /opt/homebrew/bin (brew on
 // Apple Silicon) or ~/go/bin (`go install`). An empty home yields no go/bin
 // candidate rather than a bogus relative path.
-func proximoFallbackCandidates() []string {
+//
+// A var so a test can empty the list. The candidates are absolute, so no
+// amount of t.Setenv reaches them: wherever one of them happens to exist —
+// a host with proximo installed, or this project's own toolbox image, which
+// bundles it at /usr/local/bin/proximo and is where the suite runs — the
+// binary resolves and launchProximo's refusal branch is unreachable.
+var proximoFallbackCandidates = func() []string {
 	candidates := []string{
 		"/opt/homebrew/bin/proximo",
 		"/usr/local/bin/proximo",

@@ -18,47 +18,66 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// mockClient implements the subset of client.APIClient used by Ensure.
-type mockClient struct {
-	client.APIClient
-	imgInspFn  func(ctx context.Context, id string) (client.ImageInspectResult, error)
-	pullCount  int
+// sourceStub is the data this package's tree is driven with. It implements no
+// Docker method of its own: docker() wires the shared fake to these fields,
+// stubbing the three endpoints the tree reaches and no others. What the mock
+// used to guard by hand — that Ensure never creates a container — the narrow
+// imageSource now guards at compile time, since ContainerCreate is not a
+// method it has.
+type sourceStub struct {
+	inspectFn  func(ctx context.Context, id string) (client.ImageInspectResult, error)
 	pullFn     func() (io.ReadCloser, error)
 	distDigest string
 	distErr    error
-	distCalls  int
+
+	fake *dockertest.Fake
 }
 
-func (m *mockClient) ImageInspect(ctx context.Context, id string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
-	if m.imgInspFn != nil {
-		return m.imgInspFn(ctx, id)
+// docker returns the daemon the tree sees, built once and reused so the call
+// counters survive the run and the assertions that read them. Called from the
+// test goroutine only. Every stub re-reads its field on each call, so a test
+// may still swap one after construction.
+func (m *sourceStub) docker() *dockertest.Fake {
+	if m.fake != nil {
+		return m.fake
 	}
-	return client.ImageInspectResult{}, errors.New("ImageInspect not mocked")
-}
-
-func (m *mockClient) ContainerCreate(_ context.Context, _ client.ContainerCreateOptions) (client.ContainerCreateResult, error) {
-	return client.ContainerCreateResult{}, errors.New("ContainerCreate must not be called from imageplan.Ensure")
-}
-func (m *mockClient) ImagePull(_ context.Context, _ string, _ client.ImagePullOptions) (client.ImagePullResponse, error) {
-	m.pullCount++
-	if m.pullFn != nil {
-		rc, err := m.pullFn()
-		if err != nil {
-			return nil, err
-		}
-		return dockertest.PullResponse{ReadCloser: rc}, nil
+	m.fake = &dockertest.Fake{
+		ImageInspectFn: func(ctx context.Context, id string) (client.ImageInspectResult, error) {
+			if m.inspectFn != nil {
+				return m.inspectFn(ctx, id)
+			}
+			return client.ImageInspectResult{}, errors.New("ImageInspect not mocked")
+		},
+		// DistributionInspect answers the remote-digest probe, and the fake
+		// counts the calls: a question answered from the prefetch's warm cache
+		// must reach no registry at all, and the count is how that is asserted.
+		DistributionInspectFn: func(context.Context, string) (client.DistributionInspectResult, error) {
+			if m.distErr != nil {
+				return client.DistributionInspectResult{}, m.distErr
+			}
+			return dockertest.DistributionResult(m.distDigest), nil
+		},
+		ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
+			if m.pullFn == nil {
+				return nil, errors.New("ImagePull must not be called from imageplan.Ensure")
+			}
+			rc, err := m.pullFn()
+			if err != nil {
+				return nil, err
+			}
+			return dockertest.PullResponse{ReadCloser: rc}, nil
+		},
 	}
-	return nil, errors.New("ImagePull must not be called from imageplan.Ensure")
+	return m.fake
 }
-func (m *mockClient) Close() error { return nil }
 
 func TestEnsureNoOpWhenImagePresent(t *testing.T) {
-	mock := &mockClient{
-		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+	mock := &sourceStub{
+		inspectFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, nil
 		},
 	}
-	if err := Ensure(context.Background(), mock, sessionplan.Image{Ref: "ghcr.io/example:latest"}); err != nil {
+	if err := Ensure(context.Background(), mock.docker(), sessionplan.Image{Ref: "ghcr.io/example:latest"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -78,29 +97,29 @@ func TestRefreshPullPolicy(t *testing.T) {
 	} {
 		t.Run("policy="+tt.policy, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir()) // isolate the pull-cache marker dir
-			mock := &mockClient{
+			mock := &sourceStub{
 				pullFn: func() (io.ReadCloser, error) {
 					return io.NopCloser(strings.NewReader("")), nil
 				},
 			}
-			Refresh(context.Background(), mock, sessionplan.Image{
+			Refresh(context.Background(), mock.docker(), sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tt.policy,
 			})
-			if mock.pullCount != tt.wantPulls {
-				t.Errorf("policy %q: ImagePull called %d times, want %d", tt.policy, mock.pullCount, tt.wantPulls)
+			if mock.docker().ImagePullCalls() != tt.wantPulls {
+				t.Errorf("policy %q: ImagePull called %d times, want %d", tt.policy, mock.docker().ImagePullCalls(), tt.wantPulls)
 			}
 		})
 	}
 }
 
 func TestEnsureRegistryMissingErrors(t *testing.T) {
-	mock := &mockClient{
-		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+	mock := &sourceStub{
+		inspectFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 			return client.ImageInspectResult{}, errors.New("no such image")
 		},
 	}
-	err := Ensure(context.Background(), mock, sessionplan.Image{Ref: "ghcr.io/example:latest"})
+	err := Ensure(context.Background(), mock.docker(), sessionplan.Image{Ref: "ghcr.io/example:latest"})
 	if err == nil {
 		t.Fatal("expected error for missing image")
 	}
@@ -112,24 +131,13 @@ func TestEnsureRegistryMissingErrors(t *testing.T) {
 	}
 }
 
-// DistributionInspect answers the remote-digest probe, counting the calls: a
-// question answered from the prefetch's warm cache must reach no registry at
-// all, and the count is how that is asserted.
-func (m *mockClient) DistributionInspect(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-	m.distCalls++
-	if m.distErr != nil {
-		return client.DistributionInspectResult{}, m.distErr
-	}
-	return dockertest.DistributionResult(m.distDigest), nil
-}
-
 // storeWith builds a mock whose local store holds ref at repoDigest ("" for a
 // locally built image) and whose registry answers remote.
-func storeWith(t *testing.T, repoDigest, remote string) *mockClient {
+func storeWith(t *testing.T, repoDigest, remote string) *sourceStub {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir()) // isolate imagepull's TTL marker dir
-	return &mockClient{
-		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+	return &sourceStub{
+		inspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
 			return dockertest.ImageInspectResult("ghcr.io/example", repoDigest), nil
 		},
 		distDigest: remote,
@@ -341,7 +349,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 				mock.pullFn = func() (io.ReadCloser, error) { return nil, errors.New("unauthorized") }
 			}
 			if tc.absent {
-				mock.imgInspFn = func(context.Context, string) (client.ImageInspectResult, error) {
+				mock.inspectFn = func(context.Context, string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, errors.New("no such image")
 				}
 			}
@@ -353,7 +361,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 				stateDir = warmStateDir(t, tc.warm)
 			}
 
-			got := RefreshAtStart(context.Background(), mock, sessionplan.Image{
+			got := RefreshAtStart(context.Background(), mock.docker(), sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tc.policy,
 			}, stateDir, tc.stake)
@@ -367,11 +375,11 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			if tc.wantAsked > 0 && put.elapsed != tc.wantElapsed {
 				t.Errorf("the unanswered window would have answered %v, want %v", put.elapsed, tc.wantElapsed)
 			}
-			if mock.pullCount != tc.wantPulls {
-				t.Errorf("ImagePull called %d times, want %d", mock.pullCount, tc.wantPulls)
+			if mock.docker().ImagePullCalls() != tc.wantPulls {
+				t.Errorf("ImagePull called %d times, want %d", mock.docker().ImagePullCalls(), tc.wantPulls)
 			}
-			if mock.distCalls != tc.wantProbes {
-				t.Errorf("the registry was probed %d times, want %d", mock.distCalls, tc.wantProbes)
+			if mock.docker().DistributionInspectCalls() != tc.wantProbes {
+				t.Errorf("the registry was probed %d times, want %d", mock.docker().DistributionInspectCalls(), tc.wantProbes)
 			}
 		})
 	}
@@ -386,7 +394,7 @@ func TestRefreshAtStartStaysSilentWhenTheProbeFails(t *testing.T) {
 	var put asked
 	withPrompt(t, true, askedYes(&put))
 
-	got := RefreshAtStart(context.Background(), mock, sessionplan.Image{
+	got := RefreshAtStart(context.Background(), mock.docker(), sessionplan.Image{
 		Ref:        "ghcr.io/example:latest",
 		PullPolicy: "auto",
 	}, t.TempDir(), StakeDownload)
@@ -394,7 +402,7 @@ func TestRefreshAtStartStaysSilentWhenTheProbeFails(t *testing.T) {
 	if got != (Outcome{}) {
 		t.Errorf("RefreshAtStart() = %+v, want the zero outcome", got)
 	}
-	if put.times != 0 || mock.pullCount != 0 {
-		t.Errorf("asked %d times and pulled %d times, want neither", put.times, mock.pullCount)
+	if put.times != 0 || mock.docker().ImagePullCalls() != 0 {
+		t.Errorf("asked %d times and pulled %d times, want neither", put.times, mock.docker().ImagePullCalls())
 	}
 }

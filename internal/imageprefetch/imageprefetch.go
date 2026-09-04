@@ -136,11 +136,22 @@ type Input struct {
 	CLIVersion string
 }
 
+// registryStore is the pair this package compares: the local image store it
+// reads a repo digest from, and the registry behind it — probed for the digest
+// it serves and pulled from when the two differ. build.LocalRepoDigest is
+// called with this value, and its own interface is a subset of it.
+// → CONTEXT.md, Declared Docker Surface.
+type registryStore interface {
+	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
+	DistributionInspect(ctx context.Context, ref string, opts client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
+}
+
 // Start runs the poller for the lifetime of ctx and returns immediately.
 // Cancelling ctx on shell exit also cancels an in-flight pull, which #724
 // measured to be safe: a partial ingest is never a blob and expires on its
 // own, and the next pull resumes from what already landed.
-func Start(ctx context.Context, cli client.APIClient, in Input) {
+func Start(ctx context.Context, cli registryStore, in Input) {
 	if in.Ref == "" || in.StateDir == "" {
 		return
 	}
@@ -197,7 +208,7 @@ func Start(ctx context.Context, cli client.APIClient, in Input) {
 // flight. A reissued poll usually finds the attempt stamp fresh and returns
 // without a syscall — the cancel is the point, the reissue only keeps the
 // alarm and the act on the same clock.
-func newPoller(ctx context.Context, cli client.APIClient, in Input) func() {
+func newPoller(ctx context.Context, cli registryStore, in Input) func() {
 	var cancelPrev context.CancelFunc
 	return func() {
 		if cancelPrev != nil {
@@ -231,7 +242,7 @@ func newPoller(ctx context.Context, cli client.APIClient, in Input) func() {
 //     asked for when a probe published one, and otherwise left alone — except
 //     that an adoptable image still outranks it, which is imageState's own
 //     rule and the one the renderer relies on to never print both lines.
-func publishFromStore(ctx context.Context, cli client.APIClient, in Input, synced bool) {
+func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
 	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
 		// The fingerprint of a local `toolbox build`: the prefetch abstains
@@ -279,7 +290,7 @@ func publishFromStore(ctx context.Context, cli client.APIClient, in Input, synce
 // everywhere — and on a probe that does not answer. Both leave the caller with
 // nothing to offer, which is the honest outcome of a question that was never
 // answered.
-func AheadOfStore(ctx context.Context, cli client.APIClient, ref, stateDir string) StoreState {
+func AheadOfStore(ctx context.Context, cli registryStore, ref, stateDir string) StoreState {
 	local, ok := localDigest(ctx, cli, ref)
 	if !ok {
 		return StoreState{}
@@ -348,7 +359,7 @@ func knownRemote(stateDir string) (string, bool) {
 //
 // Every failure path is silent and leaves the previous cached result in
 // place. A banner is an advisory, and this runs beside a developer's cursor.
-func Poll(ctx context.Context, cli client.APIClient, in Input) {
+func Poll(ctx context.Context, cli registryStore, in Input) {
 	if attemptFresh(in.StateDir) {
 		publishFromStore(ctx, cli, in, false)
 		return
@@ -386,7 +397,7 @@ type result struct {
 // own fields, and one that did not reach its registry leaves the previous
 // answer standing instead of retracting a banner that is still true. An axis
 // that abstains outright writes nothing at all.
-func collect(ctx context.Context, cli client.APIClient, in Input, res result) (result, bool) {
+func collect(ctx context.Context, cli registryStore, in Input, res result) (result, bool) {
 	res, imageReached := collectImage(ctx, cli, in, res)
 	res, cliReached := collectCLI(ctx, in, res)
 	return res, imageReached || cliReached
@@ -396,7 +407,7 @@ func collect(ctx context.Context, cli client.APIClient, in Input, res result) (r
 // registry. Two abstentions come first and cost nothing: a store with no repo
 // digest for the ref is a local `toolbox build`, and a probe that does not
 // answer leaves the previous result standing.
-func collectImage(ctx context.Context, cli client.APIClient, in Input, res result) (result, bool) {
+func collectImage(ctx context.Context, cli registryStore, in Input, res result) (result, bool) {
 	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
 		return res, false
@@ -421,7 +432,7 @@ func collectImage(ctx context.Context, cli client.APIClient, in Input, res resul
 // A failed pull, or a store that can no longer be read, returns `have`
 // unchanged: the banner stays silent rather than announcing bytes that never
 // landed.
-func fetched(ctx context.Context, cli client.APIClient, ref, have string) string {
+func fetched(ctx context.Context, cli registryStore, ref, have string) string {
 	if pull(ctx, cli, ref) != nil {
 		return have
 	}
@@ -454,7 +465,7 @@ func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
 // abstains on it, so an explicit build is never silently overwritten by an
 // automatic pull — and it self-heals, since a manual `docker pull` restores
 // the digest and the prefetch resumes.
-func localDigest(ctx context.Context, cli client.APIClient, ref string) (string, bool) {
+func localDigest(ctx context.Context, cli registryStore, ref string) (string, bool) {
 	d, _ := build.LocalRepoDigest(ctx, cli, ref)
 	return d, d != ""
 }
@@ -464,7 +475,7 @@ func localDigest(ctx context.Context, cli client.APIClient, ref string) (string,
 // routes through the daemon's pull endpoints, so a registry_mirror is
 // authoritative here — deliberately, since the only probe that survives is
 // the one that leads to a pull.
-func remoteDigest(ctx context.Context, cli client.APIClient, ref string) (string, error) {
+func remoteDigest(ctx context.Context, cli registryStore, ref string) (string, error) {
 	res, err := cli.DistributionInspect(ctx, ref, client.DistributionInspectOptions{})
 	if err != nil {
 		return "", err
@@ -475,7 +486,7 @@ func remoteDigest(ctx context.Context, cli client.APIClient, ref string) (string
 // pull fetches ref quietly. Wait decodes the progress stream and surfaces the
 // in-band error the daemon writes into an already-200 response; draining to
 // io.Discard would report success on a failed pull.
-func pull(ctx context.Context, cli client.APIClient, ref string) error {
+func pull(ctx context.Context, cli registryStore, ref string) error {
 	resp, err := cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
 		return err

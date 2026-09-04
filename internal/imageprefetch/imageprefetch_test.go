@@ -26,57 +26,55 @@ const (
 	digestNewer = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 )
 
-// mockClient implements the three Docker calls one poll can make. The
-// embedded nil client.APIClient is the point: an unstubbed call panics, so a
-// probe or pull that should never have happened fails the test loudly instead
-// of returning a silent zero value.
-type mockClient struct {
-	client.APIClient
-
+// pollStub is what one poll's daemon answers with. It implements no Docker
+// method of its own: docker() wires the shared fake to this data, stubbing the
+// three endpoints a poll may reach and no others, so a probe or pull that
+// should never have happened panics on the method it named instead of
+// returning a silent zero value.
+type pollStub struct {
 	// inspects are returned in order, one per ImageInspect call, so a test can
 	// distinguish the digest before a pull from the digest after it.
-	inspects  []client.ImageInspectResult
-	inspectN  int
-	distErr   error
-	distDigst string
-	pullErr   error
+	inspects   []client.ImageInspectResult
+	distErr    error
+	distDigest string
+	pullErr    error
 	// pullHang makes ImagePull block until its context is cancelled, then
 	// signals on the channel. It is how a registry that accepts the
 	// connection and then stops talking is spelled in a test.
 	pullHang chan struct{}
 
-	distCalls int
-	pullCalls int
+	fake *dockertest.Fake
 }
 
-func (m *mockClient) ImageInspect(context.Context, string, ...client.ImageInspectOption) (client.ImageInspectResult, error) {
-	if m.inspectN >= len(m.inspects) {
-		return client.ImageInspectResult{}, errors.New("no such image")
+// docker returns the daemon a poll sees, built once and reused so both the
+// inspect queue and the call counters survive across the poll and the
+// assertions that read them. Called from the test goroutine only, before the
+// pollers it hands the fake to exist.
+func (m *pollStub) docker() *dockertest.Fake {
+	if m.fake != nil {
+		return m.fake
 	}
-	res := m.inspects[m.inspectN]
-	m.inspectN++
-	return res, nil
-}
-
-func (m *mockClient) DistributionInspect(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-	m.distCalls++
-	if m.distErr != nil {
-		return client.DistributionInspectResult{}, m.distErr
+	m.fake = &dockertest.Fake{
+		ImageInspectFn: dockertest.InspectSeq(m.inspects...),
+		DistributionInspectFn: func(context.Context, string) (client.DistributionInspectResult, error) {
+			if m.distErr != nil {
+				return client.DistributionInspectResult{}, m.distErr
+			}
+			return dockertest.DistributionResult(m.distDigest), nil
+		},
+		ImagePullFn: func(ctx context.Context, _ string) (client.ImagePullResponse, error) {
+			if m.pullHang != nil {
+				<-ctx.Done()
+				m.pullHang <- struct{}{}
+				return nil, ctx.Err()
+			}
+			if m.pullErr != nil {
+				return nil, m.pullErr
+			}
+			return dockertest.PullResponse{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
+		},
 	}
-	return dockertest.DistributionResult(m.distDigst), nil
-}
-
-func (m *mockClient) ImagePull(ctx context.Context, _ string, _ client.ImagePullOptions) (client.ImagePullResponse, error) {
-	m.pullCalls++
-	if m.pullHang != nil {
-		<-ctx.Done()
-		m.pullHang <- struct{}{}
-		return nil, ctx.Err()
-	}
-	if m.pullErr != nil {
-		return nil, m.pullErr
-	}
-	return dockertest.PullResponse{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
+	return m.fake
 }
 
 // inspectWith builds a local-store inspect for the test ref.
@@ -113,22 +111,24 @@ func readCache(t *testing.T, dir string) string {
 
 // A stamp younger than the TTL is the whole cadence: the ticker is only an
 // alarm, so a tick that fires inside the window must not reach the registry.
-// The nil-embedded mock panics on any call it does not stub, which is what
-// makes the unasked question fail loudly.
+// The fake stubs the three endpoints a poll may reach and panics on the
+// method a fourth would name, and a probe that did happen would show up as a
+// DistributionInspect count — which is what makes the unasked question fail
+// loudly.
 func TestPollAsksTheRegistryNothingWhileStampIsFresh(t *testing.T) {
 	dir := stateDir(t)
 	if err := os.WriteFile(filepath.Join(dir, stampFile), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
-	if cli.distCalls != 0 {
-		t.Errorf("DistributionInspect called %d times, want 0 inside the TTL", cli.distCalls)
+	if cli.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("DistributionInspect called %d times, want 0 inside the TTL", cli.docker().DistributionInspectCalls())
 	}
-	if cli.pullCalls != 0 {
-		t.Errorf("pulled %d times inside the TTL, want 0", cli.pullCalls)
+	if cli.docker().ImagePullCalls() != 0 {
+		t.Errorf("pulled %d times inside the TTL, want 0", cli.docker().ImagePullCalls())
 	}
 }
 
@@ -151,21 +151,21 @@ func TestPollRestatesTheSessionAxisOnEveryGatedPass(t *testing.T) {
 	if !stamp(dir) {
 		t.Fatal("seed the attempt stamp")
 	}
-	cli := &mockClient{inspects: []client.ImageInspectResult{
+	cli := &pollStub{inspects: []client.ImageInspectResult{
 		inspectWith(digestNew), inspectWith(digestNew),
 	}}
 	in := Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir}
 
 	want := cacheBody("1", digestNew, stateReady, "0", "")
 	for pass := 1; pass <= 2; pass++ {
-		Poll(t.Context(), cli, in)
+		Poll(t.Context(), cli.docker(), in)
 		if got := readCache(t, dir); got != want {
 			t.Fatalf("pass %d: cache = %q, want %q", pass, got, want)
 		}
 		sibling() // the sibling polls too, and publishes its own truth again
 	}
-	if cli.distCalls != 0 {
-		t.Errorf("DistributionInspect called %d times, want 0 — the gate still holds", cli.distCalls)
+	if cli.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("DistributionInspect called %d times, want 0 — the gate still holds", cli.docker().DistributionInspectCalls())
 	}
 }
 
@@ -181,11 +181,11 @@ func TestPollRunsOnceTheStampIsStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distDigst: digestOld}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distDigest: digestOld}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
-	if cli.distCalls != 1 {
-		t.Errorf("DistributionInspect called %d times, want 1 past the TTL", cli.distCalls)
+	if cli.docker().DistributionInspectCalls() != 1 {
+		t.Errorf("DistributionInspect called %d times, want 1 past the TTL", cli.docker().DistributionInspectCalls())
 	}
 }
 
@@ -199,8 +199,8 @@ func TestPollStampsAndPreservesCacheWhenTheProbeFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distErr: errors.New("dial tcp: no route to host")}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distErr: errors.New("dial tcp: no route to host")}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if _, err := os.Stat(filepath.Join(dir, stampFile)); err != nil {
 		t.Errorf("stamp not written on a failed probe: %v", err)
@@ -208,8 +208,8 @@ func TestPollStampsAndPreservesCacheWhenTheProbeFails(t *testing.T) {
 	if got := readCache(t, dir); got != seeded {
 		t.Errorf("cache rewritten on a failed probe:\ngot  %q\nwant %q", got, seeded)
 	}
-	if cli.pullCalls != 0 {
-		t.Errorf("pulled %d times after a failed probe, want 0", cli.pullCalls)
+	if cli.docker().ImagePullCalls() != 0 {
+		t.Errorf("pulled %d times after a failed probe, want 0", cli.docker().ImagePullCalls())
 	}
 }
 
@@ -218,15 +218,15 @@ func TestPollStampsAndPreservesCacheWhenTheProbeFails(t *testing.T) {
 // undone by an automatic one.
 func TestPollAbstainsOnLocallyBuiltImage(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
-	if cli.distCalls != 0 {
-		t.Errorf("probed %d times for a locally built image, want 0", cli.distCalls)
+	if cli.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("probed %d times for a locally built image, want 0", cli.docker().DistributionInspectCalls())
 	}
-	if cli.pullCalls != 0 {
-		t.Errorf("pulled %d times for a locally built image, want 0", cli.pullCalls)
+	if cli.docker().ImagePullCalls() != 0 {
+		t.Errorf("pulled %d times for a locally built image, want 0", cli.docker().ImagePullCalls())
 	}
 }
 
@@ -235,15 +235,15 @@ func TestPollAbstainsOnLocallyBuiltImage(t *testing.T) {
 // disk — the local-store-versus-container comparison, not the remote one.
 func TestPollPullsAndReportsTheSessionBehind(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestOld), inspectWith(digestNew)},
-		distDigst: digestNew,
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestOld), inspectWith(digestNew)},
+		distDigest: digestNew,
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
-	if cli.pullCalls != 1 {
-		t.Errorf("pulled %d times, want 1", cli.pullCalls)
+	if cli.docker().ImagePullCalls() != 1 {
+		t.Errorf("pulled %d times, want 1", cli.docker().ImagePullCalls())
 	}
 	want := cacheBody("1", digestNew, stateReady, "0", "")
 	if got := readCache(t, dir); got != want {
@@ -255,12 +255,12 @@ func TestPollPullsAndReportsTheSessionBehind(t *testing.T) {
 // still behind, which is exactly the state a reload exists for.
 func TestPollSkipsThePullWhenTheStoreIsAlreadyCurrent(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigst: digestNew}
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigest: digestNew}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
-	if cli.pullCalls != 0 {
-		t.Errorf("pulled %d times with the store already current, want 0", cli.pullCalls)
+	if cli.docker().ImagePullCalls() != 0 {
+		t.Errorf("pulled %d times with the store already current, want 0", cli.docker().ImagePullCalls())
 	}
 	if got := readCache(t, dir); got != cacheBody("1", digestNew, stateReady, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -271,9 +271,9 @@ func TestPollSkipsThePullWhenTheStoreIsAlreadyCurrent(t *testing.T) {
 // registry serves. The banner must stay silent.
 func TestPollStaysSilentWhenTheSessionIsCurrent(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigst: digestNew}
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigest: digestNew}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("0", digestNew, stateNone, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -285,13 +285,13 @@ func TestPollStaysSilentWhenTheSessionIsCurrent(t *testing.T) {
 // (The dedicated "unavailable" wording is the banner ticket's, not this one's.)
 func TestPollStaysSilentWhenThePullFails(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestOld)},
-		distDigst: digestNew,
-		pullErr:   errors.New("unauthorized"),
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestOld)},
+		distDigest: digestNew,
+		pullErr:    errors.New("unauthorized"),
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	want := cacheBody("0", digestNew, stateNone, "0", "")
 	if got := readCache(t, dir); got != want {
@@ -303,9 +303,9 @@ func TestPollStaysSilentWhenThePullFails(t *testing.T) {
 // no claim is made about it either way.
 func TestPollMakesNoClaimWithoutAContainerDigest(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigst: digestNew}
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigest: digestNew}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("0", digestNew, stateNone, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -335,7 +335,7 @@ func TestStartRefusesAnIncompleteInput(t *testing.T) {
 func TestStartStopsWithTheContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	before := goroutineCount()
-	Start(ctx, &mockClient{}, Input{Ref: testRef, StateDir: t.TempDir()})
+	Start(ctx, (&pollStub{}).docker(), Input{Ref: testRef, StateDir: t.TempDir()})
 	cancel()
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -406,8 +406,8 @@ func TestPollReportsANewerCLI(t *testing.T) {
 	releasesServer(t, 200, `{"tag_name":"v1.2.3"}`)
 
 	// A locally built image abstains on the image axis, isolating the CLI one.
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
-	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir, CLIVersion: "v1.0.0"})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, StateDir: dir, CLIVersion: "v1.0.0"})
 
 	want := cacheBody("0", "", stateNone, "1", "v1.2.3")
 	if got := readCache(t, dir); got != want {
@@ -429,8 +429,8 @@ func TestPollSkipsTheCLIAxisForADevBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
-	Poll(t.Context(), cli, Input{Ref: testRef, StateDir: dir, CLIVersion: "dev"})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, StateDir: dir, CLIVersion: "dev"})
 
 	if got := readCache(t, dir); got != seeded {
 		t.Errorf("an abstaining poll rewrote the cache:\ngot  %q\nwant %q", got, seeded)
@@ -450,8 +450,8 @@ func TestPollKeepsTheAxisThatDidNotReach(t *testing.T) {
 	}
 
 	// The image axis reaches and moves; the CLI axis is rate-limited.
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigst: digestNew}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir, CLIVersion: "v1.0.0"})
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}, distDigest: digestNew}
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir, CLIVersion: "v1.0.0"})
 
 	want := cacheBody("1", digestNew, stateReady, "1", "v1.2.3")
 	if got := readCache(t, dir); got != want {
@@ -466,9 +466,9 @@ func TestPollKeepsTheAxisThatDidNotReach(t *testing.T) {
 func TestPollStaysSilentWhenTheStoreCannotBeReRead(t *testing.T) {
 	dir := stateDir(t)
 	// Only one inspect is stubbed; the post-pull one falls through to an error.
-	cli := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distDigst: digestNew}
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}, distDigest: digestNew}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	want := cacheBody("0", digestNew, stateNone, "0", "")
 	if got := readCache(t, dir); got != want {
@@ -526,13 +526,13 @@ func unavailableAge(t *testing.T, dir string, age time.Duration) {
 // connection would otherwise produce a banner accusing the registry.
 func TestPollWithholdsUnavailableOnTheFirstFailure(t *testing.T) {
 	dir := stateDir(t)
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
-		distDigst: digestNewer,
-		pullErr:   errors.New("unauthorized"),
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigest: digestNewer,
+		pullErr:    errors.New("unauthorized"),
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("0", digestNewer, stateNone, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -548,13 +548,13 @@ func TestPollWithholdsUnavailableOnTheFirstFailure(t *testing.T) {
 func TestPollReportsUnavailableOnceTheFailurePersists(t *testing.T) {
 	dir := stateDir(t)
 	unavailableAge(t, dir, 2*TTL)
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
-		distDigst: digestNewer,
-		pullErr:   errors.New("unauthorized"),
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigest: digestNewer,
+		pullErr:    errors.New("unauthorized"),
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("0", digestNewer, stateUnavailable, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -568,12 +568,12 @@ func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 	unavailableAge(t, dir, 2*TTL)
 	before := mtime(t, filepath.Join(dir, unavailableFile))
 
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
-		distDigst: digestNewer,
-		pullErr:   errors.New("unauthorized"),
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigest: digestNewer,
+		pullErr:    errors.New("unauthorized"),
 	}
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestNew, StateDir: dir})
 
 	if after := mtime(t, filepath.Join(dir, unavailableFile)); !after.Equal(before) {
 		t.Errorf("first-failure marker rewritten: %v -> %v", before, after)
@@ -585,12 +585,12 @@ func TestPollDoesNotResetTheFirstFailureClock(t *testing.T) {
 func TestPollClearsUnavailableOnceTheBytesLand(t *testing.T) {
 	dir := stateDir(t)
 	unavailableAge(t, dir, 2*TTL)
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestOld), inspectWith(digestNew)},
-		distDigst: digestNew,
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestOld), inspectWith(digestNew)},
+		distDigest: digestNew,
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("1", digestNew, stateReady, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -607,13 +607,13 @@ func TestPollPrefersReadyOverUnavailable(t *testing.T) {
 	unavailableAge(t, dir, 2*TTL)
 	// The store holds digestNew, the session is on digestOld, the registry has
 	// moved on to digestNewer and the pull for it fails.
-	cli := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
-		distDigst: digestNewer,
-		pullErr:   errors.New("unauthorized"),
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigest: digestNewer,
+		pullErr:    errors.New("unauthorized"),
 	}
 
-	Poll(t.Context(), cli, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	Poll(t.Context(), cli.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	if got := readCache(t, dir); got != cacheBody("1", digestNewer, stateReady, "0", "") {
 		t.Errorf("cache: %q", got)
@@ -682,11 +682,11 @@ func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
 	// Two inspects: the sync publishes, and the first poll — gated by the
 	// stamp the sync just left — restates the same session axis from the same
 	// store. Idempotent, and the second one is what proves it.
-	m := &mockClient{inspects: []client.ImageInspectResult{
+	m := &pollStub{inspects: []client.ImageInspectResult{
 		inspectWith(digestNew), inspectWith(digestNew),
 	}}
 
-	startPoller(t, m, Input{
+	startPoller(t, m.docker(), Input{
 		Ref:             testRef,
 		ContainerDigest: digestOld,
 		StateDir:        dir,
@@ -698,8 +698,8 @@ func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
 	if got, want := readCache(t, dir), cacheBody("1", digestNew, stateReady, "0", ""); got != want {
 		t.Errorf("cache = %q, want %q", got, want)
 	}
-	if m.distCalls != 0 {
-		t.Errorf("DistributionInspect calls = %d, want 0 — the shell start already probed", m.distCalls)
+	if m.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("DistributionInspect calls = %d, want 0 — the shell start already probed", m.docker().DistributionInspectCalls())
 	}
 	if !fsx.MarkerFresh(filepath.Join(dir, stampFile), TTL) {
 		t.Error("the shell-start sync left no attempt stamp, so the next tick will re-probe")
@@ -711,15 +711,15 @@ func TestStartPublishesFromTheStoreAfterAShellStartSync(t *testing.T) {
 // its own probe rather than trusting a round trip that did not happen.
 func TestStartProbesWhenTheShellStartDidNot(t *testing.T) {
 	dir := stateDir(t)
-	m := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestNew)},
-		distDigst: digestNew,
+	m := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestNew)},
+		distDigest: digestNew,
 	}
 
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	waitFor(t, func() bool { return readCache(t, dir) != "" })
-	if m.distCalls == 0 {
+	if m.docker().DistributionInspectCalls() == 0 {
 		t.Error("DistributionInspect calls = 0, want the poller's own probe")
 	}
 }
@@ -746,16 +746,17 @@ func TestStartPublishesTheSessionAxisWhileThePollIsGated(t *testing.T) {
 	if !stamp(dir) {
 		t.Fatal("seed the attempt stamp")
 	}
-	// distDigst is left unset on purpose: the mock panics on nothing, but a
-	// probe would show up as a DistributionInspect call, asserted below.
-	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+	// distDigest is left unset on purpose: a probe would answer the empty
+	// digest rather than panic, so what pins the unasked question is the
+	// DistributionInspect count asserted below.
+	m := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
 
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	want := cacheBody("1", digestNew, stateReady, "0", "")
 	waitFor(t, func() bool { return readCache(t, dir) == want })
-	if m.distCalls != 0 {
-		t.Errorf("DistributionInspect calls = %d, want 0 — the gate still holds, only the local comparison was redone", m.distCalls)
+	if m.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("DistributionInspect calls = %d, want 0 — the gate still holds, only the local comparison was redone", m.docker().DistributionInspectCalls())
 	}
 }
 
@@ -771,16 +772,16 @@ func TestStartLeavesTheRegistryDigestAloneWhileGated(t *testing.T) {
 	if !stamp(dir) {
 		t.Fatal("seed the attempt stamp")
 	}
-	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+	m := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
 
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	want := cacheBody("1", digestNewer, stateReady, "0", "")
 	waitFor(t, func() bool { return readCache(t, dir) == want })
 
-	store := AheadOfStore(t.Context(), &mockClient{
+	store := AheadOfStore(t.Context(), (&pollStub{
 		inspects: []client.ImageInspectResult{inspectWith(digestNew)},
-	}, testRef, dir)
+	}).docker(), testRef, dir)
 	if !store.Ahead {
 		t.Error("AheadOfStore stopped seeing the registry ahead — image_latest was overwritten with the store digest")
 	}
@@ -806,8 +807,8 @@ func TestStartKeepsTheFailureClockWhenNoProbeAnswered(t *testing.T) {
 	}
 	started := mtime(t, marker)
 
-	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	m := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestNew)}}
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	// The bytes in the store are adoptable whatever the registry is doing, and
 	// the renderer never prints "ready" beside "unavailable".
@@ -835,9 +836,9 @@ func TestStartPublishesNothingForALocallyBuiltImage(t *testing.T) {
 	if !stamp(dir) {
 		t.Fatal("seed the attempt stamp")
 	}
-	m := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
+	m := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
 
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	// The poll is gated and the publish abstains, so nothing may move. Give
 	// the goroutine a tick's worth of chances to prove otherwise.
@@ -847,8 +848,8 @@ func TestStartPublishesNothingForALocallyBuiltImage(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if m.distCalls != 0 {
-		t.Errorf("the registry was probed %d times for a locally built image", m.distCalls)
+	if m.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("the registry was probed %d times for a locally built image", m.docker().DistributionInspectCalls())
 	}
 }
 
@@ -862,13 +863,13 @@ func TestStartCancelsAHungPollAtTheNextTick(t *testing.T) {
 
 	dir := stateDir(t)
 	cancelled := make(chan struct{}, 1)
-	m := &mockClient{
-		inspects:  []client.ImageInspectResult{inspectWith(digestOld)},
-		distDigst: digestNew,
-		pullHang:  cancelled,
+	m := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestOld)},
+		distDigest: digestNew,
+		pullHang:   cancelled,
 	}
 
-	startPoller(t, m, Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
+	startPoller(t, m.docker(), Input{Ref: testRef, ContainerDigest: digestOld, StateDir: dir})
 
 	select {
 	case <-cancelled:
@@ -887,7 +888,7 @@ func TestStartCancelsAHungPollAtTheNextTick(t *testing.T) {
 // package scope — tickInterval, releasesURL, version.Version — is written by
 // some other test's setup, so a poller outliving its own test races the next
 // one rather than merely wasting cycles.
-func startPoller(t *testing.T, cli client.APIClient, in Input) {
+func startPoller(t *testing.T, cli registryStore, in Input) {
 	t.Helper()
 	before := goroutineCount()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -930,8 +931,8 @@ func shortenTick(t *testing.T, d time.Duration) {
 // of answering it — the shared probe cache and the probe itself — already do.
 // A warm stamp means a sibling session established the fact a moment ago:
 // re-establishing it would reintroduce, one step higher, the latency the
-// prompt exists to remove. The nil-embedded mock panics on any daemon call, so
-// distCalls staying at zero is asserted twice over.
+// prompt exists to remove, and the DistributionInspect count staying at zero
+// is what says the registry was never reached.
 func TestAheadOfStoreAnswersFromTheWarmStamp(t *testing.T) {
 	dir := stateDir(t)
 	if err := os.WriteFile(filepath.Join(dir, cacheFile),
@@ -941,14 +942,14 @@ func TestAheadOfStoreAnswersFromTheWarmStamp(t *testing.T) {
 	if err := fsx.TouchMarker(filepath.Join(dir, stampFile)); err != nil {
 		t.Fatal(err)
 	}
-	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
+	mock := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
 
-	got := AheadOfStore(context.Background(), mock, testRef, dir)
+	got := AheadOfStore(context.Background(), mock.docker(), testRef, dir)
 	if want := (StoreState{Ahead: true, Known: true}); got != want {
 		t.Errorf("AheadOfStore() = %+v, want %+v", got, want)
 	}
-	if mock.distCalls != 0 {
-		t.Errorf("the registry was probed %d times despite a warm stamp", mock.distCalls)
+	if mock.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("the registry was probed %d times despite a warm stamp", mock.docker().DistributionInspectCalls())
 	}
 }
 
@@ -968,17 +969,17 @@ func TestAheadOfStoreProbesOnAColdStamp(t *testing.T) {
 		{name: "probe failed", local: digestOld, remote: digestNew, distErr: errors.New("offline"), want: StoreState{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mock := &mockClient{
-				inspects:  []client.ImageInspectResult{inspectWith(tc.local)},
-				distDigst: tc.remote,
-				distErr:   tc.distErr,
+			mock := &pollStub{
+				inspects:   []client.ImageInspectResult{inspectWith(tc.local)},
+				distDigest: tc.remote,
+				distErr:    tc.distErr,
 			}
-			got := AheadOfStore(context.Background(), mock, testRef, stateDir(t))
+			got := AheadOfStore(context.Background(), mock.docker(), testRef, stateDir(t))
 			if got != tc.want {
 				t.Errorf("AheadOfStore() = %+v, want %+v", got, tc.want)
 			}
-			if mock.distCalls != 1 {
-				t.Errorf("the registry was probed %d times, want 1", mock.distCalls)
+			if mock.docker().DistributionInspectCalls() != 1 {
+				t.Errorf("the registry was probed %d times, want 1", mock.docker().DistributionInspectCalls())
 			}
 		})
 	}
@@ -989,13 +990,13 @@ func TestAheadOfStoreProbesOnAColdStamp(t *testing.T) {
 // abstains too: there is nothing a remote digest could be compared against,
 // and an automatic pull must never undo an explicit build.
 func TestAheadOfStoreAbstainsOnALocalBuild(t *testing.T) {
-	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith("")}}
+	mock := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
 
-	if got := AheadOfStore(context.Background(), mock, testRef, stateDir(t)); got != (StoreState{}) {
+	if got := AheadOfStore(context.Background(), mock.docker(), testRef, stateDir(t)); got != (StoreState{}) {
 		t.Errorf("AheadOfStore() = %+v, want nothing established", got)
 	}
-	if mock.distCalls != 0 {
-		t.Errorf("the registry was probed %d times for a locally built image", mock.distCalls)
+	if mock.docker().DistributionInspectCalls() != 0 {
+		t.Errorf("the registry was probed %d times for a locally built image", mock.docker().DistributionInspectCalls())
 	}
 }
 
@@ -1012,9 +1013,9 @@ func TestAheadOfStoreDoesNotClaimAProbeItReadFromTheCache(t *testing.T) {
 	if err := fsx.TouchMarker(filepath.Join(dir, stampFile)); err != nil {
 		t.Fatal(err)
 	}
-	mock := &mockClient{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
+	mock := &pollStub{inspects: []client.ImageInspectResult{inspectWith(digestOld)}}
 
-	got := AheadOfStore(context.Background(), mock, testRef, dir)
+	got := AheadOfStore(context.Background(), mock.docker(), testRef, dir)
 	if want := (StoreState{Known: true}); got != want {
 		t.Errorf("AheadOfStore() = %+v, want %+v — current, but not established here", got, want)
 	}

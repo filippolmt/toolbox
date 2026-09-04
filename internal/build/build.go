@@ -39,7 +39,7 @@ type Options struct {
 // BuildImage builds the Docker image from the embedded build context.
 // The context (Dockerfile + scripts) is shipped inside the Go binary (see
 // embed.go), so the CLI does not depend on the user having a repo checkout.
-func BuildImage(ctx context.Context, cli client.APIClient, opts Options) error {
+func BuildImage(ctx context.Context, cli imageBuilder, opts Options) error {
 	ui.Info("Building image " + opts.Tag + "...")
 
 	buildCtx, err := tarEmbeddedContext()

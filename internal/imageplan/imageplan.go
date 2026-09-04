@@ -38,6 +38,18 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
+// imageSource is where the image comes from, at the width this package's tree
+// actually reaches: the local store it checks for presence, plus the registry
+// its two callees ask and pull from. The union of its own call and theirs, and
+// no wider — which is what makes an unstubbed endpoint in a test a panic
+// naming the method rather than a silent zero value.
+// → CONTEXT.md, Declared Docker Surface.
+type imageSource interface {
+	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
+	DistributionInspect(ctx context.Context, ref string, opts client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
+}
+
 // Refresh best-effort syncs the image against its registry without asking
 // anything, steered by the Image's pull policy: "never" skips the registry
 // round-trip entirely (the local copy is authoritative — Ensure still guards
@@ -52,7 +64,7 @@ import (
 //
 // Reports whether the local store was actually synced against the registry
 // here and now.
-func Refresh(ctx context.Context, cli client.APIClient, image sessionplan.Image) bool {
+func Refresh(ctx context.Context, cli imageSource, image sessionplan.Image) bool {
 	switch image.PullPolicy {
 	case config.PullNever:
 		return false
@@ -190,7 +202,7 @@ type Outcome struct {
 //
 // Best-effort throughout, like Refresh: every failure path leaves the caller
 // with the local image and Ensure with the last word.
-func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, stake Stake) Outcome {
+func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string, stake Stake) Outcome {
 	switch image.PullPolicy {
 	case config.PullNever:
 		return Outcome{}
@@ -248,7 +260,7 @@ func RefreshAtStart(ctx context.Context, cli client.APIClient, image sessionplan
 // Ensure guarantees the image referenced by `image.Ref` exists in the
 // local Docker store. Exposed as a package-level variable so tests can
 // substitute without spinning up a real build context.
-var Ensure = func(ctx context.Context, cli client.APIClient, image sessionplan.Image) error {
+var Ensure = func(ctx context.Context, cli imageSource, image sessionplan.Image) error {
 	if _, err := cli.ImageInspect(ctx, image.Ref); err == nil {
 		return nil
 	}

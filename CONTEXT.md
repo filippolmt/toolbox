@@ -879,6 +879,73 @@ of the stage behind it. Two stages do not hold up their end, and the gap
 had no name because the ADR that introduced the ordering had only
 measured mtimes.
 
+### Declared Docker Surface
+
+Every module that talks to the Docker daemon declares, unexported in its
+own package, an interface holding exactly the daemon methods it calls —
+named for the role the daemon plays there rather than for Docker.
+
+Concretely: `imagepull.registry` (`ImagePull`), `imagereclaim.imageStore`
+(`ImageList` + `ImageRemove`), `localimage.overlayBuilder`,
+`imageprefetch.registryStore`, `imageplan.imageSource`,
+`teardown.containerRuntime` (the container it inspects, stops, removes or
+kills, plus the execs it asks about), and in `internal/build` both
+`LocalRepoDigest`'s `localStore` and the `imageBuilder` its two build
+functions share. No one package owns the concept: each module owns the
+interface it declares, and `internal/dockertest` owns the shared half —
+the double all of them are tested through. Exported functions take these
+unexported types: a caller passes a value that satisfies one and never
+needs to name it. Go assigns interface to interface only when the
+target's method set is a subset of the source's, so a module's declared
+surface is the union of its own calls and those of every callee it hands
+the value to — which is what pulled `build`'s two image functions into
+the same slice as `imageprefetch` and `localimage`.
+
+`internal/container` is exempt and keeps `client.APIClient`. It *is* the
+Docker edge, it calls the daemon directly on many endpoints and passes
+its client down to most of the leaves, so its union would be a large
+fraction of the SDK for no depth — and would have to be re-checked every
+time a call into a leaf is added, with the compile error landing in the
+package that did not change. The three seam vars it holds into the image
+family (`startPrefetch`, `reclaimImages`, `refreshAtStart`) are therefore
+wrappers rather than plain assignments: a bare `var x = leaf.F` would
+take the type of an interface no other package can spell, and no test
+there could write a stub for it.
+
+`internal/worktree` keeps `client.APIClient` for the same reason, one
+level removed: it hands its client to `container.Stop`, so its own
+declared surface would have to be a superset of that parameter, which is
+the edge's. Both packages therefore keep a hand-rolled adapter in their
+tests, and will as long as the edge holds the concrete client —
+`dockertest.Fake` cannot stand in where the parameter is
+`client.APIClient`, by the same design that makes it useful everywhere
+else.
+
+The shared test double is `dockertest.Fake`: one function field per
+method the narrowed modules call, a nil field panicking with the method's
+name, and deliberately **no** embedded `client.APIClient`. Embedding the
+SDK interface would satisfy every narrow interface in the tree by
+accident and undo the narrowing in exactly the place it was bought —
+`TestFakeIsNotAnAPIClient` is the guard. The panic is load-bearing:
+several assertions in the image family are assertions of *absence* (the
+registry is asked nothing while the attempt stamp is fresh; `ImageRemove`
+takes neither `force` nor `PruneChildren`) and are spelled as "no stub,
+therefore no call".
+
+Why the term exists: before it, which daemon calls a module makes — in
+what order, with which options — was carried in prose and nowhere in a
+signature, because every module declared the whole SDK surface and called
+a handful of methods. The seam was real (a live client on one side, a
+hand-rolled adapter per test package on the other) and merely declared at
+the wrong width; each package's copy of the same fake was the visible
+cost. `internal/dockertest` states the concept's shared half, the
+interfaces state the per-module half, and the name says what is being
+declared and by whom. Reasoning and consequences: [ADR
+0010](docs/adr/0010-each-module-declares-the-docker-methods-it-calls.md).
+The two packages still on
+`client.APIClient` are the two that cannot leave it, not a remainder
+waiting for a later slice.
+
 ### Docker Identity
 
 The host-process → container-identity translation at the Docker edge:

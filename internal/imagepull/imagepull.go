@@ -45,6 +45,13 @@ import (
 // invocation.
 const TTL = 1 * time.Hour
 
+// registry is the registry this package pulls from, as narrow as the act: one
+// method, and every caller of RefreshIfStale or ForcePull passes something
+// that has it. → CONTEXT.md, Declared Docker Surface.
+type registry interface {
+	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
+}
+
 // RefreshIfStale refreshes the registry image at ref, best-effort, unless
 // a recent successful pull is still within TTL. Errors are logged as
 // warnings and swallowed: the caller proceeds with the local image.
@@ -53,7 +60,7 @@ const TTL = 1 * time.Hour
 // answer lets the background update prefetch skip its own probe: a cache hit
 // did no work at all, and a failed pull leaves the local store possibly
 // behind the registry, which is the one thing the prefetch exists to notice.
-func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) bool {
+func RefreshIfStale(ctx context.Context, cli registry, ref string) bool {
 	if cached(ref) {
 		return false
 	}
@@ -65,13 +72,13 @@ func RefreshIfStale(ctx context.Context, cli client.APIClient, ref string) bool 
 // shell, so a recent cache hit must not short-circuit it. Best-effort like
 // RefreshIfStale — failures are warned and the caller falls back to the local
 // image.
-func ForcePull(ctx context.Context, cli client.APIClient, ref string) bool {
+func ForcePull(ctx context.Context, cli registry, ref string) bool {
 	return pullAndRecord(ctx, cli, ref)
 }
 
 // pullAndRecord pulls ref and stamps the cache marker on success — the shared
 // tail of RefreshIfStale (after the cache check) and ForcePull.
-func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) bool {
+func pullAndRecord(ctx context.Context, cli registry, ref string) bool {
 	if !pull(ctx, cli, ref) {
 		return false
 	}
@@ -91,7 +98,7 @@ func pullAndRecord(ctx context.Context, cli client.APIClient, ref string) bool {
 // the user keeps running a stale image and only finds out when the next
 // release fails to land. The actionable hint (`docker login ghcr.io`)
 // turns an opaque warning into a single-command fix.
-func pull(ctx context.Context, cli client.APIClient, ref string) bool {
+func pull(ctx context.Context, cli registry, ref string) bool {
 	ui.Info("Checking for image updates: " + ref + "...")
 	rc, err := cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {

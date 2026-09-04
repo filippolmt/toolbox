@@ -13,30 +13,32 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 const baseRef = "ghcr.io/filippolmt/toolbox:latest"
 const baseID = "sha256:baseimageid"
 
-// fakeClient stubs the ImageInspect calls Ensure makes: it always resolves the
-// base ref to baseID, and resolves LocalRef only when localPresent is set.
-type fakeClient struct {
-	client.APIClient
-	localPresent bool
-}
-
-func (f *fakeClient) ImageInspect(_ context.Context, ref string, _ ...client.ImageInspectOption) (client.ImageInspectResult, error) {
-	switch ref {
-	case baseRef:
-		return client.ImageInspectResult{InspectResponse: image.InspectResponse{ID: baseID}}, nil
-	case LocalRef:
-		if f.localPresent {
-			return client.ImageInspectResult{InspectResponse: image.InspectResponse{ID: "sha256:localid"}}, nil
-		}
-		return client.ImageInspectResult{}, errors.New("no such image")
-	default:
-		return client.ImageInspectResult{}, errors.New("unexpected ref " + ref)
+// store stubs the ImageInspect calls Ensure makes: it always resolves the base
+// ref to baseID, and resolves LocalRef only when localPresent is set. The
+// build endpoint is left unstubbed on purpose — every test here goes through
+// the buildOverlay seam, so a build that reached the daemon panics naming it.
+func store(localPresent bool) *dockertest.Fake {
+	return &dockertest.Fake{
+		ImageInspectFn: func(_ context.Context, ref string) (client.ImageInspectResult, error) {
+			switch ref {
+			case baseRef:
+				return client.ImageInspectResult{InspectResponse: image.InspectResponse{ID: baseID}}, nil
+			case LocalRef:
+				if localPresent {
+					return client.ImageInspectResult{InspectResponse: image.InspectResponse{ID: "sha256:localid"}}, nil
+				}
+				return client.ImageInspectResult{}, errors.New("no such image")
+			default:
+				return client.ImageInspectResult{}, errors.New("unexpected ref " + ref)
+			}
+		},
 	}
 }
 
@@ -45,7 +47,7 @@ func withStubBuilder(t *testing.T, err error) *int {
 	t.Helper()
 	calls := 0
 	orig := buildOverlay
-	buildOverlay = func(_ context.Context, _ client.APIClient, _ string, _ []byte, _ string) error {
+	buildOverlay = func(_ context.Context, _ overlayBuilder, _ string, _ []byte, _ string) error {
 		calls++
 		return err
 	}
@@ -85,7 +87,7 @@ func TestEnsureNoOverlayPassthrough(t *testing.T) {
 	calls := withStubBuilder(t, nil)
 	base := sessionplan.Image{Ref: baseRef, PullPolicy: config.PullAuto}
 
-	got, err := Ensure(context.Background(), &fakeClient{}, base, filepath.Join(t.TempDir(), "Dockerfile"))
+	got, err := Ensure(context.Background(), store(false), base, filepath.Join(t.TempDir(), "Dockerfile"))
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestEnsureNoOverlayPassthrough(t *testing.T) {
 func TestEnsureEmptyPathPassthrough(t *testing.T) {
 	calls := withStubBuilder(t, nil)
 	base := sessionplan.Image{Ref: baseRef}
-	got, err := Ensure(context.Background(), &fakeClient{}, base, "")
+	got, err := Ensure(context.Background(), store(false), base, "")
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -114,7 +116,7 @@ func TestEnsureStaleMarkerRebuilds(t *testing.T) {
 	path := writeOverlay(t, "RUN echo new\n")
 	seedMarker(t, path, "stale marker")
 
-	got, err := Ensure(context.Background(), &fakeClient{localPresent: true}, sessionplan.Image{Ref: baseRef}, path)
+	got, err := Ensure(context.Background(), store(true), sessionplan.Image{Ref: baseRef}, path)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -135,7 +137,7 @@ func TestEnsureMatchingMarkerSkips(t *testing.T) {
 	path := writeOverlay(t, dockerfile)
 	seedMarker(t, path, markerFor(t, dockerfile))
 
-	got, err := Ensure(context.Background(), &fakeClient{localPresent: true}, sessionplan.Image{Ref: baseRef}, path)
+	got, err := Ensure(context.Background(), store(true), sessionplan.Image{Ref: baseRef}, path)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -154,7 +156,7 @@ func TestEnsureMissingLocalImageRebuilds(t *testing.T) {
 	seedMarker(t, path, markerFor(t, dockerfile))
 
 	// Marker matches but :local is absent from the store → must rebuild.
-	if _, err := Ensure(context.Background(), &fakeClient{localPresent: false}, sessionplan.Image{Ref: baseRef}, path); err != nil {
+	if _, err := Ensure(context.Background(), store(false), sessionplan.Image{Ref: baseRef}, path); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if *calls != 1 {
@@ -166,7 +168,7 @@ func TestEnsureBuildFailurePropagates(t *testing.T) {
 	withStubBuilder(t, errors.New("RUN exited 1"))
 	path := writeOverlay(t, "RUN false\n")
 
-	_, err := Ensure(context.Background(), &fakeClient{}, sessionplan.Image{Ref: baseRef}, path)
+	_, err := Ensure(context.Background(), store(false), sessionplan.Image{Ref: baseRef}, path)
 	if err == nil {
 		t.Fatal("expected build failure to propagate, got nil")
 	}

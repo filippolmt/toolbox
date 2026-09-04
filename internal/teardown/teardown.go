@@ -53,11 +53,23 @@ const DefaultTimeout = 30 * time.Second
 // the user waits out.
 const DefaultStopGrace = 2
 
+// containerRuntime is the daemon at the width the teardown works over: the
+// container it inspects, stops, removes or kills, plus the execs it asks about
+// before deciding a sibling terminal is still attached.
+// → CONTEXT.md, Declared Docker Surface.
+type containerRuntime interface {
+	ContainerInspect(ctx context.Context, name string, opts client.ContainerInspectOptions) (client.ContainerInspectResult, error)
+	ContainerStop(ctx context.Context, name string, opts client.ContainerStopOptions) (client.ContainerStopResult, error)
+	ContainerRemove(ctx context.Context, name string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	ContainerKill(ctx context.Context, name string, opts client.ContainerKillOptions) (client.ContainerKillResult, error)
+	ExecInspect(ctx context.Context, execID string, opts client.ExecInspectOptions) (client.ExecInspectResult, error)
+}
+
 // StopOne stops and removes the named container. NotFound on stop is
 // treated as success (the container is already gone). NotFound on
 // remove is also tolerated — Docker's auto-remove may have raced us.
 // Any other error propagates.
-func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace int) error {
+func StopOne(ctx context.Context, cli containerRuntime, name string, stopGrace int) error {
 	timeout := stopGrace
 	_, stopErr := cli.ContainerStop(ctx, name, client.ContainerStopOptions{Timeout: &timeout})
 
@@ -89,7 +101,7 @@ func StopOne(ctx context.Context, cli client.APIClient, name string, stopGrace i
 // and stopping the container would kill it — the caller skips teardown.
 // Inspect errors are treated as "no active execs" so a transient daemon
 // hiccup does not strand a container that nobody will ever clean up.
-func HasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool {
+func HasActiveExecs(ctx context.Context, cli containerRuntime, name string) bool {
 	result, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return false
@@ -100,7 +112,7 @@ func HasActiveExecs(ctx context.Context, cli client.APIClient, name string) bool
 // execsRunning is the inspect-driven core of HasActiveExecs, split out so
 // OnShellExit can read both the sibling-exec signal and HostConfig.AutoRemove
 // from a single ContainerInspect instead of inspecting twice.
-func execsRunning(ctx context.Context, cli client.APIClient, inspect container.InspectResponse) bool {
+func execsRunning(ctx context.Context, cli containerRuntime, inspect container.InspectResponse) bool {
 	if inspect.ID == "" {
 		return false
 	}
@@ -129,7 +141,7 @@ func execsRunning(ctx context.Context, cli client.APIClient, inspect container.I
 // error chain — a failed teardown is noisy, not fatal, and should not
 // overwrite an earlier shell error. A missing container (inspect fails) is a
 // no-op: there is nothing left to clean up.
-func OnShellExit(cli client.APIClient, name string) error {
+func OnShellExit(cli containerRuntime, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
 
@@ -166,7 +178,7 @@ func OnShellExit(cli client.APIClient, name string) error {
 // disk filled and the entrypoint crashed) and AutoRemove reaps it regardless.
 // Both are success: without this the noisy "failed to kill container … is not
 // running" would mask the real (disk-exhaustion) failure the user needs to see.
-func killAutoRemove(ctx context.Context, cli client.APIClient, name string) error {
+func killAutoRemove(ctx context.Context, cli containerRuntime, name string) error {
 	if _, err := cli.ContainerKill(ctx, name, client.ContainerKillOptions{Signal: "KILL"}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
 		return fmt.Errorf("failed to kill container %s: %w", name, err)
 	}
