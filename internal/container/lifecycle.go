@@ -71,20 +71,22 @@ var reclaimImages = func(ctx context.Context, cli client.APIClient, in imagerecl
 	imagereclaim.Start(ctx, cli, in)
 }
 
-// refreshAtStart is the shell-start image refresh, prompt and all. A
-// package-level var for the same reason as startPrefetch: the tree behind it
-// asks a question on a terminal, and what Shell owns is only what it does
-// with the answer.
+// refreshAtStart is the shell-start image refresh, prompt and all — one of the
+// two asking reasons, never imageplan.ReasonReload, which the reload path
+// reaches through imageplan.Sync directly. A package-level var for the same
+// reason as startPrefetch: the tree behind it asks a question on a terminal,
+// and what Shell owns is only what it does with the answer.
 var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, reason imageplan.Reason) imageplan.Outcome {
 	return imageplan.Sync(ctx, cli, image, stateDir, reason)
 }
 
 // refreshAnswer is what the start-up refresh settled: the outcome, and the
-// reason it ran under — which is what a yes to it was staked on. offerRefresh establishes the two together and every
-// consumer needs both, so they travel as one rather than as a pair of
-// arguments. Outcome is embedded because the fields are read where they are
-// produced-for — answer.Interrupted, answer.Synced — and a wrapper that made
-// those a level deeper would buy nothing.
+// reason it ran under — which is what a yes to it was staked on. offerRefresh
+// establishes the two together and every consumer needs both, so they travel
+// as one rather than as a pair of arguments. Outcome is embedded because the
+// fields are read where they are produced-for — answer.Interrupted,
+// answer.Synced — and a wrapper that made those a level deeper would buy
+// nothing.
 type refreshAnswer struct {
 	imageplan.Outcome
 	reason imageplan.Reason

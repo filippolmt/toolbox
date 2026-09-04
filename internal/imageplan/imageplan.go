@@ -56,7 +56,7 @@ const promptWindow = 5 * time.Second
 
 // prompt is the shape of the question: what was answered, and whether the
 // developer interrupted the command instead of answering it. The elapsed
-// answer rides along because it is per-question here — see Reason.stake.
+// answer rides along because it is per-question here — see Reason.offer.
 type prompt func(question string, window time.Duration, elapsed ui.Elapsed) (yes, interrupted bool)
 
 // askable and confirm are the prompt seams: whether there is a developer to
@@ -96,32 +96,7 @@ const (
 	ReasonReload
 )
 
-// asks reports whether this reason may put the question to a developer. Only
-// the reload may not, and that is its defining property rather than a
-// configuration of it.
-func (r Reason) asks() bool { return r != ReasonReload }
-
-// stake is what a yes costs besides the wait — the [Prompt Stake], derived
-// from the reason rather than passed in beside it. The caller knows which
-// branch it is on; that a stopped container makes a yes destructive is this
-// package's own conclusion, and one it must not be able to be told wrongly.
-//
-// [Prompt Stake]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#prompt-stake
-type stake int
-
-const (
-	stakeDownload stake = iota
-	stakeRecreate
-)
-
-func (r Reason) stake() stake {
-	if r == ReasonStart {
-		return stakeRecreate
-	}
-	return stakeDownload
-}
-
-// offer is one stake's whole side of the conversation: how the question is
+// offer is one reason's whole side of the conversation: how the question is
 // put, what an unanswered window answers, and what a decline says out loud.
 // The three travel together because they are one editorial decision — a
 // question worded around a container that a clock could accept, or a
@@ -132,16 +107,25 @@ type offer struct {
 	postponed string
 }
 
-// The two forms of the same offer. Each question is kept short enough to share
-// one terminal line with the countdown: the prompt owns exactly one line for
-// its whole life — it redraws with a carriage return and erases with one clear
-// — so a question that wrapped would leave half of itself on screen.
+// offer is the [Prompt Stake] made concrete: what a yes costs besides the wait
+// decides all three fields, and it hangs off the reason because the reason is
+// what implies it. The caller knows which branch it is on; that a stopped
+// container makes a yes destructive is this package's own conclusion, and one
+// it must not be able to be told wrongly.
 //
-// A stake this does not know is worded as the download, which is the form that
-// spends nothing but time: an unknown stake must not be handed the wording, or
-// the default, of the one that discards a container.
-func (s stake) offer() offer {
-	if s == stakeRecreate {
+// Each question is kept short enough to share one terminal line with the
+// countdown: the prompt owns exactly one line for its whole life — it redraws
+// with a carriage return and erases with one clear — so a question that
+// wrapped would leave half of itself on screen.
+//
+// Only ReasonStart discards a container, so only it answers no to an
+// unanswered window. Every other reason is worded as the download, the form
+// that spends nothing but time — including the zero value, which must never be
+// handed the wording, or the default, of the one that destroys something.
+//
+// [Prompt Stake]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#prompt-stake
+func (r Reason) offer() offer {
+	if r == ReasonStart {
 		return offer{
 			question:  "A newer runtime image is available. Recreate this container on it?",
 			elapsed:   ui.ElapsedNo,
@@ -206,8 +190,8 @@ type Outcome struct {
 //
 // The reason adds exactly one case to that tree — the reload, which skips the
 // probe and the question both and reads the TTL cache instead. Past that it
-// only supplies the [stake]: what a yes costs besides the wait, which words
-// the question and points the unanswered window. Every settled case above
+// only supplies the offer: what a yes costs besides the wait, which words the
+// question and points the unanswered window. Every settled case above
 // stays settled under every reason — in particular `always`, which has said
 // yes to downloads and nothing at all about containers, so it pulls without
 // asking and reports no acceptance for a caller to act on.
@@ -222,12 +206,14 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
 	}
 
-	// The reload's whole branch, and the only place the TTL cache is trusted:
-	// it gates on nothing and confirms nothing, because its premise is that
-	// the move onto the newer image was already asked for. A shell start
-	// declines that cache deliberately — a warm one there is what let a
-	// released image go unoffered for a whole window.
-	if !reason.asks() {
+	// The reload's whole branch: it neither probes nor asks, because its
+	// premise is that the move onto the newer image was already asked for, and
+	// it is the only reason that trusts the TTL cache — a shell start declines
+	// that cache deliberately, since a warm one there is what let a released
+	// image go unoffered for a whole window. Spelled against the constant
+	// rather than behind a predicate: two properties ride on this branch, and
+	// a name for either one alone would misdescribe the other.
+	if reason == ReasonReload {
 		return Outcome{Synced: refreshIfStale(ctx, cli, image.Ref, stateDir)}
 	}
 
@@ -253,7 +239,7 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 		return Outcome{Synced: store.Probed}
 	}
 
-	ask := reason.stake().offer()
+	ask := reason.offer()
 	yes, interrupted := confirm(ask.question, promptWindow, ask.elapsed)
 	switch {
 	case interrupted:

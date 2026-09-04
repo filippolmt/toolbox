@@ -14,6 +14,8 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -74,12 +76,7 @@ func writeOverlay(t *testing.T, dockerfile string) string {
 // creating the (nested) dir first — a retargeted state dir need not exist yet.
 func seedMarker(t *testing.T, stateDir, content string) {
 	t.Helper()
-	if stateDir == "" {
-		// Would resolve a *relative* marker into the package dir and litter the
-		// tree — the hazard TestEnsureStillGatesRebuildsWithNoStateDir names.
-		t.Fatal("seedMarker needs a real state dir; pass the fallback root to markerPath instead")
-	}
-	m := markerPath(stateDir, "")
+	m := markerPath(stateDir)
 	if err := os.MkdirAll(filepath.Dir(m), 0o755); err != nil {
 		t.Fatalf("mkdir marker dir: %v", err)
 	}
@@ -132,7 +129,7 @@ func TestEnsureStaleMarkerRebuilds(t *testing.T) {
 	if *calls != 1 {
 		t.Errorf("stale marker must rebuild, build calls=%d", *calls)
 	}
-	if b, _ := os.ReadFile(markerPath(stateDir, "")); string(b) != markerFor(t, "RUN echo new\n") {
+	if b, _ := os.ReadFile(markerPath(stateDir)); string(b) != markerFor(t, "RUN echo new\n") {
 		t.Errorf("marker not refreshed after rebuild: %q", b)
 	}
 }
@@ -181,7 +178,7 @@ func TestEnsureBuildFailurePropagates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected build failure to propagate, got nil")
 	}
-	if _, statErr := os.Stat(markerPath(stateDir, "")); statErr == nil {
+	if _, statErr := os.Stat(markerPath(stateDir)); statErr == nil {
 		t.Error("marker must not be written when the build fails")
 	}
 }
@@ -225,9 +222,7 @@ func TestEnsureKeepsTheMarkerUnderTheGivenStateDir(t *testing.T) {
 // TestEnsureStillGatesRebuildsWithNoStateDir pins the fallback for the one
 // session shape that resolves no state mount: the marker lands under the
 // default state location for the overlay Dockerfile's own root, so the rebuild
-// stays gated. Without it a disabled state mount would not cost one extra
-// check per shell — the way it does for the pull cache — it would rebuild
-// the overlay image on every shell for the life of the setting.
+// stays gated. Why that fallback exists at all is on markerDir.
 func TestEnsureStillGatesRebuildsWithNoStateDir(t *testing.T) {
 	calls := withStubBuilder(t, nil)
 	path := writeOverlay(t, "RUN echo unmounted\n")
@@ -256,11 +251,8 @@ func TestEnsureStillGatesRebuildsWithNoStateDir(t *testing.T) {
 // TestEnsureRebuildsForASiblingsOverlay is the safety property the shared
 // state dir buys, and the reason the re-derived path was worth removing:
 // `:local` is one global tag, so two sessions that share a state dir must
-// share one marker. With a marker each — which is what a state dir the
-// sessions share and a marker path they derive separately produces — both can
-// read "marker matches, :local present" for an image the other overwrote, and
-// the shell then starts from the wrong overlay. One marker turns that into a
-// rebuild.
+// share one marker, or both can read "marker matches, :local present" for an
+// image the other overwrote and start from the wrong overlay.
 func TestEnsureRebuildsForASiblingsOverlay(t *testing.T) {
 	calls := withStubBuilder(t, nil)
 	stateDir := t.TempDir()
@@ -282,7 +274,39 @@ func TestEnsureRebuildsForASiblingsOverlay(t *testing.T) {
 	if *calls != 2 {
 		t.Errorf("calls=%d — started from the sibling's :local instead of rebuilding", *calls)
 	}
-	if b, _ := os.ReadFile(markerPath(stateDir, "")); string(b) != markerFor(t, "RUN echo mine\n") {
+	if b, _ := os.ReadFile(markerPath(stateDir)); string(b) != markerFor(t, "RUN echo mine\n") {
 		t.Errorf("marker = %q, want this overlay's %q", b, markerFor(t, "RUN echo mine\n"))
+	}
+}
+
+// TestFallbackTracksTheDefaultStateMount is the drift guard on the one path
+// this package derives itself. markerDir's fallback reproduces mountplan's
+// default state-mount source, and nothing but this test ties the two
+// together: if the default moves — a renamed source, a different sub-path —
+// the fallback would keep pointing at a directory that no longer means
+// anything, silently, on the only session shape that uses it.
+//
+// The assertion is the equality, not either path's spelling: the default is
+// mountplan's to change, and this only insists the copy follows.
+func TestFallbackTracksTheDefaultStateMount(t *testing.T) {
+	host := fsx.Host{Home: filepath.Join(t.TempDir(), "home")}
+
+	resolved, err := mountplan.StateDirPath(host, &config.Config{}, nil)
+	if err != nil {
+		t.Fatalf("StateDirPath: %v", err)
+	}
+	if resolved == "" {
+		t.Fatal("the default config resolves no state mount — this guard has nothing to compare against")
+	}
+
+	overlay, err := mountplan.OverlayDockerfilePath(host, &config.Config{}, nil)
+	if err != nil {
+		t.Fatalf("OverlayDockerfilePath: %v", err)
+	}
+
+	// "" is the session that resolved no state mount: the case the fallback
+	// exists for, and the only one where these two may not diverge.
+	if got := markerDir("", filepath.Dir(overlay)); got != resolved {
+		t.Errorf("fallback marker dir = %q, but mountplan resolves the default state mount to %q — the derived copy has drifted", got, resolved)
 	}
 }

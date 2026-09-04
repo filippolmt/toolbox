@@ -282,7 +282,8 @@ func publishFromStore(ctx context.Context, cli registryStore, in Input, synced b
 //
 // Deliberately does **not** stamp the shared attempt clock the way Poll does.
 // The stamp gates the poller, and the poller's immediate first pass is what
-// fetches the bytes a developer has just postponed: claiming this probeTTL's turn
+// fetches the bytes a developer has just postponed: claiming this probeTTL's
+// turn
 // here would leave a declined download with nobody to download it. The caller
 // says what it established through Input.StartSynced instead, which is a claim
 // about the store rather than about the clock.
@@ -345,7 +346,8 @@ func knownRemote(stateDir string) (string, bool) {
 }
 
 // Poll runs one gated attempt: it asks the registry nothing while the shared
-// attempt stamp is younger than probeTTL. Exported because it, and not the ticker,
+// attempt stamp is younger than probeTTL. Exported because it, and not the
+// ticker,
 // is the unit under test — the alarm carries no decision.
 //
 // The gate stops the *registry*, not the banner. One state mount serves every

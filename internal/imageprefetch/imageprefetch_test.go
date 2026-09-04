@@ -190,7 +190,8 @@ func TestPollRunsOnceTheStampIsStale(t *testing.T) {
 }
 
 // The stamp records the attempt, not the success: an offline machine must be
-// capped at one failed probe per probeTTL, not one per tick. A failed probe also
+// capped at one failed probe per probeTTL, not one per tick. A failed probe
+// also
 // leaves a previously valid result alone rather than blanking the banner.
 func TestPollStampsAndPreservesCacheWhenTheProbeFails(t *testing.T) {
 	dir := stateDir(t)
@@ -674,7 +675,8 @@ func TestClearResultWithoutAStateDir(t *testing.T) {
 }
 
 // TestStartPublishesFromTheStoreAfterAShellStartSync is #725's cold start.
-// The synchronous refresh at shell start is a probe, so it takes this probeTTL's
+// The synchronous refresh at shell start is a probe, so it takes this
+// probeTTL's
 // turn at the registry and the poller must not re-ask minutes later. What it
 // must still do is publish: on a connect the container can be behind a store
 // a sibling session just advanced, and that banner is the whole point.

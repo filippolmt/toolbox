@@ -146,7 +146,7 @@ The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: th
 
 | `pull` | shell start | background prefetch | banner |
 |---|---|---|---|
-| `auto` (default) | asks (see below), then an unconditional pull | on, one probe per 30 min shared across your sessions | yes |
+| `auto` (default) | asks (see below), then an unconditional pull | on, one shared probe per cadence window (paced by `imageprefetch.probeTTL`) | yes |
 | `always` | an unconditional pull, no question | on, **same cadence as `auto`** | yes |
 | `never` | no registry round-trip (air-gapped — `Ensure` still hard-requires the image locally) | off | silent |
 
@@ -200,7 +200,7 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     && sudo rm -rf /var/lib/apt/lists/*
 ```
 
-**Rebuild triggers.** A marker (base image ID + `sha256` of the Dockerfile bytes) is stored under the toolbox state dir (`~/.toolbox/toolbox/state/local-overlay.marker` by default — the *resolved* state mount, so a `mounts_root` or a `--profile` moves it alongside the image-pull cache and toolbox-managed state stays out of your config dir; with the state mount removed it falls back to the default location for your overlay Dockerfile's own root, because losing the marker would rebuild on every shell). The build is skipped when the marker matches **and** `:local` is present locally; otherwise it rebuilds. So a rebuild happens when you edit the Dockerfile, when the shell-start refresh updates the base (its image ID changes), or when the `:local` image is missing. Base freshness stays governed by [`pull`](#image-selection); `:local` carries pull policy `never`, so `Refresh`/`Ensure` never reach a registry for it. The first build streams its output and is unavoidably slower; later shells skip via the marker.
+**Rebuild triggers.** A marker (base image ID + `sha256` of the Dockerfile bytes) is stored under the toolbox state dir (`~/.toolbox/toolbox/state/local-overlay.marker` by default — the *resolved* state mount, so a `mounts_root` or a `--profile` moves it alongside the image-pull cache and toolbox-managed state stays out of your config dir; with the state mount removed it falls back to the default location for your overlay Dockerfile's own root, because losing the marker would rebuild on every shell). The build is skipped when the marker matches **and** `:local` is present locally; otherwise it rebuilds. So a rebuild happens when you edit the Dockerfile, when the shell-start refresh updates the base (its image ID changes), or when the `:local` image is missing. One marker per state dir, and one `:local` tag: two profiles that *share* a state dir but keep different overlay Dockerfiles therefore rebuild on every alternation between them — the alternative is worse, since without a shared marker each would find its own marker matching and start from the other's image. Base freshness stays governed by [`pull`](#image-selection); `:local` carries pull policy `never`, so `Sync`/`Ensure` never reach a registry for it. The first build streams its output and is unavoidably slower; later shells skip via the marker.
 
 **Fail-loud.** A failing overlay build (e.g. a broken `RUN`) aborts the shell and surfaces the build log — Toolbox never silently falls back to the base image.
 

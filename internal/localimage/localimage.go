@@ -94,7 +94,7 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 
 	sum := sha256.Sum256(dockerfileBytes)
 	marker := inspect.ID + "\n" + hex.EncodeToString(sum[:])
-	markerFile := markerPath(stateDir, filepath.Dir(dockerfilePath))
+	markerFile := markerPath(markerDir(stateDir, filepath.Dir(dockerfilePath)))
 
 	local := sessionplan.Image{Ref: LocalRef, PullPolicy: config.PullNever}
 
@@ -117,26 +117,30 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 	return local, nil
 }
 
-// markerPath returns the overlay marker location under the state dir the
-// session resolved — beside the pull cache, and never beside the user's own
-// Dockerfile, so toolbox-managed state does not litter the user-facing config
-// dir.
+// markerPath returns the overlay marker's location inside dir — beside the
+// pull cache when dir is the session's state dir, and never beside the user's
+// own Dockerfile, so toolbox-managed state does not litter the user-facing
+// config dir.
+func markerPath(dir string) string {
+	return filepath.Join(dir, "local-overlay.marker")
+}
+
+// markerDir answers where the marker lives: the state dir the session
+// resolved, or — for the one session shape that resolved no state mount — the
+// default state location under the overlay Dockerfile's own directory. That
+// fallback is the single path this package derives, and it is deliberate: the
+// marker is host-side only, nothing in the container reads it, and dropping it
+// would not cost one extra check per shell the way a missing pull cache does.
+// It would rebuild the overlay image on every single shell for the life of the
+// setting. The pull cache can afford to be absent; this cannot.
 //
-// A session that resolved no state mount still gets a marker, at the default
-// state location under fallbackRoot — the overlay Dockerfile's own directory.
-// That is the one place this package derives a path, and deliberately: the
-// marker is host-side only — nothing in the container reads it — and dropping
-// it would not cost one extra check per shell the way a missing pull cache
-// does, it would rebuild the overlay image on every single shell for the life
-// of the setting. The pull cache can afford to be absent; this cannot.
-//
-// The two arguments are not peers, hence the second's own name: stateDir is
-// the answer, fallbackRoot only the place to look when there is none.
-func markerPath(stateDir, fallbackRoot string) string {
-	if stateDir == "" {
-		stateDir = filepath.Join(fallbackRoot, "toolbox", "state")
+// Kept in step with mountplan's own default by
+// TestFallbackTracksTheDefaultStateMount.
+func markerDir(stateDir, overlayDir string) string {
+	if stateDir != "" {
+		return stateDir
 	}
-	return filepath.Join(stateDir, "local-overlay.marker")
+	return filepath.Join(overlayDir, "toolbox", "state")
 }
 
 // localImagePresent reports whether the derived `:local` image is in the local
