@@ -82,10 +82,11 @@ func TestEnsureNoOpWhenImagePresent(t *testing.T) {
 	}
 }
 
-// TestRefreshPullPolicy asserts the policy dispatch: "never" skips the
-// registry round-trip entirely, "always" and "auto" both pull (a fresh HOME
-// has an empty TTL cache, so "auto" misses and pulls too).
-func TestRefreshPullPolicy(t *testing.T) {
+// TestSyncPullPolicyOnAReload asserts the policy dispatch on the one reason
+// that reads the TTL cache: "never" skips the registry round-trip entirely,
+// "always" and "auto" both pull (a state dir of its own has an empty cache, so
+// "auto" misses and pulls too).
+func TestSyncPullPolicyOnAReload(t *testing.T) {
 	for _, tt := range []struct {
 		policy    string
 		wantPulls int
@@ -101,10 +102,10 @@ func TestRefreshPullPolicy(t *testing.T) {
 					return io.NopCloser(strings.NewReader("")), nil
 				},
 			}
-			Refresh(context.Background(), mock.docker(), sessionplan.Image{
+			Sync(context.Background(), mock.docker(), sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tt.policy,
-			}, t.TempDir()) // a state dir of its own isolates the TTL marker
+			}, t.TempDir(), ReasonReload) // a state dir of its own isolates the TTL marker
 			if mock.docker().ImagePullCalls() != tt.wantPulls {
 				t.Errorf("policy %q: ImagePull called %d times, want %d", tt.policy, mock.docker().ImagePullCalls(), tt.wantPulls)
 			}
@@ -194,14 +195,14 @@ func warmStateDir(t *testing.T, remote string) string {
 	return dir
 }
 
-// TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime is the tree of ADR
+// TestSyncAsksBeforeSpendingTheDevelopersTime is the tree of ADR
 // 0005: the prompt fires on exactly one case — an `auto` policy, an image
 // already in the store, a registry that is ahead of it, and a tty to ask on.
 // Every other case has its answer settled before the question could be put.
 //
 // The probe count is asserted alongside the outcome, because half the decisions
 // here are about not making a registry round-trip.
-func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
+func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 	const (
 		local  = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 		remote = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
@@ -209,7 +210,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		policy      string
-		stake       Stake
+		reason      Reason
 		repoDgst    string
 		remote      string
 		absent      bool
@@ -308,7 +309,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			// answer it, and the answer is reported as an answer rather than
 			// as a sync, because only a developer's yes may cost a container.
 			name:   "a yes where a container is at stake is reported as accepted",
-			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote,
+			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
 			want: Outcome{Synced: true, Accepted: true},
@@ -318,14 +319,14 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			// destroy the container in exchange for an image that never
 			// arrived, so nothing is reported for the caller to act on.
 			name:   "a yes the registry could not honour is not an acceptance",
-			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote, pullFails: true,
+			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote, pullFails: true,
 			tty: true, answer: askedYes,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
 			want: Outcome{},
 		},
 		{
 			name:   "a no where a container is at stake postpones like any other",
-			policy: "auto", stake: StakeRecreate, repoDgst: local, remote: remote,
+			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedNo,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantProbes: 1,
 			want: Outcome{Declined: true},
@@ -336,7 +337,7 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			// destroying a container, so nothing here is accepted on the
 			// developer's behalf.
 			name:   "pull always spends no container it was not asked about",
-			policy: "always", stake: StakeRecreate, repoDgst: local, remote: remote,
+			policy: "always", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
 			wantPulls: 1, want: Outcome{Synced: true},
 		},
@@ -359,13 +360,13 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 				stateDir = warmStateDir(t, tc.warm)
 			}
 
-			got := RefreshAtStart(context.Background(), mock.docker(), sessionplan.Image{
+			got := Sync(context.Background(), mock.docker(), sessionplan.Image{
 				Ref:        "ghcr.io/example:latest",
 				PullPolicy: tc.policy,
-			}, stateDir, tc.stake)
+			}, stateDir, tc.reason)
 
 			if got != tc.want {
-				t.Errorf("RefreshAtStart() = %+v, want %+v", got, tc.want)
+				t.Errorf("Sync() = %+v, want %+v", got, tc.want)
 			}
 			if put.times != tc.wantAsked {
 				t.Errorf("the developer was asked %d times, want %d", put.times, tc.wantAsked)
@@ -386,21 +387,56 @@ func TestRefreshAtStartAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 // A probe that does not answer leaves the developer with nothing to be asked
 // about: the session starts on what the store holds, and the background
 // prefetch is the one that will try the registry again.
-func TestRefreshAtStartStaysSilentWhenTheProbeFails(t *testing.T) {
+func TestSyncStaysSilentWhenTheProbeFails(t *testing.T) {
 	mock := storeWith(t, "sha256:1111", "")
 	mock.distErr = errors.New("offline")
 	var put asked
 	withPrompt(t, true, askedYes(&put))
 
-	got := RefreshAtStart(context.Background(), mock.docker(), sessionplan.Image{
+	got := Sync(context.Background(), mock.docker(), sessionplan.Image{
 		Ref:        "ghcr.io/example:latest",
 		PullPolicy: "auto",
-	}, t.TempDir(), StakeDownload)
+	}, t.TempDir(), ReasonCreate)
 
 	if got != (Outcome{}) {
-		t.Errorf("RefreshAtStart() = %+v, want the zero outcome", got)
+		t.Errorf("Sync() = %+v, want the zero outcome", got)
 	}
 	if put.times != 0 || mock.docker().ImagePullCalls() != 0 {
 		t.Errorf("asked %d times and pulled %d times, want neither", put.times, mock.docker().ImagePullCalls())
+	}
+}
+
+// TestSyncOnAReloadNeverAsks pins what the reason now carries on its own. The
+// reload used to be guaranteed a silent sync by calling a different function;
+// with one entry point, ReasonReload is the whole guarantee — so it is asserted
+// against the exact conditions that make every other reason ask: an `auto`
+// policy, the image in the store, a registry ahead of it, a tty, and a
+// developer who would say yes. It must ask nothing, probe nothing, and sync
+// through the TTL cache instead.
+func TestSyncOnAReloadNeverAsks(t *testing.T) {
+	const (
+		local  = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		remote = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	mock := storeWith(t, local, remote)
+	var put asked
+	withPrompt(t, true, askedYes(&put))
+
+	got := Sync(context.Background(), mock.docker(), sessionplan.Image{
+		Ref:        "ghcr.io/example:latest",
+		PullPolicy: "auto",
+	}, t.TempDir(), ReasonReload)
+
+	if put.times != 0 {
+		t.Errorf("the reload put the question %d times, want 0 — its premise is that the move was already asked for", put.times)
+	}
+	if n := mock.docker().DistributionInspectCalls(); n != 0 {
+		t.Errorf("DistributionInspect called %d times, want 0 — the reload decides from the cache, not a probe", n)
+	}
+	if n := mock.docker().ImagePullCalls(); n != 1 {
+		t.Errorf("ImagePull called %d times, want 1 — a cold TTL cache must still pull", n)
+	}
+	if got != (Outcome{Synced: true}) {
+		t.Errorf("Sync() = %+v, want only Synced — a reload can neither accept nor decline", got)
 	}
 }

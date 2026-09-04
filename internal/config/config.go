@@ -303,7 +303,7 @@ func ValidateMountsRoot(s string) error {
 
 // Pull policy values accepted by the `pull` key. These are the single source
 // of truth for the literals — validation, the empty→default normalization, the
-// `config show` renderer, and imageplan.Refresh's dispatch all reference them
+// `config show` renderer, and imageplan.Sync's dispatch all reference them
 // so a new policy can't drift between sites.
 const (
 	PullAuto   = "auto"   // best-effort, TTL-cached refresh (default)

@@ -65,7 +65,14 @@ var buildOverlay = func(ctx context.Context, cli overlayBuilder, baseImageID str
 // is skipped. On the overlay path it returns the `:local` image with pull
 // policy "never". A build or marker-write failure is returned as an error so
 // the caller can fail loud.
-func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, dockerfilePath string) (sessionplan.Image, error) {
+//
+// stateDir is the session's resolved state dir, where the marker lives. It is
+// a declared input rather than something derived here: the root-resolution
+// rule belongs to the Mount Plan, which is the only place a `--share state`
+// carve-out and a user `mounts:` patch — the two cases where the state mount
+// and the overlay Dockerfile stop sharing a root — are both accounted for.
+// See markerPath for the one session shape that resolves no state dir at all.
+func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, dockerfilePath, stateDir string) (sessionplan.Image, error) {
 	if dockerfilePath == "" {
 		return base, nil
 	}
@@ -87,7 +94,7 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 
 	sum := sha256.Sum256(dockerfileBytes)
 	marker := inspect.ID + "\n" + hex.EncodeToString(sum[:])
-	markerFile := markerPath(dockerfilePath)
+	markerFile := markerPath(markerDir(stateDir, filepath.Dir(dockerfilePath)))
 
 	local := sessionplan.Image{Ref: LocalRef, PullPolicy: config.PullNever}
 
@@ -110,14 +117,30 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 	return local, nil
 }
 
-// markerPath returns the overlay marker location under the toolbox state dir,
-// derived from the overlay Dockerfile's root (so mounts_root is honoured
-// automatically). Kept alongside the imagepull cache convention
-// (~/.toolbox/toolbox/state/…) rather than beside the user's Dockerfile, so
-// toolbox-managed state never litters the user-facing config dir.
-func markerPath(dockerfilePath string) string {
-	root := filepath.Dir(dockerfilePath)
-	return filepath.Join(root, "toolbox", "state", "local-overlay.marker")
+// markerPath returns the overlay marker's location inside dir — beside the
+// pull cache when dir is the session's state dir, and never beside the user's
+// own Dockerfile, so toolbox-managed state does not litter the user-facing
+// config dir.
+func markerPath(dir string) string {
+	return filepath.Join(dir, "local-overlay.marker")
+}
+
+// markerDir answers where the marker lives: the state dir the session
+// resolved, or — for the one session shape that resolved no state mount — the
+// default state location under the overlay Dockerfile's own directory. That
+// fallback is the single path this package derives, and it is deliberate: the
+// marker is host-side only, nothing in the container reads it, and dropping it
+// would not cost one extra check per shell the way a missing pull cache does.
+// It would rebuild the overlay image on every single shell for the life of the
+// setting. The pull cache can afford to be absent; this cannot.
+//
+// Kept in step with mountplan's own default by
+// TestFallbackTracksTheDefaultStateMount.
+func markerDir(stateDir, overlayDir string) string {
+	if stateDir != "" {
+		return stateDir
+	}
+	return filepath.Join(overlayDir, "toolbox", "state")
 }
 
 // localImagePresent reports whether the derived `:local` image is in the local

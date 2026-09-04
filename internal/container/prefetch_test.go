@@ -48,8 +48,8 @@ func TestMain(m *testing.M) {
 // package run and fails the run if anything lands in it.
 //
 // This package's tests used to sandbox $HOME one by one, because the plans
-// they build reached imagepull, whose pull-cache marker resolved its own home
-// — unsandboxed, a run wrote under the developer's real ~/.toolbox. imagepull
+// they build reached the Image Plan, whose pull-cache marker resolved its own
+// home — unsandboxed, a run wrote under the developer's real ~/.toolbox. It
 // now takes the session's resolved state dir and every path here declares its
 // host, so those 34 guards are gone. This is what keeps them gone: a
 // regression to an ambient read shows up as a file in a directory nothing is
@@ -380,16 +380,16 @@ func TestRestampImageDigest(t *testing.T) {
 // imageplan's and is tested there; what Shell owns is what a yes costs on the
 // branch it took and what it then does with the answer — the one thing a
 // terminal would otherwise be needed to reach.
-func stubRefresh(t *testing.T, out imageplan.Outcome) *[]imageplan.Stake {
+func stubRefresh(t *testing.T, out imageplan.Outcome) *[]imageplan.Reason {
 	t.Helper()
-	var stakes []imageplan.Stake
+	var reasons []imageplan.Reason
 	orig := refreshAtStart
-	refreshAtStart = func(_ context.Context, _ client.APIClient, _ sessionplan.Image, _ string, stake imageplan.Stake) imageplan.Outcome {
-		stakes = append(stakes, stake)
+	refreshAtStart = func(_ context.Context, _ client.APIClient, _ sessionplan.Image, _ string, reason imageplan.Reason) imageplan.Outcome {
+		reasons = append(reasons, reason)
 		return out
 	}
 	t.Cleanup(func() { refreshAtStart = orig })
-	return &stakes
+	return &reasons
 }
 
 // stoppedContainer is the start path: a container the daemon still holds but
@@ -494,14 +494,14 @@ func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stakes := stubRefresh(t, imageplan.Outcome{})
+	reasons := stubRefresh(t, imageplan.Outcome{})
 
 	mock := &mockClient{inspectFn: runningContainer(nil)}
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if len(*stakes) != 0 {
-		t.Errorf("the connect path ran the start-up refresh %d times, want 0", len(*stakes))
+	if len(*reasons) != 0 {
+		t.Errorf("the connect path ran the start-up refresh %d times, want 0", len(*reasons))
 	}
 }
 
@@ -513,14 +513,14 @@ func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stakes := stubRefresh(t, imageplan.Outcome{})
+	reasons := stubRefresh(t, imageplan.Outcome{})
 
 	mock := &mockClient{inspectFn: stoppedContainer(nil)}
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if want := []imageplan.Stake{imageplan.StakeRecreate}; !slices.Equal(*stakes, want) {
-		t.Errorf("the start path asked at %v, want %v", *stakes, want)
+	if want := []imageplan.Reason{imageplan.ReasonStart}; !slices.Equal(*reasons, want) {
+		t.Errorf("the start path asked under %v, want %v", *reasons, want)
 	}
 }
 

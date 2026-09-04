@@ -252,9 +252,10 @@ The result file is `key=value`, one per line:
 | `cli_update`, `cli_latest` | The CLI axis. |
 
 The poller's ticker is only an alarm: every tick re-reads the stamp, and the
-registry is contacted only when it is older than **30 minutes**. Because the
-stamp lives on the shared state mount, that is one probe per half hour *for
-you* rather than one per open shell — best effort, since two sessions whose
+registry is contacted only when it is older than the prefetch's cadence
+window (`imageprefetch.probeTTL`). Because the stamp lives on the shared
+state mount, that is one probe per window *for you* rather than one per open
+shell — best effort, since two sessions whose
 ticks coincide can both find the stamp stale and both probe; the daemon
 deduplicates the pull that follows, so the cost is a second manifest lookup.
 The first poll runs as soon as a shell attaches, subject to the same gate —

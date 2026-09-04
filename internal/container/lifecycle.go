@@ -71,23 +71,25 @@ var reclaimImages = func(ctx context.Context, cli client.APIClient, in imagerecl
 	imagereclaim.Start(ctx, cli, in)
 }
 
-// refreshAtStart is the shell-start image refresh, prompt and all. A
-// package-level var for the same reason as startPrefetch: the tree behind it
-// asks a question on a terminal, and what Shell owns is only what it does
-// with the answer.
-var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, stake imageplan.Stake) imageplan.Outcome {
-	return imageplan.RefreshAtStart(ctx, cli, image, stateDir, stake)
+// refreshAtStart is the shell-start image refresh, prompt and all — one of the
+// two asking reasons, never imageplan.ReasonReload, which the reload path
+// reaches through imageplan.Sync directly. A package-level var for the same
+// reason as startPrefetch: the tree behind it asks a question on a terminal,
+// and what Shell owns is only what it does with the answer.
+var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, reason imageplan.Reason) imageplan.Outcome {
+	return imageplan.Sync(ctx, cli, image, stateDir, reason)
 }
 
-// refreshAnswer is what the start-up refresh settled: the outcome, and what a
-// yes to it was staked on. offerRefresh establishes the two together and every
-// consumer needs both, so they travel as one rather than as a pair of
-// arguments. Outcome is embedded because the fields are read where they are
-// produced-for — answer.Interrupted, answer.Synced — and a wrapper that made
-// those a level deeper would buy nothing.
+// refreshAnswer is what the start-up refresh settled: the outcome, and the
+// reason it ran under — which is what a yes to it was staked on. offerRefresh
+// establishes the two together and every consumer needs both, so they travel
+// as one rather than as a pair of arguments. Outcome is embedded because the
+// fields are read where they are produced-for — answer.Interrupted,
+// answer.Synced — and a wrapper that made those a level deeper would buy
+// nothing.
 type refreshAnswer struct {
 	imageplan.Outcome
-	stake imageplan.Stake
+	reason imageplan.Reason
 }
 
 // offerRefresh runs the shell-start image refresh — prompt and all — on the
@@ -105,11 +107,12 @@ type refreshAnswer struct {
 //
 // What is left is create and start, and the two differ in what a yes costs:
 // on create it buys the image, on start it also spends the stopped container
-// the developer was about to reuse. That is the Stake handed to the tree,
-// which words the question and — the part no clock may decide — points the
-// unanswered window. It is carried in the answer alongside the outcome, and it
-// is the only place this branch is classified: honouring a yes reads the stake
-// rather than re-deriving what a yes meant from the op.
+// the developer was about to reuse. The branch is handed to the tree as the
+// imageplan.Reason, which derives the Prompt Stake from it — the wording, and
+// the part no clock may decide, the unanswered window. It is carried in the
+// answer alongside the outcome, and it is the only place this branch is
+// classified: honouring a yes reads the reason rather than re-deriving what a
+// yes meant from the op.
 //
 // The stamp a decline leaves is the moment, and it is what arms the Idle
 // Reload for this session alone — even where that is otherwise off, because
@@ -119,20 +122,20 @@ type refreshAnswer struct {
 // stamp older than the container it names is inert by construction, so
 // nothing has to clear it.
 func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) refreshAnswer {
-	stake := imageplan.StakeDownload
+	reason := imageplan.ReasonCreate
 	if op.Action == runplan.ActionStart {
-		stake = imageplan.StakeRecreate
+		reason = imageplan.ReasonStart
 	}
 	if plan.ReloadFrom != nil || op.Action == runplan.ActionConnect {
-		return refreshAnswer{stake: stake}
+		return refreshAnswer{reason: reason}
 	}
-	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir, stake)
+	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir, reason)
 	if refresh.Declined && plan.StateDir != "" {
 		if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
 			ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
 		}
 	}
-	return refreshAnswer{Outcome: refresh, stake: stake}
+	return refreshAnswer{Outcome: refresh, reason: reason}
 }
 
 // replaceForRefresh honours a yes given on the start branch, by destroying the
@@ -384,9 +387,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// Passthrough (base unchanged) when the file is absent; fail loud on a
 	// build error so the shell never silently starts from the wrong image.
 	// The returned `:local` carries pull policy "never", so the later
-	// Ensure/Refresh for the create path never touch a registry for it.
+	// Ensure/Refresh for the create path never touch a registry for it. The
+	// rebuild marker goes where this session's state lives, which is the plan's
+	// answer to give — the same directory the pull cache and the prefetch use.
 	baseImage := plan.Image
-	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
+	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile, plan.StateDir)
 	if overlayErr != nil {
 		return nil, overlayErr
 	}
@@ -491,7 +496,7 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 // were asked about.
 func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
 	inspect container.InspectResponse, op runplan.Op, answer refreshAnswer) (container.InspectResponse, runplan.Op, error) {
-	if !answer.Accepted || answer.stake != imageplan.StakeRecreate {
+	if !answer.Accepted || answer.reason != imageplan.ReasonStart {
 		return inspect, op, nil
 	}
 	return replaceForRefresh(ctx, cli, plan, inspect, op)

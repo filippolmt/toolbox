@@ -1,4 +1,4 @@
-package imagepull
+package imageplan
 
 import (
 	"context"
@@ -74,7 +74,7 @@ func TestFreshMarkerIsACacheHit(t *testing.T) {
 	}
 }
 
-// Marker older than TTL must NOT be treated as a cache hit: skipping the
+// Marker older than pullTTL must NOT be treated as a cache hit: skipping the
 // manifest check past the trust window is the exact bug the TTL guard is
 // meant to prevent.
 func TestFreshStaleMarker(t *testing.T) {
@@ -83,13 +83,13 @@ func TestFreshStaleMarker(t *testing.T) {
 	c.stamp(ref)
 
 	p, _ := c.markerPath(ref)
-	old := time.Now().Add(-2 * TTL)
+	old := time.Now().Add(-2 * pullTTL)
 	if err := os.Chtimes(p, old, old); err != nil {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
 	if c.fresh(ref) {
-		t.Error("fresh returned true for marker older than TTL")
+		t.Error("fresh returned true for marker older than pullTTL")
 	}
 }
 
@@ -174,8 +174,8 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 	ref := "ghcr.io/foo/bar:latest"
 
 	t.Run("successful pull", func(t *testing.T) {
-		if !RefreshIfStale(t.Context(), pulling(nil), ref, t.TempDir()) {
-			t.Error("RefreshIfStale = false after a successful pull, want true")
+		if !refreshIfStale(t.Context(), pulling(nil), ref, t.TempDir()) {
+			t.Error("refreshIfStale = false after a successful pull, want true")
 		}
 	})
 
@@ -183,8 +183,8 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 		stateDir := t.TempDir()
 		cache{dir: stateDir}.stamp(ref)
 		m := pulling(nil)
-		if RefreshIfStale(t.Context(), m, ref, stateDir) {
-			t.Error("RefreshIfStale = true on a cache hit, want false")
+		if refreshIfStale(t.Context(), m, ref, stateDir) {
+			t.Error("refreshIfStale = true on a cache hit, want false")
 		}
 		if m.ImagePullCalls() != 0 {
 			t.Errorf("ImagePull calls = %d on a cache hit, want 0", m.ImagePullCalls())
@@ -192,8 +192,8 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 	})
 
 	t.Run("failed pull is not a sync", func(t *testing.T) {
-		if RefreshIfStale(t.Context(), pulling(errors.New("boom")), ref, t.TempDir()) {
-			t.Error("RefreshIfStale = true after a failed pull, want false")
+		if refreshIfStale(t.Context(), pulling(errors.New("boom")), ref, t.TempDir()) {
+			t.Error("refreshIfStale = true after a failed pull, want false")
 		}
 	})
 }
@@ -203,11 +203,11 @@ func TestRefreshIfStaleReportsTheRegistryRoundTrip(t *testing.T) {
 func TestForcePullReportsTheRegistryRoundTrip(t *testing.T) {
 	ref := "ghcr.io/foo/bar:latest"
 	stateDir := t.TempDir()
-	cache{dir: stateDir}.stamp(ref) // a fresh marker ForcePull must ignore
+	cache{dir: stateDir}.stamp(ref) // a fresh marker forcePull must ignore
 
 	m := pulling(nil)
-	if !ForcePull(t.Context(), m, ref, stateDir) {
-		t.Error("ForcePull = false after a successful pull, want true")
+	if !forcePull(t.Context(), m, ref, stateDir) {
+		t.Error("forcePull = false after a successful pull, want true")
 	}
 	if m.ImagePullCalls() != 1 {
 		t.Errorf("ImagePull calls = %d, want 1", m.ImagePullCalls())
@@ -217,30 +217,25 @@ func TestForcePullReportsTheRegistryRoundTrip(t *testing.T) {
 // TestRefreshIfStaleCachesUnderTheGivenStateDir is the contract
 // docs/configuration.md already claims for this cache: it sits under the
 // *resolved* toolbox state dir, "mounts_root-aware — alongside the image-pull
-// cache". Its two siblings hold to that — localimage derives the overlay
-// marker from the overlay Dockerfile's root, imageprefetch takes StateDir as a
-// declared input — and this one hardcoded the default location instead, so a
-// mounts_root retarget or a --profile left the pull cache outside the tree
-// every other marker moved into.
+// cache". Its two siblings hold to that — localimage and imageprefetch each
+// take the state dir as a declared input — and this one hardcoded the default
+// location instead, so a mounts_root retarget or a --profile left the pull
+// cache outside the tree every other marker moved into.
 //
 // A retargeted state dir is the case that separates the two: a marker stamped
 // there must suppress the next refresh. Nothing here touches $HOME, because
-// nothing in this package reads one any more.
+// no marker path in this package reads one any more.
 func TestRefreshIfStaleCachesUnderTheGivenStateDir(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "custom-root", "toolbox", "state")
 
 	ref := "ghcr.io/foo/bar:latest"
-	pulls := 0
-	cli := &dockertest.Fake{ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
-		pulls++
-		return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
-	}}
+	cli := pulling(nil)
 
-	if !RefreshIfStale(context.Background(), cli, ref, stateDir) {
+	if !refreshIfStale(context.Background(), cli, ref, stateDir) {
 		t.Fatal("first refresh did not pull")
 	}
-	if pulls != 1 {
-		t.Fatalf("pulls = %d after the first refresh, want 1", pulls)
+	if cli.ImagePullCalls() != 1 {
+		t.Fatalf("pulls = %d after the first refresh, want 1", cli.ImagePullCalls())
 	}
 
 	// The marker must be under the state dir it was handed, not under $HOME.
@@ -248,21 +243,21 @@ func TestRefreshIfStaleCachesUnderTheGivenStateDir(t *testing.T) {
 		t.Fatalf("no pull-cache under the given state dir: %v", err)
 	}
 
-	if RefreshIfStale(context.Background(), cli, ref, stateDir) {
+	if refreshIfStale(context.Background(), cli, ref, stateDir) {
 		t.Error("second refresh pulled again; the marker under the state dir did not register")
 	}
-	if pulls != 1 {
-		t.Errorf("pulls = %d, want the cache to suppress the second round-trip", pulls)
+	if cli.ImagePullCalls() != 1 {
+		t.Errorf("pulls = %d, want the cache to suppress the second round-trip", cli.ImagePullCalls())
 	}
 }
 
 // TestStampWithoutAStateDirIsSilent: a session that resolved no state mount
 // has nowhere to keep the cache, and that is a configuration the user chose —
-// `mountplan.StateDirPath` documents "" as a supported answer. record's
+// `mountplan.StateDirPath` documents "" as a supported answer. stamp's
 // warning exists for a cache that *should* work and does not (ENOSPC, EROFS,
 // permissions), where the advice "fix the underlying issue and the warning
 // stops" holds. Here there is no issue to fix, so warning on every successful
-// pull would be noise for the life of the setting. cached is already silent on
+// pull would be noise for the life of the setting. fresh is already silent on
 // the same input; imageprefetch.Start returns early on it too.
 func TestStampWithoutAStateDirIsSilent(t *testing.T) {
 	got := captureStderr(t, func() { cache{dir: ""}.stamp("ghcr.io/foo/bar:latest") })
