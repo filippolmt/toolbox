@@ -614,6 +614,17 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			wantExec: "stopped123",
 		},
 		{
+			// A sibling shell answered the same question yes, so what carries
+			// the name now is a *different* container. The answer was about
+			// one that no longer exists, and every call the caller still has
+			// to make takes an ID.
+			name: "recreated by a sibling: the session joins the container that is there now",
+			second: func(context.Context, string) (container.InspectResponse, error) {
+				return container.InspectResponse{ID: "recreated456", State: &container.State{Running: true}}, nil
+			},
+			wantExec: "recreated456",
+		},
+		{
 			// A `toolbox stop` or a `docker rm` got there first: the name is
 			// free, which is all the removal was for.
 			name: "already gone: the name is free and the create takes it",

@@ -374,10 +374,14 @@ handover payload there is nothing here to fill. Two rules guard the teardown.
 can undo a host port another container holds — each of the three fails the
 shell with the container intact. And **the container is read a second time**,
 because the answer describes the moment it was given and the question held the
-terminal for seconds: `runplan.Compute` on the fresh inspect decides, so a
-sibling shell that started it meanwhile keeps it and this session joins it
-(the collateral connect is never asked about), one already removed leaves the
-name free, and an unreadable answer destroys nothing. The removal itself is
+terminal for seconds: `runplan.Compute` on the fresh inspect decides, and the
+op it computes is the one the session then acts on — so a sibling shell that
+started it meanwhile keeps it and this session joins it *by the ID that second
+read returned* (the collateral connect is never asked about, and a sibling that
+recreated the container rather than starting it left the ID the question was
+about naming nothing the daemon still has), one already removed leaves the name
+free, and an unreadable answer destroys nothing and leaves the start exactly as
+it was. The removal itself is
 `removeAndWait`, shared with the reload, and it is followed by
 `imageprefetch.ClearResult` for the reload's own reason — the banner's cache
 describes the container that was just replaced. The question owns the terminal in
