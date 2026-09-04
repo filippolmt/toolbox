@@ -140,11 +140,12 @@ func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 // its name and its place. Nothing new is needed to finish the job: the create
 // it returns already pulls, creates and starts.
 //
-// Returns the op to act on, which is the one the second read below settles —
-// never the one the question was asked about. That op carries an ID, and every
-// call the caller still has to make takes it: a container the question was
-// about may have been replaced while the question stood, and its ID then names
-// nothing.
+// Returns the inspect and the op the second read below settles, which is the
+// pair resolveOp hands a session that had no question to answer — so the
+// caller re-threads one shape either way. Both halves matter and for the same
+// reason: the container the question was put about may have been replaced
+// while the question stood, and then its ID names nothing the daemon still has
+// and its record describes an image this session is not running.
 //
 // Everything that can still fail runs before anything is destroyed, which is
 // the property the whole act rests on: the pull is already behind us
@@ -166,16 +167,15 @@ func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 //     force-removing it now would end a session whose owner never volunteered
 //     — the collateral a running container is never asked about in the first
 //     place. This session attaches to it instead.
-//   - unreadable: nothing is destroyed on an answer the daemon would not give.
-//
-// asked is the op the question was put about, returned unchanged on the one
-// branch that learns nothing: a daemon that would not answer leaves the start
-// exactly as it was.
-func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, asked runplan.Op) (runplan.Op, error) {
+//   - unreadable: nothing is destroyed on an answer the daemon would not give,
+//     and nothing is learned from it either — the asked pair is returned
+//     unchanged, which is what starting it as it is means.
+func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
+	asked container.InspectResponse, askedOp runplan.Op) (container.InspectResponse, runplan.Op, error) {
 	if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
-		// Zero rather than the asked op: the caller aborts on an error, and
-		// must not be handed an op to act on instead.
-		return runplan.Op{}, preflightErr
+		// Zero rather than the asked pair: the caller aborts on an error, and
+		// must not be handed something to act on instead.
+		return container.InspectResponse{}, runplan.Op{}, preflightErr
 	}
 
 	res, inspectErr := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
@@ -184,18 +184,15 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionp
 	case computeErr != nil:
 		ui.Warning("start-up refresh: cannot re-read " + plan.ContainerName + " before replacing it (" +
 			computeErr.Error() + ") — starting it as it is")
-		return asked, nil
+		return asked, askedOp, nil
 	case fresh.Action == runplan.ActionConnect:
 		ui.Warning("start-up refresh: another shell started " + plan.ContainerName +
 			" while the question stood — keeping it, and this session joins it")
-		// fresh, not asked: that shell may have recreated the container rather
-		// than started it, and the ID the question was about then names
-		// nothing the daemon still has.
-		return fresh, nil
+		return res.Container, fresh, nil
 	case fresh.Action == runplan.ActionStart:
 		ui.Info("Recreating container " + plan.ContainerName + " on the newer image...")
 		if removeErr := removeAndWait(ctx, cli, plan.ContainerName, "start-up refresh"); removeErr != nil {
-			return runplan.Op{}, removeErr
+			return container.InspectResponse{}, runplan.Op{}, removeErr
 		}
 	}
 	// Reached by the removal above and by a container someone else had already
@@ -203,7 +200,9 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionp
 	// is gone, and left in place that cache would announce an update this
 	// session has adopted. Same call, same reason, as the reload's own.
 	imageprefetch.ClearResult(plan.StateDir)
-	return runplan.Op{Action: runplan.ActionCreate}, nil
+	// No record with a create: the container the read described is gone, or was
+	// never there, and the consumers of the pair read the plan on this branch.
+	return container.InspectResponse{}, runplan.Op{Action: runplan.ActionCreate}, nil
 }
 
 // formatPublishMismatch builds the warning string emitted when a reused
@@ -396,7 +395,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// After the overlay, not before — see replaceIfRefreshAccepted for what that
 	// ordering protects and for why a yes at the recreate stake spends the
 	// container.
-	op, replaceErr := replaceIfRefreshAccepted(ctx, cli, plan, op, answer)
+	inspect, op, replaceErr := replaceIfRefreshAccepted(ctx, cli, plan, inspect, op, answer)
 	if replaceErr != nil {
 		return nil, replaceErr
 	}
@@ -475,7 +474,8 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 }
 
 // replaceIfRefreshAccepted destroys the stopped container when the developer
-// said yes to a refresh that staked it, and reports the op that follows.
+// said yes to a refresh that staked it, and reports the inspect and the op that
+// follow.
 //
 // A yes at the recreate stake was a yes to this: the stopped container goes,
 // and the branch becomes the create that knows how to build its replacement.
@@ -489,11 +489,12 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 // the other way this start can still fail, and failing it once the container is
 // gone would leave the developer with neither a session nor the container they
 // were asked about.
-func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, answer refreshAnswer) (runplan.Op, error) {
+func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
+	inspect container.InspectResponse, op runplan.Op, answer refreshAnswer) (container.InspectResponse, runplan.Op, error) {
 	if !answer.Accepted || answer.stake != imageplan.StakeRecreate {
-		return op, nil
+		return inspect, op, nil
 	}
-	return replaceForRefresh(ctx, cli, plan, op)
+	return replaceForRefresh(ctx, cli, plan, inspect, op)
 }
 
 // shellTeardown is the exit decision Shell defers: auto-remove the container

@@ -374,15 +374,18 @@ handover payload there is nothing here to fill. Two rules guard the teardown.
 can undo a host port another container holds — each of the three fails the
 shell with the container intact. And **the container is read a second time**,
 because the answer describes the moment it was given and the question held the
-terminal for seconds: `runplan.Compute` on the fresh inspect decides, and the
-op it computes is the one the session then acts on — so a sibling shell that
-started it meanwhile keeps it and this session joins it *by the ID that second
-read returned* (the collateral connect is never asked about, and a sibling that
-recreated the container rather than starting it left the ID the question was
-about naming nothing the daemon still has), one already removed leaves the name
-free, and an unreadable answer destroys nothing and leaves the start exactly as
-it was. The removal itself is
-`removeAndWait`, shared with the reload, and it is followed by
+terminal for seconds: `runplan.Compute` on the fresh inspect decides, and *what
+that read produced* — the inspect and the op together — is what the session
+then acts on. So a sibling shell that started it meanwhile keeps it and this
+session joins it by that second read's own record: the collateral connect is
+never asked about, and a sibling that recreated the container rather than
+starting it left the pre-prompt pair describing a container the daemon no
+longer has — an ID that names nothing to start or exec into, and a creation
+digest that would baseline this session's update banner on an image it is not
+running. One already removed leaves the name free, and an unreadable answer
+destroys nothing and learns nothing, so the start stays exactly the one the
+question was put about. The removal itself is `removeAndWait`, shared with the
+reload, and it is followed by
 `imageprefetch.ClearResult` for the reload's own reason — the banner's cache
 describes the container that was just replaced. The question owns the terminal in
 raw mode for as long as it is asked, so a single `y` or `n` answers it on the
