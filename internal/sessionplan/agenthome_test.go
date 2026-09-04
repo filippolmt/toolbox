@@ -8,6 +8,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -60,8 +61,7 @@ func TestPlanExportsHostAgentHomes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("HOME", home)
-			t.Setenv("PATH", t.TempDir())
+			planHost := fsx.Host{Home: home}
 			workspace := filepath.Join(home, "ws")
 			for _, d := range []string{workspace, filepath.Join(home, ".claude")} {
 				if err := os.MkdirAll(d, 0o700); err != nil {
@@ -72,7 +72,7 @@ func TestPlanExportsHostAgentHomes(t *testing.T) {
 			if tc.profile != nil {
 				profile = tc.profile(t)
 			}
-			plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: tc.cfg, Workspace: workspace, Profile: profile})
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: tc.cfg, Workspace: workspace, Profile: profile})
 			if err != nil {
 				t.Fatalf("Plan: %v", err)
 			}

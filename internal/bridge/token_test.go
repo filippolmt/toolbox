@@ -8,8 +8,8 @@ import (
 )
 
 func TestLoadOrCreateToken_GeneratesWhenMissing(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, _ := ResolveHostState()
+	host := testHost(t)
+	s, _ := ResolveHostState(host)
 	if err := EnsureHostDir(s); err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,8 @@ func TestLoadOrCreateToken_GeneratesWhenMissing(t *testing.T) {
 }
 
 func TestLoadOrCreateToken_PreservesExisting(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, _ := ResolveHostState()
+	host := testHost(t)
+	s, _ := ResolveHostState(host)
 	_ = EnsureHostDir(s)
 	first, _ := LoadOrCreateToken(s)
 	second, err := LoadOrCreateToken(s)
@@ -44,8 +44,8 @@ func TestLoadOrCreateToken_PreservesExisting(t *testing.T) {
 }
 
 func TestLoadToken_NotExist(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, _ := ResolveHostState()
+	host := testHost(t)
+	s, _ := ResolveHostState(host)
 	_ = EnsureHostDir(s)
 	_, err := LoadToken(s)
 	if !errors.Is(err, fs.ErrNotExist) {

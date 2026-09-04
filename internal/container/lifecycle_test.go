@@ -215,7 +215,7 @@ func testWorkspace(t *testing.T) string {
 // every test body.
 func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace, Ports: publish})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: sandboxHome(t), Cfg: testConfig(), Workspace: workspace, Ports: publish})
 	if err != nil {
 		t.Fatalf("testPlan: %v", err)
 	}
@@ -226,7 +226,7 @@ func testPlan(t *testing.T, workspace string, publish []string) *sessionplan.Ses
 // (e.g. custom shell selection).
 func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish []string) *sessionplan.SessionPlan {
 	t.Helper()
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: workspace, Ports: publish})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: sandboxHome(t), Cfg: cfg, Workspace: workspace, Ports: publish})
 	if err != nil {
 		t.Fatalf("testPlanWithCfg: %v", err)
 	}

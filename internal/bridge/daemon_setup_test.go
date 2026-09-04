@@ -73,7 +73,7 @@ func TestWithHostDefaultsFillsOnlyTheGaps(t *testing.T) {
 	called := false
 	supplied := func(context.Context, string) error { called = true; return nil }
 
-	fns := handlerFns{open: supplied}.withHostDefaults()
+	fns := handlerFns{open: supplied}.withHostDefaults(testHost(t))
 
 	if fns.edit == nil || fns.proximo == nil || fns.credential == nil || fns.sound == nil {
 		t.Fatal("withHostDefaults left a callback nil")

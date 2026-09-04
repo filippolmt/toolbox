@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 const (
@@ -73,14 +74,14 @@ const (
 // install`). So a host with proximo installed gets `.test` reachability in
 // every shell with no per-repo opt-in, while a host without proximo pays
 // nothing.
-func Enabled(cfg *config.Config) bool {
+func Enabled(host fsx.Host, cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
 	if cfg.Proximo != nil {
 		return *cfg.Proximo
 	}
-	_, _, exists := caStatus()
+	_, _, exists := caStatus(host)
 	return exists
 }
 
@@ -96,28 +97,35 @@ const caPathQueryTimeout = 2 * time.Second
 // code change. When the binary is absent or predates the subcommand, it falls
 // back to the known layout ~/.proximo/tls/ca.pem (proximo's state home since
 // v0.3.0, filippolmt/proximo#17). ok is false when neither resolves.
-func CAPath() (path string, ok bool) {
+//
+// Both halves are host inputs: the binary is looked up on host's PATH and the
+// fallback hangs off host.Home, so a caller decides which host is probed
+// rather than the process deciding for it.
+func CAPath(host fsx.Host) (path string, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), caPathQueryTimeout)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, "proximo", "config", "ca-path").Output(); err == nil {
-		// IsAbs guards against junk stdout from an older proximo that exits 0
-		// on unknown subcommands (none known to, but the contract is cheap).
-		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
-			return p, true
+	bin, lookErr := host.Look("proximo")
+	if lookErr == nil {
+		if out, err := exec.CommandContext(ctx, bin, "config", "ca-path").Output(); err == nil {
+			// IsAbs guards against junk stdout from an older proximo that exits
+			// 0 on unknown subcommands (none known to, but the contract is
+			// cheap).
+			if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
+				return p, true
+			}
 		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+	if host.Home == "" {
 		return "", false
 	}
-	return filepath.Join(home, ".proximo", "tls", "ca.pem"), true
+	return host.Join(".proximo", "tls", "ca.pem"), true
 }
 
 // caStatus resolves the CA path and probes its existence in one shot — the
 // single internal seam that pays the CAPath query (a subprocess spawn), so
 // every public entry point execs `proximo config ca-path` at most once.
-func caStatus() (path string, ok, exists bool) {
-	path, ok = CAPath()
+func caStatus(host fsx.Host) (path string, ok, exists bool) {
+	path, ok = CAPath(host)
 	if !ok {
 		return "", false, false
 	}
@@ -136,11 +144,11 @@ func forcedOff(cfg *config.Config) bool {
 // enabled and the CA path resolves. The mount resolver soft-skips it with a
 // warning when the source file is absent (proximo not installed), so callers
 // need not pre-check existence.
-func CAMount(cfg *config.Config) (config.Mount, bool) {
+func CAMount(host fsx.Host, cfg *config.Config) (config.Mount, bool) {
 	if forcedOff(cfg) {
 		return config.Mount{}, false
 	}
-	path, ok, exists := caStatus()
+	path, ok, exists := caStatus(host)
 	// Explicit true keeps the mount even without the CA file (soft-skip
 	// downstream); auto (nil) requires the CA — same gate as Enabled.
 	if !ok || (cfg.Proximo == nil && !exists) {
@@ -159,11 +167,11 @@ func CAMount(cfg *config.Config) (config.Mount, bool) {
 // exists on the host, so a missing CA never leaves Node pointing at an absent
 // NODE_EXTRA_CA_CERTS file. (With the CA present, auto and explicit true
 // coincide, so existence is the only probe needed past the forced-off gate.)
-func Env(cfg *config.Config) []string {
+func Env(host fsx.Host, cfg *config.Config) []string {
 	if forcedOff(cfg) {
 		return nil
 	}
-	if _, ok, exists := caStatus(); !ok || !exists {
+	if _, ok, exists := caStatus(host); !ok || !exists {
 		return nil
 	}
 	return []string{

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // TestPlanEndToEnd exercises the full pipeline: defaults → applyMountsRoot
@@ -17,7 +18,6 @@ func TestPlanEndToEnd(t *testing.T) {
 	// Sandbox HOME so the resolver's create/symlink steps land in tmp,
 	// not the real ~/.toolbox/.
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
 	// Pre-create a host symlink target so the ssh default actually links
 	// (otherwise it gets skipped with a warning).
@@ -46,7 +46,7 @@ func TestPlanEndToEnd(t *testing.T) {
 		},
 	}
 
-	result, err := Plan(PlanInput{Cfg: &cfg, Workspace: workspace})
+	result, err := Plan(PlanInput{Host: fsx.Host{Home: tmpHome}, Cfg: &cfg, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestPlanEndToEnd(t *testing.T) {
 // TestPlanRejectsBadMountsRoot exercises validation at the seam.
 func TestPlanRejectsBadMountsRoot(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~"}
-	if _, err := Plan(PlanInput{Cfg: &cfg, Workspace: "/workspace"}); err == nil {
+	if _, err := Plan(PlanInput{Host: testHost(t), Cfg: &cfg, Workspace: "/workspace"}); err == nil {
 		t.Fatal("Plan should reject bare ~ as mounts_root")
 	}
 }
@@ -156,7 +156,7 @@ func TestPlanRejectsUnknownPatchName(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/x"}},
 	}
-	_, err := Plan(PlanInput{Cfg: &cfg, Workspace: "/workspace"})
+	_, err := Plan(PlanInput{Host: testHost(t), Cfg: &cfg, Workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("Plan should fail when mounts: patches an unknown name")
 	}
@@ -166,12 +166,11 @@ func TestPlanRejectsUnknownPatchName(t *testing.T) {
 // the mirror but the canonical workspace bind always survives.
 func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
 	// /home/toolbox/* is reserved → no mirror.
 	workspace := "/home/toolbox/project"
 
-	result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: workspace})
+	result, err := Plan(PlanInput{Host: fsx.Host{Home: tmpHome}, Cfg: &config.Config{}, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -188,7 +187,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 
 func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	off := false
-	got, err := Merge(&config.Config{Bridge: &off}, nil)
+	got, err := Merge(testHost(t), &config.Config{Bridge: &off}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -204,7 +203,6 @@ func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 // symlinks to the host ~/.ssh — isolated auth, shared identity, end to end.
 func TestPlanWithProfile(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
 	hostSSH := filepath.Join(tmpHome, ".ssh")
 	if err := os.Mkdir(hostSSH, 0o700); err != nil {
@@ -215,7 +213,7 @@ func TestPlanWithProfile(t *testing.T) {
 		t.Fatalf("setup workspace: %v", err)
 	}
 
-	result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: workspace, Profile: &Profile{Name: "work"}})
+	result, err := Plan(PlanInput{Host: fsx.Host{Home: tmpHome}, Cfg: &config.Config{}, Workspace: workspace, Profile: &Profile{Name: "work"}})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -242,7 +240,7 @@ func TestPlanWithProfile(t *testing.T) {
 
 func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
-	got, err := Merge(&config.Config{Bridge: &on}, nil)
+	got, err := Merge(testHost(t), &config.Config{Bridge: &on}, nil)
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -264,7 +262,6 @@ func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 // mount set rather than re-deriving a path is what makes that hold.
 func TestStateDirPath(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
 	profile, err := NewProfile("work", nil)
 	if err != nil {
@@ -293,7 +290,7 @@ func TestStateDirPath(t *testing.T) {
 		}}, nil, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := StateDirPath(tc.cfg, tc.profile)
+			got, err := StateDirPath(fsx.Host{Home: tmpHome}, tc.cfg, tc.profile)
 			if err != nil {
 				t.Fatalf("StateDirPath: %v", err)
 			}

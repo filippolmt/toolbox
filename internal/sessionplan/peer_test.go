@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
@@ -11,7 +12,7 @@ import (
 // session in the shared PID namespace. The value names the toolbox-owned
 // anchor container; internal/container is what makes sure it exists.
 func TestPlanPeerPidMode(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	planHost := fsx.Host{Home: t.TempDir()}
 	for _, tc := range []struct {
 		name string
 		peer bool
@@ -21,7 +22,7 @@ func TestPlanPeerPidMode(t *testing.T) {
 		{name: "opted_in", peer: true, want: "container:" + PeerAnchorContainerName},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := Plan(PlanInput{Cfg: &config.Config{Shell: "zsh"}, Workspace: t.TempDir(), Peer: tc.peer})
+			plan, err := Plan(PlanInput{Host: planHost, Cfg: &config.Config{Shell: "zsh"}, Workspace: t.TempDir(), Peer: tc.peer})
 			if err != nil {
 				t.Fatalf("Plan: %v", err)
 			}

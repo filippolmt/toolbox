@@ -35,8 +35,8 @@ func TestBindListener_FallsBackWhenBusy(t *testing.T) {
 }
 
 func TestWriteLoadClearPort(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}
@@ -59,8 +59,8 @@ func TestWriteLoadClearPort(t *testing.T) {
 }
 
 func TestWritePort_RejectsInvalid(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	s, err := ResolveHostState()
+	host := testHost(t)
+	s, err := ResolveHostState(host)
 	if err != nil {
 		t.Fatalf("ResolveHostState: %v", err)
 	}

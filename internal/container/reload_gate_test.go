@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
@@ -20,9 +21,10 @@ import (
 // test, the same IMAGE_TAG override the peer gate uses. Not opted into peer
 // messaging: this gate is about container identity across the swap, and the
 // shared anchor would only add a second container to reason about.
-func reloadSessionPlan(t *testing.T, from *reload.From) *sessionplan.SessionPlan {
+func reloadSessionPlan(t *testing.T, host fsx.Host, from *reload.From) *sessionplan.SessionPlan {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:       host,
 		Cfg:        &config.Config{Shell: "zsh", Image: os.Getenv("IMAGE_TAG"), Pull: config.PullNever},
 		Workspace:  reloadGateWorkspace,
 		ReloadFrom: from,
@@ -71,10 +73,10 @@ func TestReloadReplacesTheContainer(t *testing.T) {
 
 	// A throwaway HOME keeps the run off the developer's own ~/.toolbox; the
 	// workspace under it is what the container name hashes.
-	t.Setenv("HOME", t.TempDir())
+	host := sandboxHome(t)
 	reloadGateWorkspace = t.TempDir()
 
-	first := reloadSessionPlan(t, nil)
+	first := reloadSessionPlan(t, host, nil)
 	t.Cleanup(func() {
 		_ = teardown.StopOne(context.Background(), cli, first.ContainerName, teardown.DefaultStopGrace)
 	})
@@ -109,7 +111,7 @@ func TestReloadReplacesTheContainer(t *testing.T) {
 	execShellFn = func(context.Context, client.APIClient, string, []string) error { return nil }
 	defer func() { execShellFn = origExec }()
 
-	second := reloadSessionPlan(t, handover)
+	second := reloadSessionPlan(t, host, handover)
 	if _, err := Shell(ctx, cli, second); err != nil {
 		t.Fatalf("Shell (reload leg): %v", err)
 	}

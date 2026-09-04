@@ -25,6 +25,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
@@ -195,6 +196,13 @@ type PlanInput struct {
 	// See docs/adr/0003-cross-container-peer-messaging.md.
 	Peer bool
 
+	// Host is the resolved host this session is planned for. Every path the
+	// plan produces under ~/.toolbox — the mount set, the overlay Dockerfile,
+	// the state dir — hangs off Host.Home, and the proximo probes off its
+	// PATH. Resolved once by cmd so the whole pipeline agrees on one host
+	// instead of each stage re-reading the process.
+	Host fsx.Host
+
 	// ReloadFrom is the payload handed over by the process this one re-exec'd
 	// from, or nil for an ordinary shell start. The reload carries nothing and
 	// re-derives everything, so the only thing it changes here is the working
@@ -288,6 +296,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	// mountplan.Plan owns the fs side effects (mkdir, symlinks); per-mount
 	// soft skips ride out on Warnings.
 	mp, err := mountplan.Plan(mountplan.PlanInput{
+		Host:      in.Host,
 		Cfg:       in.Cfg,
 		Workspace: workspace,
 		Profile:   in.Profile,
@@ -300,13 +309,13 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// Resolve the local overlay Dockerfile path (mounts_root-aware). Runs
 	// after mountplan.Plan so the same home-resolution failure surfaces once.
-	overlayDockerfile, err := mountplan.OverlayDockerfilePath(in.Cfg, in.Profile)
+	overlayDockerfile, err := mountplan.OverlayDockerfilePath(in.Host, in.Cfg, in.Profile)
 	if err != nil {
 		return nil, err
 	}
 
 	// Host path of the state mount, for the host-side update prefetch.
-	stateDir, err := mountplan.StateDirPath(in.Cfg, in.Profile)
+	stateDir, err := mountplan.StateDirPath(in.Host, in.Cfg, in.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +332,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
+		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Host, in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
@@ -331,7 +340,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
 		StateDir:          stateDir,
-		Proximo:           proximo.Enabled(in.Cfg),
+		Proximo:           proximo.Enabled(in.Host, in.Cfg),
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,

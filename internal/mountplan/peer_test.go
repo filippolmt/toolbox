@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // findBind returns the bind whose Target matches, or ok=false.
@@ -35,10 +36,9 @@ func TestPlanPeerSocketDir(t *testing.T) {
 		{name: "opted_in", peer: true, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
 			workspace := t.TempDir()
 
-			result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: workspace, Peer: tc.peer})
+			result, err := Plan(PlanInput{Host: testHost(t), Cfg: &config.Config{}, Workspace: workspace, Peer: tc.peer})
 			if err != nil {
 				t.Fatalf("Plan: %v", err)
 			}
@@ -68,9 +68,8 @@ func TestPlanPeerSocketDir(t *testing.T) {
 // back by hand.
 func TestPlanPeerSocketDirTouchesNoHostPath(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
-	result, err := Plan(PlanInput{Cfg: &config.Config{}, Workspace: t.TempDir(), Peer: true})
+	result, err := Plan(PlanInput{Host: fsx.Host{Home: tmpHome}, Cfg: &config.Config{}, Workspace: t.TempDir(), Peer: true})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -91,9 +90,9 @@ func TestPlanPeerSocketDirTouchesNoHostPath(t *testing.T) {
 // through the shared PID namespace while failing to deliver.
 func TestPlanPeerSocketDirIgnoresMountsRoot(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
 	result, err := Plan(PlanInput{
+		Host:      fsx.Host{Home: tmpHome},
 		Cfg:       &config.Config{MountsRoot: filepath.Join(tmpHome, "relocated")},
 		Workspace: t.TempDir(),
 		Peer:      true,

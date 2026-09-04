@@ -34,6 +34,7 @@ func hasPeerSocketBind(binds []string) bool {
 func peerPlan(t *testing.T, workspace string) *sessionplan.SessionPlan {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:      sandboxHome(t),
 		Cfg:       &config.Config{Shell: "zsh"},
 		Workspace: workspace,
 		Peer:      true,
@@ -83,7 +84,6 @@ func anchorScanRow(id, name string, state container.ContainerState) container.Su
 func TestShellPeerCreatesAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	var created []string
 	var sessionPidMode string
@@ -129,7 +129,6 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	sessionCreated := false
 	var sessionPidMode string
@@ -181,7 +180,6 @@ func TestShellPeerAnchorFailureDegrades(t *testing.T) {
 func TestShellPeerSocketVolumeFailureDegrades(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	sessionCreated := false
 	var sessionPidMode string
@@ -234,7 +232,6 @@ func TestShellPeerSocketVolumeFailureDegrades(t *testing.T) {
 func TestShellPeerReusesRunningAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	var created, removed []string
 	mock := &mockClient{
@@ -290,7 +287,6 @@ func TestShellPeerReusesRunningAnchor(t *testing.T) {
 func TestShellPeerReattachMismatchWarns(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	plan := peerPlan(t, testWorkspace(t))
 	mock := &mockClient{
@@ -347,7 +343,6 @@ func TestListExcludesPeerAnchor(t *testing.T) {
 func TestShellPeerReattachMatchingPidModeIsSilent(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "e6b1c0f3anchor"
 	plan := peerPlan(t, testWorkspace(t))
@@ -388,9 +383,8 @@ func TestShellPeerReattachMatchingPidModeIsSilent(t *testing.T) {
 func TestShellReattachUnwantedNamespaceWarns(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
-
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:      sandboxHome(t),
 		Cfg:       &config.Config{Shell: "zsh"},
 		Workspace: testWorkspace(t),
 	})
@@ -505,7 +499,6 @@ func peerSocketMountPoint() container.MountPoint {
 func TestShellPeerReattachWithoutSocketVolumeWarns(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "e6b1c0f3anchor"
 	plan := peerPlan(t, testWorkspace(t))
@@ -554,7 +547,6 @@ func TestShellPeerReattachWithoutSocketVolumeWarns(t *testing.T) {
 func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "e6b1c0f3anchor"
 	plan := peerPlan(t, testWorkspace(t))
@@ -608,7 +600,6 @@ func TestShellPeerStartEnsuresSocketVolume(t *testing.T) {
 func TestShellPeerAnchorReapsOrphans(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	var anchorCfg *container.Config
 	mock := &mockClient{
@@ -682,7 +673,6 @@ func TestAnchorInitMatchesImageEntrypoint(t *testing.T) {
 func TestShellPeerReplacesUnusedStaleAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "staleanchorid"
 	var removed []string
@@ -730,7 +720,6 @@ func TestShellPeerReplacesUnusedStaleAnchor(t *testing.T) {
 func TestShellPeerKeepsHeldStaleAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "staleanchorid"
 	const holderID = "siblingshellid"
@@ -784,7 +773,6 @@ func TestShellPeerKeepsHeldStaleAnchor(t *testing.T) {
 func TestShellPeerReplacesStoppedStaleAnchor(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "stoppedanchorid"
 	var removed []string
@@ -829,7 +817,6 @@ func TestShellPeerReplacesStoppedStaleAnchor(t *testing.T) {
 func TestShellPeerKeepsStaleAnchorWhenHoldersUnknown(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "staleanchorid"
 	var removed []string
@@ -901,7 +888,6 @@ func TestShellPeerKeepsStaleAnchorWhenHolderCannotBeRuledOut(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, restore := stubExecShell()
 			defer restore()
-			t.Setenv("HOME", t.TempDir())
 
 			var removed []string
 			mock := &mockClient{
@@ -951,7 +937,6 @@ func TestShellPeerKeepsStaleAnchorWhenHolderCannotBeRuledOut(t *testing.T) {
 func TestShellPeerKeepsPeerMessagingWhenReplacementFails(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	t.Setenv("HOME", t.TempDir())
 
 	const anchorID = "staleanchorid"
 	var sessionPidMode string

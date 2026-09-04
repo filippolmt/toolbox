@@ -88,6 +88,9 @@ type DaemonOptions struct {
 	// implementation's own. Tests override; production callers leave it nil to
 	// use playSound.
 	Sound func(data []byte) error
+	// Host is the host the daemon serves: its state dir hangs off Host.Home
+	// and the proximo binary is resolved on its PATH.
+	Host fsx.Host
 }
 
 // Run starts the bridge HTTP server in the foreground. It returns
@@ -95,7 +98,7 @@ type DaemonOptions struct {
 // by the LaunchAgent / systemd unit; `toolbox bridge daemon` is a
 // thin cobra wrapper.
 func Run(ctx context.Context, opts DaemonOptions) error {
-	state, err := ResolveHostState()
+	state, err := ResolveHostState(opts.Host)
 	if err != nil {
 		return err
 	}
@@ -156,7 +159,7 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential, sound: opts.Sound}
 
 	srv := &http.Server{
-		Handler:           newHandler(token, fns.withHostDefaults(), logger, now),
+		Handler:           newHandler(token, fns.withHostDefaults(opts.Host), logger, now),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -188,8 +191,8 @@ func resolveListener(opts DaemonOptions) (net.Listener, int, error) {
 }
 
 // withHostDefaults fills every unset callback with its production
-// implementation, so a test overrides only the endpoint it exercises.
-func (f handlerFns) withHostDefaults() handlerFns {
+// implementation for host, so a test overrides only the endpoint it exercises.
+func (f handlerFns) withHostDefaults(host fsx.Host) handlerFns {
 	if f.open == nil {
 		f.open = hostOpenCommand
 	}
@@ -197,7 +200,9 @@ func (f handlerFns) withHostDefaults() handlerFns {
 		f.edit = launchEditor
 	}
 	if f.proximo == nil {
-		f.proximo = launchProximo
+		f.proximo = func(ctx context.Context, command string, args []string, agent proximoAgentHome) ([]byte, int, error) {
+			return launchProximo(ctx, host, command, args, agent)
+		}
 	}
 	if f.credential == nil {
 		f.credential = runHostCredential

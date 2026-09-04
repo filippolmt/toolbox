@@ -6,21 +6,21 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
-// reloadWorkspace prepares a workspace under a sandboxed HOME.
-func reloadWorkspace(t *testing.T) string {
+// reloadWorkspace prepares a workspace under a declared host's home.
+func reloadWorkspace(t *testing.T) (fsx.Host, string) {
 	t.Helper()
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	ws := filepath.Join(tmpHome, "ws")
+	host := fsx.Host{Home: t.TempDir()}
+	ws := host.Join("ws")
 	if err := mkdirAll(t, ws); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	return ws
+	return host, ws
 }
 
 // TestPlanInjectsTheReloadMarkerPath pins the capability marker to the mount
@@ -30,9 +30,9 @@ func reloadWorkspace(t *testing.T) string {
 // is Docker's short id, not that name. One value computed once means the side
 // that writes the marker and the side that reads it cannot diverge.
 func TestPlanInjectsTheReloadMarkerPath(t *testing.T) {
-	ws := reloadWorkspace(t)
+	planHost, ws := reloadWorkspace(t)
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: ws})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: ws})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -72,9 +72,9 @@ func TestPlanInjectsTheReloadMarkerPath(t *testing.T) {
 // container does not have is worse than one that lands at the top of the
 // workspace.
 func TestPlanReloadWorkingDir(t *testing.T) {
-	ws := reloadWorkspace(t)
+	planHost, ws := reloadWorkspace(t)
 
-	canonical, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: ws})
+	canonical, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: ws})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestPlanReloadWorkingDir(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := sessionplan.Plan(sessionplan.PlanInput{
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 				Cfg:        testConfig(),
 				Workspace:  ws,
 				ReloadFrom: &reload.From{Container: "toolbox-old-1234abcd", Cwd: tc.cwd},
@@ -126,10 +126,10 @@ func TestPlanReloadWorkingDir(t *testing.T) {
 // draw: the marker goes into the container, the handover never does. The
 // container edge reads it off the typed plan instead.
 func TestPlanCarriesTheHandoverToTheContainerEdge(t *testing.T) {
-	ws := reloadWorkspace(t)
+	planHost, ws := reloadWorkspace(t)
 	from := &reload.From{Container: "toolbox-old-1234abcd", ImageDigest: "sha256:old"}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: ws, ReloadFrom: from})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: ws, ReloadFrom: from})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestPlanCarriesTheHandoverToTheContainerEdge(t *testing.T) {
 // the variable turns that into the refusal at the prompt it should have been.
 func TestPlanOmitsTheReloadMarkerWithoutTheStateMount(t *testing.T) {
 	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
+	planHost := fsx.Host{Home: tmpHome}
 	ws := filepath.Join(tmpHome, "ws")
 	if err := mkdirAll(t, ws); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -161,7 +161,7 @@ func TestPlanOmitsTheReloadMarkerWithoutTheStateMount(t *testing.T) {
 	cfg := testConfig()
 	cfg.Mounts = []config.Mount{{Name: "state", Disabled: true}}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: cfg, Workspace: ws})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: cfg, Workspace: ws})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -178,9 +178,9 @@ func TestPlanOmitsTheReloadMarkerWithoutTheStateMount(t *testing.T) {
 // they were doing: only a worktree session auto-launches an agent, so a plain
 // shell reloads into a plain shell.
 func TestPlanReloadReproducesTheLaunchMode(t *testing.T) {
-	ws := reloadWorkspace(t)
+	planHost, ws := reloadWorkspace(t)
 
-	plain, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: ws})
+	plain, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: ws})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestPlanReloadReproducesTheLaunchMode(t *testing.T) {
 		t.Error("a plain shell claims to launch an agent")
 	}
 
-	wt, err := sessionplan.Plan(sessionplan.PlanInput{
+	wt, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 		Cfg:       testConfig(),
 		Workspace: ws,
 		Worktree:  &sessionplan.WorktreeSession{RepoRoot: ws, Agent: "claude", Prompt: "do the thing"},
@@ -208,8 +208,8 @@ func TestPlanReloadReproducesTheLaunchMode(t *testing.T) {
 // keyed on the directory and the workspace is mounted twice. On the fallback
 // the agent launches bare: resuming the wrong lineage in silence is worse.
 func TestPlanReloadResumesTheAgent(t *testing.T) {
-	ws := reloadWorkspace(t)
-	canonical, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: ws})
+	planHost, ws := reloadWorkspace(t)
+	canonical, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: ws})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestPlanReloadResumesTheAgent(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := sessionplan.Plan(sessionplan.PlanInput{
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
 				Cfg:        testConfig(),
 				Workspace:  ws,
 				Worktree:   &sessionplan.WorktreeSession{RepoRoot: ws, Agent: tc.agent, Prompt: "do the thing"},

@@ -319,9 +319,7 @@ earlier — before it destroys anything — which is what turns "no usable
 image" from a spent session into a no-op. **`Ensure`
 never builds** — `toolbox build` is the explicit user-driven path for a
 local rebuild (the auto-build branch died with the local-hash image
-tag). Owned by `internal/imageplan`. `Ensure` is exposed as a
-package-level `var` so lifecycle tests can swap it without redeclaring
-the closure at every call site.
+tag). Owned by `internal/imageplan`.
 
 Why the term exists: before this concept was named, the policy was
 split — `imagepull.RefreshIfStale` ran inline at the top of
@@ -952,6 +950,66 @@ declared and by whom. Reasoning and consequences: [ADR
 The two packages still on
 `client.APIClient` are the two that cannot leave it, not a remainder
 waiting for a later slice.
+
+### Declared Host
+
+`fsx.Host` — the ambient host facts a run depends on, resolved once at the
+`cmd` edge by `fsx.CurrentHost()` and passed down as a value: `Home` (the
+directory every `~/.toolbox` path hangs off) and `LookPath` (how a host
+binary is found). Threaded through the seams that already carried the
+session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
+`bridge.DaemonOptions` — plus the exported functions behind them
+(`mountplan.Merge` / `Classify` / `Names` / `StateDirPath` /
+`OverlayDockerfilePath`, `proximo.CAPath` / `CAMount` / `Env` / `Enabled`,
+`bridge.ResolveHostState` / `NewAgent` / `Install` / `Uninstall` / `Status`,
+`configedit.Doctor`).
+
+Neither field falls back to the process, and that is the whole
+discipline. `Home` is a plain string with no default, so a zero-valued
+`Host` is a visible bug rather than a silent read of the real home:
+`Host.Validate` re-states at the seam the strictness `fsx.Home` enforces
+on the ambient read, and every entry point that turns the home into a
+path calls it. `LookPath` may be nil, but nil means *this host resolves
+no binaries* — not "ask the process PATH". The convenience fallback was
+written first and removed: it reinstated the ambient read in the one
+place nothing would notice, since a caller that declared only a home
+would keep probing the real machine and a test written against it would
+pass for whatever happened to be installed. `Expand` and `Join` are the
+two path shapes the threading actually needed; nothing else lives on the
+type.
+
+Why the term exists: `$HOME` and PATH were inputs no signature mentioned.
+A package read them wherever it happened to need them, which meant a test
+could only choose them by mutating the process — `t.Setenv("HOME", …)`
+before calling a planner, a scrubbed PATH before probing for a binary.
+That is a global write, so no test that did it could run in parallel with
+one that read it, and the read itself was invisible at the call site: you
+could not tell from `Plan(in)` that it would resolve a home, nor from
+`Merge(cfg, nil)` that it would stat under one. Making the host a declared
+value moves both facts into the signature, and the tests that used to
+rewrite the process now construct the host they mean — which is also what
+makes them deterministic where the ambient answer was not (this project's
+own image ships a real `proximo` on PATH, so a PATH scrub never proved the
+not-installed branch was reachable).
+
+`mountplan.Merge` is the one entry point that takes a `Host` without
+validating it. Two things behind it read the home — `inherit_host_auth`'s
+pre-stat and `proximo.CAMount`'s `~/.proximo` fallback — and both degrade
+when it is empty rather than fail, which is what the discarded
+`os.UserHomeDir()` error used to give them. The read-only `cmd` surfaces
+that reach it (`mounts list`, `mounts disable`'s validation, `config
+doctor`) keep that tolerance through `hostBestEffort`; the writers behind
+them still fail loud on their own.
+
+Not everything is threaded yet. `imagepull`'s pull-cache marker and
+`configio.GlobalConfigPath` still resolve their own home, and
+`configedit`'s write gate calls `fsx.CurrentHost()` at one named seam
+rather than threading a Host through every `ApplyChecked` wrapper and the
+`configui` model — one named read where the lints behind it previously
+took two unnamed ones. Their callers reach them through packages this concept
+has not crossed; until they do, a test that exercises those paths still
+sandboxes `$HOME` — which is why `internal/container`'s `sandboxHome`
+helper sets the process home *and* returns the matching Host.
 
 ### Docker Identity
 

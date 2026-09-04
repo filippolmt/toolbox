@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +11,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -91,9 +91,23 @@ func runShell(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	warnIfNewProfile(profile)
+
+	// Best-effort, and before the workspace is resolved, because that is where
+	// this notice always sat: it used to resolve its own home and skip itself
+	// when it could not, so a bad workspace argument still reported the
+	// workspace error rather than a home error raised on its behalf.
+	warnIfNewProfile(hostBestEffort(), profile)
 
 	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
+	if err != nil {
+		return err
+	}
+
+	// The ambient host, read once here and threaded from this point on: the
+	// legacy-state migration and the whole session plan address the same home
+	// instead of each re-reading $HOME. Strict — the plan cannot be built
+	// without a home, and mountplan.Plan used to be where that failed.
+	host, err := fsx.CurrentHost()
 	if err != nil {
 		return err
 	}
@@ -102,14 +116,12 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// namespace. Best-effort: on failure CreateIfMissing rebuilds an empty
 	// state dir and the pull cache regenerates, so warn instead of failing
 	// the shell.
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		if err := mountplan.MigrateLegacyToolboxState(home); err != nil {
-			fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
-		}
+	if err := mountplan.MigrateLegacyToolboxState(host.Home); err != nil {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
 	}
 
 	if cfg.Bridge != nil && *cfg.Bridge {
-		printBridgeTipIfNeeded()
+		printBridgeTipIfNeeded(host)
 	}
 
 	cli, err := container.NewClient()
@@ -133,6 +145,7 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// container-name format and the per-shell env: overlay are derived from
 	// it behind the sessionplan seam.
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:           host,
 		Cfg:            cfg,
 		Workspace:      ws,
 		Ports:          publish,
@@ -207,16 +220,13 @@ func resolveShellProfile(cmd *cobra.Command, name string, share []string) (*moun
 // warnIfNewProfile prints a one-line stderr notice when a --profile names a
 // directory that does not exist yet, so a typo (`--profile cluade`) surfaces as
 // a visibly new, empty profile instead of a silent logged-out shell. Best
-// effort: an unresolvable home just skips the notice.
-func warnIfNewProfile(p *mountplan.Profile) {
-	if p == nil {
+// effort: a host with no home skips the notice rather than stat a
+// cwd-relative .toolbox/profiles/<name>.
+func warnIfNewProfile(host fsx.Host, p *mountplan.Profile) {
+	if p == nil || host.Home == "" {
 		return
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return
-	}
-	dir := filepath.Join(home, ".toolbox", "profiles", p.Name)
+	dir := host.Join(".toolbox", "profiles", p.Name)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "toolbox: creating new profile %q (empty credentials — every CLI starts logged out)\n", p.Name)
 	}
@@ -227,8 +237,8 @@ func warnIfNewProfile(p *mountplan.Profile) {
 // that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
 // Uses IsInstalled (stat-only) instead of Status to keep the shell-start hot
 // path off launchctl/systemctl exec costs.
-func printBridgeTipIfNeeded() {
-	a, err := bridge.NewAgent()
+func printBridgeTipIfNeeded(host fsx.Host) {
+	a, err := bridge.NewAgent(host)
 	if err != nil {
 		return
 	}

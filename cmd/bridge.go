@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 var bridgeCmd = &cobra.Command{
@@ -31,7 +32,7 @@ var bridgeInstallCmd = &cobra.Command{
 		if err := bridge.EnsureUserContext(); err != nil {
 			return err
 		}
-		a, err := bridge.NewAgent()
+		host, a, err := bridgeAgent()
 		if err != nil {
 			if errors.Is(err, bridge.ErrUnsupported) {
 				return fmt.Errorf("bridge: only macOS and Linux hosts are supported")
@@ -42,7 +43,7 @@ var bridgeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := bridge.Install(a, exe); err != nil {
+		if err := bridge.Install(host, a, exe); err != nil {
 			return err
 		}
 		fmt.Println("bridge: installed and running")
@@ -61,14 +62,14 @@ var bridgeUninstallCmd = &cobra.Command{
 		if err := bridge.EnsureUserContext(); err != nil {
 			return err
 		}
-		a, err := bridge.NewAgent()
+		host, a, err := bridgeAgent()
 		if err != nil {
 			if errors.Is(err, bridge.ErrUnsupported) {
 				return nil
 			}
 			return err
 		}
-		warning, err := bridge.Uninstall(a)
+		warning, err := bridge.Uninstall(host, a)
 		if err != nil {
 			return err
 		}
@@ -95,7 +96,7 @@ var bridgeStatusCmd = &cobra.Command{
 	Short: "Report install state, daemon liveness, port",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE: func(_ *cobra.Command, _ []string) error {
-		a, err := bridge.NewAgent()
+		host, a, err := bridgeAgent()
 		if err != nil {
 			if errors.Is(err, bridge.ErrUnsupported) {
 				fmt.Println("unsupported host")
@@ -103,7 +104,7 @@ var bridgeStatusCmd = &cobra.Command{
 			}
 			return err
 		}
-		rep, err := bridge.Status(a)
+		rep, err := bridge.Status(host, a)
 		if err != nil {
 			return err
 		}
@@ -128,7 +129,11 @@ var bridgeDaemonCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, stop := signalCtx()
 		defer stop()
-		return bridge.Run(ctx, bridge.DaemonOptions{})
+		host, err := fsx.CurrentHost()
+		if err != nil {
+			return err
+		}
+		return bridge.Run(ctx, bridge.DaemonOptions{Host: host})
 	},
 }
 
@@ -138,4 +143,17 @@ func init() {
 	bridgeCmd.AddCommand(bridgeStatusCmd)
 	bridgeCmd.AddCommand(bridgeDaemonCmd)
 	rootCmd.AddCommand(bridgeCmd)
+}
+
+// bridgeAgent resolves the host and its service supervisor together — the
+// pair every `toolbox bridge` subcommand but `daemon` opens with, and which
+// must name the same host or the agent would manage a service file for one
+// home while Install/Uninstall/Status addressed another.
+func bridgeAgent() (fsx.Host, bridge.Agent, error) {
+	host, err := fsx.CurrentHost()
+	if err != nil {
+		return fsx.Host{}, nil, err
+	}
+	a, err := bridge.NewAgent(host)
+	return host, a, err
 }

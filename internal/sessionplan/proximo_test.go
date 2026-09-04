@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -17,8 +18,7 @@ import (
 // the CA file when present on the host.
 func TestPlanWiresProximo(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
+	planHost := fsx.Host{Home: tmp} // no resolver → no proximo on this host
 
 	caPath := filepath.Join(tmp, ".proximo", "tls", "ca.pem")
 	if err := os.MkdirAll(filepath.Dir(caPath), 0o700); err != nil {
@@ -33,7 +33,7 @@ func TestPlanWiresProximo(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: &config.Config{Shell: "zsh", Proximo: new(true)}, Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: &config.Config{Shell: "zsh", Proximo: new(true)}, Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -64,15 +64,14 @@ func TestPlanWiresProximo(t *testing.T) {
 // env. HOME points at a CA-less dir so auto-detect is deterministically off
 // regardless of whether the test host has proximo installed.
 func TestPlanProximoDisabled(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)         // no CA written → auto off
-	t.Setenv("PATH", t.TempDir()) // no host proximo → deterministic fallback path
+	tmp := t.TempDir()              // no CA written → auto off
+	planHost := fsx.Host{Home: tmp} // no resolver → no proximo on this host
 	workspace := filepath.Join(tmp, "ws")
 	if err := mkdirAll(t, workspace); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{Cfg: testConfig(), Workspace: workspace})
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}

@@ -30,6 +30,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/teardown"
@@ -83,9 +84,10 @@ func dockerExec(ctx context.Context, t *testing.T, cli client.APIClient, id stri
 // aliasing step, and without a second copy of the canonical ref outside
 // internal/build.DefaultRegistryImage. Empty falls back to the canonical ref
 // for a local run.
-func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient) string {
+func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, host fsx.Host) string {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
+		Host:      host,
 		Cfg:       &config.Config{Shell: "zsh", Image: os.Getenv("IMAGE_TAG")},
 		Workspace: t.TempDir(),
 		Peer:      true,
@@ -128,18 +130,18 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	}
 	defer cli.Close()
 
-	// A throwaway HOME keeps the run off the developer's own ~/.toolbox. The
+	// A throwaway home keeps the run off the developer's own ~/.toolbox. The
 	// socket directory is shared through the toolbox-cc-socks volume rather
-	// than through HOME, so both sessions land in it regardless.
-	t.Setenv("HOME", t.TempDir())
+	// than through it, so both sessions land in it regardless.
+	host := sandboxHome(t)
 
 	// The anchor outlives sessions by design, so it is torn down explicitly.
 	t.Cleanup(func() {
 		_ = teardown.StopOne(context.Background(), cli, sessionplan.PeerAnchorContainerName, teardown.DefaultStopGrace)
 	})
 
-	a := startPeerSession(ctx, t, cli)
-	b := startPeerSession(ctx, t, cli)
+	a := startPeerSession(ctx, t, cli, host)
+	b := startPeerSession(ctx, t, cli, host)
 
 	// Condition 1 — the inbox-socket directory carries a real peer socket, and
 	// what A drops in it is what B reads. Without the shared mount /tmp is

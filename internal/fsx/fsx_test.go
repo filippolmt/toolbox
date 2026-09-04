@@ -1,7 +1,9 @@
 package fsx
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -151,5 +153,87 @@ func TestTouchMarkerReportsAnUnusableParent(t *testing.T) {
 	}
 	if err := TouchMarker(filepath.Join(blocker, "marker")); err == nil {
 		t.Error("TouchMarker succeeded with a regular file as its parent")
+	}
+}
+
+func TestCurrentHostCarriesTheResolvedHome(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	h, err := CurrentHost()
+	if err != nil {
+		t.Fatalf("CurrentHost: %v", err)
+	}
+	if h.Home != dir {
+		t.Fatalf("Home = %q, want %q", h.Home, dir)
+	}
+	if h.LookPath == nil {
+		t.Fatal("CurrentHost left LookPath nil; the real host resolves no binaries then")
+	}
+	if _, err := h.LookPath("sh"); err != nil {
+		t.Fatalf("CurrentHost's resolver cannot find sh on the real PATH: %v", err)
+	}
+}
+
+func TestCurrentHostFailsWhenHomeIsUnresolvable(t *testing.T) {
+	t.Setenv("HOME", "")
+	if _, err := CurrentHost(); err == nil {
+		t.Fatal("CurrentHost succeeded with an empty $HOME")
+	}
+}
+
+func TestHostExpandUsesItsOwnHome(t *testing.T) {
+	// The point of the type: no process state decides the answer.
+	h := Host{Home: "/planned/home"}
+	if got := h.Expand("~/.toolbox"); got != "/planned/home/.toolbox" {
+		t.Fatalf("Expand = %q", got)
+	}
+	if got := h.Expand("/abs"); got != "/abs" {
+		t.Fatalf("Expand rewrote an absolute path to %q", got)
+	}
+}
+
+func TestHostJoinIsHomeRelative(t *testing.T) {
+	h := Host{Home: "/planned/home"}
+	if got := h.Join(".toolbox", "state"); got != "/planned/home/.toolbox/state" {
+		t.Fatalf("Join = %q", got)
+	}
+}
+
+func TestHostLookResolvesNothingWhenUnset(t *testing.T) {
+	// A Host with no resolver has an empty PATH — it must NOT fall back to the
+	// process, or a caller that declared only a home would silently keep
+	// probing the real machine. "sh" is the case that catches a fallback: it
+	// exists on every host this runs on.
+	var h Host
+	got, err := h.Look("sh")
+	if !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("Look = %q, %v; want exec.ErrNotFound — a nil resolver must not read the process PATH", got, err)
+	}
+}
+
+func TestHostLookUsesTheInjectedResolver(t *testing.T) {
+	h := Host{LookPath: func(name string) (string, error) { return "/stub/" + name, nil }}
+	got, err := h.Look("proximo")
+	if err != nil {
+		t.Fatalf("Look: %v", err)
+	}
+	if got != "/stub/proximo" {
+		t.Fatalf("Look = %q, want the injected resolver's answer", got)
+	}
+}
+
+func TestHostValidate(t *testing.T) {
+	// The guard fsx.Home enforces on the ambient read, re-stated where the
+	// resolved value enters a package: without it a zero Host would join
+	// every ~/.toolbox path onto "" and stat, create or bind the wrong tree.
+	if err := (Host{Home: "/planned/home"}).Validate(); err != nil {
+		t.Fatalf("Validate on a host with a home: %v", err)
+	}
+	err := Host{}.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted a host with no home")
+	}
+	if !strings.Contains(err.Error(), "resolve home directory:") {
+		t.Errorf("error %q missing the prefix every home failure shares", err)
 	}
 }

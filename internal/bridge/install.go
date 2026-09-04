@@ -26,8 +26,8 @@ type StatusReport struct {
 // Install bootstraps the daemon: migrates pre-rename state, ensures host
 // state dir, generates token, writes the platform service file, and starts
 // it.
-func Install(a Agent, execPath string) error {
-	s, err := ResolveHostState()
+func Install(host fsx.Host, a Agent, execPath string) error {
+	s, err := ResolveHostState(host)
 	if err != nil {
 		return err
 	}
@@ -49,11 +49,7 @@ func Install(a Agent, execPath string) error {
 // exist the new one wins and the stale legacy dir (recreated by an old
 // binary's CreateIfMissing mount or `browser-bridge install`) is removed.
 func migrateLegacyHostDir(s HostState) error {
-	home, err := fsx.Home()
-	if err != nil {
-		return err
-	}
-	legacy := filepath.Join(home, LegacyHostDir)
+	legacy := s.Legacy
 	if _, err := os.Stat(legacy); err != nil {
 		return nil
 	}
@@ -75,19 +71,15 @@ func migrateLegacyHostDir(s HostState) error {
 // dir (both the current and the pre-rename location). Wiping the current state
 // dir is best-effort — see stateDirOutcome and the Bridge Run Mount glossary
 // entry; the pre-rename dir is never a mount source and keeps failing hard.
-func Uninstall(a Agent) (warning string, err error) {
-	s, err := ResolveHostState()
+func Uninstall(host fsx.Host, a Agent) (warning string, err error) {
+	s, err := ResolveHostState(host)
 	if err != nil {
 		return "", err
 	}
 	if err := a.Uninstall(); err != nil {
 		return "", err
 	}
-	home, err := fsx.Home()
-	if err != nil {
-		return "", err
-	}
-	if err := os.RemoveAll(filepath.Join(home, LegacyHostDir)); err != nil {
+	if err := os.RemoveAll(s.Legacy); err != nil {
 		return "", err
 	}
 	return stateDirOutcome(s, os.RemoveAll(s.Dir))
@@ -114,8 +106,8 @@ func stateDirOutcome(s HostState, err error) (string, error) {
 }
 
 // Status reports the current bridge + agent state.
-func Status(a Agent) (StatusReport, error) {
-	s, err := ResolveHostState()
+func Status(host fsx.Host, a Agent) (StatusReport, error) {
+	s, err := ResolveHostState(host)
 	if err != nil {
 		return StatusReport{}, err
 	}
