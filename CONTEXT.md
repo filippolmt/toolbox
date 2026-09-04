@@ -295,7 +295,7 @@ The two-phase decision tree that guarantees the image referenced by a
 Concretely: `imageplan.RefreshAtStart(ctx, cli, image, stateDir, stake)`
 runs at the top of `container.Shell` and best-effort syncs the image
 against its registry, steered by the Image's pull policy — `never` skips
-the round-trip, `always` forces `imagepull.ForcePull`, `auto` (default)
+the round-trip, `always` forces an unconditional pull, `auto` (default)
 probes and then *asks*, see
 [Start-up Refresh Prompt](#start-up-refresh-prompt); errors are
 swallowed. The `imageplan.Stake` is the caller's answer to *what does a
@@ -304,21 +304,33 @@ yes cost here besides the wait* — `StakeDownload` on a create,
 adds no case to the tree: it words the question and points the
 unanswered window. `imageplan.Refresh` is the same act with nothing to ask,
 kept for the [Session Reload](#session-reload), which runs it before it
-destroys anything and whose `auto` branch stays on the TTL-cached
-`imagepull.RefreshIfStale` — a reload adopts what the store holds, and
-the [Image Prefetch](#image-prefetch) is what advanced it.
+destroys anything and whose `auto` branch stays on the TTL-cached form —
+a reload adopts what the store holds, and the
+[Image Prefetch](#image-prefetch) is what advanced it.
 
 Both entry points take the session's resolved state dir, because that is
 where the TTL marker lives: `<state dir>/pull-cache/<sha256-of-ref>`. It
 used to be derived from `$HOME`, which pinned it to the *default* state
 location while every other toolbox-managed marker followed a
-`mounts_root` or `--profile` retarget — `localimage` derives the overlay
-marker from the overlay Dockerfile's root, `imageprefetch` takes
-`StateDir` as a declared input, and `docs/configuration.md` already
-described the pull cache as mounts_root-aware. A session that resolves no
-state mount at all resolves no cache either: one round-trip per
-invocation instead of one per TTL, which is the honest cost of having
-disabled the mount, and better than a cache the container cannot see.
+`mounts_root` or `--profile` retarget — `imageprefetch` took `StateDir`
+as a declared input already, `localimage` now takes it too, and
+`docs/configuration.md` already described the pull cache as
+mounts_root-aware. A session that resolves no state mount at all resolves
+no cache either: one round-trip per invocation instead of one per TTL,
+which is the honest cost of having disabled the mount, and better than a
+cache the container cannot see. The overlay marker is the one deliberate
+exception to *that* half, and only to that half: with no state mount it
+falls back to the default state location under the overlay Dockerfile's
+own root, because losing it costs not one extra check per shell but a
+rebuild of the derived image on every shell for the life of the setting.
+
+The pull itself is a file in this package, not a package of its own. Its
+whole interface was two functions differing by one cache check, nothing
+outside the owner ever called either, and the asymmetry between them —
+one stamps a marker only the other reads — was invisible in both
+signatures and cost three paragraphs to disambiguate from the prefetch's
+own cadence. Folded in, the policy switch and the two forms it chooses
+between read as one body, and the TTL and its cache are private state.
 
 The pull policy steers the **synchronous** refresh only: the background
 [Image Prefetch](#image-prefetch) reads the same key on a two-state
@@ -335,7 +347,7 @@ local rebuild (the auto-build branch died with the local-hash image
 tag). Owned by `internal/imageplan`.
 
 Why the term exists: before this concept was named, the policy was
-split — `imagepull.RefreshIfStale` ran inline at the top of
+split — the TTL-cached refresh ran inline at the top of
 `container.Shell` and a package-level `ensureImage` closure inside
 `internal/container/lifecycle.go` covered the create-branch guarantee.
 Reading either site alone missed half the contract ("when do we
@@ -903,7 +915,7 @@ Every module that talks to the Docker daemon declares, unexported in its
 own package, an interface holding exactly the daemon methods it calls —
 named for the role the daemon plays there rather than for Docker.
 
-Concretely: `imagepull.registry` (`ImagePull`), `imagereclaim.imageStore`
+Concretely: `imageplan.registry` (`ImagePull`), `imagereclaim.imageStore`
 (`ImageList` + `ImageRemove`), `localimage.overlayBuilder`,
 `imageprefetch.registryStore`, `imageplan.imageSource`,
 `teardown.containerRuntime` (the container it inspects, stops, removes or
@@ -1022,12 +1034,13 @@ read where the lints behind it previously took two unnamed ones. Their
 callers reach them through packages this concept has not crossed; until
 they do, a test that exercises those paths still sandboxes `$HOME`.
 
-`imagepull` was on that list and came off it differently: its pull-cache
-marker never wanted a home, it wanted the session's resolved state dir,
-which `SessionPlan.StateDir` already carries. Taking that instead removed
-the ambient read *and* put the cache where `docs/configuration.md` always
-said it was — mounts_root-aware, beside the overlay marker. See the
-[Image Plan](#image-plan) entry.
+The pull cache was on that list and came off it differently: its marker
+never wanted a home, it wanted the session's resolved state dir, which
+`SessionPlan.StateDir` already carries. Taking that instead removed the
+ambient read *and* put the cache where `docs/configuration.md` always
+said it was — mounts_root-aware, beside the overlay marker, which then
+took the same input rather than re-deriving the root from a sibling path.
+See the [Image Plan](#image-plan) entry.
 
 That was the last ambient home read on `internal/container`'s path, so
 the helper that used to set the process `$HOME` *and* return a matching

@@ -99,7 +99,7 @@ func TestAtomicWriteFileLeavesNoTemp(t *testing.T) {
 }
 
 // The three marker primitives are the shared half of two TTL gates whose
-// semantics differ (imagepull stamps successes, imageprefetch stamps every
+// semantics differ (the pull cache stamps successes, imageprefetch stamps every
 // attempt), so the mechanism is worth pinning once here rather than twice
 // there. The asymmetry between Fresh and OlderThan is the point of the test:
 // an absent marker is neither, and reading it as "old" would let a caller
@@ -143,7 +143,7 @@ func TestMarkers(t *testing.T) {
 }
 
 // A marker path whose parent cannot be created is an error the caller has to
-// see: for imagepull it means every shell pays a registry round-trip, for
+// see: for the pull cache it means every shell pays a registry round-trip, for
 // imageprefetch it means the banner would never be written either.
 func TestTouchMarkerReportsAnUnusableParent(t *testing.T) {
 	dir := t.TempDir()

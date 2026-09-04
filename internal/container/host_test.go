@@ -9,8 +9,8 @@ import (
 // planHost returns a Host rooted at a fresh temp dir.
 //
 // It used to point the process $HOME at the same directory too: this package's
-// plans reach imagepull, whose pull-cache marker resolved its own home, so an
-// unsandboxed run wrote under the developer's real ~/.toolbox. imagepull now
+// plans reach the Image Plan, whose pull-cache marker resolved its own home, so
+// an unsandboxed run wrote under the developer's real ~/.toolbox. It now
 // takes the session's resolved state dir, and nothing this package reaches
 // reads the environment for a home any more — so the declared Host is the
 // whole fixture.

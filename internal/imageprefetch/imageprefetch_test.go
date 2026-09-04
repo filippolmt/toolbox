@@ -281,7 +281,8 @@ func TestPollStaysSilentWhenTheSessionIsCurrent(t *testing.T) {
 }
 
 // A probe that succeeds while the pull fails — expired registry credentials,
-// the case imagepull warns about — must not announce bytes that never landed.
+// the case the pull half warns about — must not announce bytes that never
+// landed.
 // (The dedicated "unavailable" wording is the banner ticket's, not this one's.)
 func TestPollStaysSilentWhenThePullFails(t *testing.T) {
 	dir := stateDir(t)

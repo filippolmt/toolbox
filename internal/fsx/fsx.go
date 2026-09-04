@@ -93,7 +93,7 @@ func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
 //
 // Marker contents are never read: the modification time *is* the record. Two
 // packages keep TTL-gated markers on the state mount with different meanings
-// (imagepull stamps only successful pulls, imageprefetch stamps every probe
+// (the pull cache stamps only successful pulls, imageprefetch stamps every probe
 // attempt); the mechanism is shared here, the semantics stay theirs.
 func MarkerFresh(path string, ttl time.Duration) bool {
 	info, err := os.Stat(path)

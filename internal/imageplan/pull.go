@@ -1,22 +1,28 @@
-// Package imagepull owns the "refresh canonical image, best-effort, with
-// a TTL cache" concern that used to live inline in container.Shell. The
-// cache marker file lives at <state dir>/pull-cache/<sha256-of-ref> so it
+// The pull half of the Image Plan: "refresh the canonical image, best-effort,
+// with a TTL cache". A file rather than a package, because its whole interface
+// was two functions differing by one cache check and no code outside this
+// package ever called either — the policy switch that chooses between them
+// lives in imageplan.go, and the asymmetry between them (one stamps a marker
+// only the other reads) is only legible beside it.
+//
+// The cache marker file lives at <state dir>/pull-cache/<sha256-of-ref> so it
 // survives across CLI runs; only successful pulls record, so a network blip
 // doesn't poison the next invocation into staleness.
 //
 // The state dir is passed in, not resolved here: it is the host source of the
 // toolbox state mount, which a mounts_root or a --profile retargets. Deriving
 // it from $HOME would pin the cache to the default location while every other
-// toolbox-managed marker followed the retarget — see markerPath.
+// toolbox-managed marker followed the retarget — see cache.markerPath.
 //
-// Two seams, both best-effort (callers proceed with the local image
-// regardless): RefreshIfStale(ctx, cli, ref, stateDir) is the cache-aware form
-// (cache-hit fast-path, pull on miss, record on success), and ForcePull
-// pulls unconditionally — for the "always" policy, and for a shell start
-// whose probe already established that the registry is ahead. UI surfacing
-// (per-layer progress, success/warning lines) stays inside this package so
-// the pull concern owns its own observability end-to-end.
-package imagepull
+// Both seams are best-effort (callers proceed with the local image
+// regardless): refreshIfStale is the cache-aware form (cache-hit fast-path,
+// pull on miss, record on success), and forcePull pulls unconditionally — for
+// the "always" policy, and for a shell start whose probe already established
+// that the registry is ahead. UI surfacing (per-layer progress,
+// success/warning lines) stays here so the pull concern owns its own
+// observability end-to-end.
+
+package imageplan
 
 import (
 	"context"
@@ -38,35 +44,36 @@ import (
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
-// TTL bounds how long a previous successful manifest check is trusted before
-// the registry is asked again. One hour is short enough that a freshly pushed
-// image lands on developer machines within the same work block, and long
+// registry is the registry the pull half reaches, as narrow as the act: one
+// method, and every caller inside this package passes something that has it.
+// Narrower than the tree's own imageSource on purpose — a function that only
+// pulls should not be able to inspect. → CONTEXT.md, Declared Docker Surface.
+type registry interface {
+	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
+}
+
+// pullTTL bounds how long a previous successful manifest check is trusted
+// before the registry is asked again. One hour is short enough that a freshly
+// pushed image lands on developer machines within the same work block, and long
 // enough that rapid `toolbox shell` cycles (open → exit → open) don't each
-// pay a round-trip to GHCR. It gates RefreshIfStale, which is the session
+// pay a round-trip to GHCR. It gates refreshIfStale, which is the session
 // reload's refresh — a shell start decides from a digest probe instead, and
 // deliberately: a warm cache there is what let a released image go unoffered
 // for up to an hour. Override is intentional fs-only: delete
 // <state dir>/pull-cache/* to force a fresh pull on next invocation — the
 // session's resolved state dir, which a mounts_root or a --profile moves
 // (~/.toolbox/toolbox/state only when neither does).
-const TTL = 1 * time.Hour
+const pullTTL = 1 * time.Hour
 
-// registry is the registry this package pulls from, as narrow as the act: one
-// method, and every caller of RefreshIfStale or ForcePull passes something
-// that has it. → CONTEXT.md, Declared Docker Surface.
-type registry interface {
-	ImagePull(ctx context.Context, ref string, opts client.ImagePullOptions) (client.ImagePullResponse, error)
-}
-
-// RefreshIfStale refreshes the registry image at ref, best-effort, unless
-// a recent successful pull is still within TTL. Errors are logged as
+// refreshIfStale refreshes the registry image at ref, best-effort, unless
+// a recent successful pull is still within pullTTL. Errors are logged as
 // warnings and swallowed: the caller proceeds with the local image.
 //
 // Reports whether a registry round trip actually succeeded now. Only that
 // answer lets the background update prefetch skip its own probe: a cache hit
 // did no work at all, and a failed pull leaves the local store possibly
 // behind the registry, which is the one thing the prefetch exists to notice.
-func RefreshIfStale(ctx context.Context, cli registry, ref, stateDir string) bool {
+func refreshIfStale(ctx context.Context, cli registry, ref, stateDir string) bool {
 	c := cache{dir: stateDir}
 	if c.fresh(ref) {
 		return false
@@ -74,17 +81,17 @@ func RefreshIfStale(ctx context.Context, cli registry, ref, stateDir string) boo
 	return pullAndRecord(ctx, cli, ref, c)
 }
 
-// ForcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
+// forcePull pulls ref unconditionally, ignoring the TTL cache. Backs the
 // "always" pull policy: the user has asked for a registry round-trip on every
 // shell, so a recent cache hit must not short-circuit it. Best-effort like
-// RefreshIfStale — failures are warned and the caller falls back to the local
+// refreshIfStale — failures are warned and the caller falls back to the local
 // image.
-func ForcePull(ctx context.Context, cli registry, ref, stateDir string) bool {
+func forcePull(ctx context.Context, cli registry, ref, stateDir string) bool {
 	return pullAndRecord(ctx, cli, ref, cache{dir: stateDir})
 }
 
 // pullAndRecord pulls ref and stamps the cache marker on success — the shared
-// tail of RefreshIfStale (after the cache check) and ForcePull.
+// tail of refreshIfStale (after the cache check) and forcePull.
 func pullAndRecord(ctx context.Context, cli registry, ref string, c cache) bool {
 	if !pull(ctx, cli, ref) {
 		return false
@@ -202,7 +209,7 @@ func (c cache) markerPath(ref string) (string, error) {
 }
 
 // fresh reports whether a successful pull of ref happened within the
-// last TTL. Any error (no state dir, missing marker, stat failure)
+// last pullTTL. Any error (no state dir, missing marker, stat failure)
 // returns false so the caller falls through to a real pull — never
 // silently skip on uncertainty.
 func (c cache) fresh(ref string) bool {
@@ -210,7 +217,7 @@ func (c cache) fresh(ref string) bool {
 	if err != nil {
 		return false
 	}
-	return fsx.MarkerFresh(path, TTL)
+	return fsx.MarkerFresh(path, pullTTL)
 }
 
 // stamp writes a fresh marker after a successful pull. Persist failures

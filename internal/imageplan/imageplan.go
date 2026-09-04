@@ -33,7 +33,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
-	"github.com/filippolmt/toolbox/internal/imagepull"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -54,8 +53,8 @@ type imageSource interface {
 // anything, steered by the Image's pull policy: "never" skips the registry
 // round-trip entirely (the local copy is authoritative — Ensure still guards
 // presence), "always" forces a pull bypassing the TTL cache, "auto"/"" uses
-// the cache-aware default. Errors are swallowed by imagepull (logged as a
-// warning at most); the caller's existing local copy is the fallback.
+// the cache-aware default. Errors are swallowed by the pull half (logged as
+// a warning at most); the caller's existing local copy is the fallback.
 //
 // This is the session reload's form. A shell start calls RefreshAtStart
 // instead: the TTL cache is the very unevenness that decision removes, and a
@@ -69,9 +68,9 @@ func Refresh(ctx context.Context, cli imageSource, image sessionplan.Image, stat
 	case config.PullNever:
 		return false
 	case config.PullAlways:
-		return imagepull.ForcePull(ctx, cli, image.Ref, stateDir)
+		return forcePull(ctx, cli, image.Ref, stateDir)
 	default: // config.PullAuto and the unset zero value
-		return imagepull.RefreshIfStale(ctx, cli, image.Ref, stateDir)
+		return refreshIfStale(ctx, cli, image.Ref, stateDir)
 	}
 }
 
@@ -207,13 +206,13 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 	case config.PullNever:
 		return Outcome{}
 	case config.PullAlways:
-		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref, stateDir)}
+		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
 	}
 
 	// Presence, not currency: an image the store does not hold at all leaves
 	// nothing to ask about and nothing to start.
 	if _, present := build.LocalRepoDigest(ctx, cli, image.Ref); !present {
-		return Outcome{Synced: imagepull.ForcePull(ctx, cli, image.Ref, stateDir)}
+		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
 	}
 
 	// Before the probe, not after: knowing the answer is a registry round-trip
@@ -253,7 +252,7 @@ func RefreshAtStart(ctx context.Context, cli imageSource, image sessionplan.Imag
 	// One value, read twice: the pull that landed is what makes the answer
 	// honourable, and a pull that failed leaves the developer where they
 	// already were rather than spending a container on nothing.
-	synced := imagepull.ForcePull(ctx, cli, image.Ref, stateDir)
+	synced := forcePull(ctx, cli, image.Ref, stateDir)
 	return Outcome{Synced: synced, Accepted: synced}
 }
 

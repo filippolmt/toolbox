@@ -384,9 +384,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// Passthrough (base unchanged) when the file is absent; fail loud on a
 	// build error so the shell never silently starts from the wrong image.
 	// The returned `:local` carries pull policy "never", so the later
-	// Ensure/Refresh for the create path never touch a registry for it.
+	// Ensure/Refresh for the create path never touch a registry for it. The
+	// rebuild marker goes where this session's state lives, which is the plan's
+	// answer to give — the same directory the pull cache and the prefetch use.
 	baseImage := plan.Image
-	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile)
+	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile, plan.StateDir)
 	if overlayErr != nil {
 		return nil, overlayErr
 	}

@@ -48,8 +48,8 @@ func TestMain(m *testing.M) {
 // package run and fails the run if anything lands in it.
 //
 // This package's tests used to sandbox $HOME one by one, because the plans
-// they build reached imagepull, whose pull-cache marker resolved its own home
-// — unsandboxed, a run wrote under the developer's real ~/.toolbox. imagepull
+// they build reached the Image Plan, whose pull-cache marker resolved its own
+// home — unsandboxed, a run wrote under the developer's real ~/.toolbox. It
 // now takes the session's resolved state dir and every path here declares its
 // host, so those 34 guards are gone. This is what keeps them gone: a
 // regression to an ambient read shows up as a file in a directory nothing is

@@ -27,9 +27,9 @@
 // mount, so sibling sessions share one probe per TTL and the cadence survives
 // a future re-exec of the host CLI for free. The stamp records the attempt,
 // not the success — an offline machine is capped at one failed probe per TTL
-// rather than one per tick — which is why it is a separate file from
-// imagepull's pull-cache marker, whose "successful pulls only" semantics gate
-// a different act (the silent refresh a session reload runs).
+// rather than one per tick — which is why it is a separate file from the
+// Image Plan's pull-cache marker, whose "successful pulls only" semantics
+// gate a different act (the silent refresh a session reload runs).
 package imageprefetch
 
 import (
@@ -54,8 +54,9 @@ import (
 // is asked again. Half an hour is the map's target cadence: short enough that
 // an image merged this morning is downloaded before the afternoon of a
 // multi-day session, long enough that the probe is invisible. Deliberately
-// not imagepull.TTL (1 h), which gates the synchronous refresh on every shell
-// start — retuning that one would re-probe every ordinary shell twice as often.
+// not the Image Plan's `pullTTL`, which gates the synchronous refresh on
+// every shell start — retuning that one would re-probe every ordinary shell
+// twice as often.
 const TTL = 30 * time.Minute
 
 // tickInterval is the alarm, not the cadence. Every tick re-reads the shared
