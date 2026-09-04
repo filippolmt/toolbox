@@ -139,7 +139,7 @@ jobs:
           # but its tarball 404s, so `npx --yes --package renovate` fails before
           # it ever reads renovate.json. Renovate bumps this pin itself, via the
           # customManager for this file in renovate.json.
-          RENOVATE_VERSION: 44.61.4
+          RENOVATE_VERSION: 44.61.6
         run: |
           npx --yes --package "renovate@${RENOVATE_VERSION}" \
             renovate-config-validator renovate.json

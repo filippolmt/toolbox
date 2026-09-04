@@ -11,8 +11,8 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-connections v0.8.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/moby/moby/api v1.55.0
-	github.com/moby/moby/client v0.5.1
+	github.com/moby/moby/api v1.56.0
+	github.com/moby/moby/client v0.6.0
 	github.com/muesli/cancelreader v0.2.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
