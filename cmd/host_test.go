@@ -1,11 +1,13 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -130,6 +132,18 @@ func captureCmdStderr(t *testing.T, fn func()) string {
 // service file. Early is what makes this reachable — each returns before it
 // touches Docker or a supervisor.
 func TestCommandsThatNeedAHomeRefuseCleanly(t *testing.T) {
+	// Constructing the client is made a failure, because that is what this
+	// test has to prove cannot happen: sessionplan.Plan's own Host.Validate
+	// reports the *same* "resolve home directory" text, so without the stub an
+	// assembly that reached Docker first would still pass — leaving a
+	// misconfigured DOCKER_HOST to report a Docker error, and the mount stage
+	// to leave its side effects behind, where a home error is owed instead.
+	origClient := newDockerClient
+	t.Cleanup(func() { newDockerClient = origClient })
+	newDockerClient = func() (client.APIClient, error) {
+		return nil, errors.New("the Docker client was constructed before the home was resolved")
+	}
+
 	for _, tc := range []struct {
 		name string
 		call func(t *testing.T) error
@@ -144,9 +158,8 @@ func TestCommandsThatNeedAHomeRefuseCleanly(t *testing.T) {
 			return runShell(shellCmd, nil)
 		}},
 		{"worktree session", func(t *testing.T) error {
-			// nil client: openSession resolves the host before it reaches
-			// Docker, which is the whole point of resolving it early.
-			return openSession(context.Background(), nil, t.TempDir(), t.TempDir(), "b", "claude", "")
+			withCfg(t, &config.Config{Shell: "zsh"})
+			return openWorktreeSession(t.TempDir(), t.TempDir(), "b", "claude", "")
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

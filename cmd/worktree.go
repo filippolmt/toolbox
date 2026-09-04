@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,10 +12,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
-	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/worktree"
 )
@@ -174,40 +171,32 @@ func resolveAgent(flag string) (string, error) {
 	return agent, nil
 }
 
-// openSession plans and launches a worktree container session scoped to
-// wtPath, auto-starting agent with an optional initial prompt (empty = bare
-// launch). Shared by create (which may pass a prompt) and open (which never
-// does — re-attach only). This is the interactive Docker edge that stays in
-// cmd (see the Worktree entry in CONTEXT.md): the seed gating, the sessionplan
-// call, and the TTY attach in container.Shell, plus the image-digest resolve
-// shared with the `shell` command. What a worktree session *is* — the .git bind and
-// the agent launch — lives behind PlanInput.Worktree.
-func openSession(ctx context.Context, cli client.APIClient, root, wtPath, branch, agent, prompt string) error {
-	reloadFrom, err := takeReloadHandover()
-	if err != nil {
-		return err
-	}
-	host, err := fsx.CurrentHost()
-	if err != nil {
-		return err
-	}
-	imageDigest, _ := build.LocalRepoDigest(ctx, cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{
-		Host:        host,
-		Cfg:         cfg,
-		Workspace:   wtPath,
-		ImageDigest: imageDigest,
-		Peer:        cfg.PeerMessaging,
-		Worktree:    &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
-		ReloadFrom:  reloadFrom,
+// openWorktreeSession opens the worktree session scoped to wtPath,
+// auto-starting agent with an optional initial prompt (empty = bare launch).
+// Shared by create (which may pass a prompt) and open (which never does —
+// re-attach only).
+//
+// All it does is describe the session: how any session is opened — the
+// handover, the image digest, the plan, the seeding and the TTY attach — lives
+// in startSession, shared with the `shell` command, which is what keeps the two
+// entry points from drifting apart the way they had. What a worktree session
+// *is* — the .git bind and the agent launch — lives behind PlanInput.Worktree.
+func openWorktreeSession(root, wtPath, branch, agent, prompt string) error {
+	return startSession(sessionIntent{
+		Plan: sessionplan.PlanInput{
+			Cfg:       cfg,
+			Workspace: wtPath,
+			// `worktree` exposes neither --profile/--share nor --peer, so the
+			// profile stays nil and the peer opt-in comes from config alone.
+			// Spelled out rather than omitted: the absence is a decision.
+			Profile:  nil,
+			Peer:     cfg.PeerMessaging,
+			Worktree: &sessionplan.WorktreeSession{RepoRoot: root, Agent: agent, Prompt: prompt},
+		},
+		// The re-entry form is normalised, not replayed, and pins the resolved
+		// agent so the reloaded session resumes the conversation this one ran.
+		Reentry: worktreeReentry(branch, agent),
 	})
-	if err != nil {
-		return err
-	}
-	seedWorktreeFiles(root, wtPath, cfg.Worktree.Seed)
-	// The re-entry form is normalised, not replayed, and pins the resolved
-	// agent so the reloaded session resumes the conversation this one ran.
-	return runSession(ctx, cli, plan, worktreeReentry(branch, agent))
 }
 
 // seedWorktreeFiles copies gitignored per-repo working state from the main
@@ -417,18 +406,11 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cli, err := container.NewClient()
-	if err != nil {
-		return dockerClientErr(err)
-	}
-	defer cli.Close()
-	ctx, stop := signalCtx()
-	defer stop()
-	// The worktree + branch now exist on disk; if the container launch fails
+	// The worktree + branch now exist on disk; if the session launch fails
 	// (daemon down, image pull error) the worktree is a valid artifact — point
 	// the user at `open` to re-attach rather than re-`create` (which would
 	// error on the existing branch/directory).
-	if err := openSession(ctx, cli, root, wtPath, branch, agent, prompt); err != nil {
+	if err := openWorktreeSession(root, wtPath, branch, agent, prompt); err != nil {
 		return fmt.Errorf("%w\nworktree created at %s — re-attach with 'toolbox worktree open %s' once resolved", err, wtPath, branch)
 	}
 	return nil
@@ -446,14 +428,7 @@ func runWorktreeOpen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cli, err := container.NewClient()
-	if err != nil {
-		return dockerClientErr(err)
-	}
-	defer cli.Close()
-	ctx, stop := signalCtx()
-	defer stop()
-	return openSession(ctx, cli, root, wtPath, branch, agent, "") // no prompt on re-attach
+	return openWorktreeSession(root, wtPath, branch, agent, "") // no prompt on re-attach
 }
 
 func runWorktreeList(cmd *cobra.Command, _ []string) error {

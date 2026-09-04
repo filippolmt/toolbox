@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -9,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
-	"github.com/filippolmt/toolbox/internal/build"
-	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -67,15 +64,13 @@ equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
 	RunE: runShell,
 }
 
+// runShell resolves the `shell` flags into a sessionIntent and hands it to
+// startSession, which owns everything the two interactive entry points do with
+// one. Nothing below this line talks to Docker: what stays here is the flag
+// surface only — pure expansion first, then the one bootstrap that writes
+// config, in that order, so an unknown --oauth tool or a bad --profile fails
+// before a named shell is created on disk.
 func runShell(cmd *cobra.Command, args []string) error {
-	// Consumed and unset before anything builds a container env, so the
-	// host-to-host handover never reaches a container. Nil on an ordinary
-	// shell start; unreadable is a hard error, never a silent degrade.
-	reloadFrom, err := takeReloadHandover()
-	if err != nil {
-		return err
-	}
-
 	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
 	// fails fast before any fs side effects or container creation.
 	publish, bridgeLoopback, err := expandShellOAuth(shellPublish, shellBridgeLoopback, shellOAuth)
@@ -98,78 +93,30 @@ func runShell(cmd *cobra.Command, args []string) error {
 	// workspace error rather than a home error raised on its behalf.
 	warnIfNewProfile(hostBestEffort(), profile)
 
+	// shellName is the user-typed named shell — empty for workspace sessions;
+	// both the container-name format and the per-shell env: overlay are derived
+	// from it behind the sessionplan seam.
 	ws, shellName, err := resolveShellWorkspace(args, shellCreate, shellPath)
 	if err != nil {
 		return err
 	}
 
-	// The ambient host, read once here and threaded from this point on: the
-	// legacy-state migration and the whole session plan address the same home
-	// instead of each re-reading $HOME. Strict — the plan cannot be built
-	// without a home, and mountplan.Plan used to be where that failed.
-	host, err := fsx.CurrentHost()
-	if err != nil {
-		return err
-	}
-
-	// One-time relocation of toolbox-own state into the ~/.toolbox/toolbox
-	// namespace. Best-effort: on failure CreateIfMissing rebuilds an empty
-	// state dir and the pull cache regenerates, so warn instead of failing
-	// the shell.
-	if err := mountplan.MigrateLegacyToolboxState(host.Home); err != nil {
-		fmt.Fprintf(os.Stderr, "toolbox: warning: %v\n", err)
-	}
-
-	if cfg.Bridge != nil && *cfg.Bridge {
-		printBridgeTipIfNeeded(host)
-	}
-
-	cli, err := container.NewClient()
-	if err != nil {
-		return dockerClientErr(err)
-	}
-	defer cli.Close()
-
-	// Resolve the running image's repo digest host-side and thread it to the
-	// planner, which stamps it into the container as its record of what it was
-	// created from — the baseline the update prefetch compares the local image
-	// store against. Best-effort: an unresolvable digest (locally built image,
-	// inspect failure, image not yet pulled) yields "" and the planner omits
-	// the env entry. See session-reload.
-	imageDigest, _ := build.LocalRepoDigest(context.Background(), cli, build.ResolveImage(cfg.Image, cfg.RegistryMirror))
-
-	// Plan after the Docker client is constructed so a failed client init
-	// (env parse / socket misconfig) does not leave behind mountplan.Plan
-	// fs side effects under ~/.toolbox and the workspace. shellName is the
-	// user-typed named shell — empty for workspace sessions; both the
-	// container-name format and the per-shell env: overlay are derived from
-	// it behind the sessionplan seam.
-	plan, err := sessionplan.Plan(sessionplan.PlanInput{
-		Host:           host,
-		Cfg:            cfg,
-		Workspace:      ws,
-		Ports:          publish,
-		BridgeLoopback: bridgeLoopback,
-		ImageDigest:    imageDigest,
-		Name:           shellName,
-		Profile:        profile,
-		Peer:           resolvePeer(cmd, cfg.PeerMessaging, shellPeer),
-		ReloadFrom:     reloadFrom,
+	return startSession(sessionIntent{
+		Plan: sessionplan.PlanInput{
+			Cfg:            cfg,
+			Workspace:      ws,
+			Name:           shellName,
+			Ports:          publish,
+			BridgeLoopback: bridgeLoopback,
+			Profile:        profile,
+			Peer:           resolvePeer(cmd, cfg.PeerMessaging, shellPeer),
+		},
+		// The re-entry form carries the flags as typed, not just the
+		// positional: --profile and --peer feed the container name and -p its
+		// port bindings, so a form without them would reload the session into a
+		// different container than the one the payload names for teardown.
+		Reentry: shellReentry(cmd.Flags(), args),
 	})
-	if err != nil {
-		return err
-	}
-
-	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this
-	// signal context only fires during pull/build or on external kill.
-	ctx, stop := signalCtx()
-	defer stop()
-
-	// The re-entry form carries the flags as typed, not just the positional:
-	// --profile and --peer feed the container name and -p its port bindings,
-	// so a form without them would reload the session into a different
-	// container than the one the payload names for teardown.
-	return runSession(ctx, cli, plan, shellReentry(cmd.Flags(), args))
 }
 
 // expandShellOAuth merges --oauth recipe expansion into the explicit -p/-B
