@@ -13,7 +13,7 @@
 //     already had its chance and we fail fatally.
 //
 // The image ref defaults to the canonical registry tag but can be relocated
-// opt-in (config Image / RegistryMirror; build.ResolveImage owns the
+// opt-in (config Image / RegistryMirror; imageref.ResolveImage owns the
 // precedence). Ensure never builds — `toolbox build` is the explicit
 // user-driven path for a local rebuild. The Pull policy carried on the
 // Image steers Sync: "auto" (default) probes or reads the cache depending on
@@ -28,9 +28,9 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
@@ -280,7 +280,7 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 
 	// Presence, not currency: an image the store does not hold at all leaves
 	// nothing to ask about and nothing to start.
-	if _, present := build.LocalRepoDigest(ctx, cli, image.Ref); !present {
+	if _, present := imageref.LocalRepoDigest(ctx, cli, image.Ref); !present {
 		return settleSync(forcePull(ctx, cli, image.Ref, stateDir))
 	}
 

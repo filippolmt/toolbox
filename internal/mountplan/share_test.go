@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // TestMergeShareKeepsToolOnHostRoot: under a profile, a --share token keeps
 // that tool's mount on the shared ~/.toolbox/ source while the rest are
 // retargeted into the profile.
 func TestMergeShareKeepsToolOnHostRoot(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"gh"}})
+	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"gh"}}, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -27,7 +28,7 @@ func TestMergeShareKeepsToolOnHostRoot(t *testing.T) {
 // TestMergeSharePrefixCoversSplitMounts: a single token covers a tool whose
 // state splits across sibling mounts (cf → cf-auth/cf-config).
 func TestMergeSharePrefixCoversSplitMounts(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"cf"}})
+	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"cf"}}, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestMergeSharePrefixCoversSplitMounts(t *testing.T) {
 // mounts on the host root (EffectiveShare appends "bridge") so the daemon
 // token/socket stay reachable — even with no explicit --share.
 func TestMergeProfileKeepsBridgeOnHostRoot(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work"})
+	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work"}, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestMergeProfileKeepsBridgeOnHostRoot(t *testing.T) {
 // TestMergeShareUnknownErrors: a --share token matching no shareable mount
 // fails loudly rather than silently isolating everything.
 func TestMergeShareUnknownErrors(t *testing.T) {
-	if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"ghh"}}); err == nil {
+	if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{"ghh"}}, proximo.Gate{}); err == nil {
 		t.Fatal("Merge with unknown --share token: want error, got nil")
 	}
 }
@@ -69,7 +70,7 @@ func TestMergeShareUnknownErrors(t *testing.T) {
 // mounts, never selectable via --share.
 func TestMergeShareSSHNotSelectable(t *testing.T) {
 	for _, name := range []string{"ssh", "gitconfig"} {
-		if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{name}}); err == nil {
+		if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{name}}, proximo.Gate{}); err == nil {
 			t.Errorf("Merge with --share %q: want error (not shareable), got nil", name)
 		}
 	}
@@ -79,7 +80,7 @@ func TestMergeShareSSHNotSelectable(t *testing.T) {
 // their host SymlinkFrom target even though the source path is retargeted — so
 // git/SSH identity stays shared with the host.
 func TestMergeProfileSSHStaysHostSymlink(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work"})
+	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work"}, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestMergeProfileSSHStaysHostSymlink(t *testing.T) {
 func TestMergeProfileOverridesMountsRoot(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~/other-toolbox"}
 
-	merged, err := Merge(testHost(t), &cfg, &Profile{Name: "work"})
+	merged, err := Merge(testHost(t), &cfg, &Profile{Name: "work"}, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestMergeProfileOverridesMountsRoot(t *testing.T) {
 // TestMergeShareEmptyTokenErrors: an empty --share token (e.g. `--share a,,b`)
 // is rejected explicitly, not silently ignored.
 func TestMergeShareEmptyTokenErrors(t *testing.T) {
-	if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{""}}); err == nil {
+	if _, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work", Share: []string{""}}, proximo.Gate{}); err == nil {
 		t.Fatal("Merge with empty --share token: want error, got nil")
 	}
 }
@@ -164,7 +165,7 @@ func TestProfileHostSharedWarnings(t *testing.T) {
 	}}
 	p := &Profile{Name: "work"}
 
-	merged, err := Merge(testHost(t), &cfg, p)
+	merged, err := Merge(testHost(t), &cfg, p, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}

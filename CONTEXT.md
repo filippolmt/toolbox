@@ -153,12 +153,19 @@ against.
 
 One config edit, captured as a value before it happens:
 `configedit.Mutator` — `func(*yaml.Node)` — built by a constructor that
-closes over its arguments (`configedit.Scalar`, `Bool`, `StringList`,
-`StringMap`, `Shells`, `WorktreeSeed`, `SDDEnabled`, `MountsDisabled`,
-`Remove`). Owned by `internal/configedit` (`mutate.go`).
+closes over its arguments (`configedit.Scalar`, `Scalars`, `Bool`,
+`StringList`, `StringMap`, `Shell`, `ShellEnv`, `Shells`, `RemoveShell`,
+`Mount`, `MountDisabled`, `MountsDisabled`, `RemoveMount`,
+`WorktreeSeed`, `SDDEnabled`, `Remove`). Owned by `internal/configedit`
+(`mutate.go`).
 
 The point of the term: a caller that must both *show* an edit and
 *perform* it holds one object instead of describing the edit twice.
+
+This is the package's whole edit vocabulary — a CLI writer command is a
+named constructor plus one `ApplyChecked` call at the `cmd` edge, so
+"describable" and "written" are the same value seen twice rather than two
+families of functions.
 
 Concretely: it is the callback shape `configedit.ApplyChecked`, `Render`
 and `configio.RenderDocument` all accept, so the same value can be
@@ -194,6 +201,31 @@ edit. Naming the pending mutation, and making it a value the two sides
 share, is what makes the preview structurally unable to lie about the
 write. A preview that re-derives the mutation is the defect, not a
 convenience.
+
+The same defect had a second home, and the term is what let it be seen:
+`configedit` went on describing the CLI's edits a second time, as
+typed writers that took a path and wrote immediately. Same nodes, two
+spellings — so the one rule stated in both (the mounts disable shape)
+could drift, and the CLI's edits were unrenderable, which is to say no
+writer command could grow a `--dry-run` without being ported first. They
+were collapsed into this family: a writer command now names the mutation
+and calls `ApplyChecked` itself, and `Shell` is the case that shows the
+collapse is not flattening — `shells add --env` commits both halves of
+one command or neither, so both halves are *one* mutation rather than two
+calls at the edge.
+
+That `--dry-run` then cost nothing is the term paying out. `Preview` is
+`ApplyChecked` minus its final write — one shared body, so the file a dry
+run prints is the file the write would commit and not a claim about it,
+doctor verdict included: an edit the gate would refuse fails the dry run
+with the same message. A writer command therefore reaches the disk
+through a single lane at the `cmd` edge (`applyOrPreview`), which decides
+write-or-show on the flag, and the flag is registered with `--where` in
+one call so a writer added later cannot take the targeting and leave the
+preview behind. The generality is the point: no command implements a
+preview, because a mutation that can be rendered is one every surface can
+already show — the config UI's diff and the CLI's dry run are two
+readings of the same value.
 
 ### Key Descriptor
 
@@ -266,13 +298,14 @@ Concretely: `cmd.sessionIntent` + `cmd.startSession` (`cmd/session.go`). Cobra
 keeps the flag globals; `runShell` resolves the `shell` flags and
 `openWorktreeSession` its arguments into one intent, and everything either
 command *does* with a session lives past that boundary — consume the
-[Session Reload](#session-reload) handover, resolve the host once, migrate
+[Session Reload](#session-reload) handover, resolve the host once, resolve the
+[Proximo Availability Gate](#proximo-availability-gate), migrate
 legacy toolbox state, offer the bridge install tip, construct the Docker
 client, resolve the running image's repo digest, call
 [Session Plan](#session-plan), seed a [Worktree](#worktree) checkout, install
 the signal handler and attach. The intent carries `sessionplan.PlanInput`
 itself rather than a parallel copy of its fields — the caller fills its own
-half, the assembly overwrites the three it computes — so the seam cannot drift
+half, the assembly overwrites the fields it resolves — so the seam cannot drift
 from the plan it feeds. The ordering that assembly must hold, and the tests
 that pin it, are the container-runtime rule's half of this concept.
 
@@ -320,7 +353,7 @@ untouched — it no longer pre-mixes the env layers into `cfg.Env`.
 downstream of the seam is mutated by the caller — `cmd` no longer patches a
 finished plan.
 
-Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
+Concretely: `parsePublishSpecs → imageref.ResolveImage → mountplan.Plan
 → ContainerNameFor → shellEnv → ResolveShellCmd →
 NestedSandboxSecurityOpt`. Owned by `internal/sessionplan`. The single
 seam runtime callers and tests cross is `sessionplan.Plan(PlanInput)`;
@@ -374,6 +407,37 @@ absence of a typed decision Layer. The "Run Plan" name turns the
 state machine into one observable typed Op that tests construct without
 Docker, mirroring the Mount Plan / Session Plan / Config Plan deepening
 pattern.
+
+### Image Ref Identity
+
+Which image reference a session resolves to, and which content digest the
+local store holds for it — the ref half of the image family, with no build
+context anywhere in it.
+
+Concretely: `imageref.ResolveImage(image, registryMirror)` applies the
+selection precedence (full `image` override > `registry_mirror` host swap >
+`DefaultRegistryImage`), `imageref.SplitRegistryHost` is the one registry-host
+heuristic, and `imageref.RepoDigest` / `imageref.LocalRepoDigest` are the one
+spelling of *this ref's entry in a `RepoDigests` list* and *what the local
+store answers for it*. `LocalRepoDigest`'s second return says the store
+answered, which is not the same as carrying a digest: an image built locally
+exists with none, the [Image Prefetch](#image-prefetch) abstains on exactly
+that, and `restampImageDigest` stamps whatever the store says, empty included.
+Owned by `internal/imageref`, a leaf on the stdlib plus the Docker client, so
+[Image Plan](#image-plan), [Image Prefetch](#image-prefetch),
+[Image Reclamation](#image-reclamation), `localimage` and `sessionplan` reach
+the ref functions without reaching anything heavier.
+
+Why the term exists: these four lived in `internal/build` — the package that
+embeds the whole Docker build context and lints it — joined to the image
+builder by a package name and nothing else. Four image modules therefore took
+on an `embed.FS` and a Dockerfile-lint suite to reach a handful of ref
+functions, and the ref tests were a minority in a suite about `apt-get`
+ordering and shell shims. Naming the ref half separately is the same move
+[Docker Identity](#docker-identity) makes at the Docker edge: a narrow concern
+gets its own home, and its tests are then about it. `package build` keeps the
+driver (`BuildImage`, `BuildOverlay`, `tarEmbeddedContext`), the embedded
+assets, and the suite that pins the [Invalidation Floor](#invalidation-floor).
 
 ### Image Plan
 
@@ -1074,17 +1138,18 @@ Concretely: `imageplan.registry` (`ImagePull`), `imagereclaim.imageStore`
 (`ImageList` + `ImageRemove`), `localimage.overlayBuilder`,
 `imageprefetch.registryStore`, `imageplan.imageSource`,
 `teardown.containerRuntime` (the container it inspects, stops, removes or
-kills, plus the execs it asks about), and in `internal/build` both
-`LocalRepoDigest`'s `localStore` and the `imageBuilder` its two build
-functions share. No one package owns the concept: each module owns the
-interface it declares, and `internal/dockertest` owns the shared half —
-the double all of them are tested through. Exported functions take these
+kills, plus the execs it asks about), `imageref.localStore` (the one
+`ImageInspect` behind `LocalRepoDigest`) and the `imageBuilder` that
+`internal/build`'s two build functions share. No one package owns the
+concept: each module owns the interface it declares, and
+`internal/dockertest` owns the shared half — the double all of them are
+tested through. Exported functions take these
 unexported types: a caller passes a value that satisfies one and never
 needs to name it. Go assigns interface to interface only when the
 target's method set is a subset of the source's, so a module's declared
 surface is the union of its own calls and those of every callee it hands
-the value to — which is what pulled `build`'s two image functions into
-the same slice as `imageprefetch` and `localimage`.
+the value to — which is what pulled the build driver's two image
+functions into the same slice as `imageprefetch` and `localimage`.
 
 `internal/container` is exempt and keeps `client.APIClient`. It *is* the
 Docker edge, it calls the daemon directly on many endpoints and passes
@@ -1140,7 +1205,7 @@ binary is found). Threaded through the seams that already carried the
 session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
 `bridge.DaemonOptions` — plus the exported functions behind them
 (`mountplan.Merge` / `Classify` / `Names` / `StateDirPath` /
-`OverlayDockerfilePath`, `proximo.CAPath` / `CAMount` / `Env` / `Enabled`,
+`OverlayDockerfilePath`, `proximo.CAPath` / `Resolve`,
 `bridge.ResolveHostState` / `NewAgent` / `Install` / `Uninstall` / `Status`,
 `configedit.Doctor`).
 
@@ -1174,7 +1239,7 @@ not-installed branch was reachable).
 
 `mountplan.Merge` is the one entry point that takes a `Host` without
 validating it. Two things behind it read the home — `inherit_host_auth`'s
-pre-stat and `proximo.CAMount`'s `~/.proximo` fallback — and both degrade
+pre-stat and the `~/.proximo` fallback behind `proximo.Resolve` — and both degrade
 when it is empty rather than fail, which is what the discarded
 `os.UserHomeDir()` error used to give them. The read-only `cmd` surfaces
 that reach it (`mounts list`, `mounts disable`'s validation, `config
@@ -1184,7 +1249,7 @@ them still fail loud on their own.
 Not everything is threaded yet. `configio.GlobalConfigPath` still
 resolves its own home, and `configedit`'s write gate calls
 `fsx.CurrentHost()` at one named seam rather than threading a Host
-through every `ApplyChecked` wrapper and the `configui` model — one named
+through every `ApplyChecked` call site and the `configui` model — one named
 read where the lints behind it previously took two unnamed ones. Their
 callers reach them through packages this concept has not crossed; until
 they do, a test that exercises those paths still sandboxes `$HOME`.
@@ -1451,13 +1516,34 @@ the reader is forced to ask.
 The single predicate for "is proximo usable in this shell": the presence of
 proximo's root CA at the container path `/etc/ssl/proximo-ca.pem`.
 
-Concretely: `proximo.Enabled(cfg)` decides host-side whether the CA is mounted at
-all — explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
-existence — so the mounted file *is* the in-container shadow of that decision.
-`entrypoint.sh` already self-gates its whole trust block on it; the bridge shim
-tests the same file before any POST, and refuses with one message naming both
-causes (proximo absent on the host, or disabled for this workspace). No third
-state, no extra env var, and no round-trip to the daemon to learn the answer.
+Concretely: host-side the gate is one resolved value, `proximo.Gate{Enabled,
+CAPath, CAExists}`, derived by `proximo.Resolve(host, cfg)` once per
+*configuration it is asked about* — which for a session is once, full stop.
+That is the precise invariant, and the loose reading ("once per process") would
+be wrong in a way that matters: a write lints the candidate stack against the
+current one, `proximo:` is an editable key, so those two stacks are two
+questions and each is entitled to its own answer. What the value forbids is the
+same configuration being asked twice
+— explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
+existence, and `false` short-circuits before the `proximo config ca-path` query
+so an opted-out workspace never pays that subprocess. Everything downstream
+*reads* that value rather than re-deriving the rule: `Gate.CAMount` is the bind
+`mountplan` injects, `Gate.Env` the CA-trust variables `sessionplan` composes,
+and `Gate.Enabled` the discovery flag the Docker edge acts on. It reaches both
+planners through their `PlanInput`, the seam that already carries the session's
+resolved host-side facts, and `cmd.startSession` is where the one derivation
+happens — beside the [Declared Host](#declared-host) it is resolved against.
+No function derives it on the side: `mountplan.Merge` and everything built on
+it (`Classify`, `Names`, `StateDirPath`) take the gate as an argument, so the
+read-only surfaces resolve one at their own command edge exactly as a session
+does at `startSession`. Handing the derivation to a shared callee is what let
+a single invocation pay for it more than once while every call site still
+looked like it was only reading a list. So the
+mounted file *is* the in-container shadow of that decision: `entrypoint.sh`
+self-gates its whole trust block on it; the bridge shim tests the same file
+before any POST, and refuses with one message naming both causes (proximo
+absent on the host, or disabled for this workspace). No third state, no extra
+env var, and no round-trip to the daemon to learn the answer.
 
 Why the term exists: enablement was readable from three unrelated places — a
 tri-state config field on the host, a file test in the entrypoint, and, for
@@ -1466,6 +1552,25 @@ the CA's presence *the* gate collapses those into one testable fact and settles
 what a proximo-less host should look like from inside a container: a command that
 refuses clearly, not a command that is missing (which invites an agent to install
 it) and not a command that fails only after reaching the host.
+
+Why it is a value: "the single predicate" was the claim, and three exported
+host-side entry points (`Enabled`, `CAMount`, `Env`) each re-deriving it from
+`(host, cfg)` was the reality — subtly different spellings of one rule, each
+paying its own CA query, so a single `toolbox shell` spawned the proximo
+binary once per entry point it happened to reach, to answer one boolean. Resolving the gate into a value and threading it makes the claim
+true rather than aspirational: the mount and the env can no longer disagree
+with the decision they follow, because they are answers *on* it.
+
+Threading it is necessary and not sufficient, and the residual trap is worth
+naming: the derivation also rides inside `mountplan.Merge`, so *any* second
+merge re-pays it. A session that read the state directory through
+`mountplan.StateDirPath` after planning did exactly that — a subprocess spawn
+hiding behind what reads like a path lookup. The merge already settled the
+answer, so the plan publishes it (`mountplan.Result.StateDir`) and the session
+reads it there. The rule that generalises: once a pipeline holds a plan, ask
+the plan, never the function that would rebuild one — and a function that
+would rebuild one should say so by taking the gate, not by quietly resolving
+another.
 
 ### Worktree
 

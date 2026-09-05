@@ -8,17 +8,19 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // ApplyChecked is the one write path in this package: it renders the candidate
 // document in memory, validates it in the config layer the target file
-// occupies, and writes only once the validation passes. Every writer — the
-// typed helpers in write.go, EnableSDD, and the config ui's Pending Mutation —
-// goes through it, so no surface can put a configuration the doctor rejects on
-// disk. The guarantee is structural rather than conventional: the only other
-// exported write that touches a *config file* is EnsureFileWithHeader, whose
-// comment-only output cannot introduce a finding. (The exported SDD writers in
-// sdd.go write .gitignore, which the doctor has no opinion about.)
+// occupies, and writes only once the validation passes. Every writer — each
+// named Pending Mutation a cmd surface applies, EnableSDD, and the config ui's
+// pending edit — goes through it, so no surface can put a configuration the
+// doctor rejects on disk. The guarantee is structural rather than
+// conventional: the only other exported write that touches a *config file* is
+// EnsureFileWithHeader, whose comment-only output cannot introduce a finding.
+// (The exported SDD writers in sdd.go write .gitignore, which the doctor has no
+// opinion about.)
 //
 // Render-then-validate, not write-then-doctor-then-rollback: the candidate
 // never reaches disk before it is known good, so a concurrent `toolbox shell`
@@ -30,28 +32,75 @@ import (
 // short-circuits before validation because a no-op cannot introduce a finding.
 // A non-nil error always comes with changed=false — nothing was written, so
 // callers must not report a write.
-func ApplyChecked(target, cwd string, mutate Mutator) (changed bool, err error) {
-	src, existed, err := configio.ReadMaybe(target)
+//
+// existed reports whether the target file was on disk, answered by the same
+// read the candidate is rendered from. It is returned because the caller that
+// prints "created" versus "updated" would otherwise have to stat the file
+// itself, ask a question this read already answered, and open a window in which
+// the two answers can differ. It describes that read, not the outcome: an
+// unchanged or rejected write still reports the file it found, and only a
+// failed read — which knows nothing — reports false.
+func ApplyChecked(target, cwd string, mutate Mutator) (changed, existed bool, err error) {
+	candidate, src, existed, err := checkedCandidate(target, cwd, mutate)
 	if err != nil {
-		return false, err
-	}
-	candidate, err := Render(target, src, existed, mutate)
-	if err != nil {
-		return false, err
+		return false, existed, err
 	}
 	if bytes.Equal(candidate, src) {
-		return false, nil
+		return false, existed, nil
+	}
+	if err := fsx.AtomicWriteFile(target, candidate, 0o600); err != nil {
+		return false, existed, err
+	}
+	return true, existed, nil
+}
+
+// Preview returns the bytes ApplyChecked would write for target, having put
+// them through the very same gate, and touches no file at all — the seam a
+// writer command's --dry-run prints. It is ApplyChecked minus its last line, so
+// what a dry run shows cannot become a look-alike of what the write commits:
+// same read, same Mutator, same rendering, same doctor verdict, including the
+// no-op short-circuit that spares an already-faulty file a finding its edit did
+// not introduce.
+//
+// A rejected candidate is an error here exactly as it is there, so a dry run
+// answers "would this command work" and not only "what would it render". The
+// returned bytes are the whole file, not a diff — the caller decides how to
+// show them (`config ui` diffs its own through Render).
+//
+// existed carries the same meaning it does on ApplyChecked: the file this read
+// found, not an outcome.
+func Preview(target, cwd string, mutate Mutator) (candidate []byte, existed bool, err error) {
+	candidate, _, existed, err = checkedCandidate(target, cwd, mutate)
+	return candidate, existed, err
+}
+
+// checkedCandidate is the shared body of ApplyChecked and Preview: read the
+// target, render the Mutator over it, and validate the result unless it is
+// byte-identical to what was read. It returns src alongside the candidate so
+// the caller can tell a no-op from a real edit without reading the file twice.
+//
+// Having one function produce both is the point: a preview derived from a
+// second, parallel rendering is a claim about the write rather than the write
+// itself, and that is precisely the drift `config ui`'s preview once had.
+func checkedCandidate(target, cwd string, mutate Mutator) (candidate, src []byte, existed bool, err error) {
+	src, existed, err = configio.ReadMaybe(target)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	candidate, err = Render(target, src, existed, mutate)
+	if err != nil {
+		return nil, src, existed, err
+	}
+	if bytes.Equal(candidate, src) {
+		return candidate, src, existed, nil
 	}
 	if findings := doctorCandidate(cwd, target, candidate); HasErrors(findings) {
 		// The finding names the key, not the file it lives in — and the file is
 		// what the user has to open to fix it, which is rarely the one they
 		// thought they were editing.
-		return false, fmt.Errorf("%s: %w", target, firstError(findings))
+		return nil, src, existed, fmt.Errorf("%s: %w", target, firstError(findings))
 	}
-	if err := fsx.AtomicWriteFile(target, candidate, 0o600); err != nil {
-		return false, err
-	}
-	return true, nil
+	return candidate, src, existed, nil
 }
 
 // doctorCandidate returns the findings the candidate bytes for target are
@@ -118,6 +167,15 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 		filepath.Clean(target) == filepath.Clean(globalPath) {
 		other = project
 	}
+	// Each stack is judged against the gate IT declares, never a shared one.
+	// The two stacks can disagree about `proximo:` — the key is editable, so
+	// the candidate may be the edit that flips it — and the gate decides
+	// whether the CA mount joins the merged set. Lint the baseline against the
+	// candidate's gate and a mount conflict the edit genuinely introduces
+	// appears in both passes, gets subtracted away as pre-existing, and the
+	// write is accepted for a config the next load rejects. Two derivations
+	// here are two different questions, which is not the repetition the gate
+	// was made a value to stop.
 	withCandidate := lintStack(host, other, candidate)
 	if !HasErrors(withCandidate) {
 		// Nothing to attribute, and subtraction only ever removes — so the
@@ -138,12 +196,15 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 // overriding it" by putting it second, whichever layer it really belongs to.
 // The explicit slot cannot serve here — Merge documents it as short-circuiting
 // the other two, so it would discard the stack instead of sitting above it.
+// The proximo gate is resolved here, from the stack this call is about: the
+// mount lint below reads a merged set the gate decides the shape of, so a
+// stack must be judged against its own answer and not a caller's.
 func lintStack(host fsx.Host, lower, higher []byte) []Finding {
 	cfg, err := config.Merge(lower, higher, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}
-	return append(lintShellPaths(host, cfg), lintMounts(host, cfg)...)
+	return append(lintShellPaths(host, cfg), lintMounts(host, cfg, proximo.Resolve(host, cfg))...)
 }
 
 // subtractFindings returns the findings of a that do not appear in b, compared

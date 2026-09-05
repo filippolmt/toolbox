@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 // render applies a Mutator to src and returns the document it produces. The
@@ -203,6 +205,176 @@ func TestSDDEnabledLeavesCustomStepsAlone(t *testing.T) {
 	}
 }
 
+func TestScalarsWritesEveryEditAndEmptyRemoves(t *testing.T) {
+	got := render(t, "# keep me\nagent: codex\n", Scalars([]ScalarEdit{
+		{"image", "ghcr.io/x/y:1"},
+		{"registry_mirror", "harbor.corp.io/ghcr-proxy"},
+		{"pull", "never"},
+	}))
+	for _, want := range []string{
+		"# keep me", "image: ghcr.io/x/y:1",
+		"registry_mirror: harbor.corp.io/ghcr-proxy", "pull: never",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+
+	// One edit per key, so an empty value removes exactly its own key.
+	got = render(t, got, Scalars([]ScalarEdit{{"image", ""}}))
+	if strings.Contains(got, "image:") {
+		t.Errorf("an empty value must remove the key:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("sibling keys must survive:\n%s", got)
+	}
+}
+
+// Shell is the one writer whose two halves are a single mutation on purpose:
+// `shells add --env` promises both or neither, and two mutations would be
+// validated — and could be rejected — separately, leaving the path written and
+// the env overlay lost.
+func TestShellWritesPathAndEnvAsOneMutation(t *testing.T) {
+	got := render(t, "", Shell("infra", "/tmp/infra", map[string]string{"ZED": "z", "ALPHA": "a"}))
+	if !strings.Contains(got, "shells:\n  infra:\n    path: /tmp/infra") {
+		t.Errorf("unexpected shells node shape:\n%s", got)
+	}
+	if !strings.Contains(got, "env:\n      ALPHA: a\n      ZED: z") {
+		t.Errorf("env keys must render sorted under the same entry:\n%s", got)
+	}
+
+	// Sibling keys of the entry survive a path change: the env overlay written
+	// by an earlier command is not a casualty of `shells add` re-running.
+	got = render(t, got, Shell("infra", "/tmp/other", nil))
+	if !strings.Contains(got, "path: /tmp/other") || !strings.Contains(got, "ALPHA: a") {
+		t.Errorf("a path change must preserve the entry's env block:\n%s", got)
+	}
+}
+
+func TestShellEnvUpsertsSortedAndKeepsThePath(t *testing.T) {
+	src := "shells:\n  infra:\n    path: /tmp/infra\n"
+	got := render(t, src, ShellEnv("infra", map[string]string{"ZED": "z", "ALPHA": "a"}))
+	if !strings.Contains(got, "env:\n      ALPHA: a\n      ZED: z") {
+		t.Errorf("env keys must render sorted under shells.infra.env:\n%s", got)
+	}
+	if !strings.Contains(got, "path: /tmp/infra") {
+		t.Errorf("the path sibling must survive an env write:\n%s", got)
+	}
+
+	// Nothing to write, nothing to create: an empty overlay must not leave a
+	// pathless shells entry behind for the doctor to reject.
+	if got := render(t, "", ShellEnv("infra", nil)); strings.Contains(got, "shells") {
+		t.Errorf("an empty env must write nothing:\n%s", got)
+	}
+}
+
+func TestRemoveShellDropsTheEntryAndTheEmptiedBlock(t *testing.T) {
+	src := "shells:\n  infra:\n    path: /tmp/infra\n  qa:\n    path: /tmp/qa\n"
+
+	got := render(t, src, RemoveShell("infra"))
+	if strings.Contains(got, "infra") {
+		t.Errorf("the named entry must be gone:\n%s", got)
+	}
+	if !strings.Contains(got, "qa") {
+		t.Errorf("a sibling entry must survive:\n%s", got)
+	}
+	if got := render(t, got, RemoveShell("qa")); strings.Contains(got, "shells") {
+		t.Errorf("an emptied shells map must be dropped:\n%s", got)
+	}
+
+	// Unknown name: nothing to remove, nothing to change.
+	if got := render(t, src, RemoveShell("nope")); got != src {
+		t.Errorf("removing an absent entry must leave the document alone:\n%s", got)
+	}
+}
+
+func TestMountAppendsThenReplacesInPlace(t *testing.T) {
+	got := render(t, "", Mount(config.Mount{
+		Name: "scratch", Source: "~/scratch", Target: "/scratch", ReadOnly: true,
+	}))
+	if !strings.Contains(got, "mounts:\n  - name: scratch\n    source: ~/scratch\n    target: /scratch\n    readonly: true") {
+		t.Errorf("unexpected mount node shape:\n%s", got)
+	}
+
+	got = render(t, got, Mount(config.Mount{Name: "scratch", Source: "~/other", Target: "/scratch"}))
+	if strings.Count(got, "name: scratch") != 1 {
+		t.Errorf("a same-name write must replace, not duplicate:\n%s", got)
+	}
+	if !strings.Contains(got, "source: ~/other") || strings.Contains(got, "readonly") {
+		t.Errorf("a replace must swap the whole entry:\n%s", got)
+	}
+
+	// A flow-style placeholder is the shape a hand-written file often carries.
+	got = render(t, "mounts: []\n", Mount(config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}))
+	if !strings.Contains(got, "mounts:\n  - name: scratch") {
+		t.Errorf("a flow [] placeholder must convert to block style:\n%s", got)
+	}
+}
+
+// MountDisabled is the single-name peer of MountsDisabled, and both write the
+// one disable shape mergeMounts reads: a patch when the name has no entry, an
+// in-place flag when it does.
+func TestMountDisabledAppendsAPatchOrMarksInPlace(t *testing.T) {
+	got := render(t, "", MountDisabled("gh"))
+	if !strings.Contains(got, "- name: gh\n    disabled: true") {
+		t.Errorf("an absent name must gain the disable patch shape:\n%s", got)
+	}
+
+	got = render(t, "mounts:\n  - name: scratch\n    source: ~/s\n    target: /s\n", MountDisabled("scratch"))
+	if strings.Count(got, "name: scratch") != 1 {
+		t.Errorf("an existing entry must not gain a second one:\n%s", got)
+	}
+	if !strings.Contains(got, "source: ~/s") || !strings.Contains(got, "disabled: true") {
+		t.Errorf("existing fields must survive an in-place disable:\n%s", got)
+	}
+}
+
+func TestRemoveMountDropsTheEntryAndTheEmptiedList(t *testing.T) {
+	src := "mounts:\n  - name: scratch\n    source: ~/s\n    target: /s\n"
+
+	if got := render(t, src, RemoveMount("scratch")); strings.Contains(got, "mounts") {
+		t.Errorf("an emptied mounts list must be dropped:\n%s", got)
+	}
+	if got := render(t, src, RemoveMount("nope")); got != src {
+		t.Errorf("removing an absent entry must leave the document alone:\n%s", got)
+	}
+}
+
+// Every edit a CLI writer performs is a Mutator, so every one of them can be
+// rendered instead of written — the property a `--dry-run` rests on. The
+// assertion is that renderability is uniform across the family: each named
+// mutation produces its bytes with no file to write to and none created.
+func TestEveryWriterMutationRendersWithoutTouchingDisk(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	for name, tc := range map[string]struct {
+		mut  Mutator
+		want string
+	}{
+		"Scalars":       {Scalars([]ScalarEdit{{"pull", "never"}}), "pull: never"},
+		"Scalar":        {Scalar("mounts_root", "~/toolbox-state"), "mounts_root: ~/toolbox-state"},
+		"Shell":         {Shell("infra", "/tmp/infra", nil), "path: /tmp/infra"},
+		"ShellEnv":      {ShellEnv("infra", map[string]string{"K": "v"}), "K: v"},
+		"RemoveShell":   {RemoveShell("infra"), "qa:"},
+		"Mount":         {Mount(config.Mount{Name: "scratch", Source: "~/s", Target: "/s"}), "name: scratch"},
+		"MountDisabled": {MountDisabled("gh"), "disabled: true"},
+		"RemoveMount":   {RemoveMount("scratch"), "shells:"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := "shells:\n  infra:\n    path: /tmp/infra\n  qa:\n    path: /tmp/qa\nmounts:\n  - name: scratch\n    source: ~/s\n    target: /s\n"
+			out, err := Render(path, []byte(src), false, tc.mut)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Errorf("rendered document missing %q:\n%s", tc.want, out)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Errorf("rendering must create no file at %s (err=%v)", path, err)
+			}
+		})
+	}
+}
+
 // A Mutator is documented as a snapshot: the constructors copy what they capture,
 // so a caller that keeps editing its own state (the config UI hands over live
 // editor state on every repaint) cannot change what an already-built mutation
@@ -234,6 +406,18 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 	mountsMut := MountsDisabled(disabled)
 	disabled[mountName] = false
 
+	shellOneEnv := map[string]string{"REGION": "eu"}
+	shellMut := Shell("prod", "/p", shellOneEnv)
+	shellOneEnv["REGION"] = "mutated"
+
+	overlay := map[string]string{"REGION": "eu"}
+	shellEnvMut := ShellEnv("prod", overlay)
+	overlay["REGION"] = "mutated"
+
+	edits := []ScalarEdit{{"pull", "never"}}
+	scalarsMut := Scalars(edits)
+	edits[0].Value = "mutated"
+
 	for name, tc := range map[string]struct {
 		mut  Mutator
 		want string
@@ -244,6 +428,9 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 		"Shells":         {shellsMut, "REGION: eu"},
 		"SDDEnabled":     {sddMut, sddKey + ": true"},
 		"MountsDisabled": {mountsMut, "disabled: true"},
+		"Shell":          {shellMut, "REGION: eu"},
+		"ShellEnv":       {shellEnvMut, "REGION: eu"},
+		"Scalars":        {scalarsMut, "pull: never"},
 	} {
 		got := render(t, "", tc.mut)
 		if !strings.Contains(got, tc.want) {
@@ -286,7 +473,7 @@ func TestRenderReturnsTheBytesApplyCheckedWrites(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
-			if _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
 				t.Fatalf("ApplyChecked: %v", err)
 			}
 			got, err := os.ReadFile(path)

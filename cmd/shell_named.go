@@ -308,7 +308,7 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 }
 
 // upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml through
-// configedit.SetShell — the same writer `toolbox shells add` uses, so the
+// configedit.Shell — the same mutation `toolbox shells add` applies, so the
 // --create bootstrap inherits the docs header on file creation and the doctor
 // gate, instead of open-coding the node edit. home is resolved once by the
 // caller and threaded in so the --create path does not pay for repeated
@@ -320,6 +320,12 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 // degrades to /tmp/<name> when it is empty. The write does not get that
 // tolerance: with no home there is no ~/.toolbox.yaml to patch, so the
 // fallback resolves through fsx.Home and fails loud.
+//
+// This is the one config write in cmd that does not go through applyOrPreview,
+// and so the one with no --dry-run: it is a side effect of entering a shell,
+// not a writer command with a flag surface of its own. A user who wants to see
+// the entry before it lands runs `toolbox shells add <name> --path <dir>
+// --dry-run`, which renders this very mutation.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
 		h, err := fsx.Home()
@@ -338,6 +344,6 @@ func upsertShellInUserConfig(home, name, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve cwd: %w", err)
 	}
-	_, err = configedit.SetShell(cfgPath, cwd, key, path, nil)
+	_, _, err = configedit.ApplyChecked(cfgPath, cwd, configedit.Shell(key, path, nil))
 	return err
 }

@@ -117,6 +117,35 @@ func TestStartSessionPlansWhatTheIntentDescribes(t *testing.T) {
 	}
 }
 
+// TestStartSessionResolvesTheProximoGate pins the other half of the assembly's
+// own contribution: the Proximo Availability Gate is derived here, once, from
+// the same host the plan is built against — an intent declares none, and a
+// session that reached the planner without one would silently run with the
+// integration off.
+//
+// `proximo: true` is the arm that needs no host state, so what this asserts is
+// that the gate was resolved at all, on any machine.
+func TestStartSessionResolvesTheProximoGate(t *testing.T) {
+	attached := sessionHarness(t)
+	ws := sessionWorkspace(t, "ws")
+
+	err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
+		Cfg:       &config.Config{Shell: "zsh", Proximo: new(true)},
+		Workspace: ws,
+	}})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	plan := *attached
+	if plan == nil {
+		t.Fatal("the session never attached")
+	}
+	if !plan.Proximo {
+		t.Error("plan.Proximo = false — the assembly never resolved the gate")
+	}
+}
+
 // TestStartSessionOpensAWorktreeSession asserts the two things only a worktree
 // intent adds, both of which the assembly owns: the plan launches the agent in
 // the attached exec, and the gitignored per-repo state is carried into the

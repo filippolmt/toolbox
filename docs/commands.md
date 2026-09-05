@@ -254,7 +254,7 @@ Inspect and scaffold `.toolbox.yaml`. Key semantics live in [configuration](conf
 | `example` | Print an annotated `.toolbox.yaml` template (generated from the live catalog and default mount set). |
 | `path` | Show the config layers in precedence order with found/none markers. |
 | `edit` | Open the highest-precedence config file in `$EDITOR`. |
-| `set [--image] [--registry-mirror] [--pull] [--agent] [--where]` | Set the scalar keys (empty value resets the key). |
+| `set [--image] [--registry-mirror] [--pull] [--agent] [--where] [--dry-run]` | Set the scalar keys (empty value resets the key). |
 | `doctor` | Validate the configuration without modifying it. |
 | `ui` | Interactively view and edit `.toolbox.yaml` across the Global and Repo layers (requires a TTY). |
 
@@ -276,11 +276,11 @@ For the two hardest keys, `mounts` and `sdd`, the structured editors cover the c
 
 ## toolbox mounts
 
-Edit the `mounts:` list / `mounts_root:` key without hand-editing YAML. Subcommands: `list [--defaults-only]`, `add <name> --source --target [--readonly]`, `disable <name>`, `remove <name>`, `root <path>` — all accept [`--where`](#--where-targeting). Full semantics: [mounts](mounts.md#mounts-cli).
+Edit the `mounts:` list / `mounts_root:` key without hand-editing YAML. Subcommands: `list [--defaults-only]`, `add <name> --source --target [--readonly]`, `disable <name>`, `remove <name>`, `root <path>` (empty path resets the key) — the writers all accept [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [mounts](mounts.md#mounts-cli).
 
 ## toolbox shells
 
-Manage named shell shortcuts (the `shells:` block). Subcommands: `list`, `get <name>`, `add <name> --path [--create-dir] [--env K=V]`, `set <name> --env K=V`, `remove <name> [--purge-dir]` — all accept [`--where`](#--where-targeting). Full semantics: [shells](shells.md).
+Manage named shell shortcuts (the `shells:` block). Subcommands: `list`, `get <name>`, `add <name> --path [--create-dir] [--env K=V]`, `set <name> --env K=V`, `remove <name> [--purge-dir]` — the writers all accept [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [shells](shells.md).
 
 ## toolbox bridge
 
@@ -301,4 +301,21 @@ Every config-writing subcommand (`toolbox shells add|set|remove`, `toolbox mount
 - `global` → `configio.GlobalConfigPath()` (`~/.toolbox.yaml`). Default because shells/mounts are naturally per-user.
 - `local` → the **walked-up** project `.toolbox.yaml` (`config.WalkUpProjectConfig`, the same walk-up `Plan` uses), so the existing project file is patched in place rather than shadowed by a stray `./.toolbox.yaml`. Only when the walk-up finds nothing is `./.toolbox.yaml` created in the CWD.
 
-Resolution lives in `configedit.Resolve` (`internal/configedit/where.go`). Every writer reports the touched file as `<path>: created|updated|unchanged` (idempotent re-runs render byte-identically and report `unchanged`). Files created by a writer start with a header comment pointing at `toolbox config example` (`configedit.Render`, D7: the header policy lives in `configedit`, keeping `configio` a policy-free leaf). Every write also passes the config doctor before it lands: the candidate document is rendered in memory, validated as the top of the layer stack it belongs to (minus whatever the other layer already reports on its own), and only then written — so a rejected edit reports the finding, exits non-zero and leaves the file byte-identical (nothing is created either). `config edit` is the exception, because `$EDITOR` writes the file directly: it runs the same checks *after* the editor exits, prints the findings and exits non-zero, but never reverts what you saved. See [config provenance & doctor](#config-provenance--doctor).
+Resolution lives in `configedit.Resolve` (`internal/configedit/where.go`). Every writer reports the touched file as `<path>: created|updated|unchanged` (idempotent re-runs render byte-identically and report `unchanged`). Files created by a writer start with a header comment pointing at `toolbox config example` (`configedit.Render`, D7: the header policy lives in `configedit`, keeping `configio` a policy-free leaf). Every write also passes the config doctor before it lands: the candidate document is rendered in memory, validated as the top of the layer stack it belongs to (minus whatever the other layer already reports on its own), and only then written — so a rejected edit reports the finding, exits non-zero and leaves the file byte-identical (nothing is created either). `config edit` is the exception, because `$EDITOR` writes the file directly: it runs the same checks *after* the editor exits, prints the findings and exits non-zero, but never reverts what you saved. See [config provenance & doctor](#config-provenance--doctor) and, to see a write before running it, [dry runs](#dry-runs).
+
+**Resetting a scalar.** Passing an empty value to a scalar writer (`toolbox config set --image ""`, `toolbox mounts root ""`) **removes** the key from the targeted file rather than writing it empty. An explicit empty value is an override that means "no override": it would still shadow whatever the layer below sets and leave a key behind for the next reader to puzzle over. One rule for every top-level scalar (`configedit.Scalar`), so a reset behaves the same wherever you spell it.
+
+## dry runs
+
+Every subcommand that accepts [`--where`](#--where-targeting) also accepts `--dry-run`: it prints on stdout the **whole file the write would produce** and touches nothing — no file created, no file modified, exit 0. The output is the candidate document and nothing else, so it pipes and diffs:
+
+```bash
+toolbox config set --pull never --dry-run | diff ~/.toolbox.yaml -
+toolbox mounts add scratch --source ~/scratch --target /scratch --dry-run > candidate.yaml
+```
+
+It is a preview of the *command*, not merely of its rendering: the candidate goes through the same doctor gate the write does, so an edit that would be rejected fails the dry run with the same message and prints nothing. What passes is what would land — byte for byte, header on creation included, because `configedit.Preview` **is** `configedit.ApplyChecked` minus its final write rather than a second rendering that has to be kept in step with it.
+
+The two writer flags that reach past the config file are named instead of performed, on stderr so stdout stays the document: `shells add --create-dir` says which directory it would create, `shells remove --purge-dir` which one it would delete.
+
+The `shell --create` bootstrap has no `--dry-run` — it writes `shells.<name>.path` as a side effect of entering a shell, not as a writer command. To see that entry first, dry-run the writer that applies the same mutation: `toolbox shells add <name> --path <dir> --dry-run`.

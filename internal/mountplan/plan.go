@@ -48,6 +48,13 @@ type Result struct {
 	Binds      []Bind
 	Warnings   []string
 	WorkingDir string
+	// StateDir is the host path of the toolbox state mount for this plan, or
+	// "" when nothing mounts there any more — StateDirPath's answer, read off
+	// the merge this plan already performed. It is here rather than re-derived
+	// by the caller because re-deriving means merging a second time, and the
+	// merge resolves the proximo gate: a session that asked twice paid two
+	// `proximo config ca-path` spawns to describe one set of mounts.
+	StateDir string
 }
 
 // WorktreeGitDirMountName is the Name carried by the bind that PlanInput.GitDir
@@ -80,6 +87,13 @@ type PlanInput struct {
 	// process — the plan says which home it planned against, and a test names
 	// one rather than rewriting $HOME for the whole binary.
 	Host fsx.Host
+	// Proximo is the resolved Proximo Availability Gate for this invocation:
+	// the decision plus the host CA path it was decided against, derived once
+	// by the caller (proximo.Resolve) and read here rather than re-derived —
+	// the derivation pays a subprocess spawn, and the same gate also answers
+	// the session's env and its create-edge discovery flag. The zero value is
+	// a session with proximo off, so a plan that declares nothing binds no CA.
+	Proximo proximo.Gate
 }
 
 // Plan walks the full mount pipeline for in.Cfg and returns the bind set + the
@@ -92,7 +106,7 @@ type PlanInput struct {
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
 func Plan(in PlanInput) (Result, error) {
-	merged, err := Merge(in.Host, in.Cfg, in.Profile)
+	merged, err := Merge(in.Host, in.Cfg, in.Profile, in.Proximo)
 	if err != nil {
 		return Result{}, err
 	}
@@ -132,16 +146,24 @@ func Plan(in PlanInput) (Result, error) {
 		workingDir = mirror
 	}
 
-	return Result{Binds: binds, Warnings: warnings, WorkingDir: workingDir}, nil
+	return Result{Binds: binds, Warnings: warnings, WorkingDir: workingDir, StateDir: stateDirIn(in.Host, merged)}, nil
 }
 
 // Merge returns the post-merge mount list (defaults retargeted by
 // MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts) for the
-// given host.
-// Pure: no filesystem side-effects, no workspace bind. Used by tests
-// asserting merge contracts and by callers that want to inspect the
-// resolved set without materialising sources.
-func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount, error) {
+// given host. It materialises no source and binds no workspace, so callers
+// can inspect the resolved set without touching the filesystem the plan
+// describes.
+//
+// gate is declared, never derived here: deriving it costs a `proximo config
+// ca-path` spawn, and a function that spawns when you thought you were only
+// reading a list is how one invocation came to pay for the same answer more
+// than once. Every caller resolves it at its own composition root —
+// cmd.startSession for a session, the command edge for the read-only
+// surfaces — and passes the one value down. The zero value is a gate with
+// proximo off, which is the honest answer for a caller that has no host to
+// ask about.
+func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) ([]config.Mount, error) {
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
@@ -157,11 +179,12 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount,
 		return nil, err
 	}
 	// Two things behind this function read host.Home: the inherit_host_auth
-	// pre-stat below, and proximo.CAMount's ~/.proximo fallback further down.
+	// pre-stat below, and the ~/.proximo fallback the gate was resolved from.
 	// A caller with no home to declare leaves it empty, and both degrade
 	// rather than fail — applyInheritHostAuth treats ~/ paths as-is so os.Stat
-	// reports them missing, and the CA bind drops out of the set. That is why
-	// Merge takes a Host without validating it where Plan does: the merge
+	// reports them missing, and proximo.Resolve returns a gate with no CA path
+	// so the bind drops out of the set. That is why Merge takes a Host
+	// without validating it where Plan does: the merge
 	// contract itself (patch, replace, disable, mounts_root) is answerable
 	// without a home, and the two probes that are not degrade the way the
 	// discarded os.UserHomeDir error used to make them degrade.
@@ -176,9 +199,9 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount,
 		base = dropMountByName(base, "bridge-run")
 	}
 	// proximo CA bind is injected here (not in defaults()) because its source
-	// is host-specific and only relevant when `proximo: true`. resolveAll
+	// is host-specific and only relevant when the gate is on. resolveAll
 	// soft-skips it with a warning when proximo is not installed.
-	if m, ok := proximo.CAMount(host, cfg); ok {
+	if m, ok := gate.CAMount(); ok {
 		base = append(base, m)
 	}
 	return mergeMounts(base, cfg.Mounts)
@@ -235,18 +258,26 @@ func OverlayDockerfilePath(host fsx.Host, cfg *config.Config, profile *Profile) 
 // The mount source is needed as a *path* (not a bind) by the host-side update
 // prefetch, which writes the cache the in-container prompt hook reads: the
 // two ends must address the same directory or the banner never fires.
-func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile) (string, error) {
+func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) (string, error) {
 	if err := host.Validate(); err != nil {
 		return "", err
 	}
-	merged, err := Merge(host, cfg, profile)
+	merged, err := Merge(host, cfg, profile, gate)
 	if err != nil {
 		return "", err
 	}
+	return stateDirIn(host, merged), nil
+}
+
+// stateDirIn is the lookup itself, over an already-merged set: the sole
+// spelling of "which host directory is the state mount", shared by Plan (which
+// merged for its own reasons and publishes the answer on Result) and
+// StateDirPath (which merges to answer this question alone).
+func stateDirIn(host fsx.Host, merged []config.Mount) string {
 	for _, m := range merged {
 		if m.Target == StateMountTarget {
-			return filepath.Clean(host.Expand(m.Source)), nil
+			return filepath.Clean(host.Expand(m.Source))
 		}
 	}
-	return "", nil
+	return ""
 }

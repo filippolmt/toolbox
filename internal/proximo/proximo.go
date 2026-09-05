@@ -25,6 +25,10 @@
 //     its own bundle) and TOOLBOX_PROXIMO_CA (a path pointer for the certifi
 //     gap — e.g. REQUESTS_CA_BUNDLE for python-requests).
 //
+// Both ingredients hang off one resolved value, the Gate: Resolve derives the
+// availability decision and the CA path together, once per invocation, and the
+// planners read that value through their PlanInput instead of asking again.
+//
 // The label discovery — the only Docker-dependent step — lives in
 // internal/container, which already owns the Docker client; ExtraHosts here is
 // the pure parser it feeds. Everything else in this package is host-local
@@ -67,22 +71,90 @@ const (
 	caMountName = "proximo-ca"
 )
 
-// Enabled reports whether proximo integration is active for cfg. Tri-state on
-// cfg.Proximo: an explicit true/false wins (and skips the CA probe entirely);
-// when unset (nil) it auto-detects, enabling the integration iff proximo is
-// set up on this host — i.e. its root CA exists (written by `proximo
-// install`). So a host with proximo installed gets `.test` reachability in
-// every shell with no per-repo opt-in, while a host without proximo pays
-// nothing.
-func Enabled(host fsx.Host, cfg *config.Config) bool {
-	if cfg == nil {
-		return false
+// Gate is the resolved [Proximo Availability Gate] for one invocation: the
+// enablement decision plus the host CA path it was decided against. Resolve
+// derives it once and every reader — the mount, the trust env, the create-edge
+// discovery flag — reads that value instead of re-deriving the rule and
+// re-paying the CAPath query, which is a subprocess spawn.
+//
+// It reaches the planners as a mountplan/sessionplan PlanInput field, the same
+// seam that already carries the session's other resolved host-side facts. The
+// zero value is a session with proximo off: nothing mounted, nothing exported,
+// nothing discovered at the Docker edge.
+//
+// [Proximo Availability Gate]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#proximo-availability-gate
+type Gate struct {
+	// Enabled is the decision itself: is proximo usable in this shell.
+	Enabled bool
+	// CAPath is the host path of proximo's root CA, empty when neither the
+	// binary's answer nor the state-home fallback resolves one (see CAPath).
+	CAPath string
+	// CAExists reports whether that file was present when the gate was
+	// resolved. Enabled without it is the forced-on arm — `proximo: true` on a
+	// host where `proximo install` has not written the CA — which keeps the
+	// mount (soft-skipped downstream, with a warning) but not the env.
+	CAExists bool
+}
+
+// Resolve derives the gate for cfg on host. Tri-state on cfg.Proximo: an
+// explicit true/false wins, and false (like a nil cfg) short-circuits before
+// the CA query so an opted-out config never pays the subprocess spawn; when
+// unset (nil) it auto-detects, enabling the integration iff proximo is set up
+// on this host — i.e. its root CA exists (written by `proximo install`). So a
+// host with proximo installed gets `.test` reachability in every shell with no
+// per-repo opt-in, while a host without proximo pays nothing.
+//
+// This is the single place the rule is derived, and the query behind it is
+// paid at most once per call: a caller resolves one gate per invocation and
+// hands it down rather than asking again.
+func Resolve(host fsx.Host, cfg *config.Config) Gate {
+	if cfg == nil || (cfg.Proximo != nil && !*cfg.Proximo) {
+		return Gate{}
 	}
+	path, ok := CAPath(host)
+	if !ok {
+		// Nothing to mount and nothing to trust, but an explicit `proximo:
+		// true` still says the integration is on — the arm where the config,
+		// not the host, is the whole answer.
+		return Gate{Enabled: cfg.Proximo != nil}
+	}
+	_, statErr := os.Stat(path)
+	exists := statErr == nil
+	enabled := exists
 	if cfg.Proximo != nil {
-		return *cfg.Proximo
+		enabled = *cfg.Proximo
 	}
-	_, _, exists := caStatus(host)
-	return exists
+	return Gate{Enabled: enabled, CAPath: path, CAExists: exists}
+}
+
+// CAMount returns the read-only bind for proximo's CA when the gate is on and
+// a CA path resolved. The mount resolver soft-skips it with a warning when the
+// source file is absent (proximo not installed), so callers need not pre-check
+// existence — a forced-on gate keeps the mount and gets the warning.
+func (g Gate) CAMount() (config.Mount, bool) {
+	if !g.Enabled || g.CAPath == "" {
+		return config.Mount{}, false
+	}
+	return config.Mount{
+		Name:     caMountName,
+		Source:   g.CAPath,
+		Target:   CATarget,
+		ReadOnly: true,
+	}, true
+}
+
+// Env returns the environment entries that make in-container tooling trust
+// proximo's CA. Emitted only when the gate is on AND the CA exists on the
+// host, so a missing CA never leaves Node pointing at an absent
+// NODE_EXTRA_CA_CERTS file.
+func (g Gate) Env() []string {
+	if !g.Enabled || !g.CAExists {
+		return nil
+	}
+	return []string{
+		"NODE_EXTRA_CA_CERTS=" + CATarget,
+		"TOOLBOX_PROXIMO_CA=" + CATarget,
+	}
 }
 
 // caPathQueryTimeout bounds the `proximo config ca-path` exec so a
@@ -119,65 +191,6 @@ func CAPath(host fsx.Host) (path string, ok bool) {
 		return "", false
 	}
 	return host.Join(".proximo", "tls", "ca.pem"), true
-}
-
-// caStatus resolves the CA path and probes its existence in one shot — the
-// single internal seam that pays the CAPath query (a subprocess spawn), so
-// every public entry point execs `proximo config ca-path` at most once.
-func caStatus(host fsx.Host) (path string, ok, exists bool) {
-	path, ok = CAPath(host)
-	if !ok {
-		return "", false, false
-	}
-	_, err := os.Stat(path)
-	return path, true, err == nil
-}
-
-// forcedOff reports an explicit `proximo: false` — the one tri-state arm that
-// must short-circuit before the CA probe, so an opted-out config never pays
-// the subprocess spawn.
-func forcedOff(cfg *config.Config) bool {
-	return cfg == nil || (cfg.Proximo != nil && !*cfg.Proximo)
-}
-
-// CAMount returns the read-only bind for proximo's CA when integration is
-// enabled and the CA path resolves. The mount resolver soft-skips it with a
-// warning when the source file is absent (proximo not installed), so callers
-// need not pre-check existence.
-func CAMount(host fsx.Host, cfg *config.Config) (config.Mount, bool) {
-	if forcedOff(cfg) {
-		return config.Mount{}, false
-	}
-	path, ok, exists := caStatus(host)
-	// Explicit true keeps the mount even without the CA file (soft-skip
-	// downstream); auto (nil) requires the CA — same gate as Enabled.
-	if !ok || (cfg.Proximo == nil && !exists) {
-		return config.Mount{}, false
-	}
-	return config.Mount{
-		Name:     caMountName,
-		Source:   path,
-		Target:   CATarget,
-		ReadOnly: true,
-	}, true
-}
-
-// Env returns the environment entries that make in-container tooling trust
-// proximo's CA. Emitted only when integration is enabled AND the CA file
-// exists on the host, so a missing CA never leaves Node pointing at an absent
-// NODE_EXTRA_CA_CERTS file. (With the CA present, auto and explicit true
-// coincide, so existence is the only probe needed past the forced-off gate.)
-func Env(host fsx.Host, cfg *config.Config) []string {
-	if forcedOff(cfg) {
-		return nil
-	}
-	if _, ok, exists := caStatus(host); !ok || !exists {
-		return nil
-	}
-	return []string{
-		"NODE_EXTRA_CA_CERTS=" + CATarget,
-		"TOOLBOX_PROXIMO_CA=" + CATarget,
-	}
 }
 
 // ExtraHosts turns a set of proximo.hosts label values (each a comma-separated

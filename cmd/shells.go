@@ -27,7 +27,10 @@ same precedence as toolbox shell. Write commands (add, set, remove) edit one
 file in place, preserving comments and key order, and target it via --where:
   --where global   ~/.toolbox.yaml (default)
   --where local    the walked-up project .toolbox.yaml, creating
-                   ./.toolbox.yaml when none is found`,
+                   ./.toolbox.yaml when none is found
+
+--dry-run prints the file the write would produce — same validation, nothing
+touched on disk.`,
 	Args: usageArgs(cobra.NoArgs),
 }
 
@@ -50,6 +53,7 @@ var (
 	shellsAddCreateDir bool
 	shellsAddEnv       []string
 	shellsAddWhere     string
+	shellsAddDryRun    bool
 )
 
 var shellsAddCmd = &cobra.Command{
@@ -64,8 +68,9 @@ config file, preserving comments and sibling keys.`,
 }
 
 var (
-	shellsSetEnv   []string
-	shellsSetWhere string
+	shellsSetEnv    []string
+	shellsSetWhere  string
+	shellsSetDryRun bool
 )
 
 var shellsSetCmd = &cobra.Command{
@@ -80,8 +85,9 @@ Reserved keys (the TOOLBOX_ prefix and PWD) are rejected before writing.`,
 }
 
 var (
-	shellsRemovePurge bool
-	shellsRemoveWhere string
+	shellsRemovePurge  bool
+	shellsRemoveWhere  string
+	shellsRemoveDryRun bool
 )
 
 var shellsRemoveCmd = &cobra.Command{
@@ -100,13 +106,13 @@ func init() {
 	_ = shellsAddCmd.MarkFlagRequired("path")
 	shellsAddCmd.Flags().BoolVar(&shellsAddCreateDir, "create-dir", false, "create the path directory when missing")
 	shellsAddCmd.Flags().StringArrayVar(&shellsAddEnv, "env", nil, "env overlay entry K=V (repeatable)")
-	shellsAddCmd.Flags().StringVar(&shellsAddWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(shellsAddCmd, &shellsAddWhere, &shellsAddDryRun)
 
 	shellsSetCmd.Flags().StringArrayVar(&shellsSetEnv, "env", nil, "env overlay entry K=V (repeatable, required)")
-	shellsSetCmd.Flags().StringVar(&shellsSetWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(shellsSetCmd, &shellsSetWhere, &shellsSetDryRun)
 
 	shellsRemoveCmd.Flags().BoolVar(&shellsRemovePurge, "purge-dir", false, "also remove the configured path directory")
-	shellsRemoveCmd.Flags().StringVar(&shellsRemoveWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(shellsRemoveCmd, &shellsRemoveWhere, &shellsRemoveDryRun)
 
 	shellsCmd.AddCommand(shellsListCmd)
 	shellsCmd.AddCommand(shellsGetCmd)
@@ -184,8 +190,14 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --create-dir is a host-side effect, so a dry run must not perform it: it
+	// says what the real run would create and leaves the disk alone. A missing
+	// directory is a doctor warning, never an error, so the preview is still
+	// the candidate the write would produce.
 	if shellsAddCreateDir {
-		if err := os.MkdirAll(path, 0o755); err != nil {
+		if shellsAddDryRun {
+			reportSkippedSideEffect(cmd.ErrOrStderr(), "--create-dir would create %s", path)
+		} else if err := os.MkdirAll(path, 0o755); err != nil {
 			return fmt.Errorf("create %s: %w", path, err)
 		}
 	}
@@ -198,13 +210,8 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(target)
-	changed, err := configedit.SetShell(target, cwd, key, path, env)
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), target, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), target, cwd, shellsAddDryRun,
+		configedit.Shell(key, path, env))
 }
 
 func runShellsSet(cmd *cobra.Command, args []string) error {
@@ -232,13 +239,8 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(target)
-	changed, err := configedit.SetShellEnv(target, cwd, key, env)
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), target, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), target, cwd, shellsSetDryRun,
+		configedit.ShellEnv(key, env))
 }
 
 func runShellsRemove(cmd *cobra.Command, args []string) error {
@@ -262,19 +264,21 @@ func runShellsRemove(cmd *cobra.Command, args []string) error {
 			name, target, configedit.DidYouMean(name, slices.Sorted(maps.Keys(fileShells))))}
 	}
 
-	changed, err := configedit.RemoveShell(target, cwd, key)
-	if err != nil {
+	out := cmd.OutOrStdout()
+	if err := applyOrPreview(out, target, cwd, shellsRemoveDryRun, configedit.RemoveShell(key)); err != nil {
 		return err
 	}
-	out := cmd.OutOrStdout()
-	reportWrite(out, target, true, changed)
 
-	if shellsRemovePurge {
-		if err := purgeShellDir(out, entry); err != nil {
-			return err
-		}
+	if !shellsRemovePurge {
+		return nil
 	}
-	return nil
+	// Deleting a directory is the one thing about this command a dry run could
+	// not take back, so it is named rather than done.
+	if shellsRemoveDryRun {
+		reportSkippedSideEffect(cmd.ErrOrStderr(), "--purge-dir would remove %q", entry)
+		return nil
+	}
+	return purgeShellDir(out, entry)
 }
 
 // purgeShellDir removes the configured shell directory. Symlinks and
@@ -305,23 +309,6 @@ func purgeShellDir(out io.Writer, path string) error {
 	return nil
 }
 
-// resolveWriteTarget maps a --where flag value onto the config file path a
-// writer should patch, and returns the cwd it was resolved from — the writers
-// need that same cwd to validate the candidate document against the layers a
-// load would see. Shared by the shells, mounts and sdd groups.
-func resolveWriteTarget(where string) (target, cwd string, err error) {
-	w, err := configedit.ParseWhere(where)
-	if err != nil {
-		return "", "", &usageError{err: err}
-	}
-	cwd, err = os.Getwd()
-	if err != nil {
-		return "", "", fmt.Errorf("resolve cwd: %w", err)
-	}
-	target, err = configedit.Resolve(w, cwd)
-	return target, cwd, err
-}
-
 // parseEnvPairs parses repeated --env K=V flags into a validated map.
 func parseEnvPairs(pairs []string) (map[string]string, error) {
 	if len(pairs) == 0 {
@@ -339,22 +326,4 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 		return nil, &usageError{err: err}
 	}
 	return env, nil
-}
-
-// reportWrite prints the per-file result line shared by every writer
-// command: created (file did not exist), updated, or unchanged.
-func reportWrite(out io.Writer, path string, existedBefore, changed bool) {
-	state := "unchanged"
-	switch {
-	case changed && !existedBefore:
-		state = "created"
-	case changed:
-		state = "updated"
-	}
-	_, _ = fmt.Fprintf(out, "  %s: %s\n", path, state)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

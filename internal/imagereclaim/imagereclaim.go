@@ -14,7 +14,7 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -65,7 +65,7 @@ func Start(ctx context.Context, cli imageStore, in Input) {
 }
 
 // abstains reports whether there is no sweep to run. An empty ref is not a
-// wildcard but worse than one: build.RepoDigest compares the bare registry
+// wildcard but worse than one: imageref.RepoDigest compares the bare registry
 // path, and the empty path matches a malformed `@sha256:…` entry, which would
 // nominate an image belonging to a project that is not this one.
 func (in Input) abstains() bool { return in.Ref == "" }
@@ -107,7 +107,7 @@ func sweep(ctx context.Context, cli imageStore, in Input) {
 		// abstain: a locally built image is not a candidate either (no repo
 		// digest, first clause), and this session's container already exists
 		// and references whatever it runs, so the daemon refuses it for us.
-		digest := build.RepoDigest(in.Ref, img.RepoDigests)
+		digest := imageref.RepoDigest(in.Ref, img.RepoDigests)
 		if digest == "" || digest == in.KeepDigest || len(img.RepoTags) > 0 {
 			continue
 		}

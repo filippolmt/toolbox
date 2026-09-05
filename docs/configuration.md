@@ -29,7 +29,7 @@ Configuration is loaded from (highest priority first):
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
 | [`mounts`](mounts.md#mounts-merge-semantics) | list | built-in defaults | Patch / replace / append / disable the default bind mounts by `name`. |
-| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget every `~/.toolbox/`-managed default mount to a custom root. |
+| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget every `~/.toolbox/`-managed default mount to a custom root; empty resets it. |
 | [`inherit_host_auth`](#inherit-host-auth) | list | `[]` | Opt listed CLIs into the host's real credential path instead of the isolated default. |
 | [`shells`](shells.md) | map | – | Named shell shortcuts: `<name>: {path, env}`. |
 | [`shell`](#shell) | string | `zsh` | Login shell inside the container (only `zsh` is supported). |
@@ -134,10 +134,10 @@ macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keycha
 
 `toolbox shell` defaults to `ghcr.io/filippolmt/toolbox:latest`. There is no per-tool opt-out, no local-hash fallback, no auto-build branch. `toolbox build` is the explicit escape hatch — it overwrites the local cache of the canonical tag so the next `toolbox shell` picks up the freshly built image. Run `docker pull ghcr.io/filippolmt/toolbox:latest` to restore the upstream copy.
 
-**Source relocation (opt-in).** The ref and pull behaviour are configurable — globally (`~/.toolbox.yaml`), per-repo (`.toolbox.yaml`), or via `TOOLBOX_*` env — for users who serve the image from a proxy hub / pull-through cache (Harbor, Artifactory, Nexus, ECR pull-through). `internal/build.ResolveImage(image, registryMirror)` owns the precedence, highest first:
+**Source relocation (opt-in).** The ref and pull behaviour are configurable — globally (`~/.toolbox.yaml`), per-repo (`.toolbox.yaml`), or via `TOOLBOX_*` env — for users who serve the image from a proxy hub / pull-through cache (Harbor, Artifactory, Nexus, ECR pull-through). `internal/imageref.ResolveImage(image, registryMirror)` owns the precedence, highest first:
 
 - `image` — full ref override, used verbatim. Highest. Caveat: a local `toolbox build` tags the *canonical* ref, so with a full override `imageplan.Ensure` looks for the override ref and won't find the local build — `image` is a pull-source concern, not a build target.
-- `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `build.SplitRegistryHost`, shared with the pull half's `registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`. **The mirror is also authoritative for the update probe**: detection goes through the daemon (`DistributionInspect`), not to canonical GHCR, because the only probe worth making is the one that leads to a pull — announcing an image the mirror cannot serve would be noise. Perceived latency for a new image is therefore the mirror's. Caveat: a pull-through cache that hasn't ingested the image yet fails the first shell with `manifest unknown` — warm it (or pre-seed locally with `pull: never`), see [troubleshooting](troubleshooting.md#manifest-unknown-with-a-registry-mirror).
+- `registry_mirror` — swaps only the registry host of the canonical ref, preserving `filippolmt/toolbox:latest` (host split via `imageref.SplitRegistryHost`, shared with the pull half's `registryOf`). The relocated image is byte-identical, so a `registry_mirror` *does* satisfy `Ensure`. **The mirror is also authoritative for the update probe**: detection goes through the daemon (`DistributionInspect`), not to canonical GHCR, because the only probe worth making is the one that leads to a pull — announcing an image the mirror cannot serve would be noise. Perceived latency for a new image is therefore the mirror's. Caveat: a pull-through cache that hasn't ingested the image yet fails the first shell with `manifest unknown` — warm it (or pre-seed locally with `pull: never`), see [troubleshooting](troubleshooting.md#manifest-unknown-with-a-registry-mirror).
 - neither — the canonical default.
 
 The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: the registry refresh at shell start, and the [background update prefetch](session-reload.md) that runs for as long as the shell is attached.
@@ -152,7 +152,7 @@ The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: th
 
 `always` therefore differs from `auto` at shell start and nowhere else: forcing a pull on every background tick would spend real bandwidth for the whole session, and adoption is a fresh container either way. Cross-cutting: under any policy the prefetch abstains while the resolved ref carries no repo digest — the fingerprint of a local `toolbox build`, so an automatic download never overwrites one you asked for.
 
-Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
+Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value [resets the key](commands.md#--where-targeting) by removing it); add `--dry-run` to see the file the write would produce without touching it ([dry runs](commands.md#dry-runs)).
 
 ### The start-up refresh prompt
 

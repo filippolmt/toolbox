@@ -23,9 +23,9 @@ import (
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
@@ -38,7 +38,7 @@ import (
 // Image identifies the container image to launch. Ref defaults to the
 // canonical registry image (`toolbox build` overwrites its local cache) but
 // can be relocated, opt-in, via config Image / RegistryMirror —
-// build.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
+// imageref.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
 // ("auto" | "always" | "never") and steers imageplan.Sync, on the shell-start
 // and the session-reload path alike — those differ by the imageplan.Reason
 // the caller passes, not by the policy.
@@ -199,10 +199,19 @@ type PlanInput struct {
 
 	// Host is the resolved host this session is planned for. Every path the
 	// plan produces under ~/.toolbox — the mount set, the overlay Dockerfile,
-	// the state dir — hangs off Host.Home, and the proximo probes off its
-	// PATH. Resolved once by cmd so the whole pipeline agrees on one host
-	// instead of each stage re-reading the process.
+	// the state dir — hangs off Host.Home. Resolved once by cmd so the whole
+	// pipeline agrees on one host instead of each stage re-reading the
+	// process; the proximo gate below is resolved against this same host.
 	Host fsx.Host
+
+	// Proximo is the resolved Proximo Availability Gate for this session: the
+	// decision plus the host CA path it was decided against, derived once by
+	// cmd (proximo.Resolve) alongside the Host it was probed on. Three of the
+	// plan's fields answer to it — the CA bind (through mountplan), the
+	// CA-trust env, and the create-edge discovery flag — and they read the one
+	// value rather than each re-deriving a rule that costs a subprocess spawn.
+	// The zero value is a session with proximo off.
+	Proximo proximo.Gate
 
 	// ReloadFrom is the payload handed over by the process this one re-exec'd
 	// from, or nil for an ordinary shell start. The reload carries nothing and
@@ -284,7 +293,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
-	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
+	ref := imageref.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates
@@ -303,6 +312,9 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Profile:   in.Profile,
 		GitDir:    in.gitDir(),
 		Peer:      in.Peer,
+		// Handed down, not re-resolved: the mount stage reads the same gate
+		// the env and the discovery flag below read.
+		Proximo: in.Proximo,
 	})
 	if err != nil {
 		return nil, err
@@ -315,11 +327,11 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
-	// Host path of the state mount, for the host-side update prefetch.
-	stateDir, err := mountplan.StateDirPath(in.Host, in.Cfg, in.Profile)
-	if err != nil {
-		return nil, err
-	}
+	// Host path of the state mount, for the host-side update prefetch — read
+	// off the plan above, never re-derived: mountplan.StateDirPath merges a
+	// second time, and the merge resolves the proximo gate, so asking here is
+	// the second `proximo config ca-path` spawn one session used to pay.
+	stateDir := mp.StateDir
 
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
@@ -333,7 +345,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(proximo.Env(in.Host, in.Cfg), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
+		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
@@ -341,7 +353,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
 		StateDir:          stateDir,
-		Proximo:           proximo.Enabled(in.Host, in.Cfg),
+		Proximo:           in.Proximo.Enabled,
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
@@ -498,7 +510,8 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // poller compares against published releases, then the host platform
 // (GOOS/GOARCH, for anything cross-compiling for the host from inside a
 // shell), then the managed-statusline opt-out marker, then any caller-supplied
-// curated extras (Plan passes proximo.Env, which stats the host CA), then
+// curated extras (Plan passes the proximo gate's Env, which the gate emits
+// only when the host CA it resolved is actually there), then
 // the user-supplied env: map.
 //
 // The user layer is EffectiveEnv(in.Name), not cfg.Env: the active named

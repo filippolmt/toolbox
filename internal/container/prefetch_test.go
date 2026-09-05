@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -20,7 +19,7 @@ import (
 )
 
 // The image the re-stamp tests resolve against: the repo half is what
-// build.RepoDigest matches a RepoDigests entry on, so the two must agree.
+// imageref.RepoDigest matches a RepoDigests entry on, so the two must agree.
 const (
 	prefetchRepo = "ghcr.io/filippolmt/toolbox"
 	prefetchRef  = prefetchRepo + ":latest"
@@ -157,19 +156,14 @@ func createPathMock(repoDigest string) *mockClient {
 		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
-		imgInspFn: func(_ context.Context, ref string) (client.ImageInspectResult, error) {
-			return dockertest.ImageInspectResult(repoOf(ref), repoDigest), nil
+		// The repo half is named, not derived from the ref: these tests only ever
+		// ask about the toolbox image, and a fake that re-implemented the
+		// ref-to-repo rule could agree with a stale copy of it while
+		// imageref's own moved.
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			return dockertest.ImageInspectResult(prefetchRepo, repoDigest), nil
 		},
 	}
-}
-
-// repoOf strips the tag from an image ref so a fake RepoDigests entry matches
-// what build.RepoDigest looks for.
-func repoOf(ref string) string {
-	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
-		return ref[:i]
-	}
-	return ref
 }
 
 // On the create path the container does not exist yet, so the baseline comes
@@ -391,7 +385,7 @@ func TestShellPrefetchAndStampTrackTheBaseRefNotTheOverlay(t *testing.T) {
 		if ref == localimage.LocalRef {
 			return client.ImageInspectResult{}, nil
 		}
-		return dockertest.ImageInspectResult(repoOf(ref), pulled), nil
+		return dockertest.ImageInspectResult(prefetchRepo, pulled), nil
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -32,8 +33,9 @@ type sessionIntent struct {
 	// branch — carried as sessionplan.PlanInput itself rather than copied
 	// field by field into a parallel struct.
 	//
-	// Host, ImageDigest and ReloadFrom are the assembly's half: startSession
-	// overwrites them unconditionally, so setting them here has no effect.
+	// Host, Proximo, ImageDigest and ReloadFrom are the assembly's half:
+	// startSession overwrites them unconditionally, so setting them here has
+	// no effect.
 	// A `worktree` intent leaves Profile nil and takes Peer from config,
 	// because that command exposes neither --profile/--share nor --peer;
 	// declared here rather than left to a call site that omitted a field.
@@ -85,6 +87,12 @@ func startSession(in sessionIntent) error {
 	}
 	in.Plan.Host = host
 
+	// The Proximo Availability Gate, derived once against that same host and
+	// threaded from here on: the mount stage, the CA-trust env and the
+	// create-edge discovery flag all read this one value, so the session pays
+	// the `proximo config ca-path` spawn once instead of once per reader.
+	in.Plan.Proximo = proximo.Resolve(host, in.Plan.Cfg)
+
 	// One-time relocation of toolbox-own state into the ~/.toolbox/toolbox
 	// namespace. Best-effort: on failure CreateIfMissing rebuilds an empty
 	// state dir and the pull cache regenerates, so warn instead of failing the
@@ -111,8 +119,8 @@ func startSession(in sessionIntent) error {
 	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
 	// the env entry. See session-reload.
-	in.Plan.ImageDigest, _ = build.LocalRepoDigest(context.Background(), cli,
-		build.ResolveImage(in.Plan.Cfg.Image, in.Plan.Cfg.RegistryMirror))
+	in.Plan.ImageDigest, _ = imageref.LocalRepoDigest(context.Background(), cli,
+		imageref.ResolveImage(in.Plan.Cfg.Image, in.Plan.Cfg.RegistryMirror))
 
 	plan, err := sessionplan.Plan(in.Plan)
 	if err != nil {

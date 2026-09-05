@@ -82,7 +82,7 @@ func dockerExec(ctx context.Context, t *testing.T, cli client.APIClient, id stri
 // the documented full-ref override, which wins over the canonical GHCR tag —
 // so CI runs the gate against the image it just built without a `docker tag`
 // aliasing step, and without a second copy of the canonical ref outside
-// internal/build.DefaultRegistryImage. Empty falls back to the canonical ref
+// internal/imageref.DefaultRegistryImage. Empty falls back to the canonical ref
 // for a local run.
 func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, host fsx.Host) string {
 	t.Helper()

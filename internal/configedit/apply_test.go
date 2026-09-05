@@ -16,6 +16,73 @@ import (
 // this is the seam that owns comment preservation, document bootstrap, the
 // byte-equal short-circuit and loud parse failures.
 
+// tmpConfigPath returns an isolated project config path for a write-pipeline
+// test. HOME is redirected to a separate temp dir so ApplyChecked's validation
+// sees no global layer under the test's feet, and the returned path's directory
+// is the cwd every ApplyChecked call must be given (see cwdOf).
+func tmpConfigPath(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	return filepath.Join(t.TempDir(), ".toolbox.yaml")
+}
+
+// cwdOf is the layer-resolution directory for a temp config file: every test
+// keeps its file at <tmpdir>/.toolbox.yaml, so <tmpdir> is the cwd whose
+// walk-up finds exactly that file as the project layer.
+func cwdOf(path string) string { return filepath.Dir(path) }
+
+// TestApplyCheckedNoHeaderOnExistingFile is the negative half of the
+// header-on-create policy: a file that already exists keeps its own first
+// line. The positive half (a created file gains the header) is asserted
+// above; only the pair pins the policy, since a writer that always prepended
+// would satisfy the positive one alone.
+func TestApplyCheckedNoHeaderOnExistingFile(t *testing.T) {
+	path := tmpConfigPath(t)
+	if err := os.WriteFile(path, []byte("shell: zsh\n"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if _, _, err := ApplyChecked(path, cwdOf(path), Shell("infra", "/tmp/infra", nil)); err != nil {
+		t.Fatalf("ApplyChecked: %v", err)
+	}
+	if got := readFile(t, path); strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("existing file must not gain the create header, got:\n%s", got)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
+}
+
+// TestApplyCheckedHeaderOnCreate: a file the write brings into existence opens
+// with the discovery header, so a config created by a one-line command still
+// points at the annotated template. (That the header appears on creation and
+// only there is pinned across every document shape by
+// TestRenderReturnsTheBytesApplyCheckedWrites; this case is about its content.)
+func TestApplyCheckedHeaderOnCreate(t *testing.T) {
+	path := tmpConfigPath(t)
+
+	changed, existed, err := ApplyChecked(path, cwdOf(path), Shell("infra", "/tmp/infra", nil))
+	if err != nil {
+		t.Fatalf("ApplyChecked: %v", err)
+	}
+	if !changed || existed {
+		t.Errorf("changed=%v existed=%v, want true/false on a created file", changed, existed)
+	}
+	got := readFile(t, path)
+	if !strings.HasPrefix(got, "# .toolbox.yaml — toolbox configuration.") {
+		t.Errorf("created file must start with the docs header, got:\n%s", got)
+	}
+	if !strings.Contains(got, "toolbox config example") {
+		t.Errorf("header must point at the annotated template, got:\n%s", got)
+	}
+}
+
 // TestApplyCheckedPreservesCommentsAndOrder exercises the full pipeline against
 // an existing file: user comments survive, pre-existing keys keep their order,
 // and the mutation lands as an appended sibling.
@@ -26,7 +93,7 @@ func TestApplyCheckedPreservesCommentsAndOrder(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	changed, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
+	changed, _, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
 		infra := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), "infra")
 		configio.SetMapValue(infra, "path", "/tmp/infra")
 	})
@@ -71,7 +138,7 @@ func TestApplyCheckedBootstrapsDocument(t *testing.T) {
 					t.Fatalf("seed: %v", err)
 				}
 			}
-			changed, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
+			changed, _, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
 				configio.SetMapBool(configio.EnsureChildMap(doc, "sdd"), "openspec", true)
 			})
 			if err != nil {
@@ -103,7 +170,7 @@ func TestApplyCheckedIdempotentRunDoesNotRewrite(t *testing.T) {
 	mutate := func(doc *yaml.Node) {
 		configio.SetMapBool(configio.EnsureChildMap(doc, "sdd"), "openspec", true)
 	}
-	if _, err := ApplyChecked(path, cwdOf(path), mutate); err != nil {
+	if _, _, err := ApplyChecked(path, cwdOf(path), mutate); err != nil {
 		t.Fatalf("first ApplyChecked: %v", err)
 	}
 	before := readFile(t, path)
@@ -111,7 +178,7 @@ func TestApplyCheckedIdempotentRunDoesNotRewrite(t *testing.T) {
 		t.Fatalf("chmod witness: %v", err)
 	}
 
-	changed, err := ApplyChecked(path, cwdOf(path), mutate)
+	changed, _, err := ApplyChecked(path, cwdOf(path), mutate)
 	if err != nil {
 		t.Fatalf("second ApplyChecked: %v", err)
 	}
@@ -138,7 +205,7 @@ func TestApplyCheckedUnparseableYAMLFailsLoudly(t *testing.T) {
 	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	changed, err := ApplyChecked(path, cwdOf(path), func(_ *yaml.Node) {
+	changed, _, err := ApplyChecked(path, cwdOf(path), func(_ *yaml.Node) {
 		t.Fatal("mutate must not run on unparseable input")
 	})
 	if err == nil {
@@ -181,7 +248,7 @@ func TestApplyCheckedRejectsWithoutWriting(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			changed, err := ApplyChecked(path, cwdOf(path), tc.mutate)
+			changed, _, err := ApplyChecked(path, cwdOf(path), tc.mutate)
 			if err == nil {
 				t.Fatal("an invalid candidate must be rejected")
 			}
@@ -204,7 +271,7 @@ func TestApplyCheckedRejectsWithoutWriting(t *testing.T) {
 func TestApplyCheckedCreatesNothingWhenRejected(t *testing.T) {
 	path := tmpConfigPath(t)
 
-	if _, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
+	if _, _, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
 		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), "infra")
 		configio.SetMapValue(entry, "path", "")
 	}); err == nil {
@@ -231,7 +298,7 @@ func TestApplyCheckedValidatesTheCandidateInItsOwnLayer(t *testing.T) {
 	}
 	project := filepath.Join(t.TempDir(), ".toolbox.yaml")
 
-	changed, err := SetShellEnv(project, cwdOf(project), "infra", map[string]string{"FOO": "bar"})
+	changed, _, err := ApplyChecked(project, cwdOf(project), ShellEnv("infra", map[string]string{"FOO": "bar"}))
 	if err != nil {
 		t.Fatalf("an env overlay for a globally-defined shell must be accepted: %v", err)
 	}
@@ -263,7 +330,7 @@ func TestApplyCheckedIgnoresAnotherLayersFinding(t *testing.T) {
 		t.Fatalf("seed project: %v", err)
 	}
 
-	changed, err := RemoveShell(globalPath, repo, "infra")
+	changed, _, err := ApplyChecked(globalPath, repo, RemoveShell("infra"))
 	if err != nil {
 		t.Fatalf("removing the global entry must not be blocked by the project overlay: %v", err)
 	}
@@ -291,7 +358,7 @@ func TestApplyCheckedCatchesAFaultAHigherLayerMasks(t *testing.T) {
 		t.Fatalf("seed project: %v", err)
 	}
 
-	changed, err := ApplyChecked(globalPath, repo, Scalar("shell", "bash"))
+	changed, _, err := ApplyChecked(globalPath, repo, Scalar("shell", "bash"))
 	if err == nil {
 		t.Fatal("a value invalid on its own must be rejected even when a higher layer overrides it")
 	}
@@ -300,5 +367,167 @@ func TestApplyCheckedCatchesAFaultAHigherLayerMasks(t *testing.T) {
 	}
 	if _, statErr := os.Stat(globalPath); !os.IsNotExist(statErr) {
 		t.Errorf("rejected creation must leave no file behind (err=%v)", statErr)
+	}
+}
+
+// TestApplyCheckedReportsWhetherTheFileExisted pins the second return value:
+// the write already asked the filesystem that question to render the candidate,
+// so the created-vs-updated line a caller prints comes from the very read the
+// write acted on. A caller that re-stats instead can be handed a different
+// answer than the one the write saw, through a window it opened itself.
+//
+// The bit describes the read, not the outcome: an unchanged run and a rejected
+// candidate still report the file they found.
+func TestApplyCheckedReportsWhetherTheFileExisted(t *testing.T) {
+	t.Run("creation reports absent", func(t *testing.T) {
+		path := tmpConfigPath(t)
+
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		if err != nil {
+			t.Fatalf("ApplyChecked: %v", err)
+		}
+		if !changed || existed {
+			t.Errorf("changed=%v existed=%v, want true/false on a created file", changed, existed)
+		}
+	})
+
+	t.Run("update reports present", func(t *testing.T) {
+		path := tmpConfigPath(t)
+		if err := os.WriteFile(path, []byte("pull: always\n"), 0o600); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		if err != nil {
+			t.Fatalf("ApplyChecked: %v", err)
+		}
+		if !changed || !existed {
+			t.Errorf("changed=%v existed=%v, want true/true on an edited file", changed, existed)
+		}
+	})
+
+	t.Run("unchanged run still reports present", func(t *testing.T) {
+		path := tmpConfigPath(t)
+		if err := os.WriteFile(path, []byte("agent: codex\n"), 0o600); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		if err != nil {
+			t.Fatalf("ApplyChecked: %v", err)
+		}
+		if changed || !existed {
+			t.Errorf("changed=%v existed=%v, want false/true on a no-op rewrite", changed, existed)
+		}
+	})
+
+	t.Run("rejected candidate still reports present", func(t *testing.T) {
+		path := tmpConfigPath(t)
+		if err := os.WriteFile(path, []byte("pull: always\n"), 0o600); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("shell", "bash"))
+		if err == nil {
+			t.Fatal("an unsupported shell must be rejected")
+		}
+		if changed || !existed {
+			t.Errorf("changed=%v existed=%v, want false/true on a rejected write", changed, existed)
+		}
+	})
+}
+
+// TestPreviewReturnsTheCandidateWithoutTouchingTheFile: the read side of a
+// write. `--dry-run` shows the user the same bytes ApplyChecked would commit,
+// so the two have to be one computation — and the preview must leave the disk
+// exactly as it found it, including not creating a file that is not there yet.
+func TestPreviewReturnsTheCandidateWithoutTouchingTheFile(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		absent  bool
+	}{
+		{name: "absent", absent: true},
+		{name: "populated", content: "# keep me\npull: always\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := tmpConfigPath(t)
+			if !tc.absent {
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+
+			candidate, existed, err := Preview(path, cwdOf(path), Scalar("agent", "codex"))
+			if err != nil {
+				t.Fatalf("Preview: %v", err)
+			}
+			if existed == tc.absent {
+				t.Errorf("existed=%v for an absent=%v file", existed, tc.absent)
+			}
+			if _, err := os.Stat(path); tc.absent && err == nil {
+				t.Fatal("a preview must not create the file it renders")
+			}
+			if !tc.absent && readFile(t, path) != tc.content {
+				t.Errorf("a preview must leave the file byte-identical:\n%s", readFile(t, path))
+			}
+
+			// The same edit, actually written: a preview is only worth printing
+			// if it is the write's own rendering and not a look-alike of it.
+			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+				t.Fatalf("ApplyChecked: %v", err)
+			}
+			if got := readFile(t, path); got != string(candidate) {
+				t.Errorf("Preview and ApplyChecked disagree.\nPreview:\n%s\nApplyChecked:\n%s", candidate, got)
+			}
+		})
+	}
+}
+
+// TestPreviewIsGatedLikeTheWrite: a preview of an edit the doctor would reject
+// reports that rejection instead of printing a candidate no write would ever
+// produce — what lets `--dry-run` answer "would this command work" and not only
+// "what would it render".
+func TestPreviewIsGatedLikeTheWrite(t *testing.T) {
+	path := tmpConfigPath(t)
+
+	_, _, previewErr := Preview(path, cwdOf(path), Scalar("shell", "bash")) // bash is unsupported
+	if previewErr == nil {
+		t.Fatal("a preview of an invalid candidate must be rejected")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("a rejected preview must create nothing")
+	}
+
+	_, _, writeErr := ApplyChecked(path, cwdOf(path), Scalar("shell", "bash"))
+	if writeErr == nil {
+		t.Fatal("the write must reject the same candidate")
+	}
+	if previewErr.Error() != writeErr.Error() {
+		t.Errorf("preview and write must report the same rejection:\npreview: %v\nwrite:   %v", previewErr, writeErr)
+	}
+}
+
+// TestPreviewOfANoOpRendersTheFileItFound: the write short-circuits a candidate
+// equal to the file before validating it, because a no-op cannot introduce a
+// finding. The preview shares that short-circuit, so `--dry-run` over a file
+// the doctor already dislikes shows the no-op rather than an error the real
+// command would never print.
+func TestPreviewOfANoOpRendersTheFileItFound(t *testing.T) {
+	path := tmpConfigPath(t)
+	src := "shells:\n  infra:\n    path: \"\"\n"
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	candidate, existed, err := Preview(path, cwdOf(path), func(*yaml.Node) {})
+	if err != nil {
+		t.Fatalf("Preview of a no-op: %v", err)
+	}
+	if !existed {
+		t.Error("existed must report the file the preview read")
+	}
+	if string(candidate) != src {
+		t.Errorf("a no-op preview must render the file it found:\n%s", candidate)
 	}
 }
