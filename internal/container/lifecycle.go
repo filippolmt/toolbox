@@ -83,13 +83,15 @@ var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessi
 // refreshAnswer is what the start-up refresh settled: the outcome, and the
 // reason it ran under — which is what a yes to it was staked on. offerRefresh
 // establishes the two together and every consumer needs both, so they travel
-// as one rather than as a pair of arguments. Outcome is embedded because the
-// fields are read where they are produced-for — answer.Interrupted,
-// answer.Synced — and a wrapper that made those a level deeper would buy
-// nothing.
+// as one rather than as a pair of arguments.
+//
+// A named field rather than an embedding, now that imageplan.Outcome is one
+// value with a String of its own: embedding would promote that String and make
+// refreshAnswer a fmt.Stringer that prints the settlement and silently drops
+// the reason — half of the only thing this type exists to keep together.
 type refreshAnswer struct {
-	imageplan.Outcome
-	reason imageplan.Reason
+	outcome imageplan.Outcome
+	reason  imageplan.Reason
 }
 
 // offerRefresh runs the shell-start image refresh — prompt and all — on the
@@ -130,12 +132,12 @@ func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 		return refreshAnswer{reason: reason}
 	}
 	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir, reason)
-	if refresh.Declined && plan.StateDir != "" {
+	if refresh == imageplan.OutcomeDeclined && plan.StateDir != "" {
 		if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
 			ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
 		}
 	}
-	return refreshAnswer{Outcome: refresh, reason: reason}
+	return refreshAnswer{outcome: refresh, reason: reason}
 }
 
 // replaceForRefresh honours a yes given on the start branch, by destroying the
@@ -152,7 +154,7 @@ func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 //
 // Everything that can still fail runs before anything is destroyed, which is
 // the property the whole act rests on: the pull is already behind us
-// (`Outcome.Accepted` is a pull that landed), the overlay is built by the
+// (`OutcomeAccepted` is a pull that landed), the overlay is built by the
 // caller before it gets here, and preflightCreate is the last of the three —
 // a host port another container holds can never be bound by the create that
 // follows, and learning that after the removal would cost the developer the
@@ -373,7 +375,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// probe is a probe, and the background poller must not re-ask the question
 	// this just answered.
 	answer := offerRefresh(ctx, cli, plan, op)
-	if answer.Interrupted {
+	if answer.outcome == imageplan.OutcomeInterrupted {
 		// A ctrl+c at the start-up prompt. The prompt has already re-raised
 		// the signal raw mode swallowed, but the answer is reported rather
 		// than left to the signal alone: whether cmd's signal context has
@@ -440,7 +442,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// past it, the other must never reclaim it.
 	sessionDigest := createdImageDigest(plan, inspect, op)
 
-	stopPrefetch := beginPrefetch(ctx, cli, plan, sessionDigest, answer.Synced)
+	stopPrefetch := beginPrefetch(ctx, cli, plan, sessionDigest, answer.outcome.Synced())
 	defer stopPrefetch()
 
 	stopReclaim := beginReclaim(ctx, cli, plan, sessionDigest)
@@ -503,7 +505,7 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 // were asked about.
 func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
 	inspect container.InspectResponse, op runplan.Op, answer refreshAnswer) (container.InspectResponse, runplan.Op, error) {
-	if !answer.Accepted || answer.reason != imageplan.ReasonStart {
+	if answer.outcome != imageplan.OutcomeAccepted || answer.reason != imageplan.ReasonStart {
 		return inspect, op, nil
 	}
 	return replaceForRefresh(ctx, cli, plan, inspect, op)
