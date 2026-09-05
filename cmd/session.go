@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -111,8 +111,8 @@ func startSession(in sessionIntent) error {
 	// store against. Best-effort: an unresolvable digest (locally built image,
 	// inspect failure, image not yet pulled) yields "" and the planner omits
 	// the env entry. See session-reload.
-	in.Plan.ImageDigest, _ = build.LocalRepoDigest(context.Background(), cli,
-		build.ResolveImage(in.Plan.Cfg.Image, in.Plan.Cfg.RegistryMirror))
+	in.Plan.ImageDigest, _ = imageref.LocalRepoDigest(context.Background(), cli,
+		imageref.ResolveImage(in.Plan.Cfg.Image, in.Plan.Cfg.RegistryMirror))
 
 	plan, err := sessionplan.Plan(in.Plan)
 	if err != nil {

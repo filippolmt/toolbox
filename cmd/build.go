@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -19,9 +20,9 @@ var buildCmd = &cobra.Command{
 The Dockerfile and companion scripts are embedded into the toolbox binary,
 so this works from any directory — a repo checkout is not required.
 
-The build produces the canonical image tag (` + build.DefaultRegistryImage + `),
+The build produces the canonical image tag (` + imageref.DefaultRegistryImage + `),
 overwriting the local cache. The next 'toolbox shell' picks up the freshly
-built image; run 'docker pull ` + build.DefaultRegistryImage + `' to restore
+built image; run 'docker pull ` + imageref.DefaultRegistryImage + `' to restore
 the upstream one.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: runBuild,
@@ -34,7 +35,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	defer cli.Close()
 
-	tag := build.DefaultRegistryImage
+	tag := imageref.DefaultRegistryImage
 	ui.Info("Building " + tag + " locally (overwrites the cached copy of the registry image)")
 
 	ctx, stopSig := signalCtx()

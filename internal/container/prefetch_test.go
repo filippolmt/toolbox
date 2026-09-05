@@ -20,7 +20,7 @@ import (
 )
 
 // The image the re-stamp tests resolve against: the repo half is what
-// build.RepoDigest matches a RepoDigests entry on, so the two must agree.
+// imageref.RepoDigest matches a RepoDigests entry on, so the two must agree.
 const (
 	prefetchRepo = "ghcr.io/filippolmt/toolbox"
 	prefetchRef  = prefetchRepo + ":latest"
@@ -164,7 +164,7 @@ func createPathMock(repoDigest string) *mockClient {
 }
 
 // repoOf strips the tag from an image ref so a fake RepoDigests entry matches
-// what build.RepoDigest looks for.
+// what imageref.RepoDigest looks for.
 func repoOf(ref string) string {
 	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
 		return ref[:i]

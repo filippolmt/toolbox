@@ -12,9 +12,9 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
@@ -88,7 +88,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 	// A store that cannot be read and one carrying no digest (a local build)
 	// collapse to the same "" here on purpose: the digest is summary text, not
 	// a gate, and printReloadSummary renders "unknown" for either.
-	after, _ := build.LocalRepoDigest(ctx, cli, plan.Image.Ref)
+	after, _ := imageref.LocalRepoDigest(ctx, cli, plan.Image.Ref)
 	printReloadSummary(from, after, casualties)
 	return nil
 }

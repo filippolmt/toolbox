@@ -79,7 +79,7 @@ outside it are not touched.
 ## The constraint that decided the slice
 
 The subset rule bites one level down as well. `imageprefetch` reaches
-`ImageInspect` through `build.LocalRepoDigest`, and `localimage` reaches
+`ImageInspect` through `imageref.LocalRepoDigest`, and `localimage` reaches
 `ImageBuild` through `build.BuildOverlay`. Both are called with the caller's own
 client, so either those two functions narrow in this same slice or the two
 leaves are forced to keep the full client and gain nothing.

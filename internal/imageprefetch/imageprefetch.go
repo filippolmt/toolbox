@@ -45,8 +45,8 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 )
 
 // probeTTL bounds how long a previous probe attempt is trusted before the
@@ -140,7 +140,7 @@ type Input struct {
 
 // registryStore is the pair this package compares: the local image store it
 // reads a repo digest from, and the registry behind it — probed for the digest
-// it serves and pulled from when the two differ. build.LocalRepoDigest is
+// it serves and pulled from when the two differ. imageref.LocalRepoDigest is
 // called with this value, and its own interface is a subset of it.
 // → CONTEXT.md, Declared Docker Surface.
 type registryStore interface {
@@ -471,7 +471,7 @@ func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
 // automatic pull — and it self-heals, since a manual `docker pull` restores
 // the digest and the prefetch resumes.
 func localDigest(ctx context.Context, cli registryStore, ref string) (string, bool) {
-	d, _ := build.LocalRepoDigest(ctx, cli, ref)
+	d, _ := imageref.LocalRepoDigest(ctx, cli, ref)
 	return d, d != ""
 }
 

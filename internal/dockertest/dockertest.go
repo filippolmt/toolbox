@@ -2,10 +2,11 @@
 // packages that drive the moby client SDK.
 //
 // Fake is the double for every module that declares its own Docker surface —
-// the image family, internal/build and the teardown (see CONTEXT.md, Declared
-// Docker Surface). One function field per method those interfaces hold, and
-// structural satisfaction is what lets it stand in for an interface it cannot
-// name because that interface is unexported in its own package.
+// the image family, internal/build, internal/imageref and the teardown (see
+// CONTEXT.md, Declared Docker Surface). One function field per method those
+// interfaces hold, and structural satisfaction is what lets it stand in for an
+// interface it cannot name because that interface is unexported in its own
+// package.
 //
 // Two packages still hold the whole client and keep their own hand-rolled
 // adapter, and both are structural rather than pending: internal/container is

@@ -16,7 +16,7 @@ import (
 // The runtime image defaults to the canonical
 // `ghcr.io/filippolmt/toolbox:latest` (the image content is identical across
 // users — there is no per-tool opt-out). The source can be relocated, opt-in,
-// via Image / RegistryMirror; the pull behaviour via Pull. See build.ResolveImage.
+// via Image / RegistryMirror; the pull behaviour via Pull. See imageref.ResolveImage.
 //
 // InheritHostAuth opts the listed CLIs into reading the host's standard
 // credential path (read-only) instead of the isolated `~/.toolbox/<key>/`
@@ -39,7 +39,7 @@ type Config struct {
 	// or digest). Empty = the canonical default. Highest-precedence image
 	// selector — wins over RegistryMirror. Opt-in; a full override is a
 	// pull-source concern, so a local `toolbox build` (which tags the canonical
-	// ref) no longer satisfies it. See build.ResolveImage.
+	// ref) no longer satisfies it. See imageref.ResolveImage.
 	Image string `mapstructure:"image"`
 	// RegistryMirror relocates only the registry host of the canonical image —
 	// the path+tag (`filippolmt/toolbox:latest`) is preserved — so a
@@ -342,7 +342,7 @@ func ValidateRegistryMirror(s string) error {
 	if err := validateBareRef("registry_mirror", s, "(host[:port][/path])"); err != nil {
 		return err
 	}
-	// A registry host never starts with "/". Catch it here: build.ResolveImage
+	// A registry host never starts with "/". Catch it here: imageref.ResolveImage
 	// trims trailing slashes and prepends the mirror, so a leading-slash value
 	// ("/", "//", "/harbor.io") would splice into a hostless, malformed ref
 	// ("/filippolmt/toolbox:latest") that only fails at docker-pull time.

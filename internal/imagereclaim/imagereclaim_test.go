@@ -332,7 +332,7 @@ func TestSweepStillReportsWhatACancelledRunRemoved(t *testing.T) {
 	}
 }
 
-// An empty ref is not a wildcard: build.RepoDigest compares the bare registry
+// An empty ref is not a wildcard: imageref.RepoDigest compares the bare registry
 // path, and the empty path matches a malformed `@sha256:…` RepoDigests entry —
 // which would nominate an image from a project that is not this one. The
 // sibling prefetch refuses its own empty input for the same reason.

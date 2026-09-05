@@ -320,7 +320,7 @@ untouched — it no longer pre-mixes the env layers into `cfg.Env`.
 downstream of the seam is mutated by the caller — `cmd` no longer patches a
 finished plan.
 
-Concretely: `parsePublishSpecs → build.ResolveImage → mountplan.Plan
+Concretely: `parsePublishSpecs → imageref.ResolveImage → mountplan.Plan
 → ContainerNameFor → shellEnv → ResolveShellCmd →
 NestedSandboxSecurityOpt`. Owned by `internal/sessionplan`. The single
 seam runtime callers and tests cross is `sessionplan.Plan(PlanInput)`;
@@ -374,6 +374,37 @@ absence of a typed decision Layer. The "Run Plan" name turns the
 state machine into one observable typed Op that tests construct without
 Docker, mirroring the Mount Plan / Session Plan / Config Plan deepening
 pattern.
+
+### Image Ref Identity
+
+Which image reference a session resolves to, and which content digest the
+local store holds for it — the ref half of the image family, with no build
+context anywhere in it.
+
+Concretely: `imageref.ResolveImage(image, registryMirror)` applies the
+selection precedence (full `image` override > `registry_mirror` host swap >
+`DefaultRegistryImage`), `imageref.SplitRegistryHost` is the one registry-host
+heuristic, and `imageref.RepoDigest` / `imageref.LocalRepoDigest` are the one
+spelling of *this ref's entry in a `RepoDigests` list* and *what the local
+store answers for it*. `LocalRepoDigest`'s second return says the store
+answered, which is not the same as carrying a digest: an image built locally
+exists with none, the [Image Prefetch](#image-prefetch) abstains on exactly
+that, and `restampImageDigest` stamps whatever the store says, empty included.
+Owned by `internal/imageref`, a leaf on the stdlib plus the Docker client, so
+[Image Plan](#image-plan), [Image Prefetch](#image-prefetch),
+[Image Reclamation](#image-reclamation), `localimage` and `sessionplan` reach
+the ref functions without reaching anything heavier.
+
+Why the term exists: these four lived in `internal/build` — the package that
+embeds the whole Docker build context and lints it — joined to the image
+builder by a package name and nothing else. Four image modules therefore took
+on an `embed.FS` and a Dockerfile-lint suite to reach a handful of ref
+functions, and the ref tests were a minority in a suite about `apt-get`
+ordering and shell shims. Naming the ref half separately is the same move
+[Docker Identity](#docker-identity) makes at the Docker edge: a narrow concern
+gets its own home, and its tests are then about it. `package build` keeps the
+driver (`BuildImage`, `BuildOverlay`, `tarEmbeddedContext`), the embedded
+assets, and the suite that pins the [Invalidation Floor](#invalidation-floor).
 
 ### Image Plan
 
@@ -1074,17 +1105,18 @@ Concretely: `imageplan.registry` (`ImagePull`), `imagereclaim.imageStore`
 (`ImageList` + `ImageRemove`), `localimage.overlayBuilder`,
 `imageprefetch.registryStore`, `imageplan.imageSource`,
 `teardown.containerRuntime` (the container it inspects, stops, removes or
-kills, plus the execs it asks about), and in `internal/build` both
-`LocalRepoDigest`'s `localStore` and the `imageBuilder` its two build
-functions share. No one package owns the concept: each module owns the
-interface it declares, and `internal/dockertest` owns the shared half —
-the double all of them are tested through. Exported functions take these
+kills, plus the execs it asks about), `imageref.localStore` (the one
+`ImageInspect` behind `LocalRepoDigest`) and the `imageBuilder` that
+`internal/build`'s two build functions share. No one package owns the
+concept: each module owns the interface it declares, and
+`internal/dockertest` owns the shared half — the double all of them are
+tested through. Exported functions take these
 unexported types: a caller passes a value that satisfies one and never
 needs to name it. Go assigns interface to interface only when the
 target's method set is a subset of the source's, so a module's declared
 surface is the union of its own calls and those of every callee it hands
-the value to — which is what pulled `build`'s two image functions into
-the same slice as `imageprefetch` and `localimage`.
+the value to — which is what pulled the build driver's two image
+functions into the same slice as `imageprefetch` and `localimage`.
 
 `internal/container` is exempt and keeps `client.APIClient`. It *is* the
 Docker edge, it calls the daemon directly on many endpoints and passes

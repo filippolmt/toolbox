@@ -1,4 +1,17 @@
-package build
+// Package imageref owns image-ref identity: which reference a toolbox
+// session resolves to, and which content digest the local store holds for
+// it. Pure string work over a ref plus one Docker read — ResolveImage,
+// SplitRegistryHost, RepoDigest, LocalRepoDigest — with the stdlib and the
+// Docker client as its only dependencies, so every image module can reach it
+// without depending on anything heavier.
+//
+// It is a leaf on purpose. These four lived in internal/build, joined to the
+// image builder by nothing but a package name: that package embeds the whole
+// Docker build context and lints it, so four modules took on an embed.FS and
+// a Dockerfile-lint suite to reach a handful of ref functions. The same
+// reasoning internal/dockeridentity applies at the Docker edge — a narrow
+// concern gets its own home, and its tests are then about it.
+package imageref
 
 import (
 	"context"
@@ -93,6 +106,12 @@ func SplitRegistryHost(ref string) (host, rest string) {
 	return "", ref
 }
 
+// localStore is the local image store LocalRepoDigest reads, declared here at
+// the width the read actually uses. → CONTEXT.md, Declared Docker Surface.
+type localStore interface {
+	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
+}
+
 // LocalRepoDigest reports the repo digest the local Docker store holds for
 // ref. The second return says whether the store answered at all, which is not
 // the same as carrying a digest: an image built locally exists and has none
@@ -104,12 +123,6 @@ func SplitRegistryHost(ref string) (host, rest string) {
 // The one place ImageInspect is turned into a repo digest. It was four,
 // spelled four ways, before three of them disagreed about what an empty
 // answer meant.
-// localStore is the local image store LocalRepoDigest reads, declared here at
-// the width the read actually uses. → CONTEXT.md, Declared Docker Surface.
-type localStore interface {
-	ImageInspect(ctx context.Context, ref string, opts ...client.ImageInspectOption) (client.ImageInspectResult, error)
-}
-
 func LocalRepoDigest(ctx context.Context, cli localStore, ref string) (string, bool) {
 	res, err := cli.ImageInspect(ctx, ref)
 	if err != nil {

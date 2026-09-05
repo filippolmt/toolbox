@@ -26,12 +26,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
@@ -612,7 +612,7 @@ func restampImageDigest(ctx context.Context, cli client.APIClient, plan *session
 	// a store that answers with no digest is a local build, and stamping its
 	// empty answer is what keeps the prefetch from claiming this session is
 	// behind an image it cannot read a digest for.
-	digest, answered := build.LocalRepoDigest(ctx, cli, plan.Image.Ref)
+	digest, answered := imageref.LocalRepoDigest(ctx, cli, plan.Image.Ref)
 	if !answered {
 		return
 	}

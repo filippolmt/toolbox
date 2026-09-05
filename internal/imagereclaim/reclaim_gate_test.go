@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/build"
+	"github.com/filippolmt/toolbox/internal/imageref"
 )
 
 // TestDaemonRefusesToRemoveAStoppedContainersImage pins the one claim ADR 0007
@@ -136,11 +137,11 @@ func buildSubject(ctx context.Context, t *testing.T, cli client.APIClient) strin
 
 // imageTag is the image under test, handed to the gate the same way the other
 // real-daemon gates receive it, so the canonical ref lives only in
-// internal/build.
+// internal/imageref.
 func imageTag(t *testing.T) string {
 	t.Helper()
 	if tag := os.Getenv("IMAGE_TAG"); tag != "" {
 		return tag
 	}
-	return build.DefaultRegistryImage
+	return imageref.DefaultRegistryImage
 }

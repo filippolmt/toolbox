@@ -23,9 +23,9 @@ import (
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/filippolmt/toolbox/internal/bridge"
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
@@ -38,7 +38,7 @@ import (
 // Image identifies the container image to launch. Ref defaults to the
 // canonical registry image (`toolbox build` overwrites its local cache) but
 // can be relocated, opt-in, via config Image / RegistryMirror —
-// build.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
+// imageref.ResolveImage owns the precedence. PullPolicy mirrors config.Pull
 // ("auto" | "always" | "never") and steers imageplan.Sync, on the shell-start
 // and the session-reload path alike — those differ by the imageplan.Reason
 // the caller passes, not by the policy.
@@ -284,7 +284,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
-	ref := build.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
+	ref := imageref.ResolveImage(in.Cfg.Image, in.Cfg.RegistryMirror)
 
 	// Resolve the container Cmd up front so an incoherent shell+tools
 	// combination fails before any fs side effects (mountplan.Plan creates

@@ -39,8 +39,8 @@ import (
 	"github.com/moby/moby/client/pkg/jsonmessage"
 	"golang.org/x/term"
 
-	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -176,7 +176,7 @@ func isAuthError(err error) bool {
 // malformed ref falls through to docker.io rather than printing an
 // empty hostname in the user-facing remediation line.
 func registryOf(ref string) string {
-	if host, _ := build.SplitRegistryHost(ref); host != "" {
+	if host, _ := imageref.SplitRegistryHost(ref); host != "" {
 		return host
 	}
 	return "docker.io"

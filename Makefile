@@ -1,5 +1,5 @@
 # `make build` tags the runtime image directly with the canonical registry
-# reference (see internal/build/tag.go::DefaultRegistryImage) so a freshly
+# reference (see internal/imageref/imageref.go::DefaultRegistryImage) so a freshly
 # built image is the one `./toolbox shell` resolves locally without any
 # retag step. CI / GHCR push the same tag — locally-built and registry-built
 # share the namespace by design. Run `docker pull` to restore the upstream

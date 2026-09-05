@@ -53,7 +53,7 @@ func TestValidateRegistryMirror(t *testing.T) {
 			t.Errorf("leading-slash mirror %q must be rejected", bad)
 		}
 	}
-	// Trailing slash is fine — build.ResolveImage trims it.
+	// Trailing slash is fine — imageref.ResolveImage trims it.
 	if err := ValidateRegistryMirror("harbor.corp.io/proxy/"); err != nil {
 		t.Errorf("trailing slash must be allowed: %v", err)
 	}
