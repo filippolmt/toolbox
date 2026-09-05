@@ -68,6 +68,11 @@ type keyDescriptor struct {
 	display func(*config.Config) string
 }
 
+// sddKey is the Config Schema key for the SDD skill packs. Spelled once: the
+// reset path dispatches this key's own artefact handling (the .gitignore
+// fences) on it, and the descriptor row below must be the same key.
+const sddKey = "sdd"
+
 // keyDescriptors is the one per-key table, keyed by the config schema key.
 // Adding a config key the UI presents is a row here (plus its case in
 // TestPreviewMatchesWriterForEveryEditableKey).
@@ -155,7 +160,7 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		hint: "(~/.toolbox)",
 	},
-	"sdd": {
+	sddKey: {
 		kind:     edMulti,
 		options:  SDDOptions,
 		selected: EnabledSDD,

@@ -58,10 +58,6 @@ func Resolve(w Where, cwd string) (string, error) {
 // hash, its artefacts materialise under /workspace, and its .gitignore fence
 // has no global expression at all — a global flag would fence exactly the one
 // repo the writer happened to be standing in.
-//
-// Adding a key here is not free: configui's reset reads this set to decide
-// whether to reconcile the SDD .gitignore fences, so a second member needs its
-// own artefact handling there rather than inheriting sdd's.
 var workspaceOnlyKeys = map[string]bool{"sdd": true}
 
 // WorkspaceOnlyKey reports whether a key may only be written to the workspace

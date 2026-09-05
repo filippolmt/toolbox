@@ -104,7 +104,9 @@ with the current directory at the project root and inside a subdirectory. It
 deliberately does not enter through the shared `configedit` seam, which would
 only prove that one function is deterministic.
 
-**A second workspace-only key is not free.** The set is a map because the axis
-is general, but the reset path's fence reconciliation is SDD's own. Adding a
-key to that set without giving it artefact handling of its own would have reset
-reconcile the wrong thing.
+**Which layer may write a key and which files that key owns are two facts, not
+one.** The predicate answers only the first. The reset path asks it for the
+scope asymmetry above, then dispatches the `.gitignore` reconciliation on the
+key itself — so a second member of the set does nothing until it is given
+artefact handling of its own, rather than silently inheriting SDD's and
+reconciling the wrong files.

@@ -330,9 +330,9 @@ func (m *Model) resetToDefault() {
 	m.reconcileArtefactsAfterReset(st.Key)
 }
 
-// reconcileArtefactsAfterReset brings the files a workspace-anchored key owns
-// beside .toolbox.yaml back in line once the key has been removed from the
-// selected layer. Meaning and rationale: CONTEXT.md#config-scope, ADR 0011.
+// reconcileArtefactsAfterReset brings the files the reset key owns beside
+// .toolbox.yaml back in line once the key has been removed from the selected
+// layer. Meaning and rationale: CONTEXT.md#config-scope, ADR 0011.
 //
 // It reconciles against what the layers now resolve to, not against the empty
 // set: reset clears one layer, so a flag kept in the other still enables the
@@ -351,6 +351,12 @@ func (m *Model) reconcileArtefactsAfterReset(key string) {
 		return
 	}
 	if m.loadErr != nil {
+		return
+	}
+	// Dispatched per key, never inherited from the predicate above: which layer
+	// may write a key and which files that key owns are two different facts, and
+	// a second workspace-only key reconciling sdd's fences would be a bug.
+	if key != sddKey {
 		return
 	}
 	if err := configedit.ReconcileSDDGitignore(filepath.Join(m.cwd, ".gitignore"), EnabledSDD(m.cfg)); err != nil {
