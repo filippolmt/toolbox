@@ -140,6 +140,12 @@ func TouchDeclined(stateDir, containerName string) error {
 // the working directory, is only the one nicety it carries. An *unreadable*
 // one is not — that error is almost always simply "absent", and treating an
 // I/O error as a reload would tear a session down on a failing filesystem.
+//
+// The trim is the one thing the format cannot express: a working directory
+// whose own name ends in a newline comes back a character short. The cwd is a
+// nicety with a safe fallback, so the alternative — a length prefix, or no
+// trailing newline for a file a developer may well `cat` — buys nothing worth
+// the format.
 func TakeMarker(path string) (cwd string, requested bool) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -150,10 +156,16 @@ func TakeMarker(path string) (cwd string, requested bool) {
 }
 
 // WriteMarker publishes a reload request at path. Production writes come from
-// the in-container `toolbox-reload` zsh function, never from here; this exists
-// so the tests that drive the reload path — including the real-daemon gate in
-// internal/container — produce the bytes through the same code that defines
-// them, rather than a second spelling that could drift from TakeMarker.
+// the in-container `toolbox-reload` zsh function, never from here; this is the
+// writer the tests that drive the reload path use — including the real-daemon
+// gate in internal/container — so a single change of format moves every one of
+// them at once.
+//
+// That makes this the *second* spelling of the format, and a doc comment
+// cannot keep it equal to the zsh one: only
+// TestReloadMarkerWriterMatchesGo can, by running the shipped function and
+// comparing its bytes with these. Change the format here and that test tells
+// you which zsh line to change with it.
 func WriteMarker(path, cwd string) error {
 	return fsx.AtomicWriteFile(path, []byte(cwd+"\n"), 0o644)
 }

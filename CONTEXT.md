@@ -832,12 +832,22 @@ path**, not a boolean, because the container cannot build the path: it
 would need the state mount's target, the naming convention and its own
 container name, and the hostname it can read is Docker's short id.
 
+The format has two writers and only one of them runs in production: the
+zsh function writes it, while `reload.WriteMarker` is the writer the Go
+tests driving the reload path use. Keeping a second spelling is the
+cheaper trade — those tests would otherwise each hand-roll the bytes —
+but only because the equality is executed rather than asserted in a doc
+comment: `TestReloadMarkerWriterMatchesGo` runs the shipped function and
+compares. A drift is silent in the worst way, since a marker the host
+cannot parse leaves the old container holding the name the next
+`toolbox shell` resolves to.
+
 It earns its own entry only because two host-injected names share a
 prefix and point in opposite directions: `TOOLBOX_RELOAD_MARKER` travels
 host → container and never leaves it, `TOOLBOX_RELOAD_FROM` travels
 host → host across the exec and never enters one. Owned by
-`internal/reload`; bound to the shell side by
-`TestReloadMarkerContract`.
+`internal/reload`; bound to the shell side by `TestReloadMarkerContract`
+(the names) and the writer tests above (the bytes).
 
 ### Idle Reload
 

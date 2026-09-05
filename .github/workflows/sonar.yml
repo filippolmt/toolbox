@@ -78,6 +78,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Same reason as ci.yml's copy: internal/reload runs the shipped zsh
+      # writer, and the tests refuse to skip under $CI.
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
