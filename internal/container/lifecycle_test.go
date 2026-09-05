@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -123,6 +124,15 @@ func (m *mockClient) ImagePull(ctx context.Context, ref string, opts client.Imag
 	return dockertest.PullResponse{ReadCloser: io.NopCloser(bytes.NewReader(nil))}, nil
 }
 
+// ImageBuild succeeds with an empty body: the only build this package reaches
+// is the `:local` overlay, and what the tests here assert is which image the
+// containers around it are created from, never the build output — which
+// build.streamBuildOutput owns and its own package tests.
+func (m *mockClient) ImageBuild(context.Context, io.Reader, client.ImageBuildOptions) (client.ImageBuildResult, error) {
+	m.record("ImageBuild")
+	return client.ImageBuildResult{Body: io.NopCloser(bytes.NewReader(nil))}, nil
+}
+
 func (m *mockClient) ContainerList(ctx context.Context, opts client.ContainerListOptions) (client.ContainerListResult, error) {
 	if m.listFn != nil {
 		items, err := m.listFn(ctx, opts)
@@ -231,6 +241,19 @@ func testPlanWithCfg(t *testing.T, cfg *config.Config, workspace string, publish
 		t.Fatalf("testPlanWithCfg: %v", err)
 	}
 	return plan
+}
+
+// withOverlay gives the plan a local overlay Dockerfile, so localimage.Ensure
+// builds a `:local` image and the ref this session runs stops being the base.
+// That divergence is the only state in which reading the wrong one of the two
+// is visible at all: on an ordinary session Ensure is a passthrough, and an
+// assertion would be comparing the base against itself.
+func withOverlay(t *testing.T, plan *sessionplan.SessionPlan) {
+	t.Helper()
+	plan.OverlayDockerfile = filepath.Join(t.TempDir(), "Dockerfile")
+	if err := os.WriteFile(plan.OverlayDockerfile, []byte("RUN true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // stubExecShell replaces execShellFn with a no-op and returns a restore callback.

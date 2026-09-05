@@ -419,6 +419,36 @@ redeclared the same auto-build stub closure in every body. The "Image
 Plan" name turns the two-phase policy into one named owner and the
 create-branch guarantee into a single var inside `imageplan`.
 
+### Run Image
+
+The ref this session's *container* runs, as distinct from
+`SessionPlan.Image`, the base it was planned from. They are the same ref
+on an ordinary session and diverge whenever a `~/.toolbox/Dockerfile`
+made `localimage.Ensure` build the derived `:local` overlay.
+
+Concretely: `container.Shell` keeps the overlay's answer in a local
+`runImage` and hands it to `dispatchOp` → `createAndStart`, which is the
+whole of its reach — `imageplan.Ensure` and the `ContainerCreate` config.
+Everything else reads `plan.Image`, which therefore means the base on
+every line of the package: the [Image Prefetch](#image-prefetch) and
+[Image Reclamation](#image-reclamation) track the ref that gains a
+generation per merge, `restampImageDigest` stamps the digest that ref
+carries, and both host-global halves of peer messaging — the
+[Peer Anchor](#peer-anchor) and the socket-volume initialiser — are
+created from it.
+
+Why the term exists: the overlay's result used to be assigned back into
+`plan.Image`, so the one field named the base above that line and the
+overlay below it. Every reader that wanted the base back took a
+corrective `base` parameter — except the peer-messaging pair,
+`ensureAnchor` and `ensurePeerSocketVolume`, which created host-global
+containers from whichever session's private overlay reached them first,
+contradicting `ensureAnchor`'s own doc comment. It worked only because
+the overlay is `FROM` the base. Naming the second ref instead of
+overwriting the first removes the corrective parameters and the class of
+mistake with them: a callee that reads the wrong ref can no longer do it
+by reading the obvious name.
+
 ### Start-up Refresh Prompt
 
 The one branch of the [Image Plan](#image-plan) that asks: a countdown

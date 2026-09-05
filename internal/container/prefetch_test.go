@@ -18,6 +18,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/imageplan"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
+	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -366,7 +367,7 @@ func TestRestampImageDigest(t *testing.T) {
 				return tc.res, tc.err
 			}}
 
-			restampImageDigest(t.Context(), cli, plan, plan.Image, tc.op)
+			restampImageDigest(t.Context(), cli, plan, tc.op)
 
 			if got := sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv); got != tc.want {
 				t.Errorf("%s = %q, want %q", sessionplan.ImageDigestEnv, got, tc.want)
@@ -613,10 +614,7 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	plan.OverlayDockerfile = filepath.Join(t.TempDir(), "Dockerfile")
-	if err := os.WriteFile(plan.OverlayDockerfile, []byte("FROM base\nRUN true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	withOverlay(t, plan)
 
 	if _, err := Shell(context.Background(), mock, plan); err == nil {
 		t.Fatal("Shell() error = nil, want the overlay failure to fail the start")
@@ -839,5 +837,48 @@ func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
 	}
 	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err != nil {
 		t.Errorf("a declined refresh left no stamp: %v", err)
+	}
+}
+
+// Both readers that speak in digests — the prefetch's baseline and the stamp
+// the container is created with — track plan.Image, the base, and never the
+// `:local` overlay this session may run. The overlay is built rather than
+// pulled, so it carries no repo digest at all: a stamp read off it would be
+// empty and a prefetch pointed at it would probe a ref no registry has.
+//
+// Driven with an overlay in place and a store that answers for it the way the
+// daemon does for a built image — no RepoDigests entry — which is what makes
+// reading the wrong ref visible rather than merely wrong.
+func TestShellPrefetchAndStampTrackTheBaseRefNotTheOverlay(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	got, _ := stubPrefetch(t)
+
+	const pulled = "sha256:fresh"
+	mock := createPathMock(pulled)
+	mock.imgInspFn = func(_ context.Context, ref string) (client.ImageInspectResult, error) {
+		if ref == localimage.LocalRef {
+			return client.ImageInspectResult{}, nil
+		}
+		return dockertest.ImageInspectResult(repoOf(ref), pulled), nil
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	base := plan.Image.Ref
+	withOverlay(t, plan)
+
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+
+	if len(*got) != 1 {
+		t.Fatalf("prefetch started %d times, want 1", len(*got))
+	}
+	if in := (*got)[0]; in.Ref != base {
+		t.Errorf("prefetch Ref = %q, want the base ref %q, not the overlay %q", in.Ref, base, localimage.LocalRef)
+	}
+	if stamped := sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv); stamped != pulled {
+		t.Errorf("%s = %q, want the base's own digest %q — the overlay carries none",
+			sessionplan.ImageDigestEnv, stamped, pulled)
 	}
 }

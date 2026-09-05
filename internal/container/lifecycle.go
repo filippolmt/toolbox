@@ -390,12 +390,19 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// Ensure/Refresh for the create path never touch a registry for it. The
 	// rebuild marker goes where this session's state lives, which is the plan's
 	// answer to give — the same directory the pull cache and the prefetch use.
-	baseImage := plan.Image
-	image, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile, plan.StateDir)
+	//
+	// The result is a second, separately named ref rather than an assignment
+	// back into plan.Image: this session runs the overlay, but everything that
+	// is not this session's container — the prefetch, the reclaim sweep, the
+	// digest stamp, and the two host-global halves of peer messaging — is
+	// about the base underneath it. Written back, the one name would mean the
+	// base above this line and the overlay below it, and every one of those
+	// readers would have to remember which side of the line it stands on. See
+	// CONTEXT.md, Run Image.
+	runImage, overlayErr := localimage.Ensure(ctx, cli, plan.Image, plan.OverlayDockerfile, plan.StateDir)
 	if overlayErr != nil {
 		return nil, overlayErr
 	}
-	plan.Image = image
 
 	// After the overlay, not before — see replaceIfRefreshAccepted for what that
 	// ordering protects and for why a yes at the recreate stake spends the
@@ -415,9 +422,9 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// *now*: cmd resolved it before planning, which is before Refresh had the
 	// chance to pull. Only the create path can be wrong — a connect or start
 	// reads the digest off a container that already exists.
-	restampImageDigest(ctx, cli, plan, baseImage, op)
+	restampImageDigest(ctx, cli, plan, op)
 
-	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op)
+	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)
 	if dispatchErr != nil {
 		return nil, dispatchErr
 	}
@@ -433,10 +440,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// past it, the other must never reclaim it.
 	sessionDigest := createdImageDigest(plan, inspect, op)
 
-	stopPrefetch := beginPrefetch(ctx, cli, plan, baseImage, sessionDigest, answer.Synced)
+	stopPrefetch := beginPrefetch(ctx, cli, plan, sessionDigest, answer.Synced)
 	defer stopPrefetch()
 
-	stopReclaim := beginReclaim(ctx, cli, plan, baseImage, sessionDigest)
+	stopReclaim := beginReclaim(ctx, cli, plan, sessionDigest)
 	defer stopReclaim()
 
 	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())
@@ -530,9 +537,9 @@ func shellTeardown(cli client.APIClient, name string, handingOff bool, err error
 // live, refusal included, so the caller defers one thing unconditionally —
 // cancelling it with the session leaves no blob behind, an interrupted pull
 // expiring on its own.
-func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, containerDigest string, startSynced bool) func() {
+func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) func() {
 	prefetchCtx, stop := context.WithCancel(ctx)
-	if in, ok := prefetchInput(base, plan, containerDigest, startSynced); ok {
+	if in, ok := prefetchInput(plan, containerDigest, startSynced); ok {
 		startPrefetch(prefetchCtx, cli, in)
 	}
 	return stop
@@ -546,15 +553,15 @@ func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.
 // earlier and the removal is guaranteed to be refused — the session doing the
 // reclaiming would itself be the last holder.
 //
-// The ref tracked is the *base*, never the `:local` overlay tag: the overlay is
-// built rather than pulled, so it carries no repo digest at all, while the base
-// underneath it is what gains a generation per merge. Gated by the plan's
-// resolved `image_reclaim`; the returned stop is always live, so the caller
-// defers one thing unconditionally.
-func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, sessionDigest string) func() {
+// The ref tracked is plan.Image, which is the *base* and never the `:local`
+// overlay tag: the overlay is built rather than pulled, so it carries no repo
+// digest at all, while the base underneath it is what gains a generation per
+// merge. Gated by the plan's resolved `image_reclaim`; the returned stop is
+// always live, so the caller defers one thing unconditionally.
+func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, sessionDigest string) func() {
 	reclaimCtx, stop := context.WithCancel(ctx)
 	if plan.ReclaimImages {
-		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Ref: base.Ref, KeepDigest: sessionDigest})
+		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Ref: plan.Image.Ref, KeepDigest: sessionDigest})
 	}
 	return stop
 }
@@ -569,18 +576,18 @@ func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 //     reaches the composed plan env; an export typed inside a live shell still
 //     stops the rendering, which is what that variable is now for.
 //
-// The image tracked is the *base* ref, never the `:local` overlay tag: the
-// overlay is built, not pulled, and it is the base moving underneath it that
-// a reload would adopt.
-func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) (imageprefetch.Input, bool) {
-	if base.PullPolicy == config.PullNever {
+// The image tracked is plan.Image, which is the *base* ref and never the
+// `:local` overlay tag: the overlay is built, not pulled, and it is the base
+// moving underneath it that a reload would adopt.
+func prefetchInput(plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) (imageprefetch.Input, bool) {
+	if plan.Image.PullPolicy == config.PullNever {
 		return imageprefetch.Input{}, false
 	}
 	if sessionplan.EnvValue(plan.Env, sessionplan.NoUpdateCheckEnv) != "" {
 		return imageprefetch.Input{}, false
 	}
 	return imageprefetch.Input{
-		Ref:             base.Ref,
+		Ref:             plan.Image.Ref,
 		ContainerDigest: containerDigest,
 		StateDir:        plan.StateDir,
 		StartSynced:     startSynced,
@@ -595,7 +602,7 @@ func prefetchInput(base sessionplan.Image, plan *sessionplan.SessionPlan, contai
 // has just superseded, and the update prefetch reports it behind an image it
 // is already running. Best-effort and create-only: an unreadable store leaves
 // the plan's own answer in place, and a connect/start reads the container.
-func restampImageDigest(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, base sessionplan.Image, op runplan.Op) {
+func restampImageDigest(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) {
 	if op.Action != runplan.ActionCreate {
 		return
 	}
@@ -603,7 +610,7 @@ func restampImageDigest(ctx context.Context, cli client.APIClient, plan *session
 	// a store that answers with no digest is a local build, and stamping its
 	// empty answer is what keeps the prefetch from claiming this session is
 	// behind an image it cannot read a digest for.
-	digest, answered := build.LocalRepoDigest(ctx, cli, base.Ref)
+	digest, answered := build.LocalRepoDigest(ctx, cli, plan.Image.Ref)
 	if !answered {
 		return
 	}
@@ -679,7 +686,13 @@ func warnReattachMismatch(ctx context.Context, cli client.APIClient, plan *sessi
 // the resulting container ID. Each Action maps to a distinct Docker-edge
 // sequence; the pure decision lives in runplan.Compute and is observed via
 // the typed Op rather than being re-derived from inspect data here.
-func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) (string, error) {
+//
+// runImage is what this session's container runs — the `:local` overlay when
+// one was built, plan.Image otherwise — and it is carried as an argument
+// precisely because it is the only ref that means that. Everything else here
+// reads plan.Image, which is the base and is what the host-global halves of
+// peer messaging are created from.
+func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, runImage sessionplan.Image) (string, error) {
 	switch op.Action {
 	case runplan.ActionConnect:
 		ui.Info("Connecting to running container " + plan.ContainerName + "...")
@@ -704,7 +717,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 		return op.ExistingID, nil
 
 	case runplan.ActionCreate:
-		return createAndStart(ctx, cli, plan)
+		return createAndStart(ctx, cli, plan, runImage)
 
 	default:
 		return "", fmt.Errorf("unknown runplan action: %s", op.Action)
@@ -713,8 +726,11 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 
 // createAndStart owns the not-found path: ensure the image is present,
 // create the container from the SessionPlan, start it, return its ID.
-func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (string, error) {
-	if ensureErr := imageplan.Ensure(ctx, cli, plan.Image); ensureErr != nil {
+//
+// runImage is the ref this container runs (see dispatchOp); plan.Image is the
+// base, and stays the base for ensurePeerRuntime below.
+func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image) (string, error) {
+	if ensureErr := imageplan.Ensure(ctx, cli, runImage); ensureErr != nil {
 		return "", ensureErr
 	}
 
@@ -748,7 +764,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: plan.ContainerName,
 		Config: &container.Config{
-			Image:        plan.Image.Ref,
+			Image:        runImage.Ref,
 			Tty:          true,
 			OpenStdin:    true,
 			Cmd:          plan.Cmd,
