@@ -5,6 +5,10 @@ paths:
   - "internal/configedit/**"
   - "internal/configrender/**"
   - "internal/configui/**"
+  - "internal/configexample/**"
+  # The host-filesystem primitives configio facades over — the facade
+  # boundary they must not drift from is stated below:
+  - "internal/fsx/**"
   # The config/shells/mounts/worktree CLI surfaces write through the
   # configedit seam documented here. cmd/** as a whole belongs to
   # container-runtime.md, so these files are named one by one:
@@ -16,12 +20,12 @@ paths:
 
 # Config gotchas — backstory in [`docs/configuration.md`](../../docs/configuration.md) and [`docs/commands.md`](../../docs/commands.md)
 
-- **Config load order** (highest first): `--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → defaults; the four env-bound keys (`image`/`registry_mirror`/`pull`/`bridge`) additionally take `TOOLBOX_*` env *above all file layers* (viper `AutomaticEnv` runs after `MergeConfig`, so env wins — `TestMergeImageSelectionEnvOverride`). Source of truth: `config.Plan` in `internal/config/plan.go` (`Plan ≡ Merge(LoadLayers(...))` — regression-tested; don't fork the walk-up, use `config.WalkUpProjectConfig`). Legacy `tools:` block → one-time stderr warning + ignore.
+- **Config load order** (highest first): `--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → defaults; the env-bound keys (`config.EnvBoundKeys`) additionally take `TOOLBOX_*` env *above all file layers* (viper `AutomaticEnv` runs after `MergeConfig`, so env wins — `TestMergeImageSelectionEnvOverride`). Source of truth: `config.Plan` in `internal/config/plan.go` (`Plan ≡ Merge(LoadLayers(...))` — regression-tested; don't fork the walk-up, use `config.WalkUpProjectConfig`). Legacy `tools:` block → one-time stderr warning + ignore.
 ## Config CLI editors (`toolbox shells|mounts|config …`)
 
 ### Package boundaries
 
-semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, writers, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`).
+semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, writers, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`); the host-filesystem primitives it facades over live one layer below, in `internal/fsx`. Never reimplement or fork an `fsx` primitive here — a facade forwards, it does not reinterpret (`TestGlobalConfigPath`, `TestAtomicWriteFileLeavesNoTemp`). → [shared-fs-primitives](../../docs/internals/host-cli.md#shared-fs-primitives)
 
 ### `--where` targeting
 
@@ -33,7 +37,7 @@ semantic layer in cobra-free `internal/configedit` (`--where` resolution, header
 
 ### Rendering
 
-`config show`'s resolved-YAML renderer lives in `internal/configrender` (`Resolved`/`ResolvedWithOrigin`, peer of `configexample` which renders the annotated *template*); `cmd/config.go` is flag parsing + dispatch only. Default output is byte-for-byte frozen (golden test) — annotations only behind `--origin`. Scalar fallbacks (the effective value of an unset `shell`/`agent`/`pull`) come from the one `config.EffectiveValue(cfg, key)` seam — shared by the renderer, `configui.displayValue`, and `cmd/worktree.go`'s agent resolution so they can't drift; a parity test guards it, and its coverage guard forces every scalar `SchemaKeys()` key to be owned or explicitly exempt.
+`config show`'s resolved-YAML renderer lives in `internal/configrender` (`Resolved`/`ResolvedWithOrigin`, peer of `internal/configexample` which renders the annotated *template*); `cmd/config.go` is flag parsing + dispatch only. Default output is byte-for-byte frozen (golden test) — annotations only behind `--origin`. Scalar fallbacks (the effective value of an unset `shell`/`agent`/`pull`) come from the one `config.EffectiveValue(cfg, key)` seam — shared by the renderer, `configui.displayValue`, and `cmd/worktree.go`'s agent resolution so they can't drift; a parity test guards it, and its coverage guard forces every scalar `SchemaKeys()` key to be owned or explicitly exempt.
 
 ### One validated write seam
 

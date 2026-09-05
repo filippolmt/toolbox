@@ -518,3 +518,33 @@ func fieldByTag(cfg *Config, tag string) (reflect.Value, bool) {
 	}
 	return reflect.Value{}, false
 }
+
+// TestEnvBoundKeysAreDocumented pins docs/configuration.md's env-var list to
+// EnvBoundKeys. That doc is where a user goes to learn which TOOLBOX_* vars
+// work, so it has to name the keys rather than point at a Go symbol — and a
+// list written out by hand is what let it sit at four keys after peer_messaging
+// joined, answering the question wrong for everyone who read it (#910).
+func TestEnvBoundKeysAreDocumented(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "configuration.md"))
+	if err != nil {
+		t.Fatalf("read docs/configuration.md: %v", err)
+	}
+	doc := string(raw)
+
+	var line string
+	for _, l := range strings.Split(doc, "\n") {
+		if strings.Contains(l, "`TOOLBOX_*` environment variables") {
+			line = l
+			break
+		}
+	}
+	if line == "" {
+		t.Fatal("docs/configuration.md: no `TOOLBOX_*` environment variables line found — " +
+			"if the load-order list moved, point this test at its new home")
+	}
+	for _, key := range EnvBoundKeys {
+		if !strings.Contains(line, "`"+key+"`") {
+			t.Errorf("docs/configuration.md does not list env-bound key %q: %s", key, line)
+		}
+	}
+}

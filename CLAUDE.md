@@ -40,7 +40,7 @@ Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `se
 
 [`CONTEXT.md`](CONTEXT.md) is the glossary: every named concept (Mount Plan, Config Schema, Invalidation Floor, Peer Anchor, …) with its meaning, its owning package and why it was named. Read the entry before refactoring across a pipeline seam; add one when a design conversation names a new concept. Topic guides are mapped in [`docs/README.md`](docs/README.md), section by section. A rule under `.claude/rules/` carries the guardrail and the test names, the glossary carries the meaning and the why — link across, never restate.
 
-Shared fs primitives live in `internal/fsx`: `Home()` (strict, empty-`$HOME` guard), `ExpandTilde()`, `AtomicWriteFile()`. Call these from every package — `configio` re-exports the last two as thin facades. Soft sites that tolerate an empty home keep calling `os.UserHomeDir` directly. → [shared-fs-primitives](docs/internals/host-cli.md#shared-fs-primitives)
+Shared fs primitives live in `internal/fsx` — its package doc lists them, and `Home()` sets the tone: strict, with an empty-`$HOME` guard. Call them from every package — `configio` re-exports `Home()` (as `GlobalConfigDir`) and `AtomicWriteFile()` as thin facades. Soft sites that tolerate an empty home keep calling `os.UserHomeDir` directly. → [shared-fs-primitives](docs/internals/host-cli.md#shared-fs-primitives)
 
 ## Code & language
 
@@ -62,6 +62,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`config.md`](.claude/rules/config.md) — config packages, `config|shells|mounts|worktree` CLI surfaces.
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
 - [`sdd.md`](.claude/rules/sdd.md) — SDD skill packs, `.gitignore` fence.
+- [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
