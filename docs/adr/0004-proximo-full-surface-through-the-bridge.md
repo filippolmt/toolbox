@@ -129,7 +129,7 @@ installer.
 
 Before any POST the shim tests `[ -f /etc/ssl/proximo-ca.pem ]` — the same
 predicate `entrypoint.sh` already self-gates its trust block on, and the
-in-container shadow of `proximo.Enabled`. A host without proximo, or a workspace
+in-container shadow of the host-side availability gate. A host without proximo, or a workspace
 with `proximo: false`, gets one clear refusal naming both possibilities instead of
 a round-trip to the daemon, and the check works even when the bridge is not
 installed. Deleting the shim from the image at runtime was rejected: it mutates

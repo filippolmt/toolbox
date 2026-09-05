@@ -80,6 +80,13 @@ type PlanInput struct {
 	// process — the plan says which home it planned against, and a test names
 	// one rather than rewriting $HOME for the whole binary.
 	Host fsx.Host
+	// Proximo is the resolved Proximo Availability Gate for this invocation:
+	// the decision plus the host CA path it was decided against, derived once
+	// by the caller (proximo.Resolve) and read here rather than re-derived —
+	// the derivation pays a subprocess spawn, and the same gate also answers
+	// the session's env and its create-edge discovery flag. The zero value is
+	// a session with proximo off, so a plan that declares nothing binds no CA.
+	Proximo proximo.Gate
 }
 
 // Plan walks the full mount pipeline for in.Cfg and returns the bind set + the
@@ -92,7 +99,9 @@ type PlanInput struct {
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
 func Plan(in PlanInput) (Result, error) {
-	merged, err := Merge(in.Host, in.Cfg, in.Profile)
+	// merge, not Merge: a planned session brings its own resolved proximo
+	// gate, so the pipeline reads the decision instead of paying for it again.
+	merged, err := merge(in.Host, in.Cfg, in.Profile, in.Proximo)
 	if err != nil {
 		return Result{}, err
 	}
@@ -141,7 +150,19 @@ func Plan(in PlanInput) (Result, error) {
 // Pure: no filesystem side-effects, no workspace bind. Used by tests
 // asserting merge contracts and by callers that want to inspect the
 // resolved set without materialising sources.
+//
+// It resolves the proximo gate itself because its callers are read-only
+// surfaces answering one question each (`mounts list`, `config doctor`),
+// not sessions with a gate already in hand. A session goes through Plan,
+// which carries the one PlanInput.Proximo resolved for the invocation.
 func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount, error) {
+	return merge(host, cfg, profile, proximo.Resolve(host, cfg))
+}
+
+// merge is Merge with the proximo gate declared rather than derived — the
+// form Plan uses so a session pays the gate's subprocess query once, at the
+// composition root, instead of once per pipeline that asks about it.
+func merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) ([]config.Mount, error) {
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
@@ -157,11 +178,12 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount,
 		return nil, err
 	}
 	// Two things behind this function read host.Home: the inherit_host_auth
-	// pre-stat below, and proximo.CAMount's ~/.proximo fallback further down.
+	// pre-stat below, and the ~/.proximo fallback the gate was resolved from.
 	// A caller with no home to declare leaves it empty, and both degrade
 	// rather than fail — applyInheritHostAuth treats ~/ paths as-is so os.Stat
-	// reports them missing, and the CA bind drops out of the set. That is why
-	// Merge takes a Host without validating it where Plan does: the merge
+	// reports them missing, and proximo.Resolve returns a gate with no CA path
+	// so the bind drops out of the set. That is why Merge takes a Host
+	// without validating it where Plan does: the merge
 	// contract itself (patch, replace, disable, mounts_root) is answerable
 	// without a home, and the two probes that are not degrade the way the
 	// discarded os.UserHomeDir error used to make them degrade.
@@ -176,9 +198,9 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount,
 		base = dropMountByName(base, "bridge-run")
 	}
 	// proximo CA bind is injected here (not in defaults()) because its source
-	// is host-specific and only relevant when `proximo: true`. resolveAll
+	// is host-specific and only relevant when the gate is on. resolveAll
 	// soft-skips it with a warning when proximo is not installed.
-	if m, ok := proximo.CAMount(host, cfg); ok {
+	if m, ok := gate.CAMount(); ok {
 		base = append(base, m)
 	}
 	return mergeMounts(base, cfg.Mounts)
