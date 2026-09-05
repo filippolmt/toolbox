@@ -6,105 +6,173 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
-// TestResetInheritedKeyIsNoOp: pressing reset on a key the selected scope does
-// not set reports "nothing to reset" and never touches a file (guarded before
-// any write path, so an empty cwd/target is safe).
+// browsing builds a model sitting on one key of the key list, as the program
+// stands after a reload — the state every keystroke below starts from.
+func browsing(scope Scope, cfg *config.Config, st KeyState) Model {
+	return Model{scope: scope, cfg: cfg, states: []KeyState{st}}
+}
+
+// TestResetInheritedKeyIsNoOp: reset on a key the selected scope does not set
+// reports "nothing to reset" and never touches a file (guarded before any write
+// path, so an empty cwd/target is safe).
 func TestResetInheritedKeyIsNoOp(t *testing.T) {
-	m := &Model{
-		scope:  ScopeRepo,
-		states: []KeyState{{Key: "pull", Origin: configedit.OriginGlobal, ScopeSet: false}},
+	m := press(browsing(ScopeRepo, &config.Config{},
+		KeyState{Key: "pull", Origin: configedit.OriginGlobal}), "r")
+	wantOnScreen(t, m, "nothing to reset", "global")
+}
+
+// TestResetEnvSourcedKeyPointsAtTheHostVar: a value coming from TOOLBOX_* is
+// not in any file, so reset has nothing to remove — the status names the var to
+// unset instead of reporting a reset that did not happen.
+func TestResetEnvSourcedKeyPointsAtTheHostVar(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{},
+		KeyState{Key: "pull", FromEnv: true, ScopeSet: true}), "r")
+	wantOnScreen(t, m, "TOOLBOX_PULL")
+	notOnScreen(t, m, "reset failed")
+}
+
+// TestEnterOnEnvSourcedKeyRefuses: env sits above every file layer the UI can
+// write, so an editor here would save a value the next load ignores. Enter
+// refuses and the view says which var owns the value.
+func TestEnterOnEnvSourcedKeyRefuses(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{},
+		KeyState{Key: "pull", FromEnv: true}), "enter")
+	if m.editing {
+		t.Error("an env-sourced key must not open an editor")
 	}
-	m.resetToDefault()
-	if !strings.Contains(m.status, "nothing to reset") {
-		t.Errorf("reset on an inherited key must say nothing to reset, got %q", m.status)
+	wantOnScreen(t, m, "read-only", "TOOLBOX_PULL")
+}
+
+// TestEnterOnSingleValuedKeyRefuses: a key whose enum holds one option has
+// nothing to choose, so enter says so rather than opening a list of one.
+func TestEnterOnSingleValuedKeyRefuses(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{},
+		KeyState{Key: "shell", ReadOnly: true, Default: "zsh"}), "enter")
+	if m.editing {
+		t.Error("a single-valued key must not open an editor")
 	}
-	if !strings.Contains(m.status, "global") {
-		t.Errorf("reset status should name the inherited layer, got %q", m.status)
+	wantOnScreen(t, m, "single supported value", "zsh")
+}
+
+// TestEnterOnAnUnsetKeyWarnsItCreatesAnOverride: opening an editor in a scope
+// whose file does not set the key will fork a value into that layer, so the
+// status says so before anything is written.
+func TestEnterOnAnUnsetKeyWarnsItCreatesAnOverride(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "pull"}), "enter")
+	if !m.editing {
+		t.Fatalf("pull must open an editor, status = %q", m.status)
+	}
+	wantOnScreen(t, m, "creates an override in "+ScopeRepo.String())
+}
+
+// rowsEditor opens a key's collection editor through the key stream and fails
+// the test if it did not open.
+func rowsEditor(t *testing.T, key string, cfg *config.Config) Model {
+	t.Helper()
+	m := press(browsing(ScopeRepo, cfg, KeyState{Key: key, ScopeSet: true}), "enter")
+	if !m.editing || m.ed.kind != edRows {
+		t.Fatalf("%q did not open a rows editor (status %q)", key, m.status)
+	}
+	return m
+}
+
+// TestAddingAPairRowBuffersTheKeyThenTheValue: a key→value editor takes the two
+// columns in two commits, and the finished row joins the list under the cursor.
+func TestAddingAPairRowBuffersTheKeyThenTheValue(t *testing.T) {
+	m := rowsEditor(t, "env", &config.Config{})
+	m = press(m, "a")
+	m = typeText(m, "REGION")
+	m = press(m, "enter")
+	m = typeText(m, "eu")
+	m = press(m, "enter")
+	wantOnScreen(t, m, "> REGION = eu")
+}
+
+// TestAnEmptyKeyAbortsTheRow: committing an empty key column writes no row —
+// a pair whose key is blank has nothing to write it under.
+func TestAnEmptyKeyAbortsTheRow(t *testing.T) {
+	m := rowsEditor(t, "env", &config.Config{})
+	m = press(m, "a", "enter")
+	wantOnScreen(t, m, "(no entries)")
+}
+
+// TestAnEmptyValueAbortsASingleColumnRow is its single-column sibling: a seed
+// path editor has only one column, so an empty one is the whole row.
+func TestAnEmptyValueAbortsASingleColumnRow(t *testing.T) {
+	m := rowsEditor(t, "worktree", &config.Config{})
+	m = press(m, "a", "enter")
+	wantOnScreen(t, m, "(no entries)")
+}
+
+// TestEscBacksOutOfAFieldWithoutClosingTheEditor: esc has two meanings in a
+// rows editor — abandon the field being typed, then close the editor — and the
+// row list has to survive the first.
+func TestEscBacksOutOfAFieldWithoutClosingTheEditor(t *testing.T) {
+	m := rowsEditor(t, "env", &config.Config{Env: map[string]string{"REGION": "eu"}})
+	m = press(m, "enter") // open the key column of row 0
+	m = press(m, "esc")
+	if !m.editing {
+		t.Fatal("esc in a field must not close the editor")
+	}
+	wantOnScreen(t, m, "REGION = eu", "a: add")
+
+	m = press(m, "esc")
+	if m.editing {
+		t.Error("esc on the row list must close the editor")
 	}
 }
 
-// The rows reducer is pure state manipulation on m.ed; these drive it directly
-// (no tea key stream) so the row-edit state machine is covered without a TTY.
-
-func fieldInput(v string) textinput.Model {
-	ti := textinput.New()
-	ti.SetValue(v)
-	return ti
+// TestDeleteRemovesTheSelectedRow: the delete key acts on the row under the
+// cursor, and only that one.
+func TestDeleteRemovesTheSelectedRow(t *testing.T) {
+	m := rowsEditor(t, "env", &config.Config{Env: map[string]string{"ALPHA": "1", "BETA": "2"}})
+	m = press(m, "down", "d")
+	wantOnScreen(t, m, "ALPHA = 1")
+	notOnScreen(t, m, "BETA")
 }
 
-func TestWriteRowAddsPair(t *testing.T) {
-	m := &Model{ed: editor{rowPair: true, adding: true, fieldKey: "K"}}
-	m.writeRow("V")
-	if len(m.ed.rows) != 1 || m.ed.rows[0] != [2]string{"K", "V"} {
-		t.Fatalf("rows = %v, want [[K V]]", m.ed.rows)
-	}
-	if len(m.ed.orig) != 1 || m.ed.orig[0] != "" {
-		t.Errorf("added row must get an empty orig, got %v", m.ed.orig)
-	}
-	if m.ed.cursor != 0 {
-		t.Errorf("cursor should point at the new row, got %d", m.ed.cursor)
-	}
-}
+// TestRenamingAShellAfterADeleteKeepsItsEnv: a shells row carries the identity
+// of the entry it opened with, so the writer can tell a rename from a new
+// entry and move that entry's env: block with it. Deleting a row first is the
+// case that proves the identities stay aligned with the rows — misalign them
+// and the rename credits the wrong entry, dropping the env block the user never
+// touched. Driven end to end: the assertion is on the file the save wrote.
+func TestRenamingAShellAfterADeleteKeepsItsEnv(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	target := filepath.Join(cwd, ".toolbox.yaml")
+	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n  legacy:\n    path: /repo/legacy\n")
+	cfg := &config.Config{Shells: map[string]config.NamedShell{
+		"infra":  {Path: "/repo/infra", Env: map[string]string{"REGION": "eu"}},
+		"legacy": {Path: "/repo/legacy"},
+	}}
 
-func TestWriteRowEditsPairKeepingOrig(t *testing.T) {
-	m := &Model{ed: editor{rowPair: true, rows: [][2]string{{"a", "1"}}, orig: []string{"a"}, cursor: 0, fieldKey: "a2"}}
-	m.writeRow("2")
-	if m.ed.rows[0] != [2]string{"a2", "2"} {
-		t.Errorf("edited row = %v, want [a2 2]", m.ed.rows[0])
-	}
-	if m.ed.orig[0] != "a" {
-		t.Errorf("orig must survive a rename edit, got %q", m.ed.orig[0])
-	}
-}
+	m := Model{cwd: cwd, target: target, scope: ScopeRepo, cfg: cfg,
+		states: []KeyState{{Key: "shells", ScopeSet: true}}}
+	m = press(m, "enter")               // rows: infra, legacy (sorted)
+	m = press(m, "down", "d")           // drop legacy; cursor falls back to infra
+	m = press(m, "enter")               // open infra's name column
+	m = eraseField(m, len("infra"))
+	m = typeText(m, "prod")
+	m = press(m, "enter") // commit the name, advance to the path column
+	m = press(m, "enter") // keep the path
+	m = press(m, "s")     // save
 
-func TestWriteRowSingleEmptyIgnored(t *testing.T) {
-	m := &Model{ed: editor{rowPair: false, adding: true}}
-	m.writeRow("")
-	if len(m.ed.rows) != 0 {
-		t.Errorf("empty single-value row must not be added, got %v", m.ed.rows)
+	got := readFile(t, target)
+	if !strings.Contains(got, "prod:") {
+		t.Errorf("the rename did not reach the file:\n%s", got)
 	}
-}
-
-func TestDeleteRowKeepsOrigAligned(t *testing.T) {
-	m := &Model{ed: editor{rows: [][2]string{{"a", ""}, {"b", ""}}, orig: []string{"a", "b"}, cursor: 1}}
-	m.deleteRow()
-	if len(m.ed.rows) != 1 || m.ed.rows[0][0] != "a" {
-		t.Fatalf("rows after delete = %v, want [[a]]", m.ed.rows)
+	if strings.Contains(got, "legacy") {
+		t.Errorf("the deleted shell survived the save:\n%s", got)
 	}
-	if len(m.ed.orig) != 1 || m.ed.orig[0] != "a" {
-		t.Errorf("orig must stay index-aligned after delete, got %v", m.ed.orig)
-	}
-	if m.ed.cursor != 0 {
-		t.Errorf("cursor should clamp to 0, got %d", m.ed.cursor)
-	}
-}
-
-func TestCommitRowFieldAdvancesKeyToValue(t *testing.T) {
-	m := &Model{ed: editor{rowPair: true, field: 0, rowEdit: true, adding: true, input: fieldInput("K")}}
-	m.commitRowField()
-	if m.ed.fieldKey != "K" {
-		t.Errorf("key column must be buffered, got %q", m.ed.fieldKey)
-	}
-	if m.ed.field != 1 || !m.ed.rowEdit {
-		t.Errorf("must advance to the value column still editing, got field=%d rowEdit=%v", m.ed.field, m.ed.rowEdit)
-	}
-}
-
-func TestCommitRowFieldEmptyKeyAborts(t *testing.T) {
-	m := &Model{ed: editor{rowPair: true, field: 0, rowEdit: true, adding: true, input: fieldInput("  ")}}
-	m.commitRowField()
-	if m.ed.rowEdit || m.ed.adding {
-		t.Errorf("an empty key must abort the row, got rowEdit=%v adding=%v", m.ed.rowEdit, m.ed.adding)
-	}
-	if len(m.ed.rows) != 0 {
-		t.Errorf("no row must be written on abort, got %v", m.ed.rows)
+	if !strings.Contains(got, "REGION: eu") {
+		t.Errorf("the renamed shell lost the env block it never edited:\n%s", got)
 	}
 }
 
@@ -112,35 +180,20 @@ func TestCommitRowFieldEmptyKeyAborts(t *testing.T) {
 // every multi-select editor (sdd / mounts / inherit_host_auth). Under
 // bubbletea v2 a spacebar press stringifies to "space", not " ", so matching
 // only " " left the toggle dead — no SDD skill could be selected. Driving the
-// real space KeyPressMsg keeps the binding honest across future bubbletea bumps.
+// real space key through Update keeps the binding honest across future
+// bubbletea bumps.
 func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
-	space := tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
-	if got := space.String(); got != "space" {
+	if got := (tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}).String(); got != "space" {
 		t.Fatalf("bubbletea space key stringifies to %q; test premise stale", got)
 	}
-	opts := SDDOptions()
-	sel := map[string]bool{}
-	m := Model{editing: true, ed: editor{key: "sdd", kind: edMulti, options: opts, selected: sel, cursor: indexOf(opts, "openspec")}}
-	if _, _ = m.updateEditing(space); !sel["openspec"] {
-		t.Fatalf("space must toggle openspec on, got selected = %v", sel)
+	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "sdd"}), "enter")
+	if !m.editing || m.ed.kind != edMulti {
+		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
 	}
-}
-
-func TestShellEntriesCarriesEnvFromOrig(t *testing.T) {
-	m := &Model{
-		cfg: &config.Config{Shells: map[string]config.NamedShell{
-			"infra": {Path: "/repo/infra", Env: map[string]string{"REGION": "eu"}},
-		}},
-		ed: editor{key: "shells", rows: [][2]string{{"prod", "/repo/infra"}}, orig: []string{"infra"}},
-	}
-	entries := m.ed.shellEntries(m.cfg)
-	if len(entries) != 1 {
-		t.Fatalf("entries = %v, want 1", entries)
-	}
-	e := entries[0]
-	if e.Name != "prod" || e.OrigName != "infra" || e.Env["REGION"] != "eu" {
-		t.Errorf("rename entry must carry orig+env, got %+v", e)
-	}
+	first := m.ed.options[0]
+	wantOnScreen(t, m, "[ ] "+first)
+	m = press(m, "space")
+	wantOnScreen(t, m, "[x] "+first)
 }
 
 // TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope: sdd's effect is anchored
@@ -149,24 +202,17 @@ func TestShellEntriesCarriesEnvFromOrig(t *testing.T) {
 // visible, and the $EDITOR escape still reaches it) — enter refuses, and the
 // status names both the reason and the way out.
 func TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope(t *testing.T) {
-	m := &Model{scope: ScopeGlobal, states: []KeyState{{Key: "sdd"}}}
-	m.openEditor()
+	m := press(browsing(ScopeGlobal, &config.Config{}, KeyState{Key: "sdd"}), "enter")
 	if m.editing {
 		t.Error("sdd must not open an editor in the global scope")
 	}
-	if !strings.Contains(m.status, ScopeGlobal.String()) {
-		t.Errorf("status should name the refused scope, got %q", m.status)
-	}
-	if !strings.Contains(m.status, "tab") {
-		t.Errorf("status should point at the way out, got %q", m.status)
-	}
+	wantOnScreen(t, m, ScopeGlobal.String(), "tab")
 }
 
 // TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope is the other half: the guard
 // is per-scope, not a blanket read-only marking of the key.
 func TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope(t *testing.T) {
-	m := &Model{scope: ScopeRepo, cfg: &config.Config{}, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m.openEditor()
+	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "sdd", ScopeSet: true}), "enter")
 	if !m.editing {
 		t.Errorf("sdd must stay editable in the repo scope, status = %q", m.status)
 	}
@@ -194,8 +240,8 @@ func TestResetWorkspaceOnlyKeyClearsFencesInRepoScope(t *testing.T) {
 		t.Fatal("fixture wrote no fence to reset")
 	}
 
-	m := &Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m.resetToDefault()
+	m := Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
+	press(m, "r")
 
 	if got := readFile(t, target); strings.Contains(got, "sdd") {
 		t.Errorf("reset left the sdd flag behind:\n%s", got)
@@ -219,8 +265,8 @@ func TestResetWorkspaceOnlyKeyKeepsFencesInGlobalScope(t *testing.T) {
 		t.Fatalf("write global config: %v", err)
 	}
 
-	m := &Model{cwd: cwd, target: global, scope: ScopeGlobal, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m.resetToDefault()
+	m := Model{cwd: cwd, target: global, scope: ScopeGlobal, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
+	m = press(m, "r")
 
 	if got := readFile(t, global); strings.Contains(got, "sdd") {
 		t.Errorf("reset left the global sdd flag behind:\n%s", got)
@@ -228,9 +274,7 @@ func TestResetWorkspaceOnlyKeyKeepsFencesInGlobalScope(t *testing.T) {
 	if got := readFile(t, filepath.Join(cwd, ".gitignore")); !strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
 		t.Errorf("a global reset must not touch the workspace fence:\n%s", got)
 	}
-	if !strings.Contains(m.status, "fence") {
-		t.Errorf("status should say the fences were left alone, got %q", m.status)
-	}
+	wantOnScreen(t, m, "fence")
 }
 
 // TestResetInRepoScopeKeepsFencesAKeptGlobalFlagStillNeeds: reset removes the
@@ -246,13 +290,28 @@ func TestResetInRepoScopeKeepsFencesAKeptGlobalFlagStillNeeds(t *testing.T) {
 		t.Fatalf("write global config: %v", err)
 	}
 
-	m := &Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m.resetToDefault()
+	m := Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
+	press(m, "r")
 
 	if got := readFile(t, target); strings.Contains(got, "sdd") {
 		t.Errorf("reset left the repo sdd flag behind:\n%s", got)
 	}
 	if got := readFile(t, filepath.Join(cwd, ".gitignore")); !strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
 		t.Errorf("gsd is still enabled by the global layer, so its fence must survive:\n%s", got)
+	}
+}
+
+// TestQuitStopsTheProgram: q is the documented way out, and it has to return
+// tea.Quit rather than merely blanking the view.
+func TestQuitStopsTheProgram(t *testing.T) {
+	next, cmd := browsing(ScopeRepo, &config.Config{}, KeyState{Key: "pull"}).Update(keyMsg("q"))
+	if cmd == nil {
+		t.Fatal("q must return a command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("q must quit, got %T", cmd())
+	}
+	if got := next.(Model).View().Content; got != "" {
+		t.Errorf("a quitting model must render nothing, got %q", got)
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textinput"
+
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
@@ -151,6 +153,14 @@ func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
 // survive it. The panel has to report that. Re-rendering the before side would
 // cancel it out and hide a change the user is about to get — which is the reason
 // the before side is the file's own bytes.
+// fieldInput seeds a free-text editor with a value, so a preview case can be
+// stated as the value it holds rather than the keystrokes that typed it.
+func fieldInput(v string) textinput.Model {
+	ti := textinput.New()
+	ti.SetValue(v)
+	return ti
+}
+
 func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
 	base := []byte("# global\npull: always\n\nagent: claude\n")
 	m := Model{ed: editor{key: "image", kind: edString, input: fieldInput("ghcr.io/acme/box:v1")}}
@@ -428,9 +438,8 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 		tc.inCfg(cfg)
 	}
 
-	m := Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
-		states: []KeyState{{Key: tc.key, ScopeSet: true}}}
-	m.openEditor()
+	m := press(Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
+		states: []KeyState{{Key: tc.key, ScopeSet: true}}}, "enter")
 	if !m.editing {
 		t.Fatalf("openEditor did not open an editor for %q (status: %s)", tc.key, m.status)
 	}

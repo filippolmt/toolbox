@@ -139,8 +139,8 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 // TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope's to cover.
 func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 	for _, key := range Keys() {
-		m := &Model{scope: ScopeRepo, cfg: &config.Config{}, states: []KeyState{{Key: key, ReadOnly: ReadOnlyKey(key)}}}
-		m.openEditor()
+		m := press(browsing(ScopeRepo, &config.Config{},
+			KeyState{Key: key, ReadOnly: ReadOnlyKey(key)}), "enter")
 		if m.states[0].ReadOnly {
 			if m.editing {
 				t.Errorf("read-only key %q must not open an editor", key)
@@ -175,8 +175,7 @@ func TestEveryOpenEditorHasAPendingMutation(t *testing.T) {
 		if ReadOnlyKey(key) {
 			continue
 		}
-		m := &Model{scope: ScopeRepo, cfg: &config.Config{}, states: []KeyState{{Key: key}}}
-		m.openEditor()
+		m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: key}), "enter")
 		if m.pendingMutator() == nil {
 			t.Errorf("key %q opens an editor with no pending mutation behind it", key)
 		}
