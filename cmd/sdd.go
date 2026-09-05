@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -31,12 +30,14 @@ var sddInitCmd = &cobra.Command{
 	Short: "Enable an SDD integration in the current repo",
 	Long: `Mark the current repository as opted into an SDD integration.
 
-Edits up to two files in cwd:
-  - .toolbox.yaml: sets 'sdd.<name>: true', preserving comments and key
-    order. Creates the file if missing.
-  - .gitignore: appends a fenced block listing the glob patterns
-    declared in internal/sdd.Skill.GitignoreEntries. Skills that
-    produce user-authored content leave .gitignore untouched.
+Edits up to two files:
+  - the project .toolbox.yaml found by walking up from cwd (created in
+    cwd when there is none): sets 'sdd.<name>: true', preserving
+    comments and key order.
+  - .gitignore in cwd — the workspace the container mounts: appends a
+    fenced block listing the glob patterns declared in
+    internal/sdd.Skill.GitignoreEntries. Skills that produce
+    user-authored content leave .gitignore untouched.
 
 The actual install runs on the next 'toolbox shell' via entrypoint.sh,
 which sees the TOOLBOX_SDD_* env contract emitted by sessionplan.`,
@@ -61,12 +62,14 @@ func runSDDInit(cmd *cobra.Command, args []string) error {
 		)}
 	}
 
-	cwd, err := os.Getwd()
+	// The flag is a Config Schema key, not an SDD artefact, so it goes where
+	// every other writer puts a project-layer value: the walked-up file. The
+	// fence, by contrast, governs the directory the workspace mount writes.
+	// Why they may differ: CONTEXT.md#config-scope.
+	yamlPath, cwd, err := resolveWriteTarget("local")
 	if err != nil {
-		return fmt.Errorf("resolve cwd: %w", err)
+		return err
 	}
-
-	yamlPath := filepath.Join(cwd, ".toolbox.yaml")
 	gitignorePath := filepath.Join(cwd, ".gitignore")
 	res, err := configedit.EnableSDD(yamlPath, gitignorePath, cwd, skill)
 	if err != nil {

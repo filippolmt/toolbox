@@ -308,7 +308,7 @@ func purgeShellDir(out io.Writer, path string) error {
 // resolveWriteTarget maps a --where flag value onto the config file path a
 // writer should patch, and returns the cwd it was resolved from — the writers
 // need that same cwd to validate the candidate document against the layers a
-// load would see. Shared by the shells and mounts groups.
+// load would see. Shared by the shells, mounts and sdd groups.
 func resolveWriteTarget(where string) (target, cwd string, err error) {
 	w, err := configedit.ParseWhere(where)
 	if err != nil {
