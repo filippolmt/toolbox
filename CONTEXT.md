@@ -1140,7 +1140,7 @@ binary is found). Threaded through the seams that already carried the
 session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
 `bridge.DaemonOptions` — plus the exported functions behind them
 (`mountplan.Merge` / `Classify` / `Names` / `StateDirPath` /
-`OverlayDockerfilePath`, `proximo.CAPath` / `CAMount` / `Env` / `Enabled`,
+`OverlayDockerfilePath`, `proximo.CAPath` / `Resolve`,
 `bridge.ResolveHostState` / `NewAgent` / `Install` / `Uninstall` / `Status`,
 `configedit.Doctor`).
 
@@ -1174,7 +1174,7 @@ not-installed branch was reachable).
 
 `mountplan.Merge` is the one entry point that takes a `Host` without
 validating it. Two things behind it read the home — `inherit_host_auth`'s
-pre-stat and `proximo.CAMount`'s `~/.proximo` fallback — and both degrade
+pre-stat and the `~/.proximo` fallback behind `proximo.Resolve` — and both degrade
 when it is empty rather than fail, which is what the discarded
 `os.UserHomeDir()` error used to give them. The read-only `cmd` surfaces
 that reach it (`mounts list`, `mounts disable`'s validation, `config
@@ -1451,13 +1451,24 @@ the reader is forced to ask.
 The single predicate for "is proximo usable in this shell": the presence of
 proximo's root CA at the container path `/etc/ssl/proximo-ca.pem`.
 
-Concretely: `proximo.Enabled(cfg)` decides host-side whether the CA is mounted at
-all — explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
-existence — so the mounted file *is* the in-container shadow of that decision.
-`entrypoint.sh` already self-gates its whole trust block on it; the bridge shim
-tests the same file before any POST, and refuses with one message naming both
-causes (proximo absent on the host, or disabled for this workspace). No third
-state, no extra env var, and no round-trip to the daemon to learn the answer.
+Concretely: host-side the gate is one resolved value, `proximo.Gate{Enabled,
+CAPath, CAExists}`, derived once per invocation by `proximo.Resolve(host, cfg)`
+— explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
+existence, and `false` short-circuits before the `proximo config ca-path` query
+so an opted-out workspace never pays that subprocess. Everything downstream
+*reads* that value rather than re-deriving the rule: `Gate.CAMount` is the bind
+`mountplan` injects, `Gate.Env` the CA-trust variables `sessionplan` composes,
+and `Gate.Enabled` the discovery flag the Docker edge acts on. It reaches both
+planners through their `PlanInput`, the seam that already carries the session's
+resolved host-side facts, and `cmd.startSession` is where the one derivation
+happens — beside the [Declared Host](#declared-host) it is resolved against.
+`mountplan.Merge` resolves its own only because its callers are read-only
+surfaces (`mounts list`, `config doctor`) answering one question each. So the
+mounted file *is* the in-container shadow of that decision: `entrypoint.sh`
+self-gates its whole trust block on it; the bridge shim tests the same file
+before any POST, and refuses with one message naming both causes (proximo
+absent on the host, or disabled for this workspace). No third state, no extra
+env var, and no round-trip to the daemon to learn the answer.
 
 Why the term exists: enablement was readable from three unrelated places — a
 tri-state config field on the host, a file test in the entrypoint, and, for
@@ -1466,6 +1477,14 @@ the CA's presence *the* gate collapses those into one testable fact and settles
 what a proximo-less host should look like from inside a container: a command that
 refuses clearly, not a command that is missing (which invites an agent to install
 it) and not a command that fails only after reaching the host.
+
+Why it is a value: "the single predicate" was the claim, and three exported
+host-side entry points (`Enabled`, `CAMount`, `Env`) each re-deriving it from
+`(host, cfg)` was the reality — three subtly different spellings of one rule,
+each paying its own CA query, up to three spawns per `toolbox shell` to answer
+one boolean. Resolving the gate into a value and threading it makes the claim
+true rather than aspirational: the mount and the env can no longer disagree
+with the decision they follow, because they are answers *on* it.
 
 ### Worktree
 
