@@ -29,7 +29,7 @@ const peerSocketInitContainerName = sessionplan.ContainerNamePrefix + "cc-socks-
 // volume that already exists went through this same path, and confirming it
 // otherwise would cost a container start per session. The tradeoff only holds
 // because a failed init removes the volume again — see below.
-func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, image sessionplan.Image) error {
+func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image) error {
 	name := mountplan.PeerSocketVolumeName
 
 	switch _, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); {
@@ -48,7 +48,7 @@ func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, image ses
 		return fmt.Errorf("failed to create peer socket volume: %w", err)
 	}
 
-	if err := initPeerSocketVolume(ctx, cli, image, name); err != nil {
+	if err := initPeerSocketVolume(ctx, cli, base, name); err != nil {
 		// A volume left behind root-owned would satisfy the VolumeInspect above
 		// on every later shell, so the init would never run again and each
 		// session would fail its bind instead — silently, which is the failure
@@ -73,11 +73,12 @@ func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, image ses
 // /tmp/cc-socks-<uid>, without saying so, which leaves every peer alone in a
 // private directory.
 //
-// It runs the toolbox runtime image, already guaranteed present locally on
-// this path by imageplan.Ensure, with the image's own entrypoint overridden:
-// none of the shell-start init belongs in a container that only fixes a mode
-// bit.
-func initPeerSocketVolume(ctx context.Context, cli client.APIClient, image sessionplan.Image, volume string) error {
+// It runs the toolbox runtime image with that image's own entrypoint
+// overridden: none of the shell-start init belongs in a container that only
+// fixes a mode bit. Like the anchor, it takes the session's *base* ref and
+// never the `:local` overlay — the volume it initialises is host-global, and
+// see ensureAnchor for why the base is present locally by then.
+func initPeerSocketVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, volume string) error {
 	target := mountplan.PeerSocketDirTarget
 	// Resolve(nil) reads only os.Getuid/os.Getgid; GroupAdd is bind-derived and
 	// this container mounts nothing but the volume.
@@ -86,7 +87,7 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, image sessi
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: peerSocketInitContainerName,
 		Config: &container.Config{
-			Image:      image.Ref,
+			Image:      base.Ref,
 			User:       "0:0",
 			Entrypoint: []string{"sh", "-c"},
 			Cmd:        []string{fmt.Sprintf("chown %s %s && chmod 0700 %s", owner, target, target)},

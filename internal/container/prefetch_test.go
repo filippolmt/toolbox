@@ -366,7 +366,7 @@ func TestRestampImageDigest(t *testing.T) {
 				return tc.res, tc.err
 			}}
 
-			restampImageDigest(t.Context(), cli, plan, plan.Image, tc.op)
+			restampImageDigest(t.Context(), cli, plan, tc.op)
 
 			if got := sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv); got != tc.want {
 				t.Errorf("%s = %q, want %q", sessionplan.ImageDigestEnv, got, tc.want)
@@ -613,10 +613,7 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	plan.OverlayDockerfile = filepath.Join(t.TempDir(), "Dockerfile")
-	if err := os.WriteFile(plan.OverlayDockerfile, []byte("FROM base\nRUN true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	withOverlay(t, plan)
 
 	if _, err := Shell(context.Background(), mock, plan); err == nil {
 		t.Fatal("Shell() error = nil, want the overlay failure to fail the start")

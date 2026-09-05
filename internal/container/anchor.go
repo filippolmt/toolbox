@@ -34,11 +34,17 @@ func anchorEntrypoint() []string { return []string{tiniPath, "-g", "--", "sleep"
 // for the connect / start / create branch — the same three-way decision the
 // session container goes through, read off the same inspect snapshot.
 //
-// The anchor runs the toolbox runtime image (already guaranteed present
-// locally by imageplan.Ensure on this path) rather than a second base image:
+// The anchor runs the toolbox runtime image rather than a second base image:
 // the layers are shared, and there is no registry round-trip to fail on an
-// offline host. Its entrypoint is overridden past the image's shell-start init
-// — none of that belongs in a container that only holds a namespace — but NOT
+// offline host. That is the session's *base* ref and never the `:local`
+// overlay it may run itself — the anchor is host-global and outlives the
+// session that created it, so one developer's ~/.toolbox/Dockerfile would
+// otherwise become PID 1 for every other session on the host. It is present
+// locally either way: with no overlay imageplan.Ensure has just proved it,
+// and with one the overlay could not have been built without it.
+//
+// Its entrypoint is overridden past the image's shell-start init — none of
+// that belongs in a container that only holds a namespace — but NOT
 // past tini: the anchor's PID 1 is PID 1 for every session that joins the
 // namespace, and reaping orphans is PID 1's job. Under a bare `sleep`, which
 // never calls wait(), every process reparented after its parent exits stays a
@@ -56,7 +62,7 @@ func anchorEntrypoint() []string { return []string{tiniPath, "-g", "--", "sleep"
 // AutoRemove is deliberately left off: the anchor outlives the sessions
 // referencing it, which is the whole reason a session container cannot play
 // this role.
-func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.Image) error {
+func ensureAnchor(ctx context.Context, cli client.APIClient, base sessionplan.Image) error {
 	name := sessionplan.PeerAnchorContainerName
 
 	res, inspectErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
@@ -80,7 +86,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, image sessionplan.I
 		created, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Name: name,
 			Config: &container.Config{
-				Image:      image.Ref,
+				Image:      base.Ref,
 				Entrypoint: anchorEntrypoint(),
 				Cmd:        []string{"infinity"},
 			},

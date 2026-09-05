@@ -7,7 +7,6 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -118,33 +117,18 @@ func TestShellSkipsTheReclaimWhenTheDeveloperOptedOut(t *testing.T) {
 // nominate nothing at all — while the base underneath it is what accumulates
 // a generation per merge.
 //
-// Driven at beginReclaim rather than through Shell, because the divergence
-// only exists once an overlay was actually built: on every ordinary session
-// localimage.Ensure is a passthrough and plan.Image *is* the base, so a
-// Shell-level assertion would compare the base against itself and could not
-// fail. Here the two differ, which is what makes reading the wrong one visible.
-func TestReclaimTracksTheBaseRefNotTheOverlay(t *testing.T) {
-	var got []reclaimCall
-	orig := reclaimImages
-	reclaimImages = func(c context.Context, _ client.APIClient, in imagereclaim.Input) {
-		got = append(got, reclaimCall{in: in, ctx: c})
-	}
-	t.Cleanup(func() { reclaimImages = orig })
+// Driven through Shell with an overlay in place, which is the one state where
+// the two refs differ: on every ordinary session localimage.Ensure is a
+// passthrough and the base is what the session runs anyway, so an assertion
+// would be comparing the base against itself.
+func TestShellReclaimTracksTheBaseRefNotTheOverlay(t *testing.T) {
+	mock, plan, got := reclaimFixture(t, "sha256:fresh")
+	base := plan.Image.Ref
+	withOverlay(t, plan)
 
-	base := sessionplan.Image{Ref: "ghcr.io/filippolmt/toolbox:latest"}
-	// What Shell holds after localimage.Ensure built an overlay.
-	plan := &sessionplan.SessionPlan{
-		Image:         sessionplan.Image{Ref: localimage.LocalRef, PullPolicy: config.PullNever},
-		ReclaimImages: true,
-	}
+	call := oneReclaim(t, mock, plan, got)
 
-	stop := beginReclaim(t.Context(), nil, plan, base, "sha256:fresh")
-	defer stop()
-
-	if len(got) != 1 {
-		t.Fatalf("reclaim started %d times, want 1", len(got))
-	}
-	if ref := got[0].in.Ref; ref != base.Ref {
-		t.Errorf("Ref = %q, want the base ref %q, not the overlay %q", ref, base.Ref, plan.Image.Ref)
+	if call.in.Ref != base {
+		t.Errorf("Ref = %q, want the base ref %q, not the overlay %q", call.in.Ref, base, localimage.LocalRef)
 	}
 }

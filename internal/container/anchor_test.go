@@ -12,6 +12,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/build"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -975,5 +976,53 @@ func TestShellPeerKeepsPeerMessagingWhenReplacementFails(t *testing.T) {
 	}
 	if !strings.Contains(out, peerWarnPrefix) {
 		t.Errorf("expected a peer-messaging warning about the failed replacement, got %q", out)
+	}
+}
+
+// Both host-global halves of peer messaging run the toolbox runtime image, and
+// a session that built a `:local` overlay may not substitute its own private
+// one: the anchor and the socket-volume initialiser outlive the session that
+// created them and are shared by every other session on the host, none of
+// which asked for that developer's `~/.toolbox/Dockerfile`. The session
+// container is the only thing the overlay is for.
+func TestShellPeerRuntimeUsesTheBaseImageNotTheOverlay(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	images := map[string]string{}
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		// Absent, so the socket volume is created and its initialiser runs —
+		// the second half this test is about.
+		volInspectFn: func(_ context.Context, name string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + name}
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			images[name] = cfg.Image
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	plan := peerPlan(t, testWorkspace(t))
+	base := plan.Image.Ref
+	withOverlay(t, plan)
+
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+
+	for _, c := range []struct{ name, want, why string }{
+		{sessionplan.PeerAnchorContainerName, base, "the anchor is host-global and holds the namespace every session joins"},
+		{peerSocketInitContainerName, base, "the initialiser only fixes a mode bit on a host-global volume"},
+		{plan.ContainerName, localimage.LocalRef, "the session container is what the overlay was built for"},
+	} {
+		if got := images[c.name]; got != c.want {
+			t.Errorf("%s created from %q, want %q — %s", c.name, got, c.want, c.why)
+		}
 	}
 }
