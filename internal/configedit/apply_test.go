@@ -417,3 +417,98 @@ func TestApplyCheckedReportsWhetherTheFileExisted(t *testing.T) {
 		}
 	})
 }
+
+// TestPreviewReturnsTheCandidateWithoutTouchingTheFile: the read side of a
+// write. `--dry-run` shows the user the same bytes ApplyChecked would commit,
+// so the two have to be one computation — and the preview must leave the disk
+// exactly as it found it, including not creating a file that is not there yet.
+func TestPreviewReturnsTheCandidateWithoutTouchingTheFile(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		absent  bool
+	}{
+		{name: "absent", absent: true},
+		{name: "populated", content: "# keep me\npull: always\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := tmpConfigPath(t)
+			if !tc.absent {
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+
+			candidate, existed, err := Preview(path, cwdOf(path), Scalar("agent", "codex"))
+			if err != nil {
+				t.Fatalf("Preview: %v", err)
+			}
+			if existed == tc.absent {
+				t.Errorf("existed=%v for an absent=%v file", existed, tc.absent)
+			}
+			if _, err := os.Stat(path); tc.absent && err == nil {
+				t.Fatal("a preview must not create the file it renders")
+			}
+			if !tc.absent && readFile(t, path) != tc.content {
+				t.Errorf("a preview must leave the file byte-identical:\n%s", readFile(t, path))
+			}
+
+			// The same edit, actually written: a preview is only worth printing
+			// if it is the write's own rendering and not a look-alike of it.
+			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+				t.Fatalf("ApplyChecked: %v", err)
+			}
+			if got := readFile(t, path); got != string(candidate) {
+				t.Errorf("Preview and ApplyChecked disagree.\nPreview:\n%s\nApplyChecked:\n%s", candidate, got)
+			}
+		})
+	}
+}
+
+// TestPreviewIsGatedLikeTheWrite: a preview of an edit the doctor would reject
+// reports that rejection instead of printing a candidate no write would ever
+// produce — what lets `--dry-run` answer "would this command work" and not only
+// "what would it render".
+func TestPreviewIsGatedLikeTheWrite(t *testing.T) {
+	path := tmpConfigPath(t)
+
+	_, _, previewErr := Preview(path, cwdOf(path), Scalar("shell", "bash")) // bash is unsupported
+	if previewErr == nil {
+		t.Fatal("a preview of an invalid candidate must be rejected")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("a rejected preview must create nothing")
+	}
+
+	_, _, writeErr := ApplyChecked(path, cwdOf(path), Scalar("shell", "bash"))
+	if writeErr == nil {
+		t.Fatal("the write must reject the same candidate")
+	}
+	if previewErr.Error() != writeErr.Error() {
+		t.Errorf("preview and write must report the same rejection:\npreview: %v\nwrite:   %v", previewErr, writeErr)
+	}
+}
+
+// TestPreviewOfANoOpRendersTheFileItFound: the write short-circuits a candidate
+// equal to the file before validating it, because a no-op cannot introduce a
+// finding. The preview shares that short-circuit, so `--dry-run` over a file
+// the doctor already dislikes shows the no-op rather than an error the real
+// command would never print.
+func TestPreviewOfANoOpRendersTheFileItFound(t *testing.T) {
+	path := tmpConfigPath(t)
+	src := "shells:\n  infra:\n    path: \"\"\n"
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	candidate, existed, err := Preview(path, cwdOf(path), func(*yaml.Node) {})
+	if err != nil {
+		t.Fatalf("Preview of a no-op: %v", err)
+	}
+	if !existed {
+		t.Error("existed must report the file the preview read")
+	}
+	if string(candidate) != src {
+		t.Errorf("a no-op preview must render the file it found:\n%s", candidate)
+	}
+}

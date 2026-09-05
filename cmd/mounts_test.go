@@ -22,6 +22,7 @@ func resetMountsFlags(t *testing.T) {
 		mountsDisableWhere = "global"
 		mountsRemoveWhere = "global"
 		mountsRootWhere = "global"
+		mountsAddDryRun, mountsDisableDryRun, mountsRemoveDryRun, mountsRootDryRun = false, false, false, false
 	})
 }
 
@@ -195,6 +196,51 @@ func TestMountsRootWritesValidRoot(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "mounts_root: ~/encrypted/toolbox") {
 		t.Errorf("expected mounts_root key:\n%s", body)
+	}
+}
+
+// TestMountsRootEmptyValueRemovesTheKey pins the reset: an empty path drops
+// mounts_root from the file instead of writing `mounts_root: ""`. The two are
+// not the same configuration — an explicit empty value is an override that
+// means "no override", which still shadows whatever the layer below sets, and
+// leaves a key behind for the next reader to wonder about. Removal is the
+// clean reset, and config.ValidateMountsRoot accepts "" precisely so this
+// surface can offer it.
+//
+// The behaviour comes from configedit.Scalar's empty-value-removes rule, one
+// mutation shared by every top-level scalar; this case is what holds the
+// command to it. Sibling keys are untouched, so a reset is a reset and not a
+// rewrite.
+func TestMountsRootEmptyValueRemovesTheKey(t *testing.T) {
+	resetMountsFlags(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfgPath := filepath.Join(home, ".toolbox.yaml")
+	if err := os.WriteFile(cfgPath,
+		[]byte("mounts_root: /vault/toolbox\npull: never\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	out := &bytes.Buffer{}
+	mountsRootCmd.SetOut(out)
+	t.Cleanup(func() { mountsRootCmd.SetOut(nil) })
+
+	if err := runMountsRoot(mountsRootCmd, []string{""}); err != nil {
+		t.Fatalf("runMountsRoot with an empty path: %v", err)
+	}
+	body, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read global: %v", err)
+	}
+	got := string(body)
+	if strings.Contains(got, "mounts_root") {
+		t.Errorf("an empty path must remove the key, not write it empty:\n%s", got)
+	}
+	if !strings.Contains(got, "pull: never") {
+		t.Errorf("the reset must leave sibling keys alone:\n%s", got)
+	}
+	if !strings.Contains(out.String(), ": updated") {
+		t.Errorf("the reset must be reported as a write, got: %s", out.String())
 	}
 }
 

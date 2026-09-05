@@ -214,6 +214,19 @@ collapse is not flattening — `shells add --env` commits both halves of
 one command or neither, so both halves are *one* mutation rather than two
 calls at the edge.
 
+That `--dry-run` then cost nothing is the term paying out. `Preview` is
+`ApplyChecked` minus its final write — one shared body, so the file a dry
+run prints is the file the write would commit and not a claim about it,
+doctor verdict included: an edit the gate would refuse fails the dry run
+with the same message. A writer command therefore reaches the disk
+through a single lane at the `cmd` edge (`applyOrPreview`), which decides
+write-or-show on the flag, and the flag is registered with `--where` in
+one call so a writer added later cannot take the targeting and leave the
+preview behind. The generality is the point: no command implements a
+preview, because a mutation that can be rendered is one every surface can
+already show — the config UI's diff and the CLI's dry run are two
+readings of the same value.
+
 ### Key Descriptor
 
 Everything `config ui` knows about one config key, as a single row:

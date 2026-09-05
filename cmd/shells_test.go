@@ -27,6 +27,7 @@ func resetShellsFlags(t *testing.T) {
 		shellsAddPath, shellsAddCreateDir, shellsAddEnv, shellsAddWhere = "", false, nil, "global"
 		shellsSetEnv, shellsSetWhere = nil, "global"
 		shellsRemovePurge, shellsRemoveWhere = false, "global"
+		shellsAddDryRun, shellsSetDryRun, shellsRemoveDryRun = false, false, false
 	})
 }
 
