@@ -62,6 +62,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`config.md`](.claude/rules/config.md) — config packages, `config|shells|mounts|worktree` CLI surfaces.
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
 - [`sdd.md`](.claude/rules/sdd.md) — SDD skill packs, `.gitignore` fence.
+- [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

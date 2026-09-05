@@ -92,8 +92,9 @@ func Render() string {
 	b.WriteString("\n")
 
 	b.WriteString("# bridge — host-side forwarder for xdg-open (browser), code/codium (editor)\n")
-	b.WriteString("# and proximo up|down|status. Tri-state, default AUTO (on): install it with\n")
-	b.WriteString("# `toolbox bridge install`. Set false to skip the bridge mounts entirely.\n")
+	b.WriteString("# and allowlisted proximo subcommands. Tri-state, default AUTO (on):\n")
+	b.WriteString("# install it with `toolbox bridge install`. Set false to skip the bridge\n")
+	b.WriteString("# mounts entirely.\n")
 	b.WriteString("# (browser_bridge is the deprecated spelling — use bridge.)\n")
 	b.WriteString("# bridge: true\n")
 	b.WriteString("\n")

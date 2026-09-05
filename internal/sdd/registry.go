@@ -7,8 +7,9 @@
 //     same npm package name.
 //  3. If the upstream installer writes generated files into the repo, set
 //     GitignoreEntries to a small list of glob patterns that cover every
-//     install path. The internal/configedit SDD seam splices the
-//     fenced block on `toolbox sdd init <name>`. Skills that produce purely
+//     install path. The internal/configedit SDD seam splices the fenced
+//     block — WriteSDDGitignore, reached from `toolbox sdd init <name>`
+//     through EnableSDD. Skills that produce purely
 //     user-authored content (e.g. bmad) leave the field nil.
 package sdd
 

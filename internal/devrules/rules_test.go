@@ -35,6 +35,28 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
+// ruleFiles returns the path of every rule file under .claude/rules/. Three
+// tests walk the same directory; the shared listing keeps them agreeing on
+// what counts as a rule file.
+func ruleFiles(t *testing.T) []string {
+	t.Helper()
+	dir := filepath.Join(repoRoot(t), ".claude", "rules")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("no rule files found in %s", dir)
+	}
+	return files
+}
+
 // frontmatterPaths returns the `paths:` glob entries from a rule file's YAML
 // frontmatter (the block between the first two `---` lines). It hand-parses
 // rather than pulling in a YAML dependency: the frontmatter is a flat list
@@ -98,23 +120,8 @@ func frontmatterPaths(t *testing.T, file string) []string {
 // by a package rename or deletion.
 func TestRulePathsResolve(t *testing.T) {
 	root := repoRoot(t)
-	rulesDir := filepath.Join(root, ".claude", "rules")
-	entries, err := os.ReadDir(rulesDir)
-	if err != nil {
-		t.Fatalf("read %s: %v", rulesDir, err)
-	}
 
-	var rules []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			rules = append(rules, filepath.Join(rulesDir, e.Name()))
-		}
-	}
-	if len(rules) == 0 {
-		t.Fatalf("no rule files found in %s", rulesDir)
-	}
-
-	for _, rule := range rules {
+	for _, rule := range ruleFiles(t) {
 		globs := frontmatterPaths(t, rule)
 		if len(globs) == 0 {
 			t.Errorf("%s: no paths: entries parsed from frontmatter", filepath.Base(rule))
@@ -190,18 +197,8 @@ var (
 // files that write through it, so editing cmd/config.go loaded a different rule
 // (via cmd/**) and never that one. Every glob it did list resolved fine.
 func TestRuleMentionsAreCovered(t *testing.T) {
-	root := repoRoot(t)
-	rulesDir := filepath.Join(root, ".claude", "rules")
-	entries, err := os.ReadDir(rulesDir)
-	if err != nil {
-		t.Fatalf("read %s: %v", rulesDir, err)
-	}
-
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		rule := filepath.Join(rulesDir, e.Name())
+	for _, rule := range ruleFiles(t) {
+		name := filepath.Base(rule)
 		globs := frontmatterPaths(t, rule)
 		body := ruleBody(t, rule)
 
@@ -215,7 +212,7 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 
 		seen := make(map[string]bool, len(mentioned))
 		for _, pkg := range mentioned {
-			if seen[pkg] || ruleMentionExemptions[e.Name()+": "+pkg] {
+			if seen[pkg] || ruleMentionExemptions[name+": "+pkg] {
 				continue
 			}
 			seen[pkg] = true
@@ -230,7 +227,7 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 			if !covered {
 				t.Errorf("%s: names %q in its body but no paths: entry scopes it there — "+
 					"add a glob, or exempt it in ruleMentionExemptions",
-					e.Name(), pkg)
+					name, pkg)
 			}
 		}
 	}
@@ -254,17 +251,10 @@ var rulePathExemptions = map[string]bool{}
 // nothing at all.
 func TestEveryPackageIsClaimedByARule(t *testing.T) {
 	root := repoRoot(t)
-	rulesDir := filepath.Join(root, ".claude", "rules")
-	ruleFiles, err := os.ReadDir(rulesDir)
-	if err != nil {
-		t.Fatalf("read %s: %v", rulesDir, err)
-	}
 
 	var globs []string
-	for _, e := range ruleFiles {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			globs = append(globs, frontmatterPaths(t, filepath.Join(rulesDir, e.Name()))...)
-		}
+	for _, rule := range ruleFiles(t) {
+		globs = append(globs, frontmatterPaths(t, rule)...)
 	}
 
 	pkgs, err := os.ReadDir(filepath.Join(root, "internal"))
@@ -289,6 +279,28 @@ func TestEveryPackageIsClaimedByARule(t *testing.T) {
 		if !claimed {
 			t.Errorf("%s is claimed by no rule's paths: — editing it loads no guardrail; "+
 				"add a glob to the rule that owns it, or exempt it in rulePathExemptions", pkg)
+		}
+	}
+}
+
+// TestRuleFilesAreListedInCLAUDEMd asserts CLAUDE.md's index of the rule files
+// names every file that exists. That list is how a reader (and Codex, which
+// loads no rule automatically) learns a rule is there at all, so a rule missing
+// from it is a rule nobody opens — and adding the sixth rule file while leaving
+// the list at five is exactly the drift these tests exist to catch.
+func TestRuleFilesAreListedInCLAUDEMd(t *testing.T) {
+	root := repoRoot(t)
+	claudeMd, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	index := string(claudeMd)
+
+	for _, rule := range ruleFiles(t) {
+		link := ".claude/rules/" + filepath.Base(rule)
+		if !strings.Contains(index, link) {
+			t.Errorf("CLAUDE.md does not link %s — a rule absent from that index is one "+
+				"no reader knows to open; add a line describing what it governs", link)
 		}
 	}
 }
