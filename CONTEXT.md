@@ -232,22 +232,28 @@ readings of the same value.
 Everything `config ui` knows about one config key, as a single row:
 `configui.keyDescriptors[key]` — the editor kind with the typed
 accessors that seed it, the Pending Mutation constructor, and the
-display facts (collection noun, entry names, scope-node count, scalar
-hint). Owned by `internal/configui` (`descriptor.go`), keyed by Config
-Schema key.
+display facts (collection noun, entry names, where a scope file holds the
+key's entries, scalar hint). Owned by `internal/configui`
+(`descriptor.go`), keyed by Config Schema key.
 
-Concretely: `displayValue`, `nodeDisplay`, `detailEntries`,
+Concretely: `displayValue`, `scopeDisplay`, `detailEntries`,
 `enumOptions`, `hasEditorEscape`, `Model.openEditor` and
 `Model.pendingMutator` read the row rather than switching on the key
 themselves, so the editor a key opens and the mutation it writes are the
-same declaration. The two per-key facts that are *not* presentation stay
-where they belong and are asked, not restated: which keys are attributed
-per entry (`configedit.PerEntryKey`, read by `originFor`) and which
-deprecated alias folds into which live key (`config.DeprecatedAliases`,
-read by `Keys` and `scopeNode`). `TestKeyDescriptorsCoverEveryKey` demands a row per
+same declaration. `openEditor` reads it *once*: the row's kind indexes
+`editorSeeds`, one seed per kind, rather than a second switch in the tea
+half re-deriving per key what the row already said. The per-key facts
+that are *not* presentation stay where they belong and are asked, not
+restated: which keys are attributed per entry
+(`configedit.PerEntryKey`, read by `originFor`), and what one layer's
+file itself sets — the deprecated-alias fold included
+(`configedit.FileValues`, read by `scopeStates`; `Keys` asks
+`config.DeprecatedAliases` only to drop the alias rows).
+`TestKeyDescriptorsCoverEveryKey` demands a row per
 `Keys()` entry, and three behavioural guards ride on it: every key
 displays something, every editable key opens a seeded editor, and every
-open editor has a Pending Mutation behind it.
+open editor has a Pending Mutation behind it — the first two driven
+through `Update`, the seam bubbletea crosses.
 
 Why the term exists: `configui` was the last Config Schema consumer
 whose omissions surfaced as a runtime status message instead of a red
