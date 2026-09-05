@@ -12,6 +12,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // Severity classifies a doctor finding. Errors drive the non-zero exit;
@@ -58,7 +59,7 @@ func Doctor(host fsx.Host, searchFrom, explicitOverride string) []Finding {
 	}
 
 	findings = append(findings, lintShellPaths(host, cfg)...)
-	findings = append(findings, lintMounts(host, cfg)...)
+	findings = append(findings, lintMounts(host, cfg, proximo.Resolve(host, cfg))...)
 	return findings
 }
 
@@ -124,8 +125,8 @@ func lintShellPaths(host fsx.Host, cfg *config.Config) []Finding {
 // lintMounts surfaces mount-merge failures as errors and duplicate resolved
 // targets as warnings (mountplan does not dedupe today; the last bind wins
 // silently at the Docker layer).
-func lintMounts(host fsx.Host, cfg *config.Config) []Finding {
-	resolved, err := mountplan.Merge(host, cfg, nil)
+func lintMounts(host fsx.Host, cfg *config.Config, gate proximo.Gate) []Finding {
+	resolved, err := mountplan.Merge(host, cfg, nil, gate)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}

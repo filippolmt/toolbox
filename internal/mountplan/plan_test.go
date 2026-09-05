@@ -8,6 +8,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // TestPlanEndToEnd exercises the full pipeline: defaults → applyMountsRoot
@@ -187,7 +188,7 @@ func TestPlanIncludesWorkspaceBindEvenWithReservedPath(t *testing.T) {
 
 func TestMerge_BridgeFalseDropsMounts(t *testing.T) {
 	off := false
-	got, err := Merge(testHost(t), &config.Config{Bridge: &off}, nil)
+	got, err := Merge(testHost(t), &config.Config{Bridge: &off}, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -240,7 +241,7 @@ func TestPlanWithProfile(t *testing.T) {
 
 func TestMerge_BridgeTrueKeepsMounts(t *testing.T) {
 	on := true
-	got, err := Merge(testHost(t), &config.Config{Bridge: &on}, nil)
+	got, err := Merge(testHost(t), &config.Config{Bridge: &on}, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -290,7 +291,7 @@ func TestStateDirPath(t *testing.T) {
 		}}, nil, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := StateDirPath(fsx.Host{Home: tmpHome}, tc.cfg, tc.profile)
+			got, err := StateDirPath(fsx.Host{Home: tmpHome}, tc.cfg, tc.profile, proximo.Gate{})
 			if err != nil {
 				t.Fatalf("StateDirPath: %v", err)
 			}

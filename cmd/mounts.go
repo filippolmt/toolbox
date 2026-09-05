@@ -12,6 +12,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 var mountsCmd = &cobra.Command{
@@ -153,7 +154,8 @@ func runMountsList(cmd *cobra.Command, _ []string) error {
 	if cfg == nil {
 		return errConfigNotLoaded
 	}
-	classified, err := mountplan.Classify(hostBestEffort(), cfg)
+	host := hostBestEffort()
+	classified, err := mountplan.Classify(host, cfg, proximo.Resolve(host, cfg))
 	if err != nil {
 		return err
 	}
@@ -207,7 +209,8 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 	// A {name, disabled: true} patch referencing a name unknown to the merge
 	// fails the next config load — validate against defaults + user entries
 	// before writing.
-	known, err := mountplan.Names(hostBestEffort(), cfg)
+	host := hostBestEffort()
+	known, err := mountplan.Names(host, cfg, proximo.Resolve(host, cfg))
 	if err != nil {
 		return err
 	}

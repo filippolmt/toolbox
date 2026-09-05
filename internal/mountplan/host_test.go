@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/proximo"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
@@ -31,7 +32,7 @@ func TestPathEntryPointsRefuseAHostWithoutAHome(t *testing.T) {
 			return OverlayDockerfilePath(fsx.Host{}, &config.Config{}, nil)
 		}},
 		{"StateDirPath", func() (string, error) {
-			return StateDirPath(fsx.Host{}, &config.Config{}, nil)
+			return StateDirPath(fsx.Host{}, &config.Config{}, nil, proximo.Gate{})
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

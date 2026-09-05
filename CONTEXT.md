@@ -1527,8 +1527,12 @@ and `Gate.Enabled` the discovery flag the Docker edge acts on. It reaches both
 planners through their `PlanInput`, the seam that already carries the session's
 resolved host-side facts, and `cmd.startSession` is where the one derivation
 happens — beside the [Declared Host](#declared-host) it is resolved against.
-`mountplan.Merge` resolves its own only because its callers are read-only
-surfaces (`mounts list`, `config doctor`) answering one question each. So the
+No function derives it on the side: `mountplan.Merge` and everything built on
+it (`Classify`, `Names`, `StateDirPath`) take the gate as an argument, so the
+read-only surfaces resolve one at their own command edge exactly as a session
+does at `startSession`. Handing the derivation to a shared callee is what let
+a single invocation pay for it more than once while every call site still
+looked like it was only reading a list. So the
 mounted file *is* the in-container shadow of that decision: `entrypoint.sh`
 self-gates its whole trust block on it; the bridge shim tests the same file
 before any POST, and refuses with one message naming both causes (proximo
@@ -1558,7 +1562,9 @@ merge re-pays it. A session that read the state directory through
 hiding behind what reads like a path lookup. The merge already settled the
 answer, so the plan publishes it (`mountplan.Result.StateDir`) and the session
 reads it there. The rule that generalises: once a pipeline holds a plan, ask
-the plan, never the function that would rebuild one.
+the plan, never the function that would rebuild one — and a function that
+would rebuild one should say so by taking the gate, not by quietly resolving
+another.
 
 ### Worktree
 

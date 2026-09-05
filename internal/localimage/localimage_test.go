@@ -16,6 +16,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -291,7 +292,7 @@ func TestEnsureRebuildsForASiblingsOverlay(t *testing.T) {
 func TestFallbackTracksTheDefaultStateMount(t *testing.T) {
 	host := fsx.Host{Home: filepath.Join(t.TempDir(), "home")}
 
-	resolved, err := mountplan.StateDirPath(host, &config.Config{}, nil)
+	resolved, err := mountplan.StateDirPath(host, &config.Config{}, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("StateDirPath: %v", err)
 	}

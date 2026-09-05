@@ -106,9 +106,7 @@ type PlanInput struct {
 // (missing source without a create rule, missing symlink target, …) stay
 // soft skips surfaced via Warnings.
 func Plan(in PlanInput) (Result, error) {
-	// merge, not Merge: a planned session brings its own resolved proximo
-	// gate, so the pipeline reads the decision instead of paying for it again.
-	merged, err := merge(in.Host, in.Cfg, in.Profile, in.Proximo)
+	merged, err := Merge(in.Host, in.Cfg, in.Profile, in.Proximo)
 	if err != nil {
 		return Result{}, err
 	}
@@ -153,24 +151,19 @@ func Plan(in PlanInput) (Result, error) {
 
 // Merge returns the post-merge mount list (defaults retargeted by
 // MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts) for the
-// given host.
-// It materialises no source and binds no workspace, so callers can inspect
-// the resolved set without touching the filesystem the plan describes —
-// but it is not side-effect-free: resolving the gate below queries the
-// proximo binary and stats the CA it names.
+// given host. It materialises no source and binds no workspace, so callers
+// can inspect the resolved set without touching the filesystem the plan
+// describes.
 //
-// It resolves the proximo gate itself because its callers are read-only
-// surfaces answering one question each (`mounts list`, `config doctor`),
-// not sessions with a gate already in hand. A session goes through Plan,
-// which carries the one PlanInput.Proximo resolved for the invocation.
-func Merge(host fsx.Host, cfg *config.Config, profile *Profile) ([]config.Mount, error) {
-	return merge(host, cfg, profile, proximo.Resolve(host, cfg))
-}
-
-// merge is Merge with the proximo gate declared rather than derived — the
-// form Plan uses so a session pays the gate's subprocess query once, at the
-// composition root, instead of once per pipeline that asks about it.
-func merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) ([]config.Mount, error) {
+// gate is declared, never derived here: deriving it costs a `proximo config
+// ca-path` spawn, and a function that spawns when you thought you were only
+// reading a list is how one invocation came to pay for the same answer more
+// than once. Every caller resolves it at its own composition root —
+// cmd.startSession for a session, the command edge for the read-only
+// surfaces — and passes the one value down. The zero value is a gate with
+// proximo off, which is the honest answer for a caller that has no host to
+// ask about.
+func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) ([]config.Mount, error) {
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
@@ -265,11 +258,11 @@ func OverlayDockerfilePath(host fsx.Host, cfg *config.Config, profile *Profile) 
 // The mount source is needed as a *path* (not a bind) by the host-side update
 // prefetch, which writes the cache the in-container prompt hook reads: the
 // two ends must address the same directory or the banner never fires.
-func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile) (string, error) {
+func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gate) (string, error) {
 	if err := host.Validate(); err != nil {
 		return "", err
 	}
-	merged, err := Merge(host, cfg, profile)
+	merged, err := Merge(host, cfg, profile, gate)
 	if err != nil {
 		return "", err
 	}

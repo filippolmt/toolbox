@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
 // TestMergeRetargetsSource is the main contract for the unified mounts:
@@ -17,7 +18,7 @@ func TestMergeRetargetsSource(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -52,12 +53,12 @@ func TestMergeRetargetsSource(t *testing.T) {
 }
 
 // TestMergeUnknownNameErrors guards the typo-detection contract:
-// a name-only patch referencing a non-existent mount must fail Merge().
+// a name-only patch referencing a non-existent mount must fail Merge(, proximo.Gate{}).
 func TestMergeUnknownNameErrors(t *testing.T) {
 	cfg := config.Config{
 		Mounts: []config.Mount{{Name: "nonexistent", Source: "/tmp/x"}},
 	}
-	_, err := Merge(testHost(t), &cfg, nil)
+	_, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err == nil {
 		t.Fatal("Merge should fail when a patch references an unknown name")
 	}
@@ -75,7 +76,7 @@ func TestMergeReplaceByName(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestMergeAppendNewName(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestMergeDisableDefault(t *testing.T) {
 		Mounts: []config.Mount{{Name: "docker-sock", Disabled: true}},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestMergeDisableDefault(t *testing.T) {
 func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 	cfg := config.Config{MountsRoot: "/custom/root"}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 func TestMergeMountsRootHomeRelative(t *testing.T) {
 	cfg := config.Config{MountsRoot: "~/work/toolbox-state"}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -212,7 +213,7 @@ func TestMergeMountsRootCombinedWithPatch(t *testing.T) {
 		Mounts:     []config.Mount{{Name: "gws", Source: "/elsewhere/gws"}},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestMergeMountsRootWithAnonymousAppend(t *testing.T) {
 		},
 	}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -263,7 +264,7 @@ func TestMergeMountsRootWithAnonymousAppend(t *testing.T) {
 func TestMergeMountsRootEmptyIsNoop(t *testing.T) {
 	cfg := config.Config{MountsRoot: ""}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -281,7 +282,7 @@ func TestMergeMountsRootEmptyIsNoop(t *testing.T) {
 func TestMergeMountsRootTrailingSlash(t *testing.T) {
 	cfg := config.Config{MountsRoot: "/custom/root/"}
 
-	merged, err := Merge(testHost(t), &cfg, nil)
+	merged, err := Merge(testHost(t), &cfg, nil, proximo.Gate{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -453,7 +454,7 @@ func TestMergeDisableAndPatchSameName(t *testing.T) {
 }
 
 // TestMergeUnknownPatchPlusLaterAppend: a typo'd patch on an unknown Name
-// fails Merge() even when a later user entry would have made the same Name
+// fails Merge(, proximo.Gate{}) even when a later user entry would have made the same Name
 // valid via the append branch. The patch typo is the loud failure signal —
 // silently shadowing it with a later append would mask config mistakes.
 func TestMergeUnknownPatchPlusLaterAppend(t *testing.T) {
