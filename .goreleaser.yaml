@@ -32,14 +32,11 @@ changelog:
       - "^docs:"
       - "^test:"
 
-# `brews` (Homebrew Formula) was hard-deprecated in GoReleaser v2.16. Casks
-# are macOS-only, so the tap no longer serves Linuxbrew — Linux users install
-# via `go install` or the released binaries. The binary is unsigned, so the
-# pre-install hook strips the macOS quarantine bit to avoid the
-# "toolbox is damaged" Gatekeeper alert; it must run *pre* (not post) install
-# because `generate_completions_from_executable` executes the staged binary
-# during the install phase, and a still-quarantined unsigned binary gets
-# killed by Gatekeeper before it can emit the completion scripts.
+# `brews` (Homebrew Formula) is hard-deprecated in GoReleaser, so the tap ships
+# a cask. A cask targets macOS — Linux users install via `go install` or the
+# released binaries — but that is an aim, not a guarantee Homebrew enforces:
+# `Cask#supports_linux?` is true for any cask without `depends_on macos:`, so
+# Linuxbrew will happily install this one. Hence the `on_macos` guard below.
 homebrew_casks:
   - name: toolbox
     repository:
@@ -51,9 +48,9 @@ homebrew_casks:
     description: "CLI for the containerized dev toolbox"
     commit_msg_template: "Update {{ .ProjectName }} to {{ .Tag }}"
     # Install shell completions by running `toolbox completion <shell>` at
-    # install time (GoReleaser >= v2.15). `shells` is pinned because
-    # cmd/completion.go only accepts bash|zsh|fish, while the default set
-    # would also try pwsh and fail the install.
+    # install time. `shells` is pinned because cmd/completion.go only accepts
+    # bash|zsh|fish, while the default set would also try pwsh and fail the
+    # install.
     generate_completions_from_executable:
       args:
         - completion
@@ -61,9 +58,28 @@ homebrew_casks:
         - bash
         - zsh
         - fish
-    hooks:
-      pre:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/toolbox"]
-          end
+    # The binary is unsigned, so the macOS quarantine bit has to go or Gatekeeper
+    # refuses to run it with a "toolbox is damaged" alert. Three things shape
+    # the stanza:
+    #
+    #   - It strips *before* `generate_completions_from_executable` executes the
+    #     staged binary, or Gatekeeper kills that binary before it can emit the
+    #     completion scripts. Homebrew orders cask artifacts by class, not by
+    #     position in the file: `PreflightSteps` is the first entry of that
+    #     order and `GeneratedCompletion` one of the last, so `preflight_steps`
+    #     holds the constraint and `postflight_steps` would break it.
+    #   - It goes through `custom_block` rather than `hooks.pre.install`, which
+    #     emits the legacy `preflight do` Ruby block Homebrew has deprecated in
+    #     favour of the declarative `preflight_steps` stanza.
+    #   - `on_macos` keeps it a no-op under Linuxbrew, where `/usr/bin/xattr`
+    #     does not exist and `run` — which defaults to `must_succeed: true` —
+    #     would abort the install.
+    #
+    # Homebrew expands `{{staged_path}}` at install time, so it is escaped here
+    # to survive GoReleaser's own templating first.
+    custom_block: |
+      preflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/toolbox"]
+        end
+      end

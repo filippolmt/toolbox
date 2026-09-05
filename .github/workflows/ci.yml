@@ -120,6 +120,45 @@ jobs:
           version: ${{ steps.gola.outputs.version }}
           skip-cache: true
 
+  cask:
+    # `goreleaser check` validates the config's schema and renders no template,
+    # so it passes happily on a `{{staged_path}}` that GoReleaser would try to
+    # resolve as one of its own functions — the Homebrew cask is only rendered
+    # by a release. Without this job the first proof that the cask still builds
+    # arrives when a `v*` tag is already pushed and the release has already
+    # half-failed. A snapshot renders it for nothing.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # GoReleaser derives the snapshot version from the tag history.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Render the cask
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish,validate
+
+      # What the render alone does not assert. The quarantine strip is the only
+      # thing standing between an unsigned binary and a Gatekeeper alert, and
+      # `{{staged_path}}` has to survive GoReleaser's templating as a literal so
+      # Homebrew is the one to expand it.
+      - name: The cask keeps its quarantine step
+        run: |
+          cask=dist/homebrew/Casks/toolbox.rb
+          grep -qx '  preflight_steps do' "$cask"
+          grep -qF '"{{staged_path}}/toolbox"' "$cask"
+          ! grep -qE '^[[:space:]]*preflight do' "$cask"
+
   renovate-validate:
     # Validates renovate.json with the official validator so that future edits
     # to customManagers (GOPLS_VERSION, GOIMPORTS_VERSION, GOLANGCI_VERSION, …) do

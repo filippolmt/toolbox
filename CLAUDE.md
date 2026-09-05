@@ -20,12 +20,13 @@
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
 | `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` — the extra CI gates have no local equivalent | `docker-ci.yml` (build + smoke + real-daemon gates) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
+| `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
 
 Two of the real-daemon gates `docker-ci.yml` runs for those paths (`go test -tags dockergate` — peer messaging and the session reload) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place they run. The third, the image-reclamation refusal (`internal/imagereclaim`), mounts nothing and does run locally with the socket and `IMAGE_TAG` in hand.
 
-Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — its three jobs are required checks on `main`, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
+Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — it carries the checks `main` requires, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 
 **Coverage must be at least 80%**, and two gates enforce it — `make go-check` mirrors neither:
 
