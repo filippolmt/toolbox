@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 func TestParseWhere(t *testing.T) {
@@ -62,5 +64,26 @@ func TestResolveLocalNoProjectFile(t *testing.T) {
 	}
 	if want := filepath.Join(cwd, ".toolbox.yaml"); got != want {
 		t.Errorf("Resolve(local) without walked-up file = %q, want %q", got, want)
+	}
+}
+
+// TestWorkspaceOnlyKeys pins the guarded set and holds every member to being a
+// real Config Schema key: a typo or a renamed key would leave the global layer
+// silently un-guarded, which is the failure this predicate exists to prevent.
+func TestWorkspaceOnlyKeys(t *testing.T) {
+	if !WorkspaceOnlyKey("sdd") {
+		t.Error("sdd must be workspace-only: sentinel, artefacts and fence are all workspace-anchored")
+	}
+	if WorkspaceOnlyKey("pull") {
+		t.Error("pull is a per-user preference and must stay writable in the global layer")
+	}
+	schema := make(map[string]bool, len(config.SchemaKeys()))
+	for _, k := range config.SchemaKeys() {
+		schema[k] = true
+	}
+	for key := range workspaceOnlyKeys {
+		if !schema[key] {
+			t.Errorf("workspace-only key %q is not a config.SchemaKeys() entry", key)
+		}
 	}
 }

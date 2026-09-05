@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/configedit"
+	"github.com/filippolmt/toolbox/internal/configui"
 	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
@@ -373,5 +374,138 @@ func TestSDDListIncludesAllSkills(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("list output missing %q:\n%s", want, got)
 		}
+	}
+}
+
+// sddFixture builds a repo whose root carries a .toolbox.yaml with an unrelated
+// key in it, and returns that root with the directory the caller should stand
+// in: the root itself, or a nested subdirectory of it.
+func sddFixture(t *testing.T, nested bool) (root, cwd string) {
+	t.Helper()
+	root = t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".toolbox.yaml"), []byte(fixtureRootYAML), 0o600); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	cwd = root
+	if nested {
+		cwd = filepath.Join(root, "deep", "nested")
+		if err := os.MkdirAll(cwd, 0o755); err != nil {
+			t.Fatalf("mkdir nested: %v", err)
+		}
+	}
+	return root, cwd
+}
+
+const fixtureRootYAML = "image: ghcr.io/example/toolbox:pinned\n"
+
+// chdirTo enters dir for the rest of the test.
+func chdirTo(t *testing.T, dir string) {
+	t.Helper()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+}
+
+// sddFiles reads back the two files an SDD write may touch, "" when absent.
+func sddFiles(t *testing.T, root, cwd string) (yamlBody, gitignore string) {
+	t.Helper()
+	read := func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(b)
+	}
+	return read(filepath.Join(root, ".toolbox.yaml")), read(filepath.Join(cwd, ".gitignore"))
+}
+
+// TestSDDInitPatchesTheWalkedUpProjectConfig: run from a subdirectory of a repo
+// that already carries a .toolbox.yaml, `sdd init` must patch that file rather
+// than create a second one in cwd. Config loads exactly one project file — the
+// nearest walking up — so a fresh subdir/.toolbox.yaml would shadow the repo's
+// own image/mounts/shells wholesale for every shell started there. The fence
+// stays in cwd: it governs the directory the workspace mount actually writes.
+func TestSDDInitPatchesTheWalkedUpProjectConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, sub := sddFixture(t, true)
+	chdirTo(t, sub)
+
+	cmd := sddInitCmd
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
+		t.Fatalf("runSDDInit gsd: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(sub, ".toolbox.yaml")); !os.IsNotExist(err) {
+		t.Errorf("a shadowing subdir/.toolbox.yaml must not be created (err=%v)", err)
+	}
+	rootYAML, gitignore := sddFiles(t, root, sub)
+	if !strings.Contains(rootYAML, "gsd: true") {
+		t.Errorf("root .toolbox.yaml did not gain the flag:\n%s", rootYAML)
+	}
+	if !strings.Contains(rootYAML, "ghcr.io/example/toolbox:pinned") {
+		t.Errorf("root .toolbox.yaml lost its existing keys:\n%s", rootYAML)
+	}
+	if gitignore == "" {
+		t.Error("the fence must land in the workspace cwd")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf("no fence must be written outside cwd (err=%v)", err)
+	}
+}
+
+// TestCLIAndUISDDWritesAreIdentical is the invariant behind "the two paths
+// leave identical file state": it runs both *real* entry points — the CLI
+// command's RunE and configui.SaveSDD — against the same fixture and compares
+// the resulting bytes. Entering through the shared configedit seam instead
+// would only prove one function is deterministic; the defect this guards was
+// precisely that the two callers resolved different paths on their way in.
+func TestCLIAndUISDDWritesAreIdentical(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		nested bool
+	}{
+		{"cwd is the project root", false},
+		{"cwd is a subdirectory", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+
+			cliRoot, cliCwd := sddFixture(t, tc.nested)
+			chdirTo(t, cliCwd)
+			cmd := sddInitCmd
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			if err := runSDDInit(cmd, []string{"gsd"}); err != nil {
+				t.Fatalf("runSDDInit: %v", err)
+			}
+			cliYAML, cliGitignore := sddFiles(t, cliRoot, cliCwd)
+
+			uiRoot, uiCwd := sddFixture(t, tc.nested)
+			target, err := configui.TargetPath(configui.ScopeRepo, uiCwd)
+			if err != nil {
+				t.Fatalf("TargetPath: %v", err)
+			}
+			if err := configui.SaveSDD(target, uiCwd, map[string]bool{"gsd": true}); err != nil {
+				t.Fatalf("SaveSDD: %v", err)
+			}
+			uiYAML, uiGitignore := sddFiles(t, uiRoot, uiCwd)
+
+			if cliYAML != uiYAML {
+				t.Errorf(".toolbox.yaml differs\nCLI:\n%s\nUI:\n%s", cliYAML, uiYAML)
+			}
+			if cliGitignore != uiGitignore {
+				t.Errorf(".gitignore differs\nCLI:\n%s\nUI:\n%s", cliGitignore, uiGitignore)
+			}
+			if !strings.Contains(cliYAML, "gsd: true") || cliGitignore == "" {
+				t.Errorf("fixture wrote nothing to compare:\nyaml:\n%s\ngitignore:\n%s", cliYAML, cliGitignore)
+			}
+		})
 	}
 }

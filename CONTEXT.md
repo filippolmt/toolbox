@@ -66,6 +66,41 @@ struct and its consumer, silently missing provenance, renderer, and example;
 reflected tag list the one authority and turns every omission from a silent
 runtime gap into a red coverage test, mirroring the Tool Catalog deepening.
 
+### Config Scope
+
+Which layer of the config a value is read from or written to: the
+per-user global file, or the project file the walk-up from the current
+directory finds. One axis with three faces, each owning one verb —
+`configedit.Where` writes (`Resolve` turns it into a path),
+`configui.Scope` selects (the tab in the config editor), and
+`configedit.Origin` attributes (which layer a resolved value came
+from). Owned by `internal/configedit`, with the selection face in
+`internal/configui`.
+
+Concretely: every writer command targets a Where; the config editor's
+tab moves a Scope, and every save, reset and preview it performs is
+resolved through the matching Where, never through a path of its own.
+Not every key admits both sides of the axis: a key whose effect is
+anchored to the workspace the container mounts has no coherent global
+expression, and `configedit.WorkspaceOnlyKey` is the authority on which
+ones those are — asked by the config editor before it opens a key for
+editing and before its reset touches the artefacts a key owns, never
+restated at either site. Rationale and rejected options:
+[ADR 0011](docs/adr/0011-the-sdd-opt-in-is-anchored-to-the-workspace.md).
+
+Why the term exists: the three faces were named independently and two
+of them disagree on the word for the same side (`WhereLocal` vs
+`ScopeRepo`), so nothing in the vocabulary said they were one axis —
+and a key whose write surface must be narrower than the axis had
+nowhere to say so. The gap that named it: `toolbox sdd init` joined its
+own path from the current directory while the editor resolved one
+through the Scope, so the two "identical" write paths targeted
+different files, and a Global-scope enable wrote a flag applying
+everywhere next to a fence applying to one repo. Naming the axis is
+what makes "which face is this, and does this key admit both sides?" a
+question with an owner. The identifiers keep their three names: a
+rename is its own refactor, not a passenger on a behaviour fix.
+
 ### Tool Catalog
 
 The canonical declaration of every bundled tool: a single typed table

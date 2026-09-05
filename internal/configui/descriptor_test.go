@@ -134,10 +134,12 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 // TestEveryEditableKeyOpensAnEditor: enter on any key but the read-only one
 // must open a seeded editor. The old key-switch answered a key it did not list
 // with a status message ("no interactive editor yet") at runtime; that hole is
-// this test now.
+// this test now. The sweep runs in the repo scope — the one scope every key is
+// writable in; the global layer's per-key refusal is
+// TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope's to cover.
 func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 	for _, key := range Keys() {
-		m := &Model{cfg: &config.Config{}, states: []KeyState{{Key: key, ReadOnly: ReadOnlyKey(key)}}}
+		m := &Model{scope: ScopeRepo, cfg: &config.Config{}, states: []KeyState{{Key: key, ReadOnly: ReadOnlyKey(key)}}}
 		m.openEditor()
 		if m.states[0].ReadOnly {
 			if m.editing {
@@ -173,7 +175,7 @@ func TestEveryOpenEditorHasAPendingMutation(t *testing.T) {
 		if ReadOnlyKey(key) {
 			continue
 		}
-		m := &Model{cfg: &config.Config{}, states: []KeyState{{Key: key}}}
+		m := &Model{scope: ScopeRepo, cfg: &config.Config{}, states: []KeyState{{Key: key}}}
 		m.openEditor()
 		if m.pendingMutator() == nil {
 			t.Errorf("key %q opens an editor with no pending mutation behind it", key)

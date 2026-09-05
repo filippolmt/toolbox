@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -219,6 +220,13 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("%s has a single supported value (%s) — nothing to edit", st.Key, st.Default)
 		return
 	}
+	// A third refusal in the family above: a workspace-anchored key has no
+	// coherent meaning in the global layer. configedit owns both the set and
+	// the why — CONTEXT.md#config-scope, ADR 0011.
+	if configedit.WorkspaceOnlyKey(st.Key) && m.scope == ScopeGlobal {
+		m.status = fmt.Sprintf("%s is per-workspace and cannot be written to %s — press tab to switch to the repo scope", st.Key, m.scope)
+		return
+	}
 	key := st.Key
 	// Baseline for the preview diff, taken once for the whole editor session
 	// (see Model.previewBase).
@@ -319,6 +327,35 @@ func (m *Model) resetToDefault() {
 	}
 	m.status = fmt.Sprintf("reset %s to default in %s", st.Key, m.scope)
 	m.reload()
+	m.reconcileArtefactsAfterReset(st.Key)
+}
+
+// reconcileArtefactsAfterReset brings the files a workspace-anchored key owns
+// beside .toolbox.yaml back in line once the key has been removed from the
+// selected layer. Meaning and rationale: CONTEXT.md#config-scope, ADR 0011.
+//
+// It reconciles against what the layers now resolve to, not against the empty
+// set: reset clears one layer, so a flag kept in the other still enables the
+// skill — and a skill that still runs still needs its fence. It runs after the
+// reload for that reason, and abstains when the reload could not answer.
+//
+// Only from the layer that owns the fences, though: the global file may be
+// cleaned of a hand-written flag (openEditor refuses to *create* one there, not
+// to clear it) while each fence stays with the workspace that wrote it.
+func (m *Model) reconcileArtefactsAfterReset(key string) {
+	if !configedit.WorkspaceOnlyKey(key) {
+		return
+	}
+	if m.scope == ScopeGlobal {
+		m.status += "; .gitignore fences left untouched (each belongs to its workspace)"
+		return
+	}
+	if m.loadErr != nil {
+		return
+	}
+	if err := configedit.ReconcileSDDGitignore(filepath.Join(m.cwd, ".gitignore"), EnabledSDD(m.cfg)); err != nil {
+		m.status = fmt.Sprintf("reset %s in %s, but the .gitignore fence cleanup failed: %v", key, m.scope, err)
+	}
 }
 
 func (m Model) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

@@ -19,7 +19,13 @@ import (
 // The single authority for the file mutations enabling or disabling an SDD
 // skill performs: the sdd.<key> flag in .toolbox.yaml and the per-skill
 // .gitignore fence. cmd/sdd.go (CLI) and configui.SaveSDD (TUI) both route
-// their SDD writes here so the two paths produce identical file state.
+// their SDD writes here AND resolve the two paths the same way — the flag into
+// the project config Resolve(WhereLocal, cwd) walks up to, the fence into the
+// workspace cwd — so the two paths leave identical file state. Routing alone
+// never bought that: the CLI once joined its own yaml path from cwd, which
+// diverged from the TUI's on every scope and every subdirectory. The claim is
+// held up by cmd.TestCLIAndUISDDWritesAreIdentical, which drives both real
+// entry points and compares the resulting bytes.
 
 const (
 	sddYAMLKey       = "sdd"

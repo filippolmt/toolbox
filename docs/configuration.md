@@ -37,7 +37,7 @@ Configuration is loaded from (highest priority first):
 | [`image`](#image-selection) | string | `""` | Full image ref override (pull-source concern). |
 | [`registry_mirror`](#image-selection) | string | `""` | Swap only the registry host of the canonical ref. |
 | [`pull`](#image-selection) | string | `auto` | Registry-sync policy for the shell-start refresh *and* the background prefetch: `auto` / `always` / `never`. |
-| [`sdd`](sdd.md) | map | – | Per-repo Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`). |
+| [`sdd`](sdd.md) | map | – | Per-workspace Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`); the editor writes it to the project layer only. |
 | [`bridge`](bridge.md) | bool | `true` | Mount the host bridge state dir (browser / editor / proximo forwarding). |
 | [`browser_bridge`](#browser_bridge-deprecated) | bool | – | **Deprecated** alias of `bridge`. |
 | [`proximo`](proximo.md) | bool | auto | `.test` reachability + CA trust; omitted = auto-detect (on iff proximo's CA exists on the host). |

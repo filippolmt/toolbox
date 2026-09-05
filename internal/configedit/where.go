@@ -51,3 +51,21 @@ func Resolve(w Where, cwd string) (string, error) {
 		return "", fmt.Errorf("internal: unknown Where %d", w)
 	}
 }
+
+// workspaceOnlyKeys lists the Config Schema keys whose effect is anchored to
+// the workspace, so writing them into the global layer produces a flag with no
+// coherent meaning. sdd is one: its install sentinel is keyed by the workspace
+// hash, its artefacts materialise under /workspace, and its .gitignore fence
+// has no global expression at all — a global flag would fence exactly the one
+// repo the writer happened to be standing in.
+//
+// Adding a key here is not free: configui's reset reads this set to decide
+// whether to reconcile the SDD .gitignore fences, so a second member needs its
+// own artefact handling there rather than inheriting sdd's.
+var workspaceOnlyKeys = map[string]bool{"sdd": true}
+
+// WorkspaceOnlyKey reports whether a key may only be written to the workspace
+// layer (WhereLocal). It is the single authority the write surfaces ask —
+// the config UI before opening an editor, its reset before reconciling fences
+// — rather than each restating which keys those are.
+func WorkspaceOnlyKey(key string) bool { return workspaceOnlyKeys[key] }
