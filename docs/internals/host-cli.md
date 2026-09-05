@@ -12,9 +12,7 @@ Three host-filesystem primitives were copy-pasted across packages as the CLI gre
 - `fsx.ExpandTilde(p, home)` — moved verbatim from `mountplan.expandHome`; `resolve.go` and `inherit_host_auth.go` both call it.
 - `fsx.AtomicWriteFile(dest, data, mode)` — implementation moved from `configio`; every bridge state write reuses it (`token.go`, `port.go`, `daemon.go`'s pid file, `agent.go`'s service files), so a crash mid-write never leaves a torn token/port/plist behind.
 
-`configio.GlobalConfigDir` / `configio.AtomicWriteFile` are kept as thin facades over `fsx` so `cmd/*` keeps a single config-IO import surface and existing callers/tests are untouched — the implementation lives once, in `fsx`.
-
-Deliberately **not** routed through `fsx.Home`: the best-effort `home, _ := os.UserHomeDir()` sites (`config/plan.go` global-config read, `cmd/shell_named.go`, `cmd/shells.go`) that must tolerate an empty home rather than hard-fail. `fsx`'s package doc reserves these for direct `os.UserHomeDir` use; routing them through the loud `Home()` would invert their contract. Likewise `config.ValidateMountsRoot`'s `~`/`~/` checks are *validation* (classifying a string), not expansion, so they do not call `ExpandTilde`.
+Deliberately **not** routed through `fsx.Home`: the best-effort `home, _ := os.UserHomeDir()` sites that must tolerate an empty home rather than hard-fail — the `config/plan.go` global-config read, `cmd/shells.go`, and `cmd/shell_named.go`'s `defaultShellPath`, which degrades to `/tmp/<name>` when the home is empty. The qualifier is the site, not the file: the config write behind that same degradation (`upsertShellInUserConfig`) resolves strictly through `fsx.Home` instead — its own doc comment says why. `fsx`'s package doc reserves these for direct `os.UserHomeDir` use; routing them through the loud `Home()` would invert their contract. Likewise `config.ValidateMountsRoot`'s `~`/`~/` checks are *validation* (classifying a string), not expansion, so they do not call `ExpandTilde`.
 
 ## The host as a declared input
 

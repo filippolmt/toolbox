@@ -1,7 +1,6 @@
 package configio
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,52 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TestAtomicWriteFileLeavesNoTemp asserts the rename pattern cleans up the
-// sibling temp file on success and leaves the destination with the
-// rewritten bytes.
-func TestAtomicWriteFileLeavesNoTemp(t *testing.T) {
-	dir := t.TempDir()
-	dest := filepath.Join(dir, ".toolbox.yaml")
-	if err := AtomicWriteFile(dest, []byte("hello"), 0o600); err != nil {
-		t.Fatalf("AtomicWriteFile: %v", err)
-	}
-	b, err := os.ReadFile(dest)
-	if err != nil {
-		t.Fatalf("read dest: %v", err)
-	}
-	if string(b) != "hello" {
-		t.Fatalf("dest = %q, want hello", string(b))
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("readdir: %v", err)
-	}
-	for _, e := range entries {
-		if strings.Contains(e.Name(), ".tmp-") {
-			t.Fatalf("leftover temp file: %s", e.Name())
-		}
-	}
-}
-
-// TestAtomicWriteFileOverwrites asserts a second write replaces the prior
-// content rather than leaving a partial / appended file.
-func TestAtomicWriteFileOverwrites(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "f.yaml")
-	if err := AtomicWriteFile(dest, []byte("v1"), 0o600); err != nil {
-		t.Fatalf("first write: %v", err)
-	}
-	if err := AtomicWriteFile(dest, []byte("v2"), 0o600); err != nil {
-		t.Fatalf("second write: %v", err)
-	}
-	b, _ := os.ReadFile(dest)
-	if string(b) != "v2" {
-		t.Fatalf("dest = %q, want v2", string(b))
-	}
-}
-
-// TestGlobalConfigPath returns the joined home path; the directory helper
-// returns the same parent so callers can write a sibling temp file
-// without resolving HOME a second time.
+// TestGlobalConfigPath asserts the global config resolves to .toolbox.yaml
+// joined onto the home directory — the location internal/config/plan.go's
+// read must agree with.
 func TestGlobalConfigPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -64,13 +20,6 @@ func TestGlobalConfigPath(t *testing.T) {
 	}
 	if p != filepath.Join(home, ".toolbox.yaml") {
 		t.Fatalf("path = %q, want %q", p, filepath.Join(home, ".toolbox.yaml"))
-	}
-	d, err := GlobalConfigDir()
-	if err != nil {
-		t.Fatalf("GlobalConfigDir: %v", err)
-	}
-	if d != home {
-		t.Fatalf("dir = %q, want %q", d, home)
 	}
 }
 

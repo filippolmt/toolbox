@@ -12,6 +12,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
 // headerComment is prepended (as a `#` block) to config files created by a
@@ -65,7 +66,7 @@ func EnsureFileWithHeader(path string) error {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
-	return configio.AtomicWriteFile(path, []byte(b.String()), 0o600)
+	return fsx.AtomicWriteFile(path, []byte(b.String()), 0o600)
 }
 
 // =============================================================================

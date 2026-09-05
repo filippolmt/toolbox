@@ -14,7 +14,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
-	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
 )
@@ -315,9 +315,14 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 // os.UserHomeDir() lookups. The key is resolved through shellFileKey, so
 // bootstrapping `toolbox shell Infra --create` writes the same canonical key
 // the loader will look the shell up under.
+//
+// home arrives best-effort from the caller — defaultShellPath deliberately
+// degrades to /tmp/<name> when it is empty. The write does not get that
+// tolerance: with no home there is no ~/.toolbox.yaml to patch, so the
+// fallback resolves through fsx.Home and fails loud.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
-		h, err := configio.GlobalConfigDir()
+		h, err := fsx.Home()
 		if err != nil {
 			return err
 		}

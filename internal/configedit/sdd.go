@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/configio"
+	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
@@ -86,7 +87,7 @@ func WriteSDDGitignore(gitignorePath string, skill sdd.Skill) (bool, error) {
 	if !changed {
 		return false, nil
 	}
-	return true, configio.AtomicWriteFile(gitignorePath, updated, 0o600)
+	return true, fsx.AtomicWriteFile(gitignorePath, updated, 0o600)
 }
 
 // RemoveSDDGitignore removes the skill's fenced block from gitignorePath. A
@@ -104,7 +105,7 @@ func RemoveSDDGitignore(gitignorePath string, skill sdd.Skill) (bool, error) {
 	if !changed {
 		return false, nil
 	}
-	return true, configio.AtomicWriteFile(gitignorePath, updated, 0o600)
+	return true, fsx.AtomicWriteFile(gitignorePath, updated, 0o600)
 }
 
 // ReconcileSDDGitignore brings the .gitignore fence set in line with enabled:

@@ -2,8 +2,6 @@
 // host-side toolbox configuration files. It is the single seam that knows
 //
 //   - where ~/.toolbox.yaml lives (GlobalConfigPath),
-//   - how to durably rewrite a host file without truncating the prior
-//     content on crash (AtomicWriteFile),
 //   - how to mutate a parsed yaml.Node tree in-place while preserving the
 //     user's comments and key order (EnsureDocumentMap / EnsureChildMap /
 //     SetMapValue).
@@ -32,34 +30,18 @@ import (
 // internal/config/plan.go's global-config read; both call sites must agree
 // or a write here would not be visible to the next read.
 func GlobalConfigPath() (string, error) {
-	home, err := GlobalConfigDir()
+	home, err := fsx.Home()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(home, ".toolbox.yaml"), nil
 }
 
-// GlobalConfigDir returns the directory containing the global config
-// (today: the user's home directory). Exposed so callers that need a
-// writable sibling for an atomic temp file can avoid resolving HOME twice.
-// Thin facade over fsx.Home so the strict resolution lives in one place.
-func GlobalConfigDir() (string, error) {
-	return fsx.Home()
-}
-
-// AtomicWriteFile durably rewrites a host config file without truncating the
-// prior content on crash. Facade over fsx.AtomicWriteFile, retained so
-// configio callers (cmd/sdd, cmd/shell_named) keep a config-scoped entry
-// point; the crash-safe temp-write-then-rename implementation lives once in
-// fsx.
-func AtomicWriteFile(dest string, data []byte, mode os.FileMode) error {
-	return fsx.AtomicWriteFile(dest, data, mode)
-}
-
 // ReadMaybe returns a config file's bytes and whether it existed — the read
-// counterpart of AtomicWriteFile, for callers that render a candidate document
-// before deciding to write it. A missing file is not an error (existed=false),
-// which is how an absent config layer reads as an empty document.
+// counterpart of fsx.AtomicWriteFile, for callers that render a candidate
+// document before deciding to write it. A missing file is not an error
+// (existed=false), which is how an absent config layer reads as an empty
+// document.
 func ReadMaybe(path string) (data []byte, existed bool, err error) {
 	b, err := os.ReadFile(path) //nolint:gosec // path is a resolved config file
 	if errors.Is(err, os.ErrNotExist) {
