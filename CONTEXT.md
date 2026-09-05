@@ -1555,9 +1555,9 @@ it) and not a command that fails only after reaching the host.
 
 Why it is a value: "the single predicate" was the claim, and three exported
 host-side entry points (`Enabled`, `CAMount`, `Env`) each re-deriving it from
-`(host, cfg)` was the reality — three subtly different spellings of one rule,
-each paying its own CA query, up to three spawns per `toolbox shell` to answer
-one boolean. Resolving the gate into a value and threading it makes the claim
+`(host, cfg)` was the reality — subtly different spellings of one rule, each
+paying its own CA query, so a single `toolbox shell` spawned the proximo
+binary once per entry point it happened to reach, to answer one boolean. Resolving the gate into a value and threading it makes the claim
 true rather than aspirational: the mount and the env can no longer disagree
 with the decision they follow, because they are answers *on* it.
 
