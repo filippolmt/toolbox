@@ -137,31 +137,94 @@ func (r Reason) offer() offer {
 	}
 }
 
-// Outcome is what the start-up refresh established, and each field is read by
-// a different consumer.
-type Outcome struct {
-	// Synced records that the local store is current with the registry as of
-	// a moment ago — a successful pull, or a probe that proved the store was
-	// already current. The background prefetch takes it as "this shell start
-	// already took its turn at the registry" and publishes the banner from
-	// the store instead of asking the same question seconds later.
-	Synced bool
-	// Declined records that the developer postponed the download. A "no" is a
+// Outcome is what the start-up refresh settled: one value, because the
+// settlements are mutually exclusive and the independent bools that used to
+// spell them were not. Those admitted far more combinations than there were
+// legal cases, and which combinations were legal was carried in prose above
+// the fields; here the illegal ones cannot be written.
+//
+// Currency is derived rather than stored, for the same reason: a store the
+// registry sync proved current is exactly OutcomeCurrent or OutcomeAccepted,
+// and a decline or an interrupt downloads nothing. See Synced.
+type Outcome int
+
+// The zero value is OutcomeUnsettled: every path that establishes nothing —
+// the `never` policy, a probe that did not answer, no tty to ask on — returns
+// it, so a caller that returns without choosing a settlement claims nothing
+// rather than claiming currency.
+const (
+	// OutcomeUnsettled: nothing was established. Neither the store's currency
+	// nor a developer's answer is known, and nothing may be read into it.
+	OutcomeUnsettled Outcome = iota
+	// OutcomeCurrent: the local store is current with the registry as of a
+	// moment ago — a successful pull, or a probe that proved the store was
+	// already current, with nobody asked. The background prefetch takes it as
+	// "this shell start already took its turn at the registry" and publishes
+	// the banner from the store instead of asking the same question seconds
+	// later.
+	OutcomeCurrent
+	// OutcomeDeclined: the developer postponed the download. A "no" is a
 	// postponement rather than a refusal, so the session arms the idle reload
 	// that will adopt the image the background prefetch is fetching anyway.
-	Declined bool
-	// Accepted records that the developer answered the question with a yes
-	// *and* that the download it asked for landed. Not the answer alone: a
-	// yes the registry could not honour has bought nothing, and the caller
-	// reads this field on the branch where acting on it destroys a container
-	// — which would then be spent for an image that never arrived. Not Synced
-	// either, which every settled case can reach with nobody asked.
-	Accepted bool
-	// Interrupted records a ctrl+c at the prompt, which is neither an answer
-	// nor a postponement: the developer stopped the command. Nothing is
+	OutcomeDeclined
+	// OutcomeInterrupted: a ctrl+c at the prompt, which is neither an answer
+	// nor a postponement — the developer stopped the command. Nothing is
 	// stamped and nothing is announced — there is no session left to postpone
 	// anything for — and the caller abandons the start.
-	Interrupted bool
+	OutcomeInterrupted
+	// OutcomeAccepted: the developer answered the question with a yes *and*
+	// the download it asked for landed. Not the answer alone: a yes the
+	// registry could not honour has bought nothing, and the caller reads this
+	// on the branch where acting on it destroys a container — which would
+	// then be spent for an image that never arrived. A yes whose pull failed
+	// settles as OutcomeUnsettled, which is what "the developer is where they
+	// already were" means.
+	OutcomeAccepted
+)
+
+// Synced reports that the local store is current with the registry as of a
+// moment ago. It is a question about the store, not about the conversation,
+// so both the case nobody was asked about and the honoured yes answer it —
+// and only those two, since the other three downloaded nothing.
+func (o Outcome) Synced() bool { return o == OutcomeCurrent || o == OutcomeAccepted }
+
+// String names the settlement, so a failure that prints an Outcome reads as
+// the case it is rather than as the integer behind it — the one thing the
+// struct it replaced gave for free.
+func (o Outcome) String() string {
+	switch o {
+	case OutcomeUnsettled:
+		return "unsettled"
+	case OutcomeCurrent:
+		return "current"
+	case OutcomeDeclined:
+		return "declined"
+	case OutcomeInterrupted:
+		return "interrupted"
+	case OutcomeAccepted:
+		return "accepted"
+	}
+	// Every settlement is named above, so this is a constant added without a
+	// case. It must not fall back to the zero value's name: "unsettled" is the
+	// claim that nothing was established, and printing it for a settlement
+	// that *was* established is the one lie this type exists to prevent.
+	return fmt.Sprintf("Outcome(%d)", int(o))
+}
+
+// settleSync maps a best-effort sync's success onto the settlement it
+// establishes: a pull or probe that landed proves currency, one that did not
+// proves nothing. Every call site that reports a sync nobody was asked about
+// shares it, so that "failed" cannot be spelled as anything but the zero
+// value.
+//
+// Named for the settling rather than for currency: Synced() is true of
+// OutcomeAccepted too, so a name built on it would read as the wider question
+// this answers only half of.
+func settleSync(synced bool) Outcome {
+	if synced {
+		return OutcomeCurrent
+	}
+	return OutcomeUnsettled
 }
 
 // Sync best-effort syncs the image against its registry and, in the one case
@@ -199,9 +262,9 @@ type Outcome struct {
 func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDir string, reason Reason) Outcome {
 	switch image.PullPolicy {
 	case config.PullNever:
-		return Outcome{}
+		return OutcomeUnsettled
 	case config.PullAlways:
-		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
+		return settleSync(forcePull(ctx, cli, image.Ref, stateDir))
 	}
 
 	// The reload's whole branch: it neither probes nor asks, because its
@@ -212,19 +275,19 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 	// rather than behind a predicate: two properties ride on this branch, and
 	// a name for either one alone would misdescribe the other.
 	if reason == ReasonReload {
-		return Outcome{Synced: refreshIfStale(ctx, cli, image.Ref, stateDir)}
+		return settleSync(refreshIfStale(ctx, cli, image.Ref, stateDir))
 	}
 
 	// Presence, not currency: an image the store does not hold at all leaves
 	// nothing to ask about and nothing to start.
 	if _, present := build.LocalRepoDigest(ctx, cli, image.Ref); !present {
-		return Outcome{Synced: forcePull(ctx, cli, image.Ref, stateDir)}
+		return settleSync(forcePull(ctx, cli, image.Ref, stateDir))
 	}
 
 	// Before the probe, not after: knowing the answer is a registry round-trip
 	// too, and off a tty there is nothing that could be done with it.
 	if !askable() {
-		return Outcome{}
+		return OutcomeUnsettled
 	}
 
 	store := imageprefetch.AheadOfStore(ctx, cli, image.Ref, stateDir)
@@ -232,9 +295,9 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 	case !store.Known:
 		// A probe that did not answer, or a locally built image: nothing was
 		// established, so nothing is claimed and nobody is asked.
-		return Outcome{}
+		return OutcomeUnsettled
 	case !store.Ahead:
-		return Outcome{Synced: store.Probed}
+		return settleSync(store.Probed)
 	}
 
 	ask := reason.offer()
@@ -245,7 +308,7 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 		// command asking it. Saying anything here would announce a session
 		// that is being torn down, and stamping a postponement would arm an
 		// idle reload for a session that will never idle.
-		return Outcome{Interrupted: true}
+		return OutcomeInterrupted
 	case !yes:
 		// Nothing new downloads here: the background prefetch already runs an
 		// immediate pass when the session opens, and a second fetch of the
@@ -253,13 +316,15 @@ func Sync(ctx context.Context, cli imageSource, image sessionplan.Image, stateDi
 		// because the question has just erased itself and a postponement the
 		// developer cannot see reads like one that was ignored.
 		ui.Info(ask.postponed)
-		return Outcome{Declined: true}
+		return OutcomeDeclined
 	}
-	// One value, read twice: the pull that landed is what makes the answer
-	// honourable, and a pull that failed leaves the developer where they
-	// already were rather than spending a container on nothing.
-	synced := forcePull(ctx, cli, image.Ref, stateDir)
-	return Outcome{Synced: synced, Accepted: synced}
+	// The pull that landed is what makes the answer honourable; one that
+	// failed leaves the developer where they already were rather than
+	// spending a container on nothing, so it settles as nothing at all.
+	if forcePull(ctx, cli, image.Ref, stateDir) {
+		return OutcomeAccepted
+	}
+	return OutcomeUnsettled
 }
 
 // Ensure guarantees the image referenced by `image.Ref` exists in the

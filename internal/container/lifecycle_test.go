@@ -438,7 +438,7 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 	// The start branch asks about a newer image before it dispatches; this
 	// test is about the dispatch, and an unstubbed refresh would pull out of
 	// the mock and stamp the pull cache in the developer's own home.
-	stubRefresh(t, imageplan.Outcome{})
+	stubRefresh(t, imageplan.OutcomeUnsettled)
 
 	startCalled := false
 	mock := &mockClient{

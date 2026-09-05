@@ -422,7 +422,7 @@ func TestShellStampsADeclinedRefresh(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Declined: true})
+	stubRefresh(t, imageplan.OutcomeDeclined)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
@@ -446,7 +446,7 @@ func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Interrupted: true})
+	stubRefresh(t, imageplan.OutcomeInterrupted)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err == nil {
@@ -472,7 +472,7 @@ func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Synced: true})
+	stubRefresh(t, imageplan.OutcomeCurrent)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
@@ -495,7 +495,7 @@ func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	reasons := stubRefresh(t, imageplan.Outcome{})
+	reasons := stubRefresh(t, imageplan.OutcomeUnsettled)
 
 	mock := &mockClient{inspectFn: runningContainer(nil)}
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
@@ -514,7 +514,7 @@ func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	reasons := stubRefresh(t, imageplan.Outcome{})
+	reasons := stubRefresh(t, imageplan.OutcomeUnsettled)
 
 	mock := &mockClient{inspectFn: stoppedContainer(nil)}
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
@@ -533,7 +533,7 @@ func TestShellStartRecreatesOnAnAcceptedRefresh(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
+	stubRefresh(t, imageplan.OutcomeAccepted)
 
 	mock := startPathMock("sha256:fresh")
 	plan := testPlan(t, testWorkspace(t), nil)
@@ -574,7 +574,7 @@ func TestShellStartKeepsTheContainerWhenTheRecreateCannotSucceed(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
+	stubRefresh(t, imageplan.OutcomeAccepted)
 
 	mock := startPathMock("sha256:fresh")
 	mock.listFn = func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
@@ -604,7 +604,7 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
+	stubRefresh(t, imageplan.OutcomeAccepted)
 
 	mock := startPathMock("sha256:fresh")
 	// The overlay pins its FROM to the base image's ID, so a store that
@@ -697,7 +697,7 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prefetched, _ := stubPrefetch(t)
-			stubRefresh(t, imageplan.Outcome{Synced: true, Accepted: true})
+			stubRefresh(t, imageplan.OutcomeAccepted)
 
 			execedID := ""
 			origExec := execShellFn
@@ -765,13 +765,13 @@ func TestShellStartWarnsAboutAContainerItIsActuallyJoining(t *testing.T) {
 	}{
 		{
 			name:    "an accepted recreate applies the fix instead of prescribing it",
-			refresh: imageplan.Outcome{Synced: true, Accepted: true},
+			refresh: imageplan.OutcomeAccepted,
 		},
 		{
 			// Nothing was replaced, so the container being joined really is
 			// short of what was asked for, and the advice stands.
 			name:     "a declined refresh leaves the mismatch to warn about",
-			refresh:  imageplan.Outcome{Declined: true},
+			refresh:  imageplan.OutcomeDeclined,
 			wantWarn: true,
 		},
 	} {
@@ -815,7 +815,7 @@ func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.Outcome{Declined: true})
+	stubRefresh(t, imageplan.OutcomeDeclined)
 
 	started := ""
 	mock := startPathMock("sha256:fresh")

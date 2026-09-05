@@ -230,7 +230,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "pull never neither probes nor prompts",
 			policy: "never", repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
-			want: Outcome{},
+			want: OutcomeUnsettled,
 		},
 		{
 			// A policy that has already said yes on every shell cannot
@@ -238,7 +238,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "pull always pulls without asking",
 			policy: "always", repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
-			wantPulls: 1, want: Outcome{Synced: true},
+			wantPulls: 1, want: OutcomeCurrent,
 		},
 		{
 			// There is no session to start otherwise, so the block is not a
@@ -246,13 +246,13 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "a missing image is pulled without asking",
 			policy: "auto", absent: true,
 			tty: true, answer: askedNo,
-			wantPulls: 1, want: Outcome{Synced: true},
+			wantPulls: 1, want: OutcomeCurrent,
 		},
 		{
 			name:   "a store a live probe proves current is not pulled",
 			policy: "auto", repoDgst: local, remote: local,
 			tty: true, answer: askedYes,
-			wantProbes: 1, want: Outcome{Synced: true},
+			wantProbes: 1, want: OutcomeCurrent,
 		},
 		{
 			// The same answer read from the shared cache: true when that probe
@@ -261,7 +261,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "a cached answer claims no sync",
 			policy: "auto", repoDgst: local, remote: local, warm: local,
 			tty: true, answer: askedYes,
-			want: Outcome{},
+			want: OutcomeUnsettled,
 		},
 		{
 			// The fingerprint of a local `toolbox build`: an automatic pull
@@ -269,7 +269,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "a locally built image abstains",
 			policy: "auto", repoDgst: "", remote: remote,
 			tty: true, answer: askedYes,
-			want: Outcome{},
+			want: OutcomeUnsettled,
 		},
 		{
 			// And the probe is not paid either: knowing the answer is a
@@ -277,31 +277,31 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "without a tty the session starts now and fetches behind",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: false, answer: askedYes,
-			want: Outcome{},
+			want: OutcomeUnsettled,
 		},
 		{
 			name:   "yes pulls synchronously",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
 			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantPulls: 1, wantProbes: 1,
-			want: Outcome{Synced: true, Accepted: true},
+			want: OutcomeAccepted,
 		},
 		{
 			name:   "no starts on the image already in the store",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedNo,
-			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: Outcome{Declined: true},
+			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: OutcomeDeclined,
 		},
 		{
 			// A ctrl+c is not the "no" it looks like from here: the developer
 			// stopped the command, so there is no session left to postpone a
-			// download for. Declined must stay false or the caller stamps a
-			// postponement and arms an idle reload for a session that will
-			// never idle.
+			// download for. It must not settle as OutcomeDeclined or the
+			// caller stamps a postponement and arms an idle reload for a
+			// session that will never idle.
 			name:   "ctrl+c stops the command rather than postponing",
 			policy: "auto", repoDgst: local, remote: remote,
 			tty: true, answer: askedAndStopped,
-			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: Outcome{Interrupted: true},
+			wantAsked: 1, wantElapsed: ui.ElapsedYes, wantProbes: 1, want: OutcomeInterrupted,
 		},
 		{
 			// The same question where a yes also discards the container the
@@ -312,7 +312,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
-			want: Outcome{Synced: true, Accepted: true},
+			want: OutcomeAccepted,
 		},
 		{
 			// The answer stands, the download did not: acting on it would
@@ -322,14 +322,14 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote, pullFails: true,
 			tty: true, answer: askedYes,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantPulls: 1, wantProbes: 1,
-			want: Outcome{},
+			want: OutcomeUnsettled,
 		},
 		{
 			name:   "a no where a container is at stake postpones like any other",
 			policy: "auto", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedNo,
 			wantAsked: 1, wantElapsed: ui.ElapsedNo, wantProbes: 1,
-			want: Outcome{Declined: true},
+			want: OutcomeDeclined,
 		},
 		{
 			// `always` still pulls without asking, and still rebuilds nothing:
@@ -339,7 +339,7 @@ func TestSyncAsksBeforeSpendingTheDevelopersTime(t *testing.T) {
 			name:   "pull always spends no container it was not asked about",
 			policy: "always", reason: ReasonStart, repoDgst: local, remote: remote,
 			tty: true, answer: askedYes,
-			wantPulls: 1, want: Outcome{Synced: true},
+			wantPulls: 1, want: OutcomeCurrent,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -398,8 +398,8 @@ func TestSyncStaysSilentWhenTheProbeFails(t *testing.T) {
 		PullPolicy: "auto",
 	}, t.TempDir(), ReasonCreate)
 
-	if got != (Outcome{}) {
-		t.Errorf("Sync() = %+v, want the zero outcome", got)
+	if got != OutcomeUnsettled {
+		t.Errorf("Sync() = %+v, want OutcomeUnsettled", got)
 	}
 	if put.times != 0 || mock.docker().ImagePullCalls() != 0 {
 		t.Errorf("asked %d times and pulled %d times, want neither", put.times, mock.docker().ImagePullCalls())
@@ -436,7 +436,44 @@ func TestSyncOnAReloadNeverAsks(t *testing.T) {
 	if n := mock.docker().ImagePullCalls(); n != 1 {
 		t.Errorf("ImagePull called %d times, want 1 — a cold TTL cache must still pull", n)
 	}
-	if got != (Outcome{Synced: true}) {
-		t.Errorf("Sync() = %+v, want only Synced — a reload can neither accept nor decline", got)
+	if got != OutcomeCurrent {
+		t.Errorf("Sync() = %+v, want OutcomeCurrent — a reload can neither accept nor decline", got)
+	}
+}
+
+// TestOutcomeReadsBackAsTheCaseItIs pins the two derivations the settlement
+// value replaced fields with. Synced is the load-bearing one — it is what
+// Shell hands the prefetch as Input.StartSynced, and the whole point of
+// deriving it is that only a landed download may claim it: a decline, an
+// interrupt and an unsettled sync each downloaded nothing.
+//
+// String is pinned in the same table because it is read on a failing test or a
+// warning, and the case that must never appear there is a settlement printed
+// as the zero value's name — "unsettled" is the claim that nothing happened.
+func TestOutcomeReadsBackAsTheCaseItIs(t *testing.T) {
+	tests := []struct {
+		outcome    Outcome
+		wantString string
+		wantSynced bool
+	}{
+		{OutcomeUnsettled, "unsettled", false},
+		{OutcomeCurrent, "current", true},
+		{OutcomeDeclined, "declined", false},
+		{OutcomeInterrupted, "interrupted", false},
+		{OutcomeAccepted, "accepted", true},
+		// A constant added without a case in String: it must not borrow the
+		// zero value's name, which would report a settlement as "nothing was
+		// established" — the one claim this type exists to make unspellable.
+		{Outcome(99), "Outcome(99)", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.wantString, func(t *testing.T) {
+			if got := tc.outcome.String(); got != tc.wantString {
+				t.Errorf("String() = %q, want %q", got, tc.wantString)
+			}
+			if got := tc.outcome.Synced(); got != tc.wantSynced {
+				t.Errorf("Synced() = %v, want %v — only a landed download proves the store current", got, tc.wantSynced)
+			}
+		})
 	}
 }

@@ -511,15 +511,17 @@ session on what is already there.
 
 What a yes costs beyond the wait is the [Prompt Stake](#prompt-stake), and it
 is what selects the [Elapsed Answer](#elapsed-answer) — the two entries carry
-that rule and why it inverts here. Honouring a yes is `Outcome.Accepted`, which
-is the answer *and* the pull that landed, and is deliberately distinct from
-`Synced` in both directions: a pull happens on cases nobody was asked about,
-and a yes the registry could not honour would spend a container on an image
-that never arrived. `container.replaceForRefresh` then destroys the stopped container and
+that rule and why it inverts here. Honouring a yes is `imageplan.OutcomeAccepted`,
+which is the answer *and* the pull that landed, and is deliberately distinct
+from the derived `Outcome.Synced()` in both directions: a pull happens on cases
+nobody was asked about, and a yes the registry could not honour would spend a
+container on an image that never arrived. The settlements are one value rather
+than a set of bools precisely so that "accepted but nothing downloaded" cannot
+be spelled. `container.replaceForRefresh` then destroys the stopped container and
 the branch becomes the `ActionCreate` that already pulls, creates and starts —
 not the reload, which exists to replace a *live* session and carries a
 handover payload there is nothing here to fill. Two rules guard the teardown.
-**Everything that can fail runs first**: the pull (in `Accepted`), the
+**Everything that can fail runs first**: the pull (in `OutcomeAccepted`), the
 `:local` overlay build, and the create's own port pre-flight, since no removal
 can undo a host port another container holds — each of the three fails the
 shell with the container intact. And **the container is read a second time**,
@@ -546,8 +548,8 @@ attaches to the same stdin a moment later and would otherwise receive the tail
 of an answer as its first keystrokes. Raw mode also takes `ctrl+c` from the
 terminal driver, so the prompt raises the interrupt itself **and reports it**:
 declining this download and stopping the command behind it are different asks,
-and `Outcome.Interrupted` is what keeps the second from being recorded as the
-first — a ctrl+c stamps no postponement, announces nothing, and the session is
+and `imageplan.OutcomeInterrupted` is what keeps the second from being recorded
+as the first — a ctrl+c stamps no postponement, announces nothing, and the session is
 abandoned rather than built, because whether the signal context has cancelled
 by then is a matter of scheduling. The countdown is **visible**
 because a few seconds of silence is indistinguishable from a hang, and a
