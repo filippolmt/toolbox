@@ -223,12 +223,11 @@ func brokenRename(t *testing.T) string {
 // what the reload tests drive, so pinning the two writers together is what
 // keeps those tests honest about the production format.
 func TestReloadMarkerWriterMatchesGo(t *testing.T) {
-	// The awkward shapes a working directory actually takes. The trailing
-	// newline under test is the writer's own — `print` adds one — and
-	// TakeMarker must strip exactly that. The one shape the format cannot
-	// carry is a directory name that itself ends in a newline; TakeMarker says
-	// so, and no reload has ever been asked from one.
-	for _, name := range []string{"plain", "with space", "trailing space ", "unicode-é"} {
+	// The awkward shapes a working directory actually takes. Every byte but NUL
+	// and `/` is legal in a directory name, and the last case is the one that
+	// pins the trim: the writer's own newline and a newline that belongs to
+	// the path are the same byte, so TakeMarker must undo exactly one.
+	for _, name := range []string{"plain", "with space", "trailing space ", "unicode-é", "trailing newline\n"} {
 		t.Run(name, func(t *testing.T) {
 			src, _, marker := reloadFixture(t)
 			cwd := mkdirCwd(t, name)
@@ -372,5 +371,37 @@ func TestReloadMarkerWriterIgnoresAStaleTemporary(t *testing.T) {
 
 	if got, requested := reload.TakeMarker(marker); !requested || got != cwd {
 		t.Errorf("TakeMarker = (%q, %v), want (%q, true) — a stale temporary was taken for the request", got, requested, cwd)
+	}
+}
+
+// TestReloadMarkerWriterRefusesADirectoryMarker pins the failure that looks
+// like a success. `mv file dir` does not overwrite the directory — it moves
+// the file *into* it — so a marker path that is a directory would let the
+// writer report a reload, exit the shell, and strand the request where the
+// host never looks. The developer would lose the session and get no reload:
+// the exact silent loss the marker exists to prevent, arrived at from the
+// other side.
+//
+// Nothing in the tree creates a directory there today — the host builds the
+// path from the state mount and the container name, both pinned — so this
+// guards a state no producer currently reaches. It is here because the cost is
+// one flag and the failure is silent.
+func TestReloadMarkerWriterRefusesADirectoryMarker(t *testing.T) {
+	src, state, marker := reloadFixture(t)
+	if err := os.Mkdir(marker, 0o755); err != nil {
+		t.Fatalf("seed a directory at the marker path: %v", err)
+	}
+
+	if code := runToolboxReload(t, src, mkdirCwd(t, "work"), marker); code != 1 {
+		t.Errorf("toolbox-reload exited %d with a directory at the marker path, want 1", code)
+	}
+	if _, requested := reload.TakeMarker(marker); requested {
+		t.Error("a directory at the marker path was taken for a reload request")
+	}
+	if got := dirNames(t, marker); len(got) != 0 {
+		t.Errorf("the writer moved %v inside the directory, where the host never looks", got)
+	}
+	if got := dirNames(t, state); !slices.Equal(got, []string{filepath.Base(marker)}) {
+		t.Errorf("state dir holds %v, want just the directory it was seeded with", got)
 	}
 }

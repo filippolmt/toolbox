@@ -141,18 +141,21 @@ func TouchDeclined(stateDir, containerName string) error {
 // one is not — that error is almost always simply "absent", and treating an
 // I/O error as a reload would tear a session down on a failing filesystem.
 //
-// The trim is the one thing the format cannot express: a working directory
-// whose own name ends in a newline comes back a character short. The cwd is a
-// nicety with a safe fallback, so the alternative — a length prefix, or no
-// trailing newline for a file a developer may well `cat` — buys nothing worth
-// the format.
+// The trailing newline is the writer's, and exactly one of it is removed —
+// never every trailing newline. A directory name may itself end in one, and
+// eating it would hand the consumer a path that is a character short: it fails
+// validation against the workspace target and silently falls back to the
+// canonical directory, so the developer lands somewhere other than where they
+// typed the reload. Both writers are pinned to add exactly one newline by
+// TestReloadMarkerWriterMatchesGo, which is what makes undoing exactly one the
+// right inverse.
 func TakeMarker(path string) (cwd string, requested bool) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return "", false
 	}
 	_ = os.Remove(path)
-	return strings.TrimRight(string(body), "\r\n"), true
+	return strings.TrimSuffix(string(body), "\n"), true
 }
 
 // WriteMarker publishes a reload request at path. Production writes come from
