@@ -235,3 +235,60 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 		}
 	}
 }
+
+// rulePathExemptions lists `internal/<pkg>` directories deliberately left
+// unclaimed by every rule's `paths:` frontmatter. Empty on purpose: a package
+// with no guardrail worth loading is a claim about the package, so make it
+// here explicitly rather than by silently omitting a glob.
+var rulePathExemptions = map[string]bool{}
+
+// TestEveryPackageIsClaimedByARule asserts every internal/ package is scoped by
+// at least one rule file, so editing it loads a guardrail.
+//
+// The third direction, and the one neither sibling covers.
+// TestRulePathsResolve walks rule → disk (does this glob still point at
+// something?) and TestRuleMentionsAreCovered walks body → frontmatter (is the
+// package this rule talks about in its own paths?). Both are satisfied by a
+// package no rule has ever heard of: internal/fsx owned the filesystem
+// primitives CLAUDE.md tells every package to call, and an edit there loaded
+// nothing at all.
+func TestEveryPackageIsClaimedByARule(t *testing.T) {
+	root := repoRoot(t)
+	rulesDir := filepath.Join(root, ".claude", "rules")
+	ruleFiles, err := os.ReadDir(rulesDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", rulesDir, err)
+	}
+
+	var globs []string
+	for _, e := range ruleFiles {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			globs = append(globs, frontmatterPaths(t, filepath.Join(rulesDir, e.Name()))...)
+		}
+	}
+
+	pkgs, err := os.ReadDir(filepath.Join(root, "internal"))
+	if err != nil {
+		t.Fatalf("read internal/: %v", err)
+	}
+	for _, p := range pkgs {
+		if !p.IsDir() {
+			continue
+		}
+		pkg := "internal/" + p.Name()
+		if rulePathExemptions[pkg] {
+			continue
+		}
+		claimed := false
+		for _, g := range globs {
+			if globCoversPackage(g, pkg) {
+				claimed = true
+				break
+			}
+		}
+		if !claimed {
+			t.Errorf("%s is claimed by no rule's paths: — editing it loads no guardrail; "+
+				"add a glob to the rule that owns it, or exempt it in rulePathExemptions", pkg)
+		}
+	}
+}
