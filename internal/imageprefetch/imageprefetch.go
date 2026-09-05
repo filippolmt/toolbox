@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -153,15 +154,28 @@ type registryStore interface {
 // Cancelling ctx on shell exit also cancels an in-flight pull, which #724
 // measured to be safe: a partial ingest is never a blob and expires on its
 // own, and the next pull resumes from what already landed.
-func Start(ctx context.Context, cli registryStore, in Input) {
+//
+// The returned channel closes once the poller and every poll it started have
+// returned. The CLI ignores it — the shell exits and the process goes with it
+// — but "stopped with the session" is otherwise unassertable: a test can only
+// count goroutines, and that number moves for goroutines it never started, so
+// it reads a poller still writing as one already gone.
+func Start(ctx context.Context, cli registryStore, in Input) <-chan struct{} {
+	done := make(chan struct{})
 	if in.Ref == "" || in.StateDir == "" {
-		return
+		close(done)
+		return done
 	}
 	// Read on the caller's goroutine: the alarm period is fixed for the
 	// poller's life, and a poller that kept reading the package var would
 	// race whoever rewinds it.
 	tick := tickInterval
+	// A poll outlives the goroutine that reissued it, so the two are waited on
+	// separately: the ticker loop returns on ctx.Done, polls drain after it.
+	var polls sync.WaitGroup
 	go func() {
+		defer close(done)
+		defer polls.Wait()
 		// The shell start's synchronous refresh, when it actually reached the
 		// registry, is this probeTTL's probe: stamping it here is what stops the
 		// poller re-asking minutes after the shell just asked. The banner is
@@ -180,7 +194,7 @@ func Start(ctx context.Context, cli registryStore, in Input) {
 		// session shorter than tickInterval would otherwise never refresh the
 		// banner at all. Redundant work is what the shared stamp prevents —
 		// if a sibling probed within probeTTL this returns without a syscall.
-		reissue := newPoller(ctx, cli, in)
+		reissue := newPoller(ctx, cli, in, &polls)
 		reissue()
 
 		ticker := time.NewTicker(tick)
@@ -201,6 +215,7 @@ func Start(ctx context.Context, cli registryStore, in Input) {
 			}
 		}
 	}()
+	return done
 }
 
 // newPoller returns a function that cancels the poll it started last time and
@@ -210,7 +225,7 @@ func Start(ctx context.Context, cli registryStore, in Input) {
 // flight. A reissued poll usually finds the attempt stamp fresh and returns
 // without a syscall — the cancel is the point, the reissue only keeps the
 // alarm and the act on the same clock.
-func newPoller(ctx context.Context, cli registryStore, in Input) func() {
+func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.WaitGroup) func() {
 	var cancelPrev context.CancelFunc
 	return func() {
 		if cancelPrev != nil {
@@ -218,7 +233,11 @@ func newPoller(ctx context.Context, cli registryStore, in Input) func() {
 		}
 		pollCtx, cancel := context.WithCancel(ctx)
 		cancelPrev = cancel
-		go Poll(pollCtx, cli, in)
+		polls.Add(1)
+		go func() {
+			defer polls.Done()
+			Poll(pollCtx, cli, in)
+		}()
 	}
 }
 

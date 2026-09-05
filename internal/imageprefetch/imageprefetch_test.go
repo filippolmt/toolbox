@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -336,22 +335,15 @@ func TestStartRefusesAnIncompleteInput(t *testing.T) {
 // the session: a leaked poller would outlive the shell it belongs to.
 func TestStartStopsWithTheContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	before := goroutineCount()
-	Start(ctx, (&pollStub{}).docker(), Input{Ref: testRef, StateDir: t.TempDir()})
+	done := Start(ctx, (&pollStub{}).docker(), Input{Ref: testRef, StateDir: t.TempDir()})
 	cancel()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if goroutineCount() <= before {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the poller is still running after cancel: it must stop with the session")
 	}
-	t.Fatalf("poller goroutine still running after cancel (%d, was %d)", goroutineCount(), before)
 }
-
-// goroutineCount is the leak probe for the poller goroutine.
-func goroutineCount() int { return runtime.NumGoroutine() }
 
 // newerVersion is the whole CLI axis: a wrong answer either nags about a
 // release that does not exist or hides one that does.
@@ -881,8 +873,7 @@ func TestStartCancelsAHungPollAtTheNextTick(t *testing.T) {
 	}
 
 	// The cancelled poll finishes on its own — a cancelled pull is an error
-	// like any other, so it still publishes. Waiting for that last write is
-	// what keeps the goroutine from racing the temp dir's removal.
+	// like any other, so it still publishes.
 	waitFor(t, func() bool { return readCache(t, dir) != "" })
 }
 
@@ -893,14 +884,14 @@ func TestStartCancelsAHungPollAtTheNextTick(t *testing.T) {
 // one rather than merely wasting cycles.
 func startPoller(t *testing.T, cli registryStore, in Input) {
 	t.Helper()
-	before := goroutineCount()
 	ctx, cancel := context.WithCancel(t.Context())
-	Start(ctx, cli, in)
+	done := Start(ctx, cli, in)
 	t.Cleanup(func() {
 		cancel()
-		deadline := time.Now().Add(5 * time.Second)
-		for goroutineCount() > before && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the poller outlived its test")
 		}
 	})
 }
