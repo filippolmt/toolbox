@@ -285,13 +285,14 @@ Concretely: `cmd.sessionIntent` + `cmd.startSession` (`cmd/session.go`). Cobra
 keeps the flag globals; `runShell` resolves the `shell` flags and
 `openWorktreeSession` its arguments into one intent, and everything either
 command *does* with a session lives past that boundary — consume the
-[Session Reload](#session-reload) handover, resolve the host once, migrate
+[Session Reload](#session-reload) handover, resolve the host once, resolve the
+[Proximo Availability Gate](#proximo-availability-gate), migrate
 legacy toolbox state, offer the bridge install tip, construct the Docker
 client, resolve the running image's repo digest, call
 [Session Plan](#session-plan), seed a [Worktree](#worktree) checkout, install
 the signal handler and attach. The intent carries `sessionplan.PlanInput`
 itself rather than a parallel copy of its fields — the caller fills its own
-half, the assembly overwrites the three it computes — so the seam cannot drift
+half, the assembly overwrites the fields it resolves — so the seam cannot drift
 from the plan it feeds. The ordering that assembly must hold, and the tests
 that pin it, are the container-runtime rule's half of this concept.
 

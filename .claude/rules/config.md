@@ -33,7 +33,7 @@ semantic layer in cobra-free `internal/configedit` (`--where` resolution, header
 
 ### `mounts` writers
 
-`mounts` writers emit only shapes `mergeMounts` reads — `disable` validates the name first (unknown patch name breaks the next load), defaults can only be disabled, never removed. The disable shape itself is written in exactly one place, `disableMountIn`, shared by the single-name `MountDisabled` and the reconciling `MountsDisabled`: it was stated twice before and that is a rule that drifts.
+`mounts` writers emit only shapes `mergeMounts` reads — `disable` validates the name first (unknown patch name breaks the next load), defaults can only be disabled, never removed. The disable shape itself is written in exactly one place, `disableMountIn`, shared by the single-name `MountDisabled` and the reconciling `MountsDisabled`.
 
 ### Rendering
 
@@ -43,7 +43,7 @@ semantic layer in cobra-free `internal/configedit` (`--where` resolution, header
 
 **One validated write seam**: `configedit.ApplyChecked(target, cwd, Mutator)` is the ONLY way any surface writes a config file — it renders the candidate in memory, validates it through the doctor in the layer `target` occupies, and writes only if that passes (so no transient invalid file exists and there is nothing to roll back). `configio.UpsertFile` was deleted for exactly this reason: an unvalidated write lane in the leaf package. Every `cmd` writer surface, `EnableSDD`, `configui`'s save and the `shell --create` bootstrap all route through it, each taking `cwd`. An error always means nothing was written, so `reportWrite` must not run.
 
-**One vocabulary, and the `cmd` edge applies it**: a writer command is a named [Pending Mutation](../../CONTEXT.md#pending-mutation) constructor plus one `ApplyChecked` call — never a typed writer wrapping it, which is what let the CLI's edits become unrenderable and one node rule be spelled twice. Two consequences to keep: every write path can be *shown* through `configedit.Render` (what a `--dry-run` would need, pinned by `TestEveryWriterMutationRendersWithoutTouchingDisk`), and a command whose halves must land together composes them into **one** mutation rather than two calls — `configedit.Shell` writes `shells.<name>.path` and its `env` overlay in the same document, so `shells add --env` commits both or neither (`TestShellWritesPathAndEnvAsOneMutation`).
+**One vocabulary, and the `cmd` edge applies it**: a writer command is a named [Pending Mutation](../../CONTEXT.md#pending-mutation) constructor plus one `ApplyChecked` call — never a typed writer wrapping it. Two guardrails ride on that: every write path stays renderable through `configedit.Render` (`TestEveryWriterMutationRendersWithoutTouchingDisk`), and a command whose halves must land together composes them into **one** mutation, never two `ApplyChecked` calls — `configedit.Shell` is that case (`TestShellWritesPathAndEnvAsOneMutation`).
 
 **`existed` comes from the write, never from a stat**: `ApplyChecked` returns `(changed, existed, err)`, `existed` being what its own read found, and `reportWrite`'s created-vs-updated line is drawn from it. A `cmd` site that stats the target itself is asking a question the write already answered, through a window in which the two answers can differ (`TestApplyCheckedReportsWhetherTheFileExisted`).
 

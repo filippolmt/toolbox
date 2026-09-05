@@ -147,9 +147,10 @@ func Plan(in PlanInput) (Result, error) {
 // Merge returns the post-merge mount list (defaults retargeted by
 // MountsRoot, then patched/replaced/appended/disabled by cfg.Mounts) for the
 // given host.
-// Pure: no filesystem side-effects, no workspace bind. Used by tests
-// asserting merge contracts and by callers that want to inspect the
-// resolved set without materialising sources.
+// It materialises no source and binds no workspace, so callers can inspect
+// the resolved set without touching the filesystem the plan describes —
+// but it is not side-effect-free: resolving the gate below queries the
+// proximo binary and stats the CA it names.
 //
 // It resolves the proximo gate itself because its callers are read-only
 // surfaces answering one question each (`mounts list`, `config doctor`),

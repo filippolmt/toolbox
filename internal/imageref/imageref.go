@@ -58,9 +58,10 @@ func ResolveImage(image, registryMirror string) string {
 // entry whose repo equals ref's repo (registry path minus any tag/digest).
 // Returns "" when no entry matches — e.g. a locally built image carries no
 // repo digest — so callers treat an unresolvable digest as "unknown" rather
-// than guessing. Two host-side consumers, both in session-reload: it
-// stamps TOOLBOX_IMAGE_DIGEST at container creation, and the update prefetch
-// reads it back off the local store to decide whether to pull.
+// than guessing. Host-side it feeds the TOOLBOX_IMAGE_DIGEST stamp written at
+// container creation, the update prefetch that reads that stamp back off the
+// local store to decide whether to pull, and the reclamation sweep, which
+// nominates an image whose repo digest survives its lost tag.
 func RepoDigest(ref string, repoDigests []string) string {
 	want := repoOf(ref)
 	for _, rd := range repoDigests {
