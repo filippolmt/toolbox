@@ -6,8 +6,8 @@ paths:
   - "internal/configrender/**"
   - "internal/configui/**"
   - "internal/configexample/**"
-  # The host-filesystem primitives configio facades over — the facade
-  # boundary they must not drift from is stated below:
+  # fsx holds the primitives configio callers import directly — an edit there
+  # is a config-write concern.
   - "internal/fsx/**"
   # The config/shells/mounts/worktree CLI surfaces write through the
   # configedit seam documented here. cmd/** as a whole belongs to
@@ -25,7 +25,7 @@ paths:
 
 ### Package boundaries
 
-semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, writers, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`); the host-filesystem primitives it facades over live one layer below, in `internal/fsx`. Never reimplement or fork an `fsx` primitive here — a facade forwards, it does not reinterpret (`TestGlobalConfigPath`, `TestAtomicWriteFileLeavesNoTemp`). → [shared-fs-primitives](../../docs/internals/host-cli.md#shared-fs-primitives)
+semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, writers, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`); the host-filesystem primitives live one layer below, in `internal/fsx`. Never reimplement, fork **or re-export** an `fsx` primitive here — a caller that needs one imports `fsx` directly (a fork would have to restate what `TestAtomicWriteFileLeavesNoTemp` already holds; a re-export is caught by `TestNoPackageReExportsAnFsxPrimitive`, whose own classifier is pinned by `TestForwardedPrimitiveTellsAnAliasFromACaller` so it cannot go green by seeing nothing). The leaf constraint is about what `configio` may *import*, not about giving config callers a second name for a primitive. → [shared-fs-primitives](../../docs/internals/host-cli.md#shared-fs-primitives)
 
 ### `--where` targeting
 

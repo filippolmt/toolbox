@@ -48,7 +48,7 @@ func ApplyChecked(target, cwd string, mutate Mutator) (changed bool, err error) 
 		// thought they were editing.
 		return false, fmt.Errorf("%s: %w", target, firstError(findings))
 	}
-	if err := configio.AtomicWriteFile(target, candidate, 0o600); err != nil {
+	if err := fsx.AtomicWriteFile(target, candidate, 0o600); err != nil {
 		return false, err
 	}
 	return true, nil
