@@ -1538,6 +1538,15 @@ one boolean. Resolving the gate into a value and threading it makes the claim
 true rather than aspirational: the mount and the env can no longer disagree
 with the decision they follow, because they are answers *on* it.
 
+Threading it is necessary and not sufficient, and the residual trap is worth
+naming: the derivation also rides inside `mountplan.Merge`, so *any* second
+merge re-pays it. A session that read the state directory through
+`mountplan.StateDirPath` after planning did exactly that — a subprocess spawn
+hiding behind what reads like a path lookup. The merge already settled the
+answer, so the plan publishes it (`mountplan.Result.StateDir`) and the session
+reads it there. The rule that generalises: once a pipeline holds a plan, ask
+the plan, never the function that would rebuild one.
+
 ### Worktree
 
 The per-branch worktree subsystem behind `toolbox worktree` (create / open /

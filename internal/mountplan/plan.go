@@ -48,6 +48,13 @@ type Result struct {
 	Binds      []Bind
 	Warnings   []string
 	WorkingDir string
+	// StateDir is the host path of the toolbox state mount for this plan, or
+	// "" when nothing mounts there any more — StateDirPath's answer, read off
+	// the merge this plan already performed. It is here rather than re-derived
+	// by the caller because re-deriving means merging a second time, and the
+	// merge resolves the proximo gate: a session that asked twice paid two
+	// `proximo config ca-path` spawns to describe one set of mounts.
+	StateDir string
 }
 
 // WorktreeGitDirMountName is the Name carried by the bind that PlanInput.GitDir
@@ -141,7 +148,7 @@ func Plan(in PlanInput) (Result, error) {
 		workingDir = mirror
 	}
 
-	return Result{Binds: binds, Warnings: warnings, WorkingDir: workingDir}, nil
+	return Result{Binds: binds, Warnings: warnings, WorkingDir: workingDir, StateDir: stateDirIn(in.Host, merged)}, nil
 }
 
 // Merge returns the post-merge mount list (defaults retargeted by
@@ -266,10 +273,18 @@ func StateDirPath(host fsx.Host, cfg *config.Config, profile *Profile) (string, 
 	if err != nil {
 		return "", err
 	}
+	return stateDirIn(host, merged), nil
+}
+
+// stateDirIn is the lookup itself, over an already-merged set: the sole
+// spelling of "which host directory is the state mount", shared by Plan (which
+// merged for its own reasons and publishes the answer on Result) and
+// StateDirPath (which merges to answer this question alone).
+func stateDirIn(host fsx.Host, merged []config.Mount) string {
 	for _, m := range merged {
 		if m.Target == StateMountTarget {
-			return filepath.Clean(host.Expand(m.Source)), nil
+			return filepath.Clean(host.Expand(m.Source))
 		}
 	}
-	return "", nil
+	return ""
 }

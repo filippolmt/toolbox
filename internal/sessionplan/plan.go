@@ -327,11 +327,11 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		return nil, err
 	}
 
-	// Host path of the state mount, for the host-side update prefetch.
-	stateDir, err := mountplan.StateDirPath(in.Host, in.Cfg, in.Profile)
-	if err != nil {
-		return nil, err
-	}
+	// Host path of the state mount, for the host-side update prefetch — read
+	// off the plan above, never re-derived: mountplan.StateDirPath merges a
+	// second time, and the merge resolves the proximo gate, so asking here is
+	// the second `proximo config ca-path` spawn one session used to pay.
+	stateDir := mp.StateDir
 
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.

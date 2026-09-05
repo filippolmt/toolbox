@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -14,6 +13,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
+	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -158,18 +158,9 @@ func createPathMock(repoDigest string) *mockClient {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 		imgInspFn: func(_ context.Context, ref string) (client.ImageInspectResult, error) {
-			return dockertest.ImageInspectResult(repoOf(ref), repoDigest), nil
+			return dockertest.ImageInspectResult(imageref.Repo(ref), repoDigest), nil
 		},
 	}
-}
-
-// repoOf strips the tag from an image ref so a fake RepoDigests entry matches
-// what imageref.RepoDigest looks for.
-func repoOf(ref string) string {
-	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
-		return ref[:i]
-	}
-	return ref
 }
 
 // On the create path the container does not exist yet, so the baseline comes
@@ -391,7 +382,7 @@ func TestShellPrefetchAndStampTrackTheBaseRefNotTheOverlay(t *testing.T) {
 		if ref == localimage.LocalRef {
 			return client.ImageInspectResult{}, nil
 		}
-		return dockertest.ImageInspectResult(repoOf(ref), pulled), nil
+		return dockertest.ImageInspectResult(imageref.Repo(ref), pulled), nil
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)

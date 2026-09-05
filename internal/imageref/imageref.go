@@ -63,24 +63,30 @@ func ResolveImage(image, registryMirror string) string {
 // local store to decide whether to pull, and the reclamation sweep, which
 // nominates an image whose repo digest survives its lost tag.
 func RepoDigest(ref string, repoDigests []string) string {
-	want := repoOf(ref)
+	want := Repo(ref)
 	for _, rd := range repoDigests {
 		repo, digest, ok := strings.Cut(rd, "@")
 		if !ok {
 			continue
 		}
-		if repoOf(repo) == want {
+		if Repo(repo) == want {
 			return digest
 		}
 	}
 	return ""
 }
 
-// repoOf strips any tag and digest suffix from an image ref, leaving the
-// bare registry path (`host[:port]/path`). The tag colon is the last colon
-// after the last slash, so a registry-host port (e.g. `localhost:5000/img`)
-// is not mistaken for a tag.
-func repoOf(ref string) string {
+// Repo strips any tag and digest suffix from an image ref, leaving the bare
+// registry path (`host[:port]/path`). The tag colon is the last colon after
+// the last slash, so a registry-host port (e.g. `localhost:5000/img`) is not
+// mistaken for a tag.
+//
+// Exported because it is the rule RepoDigest matches entries by, and callers
+// that build or read a RepoDigests list need the same answer: a second
+// spelling of it — internal/container's prefetch fakes carried one that
+// stripped the tag but not the digest — is a fake that can agree with a stale
+// rule while the real one moves.
+func Repo(ref string) string {
 	if i := strings.IndexByte(ref, '@'); i >= 0 {
 		ref = ref[:i]
 	}
