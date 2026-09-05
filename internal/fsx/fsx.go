@@ -1,7 +1,9 @@
-// Package fsx holds the small set of host-filesystem primitives that more
-// than one toolbox package needs: strict home-directory resolution, tilde
-// expansion, and crash-safe atomic file writes. It imports only the stdlib
-// so every other internal package can depend on it without cycle risk.
+// Package fsx holds the host-filesystem primitives that more than one
+// toolbox package needs: strict home-directory resolution, tilde expansion,
+// crash-safe atomic file writes, TTL-gated staleness markers, and the Host
+// value that carries a resolved home plus a binary lookup. It imports only
+// the stdlib so every other internal package can depend on it without cycle
+// risk.
 //
 // Semantics are deliberately strict — callers that want best-effort
 // behaviour (tolerating an empty or unresolvable home) keep using
