@@ -18,7 +18,7 @@ Prefer not to hand-edit YAML? [`toolbox config ui`](commands.md#config-ui) is an
 
 Configuration is loaded from (highest priority first):
 
-1. `TOOLBOX_*` environment variables — **only** the four env-bound keys (`image`, `registry_mirror`, `pull`, `bridge`); for those they override every file layer below. Every other `TOOLBOX_*` var is ignored (viper's `AutomaticEnv` binds only these keys).
+1. `TOOLBOX_*` environment variables — **only** the env-bound keys (`image`, `registry_mirror`, `pull`, `bridge`, `peer_messaging`); for those they override every file layer below. Every other `TOOLBOX_*` var is ignored (viper's `AutomaticEnv` binds only these keys).
 2. `--config` flag
 3. The nearest `.toolbox.yaml` walking up from the current working directory (search stops at `$HOME` or the filesystem root) — running `toolbox shell` from any subdirectory of a workspace still picks up that workspace's project config
 4. `~/.toolbox.yaml` (global)

@@ -118,7 +118,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Publishing ports & OAuth callbacks.** `toolbox shell -p <port>` forwards host ports docker-style; `--oauth <tool>` expands the documented recipe for CLIs with OAuth callback listeners (`-B` bridges container-loopback binds). → [docs/commands.md](docs/commands.md#publishing-ports)
 
-**Bridge (browser / editor / proximo / sound).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and `proximo up|down|status` reach the host's browser, editor, and proximo binary, and herdr's agent chimes reach the host's audio output — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
+**Bridge (browser / editor / proximo / sound).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and an allowlisted set of `proximo` subcommands reach the host's browser, editor, and proximo binary, and herdr's agent chimes reach the host's audio output — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
 
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 
