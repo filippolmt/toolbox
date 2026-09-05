@@ -1109,22 +1109,32 @@ so its `COPY --link` layer comes back with a fresh digest whenever the
 stage re-executes. Distinct from Archive Drift, which moves layers the
 stage sits on rather than the stage's own output.
 
-Concretely: `fetch-omz` and `fetch-brew` clone git repositories, and a
-shallow fetch does not produce a reproducible pack file.
-`freeze-mtimes` normalises timestamps, which is what makes the other
-fetch stages reproducible, but it cannot normalise content.
+`freeze-mtimes` normalises timestamps, which is what makes a stage that
+unpacks a release artefact reproducible, but it cannot normalise
+content. The two that clone git repositories instead —
+`fetch-omz` and `fetch-brew` — need `freeze-git` as well, and it is the
+answer to this term rather than a second convenience: it makes a
+checkout a function of the commit it pins by recompressing the pack
+locally (what upload-pack sends is the server's choice, and it varies),
+dropping the reflog, and reading the index back from `HEAD` with its
+stat cache zeroed. Neither stage can simply drop `.git`: Homebrew *is* a
+git checkout, and `omz update` needs one.
 
-`rtk-builder` was first counted here and does not belong: on amd64 its
-binary comes from a checksummed tarball and is identical across builds.
+`rtk-builder` was first counted here and does not belong, on either
+arch. On amd64 its binary comes from a checksummed tarball; on arm64 it
+is compiled, but `--locked` pins the dependency graph and the paths
+rustc records are container paths, and both are identical across builds.
 Its layer moved because the COPY named a single file, and a `--link`
 layer stamps the destination directories it has to synthesise with the
-build clock — a defect of the copy, not of the stage's output. The cost stays invisible while BuildKit reuses the
-stage and appears in full whenever anything invalidates it — an archive
-update, or a lost build cache.
+build clock — a defect of the copy, not of the stage's output. What does
+move the arm64 binary is its floating base tag, which is Archive Drift.
+The cost of either stays invisible while BuildKit reuses the stage and
+appears in full whenever anything invalidates it — an archive update, or
+a lost build cache.
 
 Why the term exists: `COPY --link` is what buys a bump the price of one
 layer, and that guarantee is worth exactly as much as the reproducibility
-of the stage behind it. Two stages do not hold up their end, and the gap
+of the stage behind it. Two stages did not hold up their end, and the gap
 had no name because the ADR that introduced the ordering had only
 measured mtimes.
 

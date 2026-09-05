@@ -101,6 +101,22 @@ ARG SHFMT_VERSION=3.14.0
 # against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
 # bookworm ships 2.36, no aarch64-musl release. Revisit when upstream
 # publishes aarch64-musl OR Azure CLI apt repo gains trixie suite.
+#
+# The arm64 leg needs no reproducibility treatment, which is not what it looks
+# like: `cargo install` compiles here, and compiling is the usual place a build
+# clock and an absolute path get baked in. Measured on a native arm64 daemon,
+# two `--no-cache` builds produced the same `COPY --link` layer digest — the
+# tag pins the source, `--locked` pins the dependency graph, the paths rustc
+# records are container paths that do not vary between builds, and the `touch`
+# below already freezes what the stage writes. So no SOURCE_DATE_EPOCH and no
+# --remap-path-prefix: they would be ceremony against a diff nobody measured.
+#
+# What DOES move the arm64 binary is the base tag: `1-slim-bookworm` floats
+# across the major series that tag names, so a toolchain release recompiles it.
+# That is the same class as an apt set moving under a stage — Archive Drift,
+# priced when the base moves rather than on every cache miss — and pinning the
+# image by digest would trade it for a toolchain frozen against its own security
+# releases with no Renovate manager watching. → CONTEXT.md "Fetch Nondeterminism"
 FROM rust:1-slim-bookworm AS rtk-builder
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 # Per-stage: SHELL does not survive a FROM that targets an external image.
@@ -155,6 +171,38 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
 # registry cache republishes the whole image. Freezing mtimes makes the digests a
 # function of content alone. It lives outside /out, so it never reaches the final
 # image (fetch-stage convention). → docs/adr/0002, CONTEXT.md "Invalidation Floor"
+#
+# `freeze-git` is the same job for the two stages that ship a git checkout rather
+# than an unpacked release artefact, where mtimes are not the only thing a clock
+# reaches. Given a working-tree root it makes the repository a function of the
+# commit it pins, and nothing else — Fetch Nondeterminism in CONTEXT.md:
+#
+#   * repack, so the pack is ours instead of whatever upload-pack chose to send.
+#     A server-generated pack is outside our control by construction, and the
+#     stage's whole claim is that its output follows from the pinned commit.
+#     **`-F`, not `-f`** — measured, and the whole reason this helper exists.
+#     `-f` only refuses the received *deltas*; every non-delta object is still
+#     copied out of the source pack as compressed bytes, so two responses that
+#     deflated the same blob differently produce two different packs. Under `-F`
+#     the write order and the delta bases were already identical and only the
+#     per-object compressed sizes moved, which is exactly what it re-does.
+#     `pack.threads=1` removes the thread-count dependence of the delta search,
+#     the explicit window/depth survive a config default moving, `-n` skips the
+#     dumb-HTTP `objects/info/packs` this would otherwise add to the shipped
+#     tree, and no bitmap is written.
+#   * drop the reflog: every entry is a line with the wall clock in it. Git
+#     recreates `logs/` on the next ref update (`core.logAllRefUpdates` defaults
+#     on for a worktree), so nothing downstream loses anything.
+#   * `read-tree` the index back from HEAD. A checkout's index caches the
+#     ctime/mtime/inode of every file it wrote, none of which survive a second
+#     build; reading it from the tree leaves those fields zeroed. The entries
+#     are then stat-dirty, so the first `git status` in the container compares
+#     content instead of trusting the cache, and reports the same clean tree.
+#
+# `.git` cannot simply be dropped from either stage instead: Homebrew *is* a git
+# checkout, and `omz update` needs one too. Run it BEFORE the `chmod -R a+rwX`
+# that makes the tree usable under any host UID — it writes the pack and the
+# index — and before `freeze-mtimes`, which stamps what it leaves behind.
 FROM debian:bookworm-slim AS fetch-base
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -168,7 +216,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
     git config --system http.version HTTP/1.1; \
     printf '%s\n' '#!/bin/sh' 'set -eu' 'find /out -exec touch -h -d @1 {} +' \
       > /usr/local/bin/freeze-mtimes; \
-    chmod 0755 /usr/local/bin/freeze-mtimes
+    chmod 0755 /usr/local/bin/freeze-mtimes; \
+    printf '%s\n' \
+      '#!/bin/sh' \
+      'set -eu' \
+      'for repo in "$@"; do' \
+      '  git -C "$repo" -c pack.threads=1 repack -adFqn --window=10 --depth=50 --no-write-bitmap-index' \
+      '  rm -rf "$repo/.git/logs"' \
+      '  rm -f "$repo/.git/FETCH_HEAD" "$repo/.git/ORIG_HEAD"' \
+      '  git -C "$repo" read-tree HEAD' \
+      'done' \
+      > /usr/local/bin/freeze-git; \
+    chmod 0755 /usr/local/bin/freeze-git
 
 # Zsh completions are generated by the stage that owns the tool, into
 # /out/usr/share/zsh/vendor-completions/_<tool> and before `freeze-mtimes` — never in
@@ -842,7 +901,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
 # host UID other than 1000 — smoke-test.sh asserts it.
 #
 # `.git` retained (per R-05, SPEC ZSH-02 acceptance: `git rev-parse HEAD`
-# equals OMZ_COMMIT). Delta ~24 MB, within 50 MB budget.
+# equals OMZ_COMMIT). Delta ~24 MB, within 50 MB budget. Every checkout it keeps
+# — the OMZ tree and each plugin — goes through `freeze-git` before the chmod,
+# which is what makes this stage's layer a function of the commits it pins.
 #
 # Pattern: `git init + remote add + fetch --depth=1 <sha> + checkout FETCH_HEAD`.
 # `git clone --depth=1 --branch <sha>` FAILS — --branch accepts named refs only.
@@ -859,6 +920,7 @@ RUN set -eux; \
       git -C /out/home/toolbox/.oh-my-zsh remote add origin https://github.com/ohmyzsh/ohmyzsh.git; \
       git -C /out/home/toolbox/.oh-my-zsh fetch --depth=1 origin "${OMZ_COMMIT}"; \
       git -C /out/home/toolbox/.oh-my-zsh checkout FETCH_HEAD; \
+      freeze-git /out/home/toolbox/.oh-my-zsh; \
       for triplet in \
         "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|${ZSH_AUTOSUGGESTIONS_COMMIT}" \
         "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git|${ZSH_SYNTAX_HIGHLIGHTING_COMMIT}" \
@@ -872,6 +934,7 @@ RUN set -eux; \
         git -C "$dir" remote add origin "$url"; \
         git -C "$dir" fetch --depth=1 origin "$sha"; \
         git -C "$dir" checkout FETCH_HEAD; \
+        freeze-git "$dir"; \
       done; \
       echo '# managed by toolbox — see /etc/zsh/zshrc' > /out/home/toolbox/.zshrc; \
       chmod -R a+rwX /out/home/toolbox; \
@@ -888,11 +951,15 @@ RUN set -eux; \
 # be edited). brew refuses to RUN as root → presence check only;
 # smoke-test.sh runs `brew --version` as the runtime user.
 # NO_ANALYTICS/NO_AUTO_UPDATE env set in the final stage next to the PATH ENV.
+# The clone goes through `freeze-git` before the chmod: `brew --version` reads
+# the checkout with `git describe`, so the repository has to stay a repository,
+# and it is the pack this stage keeps that has to stop moving instead.
 FROM fetch-base AS fetch-brew
 ARG HOMEBREW_VERSION
 RUN set -eux; \
       git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
         https://github.com/Homebrew/brew /out/home/linuxbrew/.linuxbrew/Homebrew; \
+      freeze-git /out/home/linuxbrew/.linuxbrew/Homebrew; \
       mkdir -p /out/home/linuxbrew/.linuxbrew/bin; \
       ln -s ../Homebrew/bin/brew /out/home/linuxbrew/.linuxbrew/bin/brew; \
       cp /out/home/linuxbrew/.linuxbrew/Homebrew/completions/zsh/_brew \

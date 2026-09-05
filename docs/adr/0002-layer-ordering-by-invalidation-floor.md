@@ -330,6 +330,35 @@ therefore 2 stages of genuine Fetch Nondeterminism plus one mis-attributed copy;
 the fix is to copy `/out/ /`, as every fetch stage already does, and
 `TestBuildStageCOPYsCopyWholeTree` holds the shape for the class.
 
+**Closed: the remaining two are normalised in the stage.** `freeze-git` runs
+over every checkout `fetch-omz` and `fetch-brew` ship, before the `chmod` and
+before `freeze-mtimes`. Neither can drop `.git` — Homebrew *is* a git checkout
+and `omz update` needs one — so the three things a fresh checkout takes from
+the clock or from the far end are normalised instead: the pack is recompressed
+locally, the reflog is dropped, and the index is read back from `HEAD` with its
+stat cache zeroed. Measured on a native arm64 daemon, as the digest of the
+`COPY --link --from=<stage> /out/ /` layer alone across two independent
+`--no-cache` builds:
+
+| Stage | Before | After |
+|---|---|---|
+| `fetch-omz` | `8c49c223…` / `967b5595…` | `427f1fb7…` twice |
+| `fetch-brew` | `c384c0b9…` / `a89fff12…` | `79cb2466…` twice |
+
+`-F`, not `-f`, is what does it, and the difference is not cosmetic: `-f`
+refuses the deltas the server sent but still copies each non-delta object's
+compressed bytes out of the received pack. Two `fetch-brew` builds minutes
+apart produced packs with identical write order and identical delta bases whose
+per-object sizes in pack differed — GitHub had deflated the same blobs
+differently. `TestFreezeGitMakesACheckoutAFunctionOfItsCommit` reassembles the
+helper and runs it over two checkouts that disagree the same way.
+
+The arm64 leg of `rtk-builder`, the other half of the issue, needed nothing:
+two `--no-cache` builds on an arm64 daemon gave the same layer digest
+(`0ee1364c…`), because `--locked` pins the dependency graph and the paths rustc
+records are container paths. What moves that binary is the floating
+`rust:1-slim-bookworm` tag, which is Archive Drift on the stage's own base.
+
 **The issue's first proposed direction is not merely weak, it is fatal.**
 Comparing only layers whose `created_by` differs would have counted zero here —
 and zero for every regression this ADR exists to catch. Measured: all 70
