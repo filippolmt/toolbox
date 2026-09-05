@@ -435,11 +435,6 @@ func TestShellExecInRunningContainer(t *testing.T) {
 func TestShellStartsStoppedContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()
-	// The start branch asks about a newer image before it dispatches; this
-	// test is about the dispatch, and an unstubbed refresh would pull out of
-	// the mock and stamp the pull cache in the developer's own home.
-	stubRefresh(t, imageplan.OutcomeUnsettled)
-
 	startCalled := false
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
@@ -456,6 +451,10 @@ func TestShellStartsStoppedContainer(t *testing.T) {
 			return nil
 		},
 	}
+	// The start branch asks about a newer image before it dispatches; this
+	// test is about the dispatch, and an unstubbed refresh would pull out of
+	// the mock and stamp the pull cache in the developer's own home.
+	stubRefresh(t, mock, imageplan.OutcomeUnsettled)
 
 	_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil))
 	if err != nil {
