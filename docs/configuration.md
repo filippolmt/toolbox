@@ -29,7 +29,7 @@ Configuration is loaded from (highest priority first):
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
 | [`mounts`](mounts.md#mounts-merge-semantics) | list | built-in defaults | Patch / replace / append / disable the default bind mounts by `name`. |
-| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget every `~/.toolbox/`-managed default mount to a custom root. |
+| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget every `~/.toolbox/`-managed default mount to a custom root; empty resets it. |
 | [`inherit_host_auth`](#inherit-host-auth) | list | `[]` | Opt listed CLIs into the host's real credential path instead of the isolated default. |
 | [`shells`](shells.md) | map | – | Named shell shortcuts: `<name>: {path, env}`. |
 | [`shell`](#shell) | string | `zsh` | Login shell inside the container (only `zsh` is supported). |
@@ -152,7 +152,7 @@ The `pull` policy (`auto` default | `always` | `never`) governs **two acts**: th
 
 `always` therefore differs from `auto` at shell start and nowhere else: forcing a pull on every background tick would spend real bandwidth for the whole session, and adoption is a fresh container either way. Cross-cutting: under any policy the prefetch abstains while the resolved ref carries no repo digest — the fingerprint of a local `toolbox build`, so an automatic download never overwrites one you asked for.
 
-Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value resets the key).
+Env override requires the keys to be viper-seeded (`SetDefault` in `config.Merge`) — `AutomaticEnv` only resolves `TOOLBOX_*` for keys it already knows, and `TOOLBOX_PULL=never toolbox shell` silences refresh and prefetch together for one run with nothing written to disk. Edit via `toolbox config set --where global|local [--image|--registry-mirror|--pull]` (empty value [resets the key](commands.md#--where-targeting) by removing it); add `--dry-run` to see the file the write would produce without touching it ([dry runs](commands.md#dry-runs)).
 
 ### The start-up refresh prompt
 

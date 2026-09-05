@@ -40,27 +40,66 @@ import (
 // unchanged or rejected write still reports the file it found, and only a
 // failed read — which knows nothing — reports false.
 func ApplyChecked(target, cwd string, mutate Mutator) (changed, existed bool, err error) {
-	src, existed, err := configio.ReadMaybe(target)
-	if err != nil {
-		return false, false, err
-	}
-	candidate, err := Render(target, src, existed, mutate)
+	candidate, src, existed, err := checkedCandidate(target, cwd, mutate)
 	if err != nil {
 		return false, existed, err
 	}
 	if bytes.Equal(candidate, src) {
 		return false, existed, nil
 	}
-	if findings := doctorCandidate(cwd, target, candidate); HasErrors(findings) {
-		// The finding names the key, not the file it lives in — and the file is
-		// what the user has to open to fix it, which is rarely the one they
-		// thought they were editing.
-		return false, existed, fmt.Errorf("%s: %w", target, firstError(findings))
-	}
 	if err := fsx.AtomicWriteFile(target, candidate, 0o600); err != nil {
 		return false, existed, err
 	}
 	return true, existed, nil
+}
+
+// Preview returns the bytes ApplyChecked would write for target, having put
+// them through the very same gate, and touches no file at all — the seam a
+// writer command's --dry-run prints. It is ApplyChecked minus its last line, so
+// what a dry run shows cannot become a look-alike of what the write commits:
+// same read, same Mutator, same rendering, same doctor verdict, including the
+// no-op short-circuit that spares an already-faulty file a finding its edit did
+// not introduce.
+//
+// A rejected candidate is an error here exactly as it is there, so a dry run
+// answers "would this command work" and not only "what would it render". The
+// returned bytes are the whole file, not a diff — the caller decides how to
+// show them (`config ui` diffs its own through Render).
+//
+// existed carries the same meaning it does on ApplyChecked: the file this read
+// found, not an outcome.
+func Preview(target, cwd string, mutate Mutator) (candidate []byte, existed bool, err error) {
+	candidate, _, existed, err = checkedCandidate(target, cwd, mutate)
+	return candidate, existed, err
+}
+
+// checkedCandidate is the shared body of ApplyChecked and Preview: read the
+// target, render the Mutator over it, and validate the result unless it is
+// byte-identical to what was read. It returns src alongside the candidate so
+// the caller can tell a no-op from a real edit without reading the file twice.
+//
+// Having one function produce both is the point: a preview derived from a
+// second, parallel rendering is a claim about the write rather than the write
+// itself, and that is precisely the drift `config ui`'s preview once had.
+func checkedCandidate(target, cwd string, mutate Mutator) (candidate, src []byte, existed bool, err error) {
+	src, existed, err = configio.ReadMaybe(target)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	candidate, err = Render(target, src, existed, mutate)
+	if err != nil {
+		return nil, src, existed, err
+	}
+	if bytes.Equal(candidate, src) {
+		return candidate, src, existed, nil
+	}
+	if findings := doctorCandidate(cwd, target, candidate); HasErrors(findings) {
+		// The finding names the key, not the file it lives in — and the file is
+		// what the user has to open to fix it, which is rarely the one they
+		// thought they were editing.
+		return nil, src, existed, fmt.Errorf("%s: %w", target, firstError(findings))
+	}
+	return candidate, src, existed, nil
 }
 
 // doctorCandidate returns the findings the candidate bytes for target are

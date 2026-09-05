@@ -40,7 +40,7 @@ The per-shell `env:` map overlays the top-level [`env:` passthrough](configurati
 | `set <name> --env K=V […]` | Set/update env overlay keys on an existing entry. |
 | `remove <name> [--purge-dir]` | Delete the entry (`--purge-dir` also deletes the configured directory). |
 
-All writers accept [`--where global|local`](commands.md#--where-targeting) (default `global` — named shells are naturally per-user) and preserve comments in the touched YAML file.
+All writers accept [`--where global|local`](commands.md#--where-targeting) (default `global` — named shells are naturally per-user) and preserve comments in the touched YAML file. They also accept [`--dry-run`](commands.md#dry-runs), which prints the file the write would produce and touches nothing — `--create-dir` and `--purge-dir` are then named on stderr instead of performed.
 
 Shell names are matched the way `toolbox shell <name>` matches them: case-insensitively and space-trimmed. A new entry is written under the canonical (lowercase) key, and an entry your file already spells differently is edited in place — so an edit never leaves two `shells:` keys that collapse into one when the config loads.
 

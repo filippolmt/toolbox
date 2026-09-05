@@ -97,7 +97,7 @@ mounts:
 
 Setting `mounts_root: /custom/path` rewrites every default mount whose Source starts with `~/.toolbox/` to live under the new root, applied *before* the user merge inside `mountplan.Merge`. Per-mount patches still win, so a global root + a single per-name override coexist. `docker-sock` and `SymlinkFrom` targets are not touched (they reference real host paths, not toolbox-managed mirrors).
 
-`mounts_root` accepts absolute paths (`/Volumes/work/toolbox`) and home-relative paths (`~/work/toolbox-state`). Relative paths are rejected at startup by `config.ValidateMountsRoot`. Bare `~` is rejected too — it would rewrite `~/.toolbox/.claude` to `~/.claude`, exposing toolbox state on the real host home and defeating credential isolation. Use a sub-path (`~/toolbox-state`) or an absolute path.
+`mounts_root` accepts absolute paths (`/Volumes/work/toolbox`), home-relative paths (`~/work/toolbox-state`) and the empty string, which is the **reset**: `toolbox mounts root ""` removes the key from the targeted file so the defaults return to `~/.toolbox/`. Removing beats writing `mounts_root: ""`, which would keep shadowing whatever the layer below sets — reset the global file and a project file's root still applies in its project, reset the project file and the global root takes over again. Relative paths are rejected at startup by `config.ValidateMountsRoot`. Bare `~` is rejected too — it would rewrite `~/.toolbox/.claude` to `~/.claude`, exposing toolbox state on the real host home and defeating credential isolation. Use a sub-path (`~/toolbox-state`) or an absolute path.
 
 **Scope: global vs per-project.** `mounts_root` follows the same precedence as every other config field:
 
@@ -219,6 +219,6 @@ Details:
 - `add <name> --source --target [--readonly]` — writes the replace/append form; a name matching a default replaces it wholesale.
 - `disable <name>` — writes the `{name, disabled: true}` patch; the name is validated against defaults + user entries first, because a patch referencing an unknown name fails the next `Plan()` load.
 - `remove <name>` — deletes a **user-list entry only**. Defaults are not stored in the file, so a default-only name gets an explanatory error pointing at `disable` instead.
-- `root <path>` — pre-validates with `config.ValidateMountsRoot`, then writes `mounts_root:`.
+- `root <path>` — pre-validates with `config.ValidateMountsRoot`, then writes `mounts_root:`. `root ""` is the reset: the key is **removed** from the targeted file, not written empty (see [resetting a scalar](commands.md#--where-targeting)), so the defaults go back to `~/.toolbox/` and whichever lower layer still sets `mounts_root` takes over.
 
-All writers go through the comment-preserving, doctor-gated `configedit.ApplyChecked` pipeline and accept `--where global|local` (see [--where targeting](commands.md#--where-targeting)). Unknown names get Levenshtein "did you mean" suggestions.
+All writers go through the comment-preserving, doctor-gated `configedit.ApplyChecked` pipeline and accept `--where global|local` (see [--where targeting](commands.md#--where-targeting)) plus `--dry-run`, which prints the file the write would produce and touches nothing (see [dry runs](commands.md#dry-runs)). Unknown names get Levenshtein "did you mean" suggestions.

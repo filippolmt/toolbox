@@ -119,11 +119,11 @@ func StringMap(key string, pairs map[string]string) Mutator {
 // keys of the entry are preserved, so an env block written earlier survives a
 // path change. Callers validate env keys (config.ValidateEnv) beforehand.
 func Shell(name, path string, env map[string]string) Mutator {
-	overlay := ShellEnv(name, env)
+	env = maps.Clone(env)
 	return func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+		entry := shellEntryIn(doc, name)
 		configio.SetMapValue(entry, "path", path)
-		overlay(doc)
+		writeShellEnvIn(entry, env)
 	}
 }
 
@@ -137,12 +137,31 @@ func ShellEnv(name string, env map[string]string) Mutator {
 		return func(*yaml.Node) {}
 	}
 	env = maps.Clone(env)
-	return func(doc *yaml.Node) {
-		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
-		envMap := configio.EnsureChildMap(entry, "env")
-		for _, k := range slices.Sorted(maps.Keys(env)) {
-			configio.SetMapValue(envMap, k, env[k])
-		}
+	return func(doc *yaml.Node) { writeShellEnvIn(shellEntryIn(doc, name), env) }
+}
+
+// shellEntryIn returns the shells.<name> mapping node, creating the shells:
+// block and the entry as needed. The one place that two-level walk is spelled:
+// Shell used to spell it and then walk it a second time through the ShellEnv
+// closure it applied, which is one walk more than the edit needs and one
+// spelling more than the rule has.
+func shellEntryIn(doc *yaml.Node, name string) *yaml.Node {
+	return configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+}
+
+// writeShellEnvIn upserts an entry's env: overlay in sorted key order, so
+// repeated runs render identically. An empty overlay writes nothing at all —
+// not even an empty env: key — which is what lets Shell take the argument
+// optionally. Upsert, not replace: the reconciling Shells writer clears the
+// block first (writeShellEntry) because a rename carries the whole overlay,
+// a different rule from this one.
+func writeShellEnvIn(entry *yaml.Node, env map[string]string) {
+	if len(env) == 0 {
+		return
+	}
+	envMap := configio.EnsureChildMap(entry, "env")
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		configio.SetMapValue(envMap, k, env[k])
 	}
 }
 

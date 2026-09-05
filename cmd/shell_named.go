@@ -320,6 +320,12 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 // degrades to /tmp/<name> when it is empty. The write does not get that
 // tolerance: with no home there is no ~/.toolbox.yaml to patch, so the
 // fallback resolves through fsx.Home and fails loud.
+//
+// This is the one config write in cmd that does not go through applyOrPreview,
+// and so the one with no --dry-run: it is a side effect of entering a shell,
+// not a writer command with a flag surface of its own. A user who wants to see
+// the entry before it lands runs `toolbox shells add <name> --path <dir>
+// --dry-run`, which renders this very mutation.
 func upsertShellInUserConfig(home, name, path string) error {
 	if home == "" {
 		h, err := fsx.Home()

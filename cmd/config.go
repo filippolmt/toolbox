@@ -94,6 +94,7 @@ var (
 	configSetPull           string
 	configSetAgent          string
 	configSetWhere          string
+	configSetDryRun         bool
 )
 
 var configSetCmd = &cobra.Command{
@@ -112,10 +113,13 @@ passing an empty value resets that key to its default.
 
   --where global     ~/.toolbox.yaml (default)
   --where local      the walked-up project .toolbox.yaml, creating
-                     ./.toolbox.yaml when none is found`,
+                     ./.toolbox.yaml when none is found
+  --dry-run          print the file the write would produce — same
+                     validation, nothing touched on disk`,
 	Example: `  toolbox config set --where global --registry-mirror harbor.corp.io/ghcr-proxy
   toolbox config set --pull never --where local
-  toolbox config set --image ""   # reset to the canonical default`,
+  toolbox config set --image ""   # reset to the canonical default
+  toolbox config set --pull never --dry-run`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: runConfigSet,
 }
@@ -157,7 +161,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&configSetRegistryMirror, "registry-mirror", "", "relocate the registry host (proxy hub / pull-through cache)")
 	configSetCmd.Flags().StringVar(&configSetPull, "pull", "", "registry-sync policy: auto|always|never")
 	configSetCmd.Flags().StringVar(&configSetAgent, "agent", "", "default AI agent for 'toolbox worktree': claude|codex (empty resets to default)")
-	configSetCmd.Flags().StringVar(&configSetWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(configSetCmd, &configSetWhere, &configSetDryRun)
 
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configSetCmd)
@@ -260,12 +264,8 @@ func runConfigSet(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	changed, existed, err := configedit.ApplyChecked(target, cwd, configedit.Scalars(edits))
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), target, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), target, cwd, configSetDryRun,
+		configedit.Scalars(edits))
 }
 
 func runConfigEdit(cmd *cobra.Command, _ []string) error {

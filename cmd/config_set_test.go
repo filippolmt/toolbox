@@ -18,7 +18,8 @@ func setConfigSetFlag(t *testing.T, name, value string) {
 	}
 	t.Cleanup(func() {
 		configSetImage, configSetRegistryMirror, configSetPull, configSetAgent, configSetWhere = "", "", "", "", "global"
-		for _, n := range []string{"image", "registry-mirror", "pull", "agent", "where"} {
+		configSetDryRun = false
+		for _, n := range []string{"image", "registry-mirror", "pull", "agent", "where", "dry-run"} {
 			if f := configSetCmd.Flags().Lookup(n); f != nil {
 				f.Changed = false
 			}

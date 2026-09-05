@@ -25,7 +25,10 @@ deletes a user entry (defaults can only be disabled, never deleted).
 Write commands accept --where:
   --where global   ~/.toolbox.yaml (default)
   --where local    the walked-up project .toolbox.yaml, creating
-                   ./.toolbox.yaml when none is found`,
+                   ./.toolbox.yaml when none is found
+
+--dry-run prints the file the write would produce — same validation, nothing
+touched on disk.`,
 	Args: usageArgs(cobra.NoArgs),
 }
 
@@ -46,6 +49,7 @@ var (
 	mountsAddTarget   string
 	mountsAddReadonly bool
 	mountsAddWhere    string
+	mountsAddDryRun   bool
 )
 
 var mountsAddCmd = &cobra.Command{
@@ -60,7 +64,10 @@ replaces that default entirely; any other name appends a user mount.`,
 	RunE: runMountsAdd,
 }
 
-var mountsDisableWhere string
+var (
+	mountsDisableWhere  string
+	mountsDisableDryRun bool
+)
 
 var mountsDisableCmd = &cobra.Command{
 	Use:   "disable <name>",
@@ -73,7 +80,10 @@ removing the named mount (default or user) from the resolved set.`,
 	RunE: runMountsDisable,
 }
 
-var mountsRemoveWhere string
+var (
+	mountsRemoveWhere  string
+	mountsRemoveDryRun bool
+)
 
 var mountsRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
@@ -87,15 +97,23 @@ file. Default mounts are not stored in the file and can only be disabled
 	RunE: runMountsRemove,
 }
 
-var mountsRootWhere string
+var (
+	mountsRootWhere  string
+	mountsRootDryRun bool
+)
 
 var mountsRootCmd = &cobra.Command{
 	Use:   "root <path>",
 	Short: "Set mounts_root (retargets default mount sources)",
 	Long: `Validate and write the top-level mounts_root: key, retargeting every
-default mount whose source lives under ~/.toolbox/ to the given prefix.`,
+default mount whose source lives under ~/.toolbox/ to the given prefix.
+
+An empty path resets the retarget: the key is removed from the file rather
+than written as an override that means "no override", so the defaults go back
+to ~/.toolbox/ and whichever lower layer still sets mounts_root takes over.`,
 	Example: `  toolbox mounts root ~/encrypted/toolbox
-  toolbox mounts root /vault/toolbox --where local`,
+  toolbox mounts root /vault/toolbox --where local
+  toolbox mounts root ""   # reset: drop the key from the file`,
 	Args: usageArgs(cobra.ExactArgs(1)),
 	RunE: runMountsRoot,
 }
@@ -108,11 +126,11 @@ func init() {
 	mountsAddCmd.Flags().StringVar(&mountsAddTarget, "target", "", "container path to bind to (required)")
 	_ = mountsAddCmd.MarkFlagRequired("target")
 	mountsAddCmd.Flags().BoolVar(&mountsAddReadonly, "readonly", false, "mount read-only")
-	mountsAddCmd.Flags().StringVar(&mountsAddWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(mountsAddCmd, &mountsAddWhere, &mountsAddDryRun)
 
-	mountsDisableCmd.Flags().StringVar(&mountsDisableWhere, "where", "global", whereFlagUsage)
-	mountsRemoveCmd.Flags().StringVar(&mountsRemoveWhere, "where", "global", whereFlagUsage)
-	mountsRootCmd.Flags().StringVar(&mountsRootWhere, "where", "global", whereFlagUsage)
+	registerWriteFlags(mountsDisableCmd, &mountsDisableWhere, &mountsDisableDryRun)
+	registerWriteFlags(mountsRemoveCmd, &mountsRemoveWhere, &mountsRemoveDryRun)
+	registerWriteFlags(mountsRootCmd, &mountsRootWhere, &mountsRootDryRun)
 
 	mountsCmd.AddCommand(mountsListCmd)
 	mountsCmd.AddCommand(mountsAddCmd)
@@ -172,17 +190,13 @@ func runMountsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.Mount(config.Mount{
-		Name:     name,
-		Source:   source,
-		Target:   target,
-		ReadOnly: mountsAddReadonly,
-	}))
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), targetPath, cwd, mountsAddDryRun,
+		configedit.Mount(config.Mount{
+			Name:     name,
+			Source:   source,
+			Target:   target,
+			ReadOnly: mountsAddReadonly,
+		}))
 }
 
 func runMountsDisable(cmd *cobra.Command, args []string) error {
@@ -206,12 +220,8 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.MountDisabled(name))
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), targetPath, cwd, mountsDisableDryRun,
+		configedit.MountDisabled(name))
 }
 
 func runMountsRemove(cmd *cobra.Command, args []string) error {
@@ -237,12 +247,8 @@ func runMountsRemove(cmd *cobra.Command, args []string) error {
 			name, targetPath, configedit.DidYouMean(name, userNames))}
 	}
 
-	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.RemoveMount(name))
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
-	return nil
+	return applyOrPreview(cmd.OutOrStdout(), targetPath, cwd, mountsRemoveDryRun,
+		configedit.RemoveMount(name))
 }
 
 func runMountsRoot(cmd *cobra.Command, args []string) error {
@@ -258,10 +264,7 @@ func runMountsRoot(cmd *cobra.Command, args []string) error {
 	// mounts_root is an ordinary top-level scalar, so it takes the same
 	// mutation every other one does — empty value included, which removes the
 	// key rather than persisting an override that means "no override".
-	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.Scalar("mounts_root", root))
-	if err != nil {
-		return err
-	}
-	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
-	return nil
+	// TestMountsRootEmptyValueRemovesTheKey holds that reset at this surface.
+	return applyOrPreview(cmd.OutOrStdout(), targetPath, cwd, mountsRootDryRun,
+		configedit.Scalar("mounts_root", root))
 }
