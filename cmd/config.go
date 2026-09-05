@@ -260,8 +260,7 @@ func runConfigSet(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(target)
-	changed, err := configedit.SetScalars(target, cwd, edits)
+	changed, existed, err := configedit.ApplyChecked(target, cwd, configedit.Scalars(edits))
 	if err != nil {
 		return err
 	}

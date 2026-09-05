@@ -25,7 +25,7 @@ paths:
 
 ### Package boundaries
 
-semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, writers, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`); the host-filesystem primitives live one layer below, in `internal/fsx`. Never reimplement, fork **or re-export** an `fsx` primitive here — a caller that needs one imports `fsx` directly (a fork would have to restate what `TestAtomicWriteFileLeavesNoTemp` already holds; a re-export is caught by `TestNoPackageReExportsAnFsxPrimitive`, whose own classifier is pinned by `TestForwardedPrimitiveTellsAnAliasFromACaller` so it cannot go green by seeing nothing). The leaf constraint is about what `configio` may *import*, not about giving config callers a second name for a primitive. → [shared-fs-primitives](../../docs/internals/host-cli.md#shared-fs-primitives)
+semantic layer in cobra-free `internal/configedit` (`--where` resolution, header-on-create, the Pending Mutation constructors and the one write that applies them, provenance, doctor, Levenshtein suggestions); `configio` stays a dependency-light leaf (must NOT import `internal/config`); the host-filesystem primitives live one layer below, in `internal/fsx`. Never reimplement, fork **or re-export** an `fsx` primitive here — a caller that needs one imports `fsx` directly (a fork would have to restate what `TestAtomicWriteFileLeavesNoTemp` already holds; a re-export is caught by `TestNoPackageReExportsAnFsxPrimitive`, whose own classifier is pinned by `TestForwardedPrimitiveTellsAnAliasFromACaller` so it cannot go green by seeing nothing). The leaf constraint is about what `configio` may *import*, not about giving config callers a second name for a primitive. → [shared-fs-primitives](../../docs/internals/host-cli.md#shared-fs-primitives)
 
 ### `--where` targeting
 
@@ -33,7 +33,7 @@ semantic layer in cobra-free `internal/configedit` (`--where` resolution, header
 
 ### `mounts` writers
 
-`mounts` writers emit only shapes `mergeMounts` reads — `disable` validates the name first (unknown patch name breaks the next load), defaults can only be disabled, never removed.
+`mounts` writers emit only shapes `mergeMounts` reads — `disable` validates the name first (unknown patch name breaks the next load), defaults can only be disabled, never removed. The disable shape itself is written in exactly one place, `disableMountIn`, shared by the single-name `MountDisabled` and the reconciling `MountsDisabled`: it was stated twice before and that is a rule that drifts.
 
 ### Rendering
 
@@ -41,7 +41,11 @@ semantic layer in cobra-free `internal/configedit` (`--where` resolution, header
 
 ### One validated write seam
 
-**One validated write seam**: `configedit.ApplyChecked(target, cwd, Mutator)` is the ONLY way any surface writes a config file — it renders the candidate in memory, validates it through the doctor in the layer `target` occupies, and writes only if that passes (so no transient invalid file exists and there is nothing to roll back). `configio.UpsertFile` was deleted for exactly this reason: an unvalidated write lane in the leaf package. The 8 typed writers in `write.go`, `EnableSDD`, `configui`'s save and the `shell --create` bootstrap all route through it, each taking `cwd`. An error always means nothing was written, so `reportWrite` must not run.
+**One validated write seam**: `configedit.ApplyChecked(target, cwd, Mutator)` is the ONLY way any surface writes a config file — it renders the candidate in memory, validates it through the doctor in the layer `target` occupies, and writes only if that passes (so no transient invalid file exists and there is nothing to roll back). `configio.UpsertFile` was deleted for exactly this reason: an unvalidated write lane in the leaf package. Every `cmd` writer surface, `EnableSDD`, `configui`'s save and the `shell --create` bootstrap all route through it, each taking `cwd`. An error always means nothing was written, so `reportWrite` must not run.
+
+**One vocabulary, and the `cmd` edge applies it**: a writer command is a named [Pending Mutation](../../CONTEXT.md#pending-mutation) constructor plus one `ApplyChecked` call — never a typed writer wrapping it, which is what let the CLI's edits become unrenderable and one node rule be spelled twice. Two consequences to keep: every write path can be *shown* through `configedit.Render` (what a `--dry-run` would need, pinned by `TestEveryWriterMutationRendersWithoutTouchingDisk`), and a command whose halves must land together composes them into **one** mutation rather than two calls — `configedit.Shell` writes `shells.<name>.path` and its `env` overlay in the same document, so `shells add --env` commits both or neither (`TestShellWritesPathAndEnvAsOneMutation`).
+
+**`existed` comes from the write, never from a stat**: `ApplyChecked` returns `(changed, existed, err)`, `existed` being what its own read found, and `reportWrite`'s created-vs-updated line is drawn from it. A `cmd` site that stats the target itself is asking a question the write already answered, through a window in which the two answers can differ (`TestApplyCheckedReportsWhetherTheFileExisted`).
 
 ### What the gate judges
 
@@ -65,7 +69,7 @@ The two values it is built on are glossary terms — meaning and rationale in [P
 - Both render sides go through `configedit.Render`, never `configio.RenderDocument` directly — the header-on-create policy lives in `configedit.headerAware`, and a preview that skipped it under-reported a file creation by whole lines.
 - Adding a key is one `configui.keyDescriptors` row (`descriptor.go`) plus that test case, never a new switch; `TestKeyDescriptorsCoverEveryKey` fails on a missing row instead of letting it surface as a blank TUI line.
 - The per-key facts that are NOT presentation are asked of their owner: `configedit.PerEntryKey` (which keys are attributed per entry) and `config.DeprecatedAliases` (which deprecated alias folds into which live key — the same fold `fillDefaultsBackstop` performs, guarded by `TestDeprecatedAliasesAreFoldedByTheLoadPath`).
-- Test placement: a new mutator's semantics go in `configedit/mutate_test.go` (pure, on bytes); `configedit/apply_test.go` owns the write pipeline (comment preservation, document bootstrap, the byte-equal short-circuit, rejection-without-writing, layer placement); `configui`'s own writer tests cover only that its saves reach that seam — with one carve-out: the reset's per-key artefact reconciliation (today the SDD `.gitignore` fences) is a decision only `configui` makes, so its scope asymmetry is asserted there, on disk, in `model_test.go`.
+- Test placement follows the files, which say what they hold: a new mutator's semantics go in `configedit/mutate_test.go` (pure, on bytes — that is where a CLI writer's node work belongs too, now that it is a mutator); `configedit/apply_test.go` owns the write pipeline (comment preservation, document bootstrap, the byte-equal short-circuit, the returned `existed` bit, rejection-without-writing, layer placement); `configedit/read_test.go` the single-file readers; `configui`'s own writer tests cover only that its saves reach that seam — with one carve-out: the reset's per-key artefact reconciliation (today the SDD `.gitignore` fences) is a decision only `configui` makes, so its scope asymmetry is asserted there, on disk, in `model_test.go`.
 
 → [--where targeting](../../docs/commands.md#--where-targeting), [config provenance & doctor](../../docs/commands.md#config-provenance--doctor), [config ui](../../docs/commands.md#config-ui), [mounts CLI](../../docs/mounts.md#mounts-cli)
 

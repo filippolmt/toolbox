@@ -172,13 +172,12 @@ func runMountsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(targetPath)
-	changed, err := configedit.AddMount(targetPath, cwd, config.Mount{
+	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.Mount(config.Mount{
 		Name:     name,
 		Source:   source,
 		Target:   target,
 		ReadOnly: mountsAddReadonly,
-	})
+	}))
 	if err != nil {
 		return err
 	}
@@ -207,8 +206,7 @@ func runMountsDisable(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(targetPath)
-	changed, err := configedit.DisableMount(targetPath, cwd, name)
+	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.MountDisabled(name))
 	if err != nil {
 		return err
 	}
@@ -239,11 +237,11 @@ func runMountsRemove(cmd *cobra.Command, args []string) error {
 			name, targetPath, configedit.DidYouMean(name, userNames))}
 	}
 
-	changed, err := configedit.RemoveMount(targetPath, cwd, name)
+	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.RemoveMount(name))
 	if err != nil {
 		return err
 	}
-	reportWrite(cmd.OutOrStdout(), targetPath, true, changed)
+	reportWrite(cmd.OutOrStdout(), targetPath, existed, changed)
 	return nil
 }
 
@@ -257,8 +255,10 @@ func runMountsRoot(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(targetPath)
-	changed, err := configedit.SetMountsRoot(targetPath, cwd, root)
+	// mounts_root is an ordinary top-level scalar, so it takes the same
+	// mutation every other one does — empty value included, which removes the
+	// key rather than persisting an override that means "no override".
+	changed, existed, err := configedit.ApplyChecked(targetPath, cwd, configedit.Scalar("mounts_root", root))
 	if err != nil {
 		return err
 	}
