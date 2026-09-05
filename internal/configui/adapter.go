@@ -339,7 +339,7 @@ func EnabledSDD(cfg *config.Config) map[string]bool {
 // it for each disabled one — fences are outside Doctor's contract, so a
 // rejected yaml reconcile leaves every fence untouched.
 func SaveSDD(target, cwd string, enabled map[string]bool) error {
-	if _, err := configedit.ApplyChecked(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
+	if _, _, err := configedit.ApplyChecked(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
 		return err
 	}
 	return configedit.ReconcileSDDGitignore(filepath.Join(cwd, ".gitignore"), enabled)

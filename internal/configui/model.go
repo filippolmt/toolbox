@@ -321,7 +321,7 @@ func (m *Model) resetToDefault() {
 	}
 	// Removing the key is the same path as a tri-state "unset": the file simply
 	// stops setting it, so the next load inherits the lower layer's value.
-	if _, err := configedit.ApplyChecked(m.target, m.cwd, configedit.Remove(st.Key)); err != nil {
+	if _, _, err := configedit.ApplyChecked(m.target, m.cwd, configedit.Remove(st.Key)); err != nil {
 		m.status = "reset failed: " + err.Error()
 		return
 	}
@@ -469,7 +469,7 @@ func (m Model) saveEdit() error {
 		// with no write behind it.
 		return fmt.Errorf("no writer for key %q", m.ed.key)
 	}
-	_, err := configedit.ApplyChecked(m.target, m.cwd, mut)
+	_, _, err := configedit.ApplyChecked(m.target, m.cwd, mut)
 	return err
 }
 

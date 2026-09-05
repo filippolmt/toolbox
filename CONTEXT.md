@@ -153,12 +153,19 @@ against.
 
 One config edit, captured as a value before it happens:
 `configedit.Mutator` — `func(*yaml.Node)` — built by a constructor that
-closes over its arguments (`configedit.Scalar`, `Bool`, `StringList`,
-`StringMap`, `Shells`, `WorktreeSeed`, `SDDEnabled`, `MountsDisabled`,
-`Remove`). Owned by `internal/configedit` (`mutate.go`).
+closes over its arguments (`configedit.Scalar`, `Scalars`, `Bool`,
+`StringList`, `StringMap`, `Shell`, `ShellEnv`, `Shells`, `RemoveShell`,
+`Mount`, `MountDisabled`, `MountsDisabled`, `RemoveMount`,
+`WorktreeSeed`, `SDDEnabled`, `Remove`). Owned by `internal/configedit`
+(`mutate.go`).
 
 The point of the term: a caller that must both *show* an edit and
 *perform* it holds one object instead of describing the edit twice.
+
+This is the package's whole edit vocabulary — a CLI writer command is a
+named constructor plus one `ApplyChecked` call at the `cmd` edge, so
+"describable" and "written" are the same value seen twice rather than two
+families of functions.
 
 Concretely: it is the callback shape `configedit.ApplyChecked`, `Render`
 and `configio.RenderDocument` all accept, so the same value can be
@@ -194,6 +201,18 @@ edit. Naming the pending mutation, and making it a value the two sides
 share, is what makes the preview structurally unable to lie about the
 write. A preview that re-derives the mutation is the defect, not a
 convenience.
+
+The same defect had a second home, and the term is what let it be seen:
+`configedit` went on describing the CLI's six edits a second time, as
+typed writers that took a path and wrote immediately. Same nodes, two
+spellings — so the one rule stated in both (the mounts disable shape)
+could drift, and the CLI's edits were unrenderable, which is to say no
+writer command could grow a `--dry-run` without being ported first. They
+were collapsed into this family: a writer command now names the mutation
+and calls `ApplyChecked` itself, and `Shell` is the case that shows the
+collapse is not flattening — `shells add --env` commits both halves of
+one command or neither, so both halves are *one* mutation rather than two
+calls at the edge.
 
 ### Key Descriptor
 
@@ -1184,7 +1203,7 @@ them still fail loud on their own.
 Not everything is threaded yet. `configio.GlobalConfigPath` still
 resolves its own home, and `configedit`'s write gate calls
 `fsx.CurrentHost()` at one named seam rather than threading a Host
-through every `ApplyChecked` wrapper and the `configui` model — one named
+through every `ApplyChecked` call site and the `configui` model — one named
 read where the lints behind it previously took two unnamed ones. Their
 callers reach them through packages this concept has not crossed; until
 they do, a test that exercises those paths still sandboxes `$HOME`.

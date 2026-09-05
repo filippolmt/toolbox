@@ -308,7 +308,7 @@ func promptYesNo(r *bufio.Reader, w io.Writer, label string, defaultYes bool) (b
 }
 
 // upsertShellInUserConfig writes shells.<name>.path to ~/.toolbox.yaml through
-// configedit.SetShell — the same writer `toolbox shells add` uses, so the
+// configedit.Shell — the same mutation `toolbox shells add` applies, so the
 // --create bootstrap inherits the docs header on file creation and the doctor
 // gate, instead of open-coding the node edit. home is resolved once by the
 // caller and threaded in so the --create path does not pay for repeated
@@ -338,6 +338,6 @@ func upsertShellInUserConfig(home, name, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve cwd: %w", err)
 	}
-	_, err = configedit.SetShell(cfgPath, cwd, key, path, nil)
+	_, _, err = configedit.ApplyChecked(cfgPath, cwd, configedit.Shell(key, path, nil))
 	return err
 }

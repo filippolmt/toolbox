@@ -22,6 +22,13 @@ import (
 // each site. That re-derivation is what let `config ui`'s preview drift from
 // its writers — the preview indexed on the editor kind while the writers
 // indexed on the key, and the two disagreed wherever those axes failed to meet.
+//
+// This is the package's whole edit vocabulary: every edit any surface performs
+// is one of these, applied by ApplyChecked at the caller's edge. There is no
+// second, write-only spelling of the same node work — a family of typed
+// writers used to describe the same six edits again, which left the CLI's edits
+// unrenderable and so unable to grow a --dry-run, and let one rule (the mounts
+// disable shape) be written twice and drift.
 
 // Mutator edits the top-level document mapping of a config file in place. It is
 // the callback shape ApplyChecked, Render and configio.RenderDocument
@@ -44,6 +51,26 @@ func Scalar(key, value string) Mutator {
 		return Remove(key)
 	}
 	return func(doc *yaml.Node) { configio.SetMapValue(doc, key, value) }
+}
+
+// ScalarEdit is one top-level scalar mutation: the key and the value to write,
+// with an empty value meaning "remove" (see Scalar).
+type ScalarEdit struct{ Key, Value string }
+
+// Scalars applies several top-level scalar edits as one mutation, in the order
+// given — so writing a handful of keys costs a single read-parse-validate-write
+// cycle and a rejected value cannot leave a partial edit behind. Each edit is a
+// Scalar, so the empty-value-removes rule is stated once.
+func Scalars(edits []ScalarEdit) Mutator {
+	muts := make([]Mutator, 0, len(edits))
+	for _, e := range edits {
+		muts = append(muts, Scalar(e.Key, e.Value))
+	}
+	return func(doc *yaml.Node) {
+		for _, m := range muts {
+			m(doc)
+		}
+	}
 }
 
 // Bool writes a tri-state bool key. A nil value removes the key so "unset"
@@ -80,6 +107,55 @@ func StringMap(key string, pairs map[string]string) Mutator {
 		node.Content = node.Content[:0]
 		for _, k := range slices.Sorted(maps.Keys(pairs)) {
 			node.Content = append(node.Content, scalarNode(k), scalarNode(pairs[k]))
+		}
+	}
+}
+
+// Shell writes shells.<name>.path and, when env is non-empty, that entry's env
+// overlay — both in one mutation, on purpose. This is the shape `shells add
+// --env` commits: one Mutator applied by one ApplyChecked writes both halves of
+// the command or neither, where two mutations would be validated, and could be
+// rejected, separately — leaving the path on disk and the overlay lost. Sibling
+// keys of the entry are preserved, so an env block written earlier survives a
+// path change. Callers validate env keys (config.ValidateEnv) beforehand.
+func Shell(name, path string, env map[string]string) Mutator {
+	overlay := ShellEnv(name, env)
+	return func(doc *yaml.Node) {
+		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+		configio.SetMapValue(entry, "path", path)
+		overlay(doc)
+	}
+}
+
+// ShellEnv upserts shells.<name>.env.<K>=<V> for every pair in env, applied in
+// sorted key order so repeated runs render identically. An empty env writes
+// nothing at all — no entry is created for it, which is what lets Shell take
+// the same argument optionally. Callers validate keys (config.ValidateEnv)
+// before writing.
+func ShellEnv(name string, env map[string]string) Mutator {
+	if len(env) == 0 {
+		return func(*yaml.Node) {}
+	}
+	env = maps.Clone(env)
+	return func(doc *yaml.Node) {
+		entry := configio.EnsureChildMap(configio.EnsureChildMap(doc, "shells"), name)
+		envMap := configio.EnsureChildMap(entry, "env")
+		for _, k := range slices.Sorted(maps.Keys(env)) {
+			configio.SetMapValue(envMap, k, env[k])
+		}
+	}
+}
+
+// RemoveShell deletes the shells.<name> entry. A shells: map left empty by the
+// removal is dropped entirely; an unknown name changes nothing.
+func RemoveShell(name string) Mutator {
+	return func(doc *yaml.Node) {
+		shells := configio.ChildValue(doc, "shells")
+		if !configio.RemoveMapKey(shells, name) {
+			return
+		}
+		if len(shells.Content) == 0 {
+			configio.RemoveMapKey(doc, "shells")
 		}
 	}
 }
@@ -225,6 +301,87 @@ func SDDEnabled(enabled map[string]bool) Mutator {
 	}
 }
 
+// Mount writes the replace/append form (name + source + target, optional
+// readonly) to the mounts: sequence: an existing entry with the same name is
+// replaced in place, otherwise the entry is appended — mirroring how
+// mergeMounts reads the list. Callers validate the mount before writing.
+func Mount(m config.Mount) Mutator {
+	return func(doc *yaml.Node) {
+		seq := configio.EnsureChildSeq(doc, "mounts")
+		node := mountNode(m)
+		if idx, _ := configio.FindSeqEntryByName(seq, m.Name); idx >= 0 {
+			seq.Content[idx] = node
+			return
+		}
+		seq.Content = append(seq.Content, node)
+	}
+}
+
+// MountDisabled marks one name disabled — the single-name peer of
+// MountsDisabled, which reconciles the whole default set. Callers validate the
+// name against the merged mount list first: a patch naming a mount the merge
+// does not know breaks the next config load.
+func MountDisabled(name string) Mutator {
+	return func(doc *yaml.Node) {
+		disableMountIn(configio.EnsureChildSeq(doc, "mounts"), name)
+	}
+}
+
+// RemoveMount deletes the user-list entry named name from the mounts:
+// sequence. Defaults are not represented in the file, so this can only ever
+// touch user entries; a mounts: list left empty is dropped entirely, and an
+// unknown name changes nothing.
+func RemoveMount(name string) Mutator {
+	return func(doc *yaml.Node) {
+		seq := configio.ChildValue(doc, "mounts")
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return
+		}
+		idx, _ := configio.FindSeqEntryByName(seq, name)
+		if idx < 0 {
+			return
+		}
+		seq.Content = append(seq.Content[:idx], seq.Content[idx+1:]...)
+		if len(seq.Content) == 0 {
+			configio.RemoveMapKey(doc, "mounts")
+		}
+	}
+}
+
+// disableMountIn marks name disabled inside a mounts: sequence: an existing
+// entry gains disabled: true in place (its own fields survive), otherwise the
+// `{name, disabled: true}` patch shape mergeMounts reads is appended. The one
+// place that rule is written, shared by the single-name MountDisabled and the
+// reconciling MountsDisabled.
+func disableMountIn(seq *yaml.Node, name string) {
+	if _, entry := configio.FindSeqEntryByName(seq, name); entry != nil {
+		configio.SetMapBool(entry, "disabled", true)
+		return
+	}
+	patch := &yaml.Node{Kind: yaml.MappingNode}
+	configio.SetMapValue(patch, "name", name)
+	configio.SetMapBool(patch, "disabled", true)
+	seq.Content = append(seq.Content, patch)
+}
+
+// mountNode renders a config.Mount as the replace/append mapping shape
+// mergeMounts reads. Zero-valued fields are omitted so the file stays
+// minimal.
+func mountNode(m config.Mount) *yaml.Node {
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	configio.SetMapValue(n, "name", m.Name)
+	if m.Source != "" {
+		configio.SetMapValue(n, "source", m.Source)
+	}
+	if m.Target != "" {
+		configio.SetMapValue(n, "target", m.Target)
+	}
+	if m.ReadOnly {
+		configio.SetMapBool(n, "readonly", true)
+	}
+	return n
+}
+
 // DefaultMountNames returns the names of the built-in default mounts, sorted —
 // the candidate set MountsDisabled reconciles and the option list the config
 // UI's mounts editor offers.
@@ -252,14 +409,7 @@ func MountsDisabled(disabled map[string]bool) Mutator {
 			idx, entry := configio.FindSeqEntryByName(seq, name)
 			switch {
 			case disabled[name]:
-				if entry != nil {
-					configio.SetMapBool(entry, "disabled", true)
-					continue
-				}
-				patch := &yaml.Node{Kind: yaml.MappingNode}
-				configio.SetMapValue(patch, "name", name)
-				configio.SetMapBool(patch, "disabled", true)
-				seq.Content = append(seq.Content, patch)
+				disableMountIn(seq, name)
 			case idx >= 0 && isPureDisable(entry):
 				seq.Content = append(seq.Content[:idx], seq.Content[idx+1:]...)
 			}

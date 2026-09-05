@@ -198,8 +198,7 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(target)
-	changed, err := configedit.SetShell(target, cwd, key, path, env)
+	changed, existed, err := configedit.ApplyChecked(target, cwd, configedit.Shell(key, path, env))
 	if err != nil {
 		return err
 	}
@@ -232,8 +231,7 @@ func runShellsSet(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	existed := fileExists(target)
-	changed, err := configedit.SetShellEnv(target, cwd, key, env)
+	changed, existed, err := configedit.ApplyChecked(target, cwd, configedit.ShellEnv(key, env))
 	if err != nil {
 		return err
 	}
@@ -262,12 +260,12 @@ func runShellsRemove(cmd *cobra.Command, args []string) error {
 			name, target, configedit.DidYouMean(name, slices.Sorted(maps.Keys(fileShells))))}
 	}
 
-	changed, err := configedit.RemoveShell(target, cwd, key)
+	changed, existed, err := configedit.ApplyChecked(target, cwd, configedit.RemoveShell(key))
 	if err != nil {
 		return err
 	}
 	out := cmd.OutOrStdout()
-	reportWrite(out, target, true, changed)
+	reportWrite(out, target, existed, changed)
 
 	if shellsRemovePurge {
 		if err := purgeShellDir(out, entry); err != nil {
@@ -343,6 +341,10 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 
 // reportWrite prints the per-file result line shared by every writer
 // command: created (file did not exist), updated, or unchanged.
+//
+// existedBefore is always the bit ApplyChecked returns, never a stat of the
+// caller's own: the write answered that question when it read the file, and a
+// second look could disagree with the one the write acted on.
 func reportWrite(out io.Writer, path string, existedBefore, changed bool) {
 	state := "unchanged"
 	switch {
@@ -352,9 +354,4 @@ func reportWrite(out io.Writer, path string, existedBefore, changed bool) {
 		state = "updated"
 	}
 	_, _ = fmt.Fprintf(out, "  %s: %s\n", path, state)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

@@ -156,7 +156,7 @@ type SDDResult struct {
 // fence untouched — ApplyChecked returns before either file changes.
 func EnableSDD(yamlPath, gitignorePath, cwd string, skill sdd.Skill) (SDDResult, error) {
 	var res SDDResult
-	yamlChanged, err := ApplyChecked(yamlPath, cwd, func(doc *yaml.Node) {
+	yamlChanged, _, err := ApplyChecked(yamlPath, cwd, func(doc *yaml.Node) {
 		SetSDDEnabled(doc, skill.Key, true)
 	})
 	if err != nil {

@@ -207,11 +207,11 @@ func TestTargetPath(t *testing.T) {
 	}
 }
 
-// apply is the save path the model takes, with ApplyChecked's changed flag
+// apply is the save path the model takes, with ApplyChecked's changed and existed flags
 // dropped — the TUI has no per-file report line to print, so its tests only ever
 // care whether the write was accepted.
 func apply(target, cwd string, mutate configedit.Mutator) error {
-	_, err := configedit.ApplyChecked(target, cwd, mutate)
+	_, _, err := configedit.ApplyChecked(target, cwd, mutate)
 	return err
 }
 
