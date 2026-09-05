@@ -34,8 +34,8 @@ changelog:
 
 # `brews` (Homebrew Formula) was hard-deprecated in GoReleaser v2.16. Casks
 # are macOS-only, so the tap no longer serves Linuxbrew — Linux users install
-# via `go install` or the released binaries. The binary is unsigned, so the
-# pre-install hook strips the macOS quarantine bit to avoid the
+# via `go install` or the released binaries. The binary is unsigned, so a
+# preflight step strips the macOS quarantine bit to avoid the
 # "toolbox is damaged" Gatekeeper alert; it must run *pre* (not post) install
 # because `generate_completions_from_executable` executes the staged binary
 # during the install phase, and a still-quarantined unsigned binary gets
@@ -61,9 +61,14 @@ homebrew_casks:
         - bash
         - zsh
         - fish
-    hooks:
-      pre:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/toolbox"]
-          end
+    # The quarantine step goes through `custom_block` and not `hooks.pre.install`:
+    # that field emits the legacy `preflight do` Ruby block, which Homebrew has
+    # deprecated in favour of the declarative `preflight_steps` stanza. Homebrew
+    # expands the `{{staged_path}}` token at install time, so it is escaped here
+    # to survive GoReleaser's own templating. `preflight_steps` sorts ahead of
+    # `generate_completions_from_executable`, so the ordering the comment above
+    # requires still holds.
+    custom_block: |
+      preflight_steps do
+        run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/toolbox"]
+      end
