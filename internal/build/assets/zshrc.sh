@@ -327,9 +327,17 @@ toolbox-reload() {
         return 1
     fi
     # Atomic: write beside the target and rename over it, so a host reading the
-    # marker never sees a half-written working directory.
+    # marker never sees a half-written working directory. Beside it, not in
+    # $PWD: a rename is atomic only within one filesystem, and the state mount
+    # and the workspace are two.
+    #
+    # -T (GNU coreutils, which this image has) because plain `mv file dir`
+    # moves the file *into* an existing directory and reports success — this
+    # shell would then announce a reload, exit, and leave the request where the
+    # host never looks, costing the session and delivering nothing. Refusing is
+    # the only safe answer, and -T is what turns that into the branch below.
     local tmp="${TOOLBOX_RELOAD_MARKER}.tmp.$$"
-    if ! { print -r -- "$PWD" > "$tmp" && mv -f "$tmp" "$TOOLBOX_RELOAD_MARKER"; } 2>/dev/null; then
+    if ! { print -r -- "$PWD" > "$tmp" && mv -fT "$tmp" "$TOOLBOX_RELOAD_MARKER"; } 2>/dev/null; then
         rm -f "$tmp" 2>/dev/null
         print -u2 -P "%F{yellow}toolbox:%f could not write the reload marker ($TOOLBOX_RELOAD_MARKER) — the session is unchanged."
         return 1

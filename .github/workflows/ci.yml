@@ -37,6 +37,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # internal/reload executes the runtime image's `toolbox-reload` — a zsh
+      # function — to pin the reload marker's format against its Go reader.
+      # The interpreter is this job's to provide: the tests refuse to skip
+      # under $CI, so dropping this step turns the suite red rather than
+      # quietly retiring the guard. Mirrored in sonar.yml, which runs the same
+      # suite.
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
       - name: Run tests
         run: go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
 
