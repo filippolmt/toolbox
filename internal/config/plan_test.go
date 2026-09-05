@@ -491,32 +491,30 @@ func TestPlan_BridgeNewKeyWinsOverLegacy(t *testing.T) {
 
 // TestDeprecatedAliasesAreFoldedByTheLoadPath: the alias table is only worth
 // reading if every pair it declares is the fold Merge actually performs. A file
-// setting nothing but the alias must leave its live key set after the load.
+// setting nothing but the alias must resolve to the same config as one setting
+// the live key — the *value*, not merely a non-zero field: a live key with a
+// built-in default is non-zero whether the fold ran or not, so "is it set" was
+// an assertion the default satisfied on its own.
 func TestDeprecatedAliasesAreFoldedByTheLoadPath(t *testing.T) {
 	for alias, live := range DeprecatedAliases() {
-		cfg, err := Merge(nil, []byte(alias+": false\n"), nil)
+		if _, ok := fieldByTag(&Config{}, live); !ok {
+			t.Fatalf("alias %q names live key %q, which is not a schema key", alias, live)
+		}
+		viaAlias, err := Merge(nil, []byte(alias+": false\n"), nil)
 		if err != nil {
 			t.Fatalf("Merge(%s): %v", alias, err)
 		}
-		field, ok := fieldByTag(cfg, live)
-		if !ok {
-			t.Fatalf("alias %q names live key %q, which is not a schema key", alias, live)
+		viaLive, err := Merge(nil, []byte(live+": false\n"), nil)
+		if err != nil {
+			t.Fatalf("Merge(%s): %v", live, err)
 		}
-		if field.IsZero() {
-			t.Errorf("a file setting only %q left %q unset — the fold is gone", alias, live)
-		}
-	}
-}
-
-// fieldByTag returns the Config field carrying the given mapstructure tag.
-func fieldByTag(cfg *Config, tag string) (reflect.Value, bool) {
-	v := reflect.ValueOf(*cfg)
-	for f := range reflect.TypeFor[Config]().Fields() {
-		if f.Tag.Get("mapstructure") == tag {
-			return v.FieldByName(f.Name), true
+		got, _ := fieldByTag(viaAlias, live)
+		want, _ := fieldByTag(viaLive, live)
+		if !reflect.DeepEqual(got.Interface(), want.Interface()) {
+			t.Errorf("a file setting only %q resolved %q to %v, want %v — the fold is gone",
+				alias, live, got.Interface(), want.Interface())
 		}
 	}
-	return reflect.Value{}, false
 }
 
 // TestEnvBoundKeysAreDocumented pins docs/configuration.md's env-var list to

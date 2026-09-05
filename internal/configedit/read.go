@@ -29,24 +29,46 @@ type FileValue struct {
 // reads back as inheriting everything.
 //
 // A deprecated alias is credited to the live key it folds into, so a file that
-// only sets browser_bridge counts as setting bridge. That fold belongs to the
-// load path (config.Merge performs it), and the pairs are asked of
-// config.DeprecatedAliases rather than restated here.
+// only sets browser_bridge counts as setting bridge. The fold is not performed
+// here: config.FoldDeprecatedAliases owns the pairs and the precedence, and this
+// reader supplies only its own answer to "does this carrier set the key" —
+// which for a file is "is the key written at all".
 func FileValues(path string) (map[string]FileValue, error) {
+	b, err := readMaybe(path)
+	if err != nil {
+		return nil, err
+	}
 	var root yaml.Node
-	if err := readYAMLFile(path, &root); err != nil {
+	// The parse error goes back unwrapped, unlike the typed readers above. This
+	// one's error reaches `config ui`'s own error line, so wrapping it would
+	// change what a user reads — and it is a branch config.Plan reaches first
+	// (it parses these same layer files before the per-scope read runs), so the
+	// better wording would never be seen and is not worth the change.
+	if err := yaml.Unmarshal(b, &root); err != nil {
 		return nil, err
 	}
 	out := map[string]FileValue{}
 	if doc := documentMapping(&root); doc != nil {
 		collectFileValues(out, "", doc)
-		foldDeprecatedAliases(out)
+		// The fold itself belongs to config, which owns both the alias pairs and
+		// the precedence between them; only "what does this carrier call set" is
+		// ours to answer.
+		config.FoldDeprecatedAliases(
+			func(key string) bool { _, ok := out[key]; return ok },
+			func(alias, live string) { out[live] = out[alias] },
+		)
 	}
 	return out, nil
 }
 
 // documentMapping returns the document's root mapping, or nil when the file
 // holds none — empty, comments only, or a document that is not a mapping.
+//
+// Read-only, and that is the whole difference from configio.EnsureDocumentMap,
+// which answers the same question for a writer by *creating* the mapping it
+// does not find. A reader must be able to say "this file sets nothing"; a
+// writer must always have somewhere to put the key. Neither can serve the
+// other, so they stay two functions and this comment says why.
 func documentMapping(root *yaml.Node) *yaml.Node {
 	node := root
 	if node.Kind == yaml.DocumentNode {
@@ -97,16 +119,14 @@ func nodeEntries(node *yaml.Node) int {
 	return 0
 }
 
-// foldDeprecatedAliases credits an alias's value to the live key it folds into.
-// A file spelling both wins with the live key, matching the load path: the
-// alias is a backstop, never an override.
-func foldDeprecatedAliases(vals map[string]FileValue) {
-	for alias, live := range config.DeprecatedAliases() {
-		v, aliased := vals[alias]
-		if _, set := vals[live]; aliased && !set {
-			vals[live] = v
-		}
+// readMaybe returns a file's bytes, or nil when it does not exist — a missing
+// config file is an empty layer, never an error.
+func readMaybe(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
 	}
+	return b, err
 }
 
 // UserMountNames returns the name of every named entry in path's mounts:
@@ -153,11 +173,8 @@ func UserShells(path string) (map[string]string, error) {
 // UserShells: missing file decodes as the zero value, anything else
 // unmarshals into out.
 func readYAMLFile(path string, out any) error {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+	b, err := readMaybe(path)
+	if err != nil || b == nil {
 		return err
 	}
 	if err := yaml.Unmarshal(b, out); err != nil {

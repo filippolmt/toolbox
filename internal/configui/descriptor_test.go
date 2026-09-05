@@ -102,6 +102,27 @@ worktree:
 	}
 }
 
+// TestNestedCollectionCountsTheFieldItPresents: worktree is the key whose
+// entries do not live on its own node — the UI presents its seed list, and the
+// row says so with scopeEntries. One entry each is not enough to catch a count
+// taken from the wrong node: `worktree: {seed: [x]}` holds one pair *and* one
+// seed, so both readings agree. Two seeds under the one mapping key tell them
+// apart.
+func TestNestedCollectionCountsTheFieldItPresents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".toolbox.yaml")
+	writeFile(t, path, "worktree:\n  seed: [.env.local, .env.test]\n")
+
+	got, err := scopeStates(path)
+	if err != nil {
+		t.Fatalf("scopeStates: %v", err)
+	}
+	want := countLabel(2, keyDescriptors["worktree"].noun)
+	if got["worktree"].display != want {
+		t.Errorf("per-scope display of worktree = %q, want %q — the count must come "+
+			"from the seed list, not from the worktree mapping", got["worktree"].display, want)
+	}
+}
+
 // TestEveryCollectionKeyListsItsEntries: a key whose list row is a count must
 // name those entries in the detail pane — a count with no names behind it is
 // the row a missing descriptor field produces.
@@ -161,6 +182,50 @@ func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 		if m.ed.kind == edMulti && m.ed.selected == nil {
 			t.Errorf("key %q opened a multi-select with a nil selection set", key)
 		}
+	}
+}
+
+// TestEveryEditorKindIsSeededDrawnAndDriven: an editor kind is declared in
+// three places — the seed that opens it (editorSeeds, indexed by kind), the
+// pane that draws it (renderEditor) and the reducer that takes its keys
+// (updateEditing). Only the first is a table; the other two are switches, so a
+// kind added without its case opens an editor that draws a bare title or
+// swallows every key, with a green suite. This is that guard.
+//
+// The pane is proved by its footer: every kind's renderer emits one naming
+// `esc`, and nothing else on screen does while an editor is open. The reducer
+// is proved by the kind's own key, which each row below names — a new kind
+// fails the completeness check first and has to declare one.
+func TestEveryEditorKindIsSeededDrawnAndDriven(t *testing.T) {
+	// key: a key whose descriptor declares the kind. press: a key press that
+	// kind's reducer must act on. after: what the pane shows once it has.
+	drivers := map[editorKind]struct{ key, press, after string }{
+		edEnum:   {"pull", "down", "> always"},
+		edString: {"image", "x", "x"},
+		edTri:    {"bridge", "down", "> true"},
+		edMulti:  {"sdd", "space", "[x]"},
+		edRows:   {"env", "a", "key:"},
+	}
+	if len(drivers) != len(editorSeeds) {
+		t.Fatalf("editorSeeds holds %d kinds and this table %d — a new editor kind needs a row here, "+
+			"and cases in renderEditor and updateEditing", len(editorSeeds), len(drivers))
+	}
+	for kind, d := range drivers {
+		if _, ok := editorSeeds[kind]; !ok {
+			t.Errorf("kind %d has no seed", kind)
+			continue
+		}
+		if got := keyDescriptors[d.key].kind; got != kind {
+			t.Fatalf("key %q declares kind %d, not the %d this row drives", d.key, got, kind)
+		}
+		m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: d.key, ScopeSet: true}), "enter")
+		if !m.editing {
+			t.Errorf("kind %d opened no editor for %q (status %q)", kind, d.key, m.status)
+			continue
+		}
+		// A kind missing from renderEditor draws the title and nothing else.
+		wantOnScreen(t, m, "esc")
+		wantOnScreen(t, press(m, d.press), d.after)
 	}
 }
 

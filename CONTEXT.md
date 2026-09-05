@@ -242,12 +242,16 @@ Concretely: `displayValue`, `scopeDisplay`, `detailEntries`,
 themselves, so the editor a key opens and the mutation it writes are the
 same declaration. `openEditor` reads it *once*: the row's kind indexes
 `editorSeeds`, one seed per kind, rather than a second switch in the tea
-half re-deriving per key what the row already said. The per-key facts
-that are *not* presentation stay where they belong and are asked, not
-restated: which keys are attributed per entry
-(`configedit.PerEntryKey`, read by `originFor`), and what one layer's
-file itself sets — the deprecated-alias fold included
-(`configedit.FileValues`, read by `scopeStates`; `Keys` asks
+half re-deriving per key what the row already said. The row declares
+which kind; the seed table lives with the kinds in `model.go`, because
+what a kind opens with is bubbles widgets and the descriptor holds
+presentation facts, not UI state. The per-key facts that are *not*
+presentation stay where they belong and are asked, not restated: which
+keys are attributed per entry (`configedit.PerEntryKey`, read by
+`originFor`), what one layer's file itself sets (`configedit.FileValues`,
+read by `scopeStates`), and how a deprecated alias folds into its live
+key (`config.FoldDeprecatedAliases` — the one implementation, called by
+the load path and by `FileValues` alike; `Keys` asks
 `config.DeprecatedAliases` only to drop the alias rows).
 `TestKeyDescriptorsCoverEveryKey` demands a row per
 `Keys()` entry, and three behavioural guards ride on it: every key

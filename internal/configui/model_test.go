@@ -20,11 +20,13 @@ func browsing(scope Scope, cfg *config.Config, st KeyState) Model {
 
 // TestResetInheritedKeyIsNoOp: reset on a key the selected scope does not set
 // reports "nothing to reset" and never touches a file (guarded before any write
-// path, so an empty cwd/target is safe).
+// path, so an empty cwd/target is safe). The layer it inherits from is named in
+// the status, not merely somewhere on screen — the list tag and the detail
+// pane's "(unset — inherits global)" both say "global" whatever reset does.
 func TestResetInheritedKeyIsNoOp(t *testing.T) {
 	m := press(browsing(ScopeRepo, &config.Config{},
 		KeyState{Key: "pull", Origin: configedit.OriginGlobal}), "r")
-	wantOnScreen(t, m, "nothing to reset", "global")
+	wantInStatus(t, m, "nothing to reset", "global")
 }
 
 // TestResetEnvSourcedKeyPointsAtTheHostVar: a value coming from TOOLBOX_* is
@@ -33,20 +35,22 @@ func TestResetInheritedKeyIsNoOp(t *testing.T) {
 func TestResetEnvSourcedKeyPointsAtTheHostVar(t *testing.T) {
 	m := press(browsing(ScopeRepo, &config.Config{},
 		KeyState{Key: "pull", FromEnv: true, ScopeSet: true}), "r")
-	wantOnScreen(t, m, "TOOLBOX_PULL")
-	notOnScreen(t, m, "reset failed")
+	wantInStatus(t, m, "TOOLBOX_PULL", "unset")
+	notInStatus(t, m, "reset failed", "reset pull")
 }
 
 // TestEnterOnEnvSourcedKeyRefuses: env sits above every file layer the UI can
 // write, so an editor here would save a value the next load ignores. Enter
-// refuses and the view says which var owns the value.
+// refuses and the status names which var owns the value — the detail pane says
+// "read-only — set via TOOLBOX_PULL" for an env-sourced key whether enter was
+// pressed or not, so only the status can testify about the refusal.
 func TestEnterOnEnvSourcedKeyRefuses(t *testing.T) {
 	m := press(browsing(ScopeRepo, &config.Config{},
 		KeyState{Key: "pull", FromEnv: true}), "enter")
 	if m.editing {
 		t.Error("an env-sourced key must not open an editor")
 	}
-	wantOnScreen(t, m, "read-only", "TOOLBOX_PULL")
+	wantInStatus(t, m, "TOOLBOX_PULL", "read-only")
 }
 
 // TestEnterOnSingleValuedKeyRefuses: a key whose enum holds one option has
@@ -57,7 +61,7 @@ func TestEnterOnSingleValuedKeyRefuses(t *testing.T) {
 	if m.editing {
 		t.Error("a single-valued key must not open an editor")
 	}
-	wantOnScreen(t, m, "single supported value", "zsh")
+	wantInStatus(t, m, "single supported value", "zsh")
 }
 
 // TestEnterOnAnUnsetKeyWarnsItCreatesAnOverride: opening an editor in a scope
@@ -68,7 +72,15 @@ func TestEnterOnAnUnsetKeyWarnsItCreatesAnOverride(t *testing.T) {
 	if !m.editing {
 		t.Fatalf("pull must open an editor, status = %q", m.status)
 	}
-	wantOnScreen(t, m, "creates an override in "+ScopeRepo.String())
+	wantInStatus(t, m, "creates an override in "+ScopeRepo.String())
+}
+
+// TestEnterOnAKeyTheScopeSetsWarnsNothing is the other half: editing a key the
+// layer already sets forks nothing, so the override warning must not fire.
+func TestEnterOnAKeyTheScopeSetsWarnsNothing(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{},
+		KeyState{Key: "pull", ScopeSet: true}), "enter")
+	notInStatus(t, m, "creates an override")
 }
 
 // rowsEditor opens a key's collection editor through the key stream and fails
@@ -87,27 +99,37 @@ func rowsEditor(t *testing.T, key string, cfg *config.Config) Model {
 func TestAddingAPairRowBuffersTheKeyThenTheValue(t *testing.T) {
 	m := rowsEditor(t, "env", &config.Config{})
 	m = press(m, "a")
+	wantOnScreen(t, m, "key:") // the key column is open first
 	m = typeText(m, "REGION")
 	m = press(m, "enter")
+	wantOnScreen(t, m, "value:") // committing the key advances to the value
 	m = typeText(m, "eu")
 	m = press(m, "enter")
 	wantOnScreen(t, m, "> REGION = eu")
+	notOnScreen(t, m, "(no entries)")
 }
 
 // TestAnEmptyKeyAbortsTheRow: committing an empty key column writes no row —
-// a pair whose key is blank has nothing to write it under.
+// a pair whose key is blank has nothing to write it under. The field has to
+// close too, or the abort is just a stuck prompt.
 func TestAnEmptyKeyAbortsTheRow(t *testing.T) {
 	m := rowsEditor(t, "env", &config.Config{})
-	m = press(m, "a", "enter")
-	wantOnScreen(t, m, "(no entries)")
+	m = press(m, "a")
+	wantOnScreen(t, m, "key:")
+	m = press(m, "enter")
+	wantOnScreen(t, m, "(no entries)", "a: add")
+	notOnScreen(t, m, "key:")
 }
 
 // TestAnEmptyValueAbortsASingleColumnRow is its single-column sibling: a seed
 // path editor has only one column, so an empty one is the whole row.
 func TestAnEmptyValueAbortsASingleColumnRow(t *testing.T) {
 	m := rowsEditor(t, "worktree", &config.Config{})
-	m = press(m, "a", "enter")
-	wantOnScreen(t, m, "(no entries)")
+	m = press(m, "a")
+	wantOnScreen(t, m, "value:")
+	m = press(m, "enter")
+	wantOnScreen(t, m, "(no entries)", "a: add")
+	notOnScreen(t, m, "value:")
 }
 
 // TestEscBacksOutOfAFieldWithoutClosingTheEditor: esc has two meanings in a
@@ -116,11 +138,13 @@ func TestAnEmptyValueAbortsASingleColumnRow(t *testing.T) {
 func TestEscBacksOutOfAFieldWithoutClosingTheEditor(t *testing.T) {
 	m := rowsEditor(t, "env", &config.Config{Env: map[string]string{"REGION": "eu"}})
 	m = press(m, "enter") // open the key column of row 0
+	wantOnScreen(t, m, "key:")
 	m = press(m, "esc")
 	if !m.editing {
 		t.Fatal("esc in a field must not close the editor")
 	}
 	wantOnScreen(t, m, "REGION = eu", "a: add")
+	notOnScreen(t, m, "key:")
 
 	m = press(m, "esc")
 	if m.editing {
@@ -138,37 +162,42 @@ func TestDeleteRemovesTheSelectedRow(t *testing.T) {
 }
 
 // TestRenamingAShellAfterADeleteKeepsItsEnv: a shells row carries the identity
-// of the entry it opened with, so the writer can tell a rename from a new
-// entry and move that entry's env: block with it. Deleting a row first is the
-// case that proves the identities stay aligned with the rows — misalign them
-// and the rename credits the wrong entry, dropping the env block the user never
-// touched. Driven end to end: the assertion is on the file the save wrote.
+// of the entry it opened with, so the writer can tell a rename from a new entry
+// and move that entry's env: block with it. Deleting an *earlier* row first is
+// the case that proves the identities stay aligned with the rows: drop the
+// alignment and every later row inherits its neighbour's identity, so the rename
+// credits the wrong entry and takes the env block of a shell the user never
+// touched. Deleting a later row would not show it — the surviving row's index is
+// unchanged — which is why this one deletes the first of the two.
+//
+// Driven end to end: the assertion is on the file the save wrote.
 func TestRenamingAShellAfterADeleteKeepsItsEnv(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cwd := t.TempDir()
 	target := filepath.Join(cwd, ".toolbox.yaml")
-	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n    env:\n      REGION: eu\n  legacy:\n    path: /repo/legacy\n")
+	writeFile(t, target, "shells:\n  infra:\n    path: /repo/infra\n  legacy:\n    path: /repo/legacy\n    env:\n      REGION: eu\n")
 	cfg := &config.Config{Shells: map[string]config.NamedShell{
-		"infra":  {Path: "/repo/infra", Env: map[string]string{"REGION": "eu"}},
-		"legacy": {Path: "/repo/legacy"},
+		"infra":  {Path: "/repo/infra"},
+		"legacy": {Path: "/repo/legacy", Env: map[string]string{"REGION": "eu"}},
 	}}
 
 	m := Model{cwd: cwd, target: target, scope: ScopeRepo, cfg: cfg,
 		states: []KeyState{{Key: "shells", ScopeSet: true}}}
-	m = press(m, "enter")     // rows: infra, legacy (sorted)
-	m = press(m, "down", "d") // drop legacy; cursor falls back to infra
-	m = press(m, "enter")     // open infra's name column
-	m = eraseField(m, len("infra"))
+	m = press(m, "enter") // rows: infra, legacy (sorted)
+	m = press(m, "d")     // drop infra, the first row; legacy shifts up into its slot
+	m = press(m, "enter") // open the surviving row's name column
+	m = eraseField(m, len("legacy"))
 	m = typeText(m, "prod")
 	m = press(m, "enter") // commit the name, advance to the path column
 	m = press(m, "enter") // keep the path
-	press(m, "s")         // save
+	m = press(m, "s")     // save
 
+	wantInStatus(t, m, "saved shells")
 	got := readFile(t, target)
-	if !strings.Contains(got, "prod:") {
-		t.Errorf("the rename did not reach the file:\n%s", got)
+	if !strings.Contains(got, "prod:") || !strings.Contains(got, "/repo/legacy") {
+		t.Errorf("the rename did not reach the file, or renamed the wrong row:\n%s", got)
 	}
-	if strings.Contains(got, "legacy") {
+	if strings.Contains(got, "infra") {
 		t.Errorf("the deleted shell survived the save:\n%s", got)
 	}
 	if !strings.Contains(got, "REGION: eu") {
@@ -194,19 +223,22 @@ func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
 	wantOnScreen(t, m, "[ ] "+first)
 	m = press(m, "space")
 	wantOnScreen(t, m, "[x] "+first)
+	m = press(m, "space")
+	wantOnScreen(t, m, "[ ] "+first)
 }
 
 // TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope: sdd's effect is anchored
 // to the workspace, so the structured editor must not write it into the global
 // layer. The row still displays (a hand-written global flag stays legal and
 // visible, and the $EDITOR escape still reaches it) — enter refuses, and the
-// status names both the reason and the way out.
+// status names both the reason and the way out. Asserted on the status, because
+// the keybar names `tab` and the detail pane names the scope on every frame.
 func TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope(t *testing.T) {
 	m := press(browsing(ScopeGlobal, &config.Config{}, KeyState{Key: "sdd"}), "enter")
 	if m.editing {
 		t.Error("sdd must not open an editor in the global scope")
 	}
-	wantOnScreen(t, m, ScopeGlobal.String(), "tab")
+	wantInStatus(t, m, "per-workspace", ScopeGlobal.String(), "press tab")
 }
 
 // TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope is the other half: the guard
@@ -216,6 +248,7 @@ func TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope(t *testing.T) {
 	if !m.editing {
 		t.Errorf("sdd must stay editable in the repo scope, status = %q", m.status)
 	}
+	notInStatus(t, m, "per-workspace")
 }
 
 // enabledSDDRepo builds a workspace with gsd enabled through the real save
@@ -241,8 +274,9 @@ func TestResetWorkspaceOnlyKeyClearsFencesInRepoScope(t *testing.T) {
 	}
 
 	m := Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	press(m, "r")
+	m = press(m, "r")
 
+	wantInStatus(t, m, "reset sdd")
 	if got := readFile(t, target); strings.Contains(got, "sdd") {
 		t.Errorf("reset left the sdd flag behind:\n%s", got)
 	}
@@ -274,7 +308,7 @@ func TestResetWorkspaceOnlyKeyKeepsFencesInGlobalScope(t *testing.T) {
 	if got := readFile(t, filepath.Join(cwd, ".gitignore")); !strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
 		t.Errorf("a global reset must not touch the workspace fence:\n%s", got)
 	}
-	wantOnScreen(t, m, "fence")
+	wantInStatus(t, m, "fences left untouched")
 }
 
 // TestResetInRepoScopeKeepsFencesAKeptGlobalFlagStillNeeds: reset removes the

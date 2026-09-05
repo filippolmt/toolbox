@@ -118,19 +118,3 @@ func rowsPaneLine(t *testing.T, m Model, want string) string {
 	t.Fatalf("no rendered line contains %q:\n%s", want, screen(m))
 	return ""
 }
-
-// stripStyle removes the ANSI escapes lipgloss adds, so assertions can match
-// the text the user reads rather than the styling around it.
-func stripStyle(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0x1b {
-			for i < len(s) && s[i] != 'm' {
-				i++
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}

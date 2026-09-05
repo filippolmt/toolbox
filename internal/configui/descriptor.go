@@ -5,8 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
-
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
@@ -216,43 +214,6 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		noun:         "seed path",
 		scopeEntries: "seed",
-	},
-}
-
-// editorSeeds is the state each editor kind opens with — the single dispatch on
-// the kind a descriptor row declares. openEditor looks the seed up by that kind
-// instead of switching on it a second time: the tea half used to carry a copy of
-// this switch, re-answering per key what the row had already said, so a kind
-// added there and forgotten here (or the reverse) produced an editor pane with
-// nothing in it. A kind absent from this table opens nothing, which is how
-// edNone stays inert without a branch of its own.
-var editorSeeds = map[editorKind]func(keyDescriptor, string, *config.Config) editor{
-	edEnum: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		opts, cur := d.options(), d.str(cfg)
-		return editor{key: key, kind: edEnum, options: opts, current: cur,
-			def: EnumDefault(key), cursor: indexOf(opts, cur)}
-	},
-	edString: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		ti := textinput.New()
-		ti.SetValue(d.str(cfg))
-		ti.Focus()
-		return editor{key: key, kind: edString, input: ti}
-	},
-	edTri: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		cur := triState(d.tri(cfg))
-		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
-		return editor{key: key, kind: edTri, options: triChoices, current: cur,
-			def: triChoices[0], cursor: indexOf(triChoices, cur)}
-	},
-	edMulti: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		return editor{key: key, kind: edMulti, options: d.options(), selected: d.selected(cfg)}
-	},
-	edRows: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		// Pair editors carry key→value rows; the rest are single-column lists.
-		if d.pairs != nil {
-			return rowsEditorState(key, true, pairsToRows(d.pairs(cfg)))
-		}
-		return rowsEditorState(key, false, valuesToRows(d.list(cfg)))
 	},
 }
 
