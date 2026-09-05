@@ -77,6 +77,14 @@ directory finds. One axis with three faces, each owning one verb —
 from). Owned by `internal/configedit`, with the selection face in
 `internal/configui`.
 
+`mountplan.Origin` is a different subject under the same name and the same
+user-facing column heading: it attributes a *mount* to the merge set it came
+from (see [Mount Plan](#mount-plan)), which is set arithmetic over one file,
+not a layer of the config. Each name is
+right in its own package and neither is renamed; a reader tracing "where does
+origin come from" starts here, and the answer is *which column* — the config
+layer, or the mount's merge set.
+
 Concretely: every writer command targets a Where; the config editor's
 tab moves a Scope, and every save, reset and preview it performs is
 resolved through the matching Where, never through a path of its own.
