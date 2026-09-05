@@ -102,22 +102,26 @@ ARG SHFMT_VERSION=3.14.0
 # bookworm ships 2.36, no aarch64-musl release. Revisit when upstream
 # publishes aarch64-musl OR Azure CLI apt repo gains trixie suite.
 #
-# The arm64 leg needs no reproducibility treatment, which is not what it looks
-# like: `cargo install` compiles here, and compiling is the usual place a build
-# clock and an absolute path get baked in. Measured on a native arm64 daemon,
-# two `--no-cache` builds produced the same `COPY --link` layer digest — the
-# tag pins the source, `--locked` pins the dependency graph, the paths rustc
-# records are container paths that do not vary between builds, and the `touch`
-# below already freezes what the stage writes. So no SOURCE_DATE_EPOCH and no
-# --remap-path-prefix: they would be ceremony against a diff nobody measured.
+# **The base image is pinned by digest, and on arm64 that pin is what makes the
+# stage reproducible at all.** This is the one FROM in the file whose contents
+# are compiled *into* a stage's `/out` rather than merely hosting the download
+# of one, so a floating tag here is Fetch Nondeterminism — `/out` stops being a
+# function of RTK_VERSION — and not the Archive Drift a moving base usually is.
+# Measured on a native arm64 daemon, same RTK_VERSION and same `--locked`
+# dependency graph, varying only the toolchain:
 #
-# What DOES move the arm64 binary is the base tag: `1-slim-bookworm` floats
-# across the major series that tag names, so a toolchain release recompiles it.
-# That is the same class as an apt set moving under a stage — Archive Drift,
-# priced when the base moves rather than on every cache miss — and pinning the
-# image by digest would trade it for a toolchain frozen against its own security
-# releases with no Renovate manager watching. → CONTEXT.md "Fetch Nondeterminism"
-FROM rust:1-slim-bookworm AS rtk-builder
+#   rustc 1.98.0 → rtk 0d114e8daf093e81…    rustc 1.97.1 → rtk 0c1a18b805e6aa54…
+#
+# Two `--no-cache` builds against the *same* base agree to the byte, which is
+# why no SOURCE_DATE_EPOCH and no --remap-path-prefix: `--locked` pins the
+# dependency graph and the paths rustc records are container paths. Holding the
+# base still is the whole fix, and Renovate keeps the digest fresh (`pinDigests`
+# for this package in renovate.json) so the pin is a reproducibility barrier
+# rather than a frozen toolchain — the objection that would otherwise apply, and
+# weaker here anyway than in ADR 0002's rejection of apt pinning for the final
+# stage: nothing this build container installs reaches the shipped image.
+# → CONTEXT.md "Fetch Nondeterminism"
+FROM rust:1-slim-bookworm@sha256:1469a27c125cb5a3aebfa4f4e4665d935b02fb72cc093b2c974b3d740e43f157 AS rtk-builder
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 # Per-stage: SHELL does not survive a FROM that targets an external image.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -175,7 +179,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
 # `freeze-git` is the same job for the two stages that ship a git checkout rather
 # than an unpacked release artefact, where mtimes are not the only thing a clock
 # reaches. Given a working-tree root it makes the repository a function of the
-# commit it pins, and nothing else — Fetch Nondeterminism in CONTEXT.md:
+# commit it pins, and nothing else — Fetch Nondeterminism in CONTEXT.md.
+#
+# It names `--git-dir`/`--work-tree` rather than `-C`, and that is a correctness
+# requirement, not a style: `git -C <dir>` *discovers* a repository by walking
+# up, and the OMZ plugins live inside the OMZ working tree, so a plugin that
+# failed to become a repository would silently get its parent repacked and
+# read-tree'd in its place. Naming the directory makes that case fatal, as does
+# refusing an empty argument list. The three normalisations:
 #
 #   * repack, so the pack is ours instead of whatever upload-pack chose to send.
 #     A server-generated pack is outside our control by construction, and the
@@ -220,11 +231,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
     printf '%s\n' \
       '#!/bin/sh' \
       'set -eu' \
+      '[ "$#" -gt 0 ] || { echo "freeze-git: no repository given" >&2; exit 1; }' \
       'for repo in "$@"; do' \
-      '  git -C "$repo" -c pack.threads=1 repack -adFqn --window=10 --depth=50 --no-write-bitmap-index' \
+      '  git --git-dir="$repo/.git" --work-tree="$repo" -c pack.threads=1 repack -adFqn --window=10 --depth=50 --no-write-bitmap-index' \
       '  rm -rf "$repo/.git/logs"' \
-      '  rm -f "$repo/.git/FETCH_HEAD" "$repo/.git/ORIG_HEAD"' \
-      '  git -C "$repo" read-tree HEAD' \
+      '  git --git-dir="$repo/.git" --work-tree="$repo" read-tree HEAD' \
       'done' \
       > /usr/local/bin/freeze-git; \
     chmod 0755 /usr/local/bin/freeze-git

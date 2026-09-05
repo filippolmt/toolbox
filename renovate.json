@@ -26,6 +26,12 @@
       "matchFileNames": ["internal/build/assets/Dockerfile"],
       "groupName": "dockerfile image",
       "groupSlug": "dockerfile"
+    },
+    {
+      "description": "The rust base is pinned by digest, alone among the FROMs. It is the only one whose contents are compiled into a stage's /out instead of hosting the download of one, so a floating tag makes rtk-builder's arm64 output stop being a function of RTK_VERSION — Fetch Nondeterminism in CONTEXT.md, measured in the stage comment. pinDigests is what keeps that pin from becoming a frozen toolchain: Renovate re-resolves the digest for the same tag, so upstream rebuilds still arrive, as a digest PR instead of silently.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["rust"],
+      "pinDigests": true
     }
   ],
   "customManagers": [

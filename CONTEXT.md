@@ -1120,17 +1120,25 @@ dropping the reflog, and reading the index back from `HEAD` with its
 stat cache zeroed. Neither stage can simply drop `.git`: Homebrew *is* a
 git checkout, and `omz update` needs one.
 
-`rtk-builder` was first counted here and does not belong, on either
-arch. On amd64 its binary comes from a checksummed tarball; on arm64 it
-is compiled, but `--locked` pins the dependency graph and the paths
-rustc records are container paths, and both are identical across builds.
-Its layer moved because the COPY named a single file, and a `--link`
-layer stamps the destination directories it has to synthesise with the
-build clock — a defect of the copy, not of the stage's output. What does
-move the arm64 binary is its floating base tag, which is Archive Drift.
-The cost of either stays invisible while BuildKit reuses the stage and
-appears in full whenever anything invalidates it — an archive update, or
-a lost build cache.
+`rtk-builder` belongs here on arm64 and not on amd64, and the two are
+worth separating. On amd64 its binary comes from a checksummed tarball
+and is identical across builds; its layer moved because the COPY named a
+single file, and a `--link` layer stamps the destination directories it
+has to synthesise with the build clock — a defect of the copy, not of
+the stage's output. On arm64 the binary is compiled, and a base image
+tag that floats is enough to make `/out` stop being a function of
+`RTK_VERSION`: the same version and the same `--locked` dependency graph
+built on two toolchains produce two different binaries. That is this
+term and not Archive Drift, because what moves is the stage's own output
+rather than the layers it sits on — the base image here is not a host
+for a download, it is compiled *into* the result. The fix is therefore
+to hold the base still: it is the one `FROM` in the file pinned by
+digest, with Renovate keeping the digest fresh so the pin does not
+become a frozen toolchain.
+
+The cost of any of this stays invisible while BuildKit reuses the stage
+and appears in full whenever anything invalidates it — an archive
+update, or a lost build cache.
 
 Why the term exists: `COPY --link` is what buys a bump the price of one
 layer, and that guarantee is worth exactly as much as the reproducibility
