@@ -155,14 +155,14 @@ func TestRenamingAShellAfterADeleteKeepsItsEnv(t *testing.T) {
 
 	m := Model{cwd: cwd, target: target, scope: ScopeRepo, cfg: cfg,
 		states: []KeyState{{Key: "shells", ScopeSet: true}}}
-	m = press(m, "enter")               // rows: infra, legacy (sorted)
-	m = press(m, "down", "d")           // drop legacy; cursor falls back to infra
-	m = press(m, "enter")               // open infra's name column
+	m = press(m, "enter")     // rows: infra, legacy (sorted)
+	m = press(m, "down", "d") // drop legacy; cursor falls back to infra
+	m = press(m, "enter")     // open infra's name column
 	m = eraseField(m, len("infra"))
 	m = typeText(m, "prod")
 	m = press(m, "enter") // commit the name, advance to the path column
 	m = press(m, "enter") // keep the path
-	m = press(m, "s")     // save
+	press(m, "s")         // save
 
 	got := readFile(t, target)
 	if !strings.Contains(got, "prod:") {

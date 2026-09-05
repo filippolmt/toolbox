@@ -63,16 +63,14 @@ func TestEveryDescriptorRowIsCompleteForItsKind(t *testing.T) {
 		if d.mutator == nil {
 			t.Errorf("descriptor %q has an editor with no writer behind it", key)
 		}
-		if d.noun != "" && d.nodeCount == nil {
-			t.Errorf("descriptor %q counts %ss but cannot count them in a scope file", key, d.noun)
-		}
 	}
 }
 
 // TestEveryCountedKeyCountsItsScopeEntries: a key rendered as a count of
-// entries must count them in a scope file too — a countable key whose descriptor
-// forgets how to count a yaml node would show the raw (empty) node value in the
-// "in <scope>" line. One entry each, so the singular label is exercised.
+// entries must count them in a scope file too — a countable key whose
+// descriptor points the count at the wrong node in that file would show a bare
+// "0" in the "in <scope>" line. One entry each, so the singular label is
+// exercised, and worktree is the case that proves a nested list is reached.
 func TestEveryCountedKeyCountsItsScopeEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".toolbox.yaml")
 	writeFile(t, path, `mounts:
@@ -88,9 +86,9 @@ env:
 worktree:
   seed: [.env.local]
 `)
-	got, err := ScopeStates(path)
+	got, err := scopeStates(path)
 	if err != nil {
-		t.Fatalf("ScopeStates: %v", err)
+		t.Fatalf("scopeStates: %v", err)
 	}
 	for _, key := range Keys() {
 		d := keyDescriptors[key]

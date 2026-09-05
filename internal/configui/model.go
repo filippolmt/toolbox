@@ -117,7 +117,7 @@ func (m *Model) reload() {
 	// Enrich the (scope-agnostic) effective snapshot with the selected scope's
 	// own view of each key, so the detail pane can show "in <scope>" and the tab
 	// visibly changes what it reports.
-	scoped, err := ScopeStates(target)
+	scoped, err := scopeStates(target)
 	if err != nil {
 		m.loadErr = err
 		return

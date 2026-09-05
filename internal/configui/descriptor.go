@@ -6,11 +6,9 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
-	yaml "gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
-	"github.com/filippolmt/toolbox/internal/configio"
 )
 
 // keyDescriptor is everything this package knows about one config key, in one
@@ -58,9 +56,10 @@ type keyDescriptor struct {
 	// entries lists the effective entry names for the detail pane, sorted by
 	// detailEntries. Defaults to list; nil for keys with no entries to name.
 	entries func(*config.Config) []string
-	// nodeCount counts the entries one config file's own node holds for the key.
-	// Nil for keys whose file value is a scalar shown verbatim.
-	nodeCount func(*yaml.Node) int
+	// scopeEntries names the field, nested inside the key's own node, whose
+	// entries the per-scope count reports. Empty means the key's node itself —
+	// only worktree names one, because the UI presents its seed list alone.
+	scopeEntries string
 	// hint is the parenthesised placeholder a free-text scalar shows when it is
 	// empty and has no default value to echo.
 	hint string
@@ -88,9 +87,8 @@ var keyDescriptors = map[string]keyDescriptor{
 		noun: "override",
 		// Counted from the config, not from the names below: an unnamed override
 		// is still an override, it just has no label the detail pane can show.
-		count:     func(c *config.Config) int { return len(c.Mounts) },
-		entries:   mountNames,
-		nodeCount: seqEntries,
+		count:   func(c *config.Config) int { return len(c.Mounts) },
+		entries: mountNames,
 	},
 	"inherit_host_auth": {
 		kind:     edMulti,
@@ -99,8 +97,7 @@ var keyDescriptors = map[string]keyDescriptor{
 		selected: func(c *config.Config) map[string]bool { return setOf(c.InheritHostAuth) },
 		mutator:  listFromSelection,
 
-		noun:      "auth entry",
-		nodeCount: seqEntries,
+		noun: "auth entry",
 		// The effective value names the CLIs rather than counting them: the list
 		// is short, and which CLI reads host credentials is the point of the key.
 		display: func(c *config.Config) string {
@@ -115,9 +112,8 @@ var keyDescriptors = map[string]keyDescriptor{
 		pairs:   ShellPaths,
 		mutator: func(e *editor, cfg *config.Config) configedit.Mutator { return configedit.Shells(e.shellEntries(cfg)) },
 
-		noun:      "shell",
-		entries:   func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Shells)) },
-		nodeCount: mapEntries,
+		noun:    "shell",
+		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Shells)) },
 	},
 	// shell / agent / pull carry a fallback, so their effective display comes
 	// from the one config.EffectiveValue seam (guarded by TestRendererParity) —
@@ -170,8 +166,7 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		noun: "pack",
 		// Every declared pack, enabled or not — the flag lives on the entry.
-		entries:   func(c *config.Config) []string { return slices.Collect(maps.Keys(c.SDD)) },
-		nodeCount: mapEntries,
+		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.SDD)) },
 	},
 	"bridge": {
 		kind:    edTri,
@@ -209,9 +204,8 @@ var keyDescriptors = map[string]keyDescriptor{
 			return configedit.StringMap(e.key, rowsToPairs(e.rows))
 		},
 
-		noun:      "var",
-		entries:   func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Env)) },
-		nodeCount: mapEntries,
+		noun:    "var",
+		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Env)) },
 	},
 	"worktree": {
 		kind: edRows,
@@ -220,8 +214,8 @@ var keyDescriptors = map[string]keyDescriptor{
 			return configedit.WorktreeSeed(rowsToValues(e.rows))
 		},
 
-		noun:      "seed path",
-		nodeCount: seedEntries,
+		noun:         "seed path",
+		scopeEntries: "seed",
 	},
 }
 
@@ -309,6 +303,27 @@ func (d keyDescriptor) displayOf(cfg *config.Config, key string) string {
 	return ""
 }
 
+// scopeDisplay renders one config file's own value for the key: a counted
+// collection shows how many entries that file holds — with the same noun the
+// effective display uses, so the two cannot drift — and everything else shows
+// the scalar the file wrote. The values are configedit's reading of the file;
+// this only chooses which of them the row shows.
+func (d keyDescriptor) scopeDisplay(vals map[string]configedit.FileValue, key string) string {
+	if d.noun == "" {
+		return vals[key].Scalar
+	}
+	return countLabel(vals[d.scopeEntriesPath(key)].Entries, d.noun)
+}
+
+// scopeEntriesPath is where in the file the key's entries live: the key's own
+// node, unless the row names a field nested inside it.
+func (d keyDescriptor) scopeEntriesPath(key string) string {
+	if d.scopeEntries == "" {
+		return key
+	}
+	return key + "." + d.scopeEntries
+}
+
 // countOf is how many entries a collection holds: its own counter when the key
 // has one, otherwise the entries it can name.
 func (d keyDescriptor) countOf(cfg *config.Config) int {
@@ -349,20 +364,4 @@ func setOf(vals []string) map[string]bool {
 		out[v] = true
 	}
 	return out
-}
-
-// mapEntries counts a mapping node's key/value pairs.
-func mapEntries(node *yaml.Node) int { return len(node.Content) / 2 }
-
-// seqEntries counts a sequence node's items.
-func seqEntries(node *yaml.Node) int { return len(node.Content) }
-
-// seedEntries counts the worktree key's nested seed list — the only entries the
-// UI presents for it.
-func seedEntries(node *yaml.Node) int {
-	seed := configio.ChildValue(node, "seed")
-	if seed == nil {
-		return 0
-	}
-	return len(seed.Content)
 }
