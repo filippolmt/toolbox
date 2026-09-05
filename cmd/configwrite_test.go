@@ -53,10 +53,15 @@ func TestEveryConfigWriterCommandOffersDryRun(t *testing.T) {
 // flag inert. Every config write in cmd goes through applyOrPreview, the one
 // place that reads it.
 func TestConfigWritesGoThroughTheDryRunLane(t *testing.T) {
-	// The lane's own implementation, and the `shell --create` bootstrap — a
-	// side effect of entering a shell rather than a writer command with a flag
-	// surface of its own (see upsertShellInUserConfig).
-	allowed := map[string]bool{"configwrite.go": true, "shell_named.go": true}
+	// How many direct calls a file may carry outside the lane. configwrite.go
+	// is the lane itself, so it is unbounded. shell_named.go holds the
+	// `shell --create` bootstrap — a side effect of entering a shell rather
+	// than a writer command with a flag surface of its own (see
+	// upsertShellInUserConfig) — and holds exactly one: an exemption by
+	// filename alone would let a second writer in beside the one that earned
+	// it, which is the escape this test exists to close.
+	const unbounded = -1
+	budget := map[string]int{"configwrite.go": unbounded, "shell_named.go": 1}
 
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -71,8 +76,16 @@ func TestConfigWritesGoThroughTheDryRunLane(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if bytes.Contains(body, []byte("configedit.ApplyChecked(")) && !allowed[name] {
+		calls := bytes.Count(body, []byte("configedit.ApplyChecked("))
+		if calls == 0 {
+			continue
+		}
+		allowed, known := budget[name]
+		switch {
+		case !known:
 			t.Errorf("cmd/%s calls configedit.ApplyChecked directly — route the write through applyOrPreview so --dry-run reaches it", name)
+		case allowed != unbounded && calls != allowed:
+			t.Errorf("cmd/%s carries %d direct configedit.ApplyChecked calls, expected %d — a new writer here bypasses applyOrPreview and its --dry-run", name, calls, allowed)
 		}
 	}
 }

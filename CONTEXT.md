@@ -203,7 +203,7 @@ write. A preview that re-derives the mutation is the defect, not a
 convenience.
 
 The same defect had a second home, and the term is what let it be seen:
-`configedit` went on describing the CLI's six edits a second time, as
+`configedit` went on describing the CLI's edits a second time, as
 typed writers that took a path and wrote immediately. Same nodes, two
 spellings — so the one rule stated in both (the mounts disable shape)
 could drift, and the CLI's edits were unrenderable, which is to say no
@@ -1517,7 +1517,13 @@ The single predicate for "is proximo usable in this shell": the presence of
 proximo's root CA at the container path `/etc/ssl/proximo-ca.pem`.
 
 Concretely: host-side the gate is one resolved value, `proximo.Gate{Enabled,
-CAPath, CAExists}`, derived once per invocation by `proximo.Resolve(host, cfg)`
+CAPath, CAExists}`, derived by `proximo.Resolve(host, cfg)` once per
+*configuration it is asked about* — which for a session is once, full stop.
+That is the precise invariant, and the loose reading ("once per process") would
+be wrong in a way that matters: a write lints the candidate stack against the
+current one, `proximo:` is an editable key, so those two stacks are two
+questions and each is entitled to its own answer. What the value forbids is the
+same configuration being asked twice
 — explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
 existence, and `false` short-circuits before the `proximo config ca-path` query
 so an opted-out workspace never pays that subprocess. Everything downstream

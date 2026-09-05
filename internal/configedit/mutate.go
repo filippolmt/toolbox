@@ -26,7 +26,7 @@ import (
 // This is the package's whole edit vocabulary: every edit any surface performs
 // is one of these, applied by ApplyChecked at the caller's edge. There is no
 // second, write-only spelling of the same node work — a family of typed
-// writers used to describe the same six edits again, which left the CLI's edits
+// writers used to describe those same edits again, which left the CLI's edits
 // unrenderable and so unable to grow a --dry-run, and let one rule (the mounts
 // disable shape) be written twice and drift.
 
@@ -342,7 +342,9 @@ func Mount(m config.Mount) Mutator {
 // does not know breaks the next config load.
 func MountDisabled(name string) Mutator {
 	return func(doc *yaml.Node) {
-		disableMountIn(configio.EnsureChildSeq(doc, "mounts"), name)
+		seq := configio.EnsureChildSeq(doc, "mounts")
+		_, entry := configio.FindSeqEntryByName(seq, name)
+		disableMountIn(seq, name, entry)
 	}
 }
 
@@ -372,8 +374,12 @@ func RemoveMount(name string) Mutator {
 // `{name, disabled: true}` patch shape mergeMounts reads is appended. The one
 // place that rule is written, shared by the single-name MountDisabled and the
 // reconciling MountsDisabled.
-func disableMountIn(seq *yaml.Node, name string) {
-	if _, entry := configio.FindSeqEntryByName(seq, name); entry != nil {
+//
+// entry is that name's current entry, nil when the sequence has none. It is
+// the caller's to find because MountsDisabled has already found it to decide
+// which arm it is on, and re-scanning here would be the same lookup twice.
+func disableMountIn(seq *yaml.Node, name string, entry *yaml.Node) {
+	if entry != nil {
 		configio.SetMapBool(entry, "disabled", true)
 		return
 	}
@@ -428,7 +434,7 @@ func MountsDisabled(disabled map[string]bool) Mutator {
 			idx, entry := configio.FindSeqEntryByName(seq, name)
 			switch {
 			case disabled[name]:
-				disableMountIn(seq, name)
+				disableMountIn(seq, name, entry)
 			case idx >= 0 && isPureDisable(entry):
 				seq.Content = append(seq.Content[:idx], seq.Content[idx+1:]...)
 			}

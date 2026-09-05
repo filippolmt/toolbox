@@ -167,22 +167,23 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 		filepath.Clean(target) == filepath.Clean(globalPath) {
 		other = project
 	}
-	// Resolved once, from the candidate stack — the configuration the write
-	// would produce — and both passes below are judged against it. Deriving it
-	// per pass would pay a second `proximo config ca-path` spawn for a rejected
-	// write, and would judge the two stacks against different mount sets, so a
-	// finding could survive the subtraction for a reason the edit never
-	// introduced.
-	gate := stackGate(host, other, candidate)
-
-	withCandidate := lintStack(host, gate, other, candidate)
+	// Each stack is judged against the gate IT declares, never a shared one.
+	// The two stacks can disagree about `proximo:` — the key is editable, so
+	// the candidate may be the edit that flips it — and the gate decides
+	// whether the CA mount joins the merged set. Lint the baseline against the
+	// candidate's gate and a mount conflict the edit genuinely introduces
+	// appears in both passes, gets subtracted away as pre-existing, and the
+	// write is accepted for a config the next load rejects. Two derivations
+	// here are two different questions, which is not the repetition the gate
+	// was made a value to stop.
+	withCandidate := lintStack(host, other, candidate)
 	if !HasErrors(withCandidate) {
 		// Nothing to attribute, and subtraction only ever removes — so the
 		// baseline stack (a second full merge + lint) is not worth resolving.
 		// This is the path every accepted write takes.
 		return nil
 	}
-	return subtractFindings(withCandidate, lintStack(host, gate, other, nil))
+	return subtractFindings(withCandidate, lintStack(host, other, nil))
 }
 
 // lintStack resolves two config layers — lower, then higher — and returns what
@@ -195,26 +196,15 @@ func doctorCandidate(cwd, target string, candidate []byte) []Finding {
 // overriding it" by putting it second, whichever layer it really belongs to.
 // The explicit slot cannot serve here — Merge documents it as short-circuiting
 // the other two, so it would discard the stack instead of sitting above it.
-// stackGate resolves the [Proximo Availability Gate] a config stack asks for.
-// An unmergeable stack yields the zero gate — proximo off: that stack is about
-// to be reported as a finding of its own, and asking the host about a
-// configuration that does not resolve would spend a subprocess on nothing.
-//
-// [Proximo Availability Gate]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#proximo-availability-gate
-func stackGate(host fsx.Host, lower, higher []byte) proximo.Gate {
-	cfg, err := config.Merge(lower, higher, nil)
-	if err != nil {
-		return proximo.Gate{}
-	}
-	return proximo.Resolve(host, cfg)
-}
-
-func lintStack(host fsx.Host, gate proximo.Gate, lower, higher []byte) []Finding {
+// The proximo gate is resolved here, from the stack this call is about: the
+// mount lint below reads a merged set the gate decides the shape of, so a
+// stack must be judged against its own answer and not a caller's.
+func lintStack(host fsx.Host, lower, higher []byte) []Finding {
 	cfg, err := config.Merge(lower, higher, nil)
 	if err != nil {
 		return []Finding{{SeverityError, err.Error()}}
 	}
-	return append(lintShellPaths(host, cfg), lintMounts(host, cfg, gate)...)
+	return append(lintShellPaths(host, cfg), lintMounts(host, cfg, proximo.Resolve(host, cfg))...)
 }
 
 // subtractFindings returns the findings of a that do not appear in b, compared

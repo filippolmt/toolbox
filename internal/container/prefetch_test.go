@@ -13,7 +13,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
-	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/localimage"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -157,8 +156,12 @@ func createPathMock(repoDigest string) *mockClient {
 		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
-		imgInspFn: func(_ context.Context, ref string) (client.ImageInspectResult, error) {
-			return dockertest.ImageInspectResult(imageref.Repo(ref), repoDigest), nil
+		// The repo half is named, not derived from the ref: these tests only ever
+		// ask about the toolbox image, and a fake that re-implemented the
+		// ref-to-repo rule could agree with a stale copy of it while
+		// imageref's own moved.
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			return dockertest.ImageInspectResult(prefetchRepo, repoDigest), nil
 		},
 	}
 }
@@ -382,7 +385,7 @@ func TestShellPrefetchAndStampTrackTheBaseRefNotTheOverlay(t *testing.T) {
 		if ref == localimage.LocalRef {
 			return client.ImageInspectResult{}, nil
 		}
-		return dockertest.ImageInspectResult(imageref.Repo(ref), pulled), nil
+		return dockertest.ImageInspectResult(prefetchRepo, pulled), nil
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)

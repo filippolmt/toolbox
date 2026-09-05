@@ -31,6 +31,25 @@ func tmpConfigPath(t *testing.T) string {
 // walk-up finds exactly that file as the project layer.
 func cwdOf(path string) string { return filepath.Dir(path) }
 
+// TestApplyCheckedNoHeaderOnExistingFile is the negative half of the
+// header-on-create policy: a file that already exists keeps its own first
+// line. The positive half (a created file gains the header) is asserted
+// above; only the pair pins the policy, since a writer that always prepended
+// would satisfy the positive one alone.
+func TestApplyCheckedNoHeaderOnExistingFile(t *testing.T) {
+	path := tmpConfigPath(t)
+	if err := os.WriteFile(path, []byte("shell: zsh\n"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+
+	if _, _, err := ApplyChecked(path, cwdOf(path), Shell("infra", "/tmp/infra", nil)); err != nil {
+		t.Fatalf("ApplyChecked: %v", err)
+	}
+	if got := readFile(t, path); strings.Contains(got, "# .toolbox.yaml") {
+		t.Errorf("existing file must not gain the create header, got:\n%s", got)
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
