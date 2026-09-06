@@ -87,7 +87,7 @@ ARG EZA_VERSION=0.23.5
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=8a5b3930889ea9b99450e600b5b5e00d0170cc09
+ARG OMZ_COMMIT=426650fbe8943879af72703556ae5d1eb2eac734
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=2fc57d63067c18b1100ecdbf684fa5baf49459d1
 ARG ZSH_COMPLETIONS_COMMIT=de02bb84ab0af51e328c6ae85ab5555397c31277
@@ -95,7 +95,7 @@ ARG FZF_TAB_COMMIT=24105b15714bfec37989ed5c5b6e60f572253019
 ARG ZOXIDE_VERSION=0.10.0
 ARG SHELLCHECK_VERSION=0.11.0
 # shellcheck: use the .tar.gz asset (slim base has no xz for the .xz build).
-ARG SHFMT_VERSION=3.14.0
+ARG SHFMT_VERSION=3.14.1
 
 # rtk builder: amd64 uses upstream MUSL tarball, arm64 builds from source
 # against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
