@@ -1778,3 +1778,30 @@ anchor exists precisely because no session can play that role. Unnamed, the
 next reader sees an odd extra container in `docker ps` and the obvious
 "simplification" is to point `PidMode` at one of the shells, which breaks the
 moment that shell exits.
+
+### Rule Pointer
+
+A package a rule file under `.claude/rules/` names without claiming to govern:
+the mention is a signpost to where the package's guardrail actually lives, and
+the rule says so by linking, in the same block, the sibling rule whose `paths:`
+frontmatter scopes it there.
+
+Concretely: `container-runtime.md` names `localimage.Ensure` as a step in
+`Shell`'s sequence and hands it to `image-build.md`, which carries the overlay
+contract and already lists `internal/localimage/**`. Guardrail and enforcing
+tests: [`.claude/rules/rules.md`](.claude/rules/rules.md). The link is the
+whole marker — there is no separate syntax to learn and nothing to keep in
+sync, because a pointer only counts when the rule it names really covers the
+package, and a link to the same-basename guide under `docs/` never does.
+
+Why the term exists: the alternative reading of a named package is ownership,
+and the two are settled in opposite directions. Ownership widens the `paths:`
+glob; a pointer must not, because a rule loads on its globs and nothing else —
+adding `internal/localimage/**` to the container rule would pull the whole
+container runtime into every overlay edit, which is how a guardrail set stops
+being read. Unnamed, the cross-reference has nowhere to go but the exemption
+map, and that map is meant to hold the rare undecided case, not the routine
+one: measured across the rule files when the hygiene test first learned to see
+Go qualifiers, every uncovered mention was a pointer and none was an ownership
+question, so an exemption-only answer would have buried the signal it exists to
+carry.

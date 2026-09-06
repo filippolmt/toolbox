@@ -15,8 +15,14 @@ directory rename cannot quietly orphan a rule.
 - **rule → disk**: every glob still points at something that exists
   (`TestRulePathsResolve`). Catches a rename or deletion leaving a dead glob.
 - **body → frontmatter**: every package a rule *names* is scoped by that same
-  rule's `paths:` (`TestRuleMentionsAreCovered`). Naming a package is the
-  default claim that the rule governs edits there.
+  rule's `paths:`, or handed to the rule that does (`TestRuleMentionsAreCovered`).
+  Naming a package is the default claim that the rule governs edits there; a
+  [Rule Pointer](../../CONTEXT.md#rule-pointer) is how a rule says otherwise.
+  Both spellings count — the `internal/<pkg>` path and the Go qualifier
+  `<pkg>.<Member>`, which is what the prose actually uses — and the classifier
+  that tells a qualifier from its lookalikes (`config.yml`, `image-build.md`,
+  `worktree.seed`) is pinned by `TestAMentionIsAQualifierNotItsLookalikes`, so
+  it cannot go green by seeing nothing.
 - **package → some rule**: every top-level package under `internal/` is claimed
   by at least one rule (`TestEveryPackageIsClaimedByARule`). The direction the
   other two cannot see: both pass for a package no rule has ever heard of.
@@ -24,13 +30,24 @@ directory rename cannot quietly orphan a rule.
   (`TestRuleFilesAreListedInCLAUDEMd`). A rule absent from that list is one no
   reader knows to open, and Codex loads none of them automatically.
 
-**When one of these fails, add the glob — not the exemption.** Both exemption
-maps (`ruleMentionExemptions`, `rulePathExemptions`) are empty on purpose, and
-an entry in either is a claim about the package: that the rule does not govern
-edits there, or that the package carries no guardrail worth loading. Make that
-claim deliberately, in the map's comment; do not reach for it to turn a test
-green. Adding a package under `internal/` is therefore two edits, not one — the
-package, and the rule that owns it.
+**A pointer's shape**: in the block that names the package — the bullet, the
+heading or the paragraph — link the sibling rule file whose `paths:` scopes it
+there, as a bare sibling target: `[mounts.md](mounts.md)`. The link is checked,
+not taken on trust (`TestARulePointerNamesARuleThatCoversThePackage`):
+a target whose frontmatter does not cover the package is not a pointer, and
+neither is a link to the same-basename guide under `docs/`. Block-scoped on
+purpose — these files cross-link each other constantly, so a file-wide link
+would excuse every mention in the file.
+
+**When one of these fails, add the glob, or the pointer — not the exemption.**
+Both exemption maps (`ruleMentionExemptions`, `rulePathExemptions`) are empty on
+purpose, and an entry in either is a claim about the package: that the rule does
+not govern edits there, or that the package carries no guardrail worth loading.
+A cross-reference is not that claim — it is a pointer, and it is settled in the
+prose, where the reader is. Make the exemption claim deliberately, in the map's
+comment; do not reach for it to turn a test green. Adding a package under
+`internal/` is therefore two edits, not one — the package, and the rule that
+owns it.
 
 **What goes in a rule, and in what shape**, is [`CLAUDE.md`](../../CLAUDE.md)'s
 to say — guardrail and test names here, meaning and why in the glossary; name
