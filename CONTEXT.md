@@ -1567,6 +1567,37 @@ The term also carries the honesty cost the name itself imposes: `paplay` never
 speaks to PulseAudio, and the mitigation is the reason in the file header plus
 the fact that PulseAudio is not in the image and is not coming.
 
+### Served Artifact
+
+Bytes produced inside the container that the daemon **retains** under an
+unguessable id and **serves from its own origin**, so the host opens them
+without the file ever existing on the host filesystem. Decided in
+[ADR 0012](docs/adr/0012-serving-artifacts-from-the-bridge-origin.md).
+
+Concretely: an agent writes an HTML report and runs `xdg-open` on it; the shim
+sees a local path rather than a URL, reads the bytes and POSTs them to `/view`
+instead of `/open`. The daemon holds them in memory, mints a `crypto/rand` id,
+and calls the same host URL handler `/open` uses — with an `http://127.0.0.1`
+URL pointing at its own listener. The id is the credential: the `GET` that
+serves the artifact is the one bridge route with no bearer token, because a
+browser cannot be given a header. The response carries a Content-Security-Policy
+that denies `connect-src` and `form-action`, so the served page cannot call back
+into the routes that *do* take the token, nor exfiltrate what it renders.
+
+Why the term exists: "open a file on the host" names the goal and hides both
+decisions that make it possible. The obvious reading — hand the host a path —
+fails twice at once here: `internal/bridge/allowlist.go` refuses `file://` on
+`/open` by design, and the container's own scratchpad is not a mount, so a
+path the daemon accepted would name nothing it could read. Naming the concept
+after *retention and service* rather than after a handoff keeps it honest
+against its neighbour: [Sound Handoff](#sound-handoff) also carries content
+rather than a path, but the daemon there is done the moment playback starts and
+deletes its temp file, while here the browser re-reads the artifact for as long
+as the tab lives. The term also fixes where the residual risk sits — on an
+origin that serves container-authored active content, which is what the CSP and
+the id's entropy are answering, and what the ADR argues stays under the ceiling
+the bridge token already sets.
+
 ### Proximo Execution Modes
 
 The two ways the bridge daemon runs the **host** proximo binary on behalf of a
