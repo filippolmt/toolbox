@@ -608,9 +608,10 @@ func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stakes := stubRefresh(t, imageplan.OutcomeUnsettled)
+	mock := createAfterReloadMock()
+	stakes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
 
-	if _, err := Shell(context.Background(), createAfterReloadMock(), reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
+	if _, err := Shell(context.Background(), mock, reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
 		t.Fatalf("Shell(): %v", err)
 	}
 	if len(*stakes) != 0 {

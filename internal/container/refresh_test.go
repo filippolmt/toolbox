@@ -23,21 +23,42 @@ import (
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
+// refreshCall is one shell-start refresh: the stake it was put at, and the
+// daemon calls that had already happened when it ran. The second is the only
+// way an act that never reaches the daemon can be placed in that sequence —
+// reclaimCall carries its `before` for the same reason, snapshotted the same
+// way, inside the stub that stands in for the act.
+type refreshCall struct {
+	reason imageplan.Reason
+	before []string
+}
+
 // stubRefresh replaces the shell-start refresh with a fixed outcome and
-// records the stake each call was put at. The decision tree it stands for is
-// imageplan's and is tested there; what Shell owns is what a yes costs on the
-// branch it took and what it then does with the answer — the one thing a
-// terminal would otherwise be needed to reach.
-func stubRefresh(t *testing.T, out imageplan.Outcome) *[]imageplan.Reason {
+// records each call against the mock the session runs on. The decision tree it
+// stands for is imageplan's and is tested there; what Shell owns is what a yes
+// costs on the branch it took, what it then does with the answer, and where
+// the act falls among the daemon calls around it — the one thing a terminal
+// would otherwise be needed to reach.
+func stubRefresh(t *testing.T, mock *mockClient, out imageplan.Outcome) *[]refreshCall {
 	t.Helper()
-	var reasons []imageplan.Reason
+	var calls []refreshCall
 	orig := refreshAtStart
 	refreshAtStart = func(_ context.Context, _ client.APIClient, _ sessionplan.Image, _ string, reason imageplan.Reason) imageplan.Outcome {
-		reasons = append(reasons, reason)
+		calls = append(calls, refreshCall{reason: reason, before: slices.Clone(mock.calls)})
 		return out
 	}
 	t.Cleanup(func() { refreshAtStart = orig })
-	return &reasons
+	return &calls
+}
+
+// refreshReasons is the stakes half of the recorded calls, for the tests that
+// assert on the question that was put rather than on when it was put.
+func refreshReasons(calls *[]refreshCall) []imageplan.Reason {
+	out := make([]imageplan.Reason, 0, len(*calls))
+	for _, c := range *calls {
+		out = append(out, c.reason)
+	}
+	return out
 }
 
 // stoppedContainer is the start path: a container the daemon still holds but
@@ -69,10 +90,11 @@ func TestShellStampsADeclinedRefresh(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeDeclined)
+	mock := createPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeDeclined)
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -93,10 +115,11 @@ func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeInterrupted)
+	mock := createPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeInterrupted)
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err == nil {
+	if _, err := Shell(context.Background(), mock, plan); err == nil {
 		t.Fatal("Shell() error = nil, want the interrupted start to fail")
 	}
 
@@ -119,10 +142,11 @@ func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	got, _ := stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeCurrent)
+	mock := createPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeCurrent)
 
 	plan := testPlan(t, testWorkspace(t), nil)
-	if _, err := Shell(context.Background(), createPathMock("sha256:fresh"), plan); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 
@@ -142,14 +166,14 @@ func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	reasons := stubRefresh(t, imageplan.OutcomeUnsettled)
-
 	mock := &mockClient{inspectFn: runningContainer(nil)}
+	refreshes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if len(*reasons) != 0 {
-		t.Errorf("the connect path ran the start-up refresh %d times, want 0", len(*reasons))
+	if len(*refreshes) != 0 {
+		t.Errorf("the connect path ran the start-up refresh %d times, want 0", len(*refreshes))
 	}
 }
 
@@ -161,14 +185,14 @@ func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	reasons := stubRefresh(t, imageplan.OutcomeUnsettled)
-
 	mock := &mockClient{inspectFn: stoppedContainer(nil)}
+	refreshes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if want := []imageplan.Reason{imageplan.ReasonStart}; !slices.Equal(*reasons, want) {
-		t.Errorf("the start path asked under %v, want %v", *reasons, want)
+	if got, want := refreshReasons(refreshes), []imageplan.Reason{imageplan.ReasonStart}; !slices.Equal(got, want) {
+		t.Errorf("the start path asked under %v, want %v", got, want)
 	}
 }
 
@@ -180,9 +204,9 @@ func TestShellStartRecreatesOnAnAcceptedRefresh(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeAccepted)
-
 	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+
 	plan := testPlan(t, testWorkspace(t), nil)
 	// What the banner would render at the first prompt: a result published
 	// about the container that is being replaced.
@@ -221,9 +245,9 @@ func TestShellStartKeepsTheContainerWhenTheRecreateCannotSucceed(t *testing.T) {
 	execed, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeAccepted)
-
 	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+
 	mock.listFn = func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
 		return []container.Summary{holderSummary("/nginx-proxy", 8877)}, nil
 	}
@@ -251,9 +275,9 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeAccepted)
-
 	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+
 	// The overlay pins its FROM to the base image's ID, so a store that
 	// cannot answer for the base is a build that cannot start.
 	mock.imgInspFn = func(context.Context, string) (client.ImageInspectResult, error) {
@@ -344,7 +368,6 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prefetched, _ := stubPrefetch(t)
-			stubRefresh(t, imageplan.OutcomeAccepted)
 
 			execedID := ""
 			origExec := execShellFn
@@ -355,6 +378,7 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			t.Cleanup(func() { execShellFn = origExec })
 
 			mock := startPathMock("sha256:fresh")
+			stubRefresh(t, mock, imageplan.OutcomeAccepted)
 			reads := 0
 			mock.inspectFn = func(ctx context.Context, name string) (container.InspectResponse, error) {
 				reads++
@@ -426,9 +450,9 @@ func TestShellStartWarnsAboutAContainerItIsActuallyJoining(t *testing.T) {
 			_, restore := stubExecShell()
 			defer restore()
 			stubPrefetch(t)
-			stubRefresh(t, tc.refresh)
-
 			mock := startPathMock("sha256:fresh")
+			stubRefresh(t, mock, tc.refresh)
+
 			// A HostConfig that binds nothing is what makes the wanted port
 			// missing rather than unknowable: a record with no HostConfig at
 			// all says nothing about what the container publishes.
@@ -462,10 +486,10 @@ func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 	stubPrefetch(t)
-	stubRefresh(t, imageplan.OutcomeDeclined)
-
 	started := ""
 	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imageplan.OutcomeDeclined)
+
 	mock.startFn = func(_ context.Context, id string, _ client.ContainerStartOptions) error {
 		started = id
 		return nil
