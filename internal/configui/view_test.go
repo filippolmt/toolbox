@@ -40,15 +40,29 @@ func markedText(lines []previewLine) string {
 	return b.String()
 }
 
-// mountsEditor is the editor state reached by checking `claude` in the mounts
-// multi-select.
-func mountsEditor() Model {
-	return Model{ed: editor{
-		key:      "mounts",
-		kind:     edMulti,
-		options:  []string{"claude", "gh"},
-		selected: map[string]bool{"claude": true},
-	}}
+// editorFor opens key's editor by key press over cfg, so a preview is always
+// taken from editor state the program can actually be in. The target is left
+// empty: these tests supply the "before" document themselves.
+func editorFor(t *testing.T, key string, cfg *config.Config) Model {
+	t.Helper()
+	m := press(browsing(ScopeRepo, cfg, KeyState{Key: key, ScopeSet: true}), "enter")
+	if !m.editing {
+		t.Fatalf("%q opened no editor (status %q)", key, m.status)
+	}
+	return m
+}
+
+// disabledMount is the default mount the multi-select tests check. Taken from
+// the option set the UI offers rather than spelled out, so the fixture cannot
+// name a mount that is not on the list.
+func disabledMount() string { return DefaultMountNames()[0] }
+
+// mountsEditor is the editor state reached by checking the first default mount
+// in the multi-select — opened and toggled through the key stream.
+func mountsEditor(t *testing.T) Model {
+	t.Helper()
+	m := editorFor(t, "mounts", &config.Config{})
+	return press(chooseOption(t, m, disabledMount()), "space")
 }
 
 // The mounts editor's checkboxes select the default mounts to *disable*
@@ -57,18 +71,18 @@ func mountsEditor() Model {
 // bare `mounts:` list claimed the inverse of the pending edit — that the checked
 // mount was the only one kept.
 func TestPreviewMountsShowsDisablePatch(t *testing.T) {
-	lines := previewLines(t, mountsEditor(), []byte("pull: never\n"))
+	lines := previewLines(t, mountsEditor(t), []byte("pull: never\n"))
 
 	got := markedText(lines)
-	if !strings.Contains(got, "name: claude") || !strings.Contains(got, "disabled: true") {
+	if !strings.Contains(got, "name: "+disabledMount()) || !strings.Contains(got, "disabled: true") {
 		t.Errorf("preview does not show the disable patch the writer produces:\n%s", got)
 	}
 	// A bare sequence item is the inverting shape. Compare on the trimmed line
 	// rather than a marked substring: the item's own indentation depends on the
 	// encoder, and baking it into the needle is how this assertion goes inert.
 	for _, l := range lines {
-		if l.Added && strings.TrimSpace(l.Text) == "- claude" {
-			t.Errorf("preview lists claude as a kept mount, inverting the edit:\n%s", got)
+		if l.Added && strings.TrimSpace(l.Text) == "- "+disabledMount() {
+			t.Errorf("preview lists %s as a kept mount, inverting the edit:\n%s", disabledMount(), got)
 		}
 	}
 }
@@ -77,10 +91,10 @@ func TestPreviewMountsShowsDisablePatch(t *testing.T) {
 // fragment could never describe: the result depends on what the file already
 // holds, so the preview has to render the mutation against the real document.
 func TestPreviewMountsKeepsRicherUserEntry(t *testing.T) {
-	base := []byte("mounts:\n  - name: claude\n    source: /host/claude\n    target: /home/toolbox/.claude\n")
+	base := []byte("mounts:\n  - name: " + disabledMount() + "\n    source: /host/keep\n    target: /in/box\n")
 
-	got := previewText(t, mountsEditor(), base)
-	if strings.Contains(got, "- source: /host/claude") {
+	got := previewText(t, mountsEditor(t), base)
+	if strings.Contains(got, "- source: /host/keep") {
 		t.Errorf("preview claims the user's source override is dropped:\n%s", got)
 	}
 	if !strings.Contains(got, "disabled: true") {
@@ -92,7 +106,7 @@ func TestPreviewMountsKeepsRicherUserEntry(t *testing.T) {
 // say so: an unchanged fragment would imply a pending change that does not exist.
 func TestPreviewReportsNoChangeForAnIdenticalEdit(t *testing.T) {
 	base := []byte("pull: never\n")
-	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+	m := chooseOption(t, editorFor(t, "pull", &config.Config{Pull: config.PullNever}), "never")
 
 	if got := previewText(t, m, base); got != "" {
 		t.Errorf("re-selecting the active value must diff to nothing, got:\n%s", got)
@@ -105,7 +119,7 @@ func TestPreviewReportsNoChangeForAnIdenticalEdit(t *testing.T) {
 // document as the "before" side puts a `{}` removal in the panel that no file
 // ever held.
 func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
-	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+	m := chooseOption(t, editorFor(t, "pull", &config.Config{}), "never")
 
 	lines, err := previewDiff("new.yaml", baseDoc{}, m.pendingMutator())
 	if err != nil {
@@ -135,7 +149,7 @@ func TestPreviewOnAbsentTargetShowsWholeCreate(t *testing.T) {
 // $EDITOR escape creates the target.
 func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
 	base := []byte("# hand-written notes\n# second line\n")
-	m := Model{ed: editor{key: "pull", kind: edEnum, options: []string{"never", "always"}}}
+	m := chooseOption(t, editorFor(t, "pull", &config.Config{}), "never")
 
 	got := previewText(t, m, base)
 	if strings.Contains(got, "{}") {
@@ -153,7 +167,7 @@ func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
 // the before side is the file's own bytes.
 func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
 	base := []byte("# global\npull: always\n\nagent: claude\n")
-	m := Model{ed: editor{key: "image", kind: edString, input: fieldInput("ghcr.io/acme/box:v1")}}
+	m := typeText(editorFor(t, "image", &config.Config{}), "ghcr.io/acme/box:v1")
 
 	lines := previewLines(t, m, base)
 	blankRemoved := false
@@ -170,51 +184,51 @@ func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
 	}
 }
 
-// previewBody is the panel's own seam, and the link every other preview test
-// skips: it is what carries openEditor's reading of the target into the diff.
-// With the tests all calling previewDiff directly and passing exists themselves,
-// that link could be broken — or hardcoded — and the fresh-target header
-// regression would come back on the only surface a user sees.
-func TestPreviewBodyCarriesTheTargetStateFromOpenEditor(t *testing.T) {
-	tc := previewCase{key: "pull", open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") }}
-	m, _ := openedEditor(t, tc, false)
+// The pending-change panel is the link every previewDiff test skips: it is what
+// carries openEditor's reading of the target into the diff. With the tests all
+// calling previewDiff directly and passing exists themselves, that link could be
+// broken — or hardcoded — and the fresh-target header regression would come back
+// on the only surface a user sees. So this one is read off the screen.
+// Both target states, because only the pair pins the link: an absent target is
+// created carrying the docs header, so the panel shows it, and an existing one
+// is patched, so the panel must not. A baseline that ignored what openEditor
+// read would still get the absent case right — it is the existing case that
+// catches it.
+func TestPreviewPanelCarriesTheTargetStateFromOpenEditor(t *testing.T) {
+	tc := previewCase{key: "pull", open: chooseValue("never")}
 
-	if m.previewBase.exists {
+	fresh, _ := openedEditor(t, tc, false)
+	if fresh.previewBase.exists {
 		t.Error("openEditor must report an absent target as not existing")
 	}
-	got, err := m.previewBody()
-	if err != nil {
-		t.Fatalf("previewBody: %v", err)
+	wantOnScreen(t, fresh, "pending change", "# .toolbox.yaml", "+ pull: never")
+
+	existing, _ := openedEditor(t, tc, true)
+	if !existing.previewBase.exists {
+		t.Error("openEditor must report a present target as existing")
 	}
-	if !strings.Contains(got, "# .toolbox.yaml") {
-		t.Errorf("panel must show the docs header a create writes:\n%s", got)
-	}
-	if !strings.Contains(got, "pull: never") {
-		t.Errorf("panel must show the edit itself:\n%s", got)
-	}
+	wantOnScreen(t, existing, "pending change", "+ pull: never")
+	notOnScreen(t, existing, "# .toolbox.yaml")
 }
 
 // The panel's no-change branch. An editor opens with its cursor already on the
 // current effective value, so saving straight away writes nothing — and the
 // panel must say so rather than show an unchanged fragment.
-func TestPreviewBodyReportsNoChangeForAnUntouchedEditor(t *testing.T) {
+func TestPreviewPanelReportsNoChangeForAnUntouchedEditor(t *testing.T) {
 	// The fixture sets agent: claude, so the freshly opened cursor sits on it.
-	m, _ := openedEditor(t, previewCase{key: "agent", open: func(*Model) {}}, true)
+	m, _ := openedEditor(t, previewCase{key: "agent", open: leaveAsOpened}, true)
 
-	got, err := m.previewBody()
-	if err != nil {
-		t.Fatalf("previewBody: %v", err)
-	}
-	if !strings.Contains(got, "no change") {
-		t.Errorf("an untouched editor must report no change, got:\n%s", got)
-	}
+	wantOnScreen(t, m, "pending change", "no change")
+	notOnScreen(t, m, "+ agent:")
 }
 
 // previewCase is one editable key: the editor state a user would reach, and the
 // pending value it carries.
 type previewCase struct {
-	key  string
-	open func(m *Model)
+	key string
+	// open drives the editor to its pending value with key presses, so the
+	// mutation compared below is one a user could actually have produced.
+	open func(t *testing.T, m Model) Model
 	// save performs the same edit through apply, naming the mutator and its
 	// arguments by hand. It is the independent oracle: the preview comes from the
 	// model's own dispatch, so comparing the two catches a dispatch that reaches
@@ -224,6 +238,41 @@ type previewCase struct {
 	inCfg   func(cfg *config.Config)        // seeds the effective config the editor reads
 	prepare func(t *testing.T, home string) // host state Doctor requires for the value
 }
+
+// The four ways a user reaches a pending value, one per editor kind. They press
+// keys and nothing else: a test that pokes m.ed directly proves the mutation is
+// right for state the key stream may never produce.
+
+// chooseValue walks a bounded list onto an option.
+func chooseValue(want string) func(*testing.T, Model) Model {
+	return func(t *testing.T, m Model) Model { return chooseOption(t, m, want) }
+}
+
+// typeValue clears a free-text field and types a new value into it.
+func typeValue(text string) func(*testing.T, Model) Model {
+	return func(_ *testing.T, m Model) Model {
+		return typeText(eraseField(m, len(m.ed.input.Value())), text)
+	}
+}
+
+// checkFirstOption ticks the first checkbox of a multi-select.
+func checkFirstOption(t *testing.T, m Model) Model {
+	return press(chooseOption(t, m, m.ed.options[0]), "space")
+}
+
+// addRow adds one row to a collection editor, one column per argument.
+func addRow(cols ...string) func(*testing.T, Model) Model {
+	return func(_ *testing.T, m Model) Model {
+		m = press(m, "a")
+		for _, col := range cols {
+			m = press(typeText(m, col), "enter")
+		}
+		return m
+	}
+}
+
+// leaveAsOpened is the empty edit: whatever the editor opened with.
+func leaveAsOpened(_ *testing.T, m Model) Model { return m }
 
 // requireHostAuthPath creates the host credential directory of an
 // inherit_host_auth key, which Doctor requires to exist before the key may name
@@ -253,63 +302,63 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 	cases := []previewCase{
 		{
 			key:  "agent",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "codex") },
+			open: chooseValue("codex"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("agent", "codex")) },
 		},
 		{
 			key:  "pull",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "never") },
+			open: chooseValue("never"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("pull", "never")) },
 		},
 		{
 			key:  "image",
-			open: func(m *Model) { m.ed.input.SetValue("ghcr.io/acme/box:v1") },
+			open: typeValue("ghcr.io/acme/box:v1"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("image", "ghcr.io/acme/box:v1")) },
 		},
 		{
 			key:  "registry_mirror",
-			open: func(m *Model) { m.ed.input.SetValue("mirror.example.com") },
+			open: typeValue("mirror.example.com"),
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.Scalar("registry_mirror", "mirror.example.com"))
 			},
 		},
 		{
 			key:  "mounts_root",
-			open: func(m *Model) { m.ed.input.SetValue("/tmp/roots") },
+			open: typeValue("/tmp/roots"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("mounts_root", "/tmp/roots")) },
 		},
 		{
 			key:  "bridge",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			open: chooseValue("false"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },
 		},
 		{
 			key:  "proximo",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
+			open: chooseValue("true"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("proximo", boolPtr(true))) },
 		},
 		{
 			key:  "managed_statusline",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			open: chooseValue("false"),
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.Bool("managed_statusline", boolPtr(false)))
 			},
 		},
 		{
 			key:  "image_reclaim",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "false") },
+			open: chooseValue("false"),
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.Bool("image_reclaim", boolPtr(false)))
 			},
 		},
 		{
 			key:  "peer_messaging",
-			open: func(m *Model) { m.ed.cursor = indexOf(m.ed.options, "true") },
+			open: chooseValue("true"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("peer_messaging", boolPtr(true))) },
 		},
 		{
 			key:  "inherit_host_auth",
-			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			open: checkFirstOption,
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.StringList("inherit_host_auth", []string{HostAuthOptions()[0]}))
 			},
@@ -317,31 +366,31 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 		},
 		{
 			key:  "sdd",
-			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			open: checkFirstOption,
 			save: func(m Model) error { return SaveSDD(m.target, m.cwd, map[string]bool{SDDOptions()[0]: true}) },
 		},
 		{
 			key:  "mounts",
-			open: func(m *Model) { m.ed.selected[m.ed.options[0]] = true },
+			open: checkFirstOption,
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.MountsDisabled(map[string]bool{DefaultMountNames()[0]: true}))
 			},
 		},
 		{
 			key:  "env",
-			open: func(m *Model) { m.ed.rows = [][2]string{{"REGION", "eu"}} },
+			open: addRow("REGION", "eu"),
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.StringMap("env", map[string]string{"REGION": "eu"}))
 			},
 		},
 		{
 			key:  "worktree",
-			open: func(m *Model) { m.ed.rows = [][2]string{{".env.local", ""}} },
+			open: addRow(".env.local"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.WorktreeSeed([]string{".env.local"})) },
 		},
 		{
 			key:   "shells",
-			open:  func(m *Model) { m.ed.rows = [][2]string{{"prod", "/repo/prod"}} },
+			open:  addRow("prod", "/repo/prod"),
 			inCfg: func(cfg *config.Config) { cfg.Shells = map[string]config.NamedShell{"prod": {Path: "/repo/old"}} },
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.Shells([]ShellEntry{{Name: "prod", Path: "/repo/prod", OrigName: "prod"}}))
@@ -428,12 +477,10 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 		tc.inCfg(cfg)
 	}
 
-	m := Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
-		states: []KeyState{{Key: tc.key, ScopeSet: true}}}
-	m.openEditor()
+	m := press(Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
+		states: []KeyState{{Key: tc.key, ScopeSet: true}}}, "enter")
 	if !m.editing {
-		t.Fatalf("openEditor did not open an editor for %q (status: %s)", tc.key, m.status)
+		t.Fatalf("enter did not open an editor for %q (status: %s)", tc.key, m.status)
 	}
-	tc.open(&m)
-	return m, target
+	return tc.open(t, m), target
 }

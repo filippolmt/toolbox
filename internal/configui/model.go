@@ -26,6 +26,48 @@ const (
 	edRows              // add/edit/remove rows (env / shells / worktree.seed)
 )
 
+// editorSeeds is the state each editor kind opens with — the single dispatch on
+// the kind a descriptor row declares. openEditor looks the seed up by that kind
+// instead of switching on it a second time: it used to carry a copy of this
+// switch, re-answering per key what the row had already said, so a kind added
+// there and forgotten here (or the reverse) produced an editor pane with
+// nothing in it. A kind absent from this table opens nothing, which is how
+// edNone stays inert without a branch of its own.
+//
+// It lives here, in the tea half, and not beside keyDescriptors: a descriptor
+// row declares *which* kind a key gets, which is a presentation fact; what that
+// kind opens with is UI state built out of bubbles widgets, and the adapter half
+// has no business holding a textinput.
+var editorSeeds = map[editorKind]func(keyDescriptor, string, *config.Config) editor{
+	edEnum: func(d keyDescriptor, key string, cfg *config.Config) editor {
+		opts, cur := d.options(), d.str(cfg)
+		return editor{key: key, kind: edEnum, options: opts, current: cur,
+			def: EnumDefault(key), cursor: indexOf(opts, cur)}
+	},
+	edString: func(d keyDescriptor, key string, cfg *config.Config) editor {
+		ti := textinput.New()
+		ti.SetValue(d.str(cfg))
+		ti.Focus()
+		return editor{key: key, kind: edString, input: ti}
+	},
+	edTri: func(d keyDescriptor, key string, cfg *config.Config) editor {
+		cur := triState(d.tri(cfg))
+		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
+		return editor{key: key, kind: edTri, options: triChoices, current: cur,
+			def: triChoices[0], cursor: indexOf(triChoices, cur)}
+	},
+	edMulti: func(d keyDescriptor, key string, cfg *config.Config) editor {
+		return editor{key: key, kind: edMulti, options: d.options(), selected: d.selected(cfg)}
+	},
+	edRows: func(d keyDescriptor, key string, cfg *config.Config) editor {
+		// Pair editors carry key→value rows; the rest are single-column lists.
+		if d.pairs != nil {
+			return rowsEditorState(key, true, pairsToRows(d.pairs(cfg)))
+		}
+		return rowsEditorState(key, false, valuesToRows(d.list(cfg)))
+	},
+}
+
 // triChoices is the fixed option order for tri-state editors; index maps to the
 // persisted value via triValue.
 var triChoices = []string{"unset", "true", "false"}
@@ -117,7 +159,7 @@ func (m *Model) reload() {
 	// Enrich the (scope-agnostic) effective snapshot with the selected scope's
 	// own view of each key, so the detail pane can show "in <scope>" and the tab
 	// visibly changes what it reports.
-	scoped, err := ScopeStates(target)
+	scoped, err := scopeStates(target)
 	if err != nil {
 		m.loadErr = err
 		return
@@ -206,7 +248,8 @@ func (m *Model) toggleScope() {
 // openEditor opens the editor the selected key's descriptor names, seeded from
 // that row's typed accessor. Env-sourced and single-value keys open none. The
 // editor a key gets is no longer a branch to remember: it is the row's kind,
-// which TestEveryEditableKeyOpensAnEditor demands for every key the UI lists.
+// looked up in editorSeeds, which TestEveryEditableKeyOpensAnEditor demands for
+// every key the UI lists.
 func (m *Model) openEditor() {
 	if len(m.states) == 0 {
 		return
@@ -239,45 +282,19 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("editing creates an override in %s", m.scope)
 	}
 
-	d, ok := keyDescriptors[key]
-	if !ok || d.kind == edNone {
-		// Defensive: TestEveryEditableKeyOpensAnEditor forbids a UI key without an
-		// editor, so this only fires for a key that never reached the table.
+	// One dispatch, not two: the row already declares the key's editor kind, so
+	// the seed is looked up by that kind rather than re-derived from the key.
+	// Defensive both ways — TestEveryEditableKeyOpensAnEditor forbids a UI key
+	// without an editor, so this only fires for a key that never reached the
+	// descriptor table, or for an editor kind added without a seed beside it.
+	d := keyDescriptors[key]
+	seed, ok := editorSeeds[d.kind]
+	if !ok {
 		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
 		return
 	}
-	switch d.kind {
-	case edEnum:
-		opts := d.options()
-		cur := d.str(m.cfg)
-		m.ed = editor{key: key, kind: edEnum, options: opts, current: cur, def: EnumDefault(key), cursor: indexOf(opts, cur)}
-		m.editing = true
-	case edString:
-		ti := textinput.New()
-		ti.SetValue(d.str(m.cfg))
-		ti.Focus()
-		m.ed = editor{key: key, kind: edString, input: ti}
-		m.editing = true
-	case edTri:
-		cur := triState(d.tri(m.cfg))
-		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
-		m.ed = editor{key: key, kind: edTri, options: triChoices, current: cur, def: triChoices[0], cursor: indexOf(triChoices, cur)}
-		m.editing = true
-	case edMulti:
-		m.ed = editor{key: key, kind: edMulti, options: d.options(), selected: d.selected(m.cfg)}
-		m.editing = true
-	case edRows:
-		// Pair editors carry key→value rows; the rest are single-column lists.
-		if d.pairs != nil {
-			m.openRowsEditor(key, true, pairsToRows(d.pairs(m.cfg)))
-		} else {
-			m.openRowsEditor(key, false, valuesToRows(d.list(m.cfg)))
-		}
-	default:
-		// A new editor kind that forgot its branch here: say so rather than
-		// leaving the pane open on the previous key's editor state.
-		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
-	}
+	m.ed = seed(d, key, m.cfg)
+	m.editing = true
 }
 
 // hasEditorEscape reports whether a key offers the "open in $EDITOR" hatch —

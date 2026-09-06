@@ -7,12 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	yaml "gopkg.in/yaml.v3"
-
 	"github.com/filippolmt/toolbox/internal/catalog"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
-	"github.com/filippolmt/toolbox/internal/configio"
 )
 
 // Scope selects which config layer every read and write targets.
@@ -122,61 +119,27 @@ type scopeState struct {
 	display string
 }
 
-// ScopeStates parses one config file and reports, per UI key, whether that file
-// sets it and a short display of the file's own value — the data behind the
-// TUI's per-scope "in <scope>" line. A missing file yields an all-unset map, so
-// switching to a scope with no file cleanly shows every key as inherited.
-func ScopeStates(path string) (map[string]scopeState, error) {
-	b, existed, err := configio.ReadMaybe(path)
+// scopeStates reports, per UI key, whether one layer's file sets it and a short
+// display of that file's own value — the data behind the TUI's per-scope
+// "in <scope>" line. Whether a file sets a key (and how a deprecated alias
+// folds into the live one) is a provenance question configedit owns, so it is
+// asked there rather than answered here by parsing the file a second time; this
+// keeps only the rendering, which is presentation. A missing file yields an
+// all-unset map, so switching to a scope with no file cleanly shows every key
+// as inherited.
+func scopeStates(path string) (map[string]scopeState, error) {
+	vals, err := configedit.FileValues(path)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]scopeState, len(Keys()))
-	if !existed {
-		return out, nil
-	}
-	var root yaml.Node
-	if err := yaml.Unmarshal(b, &root); err != nil {
-		return nil, err
-	}
-	doc := configio.EnsureDocumentMap(&root)
 	for _, key := range Keys() {
-		if node := scopeNode(doc, key); node != nil {
-			out[key] = scopeState{set: true, display: nodeDisplay(node, key)}
-		}
-	}
-	return out, nil
-}
-
-// scopeNode returns the file node for a key, folding a deprecated alias into
-// its live key the same way config.Merge does (fillDefaultsBackstop), so a file
-// that only sets browser_bridge still counts as setting bridge in that scope.
-// The alias→live pairs come from config.DeprecatedAliases, so neither the pair
-// nor a future one can drift away from the canonical fold.
-func scopeNode(doc *yaml.Node, key string) *yaml.Node {
-	if n := configio.ChildValue(doc, key); n != nil {
-		return n
-	}
-	for alias, live := range config.DeprecatedAliases() {
-		if live != key {
+		if _, set := vals[key]; !set {
 			continue
 		}
-		if n := configio.ChildValue(doc, alias); n != nil {
-			return n
-		}
+		out[key] = scopeState{set: true, display: keyDescriptors[key].scopeDisplay(vals, key)}
 	}
-	return nil
-}
-
-// nodeDisplay renders a scope file's own value for a key: collections show a
-// count of their entries in that file (counted by the key's descriptor, with
-// the same noun the effective display uses, so the two cannot drift);
-// everything else shows the scalar value.
-func nodeDisplay(node *yaml.Node, key string) string {
-	if d := keyDescriptors[key]; d.nodeCount != nil {
-		return countLabel(d.nodeCount(node), d.noun)
-	}
-	return node.Value
+	return out, nil
 }
 
 // originFor returns the provenance origin for a top-level key and whether it is

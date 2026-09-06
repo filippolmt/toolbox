@@ -112,7 +112,7 @@ var Skills = []Skill{
 		// so it is deliberately NOT fenced here.
 		Key:        "gsd",
 		NpmPackage: "@opengsd/gsd-core",
-		Version:    "1.12.0",
+		Version:    "1.13.0",
 		BinName:    "gsd-core",
 		InstallSteps: [][]string{
 			{"--claude", "--global", "--config-dir", "./.claude"},

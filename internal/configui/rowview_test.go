@@ -3,137 +3,118 @@ package configui
 import (
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
-// rowsModel builds a Model whose rows editor is in a known state, so the
-// renderers below are exercised without driving the whole tea loop.
-func rowsModel(ed editor) Model { return Model{ed: ed} }
+// What each editor kind puts on screen, read off View — the same rendering
+// bubbletea paints, reached the same way. The editors are opened by pressing
+// keys, so a pane can only be asserted on in a state the program can actually
+// reach.
 
 // A pair row renders "key = value"; a single-column row renders the value
 // alone. Getting this backwards is what the rowPair flag exists to prevent.
 func TestRowLineRendersPairAndSingleColumn(t *testing.T) {
-	pair := rowsModel(editor{rows: [][2]string{{"FOO", "bar"}}, rowPair: true, cursor: -1})
-	if got := pair.rowLine(0, [2]string{"FOO", "bar"}); !strings.Contains(got, "FOO = bar") {
-		t.Errorf("pair row = %q, want it to contain %q", got, "FOO = bar")
-	}
+	pair := rowsEditor(t, "env", &config.Config{Env: map[string]string{"FOO": "bar"}})
+	wantOnScreen(t, pair, "FOO = bar")
 
-	single := rowsModel(editor{rows: [][2]string{{"openspec", ""}}, cursor: -1})
-	got := single.rowLine(0, [2]string{"openspec", ""})
-	if !strings.Contains(got, "openspec") {
-		t.Errorf("single row = %q, want it to contain %q", got, "openspec")
-	}
-	if strings.Contains(got, "=") {
-		t.Errorf("single row = %q, want no %q separator", got, "=")
+	single := rowsEditor(t, "worktree", &config.Config{
+		Worktree: config.WorktreeConfig{Seed: []string{".env.local"}},
+	})
+	wantOnScreen(t, single, ".env.local")
+	if line := rowsPaneLine(t, single, ".env.local"); strings.Contains(line, "=") {
+		t.Errorf("single-column row = %q, want no %q separator", line, "=")
 	}
 }
 
 // The cursor marker tracks the selected row, and disappears while a row is
 // being added — at that point the field prompt below owns the focus.
-func TestRowLineCursorMarker(t *testing.T) {
-	m := rowsModel(editor{rows: [][2]string{{"a", ""}, {"b", ""}}, cursor: 1})
-	if got := m.rowLine(1, [2]string{"b", ""}); !strings.HasPrefix(stripStyle(got), "> ") {
-		t.Errorf("selected row = %q, want it to start with %q", stripStyle(got), "> ")
-	}
-	if got := m.rowLine(0, [2]string{"a", ""}); !strings.HasPrefix(stripStyle(got), "  ") {
-		t.Errorf("unselected row = %q, want it to start with two spaces", stripStyle(got))
-	}
+func TestRowCursorMarkerTracksTheSelection(t *testing.T) {
+	m := rowsEditor(t, "env", &config.Config{Env: map[string]string{"ALPHA": "1", "BETA": "2"}})
+	wantOnScreen(t, m, "> ALPHA = 1", "  BETA = 2")
 
-	adding := rowsModel(editor{rows: [][2]string{{"a", ""}}, cursor: 0, adding: true})
-	if got := adding.rowLine(0, [2]string{"a", ""}); strings.HasPrefix(stripStyle(got), "> ") {
-		t.Errorf("row while adding = %q, want no cursor marker", stripStyle(got))
-	}
+	m = press(m, "down")
+	wantOnScreen(t, m, "  ALPHA = 1", "> BETA = 2")
+
+	m = press(m, "a")
+	notOnScreen(t, m, "> ALPHA", "> BETA")
 }
 
 // The footer swaps between the row-list keys and the field prompt, and the
 // prompt names the column being typed into — "key" only for the first column
 // of a pair editor, "value" everywhere else.
 func TestRowsFooterSwitchesOnEditState(t *testing.T) {
-	list := rowsModel(editor{}).rowsFooter()
-	if !strings.Contains(list, "a: add") {
-		t.Errorf("row-list footer = %q, want it to offer %q", list, "a: add")
-	}
+	pair := rowsEditor(t, "env", &config.Config{Env: map[string]string{"FOO": "bar"}})
+	wantOnScreen(t, pair, "a: add")
 
-	keyField := rowsModel(editor{rowEdit: true, rowPair: true, field: 0}).rowsFooter()
-	if !strings.Contains(keyField, "key:") {
-		t.Errorf("pair field 0 footer = %q, want it to prompt for %q", keyField, "key")
-	}
+	keyField := press(pair, "enter")
+	wantOnScreen(t, keyField, "key:")
 
-	valField := rowsModel(editor{rowEdit: true, rowPair: true, field: 1}).rowsFooter()
-	if !strings.Contains(valField, "value:") {
-		t.Errorf("pair field 1 footer = %q, want it to prompt for %q", valField, "value")
-	}
+	valField := typeText(keyField, "X")
+	valField = press(valField, "enter")
+	wantOnScreen(t, valField, "value:")
 
-	single := rowsModel(editor{rowEdit: true, field: 0}).rowsFooter()
-	if !strings.Contains(single, "value:") {
-		t.Errorf("single-column footer = %q, want it to prompt for %q", single, "value")
-	}
+	single := rowsEditor(t, "worktree", &config.Config{
+		Worktree: config.WorktreeConfig{Seed: []string{".env.local"}},
+	})
+	wantOnScreen(t, press(single, "enter"), "value:")
 }
 
 // An empty rows editor still has to say so, rather than rendering a bare
 // keybar over nothing.
 func TestRenderRowsReportsAnEmptyList(t *testing.T) {
-	if got := rowsModel(editor{}).renderRows(); !strings.Contains(got, "(no entries)") {
-		t.Errorf("empty rows = %q, want it to contain %q", got, "(no entries)")
-	}
+	wantOnScreen(t, rowsEditor(t, "env", &config.Config{}), "(no entries)")
 }
 
 // Every option is listed, the cursor one is marked, and the current/default
 // tags are attached to the right options.
 func TestRenderOptionsMarksCursorAndTags(t *testing.T) {
-	m := Model{ed: editor{
-		kind:    edEnum,
-		options: []string{"auto", "always", "never"},
-		current: "never",
-		def:     "auto",
-		cursor:  1,
-	}}
-	got := stripStyle(m.renderOptions())
-	for _, opt := range []string{"auto", "always", "never"} {
-		if !strings.Contains(got, opt) {
-			t.Errorf("options = %q, want it to list %q", got, opt)
-		}
+	m := press(browsing(ScopeRepo, &config.Config{Pull: config.PullNever},
+		KeyState{Key: "pull", ScopeSet: true}), "enter")
+	if !m.editing || m.ed.kind != edEnum {
+		t.Fatalf("pull did not open an enum editor (status %q)", m.status)
 	}
-	if !strings.Contains(got, "> always") {
-		t.Errorf("options = %q, want the cursor on %q", got, "always")
-	}
-	if !strings.Contains(got, "never (current)") {
-		t.Errorf("options = %q, want %q tagged current", got, "never")
-	}
-	if !strings.Contains(got, "auto (default)") {
-		t.Errorf("options = %q, want %q tagged default", got, "auto")
-	}
+	// The editor opens on the current value; step up so the cursor and the
+	// "current" tag sit on different options and cannot be confused.
+	m = press(m, "up")
+	wantOnScreen(t, m, "auto", "always", "never",
+		"> always", "never (current)", "auto (default)")
 }
 
 // The checkbox state is per option and independent of the cursor: the box
 // reflects the selection, the marker reflects where you are.
 func TestRenderCheckboxesTracksSelectionNotCursor(t *testing.T) {
-	m := Model{ed: editor{
-		kind:     edMulti,
-		options:  []string{"claude", "gh"},
-		selected: map[string]bool{"gh": true},
-		cursor:   0,
-	}}
-	got := stripStyle(m.renderCheckboxes())
-	if !strings.Contains(got, "> [ ] claude") {
-		t.Errorf("checkboxes = %q, want the cursor on an unchecked %q", got, "claude")
+	opts := SDDOptions()
+	if len(opts) < 2 {
+		t.Skipf("need two SDD packs to separate cursor from selection, have %v", opts)
 	}
-	if !strings.Contains(got, "  [x] gh") {
-		t.Errorf("checkboxes = %q, want %q checked without the cursor", got, "gh")
+	cfg := &config.Config{SDD: map[string]config.SDDSkill{opts[1]: {Enabled: true}}}
+	m := press(browsing(ScopeRepo, cfg, KeyState{Key: "sdd", ScopeSet: true}), "enter")
+	if !m.editing || m.ed.kind != edMulti {
+		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
 	}
+	wantOnScreen(t, m, "> [ ] "+opts[0], "  [x] "+opts[1])
 }
 
-// stripStyle removes the ANSI escapes lipgloss adds, so assertions can match
-// the text the user reads rather than the styling around it.
-func stripStyle(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0x1b {
-			for i < len(s) && s[i] != 'm' {
-				i++
-			}
-			continue
+// The detail pane names the escape hatch only for the keys that offer one, so
+// the keybar never advertises a key press that does nothing.
+func TestDetailKeybarOffersTheEditorEscapeOnlyWhereItExists(t *testing.T) {
+	withEscape := browsing(ScopeRepo, &config.Config{}, KeyState{Key: "mounts", ScopeSet: true})
+	wantOnScreen(t, withEscape, "$EDITOR")
+
+	withoutEscape := browsing(ScopeRepo, &config.Config{}, KeyState{Key: "pull", ScopeSet: true})
+	notOnScreen(t, withoutEscape, "$EDITOR")
+}
+
+// rowsPaneLine returns the rendered line containing want, so an assertion can
+// be made about that line alone rather than the whole screen.
+func rowsPaneLine(t *testing.T, m Model, want string) string {
+	t.Helper()
+	for _, line := range strings.Split(screen(m), "\n") {
+		if strings.Contains(line, want) {
+			return line
 		}
-		b.WriteByte(s[i])
 	}
-	return b.String()
+	t.Fatalf("no rendered line contains %q:\n%s", want, screen(m))
+	return ""
 }
