@@ -320,7 +320,8 @@ re-executed because their shared `fetch-base` moved, and unlike the other 27
 they do not produce identical bytes twice. `freeze-mtimes` made the fetch
 layers reproducible against timestamps; it says nothing about content.
 
-**Corrected: idx 69 is not one of them.** Two `--no-cache` builds of a minimal
+**Corrected: idx 69 is not one of them — on amd64, which is the arch this table
+measures.** The arm64 leg of the same stage is a separate finding, below. Two `--no-cache` builds of a minimal
 reproduction show rtk's amd64 binary — a checksummed upstream tarball — identical
 across builds while its layer digest was not. It moved because the COPY named a
 single file: a `--link` layer is built independently of what is beneath it, so it
@@ -329,6 +330,65 @@ build's wall clock however thoroughly the stage froze the file. The row above is
 therefore 2 stages of genuine Fetch Nondeterminism plus one mis-attributed copy;
 the fix is to copy `/out/ /`, as every fetch stage already does, and
 `TestBuildStageCOPYsCopyWholeTree` holds the shape for the class.
+
+**Closed (measured 2026-09-05, not when this decision was taken).** The figures
+below post-date the header's "as measured when this decision was taken" by the
+length of this follow-up; read them as of that date.
+
+`freeze-git` runs
+over every checkout `fetch-omz` and `fetch-brew` ship, before the `chmod` and
+before `freeze-mtimes`. Neither can drop `.git` — Homebrew *is* a git checkout
+and `omz update` needs one — so the three things a fresh checkout takes from
+the clock or from the far end are normalised instead: the pack is recompressed
+locally, the reflog is dropped, and the index is read back from `HEAD` with its
+stat cache zeroed. Measured on a native arm64 daemon, as the digest of the
+`COPY --link --from=<stage> /out/ /` layer alone across two independent
+`--no-cache` builds:
+
+| Stage | Before | After |
+|---|---|---|
+| `fetch-omz` | `8c49c223…` / `967b5595…` | `427f1fb7…` twice |
+| `fetch-brew` | `c384c0b9…` / `a89fff12…` | `79cb2466…` twice |
+
+`-F`, not `-f`, is what does it, and the difference is not cosmetic: `-f`
+refuses the deltas the server sent but still copies each non-delta object's
+compressed bytes out of the received pack. Two `fetch-brew` builds minutes
+apart produced packs with identical write order and identical delta bases whose
+per-object sizes in pack differed — GitHub had deflated the same blobs
+differently. `TestFreezeGitMakesACheckoutAFunctionOfItsCommit` reassembles the
+helper and runs it over two checkouts that disagree the same way.
+
+**The arm64 leg of `rtk-builder` is Fetch Nondeterminism too, and the first
+measurement of it was wrong.** Two `--no-cache` builds on an arm64 daemon gave
+the same layer digest (`0ee1364c…`) — but both pulled the same floating base and
+shared the cargo registry cache mount, so the experiment held constant exactly
+the input under suspicion. Varying the toolchain instead, at one `RTK_VERSION`
+and one `--locked` dependency graph:
+
+| Toolchain | arm64 `rtk` binary |
+|---|---|
+| rustc 1.98.0 | `0d114e8daf093e81…` |
+| rustc 1.97.1 | `0c1a18b805e6aa54…` |
+
+So `/out` is not a function of the version the stage pins, which is this term
+and not Archive Drift: what moves is the stage's own output, not the layers it
+sits on. The distinction turns on what the base image *is* here — for every
+other `FROM` in the file it hosts a download, and for this one it is compiled
+into the result.
+
+Holding the base still would close it — a digest pin, with `pinDigests` so
+Renovate re-resolves the same tag and the pin does not become a frozen
+toolchain. That was built and then withdrawn: re-resolving the same tag means a
+PR on every upstream rebuild, and the churn buys nothing the gate can see,
+because the moved-layer count is measured on amd64 only and amd64's binary is a
+checksummed tarball that is identical across builds.
+
+So the arm64 leg is **accepted, not fixed** — issue direction 4, and it is
+accepted at the stage rather than as an allowance subtracted in the gate, which
+never measures it. The honest statement is that the image published for arm64
+carries a stage whose output is not a function of the version it pins, and that
+this costs nothing today only because nothing measures arm64. Revisit if the
+gate grows an arm64 leg.
 
 **The issue's first proposed direction is not merely weak, it is fatal.**
 Comparing only layers whose `created_by` differs would have counted zero here —
