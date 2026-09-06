@@ -329,9 +329,14 @@ func TestSaveSDDPreservesCustomSteps(t *testing.T) {
 	}
 }
 
+// The per-scope rows are configedit's reading of one layer's file, rendered for
+// the row it belongs to. What that file sets — the deprecated-alias fold
+// included — is configedit's own contract (TestFileValues*); what is asserted
+// here is only the rendering this package still owns.
+
 // TestScopeStatesPerFile: a file's own view reports only the keys that file
 // sets — the data behind the per-scope "in <scope>" line. A key set in one
-// layer's file is absent from the other layer's ScopeStates.
+// layer's file is absent from the other layer's scope states.
 func TestScopeStatesPerFile(t *testing.T) {
 	repo := t.TempDir()
 	globalPath := filepath.Join(repo, "global.yaml")
@@ -339,9 +344,9 @@ func TestScopeStatesPerFile(t *testing.T) {
 	writeFile(t, globalPath, "pull: never\n")
 	writeFile(t, repoPath, "agent: codex\n")
 
-	global, err := ScopeStates(globalPath)
+	global, err := scopeStates(globalPath)
 	if err != nil {
-		t.Fatalf("ScopeStates global: %v", err)
+		t.Fatalf("scopeStates global: %v", err)
 	}
 	if !global["pull"].set || global["pull"].display != "never" {
 		t.Errorf("global scope must set pull=never, got %+v", global["pull"])
@@ -350,9 +355,9 @@ func TestScopeStatesPerFile(t *testing.T) {
 		t.Errorf("global scope must NOT set agent, got %+v", global["agent"])
 	}
 
-	rep, err := ScopeStates(repoPath)
+	rep, err := scopeStates(repoPath)
 	if err != nil {
-		t.Fatalf("ScopeStates repo: %v", err)
+		t.Fatalf("scopeStates repo: %v", err)
 	}
 	if !rep["agent"].set || rep["agent"].display != "codex" {
 		t.Errorf("repo scope must set agent=codex, got %+v", rep["agent"])
@@ -365,9 +370,9 @@ func TestScopeStatesPerFile(t *testing.T) {
 // TestScopeStatesMissingFile: a scope whose file does not exist reports every
 // key as unset (all inherited), never an error.
 func TestScopeStatesMissingFile(t *testing.T) {
-	got, err := ScopeStates(filepath.Join(t.TempDir(), "absent.yaml"))
+	got, err := scopeStates(filepath.Join(t.TempDir(), "absent.yaml"))
 	if err != nil {
-		t.Fatalf("ScopeStates missing: %v", err)
+		t.Fatalf("scopeStates missing: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("a missing file must yield an all-unset map, got %+v", got)
@@ -381,28 +386,12 @@ func TestScopeStatesCollectionCount(t *testing.T) {
 	path := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, path, "env:\n  FOO: bar\n  BAZ: qux\n")
 
-	got, err := ScopeStates(path)
+	got, err := scopeStates(path)
 	if err != nil {
-		t.Fatalf("ScopeStates: %v", err)
+		t.Fatalf("scopeStates: %v", err)
 	}
 	if got["env"].display != "2 vars" {
 		t.Errorf("env per-scope display = %q, want %q", got["env"].display, "2 vars")
-	}
-}
-
-// TestScopeStatesBrowserBridgeFold: a file that sets only the deprecated
-// browser_bridge counts as setting bridge in that scope.
-func TestScopeStatesBrowserBridgeFold(t *testing.T) {
-	repo := t.TempDir()
-	path := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, path, "browser_bridge: false\n")
-
-	got, err := ScopeStates(path)
-	if err != nil {
-		t.Fatalf("ScopeStates: %v", err)
-	}
-	if !got["bridge"].set {
-		t.Errorf("browser_bridge in a file must count as bridge being set in that scope, got %+v", got["bridge"])
 	}
 }
 

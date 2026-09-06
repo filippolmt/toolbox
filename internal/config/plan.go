@@ -284,6 +284,62 @@ func DeprecatedAliases() map[string]string {
 	return map[string]string{DeprecatedBridgeKey: "bridge"}
 }
 
+// FoldDeprecatedAliases performs the fold, once, for every carrier of a
+// config's contents: for each pair in DeprecatedAliases the live key wins, and
+// the alias fills in only when the live key is absent. The pair table, the
+// precedence and the loop live here; a carrier passes what it alone can answer.
+//
+// isSet reports whether the carrier sets a key; fold moves the alias's value
+// onto the live key. That split is the irreducible part, and it is why one
+// function cannot serve both callers outright: the load path asks a *decoded*
+// Config whether a tri-state pointer is nil, while a per-file reader
+// (configedit.FileValues) asks a *parsed document* whether the key is written
+// at all. The two answers differ on purpose — a file writing a bare `bridge:`
+// with no value sets the key for the reader and leaves a nil pointer for the
+// load path — and the load path depends on its own reading: seedEnvBoundKeys
+// leaves `bridge` unseeded precisely so that non-nil means "the user wrote it".
+func FoldDeprecatedAliases(isSet func(key string) bool, fold func(alias, live string)) {
+	for alias, live := range DeprecatedAliases() {
+		if isSet(alias) && !isSet(live) {
+			fold(alias, live)
+		}
+	}
+}
+
+// fieldByTag returns the Config field carrying the given mapstructure tag — the
+// bridge between the string-keyed vocabulary the schema tables speak (schema
+// keys, alias pairs) and the struct that holds the values. Addressable, so a
+// caller can write through it.
+func fieldByTag(cfg *Config, tag string) (reflect.Value, bool) {
+	v := reflect.ValueOf(cfg).Elem()
+	for f := range reflect.TypeFor[Config]().Fields() {
+		if f.Tag.Get("mapstructure") == tag {
+			return v.FieldByName(f.Name), true
+		}
+	}
+	return reflect.Value{}, false
+}
+
+// writtenInConfig is the load path's answer to "does this carrier set the key":
+// the field is a tri-state pointer and it is not nil. Every deprecated alias is
+// such a pointer today — that is what lets an omitted key be told from an
+// explicit one — and a future alias on a plain field has no such marker, so it
+// reads as unset rather than being folded on a guess.
+func writtenInConfig(cfg *Config, key string) bool {
+	f, ok := fieldByTag(cfg, key)
+	return ok && f.Kind() == reflect.Pointer && !f.IsNil()
+}
+
+// copyAliasField moves the alias field's value onto the live one, by tag, so a
+// new pair in DeprecatedAliases needs no second edit here.
+func copyAliasField(cfg *Config, alias, live string) {
+	from, fromOK := fieldByTag(cfg, alias)
+	to, toOK := fieldByTag(cfg, live)
+	if fromOK && toOK && to.CanSet() && from.Type() == to.Type() {
+		to.Set(from)
+	}
+}
+
 // warnLegacyBrowserBridge emits a deprecation warning the first time any
 // input buffer carries a top-level `browser_bridge:` key. The key still
 // works (fillDefaultsBackstop folds it into Bridge) — this is a rename
@@ -558,15 +614,19 @@ func validateInheritHostAuth(keys []string) error {
 // fillDefaultsBackstop nil-guards cfg.Shells and seeds cfg.Bridge to its
 // default value when omitted. Viper SetDefault values do not always surface
 // through Unmarshal for map/pointer types, so the Go-side backstop keeps the
-// contract explicit. The deprecated browser_bridge spelling folds into
-// Bridge here — only when `bridge:` is absent, so the new key always wins.
+// contract explicit. The deprecated spellings fold into their live keys here —
+// through FoldDeprecatedAliases, which owns the rule, so the fold this package
+// performs on load and the one configedit.FileValues reports per file are the
+// same one and cannot drift. Naming the pair by hand here is what made "the
+// same way as config.Merge does" a thing another package had to write out.
 func fillDefaultsBackstop(cfg *Config) {
 	if cfg.Shells == nil {
 		cfg.Shells = map[string]NamedShell{}
 	}
-	if cfg.Bridge == nil {
-		cfg.Bridge = cfg.BrowserBridge
-	}
+	FoldDeprecatedAliases(
+		func(key string) bool { return writtenInConfig(cfg, key) },
+		func(alias, live string) { copyAliasField(cfg, alias, live) },
+	)
 	if cfg.Bridge == nil {
 		v := true
 		cfg.Bridge = &v
