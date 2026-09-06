@@ -9,9 +9,14 @@ package devrules
 
 import (
 	"bufio"
+	"cmp"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -174,21 +179,216 @@ func globCoversPackage(glob, pkg string) bool {
 	return pkg == glob
 }
 
+// pathsCoverPackage reports whether any of a rule's `paths:` globs scopes it to
+// pkg.
+func pathsCoverPackage(globs []string, pkg string) bool {
+	for _, g := range globs {
+		if globCoversPackage(g, pkg) {
+			return true
+		}
+	}
+	return false
+}
+
 // ruleMentionExemptions lists `<rule file>: <path>` pairs a rule may name in its
-// body without scoping itself to that path — a passing cross-reference to a
-// neighbouring package rather than material the rule governs. Empty on purpose:
-// add an entry only after deciding the rule does not own edits in that package,
-// because the default reading of a named package is that it does.
+// body without scoping itself to that path and without pointing at the rule that
+// does. Empty on purpose: the routine cross-reference is settled in the prose
+// instead (see ruleBlockPointsAtOwner), so an entry here is the residue — a
+// package no rule owns, or one whose ownership is genuinely undecided. Add one
+// only after making that call, because the default reading of a named package is
+// that the naming rule governs it.
 var ruleMentionExemptions = map[string]bool{}
+
+// internalPackages returns the top-level package directory names under
+// internal/. The qualifier matcher below is built from this list rather than
+// from a generic "lowercase word followed by a dot" pattern, which has the same
+// shape as a filename (`config.yml`), a link target (`image-build.md`), a
+// hostname and a dotted config key (`worktree.seed`) — none of which name a Go
+// package. Only a name that is really a directory under internal/ can.
+func internalPackages(t *testing.T, root string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(root, "internal"))
+	if err != nil {
+		t.Fatalf("read internal/: %v", err)
+	}
+	var pkgs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			pkgs = append(pkgs, e.Name())
+		}
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("no packages found under internal/")
+	}
+	// Longest first, so `configio.RemoveFence` matches configio and not config.
+	slices.SortFunc(pkgs, func(a, b string) int {
+		if n := cmp.Compare(len(b), len(a)); n != 0 {
+			return n
+		}
+		return cmp.Compare(a, b)
+	})
+	return pkgs
+}
+
+// qualifierPattern builds the matcher for a Go qualifier naming one of pkgs:
+// `<pkg>.<member>`. The rule files spell a package this way far more often than
+// as a path, so a matcher blind to it is blind to most mentions.
+func qualifierPattern(pkgs []string) *regexp.Regexp {
+	quoted := make([]string, len(pkgs))
+	for i, p := range pkgs {
+		quoted[i] = regexp.QuoteMeta(p)
+	}
+	return regexp.MustCompile(`\b(` + strings.Join(quoted, "|") + `)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
+}
+
+// packageMembers returns, per package under internal/, the top-level
+// identifiers it declares — every func, type, const and var name, test files
+// included.
+//
+// This is what tells a qualifier from its lookalikes. `config.yml`,
+// `image-build.md`, `worktree.seed` and a hostname all have the `<word>.<word>`
+// shape of a qualifier, and the left half of some of them really is a package
+// name, so the decision has to be made on the right half. Asking the package
+// what it declares answers it exactly: `configio.RemoveFence` is a mention
+// because configio declares RemoveFence, and `worktree.seed` is not because
+// worktree declares no seed.
+//
+// The alternative was a capitalisation heuristic, which read `Ensure` as a
+// member and any flat-lowercase word as a lookalike. That was conservative in
+// the wrong direction: it made every unexported member spelled as one lowercase
+// word invisible to the gate, which is the class of mention this test exists to
+// stop being invisible.
+func packageMembers(t *testing.T, root string) map[string]map[string]bool {
+	t.Helper()
+	members := map[string]map[string]bool{}
+	for _, pkg := range internalPackages(t, root) {
+		dir := filepath.Join(root, "internal", pkg)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read internal/%s: %v", pkg, err)
+		}
+		fset := token.NewFileSet()
+		names := map[string]bool{}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			file, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parse internal/%s/%s: %v", pkg, e.Name(), err)
+			}
+			for _, decl := range file.Decls {
+				declaredNames(decl, names)
+			}
+		}
+		members[pkg] = names
+	}
+	return members
+}
+
+// declaredNames collects the top-level names one declaration introduces.
+func declaredNames(decl ast.Decl, into map[string]bool) {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		into[d.Name.Name] = true
+	case *ast.GenDecl:
+		for _, spec := range d.Specs {
+			switch s := spec.(type) {
+			case *ast.TypeSpec:
+				into[s.Name.Name] = true
+			case *ast.ValueSpec:
+				for _, name := range s.Names {
+					into[name.Name] = true
+				}
+			}
+		}
+	}
+}
 
 var (
 	internalPkgPattern = regexp.MustCompile(`\binternal/([a-z][a-z0-9]*)\b`)
 	cmdFilePattern     = regexp.MustCompile(`\bcmd/([a-z_]+\.go)\b`)
+	// siblingRulePattern matches a Markdown link to a rule file next to this
+	// one. The target must carry no slash, so the `docs/internals/image-build.md`
+	// guide never passes for the `image-build.md` rule that shares its basename.
+	siblingRulePattern = regexp.MustCompile(`\]\(([A-Za-z0-9._-]+\.md)(?:#[^)]*)?\)`)
 )
 
+// mentionedPaths returns every repo path a rule block names, in all three
+// spellings: the `internal/<pkg>` path, the `cmd/<file>.go` path, and the Go
+// qualifier `<pkg>.<Member>`. A bare `cmd.<Member>` qualifier is deliberately
+// not resolved — `cmd/` is one package spread over many files, and a qualifier
+// names no file to scope a rule to.
+func mentionedPaths(block string, qualifier *regexp.Regexp, members map[string]map[string]bool) []string {
+	var mentioned []string
+	for _, m := range internalPkgPattern.FindAllStringSubmatch(block, -1) {
+		mentioned = append(mentioned, "internal/"+m[1])
+	}
+	for _, m := range cmdFilePattern.FindAllStringSubmatch(block, -1) {
+		mentioned = append(mentioned, "cmd/"+m[1])
+	}
+	for _, m := range qualifier.FindAllStringSubmatch(block, -1) {
+		if members[m[1]][m[2]] {
+			mentioned = append(mentioned, "internal/"+m[1])
+		}
+	}
+	return mentioned
+}
+
+// ruleBlocks splits a rule body into the units a pointer is scoped to: a
+// heading, a top-level list item, or a paragraph. Anything else — a wrapped
+// continuation line, an indented sub-item — belongs to the block it continues.
+// The block, not the whole file, is the scope on purpose: rule files cross-link
+// each other constantly, so a file-wide link would excuse every mention in it,
+// and a reader lands on one bullet rather than on the file.
+func ruleBlocks(body string) []string {
+	var (
+		blocks []string
+		cur    strings.Builder
+	)
+	flush := func() {
+		if strings.TrimSpace(cur.String()) != "" {
+			blocks = append(blocks, cur.String())
+		}
+		cur.Reset()
+	}
+	for _, line := range strings.Split(body, "\n") {
+		switch {
+		case strings.TrimSpace(line) == "":
+			flush()
+			continue
+		case strings.HasPrefix(line, "#"), strings.HasPrefix(line, "- "), strings.HasPrefix(line, "* "):
+			flush()
+		}
+		cur.WriteString(line)
+		cur.WriteString("\n")
+	}
+	flush()
+	return blocks
+}
+
+// ruleBlockPointsAtOwner reports whether block hands pkg to the rule that
+// governs it: a link to a sibling rule file whose own `paths:` scopes it there.
+// That is the Rule Pointer convention — the mention is a signpost, not an
+// ownership claim, and it cannot be asserted in the abstract, because the link
+// target has to really cover the package for the pointer to count.
+func ruleBlockPointsAtOwner(block, pkg, self string, globs map[string][]string) bool {
+	for _, m := range siblingRulePattern.FindAllStringSubmatch(block, -1) {
+		target := m[1]
+		if target == self {
+			continue
+		}
+		if pathsCoverPackage(globs[target], pkg) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestRuleMentionsAreCovered asserts that every package a rule file names in its
-// body is matched by that same file's `paths:` frontmatter, so the rule loads on
-// the edits it governs.
+// body is either matched by that same file's `paths:` frontmatter — so the rule
+// loads on the edits it governs — or handed, in the block that names it, to the
+// rule whose frontmatter does.
 //
 // TestRulePathsResolve checks the opposite direction — that each glob still
 // points at something on disk — and cannot catch this: config-mounts-sdd.md
@@ -197,39 +397,130 @@ var (
 // files that write through it, so editing cmd/config.go loaded a different rule
 // (via cmd/**) and never that one. Every glob it did list resolved fine.
 func TestRuleMentionsAreCovered(t *testing.T) {
-	for _, rule := range ruleFiles(t) {
+	root := repoRoot(t)
+	qualifier := qualifierPattern(internalPackages(t, root))
+	members := packageMembers(t, root)
+
+	rules := ruleFiles(t)
+	globs := make(map[string][]string, len(rules))
+	for _, rule := range rules {
+		globs[filepath.Base(rule)] = frontmatterPaths(t, rule)
+	}
+
+	for _, rule := range rules {
 		name := filepath.Base(rule)
-		globs := frontmatterPaths(t, rule)
-		body := ruleBody(t, rule)
+		reported := map[string]bool{}
 
-		var mentioned []string
-		for _, m := range internalPkgPattern.FindAllStringSubmatch(body, -1) {
-			mentioned = append(mentioned, "internal/"+m[1])
-		}
-		for _, m := range cmdFilePattern.FindAllStringSubmatch(body, -1) {
-			mentioned = append(mentioned, "cmd/"+m[1])
-		}
-
-		seen := make(map[string]bool, len(mentioned))
-		for _, pkg := range mentioned {
-			if seen[pkg] || ruleMentionExemptions[name+": "+pkg] {
-				continue
-			}
-			seen[pkg] = true
-
-			covered := false
-			for _, g := range globs {
-				if globCoversPackage(g, pkg) {
-					covered = true
-					break
+		for _, block := range ruleBlocks(ruleBody(t, rule)) {
+			seen := map[string]bool{}
+			for _, pkg := range mentionedPaths(block, qualifier, members) {
+				if seen[pkg] || reported[pkg] || ruleMentionExemptions[name+": "+pkg] {
+					continue
 				}
-			}
-			if !covered {
-				t.Errorf("%s: names %q in its body but no paths: entry scopes it there — "+
-					"add a glob, or exempt it in ruleMentionExemptions",
+				seen[pkg] = true
+
+				if pathsCoverPackage(globs[name], pkg) {
+					continue
+				}
+				if ruleBlockPointsAtOwner(block, pkg, name, globs) {
+					continue
+				}
+				reported[pkg] = true
+				t.Errorf("%s: names %q but no paths: entry scopes it there and the block "+
+					"that names it links no rule that does — add a glob if this rule governs "+
+					"those edits, link the rule that does if it is a pointer, or exempt it in "+
+					"ruleMentionExemptions",
 					name, pkg)
 			}
 		}
+	}
+}
+
+// TestAMentionIsAQualifierNotItsLookalikes pins the classifier
+// TestRuleMentionsAreCovered rests on, so it cannot go green by seeing nothing.
+// Its predecessor read only the `internal/<pkg>` path spelling while the rule
+// files overwhelmingly write the Go qualifier, and a mention it cannot see is
+// neither enforced nor exempted — it passes by being invisible. The other half
+// is what it must keep refusing: a filename, a link target, a hostname and a
+// dotted config key all have the shape of a qualifier and name no package.
+//
+// The member sets are written out here rather than parsed, so the cases pin the
+// classifier's rule — the right half must be a name the package declares — and
+// not today's contents of those packages.
+func TestAMentionIsAQualifierNotItsLookalikes(t *testing.T) {
+	pkgs := []string{"sessionplan", "localimage", "configio", "worktree", "config", "build"}
+	qualifier := qualifierPattern(pkgs)
+	members := map[string]map[string]bool{
+		"localimage":  {"Ensure": true},
+		"sessionplan": {"composeEnv": true},
+		"configio":    {"RemoveFence": true},
+		"config":      {"Merge": true, "lock": true},
+		"worktree":    {"Prune": true},
+		"build":       {"Assets": true},
+	}
+
+	cases := []struct {
+		name  string
+		block string
+		want  []string
+	}{
+		{"exported qualifier", "`localimage.Ensure` builds the overlay", []string{"internal/localimage"}},
+		{"unexported camelCase qualifier", "applied by `sessionplan.composeEnv`", []string{"internal/sessionplan"}},
+		{"the longest package wins", "`configio.RemoveFence`", []string{"internal/configio"}},
+		{"path spelling still read", "the primitives in internal/config", []string{"internal/config"}},
+		{"cmd file spelling still read", "`cmd/worktree.go` resolves the agent", []string{"cmd/worktree.go"}},
+		{"a link to a sibling rule", "governed by [image-build.md](image-build.md)", nil},
+		{"a filename", "`~/.config/glab-cli/config.yml` is one host mount", nil},
+		{"a dotted config key", "plus `worktree.seed` config extras", nil},
+		{"a bare cmd qualifier names no file", "`cmd.startSession` resolves it", nil},
+		{"a lowercase unexported member is seen", "the `config.lock` it takes", []string{"internal/config"}},
+		{"a member the package does not declare", "`config.NoSuchThing` is stale", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := mentionedPaths(c.block, qualifier, members)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("mentionedPaths(%q) = %v, want %v", c.block, got, c.want)
+			}
+		})
+	}
+}
+
+// TestARulePointerNamesARuleThatCoversThePackage pins the other half of the
+// settlement: a pointer is a link whose target really governs the package, in
+// the block that names it. Anything looser stops being a check — every rule
+// file links its neighbours, so a pointer taken on trust, or read file-wide,
+// would excuse every mention in the tree.
+func TestARulePointerNamesARuleThatCoversThePackage(t *testing.T) {
+	globs := map[string][]string{
+		"mounts.md":            {"internal/mountplan/**"},
+		"container-runtime.md": {"internal/container/**"},
+	}
+
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"the rule that covers it", "- `mountplan.Merge`, governed by [mounts.md](mounts.md)\n", true},
+		{"a rule that does not", "- `mountplan.Merge`, see [container-runtime.md](container-runtime.md)\n", false},
+		{"the same-basename guide under docs/", "- `mountplan.Merge`, see [mounts](../../docs/mounts.md)\n", false},
+		{"itself", "- `mountplan.Merge`, see [self.md](self.md)\n", false},
+		{"a pointer on the previous bullet", "- governed by [mounts.md](mounts.md)\n- `mountplan.Merge` here\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got bool
+			for _, block := range ruleBlocks(c.body) {
+				if !strings.Contains(block, "`mountplan.Merge`") {
+					continue
+				}
+				got = ruleBlockPointsAtOwner(block, "internal/mountplan", "self.md", globs)
+			}
+			if got != c.want {
+				t.Errorf("pointer accepted = %v, want %v, for %q", got, c.want, c.body)
+			}
+		})
 	}
 }
 

@@ -71,7 +71,7 @@ func TestRenderRowsReportsAnEmptyList(t *testing.T) {
 func TestRenderOptionsMarksCursorAndTags(t *testing.T) {
 	m := press(browsing(ScopeRepo, &config.Config{Pull: config.PullNever},
 		KeyState{Key: "pull", ScopeSet: true}), "enter")
-	if !m.editing || m.ed.kind != edEnum {
+	if !m.editing || m.ed.kind != config.EditorChoice {
 		t.Fatalf("pull did not open an enum editor (status %q)", m.status)
 	}
 	// The editor opens on the current value; step up so the cursor and the
@@ -90,7 +90,7 @@ func TestRenderCheckboxesTracksSelectionNotCursor(t *testing.T) {
 	}
 	cfg := &config.Config{SDD: map[string]config.SDDSkill{opts[1]: {Enabled: true}}}
 	m := press(browsing(ScopeRepo, cfg, KeyState{Key: "sdd", ScopeSet: true}), "enter")
-	if !m.editing || m.ed.kind != edMulti {
+	if !m.editing || m.ed.kind != config.EditorSet {
 		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
 	}
 	wantOnScreen(t, m, "> [ ] "+opts[0], "  [x] "+opts[1])

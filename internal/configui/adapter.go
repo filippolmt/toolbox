@@ -66,8 +66,8 @@ type KeyState struct {
 	FromEnv bool // value comes from a TOOLBOX_* env var, so it is read-only here
 	Display string
 
-	Description string // one-line "what this key does" (config.KeyDocs)
-	Default     string // human-readable built-in default (config.KeyDocs)
+	Description string // one-line "what this key does" (the key's config.Key row)
+	Default     string // human-readable built-in default (the key's config.Key row)
 	ReadOnly    bool   // the key admits a single supported value — no editor to open
 
 	ScopeSet     bool   // the currently selected scope's file sets this key
@@ -91,17 +91,17 @@ func Snapshot(cwd, explicitOverride string) (*config.Config, []KeyState, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	docs := config.KeyDocs()
 	states := make([]KeyState, 0, len(Keys()))
 	for _, key := range Keys() {
 		origin, mixed := originFor(prov, key)
+		row, _ := config.KeyByName(key)
 		st := KeyState{
 			Key:         key,
 			Origin:      origin,
 			Mixed:       mixed,
 			Display:     displayValue(cfg, key),
-			Description: docs[key].Summary,
-			Default:     docs[key].Default,
+			Description: row.Summary,
+			Default:     row.Default,
 			ReadOnly:    ReadOnlyKey(key),
 		}
 		if st.Origin == configedit.OriginDefault && config.EnvVarSet(key) {
@@ -171,9 +171,10 @@ func originFor(prov configedit.Provenance, key string) (origin configedit.Origin
 // value. Collections show a count; scalars show the value (or a parenthesised
 // default hint when empty); tri-state bools show unset/true/false. The shape
 // comes from the key's descriptor, so a key with no row renders empty — which
-// TestKeyDescriptorsCoverEveryKey forbids.
+// TestEveryKeyDisplaysSomething forbids, naming the key.
 func displayValue(cfg *config.Config, key string) string {
-	return keyDescriptors[key].displayOf(cfg, key)
+	row, _ := config.KeyByName(key)
+	return keyDescriptors[key].displayOf(cfg, row)
 }
 
 func countLabel(n int, noun string) string {
@@ -199,7 +200,8 @@ func orHint(v, hint string) string {
 // here (on a copy) so a descriptor row can hand back the config's own slice.
 // Returns nil for non-collection keys or an empty collection.
 func detailEntries(cfg *config.Config, key string) []string {
-	return slices.Sorted(slices.Values(keyDescriptors[key].entriesOf(cfg)))
+	row, _ := config.KeyByName(key)
+	return slices.Sorted(slices.Values(keyDescriptors[key].entriesOf(cfg, row)))
 }
 
 // triState renders an optional bool as its three distinct states.
@@ -225,21 +227,23 @@ func TargetPath(scope Scope, cwd string) (string, error) {
 // key is not an enum. The option sets themselves stay in config — the descriptor
 // only records which key offers which one.
 func enumOptions(key string) []string {
-	if d := keyDescriptors[key]; d.kind == edEnum {
-		return d.options()
+	row, ok := config.KeyByName(key)
+	if !ok || row.Editor != config.EditorChoice {
+		return nil
 	}
-	return nil
+	return keyDescriptors[key].optionsOf()
 }
 
 // EnumDefault returns the value an enum key resolves to when unset — the option
-// the editor marks "(default)". "" for non-enum keys. The default itself comes
-// from config.KeyDocs (the single source for per-key defaults), so this never
-// re-hardcodes the key→default mapping config already owns.
+// the editor marks "(default)". "" for non-enum keys. The default itself is the
+// key row's own Default, so this never re-hardcodes the key→default mapping
+// config already owns.
 func EnumDefault(key string) string {
 	if enumOptions(key) == nil {
 		return ""
 	}
-	return config.KeyDocs()[key].Default
+	row, _ := config.KeyByName(key)
+	return row.Default
 }
 
 // ReadOnlyKey reports whether a key admits a single supported value, so the UI
@@ -259,16 +263,6 @@ func HostAuthOptions() []string { return catalog.HostAuthEligibleKeys() }
 // editor's output shape, aliased so the UI does not have to name the configedit
 // package to build one.
 type ShellEntry = configedit.ShellEntry
-
-// ShellPaths flattens the effective shells map to name→path for the structured
-// editor (per-shell env overlays are preserved on save, not edited here).
-func ShellPaths(cfg *config.Config) map[string]string {
-	out := make(map[string]string, len(cfg.Shells))
-	for name, s := range cfg.Shells {
-		out[name] = s.Path
-	}
-	return out
-}
 
 func sortedKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))

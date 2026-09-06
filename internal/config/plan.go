@@ -484,94 +484,38 @@ func mergeShellEnv(dst map[string]map[string]string, raw rawCaseLayer) {
 // Validation
 // =============================================================================
 
-// fieldValidator pairs a config key with the validator run over a resolved
-// Config. The set of keys here plus noValidationKeys must equal
-// config.SchemaKeys() — TestValidatorsCoverSchema enforces that, so a new
-// Config field cannot silently ship unvalidated (or un-exempted). Order is the
-// validation order: the first failing validator wins.
-type fieldValidator struct {
-	key string
-	run func(*Config) error
-}
-
-var fieldValidators = []fieldValidator{
-	{"mounts_root", func(c *Config) error { return ValidateMountsRoot(c.MountsRoot) }},
-	{"image", func(c *Config) error { return ValidateImageRef(c.Image) }},
-	{"registry_mirror", func(c *Config) error { return ValidateRegistryMirror(c.RegistryMirror) }},
-	{"pull", func(c *Config) error { return ValidatePull(c.Pull) }},
-	{"shell", func(c *Config) error { return ValidateShell(c.Shell) }},
-	{"agent", func(c *Config) error { return ValidateAgent(c.Agent) }},
-	{"inherit_host_auth", func(c *Config) error { return validateInheritHostAuth(c.InheritHostAuth) }},
-	{"sdd", func(c *Config) error { return ValidateSDD(c.SDD) }},
-	{"worktree", func(c *Config) error { return ValidateWorktreeSeed(c.Worktree.Seed) }},
-	{"env", func(c *Config) error { return ValidateEnv(c.Env) }},
-	{"shells", func(c *Config) error {
-		for name, s := range c.Shells {
-			if err := ValidateEnv(s.Env); err != nil {
-				return fmt.Errorf("shells.%s.%w", name, err)
-			}
-		}
-		return nil
-	}},
-}
-
-// noValidationKeys are the config keys that legitimately have no validator:
-// bare tri-state / bool toggles (no invalid value) and mounts (validated
-// structurally by the mount plan, not here). Listed explicitly so the
-// coverage guard forces a deliberate classification of every new field.
-var noValidationKeys = map[string]bool{
-	"bridge":             true,
-	DeprecatedBridgeKey:  true,
-	"proximo":            true,
-	"managed_statusline": true,
-	"image_reclaim":      true,
-	"peer_messaging":     true,
-	"mounts":             true,
-}
-
 // ValidateKey validates one config key's raw scalar value — the per-key half of
 // the validation tail, for a surface holding a single key/value pair before any
-// Config exists (the `config set` flags today). Keeping it here rather than in
-// cmd/ is what stops a presentation layer from owning its own copy of the
-// flag→validator mapping and drifting from the load path.
+// Config exists (the `config set` flags today). It reads the key's row, so a
+// presentation layer never owns its own flag→validator mapping to drift from
+// the load path.
 //
-// A key whose validator cannot judge a lone string returns nil: a bool toggle
-// has no invalid value, and the structural keys (mounts, shells, env, sdd,
-// worktree, inherit_host_auth) are validated over the whole resolved Config by
-// the tail — which every write goes through anyway, via
-// configedit.ApplyChecked. So does an unknown key: this is a fail-fast
-// convenience, not the authority on what a config may contain.
+// A key whose row declares no Scalar verdict returns nil: a bool toggle has no
+// invalid value, and the structural keys (mounts, shells, env, sdd, worktree,
+// inherit_host_auth) are validated over the whole resolved Config by the tail —
+// which every write goes through anyway, via configedit.ApplyChecked. So does
+// an unknown key: this is a fail-fast convenience, not the authority on what a
+// config may contain.
 func ValidateKey(key, value string) error {
-	switch key {
-	case "mounts_root":
-		return ValidateMountsRoot(value)
-	case "image":
-		return ValidateImageRef(value)
-	case "registry_mirror":
-		return ValidateRegistryMirror(value)
-	case "pull":
-		return ValidatePull(value)
-	case "shell":
-		return ValidateShell(value)
-	case "agent":
-		return ValidateAgent(value)
+	if k, ok := KeyByName(key); ok && k.Scalar != nil {
+		return k.Scalar(value)
 	}
 	return nil
 }
 
-// applyValidationTail defaults the pull/shell scalars, then runs every
-// field validator in fieldValidators order (first failure wins).
+// applyValidationTail defaults the pull/shell scalars, then runs every key
+// row's verdict in Config declaration order (first failure wins).
 func applyValidationTail(cfg *Config) error {
 	// Side-effecting defaults stay explicit — they mutate cfg, so they are not
-	// pure validators and don't belong in the fieldValidators table.
+	// pure validators and don't belong in the key rows.
 	if cfg.Pull == "" {
 		cfg.Pull = PullAuto
 	}
 	if cfg.Shell == "" {
 		cfg.Shell = "zsh"
 	}
-	for _, v := range fieldValidators {
-		if err := v.run(cfg); err != nil {
+	for _, k := range Keys() {
+		if err := k.check(cfg); err != nil {
 			return err
 		}
 	}

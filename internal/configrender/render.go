@@ -3,8 +3,7 @@
 // It is a peer of internal/configexample: configexample renders the annotated
 // *template* (a docs artefact), this renders the *live resolved state*. Keeping
 // it here reduces cmd/config.go to flag parsing + dispatch, matching every
-// sibling command, and lets the renderer derive scalar fallbacks from the one
-// config.EffectiveValue seam instead of re-hardcoding them.
+// sibling command.
 package configrender
 
 import (
@@ -18,11 +17,16 @@ import (
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
-// Resolved renders c as a deterministic YAML document covering every
-// config.SchemaKeys() field (TestConfigShowCoversSchema guards that a new field
-// can't silently go unrendered). Hand-rolled to avoid promoting the yaml v3
-// module to a direct dependency. Users pipe this output: it stays deterministic
-// (map keys sorted), so origin annotations live behind the --origin flag
+// Resolved renders c as a deterministic YAML document covering every config
+// key, in config.Keys() order and with each key's shape taken from its row.
+//
+// It stays hand-rolled rather than marshalled through yaml.v3 because the
+// document is not a serialisation of Config: unset scalars render their
+// effective fallback, a nil tri-state renders `auto`, an empty scalar renders
+// the explicit `""` token, and --origin appends a provenance label as bare
+// trailing text (`mounts_root: /tmp/root (./.toolbox.yaml)`) — not a YAML
+// comment, so no marshaller emits it. Users pipe this output, so it stays
+// deterministic (map keys sorted) and annotation-free unless --origin asks
 // (Resolved passes nil provenance).
 func Resolved(w io.Writer, c *config.Config) error {
 	return ResolvedWithOrigin(w, c, nil, "")
@@ -42,6 +46,14 @@ func (e *errWriter) printf(format string, a ...any) {
 		return
 	}
 	_, e.err = fmt.Fprintf(e.w, format, a...)
+}
+
+// fail records the first structural error (a key the renderer has no shape
+// for), so it surfaces as a returned error rather than a missing line.
+func (e *errWriter) fail(err error) {
+	if e.err == nil {
+		e.err = err
+	}
 }
 
 // quoteIfEmpty renders an empty scalar as the explicit `""` token (matching
@@ -69,15 +81,15 @@ func boolPtrStr(p *bool) string {
 
 // writeSortedMap renders a string-keyed map as a YAML block with keys sorted
 // for determinism: `key: {}` when empty, else `key:` followed by two-space
-// `k: <val(v)>` entries. ann is the origin annotation appended to the header.
-func writeSortedMap[V any](e *errWriter, key, ann string, m map[string]V, val func(V) string) {
+// `k: v` entries. ann is the origin annotation appended to the header.
+func writeSortedMap(e *errWriter, key, ann string, m map[string]string) {
 	if len(m) == 0 {
 		e.printf("%s: {}%s\n", key, ann)
 		return
 	}
 	e.printf("%s:%s\n", key, ann)
 	for _, k := range slices.Sorted(maps.Keys(m)) {
-		e.printf("  %s: %s\n", k, val(m[k]))
+		e.printf("  %s: %s\n", k, m[k])
 	}
 }
 
@@ -117,68 +129,76 @@ func ResolvedWithOrigin(w io.Writer, c *config.Config, prov configedit.Provenanc
 	e := &errWriter{w: w}
 	ann := annotator(prov, explicitPath)
 
-	writeScalars(e, c, ann)
-	writeToggles(e, c, ann)
-	writeCollections(e, c, ann)
-	writeShells(e, c, ann)
-	writeMounts(e, c, ann)
-
+	for _, k := range config.Keys() {
+		writeKey(e, k, c, ann)
+	}
 	return e.err
 }
 
-// writeScalars emits the plain string-valued keys. shell, agent and pull render
-// their effective (post-fallback) value straight from config.EffectiveValue —
-// the single seam for "what an unset key resolves to" — so `config show` and
-// the config UI cannot drift on the fallback. (shell/pull are already
-// normalized by config.Plan, so on live output this is a no-op; routing them
-// keeps the seam the sole owner.)
-func writeScalars(e *errWriter, c *config.Config, ann func(string) string) {
-	shell, _ := config.EffectiveValue(c, "shell")
-	e.printf("shell: %s%s\n", shell, ann("shell"))
-
-	agent, _ := config.EffectiveValue(c, "agent")
-	e.printf("agent: %s%s\n", agent, ann("agent"))
-
-	e.printf("image: %s%s\n", quoteIfEmpty(c.Image), ann("image"))
-	e.printf("registry_mirror: %s%s\n", quoteIfEmpty(c.RegistryMirror), ann("registry_mirror"))
-
-	pull, _ := config.EffectiveValue(c, "pull")
-	e.printf("pull: %s%s\n", pull, ann("pull"))
-
-	e.printf("mounts_root: %s%s\n", quoteIfEmpty(c.MountsRoot), ann("mounts_root"))
+// writeKey emits one key, shaped by its row's Kind. The generic shapes read the
+// row's accessors, so a new key of an existing shape renders with no edit here;
+// only a structurally new shape (writeBlock's three) needs one. An unhandled
+// Kind is an error rather than a silently missing line.
+func writeKey(e *errWriter, k config.Key, c *config.Config, ann func(string) string) {
+	switch k.Kind {
+	case config.KindAlias:
+		// A deprecated spelling is rendered only as the live key it folds into
+		// (it is still tracked in provenance).
+	case config.KindEnum, config.KindScalar:
+		e.printf("%s: %s%s\n", k.Name, scalarOf(k, c), ann(k.Name))
+	case config.KindTri:
+		e.printf("%s: %s%s\n", k.Name, boolPtrStr(k.Tri(c)), ann(k.Name))
+	case config.KindBool:
+		// Same policy as the unhandled Kind below: a row that reads no bool is a
+		// broken row, and saying so beats panicking mid-document.
+		v := k.Tri(c)
+		if v == nil {
+			e.fail(fmt.Errorf("config show: bool key %q reads no value", k.Name))
+			return
+		}
+		e.printf("%s: %t%s\n", k.Name, *v, ann(k.Name))
+	case config.KindMap:
+		writeSortedMap(e, k.Name, ann(k.Name), k.Pairs(c))
+	case config.KindList:
+		writeYAMLSlice(e, 0, k.Name, ann(k.Name), k.List(c))
+	case config.KindBlock:
+		writeBlock(e, k, c, ann)
+	default:
+		e.fail(fmt.Errorf("config show: key %q has no render shape", k.Name))
+	}
 }
 
-// writeToggles emits the boolean keys: the tri-state *bool ones render `auto`
-// when nil (the resolved effective value is host-derived and can't be computed
-// from *Config alone), while the plain bool peer_messaging renders its literal
-// value — unset simply is false. The deprecated browser_bridge alias is
-// intentionally not rendered — only the canonical bridge key is shown
-// (browser_bridge is still tracked in provenance).
-func writeToggles(e *errWriter, c *config.Config, ann func(string) string) {
-	e.printf("bridge: %s%s\n", boolPtrStr(c.Bridge), ann("bridge"))
-	e.printf("proximo: %s%s\n", boolPtrStr(c.Proximo), ann("proximo"))
-	e.printf("managed_statusline: %s%s\n", boolPtrStr(c.ManagedStatusline), ann("managed_statusline"))
-	e.printf("image_reclaim: %s%s\n", boolPtrStr(c.ImageReclaim), ann("image_reclaim"))
-	e.printf("peer_messaging: %t%s\n", c.PeerMessaging, ann("peer_messaging"))
+// scalarOf is a scalar key's rendered value: its effective (post-fallback)
+// value when the row declares one — straight from config.EffectiveValue, the
+// single seam for "what an unset key resolves to", so `config show` and the
+// config UI cannot drift — otherwise its raw value, with empty rendered as the
+// explicit `""` token.
+func scalarOf(k config.Key, c *config.Config) string {
+	if v, ok := config.EffectiveValue(c, k.Name); ok {
+		return v
+	}
+	return quoteIfEmpty(k.Str(c))
 }
 
-// writeCollections emits the map- and slice-valued keys that need no per-entry
-// shaping beyond their generic writer.
-func writeCollections(e *errWriter, c *config.Config, ann func(string) string) {
-	writeSortedMap(e, "sdd", ann("sdd"), c.SDD, func(s config.SDDSkill) string {
-		return fmt.Sprintf("%t", s.Enabled)
-	})
-	writeSortedMap(e, "env", ann("env"), c.Env, func(v string) string { return v })
-
-	e.printf("worktree:%s\n", ann("worktree"))
-	writeYAMLSlice(e, 1, "seed", "", c.Worktree.Seed)
-
-	writeYAMLSlice(e, 0, "inherit_host_auth", ann("inherit_host_auth"), c.InheritHostAuth)
+// writeBlock emits the three keys whose entries carry more than one field, so
+// no generic shape fits: worktree nests its seed list, and shells and mounts
+// annotate every entry individually (they are individually settable keys).
+func writeBlock(e *errWriter, k config.Key, c *config.Config, ann func(string) string) {
+	switch k.Name {
+	case "worktree":
+		e.printf("worktree:%s\n", ann("worktree"))
+		writeYAMLSlice(e, 1, "seed", "", k.List(c))
+	case "shells":
+		writeShells(e, c, ann)
+	case "mounts":
+		writeMounts(e, c, ann)
+	default:
+		e.fail(fmt.Errorf("config show: block key %q has no render shape", k.Name))
+	}
 }
 
 // writeShells emits the named-workspace block. Each shell carries its own
-// origin annotation (they are individually settable keys) and an optional
-// nested env map.
+// origin annotation and an optional nested env map.
 func writeShells(e *errWriter, c *config.Config, ann func(string) string) {
 	if len(c.Shells) == 0 {
 		e.printf("shells: {}%s\n", ann("shells"))

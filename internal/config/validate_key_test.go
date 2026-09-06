@@ -1,15 +1,14 @@
 package config
 
-import (
-	"maps"
-	"slices"
-	"testing"
-)
+import "testing"
 
 // TestValidateKeyAgreesWithTheValidationTail: ValidateKey exists so a surface
 // holding one raw key/value pair (the `config set` flags today) can fail fast
-// with the *same* verdict the load path reaches later. The oracle is therefore
-// Merge — the real validation tail over a resolved Config — not a restatement of
+// with the *same* verdict the load path reaches later. A scalar row spells that
+// verdict once — the tail applies Scalar to the value Str reads — so what is
+// left to prove is that the wiring holds end to end: that the tail really
+// reaches the row, and reads the field the row claims. The oracle is therefore
+// Merge, the real validation tail over a resolved Config, not a restatement of
 // each validator here.
 func TestValidateKeyAgreesWithTheValidationTail(t *testing.T) {
 	cases := []struct {
@@ -59,39 +58,4 @@ func TestValidateKeyIsSilentWhereTheTailNeedsAWholeConfig(t *testing.T) {
 	if err := ValidateKey("no_such_key", "x"); err != nil {
 		t.Errorf("ValidateKey on an unknown key = %v, want nil", err)
 	}
-}
-
-// TestValidateKeyCoversEveryScalarValidator is the anti-drift guard: every
-// fieldValidators key that a lone scalar *can* violate must be reachable through
-// ValidateKey, so adding a scalar field to the schema cannot silently leave the
-// flag surface unvalidated. Keys listed in wholeConfigKeys are the deliberate
-// exemptions.
-func TestValidateKeyCoversEveryScalarValidator(t *testing.T) {
-	wholeConfigKeys := map[string]bool{
-		"inherit_host_auth": true, "sdd": true, "worktree": true, "env": true, "shells": true,
-	}
-	for _, v := range fieldValidators {
-		if wholeConfigKeys[v.key] {
-			continue
-		}
-		// A value no scalar validator can accept: every scalar key here rejects
-		// either a scheme, a relative path or an unknown enum member.
-		if err := ValidateKey(v.key, "://not a valid value"); err == nil {
-			t.Errorf("ValidateKey(%q, …) accepts anything — scalar key not wired in", v.key)
-		}
-	}
-	for _, key := range slices.Sorted(maps.Keys(wholeConfigKeys)) {
-		if !hasFieldValidator(key) {
-			t.Errorf("wholeConfigKeys lists %q, which no longer has a field validator", key)
-		}
-	}
-}
-
-func hasFieldValidator(key string) bool {
-	for _, v := range fieldValidators {
-		if v.key == key {
-			return true
-		}
-	}
-	return false
 }

@@ -14,57 +14,54 @@ import (
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
-// editorKind is the per-key editor the detail pane shows while editing.
-type editorKind int
-
-const (
-	edNone   editorKind = iota
-	edEnum              // bounded value list (pull / agent / shell)
-	edString            // free text (image / registry_mirror / mounts_root)
-	edTri               // unset / true / false (bridge / proximo / managed_statusline)
-	edMulti             // catalog multi-select (inherit_host_auth)
-	edRows              // add/edit/remove rows (env / shells / worktree.seed)
-)
-
 // editorSeeds is the state each editor kind opens with — the single dispatch on
-// the kind a descriptor row declares. openEditor looks the seed up by that kind
-// instead of switching on it a second time: it used to carry a copy of this
+// the kind a key's config.Key row declares. openEditor looks the seed up by that
+// kind instead of switching on it a second time: it used to carry a copy of this
 // switch, re-answering per key what the row had already said, so a kind added
 // there and forgotten here (or the reverse) produced an editor pane with
 // nothing in it. A kind absent from this table opens nothing, which is how
-// edNone stays inert without a branch of its own.
+// config.EditorNone stays inert without a branch of its own.
 //
-// It lives here, in the tea half, and not beside keyDescriptors: a descriptor
-// row declares *which* kind a key gets, which is a presentation fact; what that
-// kind opens with is UI state built out of bubbles widgets, and the adapter half
-// has no business holding a textinput.
-var editorSeeds = map[editorKind]func(keyDescriptor, string, *config.Config) editor{
-	edEnum: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		opts, cur := d.options(), d.str(cfg)
-		return editor{key: key, kind: edEnum, options: opts, current: cur,
-			def: EnumDefault(key), cursor: indexOf(opts, cur)}
+// A seed reads the current value through the row's typed reader and its option
+// set through the key's descriptor — the two halves openEditor hands it. The
+// table lives here, in the tea half, and not beside keyDescriptors: what a kind
+// opens with is UI state built out of bubbles widgets, and the adapter half has
+// no business holding a textinput.
+var editorSeeds = map[config.Editor]func(config.Key, keyDescriptor, *config.Config) editor{
+	config.EditorChoice: func(row config.Key, d keyDescriptor, cfg *config.Config) editor {
+		// A missing option set opens an empty chooser rather than panicking, so
+		// TestEveryEditableKeyOpensAnEditor names the key that lacks one.
+		opts, cur := d.optionsOf(), row.Str(cfg)
+		return editor{key: row.Name, kind: config.EditorChoice, options: opts, current: cur,
+			def: EnumDefault(row.Name), cursor: indexOf(opts, cur)}
 	},
-	edString: func(d keyDescriptor, key string, cfg *config.Config) editor {
+	config.EditorText: func(row config.Key, _ keyDescriptor, cfg *config.Config) editor {
 		ti := textinput.New()
-		ti.SetValue(d.str(cfg))
+		ti.SetValue(row.Str(cfg))
 		ti.Focus()
-		return editor{key: key, kind: edString, input: ti}
+		return editor{key: row.Name, kind: config.EditorText, input: ti}
 	},
-	edTri: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		cur := triState(d.tri(cfg))
+	config.EditorTri: func(row config.Key, _ keyDescriptor, cfg *config.Config) editor {
+		cur := triState(row.Tri(cfg))
 		// Tri-state default is "unset" (auto) — omitting the key is the built-in.
-		return editor{key: key, kind: edTri, options: triChoices, current: cur,
+		return editor{key: row.Name, kind: config.EditorTri, options: triChoices, current: cur,
 			def: triChoices[0], cursor: indexOf(triChoices, cur)}
 	},
-	edMulti: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		return editor{key: key, kind: edMulti, options: d.options(), selected: d.selected(cfg)}
+	config.EditorSet: func(row config.Key, d keyDescriptor, cfg *config.Config) editor {
+		return editor{key: row.Name, kind: config.EditorSet, options: d.optionsOf(), selected: d.selectionOf(cfg)}
 	},
-	edRows: func(d keyDescriptor, key string, cfg *config.Config) editor {
-		// Pair editors carry key→value rows; the rest are single-column lists.
-		if d.pairs != nil {
-			return rowsEditorState(key, true, pairsToRows(d.pairs(cfg)))
+	config.EditorRows: func(row config.Key, _ keyDescriptor, cfg *config.Config) editor {
+		// Pair editors carry key→value rows; the rest are single-column lists. A
+		// row with neither opens empty rather than panicking, so the sweep names
+		// the key instead of the TUI dying on enter.
+		switch {
+		case row.Pairs != nil:
+			return rowsEditorState(row.Name, true, pairsToRows(row.Pairs(cfg)))
+		case row.List != nil:
+			return rowsEditorState(row.Name, false, valuesToRows(row.List(cfg)))
+		default:
+			return rowsEditorState(row.Name, false, nil)
 		}
-		return rowsEditorState(key, false, valuesToRows(d.list(cfg)))
 	},
 }
 
@@ -88,7 +85,7 @@ func triValue(choice string) *bool {
 // editor holds the transient state of the detail pane while a key is edited.
 type editor struct {
 	key      string
-	kind     editorKind
+	kind     config.Editor
 	options  []string        // enum / tri / multi option labels
 	current  string          // enum / tri option matching the current effective value
 	def      string          // enum / tri option that is the built-in default (marked "(default)")
@@ -282,18 +279,25 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("editing creates an override in %s", m.scope)
 	}
 
-	// One dispatch, not two: the row already declares the key's editor kind, so
-	// the seed is looked up by that kind rather than re-derived from the key.
+	// The editor kind and the typed reader that seeds it come from the key's
+	// row; the option sets and the writer behind them from its descriptor. One
+	// dispatch, not two: the seed is looked up by the kind the row declares
+	// rather than re-derived from the key.
+	//
 	// Defensive both ways — TestEveryEditableKeyOpensAnEditor forbids a UI key
-	// without an editor, so this only fires for a key that never reached the
-	// descriptor table, or for an editor kind added without a seed beside it.
-	d := keyDescriptors[key]
-	seed, ok := editorSeeds[d.kind]
+	// without an editor, so this only fires for a key absent from the schema, or
+	// for an editor kind added without a seed beside it.
+	row, known := config.KeyByName(key)
+	if !known {
+		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
+		return
+	}
+	seed, ok := editorSeeds[row.Editor]
 	if !ok {
 		m.status = fmt.Sprintf("%s has no interactive editor yet", key)
 		return
 	}
-	m.ed = seed(d, key, m.cfg)
+	m.ed = seed(row, keyDescriptors[key], m.cfg)
 	m.editing = true
 }
 
@@ -384,7 +388,7 @@ func (m *Model) reconcileArtefactsAfterReset(key string) {
 func (m Model) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Rows editors give esc a nuanced meaning (back out of a field vs close),
 	// so they own the whole key stream.
-	if m.ed.kind == edRows {
+	if m.ed.kind == config.EditorRows {
 		return m.updateRows(msg)
 	}
 	if msg.String() == "esc" {
@@ -392,11 +396,11 @@ func (m Model) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.ed.kind {
-	case edEnum, edTri:
+	case config.EditorChoice, config.EditorTri:
 		return m.updateChoice(msg)
-	case edMulti:
+	case config.EditorSet:
 		return m.updateMulti(msg)
-	case edString:
+	case config.EditorText:
 		return m.updateString(msg)
 	}
 	return m, nil
