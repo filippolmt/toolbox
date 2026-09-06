@@ -2,69 +2,10 @@ package configui
 
 import (
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
 )
-
-// TestKeyDescriptorsCoverEveryKey is the anti-drift guard the per-key switches
-// never had: a schema key added without a descriptor row used to surface as a
-// blank TUI row (or a runtime status message) with a green suite. It now fails
-// here, naming the key.
-func TestKeyDescriptorsCoverEveryKey(t *testing.T) {
-	for _, key := range Keys() {
-		if _, ok := keyDescriptors[key]; !ok {
-			t.Errorf("key %q has no descriptor row — the TUI would render it blank", key)
-		}
-	}
-	for key := range keyDescriptors {
-		if !slices.Contains(Keys(), key) {
-			t.Errorf("descriptor row %q is not a UI key", key)
-		}
-	}
-}
-
-// TestEveryDescriptorRowIsCompleteForItsKind: a row's editor kind and the
-// accessors openEditor reads for that kind are separate fields, so a row can
-// claim a kind while carrying none of what seeds it — which panics the TUI on
-// enter rather than opening anything. This names the incomplete row instead,
-// and does it for every row (the behavioural guards skip read-only keys).
-func TestEveryDescriptorRowIsCompleteForItsKind(t *testing.T) {
-	for key, d := range keyDescriptors {
-		var missing string
-		switch d.kind {
-		case edEnum:
-			if d.options == nil || d.str == nil {
-				missing = "options + str"
-			}
-		case edString:
-			if d.str == nil {
-				missing = "str"
-			}
-		case edTri:
-			if d.tri == nil {
-				missing = "tri"
-			}
-		case edMulti:
-			if d.options == nil || d.selected == nil {
-				missing = "options + selected"
-			}
-		case edRows:
-			if d.pairs == nil && d.list == nil {
-				missing = "pairs or list"
-			}
-		default:
-			missing = "an editor kind"
-		}
-		if missing != "" {
-			t.Errorf("descriptor %q opens editor kind %d but carries no %s", key, d.kind, missing)
-		}
-		if d.mutator == nil {
-			t.Errorf("descriptor %q has an editor with no writer behind it", key)
-		}
-	}
-}
 
 // TestEveryCountedKeyCountsItsScopeEntries: a key rendered as a count of
 // entries must count them in a scope file too — a countable key whose
@@ -215,8 +156,14 @@ func TestEveryEditorKindIsSeededDrawnAndDriven(t *testing.T) {
 			t.Errorf("kind %d has no seed", kind)
 			continue
 		}
-		if got := keyDescriptors[d.key].kind; got != kind {
-			t.Fatalf("key %q declares kind %d, not the %d this row drives", d.key, got, kind)
+		// The kind is the row's, not the descriptor's: internal/config declares
+		// which editor a key opens, and this table has to drive that one.
+		row, ok := config.KeyByName(d.key)
+		if !ok {
+			t.Fatalf("key %q is not a schema key", d.key)
+		}
+		if row.Editor != kind {
+			t.Fatalf("key %q declares kind %d, not the %d this row drives", d.key, row.Editor, kind)
 		}
 		m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: d.key, ScopeSet: true}), "enter")
 		if !m.editing {

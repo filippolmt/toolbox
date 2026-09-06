@@ -44,17 +44,15 @@ The single source of truth for "which config fields exist":
 declaration order. Owned by `internal/config` (`schema.go`).
 
 Every consumer that used to hand-enumerate the field set now derives from
-or is guarded against it: provenance (`configedit.diffLayer`) reflects over
-`Config` generically — scalar/slice/map/pointer/struct fields compared by
-`DeepEqual` keyed by tag, so a new field is attributed with no per-field
-branch (shells + mounts keep per-entry attribution via `perEntryDiffKeys`);
-validation runs the `config.fieldValidators` table, with `noValidationKeys`
-the explicit exemption set; the resolved renderer (`cmd/config.go`) and the
-annotated example (`internal/configexample`) each stay complete via a
-coverage test that reflects `SchemaKeys()` and fails on an unrendered /
-undocumented field. The deprecated `browser_bridge` alias is the one
-documented exception — tracked in provenance but rendered only as the
-canonical `bridge`.
+it. Provenance (`configedit.diffLayer`) reflects over `Config` generically —
+scalar/slice/map/pointer/struct fields compared by `DeepEqual` keyed by tag,
+so a new field is attributed with no per-field branch (shells + mounts keep
+per-entry attribution via `perEntryDiffKeys`). Everything else — validation,
+`config show`, the annotated example, `config ui` — reads the key's
+[Key Row](#key-row), the table `SchemaKeys()` is the index of. The deprecated
+`browser_bridge` alias is the one documented exception — tracked in
+provenance, but rendered only as the canonical `bridge` (its row is
+`KindAlias`, which is what says so).
 
 Why the term exists: before this concept was named, the sixteen config
 fields were hand-enumerated across five independent sites (struct, validation
@@ -65,6 +63,47 @@ struct and its consumer, silently missing provenance, renderer, and example;
 `agent` missed provenance and example. The "Config Schema" name makes the
 reflected tag list the one authority and turns every omission from a silent
 runtime gap into a red coverage test, mirroring the Tool Catalog deepening.
+
+### Key Row
+
+The one declaration of a config key. `config.Keys()` returns one
+`config.Key` per [Config Schema](#config-schema) key, in Config
+declaration order, carrying everything the surfaces used to restate: the
+summary and human default `config ui` shows, the annotated block
+`config example` prints, the value `Kind` `config show` renders and the
+`Editor` the TUI opens, the typed readers those present the value through
+(`Str` / `Tri` / `List` / `Pairs`), the `Validate` half of the load path's
+validation tail, the `Scalar` fail-fast verdict behind
+`config.ValidateKey`, and the `Effective` fallback behind
+`config.EffectiveValue`. Owned by `internal/config` (`keys.go`).
+
+The four surfaces read rows instead of restating them: the validation tail
+runs each row's `Validate` in table order; `configrender` walks `Keys()`
+and shapes each key by its `Kind` (the three block keys — `worktree`,
+`shells`, `mounts` — carry entries too structured for a generic shape and
+keep their own writer); `configexample` concatenates each row's `Example`,
+splicing in at `config.ExampleListing` the two live listings config cannot
+compute itself (the catalog's eligible CLIs, the default mounts —
+`mountplan` imports config, so config cannot import it back); `configui`
+opens the editor the row names and seeds it from the row's readers, adding
+only what is presentation ([Key Descriptor](#key-descriptor)).
+
+Declaration order is presentation order: `config show`, the annotated
+example and the `config ui` key list all walk this one table, so moving a
+field in the struct moves it in all three (`TestSchemaKeys` pins the
+order).
+
+Why the term exists: `SchemaKeys()` made drift *loud* — a new key turned a
+coverage test red instead of shipping a silent gap — but it left the
+fan-out itself intact. One key was still declared in six places (struct
+tag, validator table, the `ValidateKey` switch restating that table,
+`KeyDocs`, the example's prose, the renderer's printf, the TUI
+descriptor), and the per-surface coverage guards existed to make that fact
+fail visibly rather than to remove it. Naming the row turns "add a config
+key" into one row, and collapses those presence guards into
+`TestEveryKeyHasACompleteRow` — one guard, over the one table — which
+frees each surface's own tests to assert its output rather than the
+presence of a row.
 
 ### Config Scope
 
@@ -229,44 +268,47 @@ readings of the same value.
 
 ### Key Descriptor
 
-Everything `config ui` knows about one config key, as a single row:
-`configui.keyDescriptors[key]` — the editor kind with the typed
-accessors that seed it, the Pending Mutation constructor, and the
-display facts (collection noun, entry names, where a scope file holds the
-key's entries, scalar hint). Owned by `internal/configui`
-(`descriptor.go`), keyed by Config Schema key.
+What `config ui` adds to a key's [Key Row](#key-row): the option sets, the
+Pending Mutation constructor, and the display facts (collection noun, entry
+names, where a scope file holds the key's entries, scalar hint). Owned by
+`internal/configui` (`descriptor.go`), keyed by Config Schema key. The row
+itself carries the editor kind and the typed readers that seed it, so which
+editor a key opens is declared once, in `internal/config`, and read here.
 
 Concretely: `displayValue`, `scopeDisplay`, `detailEntries`,
 `enumOptions`, `hasEditorEscape`, `Model.openEditor` and
-`Model.pendingMutator` read the row rather than switching on the key
-themselves, so the editor a key opens and the mutation it writes are the
-same declaration. `openEditor` reads it *once*: the row's kind indexes
-`editorSeeds`, one seed per kind, rather than a second switch in the tea
-half re-deriving per key what the row already said. The row declares
-which kind; the seed table lives with the kinds in `model.go`, because
-what a kind opens with is bubbles widgets and the descriptor holds
+`Model.pendingMutator` read row and descriptor rather than switching on
+the key themselves, so the editor a key opens and the mutation it writes
+are the same declaration. `openEditor` reads the kind *once*: the row's
+`Editor` indexes `editorSeeds`, one seed per kind, rather than a second
+switch in the tea half re-deriving per key what the row already said. The
+row declares which kind; the seed table lives with the kinds in `model.go`,
+because what a kind opens with is bubbles widgets and the descriptor holds
 presentation facts, not UI state. The per-key facts that are *not*
-presentation stay where they belong and are asked, not restated: which
-keys are attributed per entry (`configedit.PerEntryKey`, read by
-`originFor`), what one layer's file itself sets (`configedit.FileValues`,
-read by `scopeStates`), and how a deprecated alias folds into its live
-key (`config.FoldDeprecatedAliases` — the one implementation, called by
-the load path and by `FileValues` alike; `Keys` asks
-`config.DeprecatedAliases` only to drop the alias rows).
-`TestKeyDescriptorsCoverEveryKey` demands a row per
-`Keys()` entry, and three behavioural guards ride on it: every key
-displays something, every editable key opens a seeded editor, and every
-open editor has a Pending Mutation behind it — the first two driven
-through `Update`, the seam bubbletea crosses.
+presentation stay where they belong and are asked, not restated: the value
+shape and editor kind (the Key Row), which keys are attributed per entry
+(`configedit.PerEntryKey`, read by `originFor`), what one layer's file itself
+sets (`configedit.FileValues`, read by `scopeStates`), and how a deprecated
+alias folds into its live key (`config.FoldDeprecatedAliases` — the one
+implementation, called by the load path and by `FileValues` alike; `Keys`
+asks `config.DeprecatedAliases` only to drop the alias rows). Nothing here
+demands a row per key any more — the behavioural sweeps do: every key
+displays something, every editable key opens a seeded editor, every open
+editor has a Pending Mutation behind it, and a key the UI cannot edit fails
+all three by name — the first two driven through `Update`, the seam
+bubbletea crosses.
 
 Why the term exists: `configui` was the last Config Schema consumer
 whose omissions surfaced as a runtime status message instead of a red
 test. The same key list was re-derived by ten switches across two files,
 so a key missing from one of them rendered a blank row, listed no
 entries, or reported "no interactive editor yet" — with a green suite.
-Naming the per-key row turns "add a config key" into one row plus its
-`TestPreviewMatchesWriterForEveryEditableKey` case, and turns every
-omission into a failing test, mirroring the Tool Catalog deepening.
+Naming the per-key row turned "add a config key" into one row plus its
+`TestPreviewMatchesWriterForEveryEditableKey` case; the Key Row then took
+the half of that row which was schema rather than presentation, leaving
+here the option sets (one of them, the default mount names, comes from
+`mountplan` and so cannot live in config at all), the writers, and the
+display facts.
 
 ### Config Plan
 

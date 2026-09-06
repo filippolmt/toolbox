@@ -9,31 +9,25 @@ import (
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
-// keyDescriptor is everything this package knows about one config key, in one
-// place. The same question — "what shape is this key?" — used to be answered by
-// a switch per axis (effective display, per-scope display, collection noun,
-// detail entries, enum options, typed accessors, editor kind, writer), so adding
-// a schema key meant finding every one of them, and a missed switch surfaced as
-// a blank row or a runtime status message with a green suite. It is one row
-// here now, and TestKeyDescriptorsCoverEveryKey demands that row for every key
-// the UI presents.
+// keyDescriptor is what this package adds to a key's config.Key row: the option
+// sets, the Pending Mutation constructor and the display facts that are
+// presentation, not schema. The row itself carries the editor kind and the
+// typed readers that seed it (Str / Tri / List / Pairs), so a key's shape is
+// declared once, in internal/config, and the UI reads it.
 //
-// The row carries presentation facts only — what the value looks like and which
-// editor it opens. Resolution, validation and writing stay in config /
-// configedit; configui is a presentation layer over them.
+// The row and this table used to be one switch per axis (effective display,
+// per-scope display, collection noun, detail entries, enum options, typed
+// accessors, editor kind, writer), so adding a schema key meant finding every
+// one of them, and a missed switch surfaced as a blank row or a runtime status
+// message with a green suite. The behavioural sweeps in descriptor_test.go are
+// what fail now: every key displays something, every editable key opens a
+// seeded editor, every open editor has a mutation behind it.
 type keyDescriptor struct {
-	// kind is the editor `enter` opens on the key.
-	kind editorKind
-	// options is the fixed option set of an edEnum / edMulti editor.
+	// options is the fixed option set of an edEnum / edMulti editor. It stays
+	// here rather than in the row because one of them (the default mount names)
+	// comes from internal/mountplan, which imports config and so cannot be read
+	// back from it.
 	options func() []string
-	// str is the current effective value of a free-text or enum scalar.
-	str func(*config.Config) string
-	// tri is the current effective value of a tri-state bool.
-	tri func(*config.Config) *bool
-	// list is the current effective value of a string-list key.
-	list func(*config.Config) []string
-	// pairs is the current effective value of a key→value collection.
-	pairs func(*config.Config) map[string]string
 	// selected is the checked set an edMulti editor opens with.
 	selected func(*config.Config) map[string]bool
 	// escape marks a key whose structured editor does not cover every case, so
@@ -52,7 +46,8 @@ type keyDescriptor struct {
 	// count overrides the counted entries (default: the entries listed below).
 	count func(*config.Config) int
 	// entries lists the effective entry names for the detail pane, sorted by
-	// detailEntries. Defaults to list; nil for keys with no entries to name.
+	// detailEntries. Defaults to the row's List; nil for keys with no entries to
+	// name.
 	entries func(*config.Config) []string
 	// scopeEntries names the field, nested inside the key's own node, whose
 	// entries the per-scope count reports. Empty means the key's node itself —
@@ -71,12 +66,12 @@ type keyDescriptor struct {
 // fences) on it, and the descriptor row below must be the same key.
 const sddKey = "sdd"
 
-// keyDescriptors is the one per-key table, keyed by the config schema key.
-// Adding a config key the UI presents is a row here (plus its case in
-// TestPreviewMatchesWriterForEveryEditableKey).
+// keyDescriptors is the per-key table of what the row does not carry, keyed by
+// the config schema key. Adding a config key the UI edits is its row in
+// internal/config plus, when it needs an option set or a writer, an entry here
+// (plus its case in TestPreviewMatchesWriterForEveryEditableKey).
 var keyDescriptors = map[string]keyDescriptor{
 	"mounts": {
-		kind:     edMulti,
 		options:  DefaultMountNames,
 		selected: DisabledMounts,
 		escape:   true,
@@ -89,9 +84,7 @@ var keyDescriptors = map[string]keyDescriptor{
 		entries: mountNames,
 	},
 	"inherit_host_auth": {
-		kind:     edMulti,
 		options:  HostAuthOptions,
-		list:     func(c *config.Config) []string { return c.InheritHostAuth },
 		selected: func(c *config.Config) map[string]bool { return setOf(c.InheritHostAuth) },
 		mutator:  listFromSelection,
 
@@ -106,57 +99,42 @@ var keyDescriptors = map[string]keyDescriptor{
 		},
 	},
 	"shells": {
-		kind:    edRows,
-		pairs:   ShellPaths,
 		mutator: func(e *editor, cfg *config.Config) configedit.Mutator { return configedit.Shells(e.shellEntries(cfg)) },
 
 		noun:    "shell",
 		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Shells)) },
 	},
 	// shell / agent / pull carry a fallback, so their effective display comes
-	// from the one config.EffectiveValue seam (guarded by TestRendererParity) —
-	// str is the raw value the editor prefills with.
+	// from the one config.EffectiveValue seam (guarded by TestRendererParity);
+	// the row's Str is the raw value the editor prefills with.
 	"shell": {
-		kind:    edEnum,
 		options: func() []string { return config.SupportedShells },
-		str:     func(c *config.Config) string { return c.Shell },
 		mutator: scalarFromChoice,
 	},
 	"agent": {
-		kind:    edEnum,
 		options: func() []string { return config.SupportedAgents },
-		str:     func(c *config.Config) string { return c.Agent },
 		mutator: scalarFromChoice,
 	},
 	"pull": {
-		kind:    edEnum,
 		options: func() []string { return config.SupportedPullPolicies },
-		str:     func(c *config.Config) string { return c.Pull },
 		mutator: scalarFromChoice,
 	},
 	"image": {
-		kind:    edString,
-		str:     func(c *config.Config) string { return c.Image },
 		mutator: scalarFromInput,
 
 		hint: "(default)",
 	},
 	"registry_mirror": {
-		kind:    edString,
-		str:     func(c *config.Config) string { return c.RegistryMirror },
 		mutator: scalarFromInput,
 
 		hint: "(none)",
 	},
 	"mounts_root": {
-		kind:    edString,
-		str:     func(c *config.Config) string { return c.MountsRoot },
 		mutator: scalarFromInput,
 
 		hint: "(~/.toolbox)",
 	},
 	sddKey: {
-		kind:     edMulti,
 		options:  SDDOptions,
 		selected: EnabledSDD,
 		escape:   true,
@@ -166,38 +144,16 @@ var keyDescriptors = map[string]keyDescriptor{
 		// Every declared pack, enabled or not — the flag lives on the entry.
 		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.SDD)) },
 	},
-	"bridge": {
-		kind:    edTri,
-		tri:     func(c *config.Config) *bool { return c.Bridge },
-		mutator: boolFromChoice,
-	},
-	"proximo": {
-		kind:    edTri,
-		tri:     func(c *config.Config) *bool { return c.Proximo },
-		mutator: boolFromChoice,
-	},
-	"managed_statusline": {
-		kind:    edTri,
-		tri:     func(c *config.Config) *bool { return c.ManagedStatusline },
-		mutator: boolFromChoice,
-	},
-	"image_reclaim": {
-		kind:    edTri,
-		tri:     func(c *config.Config) *bool { return c.ImageReclaim },
-		mutator: boolFromChoice,
-	},
+	"bridge":             {mutator: boolFromChoice},
+	"proximo":            {mutator: boolFromChoice},
+	"managed_statusline": {mutator: boolFromChoice},
+	"image_reclaim":      {mutator: boolFromChoice},
 	// peer_messaging is a plain bool, not a tri-state: the pointer is always
 	// non-nil, so the editor shows true/false and never "auto". Choosing
 	// "unset" removes the key, which reads back as true (the default seeded
 	// in config.Merge) — the same value as true, written the shorter way.
-	"peer_messaging": {
-		kind:    edTri,
-		tri:     func(c *config.Config) *bool { return &c.PeerMessaging },
-		mutator: boolFromChoice,
-	},
+	"peer_messaging": {mutator: boolFromChoice},
 	"env": {
-		kind:  edRows,
-		pairs: func(c *config.Config) map[string]string { return c.Env },
 		mutator: func(e *editor, _ *config.Config) configedit.Mutator {
 			return configedit.StringMap(e.key, rowsToPairs(e.rows))
 		},
@@ -206,8 +162,6 @@ var keyDescriptors = map[string]keyDescriptor{
 		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Env)) },
 	},
 	"worktree": {
-		kind: edRows,
-		list: func(c *config.Config) []string { return c.Worktree.Seed },
 		mutator: func(e *editor, _ *config.Config) configedit.Mutator {
 			return configedit.WorktreeSeed(rowsToValues(e.rows))
 		},
@@ -243,23 +197,25 @@ func listFromSelection(e *editor, _ *config.Config) configedit.Mutator {
 }
 
 // displayOf renders a key's effective value: an explicit override first, then
-// the counted-collection and tri-state shapes, then the shared fallback
-// accessor (so the TUI cannot drift from `config show` on the keys that have
-// one), and finally the raw scalar with its hint.
+// the counted-collection and bool shapes, then the shared fallback accessor (so
+// the TUI cannot drift from `config show` on the keys that have one), and
+// finally the raw scalar with its hint. The value shapes come from the key's
+// row; only the overrides are this package's.
 func (d keyDescriptor) displayOf(cfg *config.Config, key string) string {
+	row, _ := config.KeyByName(key)
 	switch {
 	case d.display != nil:
 		return d.display(cfg)
 	case d.noun != "":
-		return countLabel(d.countOf(cfg), d.noun)
-	case d.tri != nil:
-		return triState(d.tri(cfg))
+		return countLabel(d.countOf(cfg, key), d.noun)
+	case row.Tri != nil:
+		return triState(row.Tri(cfg))
 	}
 	if v, ok := config.EffectiveValue(cfg, key); ok {
 		return v
 	}
-	if d.str != nil {
-		return orHint(d.str(cfg), d.hint)
+	if row.Str != nil {
+		return orHint(row.Str(cfg), d.hint)
 	}
 	return ""
 }
@@ -287,21 +243,21 @@ func (d keyDescriptor) scopeEntriesPath(key string) string {
 
 // countOf is how many entries a collection holds: its own counter when the key
 // has one, otherwise the entries it can name.
-func (d keyDescriptor) countOf(cfg *config.Config) int {
+func (d keyDescriptor) countOf(cfg *config.Config, key string) int {
 	if d.count != nil {
 		return d.count(cfg)
 	}
-	return len(d.entriesOf(cfg))
+	return len(d.entriesOf(cfg, key))
 }
 
 // entriesOf lists a collection's effective entry names, unsorted. A key whose
-// entries are exactly its list value needs no separate accessor.
-func (d keyDescriptor) entriesOf(cfg *config.Config) []string {
+// entries are exactly its row's list value needs no separate accessor.
+func (d keyDescriptor) entriesOf(cfg *config.Config, key string) []string {
 	if d.entries != nil {
 		return d.entries(cfg)
 	}
-	if d.list != nil {
-		return d.list(cfg)
+	if row, ok := config.KeyByName(key); ok && row.List != nil {
+		return row.List(cfg)
 	}
 	return nil
 }

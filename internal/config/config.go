@@ -13,6 +13,11 @@ import (
 
 // Config is the top-level toolbox configuration.
 //
+// Field order is presentation order: SchemaKeys() reflects these tags in
+// declaration order, Keys() pairs each with its row, and `config show`, the
+// annotated example and the `config ui` key list all walk that one table — so
+// moving a field here moves it in all three.
+//
 // The runtime image defaults to the canonical
 // `ghcr.io/filippolmt/toolbox:latest` (the image content is identical across
 // users — there is no per-tool opt-out). The source can be relocated, opt-in,
@@ -22,10 +27,7 @@ import (
 // credential path (read-only) instead of the isolated `~/.toolbox/<key>/`
 // default. Whitelist lives on catalog.Entry.HostAuthMount.
 type Config struct {
-	Mounts          []Mount               `mapstructure:"mounts"`
-	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
-	Shells          map[string]NamedShell `mapstructure:"shells"`
-	Shell           string                `mapstructure:"shell"`
+	Shell string `mapstructure:"shell"`
 	// Agent is the default AI agent auto-launched by `toolbox worktree`
 	// sessions. Resolved with precedence --agent flag > this key > the
 	// DefaultAgent ("claude"); the resolution default lives in cmd so this
@@ -61,21 +63,6 @@ type Config struct {
 	// root rewrite by mountplan.Merge, so a single override remains
 	// possible.
 	MountsRoot string `mapstructure:"mounts_root"`
-	// SDD opts the workspace into one or more Spec-Driven-Development skill
-	// packs (gsd, bmad, openspec, ...) installed repo-locally on every
-	// `toolbox shell`. Each `sdd.<key>: true` flag toggles the matching
-	// internal/sdd.Skill entry: sessionplan emits TOOLBOX_SDD_ENABLED plus
-	// a per-skill spec env var; entrypoint.sh loops them and runs the
-	// pinned installer in /workspace.
-	//
-	// Two YAML shapes per key (sddDecodeHook normalises the bool shorthand):
-	//
-	//	sdd:
-	//	  gsd: true            # registry-default install steps
-	//	  gsd:                 # explicit steps override (#317)
-	//	    steps:
-	//	      - ["--claude", "--global", "--config-dir", "./.claude"]
-	SDD map[string]SDDSkill `mapstructure:"sdd"`
 	// Bridge toggles the host-side ~/.toolbox/bridge RO mount in the
 	// container and gates the `toolbox bridge install` command. When false,
 	// the mount is omitted and the install command refuses. Default true.
@@ -126,14 +113,6 @@ type Config struct {
 	// See docs/configuration.md#image_reclaim and ADR 0007 for why the
 	// daemon's refusal is the only in-use check.
 	ImageReclaim *bool `mapstructure:"image_reclaim"`
-	// Env injects arbitrary K=V pairs into every shell spawned by the
-	// container, emitted after the curated TOOLBOX_* / PWD entries by
-	// sessionplan. Hash-neutral (lives outside the removed tools: block) so
-	// flipping a key never invalidates the image. Reserved keys — anything
-	// with the TOOLBOX_ prefix plus PWD — are rejected at validation time to
-	// keep the curated env contract authoritative. Motivating use: opt-in
-	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
-	Env map[string]string `mapstructure:"env"`
 	// PeerMessaging controls cross-container Claude Code peer
 	// messaging (`ListAgents` / `SendMessage`): opted-in containers join one
 	// toolbox-owned PID namespace and share the `toolbox-cc-socks` Docker
@@ -144,12 +123,38 @@ type Config struct {
 	// `toolbox shell --peer=false`.
 	// See docs/adr/0003-cross-container-peer-messaging.md.
 	PeerMessaging bool `mapstructure:"peer_messaging"`
+	// SDD opts the workspace into one or more Spec-Driven-Development skill
+	// packs (gsd, bmad, openspec, ...) installed repo-locally on every
+	// `toolbox shell`. Each `sdd.<key>: true` flag toggles the matching
+	// internal/sdd.Skill entry: sessionplan emits TOOLBOX_SDD_ENABLED plus
+	// a per-skill spec env var; entrypoint.sh loops them and runs the
+	// pinned installer in /workspace.
+	//
+	// Two YAML shapes per key (sddDecodeHook normalises the bool shorthand):
+	//
+	//	sdd:
+	//	  gsd: true            # registry-default install steps
+	//	  gsd:                 # explicit steps override (#317)
+	//	    steps:
+	//	      - ["--claude", "--global", "--config-dir", "./.claude"]
+	SDD map[string]SDDSkill `mapstructure:"sdd"`
+	// Env injects arbitrary K=V pairs into every shell spawned by the
+	// container, emitted after the curated TOOLBOX_* / PWD entries by
+	// sessionplan. Hash-neutral (lives outside the removed tools: block) so
+	// flipping a key never invalidates the image. Reserved keys — anything
+	// with the TOOLBOX_ prefix plus PWD — are rejected at validation time to
+	// keep the curated env contract authoritative. Motivating use: opt-in
+	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
+	Env map[string]string `mapstructure:"env"`
 	// Worktree tunes `toolbox worktree` sessions. Currently only Seed: extra
 	// repo-relative paths to carry from the main repo into a freshly created
 	// worktree, on top of the built-in defaults. Only paths git actually
 	// ignores are copied (see cmd.seedWorktreeFiles); a non-ignored entry is a
 	// silent no-op.
-	Worktree WorktreeConfig `mapstructure:"worktree"`
+	Worktree        WorktreeConfig        `mapstructure:"worktree"`
+	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
+	Shells          map[string]NamedShell `mapstructure:"shells"`
+	Mounts          []Mount               `mapstructure:"mounts"`
 }
 
 // WorktreeConfig holds the `worktree:` config block.
