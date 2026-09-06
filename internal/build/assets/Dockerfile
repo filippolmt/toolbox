@@ -102,26 +102,26 @@ ARG SHFMT_VERSION=3.14.0
 # bookworm ships 2.36, no aarch64-musl release. Revisit when upstream
 # publishes aarch64-musl OR Azure CLI apt repo gains trixie suite.
 #
-# **The base image is pinned by digest, and on arm64 that pin is what makes the
-# stage reproducible at all.** This is the one FROM in the file whose contents
-# are compiled *into* a stage's `/out` rather than merely hosting the download
-# of one, so a floating tag here is Fetch Nondeterminism — `/out` stops being a
-# function of RTK_VERSION — and not the Archive Drift a moving base usually is.
-# Measured on a native arm64 daemon, same RTK_VERSION and same `--locked`
-# dependency graph, varying only the toolchain:
+# **On arm64 this stage is not reproducible, knowingly.** It is the one FROM in
+# the file whose contents are compiled *into* a stage's `/out` rather than
+# merely hosting the download of one, so a floating tag here is Fetch
+# Nondeterminism — `/out` stops being a function of RTK_VERSION — and not the
+# Archive Drift a moving base usually is. Two toolchains, same RTK_VERSION and
+# same `--locked` graph, give two different binaries; ADR 0002 follow-up 3
+# carries the measurement.
 #
-#   rustc 1.98.0 → rtk 0d114e8daf093e81…    rustc 1.97.1 → rtk 0c1a18b805e6aa54…
+# Holding the base still would close it, but pinning by digest costs a Renovate
+# PR on every upstream rebuild of the same tag, and the moved-layer gate
+# measures amd64 only — where the binary is a checksummed tarball and identical
+# across builds. So this is accepted rather than fixed, and it is accepted here
+# rather than excused in the gate, which never sees it. Revisit if the gate
+# grows an arm64 leg.
 #
 # Two `--no-cache` builds against the *same* base agree to the byte, which is
-# why no SOURCE_DATE_EPOCH and no --remap-path-prefix: `--locked` pins the
-# dependency graph and the paths rustc records are container paths. Holding the
-# base still is the whole fix, and Renovate keeps the digest fresh (`pinDigests`
-# for this package in renovate.json) so the pin is a reproducibility barrier
-# rather than a frozen toolchain — the objection that would otherwise apply, and
-# weaker here anyway than in ADR 0002's rejection of apt pinning for the final
-# stage: nothing this build container installs reaches the shipped image.
+# why no SOURCE_DATE_EPOCH and no --remap-path-prefix would help: `--locked`
+# pins the dependency graph and the paths rustc records are container paths.
 # → CONTEXT.md "Fetch Nondeterminism"
-FROM rust:1-slim-bookworm@sha256:1469a27c125cb5a3aebfa4f4e4665d935b02fb72cc093b2c974b3d740e43f157 AS rtk-builder
+FROM rust:1-slim-bookworm AS rtk-builder
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 # Per-stage: SHELL does not survive a FROM that targets an external image.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

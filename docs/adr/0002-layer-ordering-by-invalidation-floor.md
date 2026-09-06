@@ -376,15 +376,19 @@ sits on. The distinction turns on what the base image *is* here — for every
 other `FROM` in the file it hosts a download, and for this one it is compiled
 into the result.
 
-The fix is to hold the base still, so `rust` is the one `FROM` pinned by digest.
-This is **not** issue direction 4 (a documented allowance): nothing is being
-excused in the gate. The objection first raised against the pin — a toolchain
-frozen against its own security releases, with no Renovate manager watching —
-does not survive contact with the config: `pinDigests` for that package makes
-Renovate re-resolve the digest for the same tag, so upstream rebuilds arrive as
-a digest PR rather than silently, and the concern is weaker here than in
-follow-up 3's rejection of apt pinning for the final stage in any case, because
-nothing this build container installs reaches the shipped image.
+Holding the base still would close it — a digest pin, with `pinDigests` so
+Renovate re-resolves the same tag and the pin does not become a frozen
+toolchain. That was built and then withdrawn: re-resolving the same tag means a
+PR on every upstream rebuild, and the churn buys nothing the gate can see,
+because the moved-layer count is measured on amd64 only and amd64's binary is a
+checksummed tarball that is identical across builds.
+
+So the arm64 leg is **accepted, not fixed** — issue direction 4, and it is
+accepted at the stage rather than as an allowance subtracted in the gate, which
+never measures it. The honest statement is that the image published for arm64
+carries a stage whose output is not a function of the version it pins, and that
+this costs nothing today only because nothing measures arm64. Revisit if the
+gate grows an arm64 leg.
 
 **The issue's first proposed direction is not merely weak, it is fatal.**
 Comparing only layers whose `created_by` differs would have counted zero here —

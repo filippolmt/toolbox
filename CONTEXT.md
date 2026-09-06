@@ -1131,10 +1131,11 @@ tag that floats is enough to make `/out` stop being a function of
 built on two toolchains produce two different binaries. That is this
 term and not Archive Drift, because what moves is the stage's own output
 rather than the layers it sits on — the base image here is not a host
-for a download, it is compiled *into* the result. The fix is therefore
-to hold the base still: it is the one `FROM` in the file pinned by
-digest, with Renovate keeping the digest fresh so the pin does not
-become a frozen toolchain.
+for a download, it is compiled *into* the result. Holding the base still
+would close it, and is deliberately not done: the moved-layer gate
+measures amd64 only, so the pin would cost a digest PR on every upstream
+rebuild and buy nothing anything measures. Accepted at the stage, not
+excused in the gate.
 
 The cost of any of this stays invisible while BuildKit reuses the stage
 and appears in full whenever anything invalidates it — an archive
