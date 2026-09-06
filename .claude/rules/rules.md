@@ -19,10 +19,13 @@ directory rename cannot quietly orphan a rule.
   Naming a package is the default claim that the rule governs edits there; a
   [Rule Pointer](../../CONTEXT.md#rule-pointer) is how a rule says otherwise.
   Both spellings count — the `internal/<pkg>` path and the Go qualifier
-  `<pkg>.<Member>`, which is what the prose actually uses — and the classifier
-  that tells a qualifier from its lookalikes (`config.yml`, `image-build.md`,
-  `worktree.seed`) is pinned by `TestAMentionIsAQualifierNotItsLookalikes`, so
-  it cannot go green by seeing nothing.
+  `<pkg>.<member>`, which is what the prose actually uses. A qualifier is told
+  from its lookalikes (`config.yml`, `image-build.md`, `worktree.seed`) by
+  asking the package what it declares: the right half must be a top-level name
+  in that package, so an unexported member counts as readily as an exported one
+  and a filename never does. Pinned by
+  `TestAMentionIsAQualifierNotItsLookalikes`, so it cannot go green by seeing
+  nothing.
 - **package → some rule**: every top-level package under `internal/` is claimed
   by at least one rule (`TestEveryPackageIsClaimedByARule`). The direction the
   other two cannot see: both pass for a package no rule has ever heard of.

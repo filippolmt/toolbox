@@ -4,8 +4,11 @@ import "testing"
 
 // TestValidateKeyAgreesWithTheValidationTail: ValidateKey exists so a surface
 // holding one raw key/value pair (the `config set` flags today) can fail fast
-// with the *same* verdict the load path reaches later. The oracle is therefore
-// Merge — the real validation tail over a resolved Config — not a restatement of
+// with the *same* verdict the load path reaches later. A scalar row spells that
+// verdict once — the tail applies Scalar to the value Str reads — so what is
+// left to prove is that the wiring holds end to end: that the tail really
+// reaches the row, and reads the field the row claims. The oracle is therefore
+// Merge, the real validation tail over a resolved Config, not a restatement of
 // each validator here.
 func TestValidateKeyAgreesWithTheValidationTail(t *testing.T) {
 	cases := []struct {

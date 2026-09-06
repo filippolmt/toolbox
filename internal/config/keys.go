@@ -69,9 +69,9 @@ const ExampleListing = "#   <listing>\n"
 // applies. Every surface reads the row; none restates it.
 //
 // Which fields a row must carry follows from its Kind, and
-// TestEveryKeyHasACompleteRow is the single guard that says so — the seven
+// TestEveryKeyHasACompleteRow is the single guard that says so — the
 // per-surface presence guards it replaced each asserted one column of this
-// table from a different package.
+// table from a different package, because each surface held its own copy.
 type Key struct {
 	// Name is the key's `mapstructure` tag — its spelling in the YAML file.
 	Name string
@@ -111,11 +111,34 @@ type Key struct {
 	// key/value pair before any Config exists (`config set` flags). Nil when
 	// only the tail, over a whole Config, can judge the key.
 	Scalar func(string) error
+	// NoValidation is why a row carrying neither validator legitimately needs
+	// none —
+	// the reason, not a bare flag, so the exemption has to be argued in the row
+	// that takes it. A toggle is exempt by its Kind (no value of a bool is
+	// invalid) and leaves this empty; anything else must fill one or the other,
+	// which is what TestEveryKeyValidatesOrSaysWhyNot demands. This is the old
+	// noValidationKeys list, moved onto the row it classifies.
+	NoValidation string
 }
 
 // Keys returns every config key's row, in Config declaration order — which is
 // also the order every surface presents them in.
 func Keys() []Key { return slices.Clone(keyRows) }
+
+// check is the row's verdict on a whole resolved Config. A scalar key needs no
+// Validate of its own: its fail-fast Scalar is the same judgement, and Str is
+// where the value lives, so the tail applies one to the other rather than
+// making the row spell the pair twice and a test reconcile them. A key only the
+// tail can judge — a collection, a block — carries Validate instead.
+func (k Key) check(c *Config) error {
+	switch {
+	case k.Validate != nil:
+		return k.Validate(c)
+	case k.Scalar != nil && k.Str != nil:
+		return k.Scalar(k.Str(c))
+	}
+	return nil
+}
 
 // KeyByName returns one key's row.
 func KeyByName(name string) (Key, bool) {
@@ -144,7 +167,6 @@ var keyRows = []Key{
 			"# shell: zsh\n",
 		Str:       func(c *Config) string { return c.Shell },
 		Effective: func(c *Config) string { return orElse(c.Shell, SupportedShells[0]) },
-		Validate:  func(c *Config) error { return ValidateShell(c.Shell) },
 		Scalar:    ValidateShell,
 	},
 	{
@@ -158,7 +180,6 @@ var keyRows = []Key{
 			"# agent: claude\n",
 		Str:       func(c *Config) string { return c.Agent },
 		Effective: func(c *Config) string { return orElse(c.Agent, DefaultAgent) },
-		Validate:  func(c *Config) error { return ValidateAgent(c.Agent) },
 		Scalar:    ValidateAgent,
 	},
 	{
@@ -167,15 +188,17 @@ var keyRows = []Key{
 		Editor:  EditorText,
 		Summary: "Full image ref override, used verbatim (host/path:tag or digest). Wins over registry_mirror.",
 		Default: "canonical ghcr.io/filippolmt/toolbox:latest",
-		Example: "# image — full ref override, used verbatim (host/path:tag or digest).\n" +
+		Example: "# Image selection — image / registry_mirror / pull, all opt-in, in that\n" +
+			"# order of precedence.\n" +
+			"#\n" +
+			"# image — full ref override, used verbatim (host/path:tag or digest).\n" +
 			"# Opt-in, like every image selector: unset, the canonical\n" +
 			"# ghcr.io/filippolmt/toolbox:latest is pulled. Wins over registry_mirror.\n" +
 			"# Note: a local `toolbox build` tags the canonical ref, so it won't satisfy\n" +
 			"# a full override.\n" +
 			"# image: harbor.corp.io/team/toolbox:pinned\n",
-		Str:      func(c *Config) string { return c.Image },
-		Validate: func(c *Config) error { return ValidateImageRef(c.Image) },
-		Scalar:   ValidateImageRef,
+		Str:    func(c *Config) string { return c.Image },
+		Scalar: ValidateImageRef,
 	},
 	{
 		Name:    "registry_mirror",
@@ -187,9 +210,8 @@ var keyRows = []Key{
 			"# image at a proxy hub / pull-through cache (Harbor, Artifactory, Nexus, ECR\n" +
 			"# pull-through). Bare host[:port][/path], no scheme. Ignored when image is set.\n" +
 			"# registry_mirror: harbor.corp.io/ghcr-proxy\n",
-		Str:      func(c *Config) string { return c.RegistryMirror },
-		Validate: func(c *Config) error { return ValidateRegistryMirror(c.RegistryMirror) },
-		Scalar:   ValidateRegistryMirror,
+		Str:    func(c *Config) string { return c.RegistryMirror },
+		Scalar: ValidateRegistryMirror,
 	},
 	{
 		Name:    "pull",
@@ -205,7 +227,6 @@ var keyRows = []Key{
 			"# pull: auto\n",
 		Str:       func(c *Config) string { return c.Pull },
 		Effective: func(c *Config) string { return orElse(c.Pull, PullAuto) },
-		Validate:  func(c *Config) error { return ValidatePull(c.Pull) },
 		Scalar:    ValidatePull,
 	},
 	{
@@ -218,9 +239,8 @@ var keyRows = []Key{
 			"# given prefix. Must be absolute (/path) or strictly home-relative (~/sub).\n" +
 			"# Bare \"~\" is rejected — it would defeat credential isolation.\n" +
 			"# mounts_root: ~/work-toolbox\n",
-		Str:      func(c *Config) string { return c.MountsRoot },
-		Validate: func(c *Config) error { return ValidateMountsRoot(c.MountsRoot) },
-		Scalar:   ValidateMountsRoot,
+		Str:    func(c *Config) string { return c.MountsRoot },
+		Scalar: ValidateMountsRoot,
 	},
 	{
 		Name:    "bridge",
@@ -410,11 +430,12 @@ var keyRows = []Key{
 		},
 	},
 	{
-		Name:    "mounts",
-		Kind:    KindBlock,
-		Editor:  EditorSet,
-		Summary: "Patch / replace / append host -> container binds by name; disable a default with `disabled: true`.",
-		Default: "(defaults only)",
+		Name:         "mounts",
+		Kind:         KindBlock,
+		Editor:       EditorSet,
+		NoValidation: "validated structurally by the mount plan, not by the load path",
+		Summary:      "Patch / replace / append host -> container binds by name; disable a default with `disabled: true`.",
+		Default:      "(defaults only)",
 		Example: "# mounts — patch / replace / append host -> container binds.\n" +
 			"# Behaviour by `name`:\n" +
 			"#   - name matches a default + target empty  -> patch (only set fields override)\n" +

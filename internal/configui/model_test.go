@@ -88,7 +88,7 @@ func TestEnterOnAKeyTheScopeSetsWarnsNothing(t *testing.T) {
 func rowsEditor(t *testing.T, key string, cfg *config.Config) Model {
 	t.Helper()
 	m := press(browsing(ScopeRepo, cfg, KeyState{Key: key, ScopeSet: true}), "enter")
-	if !m.editing || m.ed.kind != edRows {
+	if !m.editing || m.ed.kind != config.EditorRows {
 		t.Fatalf("%q did not open a rows editor (status %q)", key, m.status)
 	}
 	return m
@@ -216,7 +216,7 @@ func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
 		t.Fatalf("bubbletea space key stringifies to %q; test premise stale", got)
 	}
 	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "sdd"}), "enter")
-	if !m.editing || m.ed.kind != edMulti {
+	if !m.editing || m.ed.kind != config.EditorSet {
 		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
 	}
 	first := m.ed.options[0]

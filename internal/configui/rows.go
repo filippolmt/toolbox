@@ -40,7 +40,7 @@ func columnZero(rows [][2]string) []string {
 // rowsEditorState is the collection editor's opening state: the rows plus the
 // index-aligned original-name snapshot a rename is detected against.
 func rowsEditorState(key string, pair bool, rows [][2]string) editor {
-	return editor{key: key, kind: edRows, rowPair: pair, rows: rows, orig: columnZero(rows)}
+	return editor{key: key, kind: config.EditorRows, rowPair: pair, rows: rows, orig: columnZero(rows)}
 }
 
 // updateRows drives the collection editor for env / shells / worktree.seed. It

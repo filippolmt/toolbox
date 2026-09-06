@@ -77,8 +77,23 @@ validation tail, the `Scalar` fail-fast verdict behind
 `config.ValidateKey`, and the `Effective` fallback behind
 `config.EffectiveValue`. Owned by `internal/config` (`keys.go`).
 
+Adding a key is its `Config` field, its row, and the order `TestSchemaKeys`
+pins — nothing else, unless the key brings a *shape* no surface has
+rendered before: a structurally new block needs its writer in
+`configrender`, and a key the TUI edits with a bounded option set or a
+writer of its own needs its [Key Descriptor](#key-descriptor) entry too.
+That residue is deliberate — both are facts the owning surface holds and
+`config` cannot (one option set comes from `mountplan`, which imports
+`config`) — and neither is a restatement of the row.
+
+Because one table now feeds all of them, Config declaration order *is*
+presentation order for the three surfaces that present keys, and the order
+chosen is the one `config show` already emitted, so its output is
+unchanged while `config ui` and `config example` follow it instead of
+their own.
+
 The four surfaces read rows instead of restating them: the validation tail
-runs each row's `Validate` in table order; `configrender` walks `Keys()`
+runs each row's verdict in table order; `configrender` walks `Keys()`
 and shapes each key by its `Kind` (the three block keys — `worktree`,
 `shells`, `mounts` — carry entries too structured for a generic shape and
 keep their own writer); `configexample` concatenates each row's `Example`,
@@ -95,9 +110,9 @@ order).
 
 Why the term exists: `SchemaKeys()` made drift *loud* — a new key turned a
 coverage test red instead of shipping a silent gap — but it left the
-fan-out itself intact. One key was still declared in six places (struct
-tag, validator table, the `ValidateKey` switch restating that table,
-`KeyDocs`, the example's prose, the renderer's printf, the TUI
+fan-out itself intact. One key was still declared once per surface and
+then some (struct tag, validator table, the `ValidateKey` switch restating
+that table, `KeyDocs`, the example's prose, the renderer's printf, the TUI
 descriptor), and the per-surface coverage guards existed to make that fact
 fail visibly rather than to remove it. Naming the row turns "add a config
 key" into one row, and collapses those presence guards into

@@ -6,7 +6,7 @@ import (
 )
 
 // TestEveryKeyHasACompleteRow is the one guard behind the key rows, and it
-// replaced six: a per-surface presence test in config (docs, validators,
+// replaced a family: a per-surface presence test in config (docs, validators,
 // ValidateKey reachability, effective fallbacks) and in configui (a descriptor
 // row, complete for its editor kind) each asserted one column of this table
 // from a different package, because each surface held its own copy of it.
@@ -31,7 +31,7 @@ func TestEveryKeyHasACompleteRow(t *testing.T) {
 			// An alias is input-only: the load path folds it, and no surface
 			// presents it — so it must carry nothing a surface could present.
 			if k.Editor != EditorNone || k.Summary != "" || k.Default != "" || k.Example != "" ||
-				k.Effective != nil || k.Validate != nil || k.Scalar != nil {
+				k.Effective != nil || k.Validate != nil || k.Scalar != nil || k.NoValidation != "" {
 				t.Errorf("alias row %q carries surface facts; only the live key it folds into is presented", k.Name)
 			}
 			continue
@@ -113,6 +113,44 @@ func checkRenderReader(t *testing.T, k Key) {
 	}
 	if k.Effective != nil && k.Kind != KindEnum && k.Kind != KindScalar {
 		t.Errorf("row %q declares a fallback, but only a scalar has one", k.Name)
+	}
+}
+
+// TestEveryKeyValidatesOrSaysWhyNot asserts every row either validates or says
+// why it needs no validator. Collapsing the per-surface presence guards dropped this
+// classification: checkRenderReader demands a fail-fast Scalar of the two
+// scalar Kinds, but a KindMap / KindList / KindBlock row carrying no Validate
+// at all went unremarked, which is exactly the "shipping unvalidated" the old
+// TestValidatorsCoverSchema existed to refuse. A row judges a Config either
+// through its own Validate or through Scalar applied to Str, which is how the
+// tail reads it. A toggle is exempt by its Kind rather than by a list, so only
+// a genuinely unvalidated row has to argue for itself.
+func TestEveryKeyValidatesOrSaysWhyNot(t *testing.T) {
+	aliases := DeprecatedAliases()
+	for _, k := range Keys() {
+		// An alias is input-only: the live key it folds into carries the verdict.
+		if _, ok := aliases[k.Name]; ok {
+			continue
+		}
+		checkKeyValidation(t, k)
+	}
+}
+
+func checkKeyValidation(t *testing.T, k Key) {
+	t.Helper()
+	toggle := k.Kind == KindTri || k.Kind == KindBool
+	judges := k.Validate != nil || (k.Scalar != nil && k.Str != nil)
+	switch {
+	case toggle && judges:
+		t.Errorf("toggle row %q declares a validator, but no value of a bool is invalid", k.Name)
+	case toggle && k.NoValidation != "":
+		t.Errorf("toggle row %q explains away a validator its Kind already exempts it from", k.Name)
+	case toggle:
+	case judges && k.NoValidation != "":
+		t.Errorf("row %q both validates and says why it does not", k.Name)
+	case !judges && k.NoValidation == "":
+		t.Errorf("row %q ships unvalidated: give it a Validate (or a Scalar the tail can apply through Str), "+
+			"or say in NoValidation why it needs none", k.Name)
 	}
 }
 

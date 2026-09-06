@@ -107,7 +107,7 @@ func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 			}
 			continue
 		}
-		if !m.editing || m.ed.kind == edNone {
+		if !m.editing || m.ed.kind == config.EditorNone {
 			t.Errorf("key %q opened no editor (status %q)", key, m.status)
 			continue
 		}
@@ -115,12 +115,12 @@ func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 			t.Errorf("editor opened for %q, want %q", m.ed.key, key)
 		}
 		switch m.ed.kind {
-		case edEnum, edTri, edMulti:
+		case config.EditorChoice, config.EditorTri, config.EditorSet:
 			if len(m.ed.options) == 0 {
 				t.Errorf("key %q opened a choice editor with no options", key)
 			}
 		}
-		if m.ed.kind == edMulti && m.ed.selected == nil {
+		if m.ed.kind == config.EditorSet && m.ed.selected == nil {
 			t.Errorf("key %q opened a multi-select with a nil selection set", key)
 		}
 	}
@@ -140,12 +140,12 @@ func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 func TestEveryEditorKindIsSeededDrawnAndDriven(t *testing.T) {
 	// key: a key whose descriptor declares the kind. press: a key press that
 	// kind's reducer must act on. after: what the pane shows once it has.
-	drivers := map[editorKind]struct{ key, press, after string }{
-		edEnum:   {"pull", "down", "> always"},
-		edString: {"image", "x", "x"},
-		edTri:    {"bridge", "down", "> true"},
-		edMulti:  {"sdd", "space", "[x]"},
-		edRows:   {"env", "a", "key:"},
+	drivers := map[config.Editor]struct{ key, press, after string }{
+		config.EditorChoice: {"pull", "down", "> always"},
+		config.EditorText:   {"image", "x", "x"},
+		config.EditorTri:    {"bridge", "down", "> true"},
+		config.EditorSet:    {"sdd", "space", "[x]"},
+		config.EditorRows:   {"env", "a", "key:"},
 	}
 	if len(drivers) != len(editorSeeds) {
 		t.Fatalf("editorSeeds holds %d kinds and this table %d — a new editor kind needs a row here, "+

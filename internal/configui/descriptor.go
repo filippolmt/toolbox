@@ -23,12 +23,12 @@ import (
 // what fail now: every key displays something, every editable key opens a
 // seeded editor, every open editor has a mutation behind it.
 type keyDescriptor struct {
-	// options is the fixed option set of an edEnum / edMulti editor. It stays
+	// options is the fixed option set of an config.EditorChoice / config.EditorSet editor. It stays
 	// here rather than in the row because one of them (the default mount names)
 	// comes from internal/mountplan, which imports config and so cannot be read
 	// back from it.
 	options func() []string
-	// selected is the checked set an edMulti editor opens with.
+	// selected is the checked set an config.EditorSet editor opens with.
 	selected func(*config.Config) map[string]bool
 	// escape marks a key whose structured editor does not cover every case, so
 	// the UI also offers the "open in $EDITOR" hatch.
@@ -201,17 +201,16 @@ func listFromSelection(e *editor, _ *config.Config) configedit.Mutator {
 // the TUI cannot drift from `config show` on the keys that have one), and
 // finally the raw scalar with its hint. The value shapes come from the key's
 // row; only the overrides are this package's.
-func (d keyDescriptor) displayOf(cfg *config.Config, key string) string {
-	row, _ := config.KeyByName(key)
+func (d keyDescriptor) displayOf(cfg *config.Config, row config.Key) string {
 	switch {
 	case d.display != nil:
 		return d.display(cfg)
 	case d.noun != "":
-		return countLabel(d.countOf(cfg, key), d.noun)
+		return countLabel(d.countOf(cfg, row), d.noun)
 	case row.Tri != nil:
 		return triState(row.Tri(cfg))
 	}
-	if v, ok := config.EffectiveValue(cfg, key); ok {
+	if v, ok := config.EffectiveValue(cfg, row.Name); ok {
 		return v
 	}
 	if row.Str != nil {
@@ -243,23 +242,42 @@ func (d keyDescriptor) scopeEntriesPath(key string) string {
 
 // countOf is how many entries a collection holds: its own counter when the key
 // has one, otherwise the entries it can name.
-func (d keyDescriptor) countOf(cfg *config.Config, key string) int {
+func (d keyDescriptor) countOf(cfg *config.Config, row config.Key) int {
 	if d.count != nil {
 		return d.count(cfg)
 	}
-	return len(d.entriesOf(cfg, key))
+	return len(d.entriesOf(cfg, row))
 }
 
 // entriesOf lists a collection's effective entry names, unsorted. A key whose
 // entries are exactly its row's list value needs no separate accessor.
-func (d keyDescriptor) entriesOf(cfg *config.Config, key string) []string {
+func (d keyDescriptor) entriesOf(cfg *config.Config, row config.Key) []string {
 	if d.entries != nil {
 		return d.entries(cfg)
 	}
-	if row, ok := config.KeyByName(key); ok && row.List != nil {
+	if row.List != nil {
 		return row.List(cfg)
 	}
 	return nil
+}
+
+// optionsOf and selectionOf read a multi-select's option set and checked set,
+// tolerating a row that carries neither: the editor then opens empty and
+// TestEveryEditableKeyOpensAnEditor names the key, instead of a nil call
+// panicking the TUI on enter. They live here, beside the fields they read,
+// rather than in the tea half that happens to call them.
+func (d keyDescriptor) optionsOf() []string {
+	if d.options == nil {
+		return nil
+	}
+	return d.options()
+}
+
+func (d keyDescriptor) selectionOf(cfg *config.Config) map[string]bool {
+	if d.selected == nil {
+		return nil
+	}
+	return d.selected(cfg)
 }
 
 // mountNames lists the named mount overrides; an unnamed entry patches nothing
@@ -274,7 +292,7 @@ func mountNames(cfg *config.Config) []string {
 	return names
 }
 
-// setOf turns a list of values into the checked set an edMulti editor opens with.
+// setOf turns a list of values into the checked set an config.EditorSet editor opens with.
 func setOf(vals []string) map[string]bool {
 	out := make(map[string]bool, len(vals))
 	for _, v := range vals {

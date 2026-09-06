@@ -504,7 +504,7 @@ func ValidateKey(key, value string) error {
 }
 
 // applyValidationTail defaults the pull/shell scalars, then runs every key
-// row's Validate in Config declaration order (first failure wins).
+// row's verdict in Config declaration order (first failure wins).
 func applyValidationTail(cfg *Config) error {
 	// Side-effecting defaults stay explicit — they mutate cfg, so they are not
 	// pure validators and don't belong in the key rows.
@@ -515,10 +515,7 @@ func applyValidationTail(cfg *Config) error {
 		cfg.Shell = "zsh"
 	}
 	for _, k := range Keys() {
-		if k.Validate == nil {
-			continue
-		}
-		if err := k.Validate(cfg); err != nil {
+		if err := k.check(cfg); err != nil {
 			return err
 		}
 	}

@@ -171,9 +171,10 @@ func originFor(prov configedit.Provenance, key string) (origin configedit.Origin
 // value. Collections show a count; scalars show the value (or a parenthesised
 // default hint when empty); tri-state bools show unset/true/false. The shape
 // comes from the key's descriptor, so a key with no row renders empty — which
-// TestKeyDescriptorsCoverEveryKey forbids.
+// TestEveryKeyDisplaysSomething forbids, naming the key.
 func displayValue(cfg *config.Config, key string) string {
-	return keyDescriptors[key].displayOf(cfg, key)
+	row, _ := config.KeyByName(key)
+	return keyDescriptors[key].displayOf(cfg, row)
 }
 
 func countLabel(n int, noun string) string {
@@ -199,7 +200,8 @@ func orHint(v, hint string) string {
 // here (on a copy) so a descriptor row can hand back the config's own slice.
 // Returns nil for non-collection keys or an empty collection.
 func detailEntries(cfg *config.Config, key string) []string {
-	return slices.Sorted(slices.Values(keyDescriptors[key].entriesOf(cfg, key)))
+	row, _ := config.KeyByName(key)
+	return slices.Sorted(slices.Values(keyDescriptors[key].entriesOf(cfg, row)))
 }
 
 // triState renders an optional bool as its three distinct states.
@@ -226,10 +228,10 @@ func TargetPath(scope Scope, cwd string) (string, error) {
 // only records which key offers which one.
 func enumOptions(key string) []string {
 	row, ok := config.KeyByName(key)
-	if !ok || row.Editor != edEnum {
+	if !ok || row.Editor != config.EditorChoice {
 		return nil
 	}
-	return optionsOf(keyDescriptors[key])
+	return keyDescriptors[key].optionsOf()
 }
 
 // EnumDefault returns the value an enum key resolves to when unset — the option

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configedit"
 )
 
@@ -156,20 +157,20 @@ func (m Model) renderEditor() string {
 	}
 	b.WriteByte('\n')
 	switch m.ed.kind {
-	case edString:
+	case config.EditorText:
 		fmt.Fprintf(&b, "%s\n\n", m.ed.input.View())
 		b.WriteString(styleKeybar.Render("enter: save   esc: cancel"))
-	case edEnum, edTri:
+	case config.EditorChoice, config.EditorTri:
 		b.WriteString(m.renderOptions())
-	case edMulti:
+	case config.EditorSet:
 		b.WriteString(m.renderCheckboxes())
-	case edRows:
+	case config.EditorRows:
 		b.WriteString(m.renderRows())
 	}
 	return b.String()
 }
 
-// renderOptions is the single-choice list behind edEnum / edTri: one option per
+// renderOptions is the single-choice list behind config.EditorChoice / config.EditorTri: one option per
 // line, the cursor one highlighted, each tagged with current/default.
 func (m Model) renderOptions() string {
 	var b strings.Builder
@@ -186,7 +187,7 @@ func (m Model) renderOptions() string {
 	return b.String()
 }
 
-// renderCheckboxes is the multi-select list behind edMulti: every option
+// renderCheckboxes is the multi-select list behind config.EditorSet: every option
 // carries its own [x]/[ ] box, independent of where the cursor sits.
 func (m Model) renderCheckboxes() string {
 	var b strings.Builder

@@ -149,7 +149,14 @@ func writeKey(e *errWriter, k config.Key, c *config.Config, ann func(string) str
 	case config.KindTri:
 		e.printf("%s: %s%s\n", k.Name, boolPtrStr(k.Tri(c)), ann(k.Name))
 	case config.KindBool:
-		e.printf("%s: %t%s\n", k.Name, *k.Tri(c), ann(k.Name))
+		// Same policy as the unhandled Kind below: a row that reads no bool is a
+		// broken row, and saying so beats panicking mid-document.
+		v := k.Tri(c)
+		if v == nil {
+			e.fail(fmt.Errorf("config show: bool key %q reads no value", k.Name))
+			return
+		}
+		e.printf("%s: %t%s\n", k.Name, *v, ann(k.Name))
 	case config.KindMap:
 		writeSortedMap(e, k.Name, ann(k.Name), k.Pairs(c))
 	case config.KindList:

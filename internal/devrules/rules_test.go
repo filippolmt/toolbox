@@ -10,6 +10,9 @@ package devrules
 import (
 	"bufio"
 	"cmp"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -238,15 +241,68 @@ func qualifierPattern(pkgs []string) *regexp.Regexp {
 	return regexp.MustCompile(`\b(` + strings.Join(quoted, "|") + `)\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 }
 
-// namesAGoMember reports whether member reads as the Go identifier half of a
-// qualifier rather than as a file extension, a TLD or a config-key segment,
-// which share the `<pkg>.<word>` shape. The discriminator is a capital: a Go
-// member these rules cite is either exported (`Ensure`) or unexported
-// camelCase (`overlayBuilder`), while `md`, `yml`, `go`, `test` and `seed` are
-// flat lowercase. Deliberately conservative — a lone-lowercase-word unexported
-// member goes unseen, which costs a missed mention, not a false one.
-func namesAGoMember(member string) bool {
-	return strings.ToLower(member) != member
+// packageMembers returns, per package under internal/, the top-level
+// identifiers it declares — every func, type, const and var name, test files
+// included.
+//
+// This is what tells a qualifier from its lookalikes. `config.yml`,
+// `image-build.md`, `worktree.seed` and a hostname all have the `<word>.<word>`
+// shape of a qualifier, and the left half of some of them really is a package
+// name, so the decision has to be made on the right half. Asking the package
+// what it declares answers it exactly: `configio.RemoveFence` is a mention
+// because configio declares RemoveFence, and `worktree.seed` is not because
+// worktree declares no seed.
+//
+// The alternative was a capitalisation heuristic, which read `Ensure` as a
+// member and any flat-lowercase word as a lookalike. That was conservative in
+// the wrong direction: it made every unexported member spelled as one lowercase
+// word invisible to the gate, which is the class of mention this test exists to
+// stop being invisible.
+func packageMembers(t *testing.T, root string) map[string]map[string]bool {
+	t.Helper()
+	members := map[string]map[string]bool{}
+	for _, pkg := range internalPackages(t, root) {
+		dir := filepath.Join(root, "internal", pkg)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read internal/%s: %v", pkg, err)
+		}
+		fset := token.NewFileSet()
+		names := map[string]bool{}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			file, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parse internal/%s/%s: %v", pkg, e.Name(), err)
+			}
+			for _, decl := range file.Decls {
+				declaredNames(decl, names)
+			}
+		}
+		members[pkg] = names
+	}
+	return members
+}
+
+// declaredNames collects the top-level names one declaration introduces.
+func declaredNames(decl ast.Decl, into map[string]bool) {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		into[d.Name.Name] = true
+	case *ast.GenDecl:
+		for _, spec := range d.Specs {
+			switch s := spec.(type) {
+			case *ast.TypeSpec:
+				into[s.Name.Name] = true
+			case *ast.ValueSpec:
+				for _, name := range s.Names {
+					into[name.Name] = true
+				}
+			}
+		}
+	}
 }
 
 var (
@@ -263,7 +319,7 @@ var (
 // qualifier `<pkg>.<Member>`. A bare `cmd.<Member>` qualifier is deliberately
 // not resolved — `cmd/` is one package spread over many files, and a qualifier
 // names no file to scope a rule to.
-func mentionedPaths(block string, qualifier *regexp.Regexp) []string {
+func mentionedPaths(block string, qualifier *regexp.Regexp, members map[string]map[string]bool) []string {
 	var mentioned []string
 	for _, m := range internalPkgPattern.FindAllStringSubmatch(block, -1) {
 		mentioned = append(mentioned, "internal/"+m[1])
@@ -272,7 +328,7 @@ func mentionedPaths(block string, qualifier *regexp.Regexp) []string {
 		mentioned = append(mentioned, "cmd/"+m[1])
 	}
 	for _, m := range qualifier.FindAllStringSubmatch(block, -1) {
-		if namesAGoMember(m[2]) {
+		if members[m[1]][m[2]] {
 			mentioned = append(mentioned, "internal/"+m[1])
 		}
 	}
@@ -316,17 +372,17 @@ func ruleBlocks(body string) []string {
 // That is the Rule Pointer convention — the mention is a signpost, not an
 // ownership claim, and it cannot be asserted in the abstract, because the link
 // target has to really cover the package for the pointer to count.
-func ruleBlockPointsAtOwner(block, pkg, self string, globs map[string][]string) (string, bool) {
+func ruleBlockPointsAtOwner(block, pkg, self string, globs map[string][]string) bool {
 	for _, m := range siblingRulePattern.FindAllStringSubmatch(block, -1) {
 		target := m[1]
 		if target == self {
 			continue
 		}
 		if pathsCoverPackage(globs[target], pkg) {
-			return target, true
+			return true
 		}
 	}
-	return "", false
+	return false
 }
 
 // TestRuleMentionsAreCovered asserts that every package a rule file names in its
@@ -343,6 +399,7 @@ func ruleBlockPointsAtOwner(block, pkg, self string, globs map[string][]string) 
 func TestRuleMentionsAreCovered(t *testing.T) {
 	root := repoRoot(t)
 	qualifier := qualifierPattern(internalPackages(t, root))
+	members := packageMembers(t, root)
 
 	rules := ruleFiles(t)
 	globs := make(map[string][]string, len(rules))
@@ -356,7 +413,7 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 
 		for _, block := range ruleBlocks(ruleBody(t, rule)) {
 			seen := map[string]bool{}
-			for _, pkg := range mentionedPaths(block, qualifier) {
+			for _, pkg := range mentionedPaths(block, qualifier, members) {
 				if seen[pkg] || reported[pkg] || ruleMentionExemptions[name+": "+pkg] {
 					continue
 				}
@@ -365,7 +422,7 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 				if pathsCoverPackage(globs[name], pkg) {
 					continue
 				}
-				if _, ok := ruleBlockPointsAtOwner(block, pkg, name, globs); ok {
+				if ruleBlockPointsAtOwner(block, pkg, name, globs) {
 					continue
 				}
 				reported[pkg] = true
@@ -386,10 +443,21 @@ func TestRuleMentionsAreCovered(t *testing.T) {
 // neither enforced nor exempted — it passes by being invisible. The other half
 // is what it must keep refusing: a filename, a link target, a hostname and a
 // dotted config key all have the shape of a qualifier and name no package.
+//
+// The member sets are written out here rather than parsed, so the cases pin the
+// classifier's rule — the right half must be a name the package declares — and
+// not today's contents of those packages.
 func TestAMentionIsAQualifierNotItsLookalikes(t *testing.T) {
-	qualifier := qualifierPattern([]string{
-		"sessionplan", "localimage", "configio", "worktree", "config", "build",
-	})
+	pkgs := []string{"sessionplan", "localimage", "configio", "worktree", "config", "build"}
+	qualifier := qualifierPattern(pkgs)
+	members := map[string]map[string]bool{
+		"localimage":  {"Ensure": true},
+		"sessionplan": {"composeEnv": true},
+		"configio":    {"RemoveFence": true},
+		"config":      {"Merge": true, "lock": true},
+		"worktree":    {"Prune": true},
+		"build":       {"Assets": true},
+	}
 
 	cases := []struct {
 		name  string
@@ -405,10 +473,12 @@ func TestAMentionIsAQualifierNotItsLookalikes(t *testing.T) {
 		{"a filename", "`~/.config/glab-cli/config.yml` is one host mount", nil},
 		{"a dotted config key", "plus `worktree.seed` config extras", nil},
 		{"a bare cmd qualifier names no file", "`cmd.startSession` resolves it", nil},
+		{"a lowercase unexported member is seen", "the `config.lock` it takes", []string{"internal/config"}},
+		{"a member the package does not declare", "`config.NoSuchThing` is stale", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := mentionedPaths(c.block, qualifier)
+			got := mentionedPaths(c.block, qualifier, members)
 			if !slices.Equal(got, c.want) {
 				t.Errorf("mentionedPaths(%q) = %v, want %v", c.block, got, c.want)
 			}
@@ -445,7 +515,7 @@ func TestARulePointerNamesARuleThatCoversThePackage(t *testing.T) {
 				if !strings.Contains(block, "`mountplan.Merge`") {
 					continue
 				}
-				_, got = ruleBlockPointsAtOwner(block, "internal/mountplan", "self.md", globs)
+				got = ruleBlockPointsAtOwner(block, "internal/mountplan", "self.md", globs)
 			}
 			if got != c.want {
 				t.Errorf("pointer accepted = %v, want %v, for %q", got, c.want, c.body)

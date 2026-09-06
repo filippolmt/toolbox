@@ -449,7 +449,7 @@ func TestReadOnlyAndEnumDefault(t *testing.T) {
 }
 
 // TestSnapshotPopulatesDoc: every key carries a description and an explicit
-// default from config.KeyDocs, and single-option keys are flagged read-only.
+// default from its key row, and single-option keys are flagged read-only.
 func TestSnapshotPopulatesDoc(t *testing.T) {
 	isolatedHome(t)
 	_, states, err := Snapshot(t.TempDir(), "")
