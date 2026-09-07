@@ -1531,8 +1531,13 @@ image has none, so `internal/build/assets/bin/paplay` reads the file herdr just
 wrote and POSTs its bytes base64-encoded, and `bridge.playSound` writes them to
 a temp file the **daemon** names before spawning the host's player detached
 (`afplay` on macOS, the first installed entry of `soundPlayers` on Linux). The
-response is `200` before playback starts: nothing waits for a chime, and two
-completions moments apart overlap instead of queueing. Decided in
+response is `200` before playback starts, so nothing waits for a chime — and a
+chime that arrives while a player is still running is **dropped**, neither
+queued nor overlapped: one output device replaying the same MP3 out of phase is
+heard as a single garbled chime rather than as two. The player's own outcome —
+exit status, how long it lived, what it wrote to `stderr` — lands in the daemon
+log, which the answered response left as its only channel. Decided, and then
+amended on both counts, in
 [ADR 0009](docs/adr/0009-sound-handoff-through-the-bridge.md).
 
 Why the term exists: "play a sound on the host" hides the one decision that

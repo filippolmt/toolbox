@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -70,8 +72,8 @@ func playSound(logger *log.Logger, data []byte) error {
 // beats truncating the one already playing: a listener cannot tell two
 // overlapping chimes apart anyway, so the clean single sound carries more.
 //
-// ponytail: one flag for the whole daemon, which is one process per host —
-// per-device gating only if a chime ever has to overlap itself.
+// One flag for the whole daemon, which is one process per host: per-device
+// gating would earn its keep only if a chime ever had to overlap itself.
 var soundPlaying atomic.Bool
 
 // errSoundBusy is what playSound returns for a chime dropped by soundPlaying.
@@ -91,43 +93,68 @@ func playSoundWith(logger *log.Logger, player func(ctx context.Context, path str
 	if !soundPlaying.CompareAndSwap(false, true) {
 		return errSoundBusy
 	}
+	// From here the flag belongs to the reaping goroutine, and every path
+	// that returns without a live player has to hand it back. One release
+	// site rather than one per unwind: a later early return that forgot its
+	// own would wedge the flag at true and silence every chime after it.
+	spawned := false
+	defer func() {
+		if !spawned {
+			soundPlaying.Store(false)
+		}
+	}()
 
 	// The .mp3 suffix is load-bearing: some players in the probe chain infer
 	// the format from the name rather than from the bytes.
 	f, err := os.CreateTemp("", "toolbox-sound-*.mp3")
 	if err != nil {
-		soundPlaying.Store(false)
 		return fmt.Errorf("create sound temp file: %w", err)
 	}
 	path := f.Name()
 	_, writeErr := f.Write(data)
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
-		soundPlaying.Store(false)
 		_ = os.Remove(path)
 		return fmt.Errorf("write sound temp file: %w", err)
 	}
+
+	// The player's own diagnosis — afplay naming a payload it cannot decode,
+	// a probe-chain player naming a dead device — belongs in the daemon log
+	// rather than in /dev/null, which is where an unset Stderr sends it. It
+	// travels through a file the reaper reads back, and not through
+	// logger.Writer(): a Stderr that is not an *os.File makes os/exec build a
+	// pipe and copy it in a goroutine, so cmd.Wait would return when that
+	// pipe closes rather than when the player exits — a player that leaves a
+	// child holding the descriptor would hold soundPlaying past its own death
+	// and drop every later chime, with soundTimeout reaching only the process
+	// it spawned. The file also keeps the child's bytes off logger.Writer(),
+	// which is the logger's own unsynchronised writer and would interleave
+	// them mid-line with the daemon's.
+	errFile, err := os.CreateTemp("", "toolbox-sound-*.stderr")
+	if err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("create sound stderr file: %w", err)
+	}
+	errPath := errFile.Name()
 
 	// Detached from the request: the response is already on its way, so the
 	// player's deadline is this context and not the caller's.
 	ctx, cancel := context.WithTimeout(context.Background(), soundTimeout)
 	cmd, err := player(ctx, path)
 	if err == nil {
-		// The player's own diagnosis — afplay naming a payload it cannot
-		// decode, a probe-chain player naming a dead device — goes to the
-		// daemon log rather than to /dev/null, which is where an unset
-		// Stderr sends it. logger.Writer() and not os.Stderr: the two land
-		// in different files under launchd, and an exit status is worth
-		// little without the line that explains it next to it.
-		cmd.Stderr = logger.Writer()
+		cmd.Stderr = errFile
 		err = cmd.Start()
 	}
+	// Start handed the player a descriptor of its own and the reaper reads
+	// the file back by name, so this copy has no reader left.
+	_ = errFile.Close()
 	if err != nil {
-		soundPlaying.Store(false)
 		cancel()
 		_ = os.Remove(path)
+		_ = os.Remove(errPath)
 		return fmt.Errorf("start sound player: %w", err)
 	}
+	spawned = true
 
 	// The 200 is already out, so this goroutine's line is the only place the
 	// player's outcome can land — and the lifetime in it is what separates a
@@ -140,15 +167,35 @@ func playSoundWith(logger *log.Logger, player func(ctx context.Context, path str
 		defer cancel()
 		waitErr := cmd.Wait()
 		lived := time.Since(started).Round(time.Millisecond)
+		said := soundPlayerStderr(errPath)
 		// Released before the log line, so a caller that has read the line
 		// knows the next chime will be spawned and not skipped.
 		soundPlaying.Store(false)
 		_ = os.Remove(path)
+		_ = os.Remove(errPath)
 		if waitErr != nil {
-			logger.Printf("sound: player failed after %s: %v file=%s", lived, waitErr, filepath.Base(path))
+			logger.Printf("sound: player failed after %s: %v file=%s%s", lived, waitErr, filepath.Base(path), said)
 			return
 		}
-		logger.Printf("sound: player done after %s file=%s", lived, filepath.Base(path))
+		logger.Printf("sound: player done after %s file=%s%s", lived, filepath.Base(path), said)
 	}()
 	return nil
 }
+
+// soundPlayerStderr reads back what the player wrote, shaped to append to the
+// reaper's line: empty when it said nothing, so a healthy chime stays one
+// short line, and capped because a player looping on a dead device would
+// otherwise write the daemon log full. A file that cannot be read means the
+// same as a silent player — the reaper is its only reader.
+func soundPlayerStderr(path string) string {
+	raw, _ := os.ReadFile(path)
+	said := strings.TrimSpace(string(raw))
+	if said == "" {
+		return ""
+	}
+	return " stderr=" + strconv.Quote(truncate(said, maxSoundStderr))
+}
+
+// maxSoundStderr caps what one player can add to a log line. Sized for a
+// decoder's few lines of complaint, not for a loop on a dead device.
+const maxSoundStderr = 512

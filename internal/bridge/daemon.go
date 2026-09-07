@@ -568,8 +568,10 @@ func (h *handler) handleSound(w http.ResponseWriter, r *http.Request) {
 	}
 	// Fire-and-forget: the player is spawned detached and the 200 goes out
 	// now. Waiting for playback would block herdr's client for the length of
-	// the chime and queue two completions moments apart, where overlapping
-	// them is what herdr does natively on a host.
+	// the chime, so a failing player can be reported only into the daemon
+	// log. Two completions moments apart do not overlap either: the second is
+	// dropped, because one output device replaying the same MP3 out of phase
+	// is heard as one garbled chime rather than as two.
 	if err := h.fns.sound(data); err != nil {
 		// A chime dropped because one is still playing is not a failure: the
 		// request was well-formed, the answer stays 200, and the line names
