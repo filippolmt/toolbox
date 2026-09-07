@@ -48,6 +48,18 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 **Sounds still only sometimes?** That is by design and it is herdr's rule, not the bridge's: `Request` (an agent waiting on a human) always fires, while `Done` fires only when the pane's tab is inactive or the terminal window is unfocused. Panes in the same tab share that state, so a single-tab split layout stays quiet on `Done` while you are looking at it.
 
+## herdr opens in `/home/toolbox` instead of the workspace
+
+**Symptom:** the toolbox shell lands in the mounted workspace, but `herdr` launched from there opens on a workspace labelled `~` sitting in `/home/toolbox`. Relaunching from the right directory changes nothing.
+
+**Cause:** the launch cwd only ever creates herdr's *first* workspace. `~/.config/herdr/sessions/$HERDR_SESSION/session.json` persists the workspace list with absolute cwds, and on restore herdr logs `restored session already has workspaces; ignoring startup cwd` — the directory you launched from is discarded. A persisted cwd this container does not mount then draws `saved pane cwd does not exist, falling back to HOME`: that workspace reopens on `/home/toolbox`, labelled `~`. herdr saves the fallback, and `/home/toolbox` exists, so the warning never fires again — the stray workspace is restored on every start, and any launch that focuses it starts you there.
+
+**Fix:** `herdr workspace list` to find the one labelled `~`, then `herdr workspace close <workspace-id>`. The next save drops it and the workspace you care about is the only one left to restore.
+
+**Check before closing.** `herdr api snapshot` prints every pane's live cwd, so you can tell the stray workspace from a real one that merely looks idle. Both log lines above live in that session's own server log, `~/.config/herdr/sessions/$HERDR_SESSION/herdr-server.log`. If the whole list is disposable, `herdr server stop` and delete that session's `session.json` — with nothing to restore, the next launch honours the launch cwd again.
+
+**This is not the cross-project variant.** `~/.config/herdr` is one host-global bind shared by every toolbox container, which is why `sessionplan` names each herdr session after the workspace (`HERDR_SESSION`, `internal/sessionplan/plan.go`) — unnamed, every container reopened whatever another project saved last, a path it does not mount, and landed on `/home/toolbox` by the same fallback. That keeps other projects out of your session; it does nothing about a path inside your own session that stopped existing — a deleted clone, a pruned worktree, a renamed directory.
+
 ## Stale local branches pile up after merges
 
 **Symptom:** `git branch` lists many local branches whose PRs were already merged — squash-merged branches (the local copy isn't recognised as merged) and leftover `worktree-agent-*` branches from agent worktrees.
