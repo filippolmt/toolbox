@@ -224,6 +224,7 @@ func skipEscape(s string, i int) int {
 	switch s[i] {
 	case '[': // CSI: parameter bytes, then a final byte in @-~
 		for i++; i < len(s) && (s[i] < '@' || s[i] > '~'); i++ {
+			// the parameter bytes carry nothing we keep; the header advances i
 		}
 		return min(i+1, len(s))
 	case ']': // OSC: runs to BEL, or to ST (ESC \)

@@ -134,7 +134,7 @@ func Shell(name, path string, env map[string]string) Mutator {
 // before writing.
 func ShellEnv(name string, env map[string]string) Mutator {
 	if len(env) == 0 {
-		return func(*yaml.Node) {}
+		return func(*yaml.Node) { /* no pairs: nothing to upsert */ }
 	}
 	env = maps.Clone(env)
 	return func(doc *yaml.Node) { writeShellEnvIn(shellEntryIn(doc, name), env) }
