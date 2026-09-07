@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -52,8 +55,31 @@ func pickSoundPlayer(lookPath func(string) (string, error)) (name string, args [
 }
 
 // playSound writes an MP3 payload to a temp file and plays it with the host's
-// own player. It is the production Sound callback.
-func playSound(data []byte) error { return playSoundWith(hostSoundCommand, data) }
+// own player. It is the production Sound callback; logger is the daemon's own,
+// because the player outlives the response and the log is the only place its
+// outcome can land.
+func playSound(logger *log.Logger, data []byte) error {
+	return playSoundWith(logger, hostSoundCommand, data)
+}
+
+// soundPlaying is held for as long as a spawned player lives. A chime is
+// seconds of audio while herdr only coalesces pane states closer together than
+// a fraction of a second, so everything in between used to reach the host as
+// two players on one output device replaying the same MP3 out of phase — heard
+// as a chime that garbles or cuts, not as two chimes. Dropping the later one
+// beats truncating the one already playing: a listener cannot tell two
+// overlapping chimes apart anyway, so the clean single sound carries more.
+//
+// ponytail: one flag for the whole daemon, which is one process per host —
+// per-device gating only if a chime ever has to overlap itself.
+var soundPlaying atomic.Bool
+
+// errSoundBusy is what playSound returns for a chime dropped by soundPlaying.
+// Not a failure — the request was well-formed and the answer is still 200 — so
+// the handler renders it as its own log line rather than a 502. It travels as
+// an error because the callback has no other channel back, and one line per
+// chime beats a "skipped" the handler then contradicts with "ok".
+var errSoundBusy = errors.New("a player is still running")
 
 // playSoundWith writes an MP3 payload to a temp file the daemon names itself
 // and spawns player on it, returning as soon as the player is running. The
@@ -61,17 +87,23 @@ func playSound(data []byte) error { return playSoundWith(hostSoundCommand, data)
 // the bytes and this is where they land (ADR-0009). The player builder is a
 // parameter because the per-OS hostSoundCommand is the one part CI cannot run
 // on every platform.
-func playSoundWith(player func(ctx context.Context, path string) (*exec.Cmd, error), data []byte) error {
+func playSoundWith(logger *log.Logger, player func(ctx context.Context, path string) (*exec.Cmd, error), data []byte) error {
+	if !soundPlaying.CompareAndSwap(false, true) {
+		return errSoundBusy
+	}
+
 	// The .mp3 suffix is load-bearing: some players in the probe chain infer
 	// the format from the name rather than from the bytes.
 	f, err := os.CreateTemp("", "toolbox-sound-*.mp3")
 	if err != nil {
+		soundPlaying.Store(false)
 		return fmt.Errorf("create sound temp file: %w", err)
 	}
 	path := f.Name()
 	_, writeErr := f.Write(data)
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
+		soundPlaying.Store(false)
 		_ = os.Remove(path)
 		return fmt.Errorf("write sound temp file: %w", err)
 	}
@@ -81,18 +113,42 @@ func playSoundWith(player func(ctx context.Context, path string) (*exec.Cmd, err
 	ctx, cancel := context.WithTimeout(context.Background(), soundTimeout)
 	cmd, err := player(ctx, path)
 	if err == nil {
+		// The player's own diagnosis — afplay naming a payload it cannot
+		// decode, a probe-chain player naming a dead device — goes to the
+		// daemon log rather than to /dev/null, which is where an unset
+		// Stderr sends it. logger.Writer() and not os.Stderr: the two land
+		// in different files under launchd, and an exit status is worth
+		// little without the line that explains it next to it.
+		cmd.Stderr = logger.Writer()
 		err = cmd.Start()
 	}
 	if err != nil {
+		soundPlaying.Store(false)
 		cancel()
 		_ = os.Remove(path)
 		return fmt.Errorf("start sound player: %w", err)
 	}
 
+	// The 200 is already out, so this goroutine's line is the only place the
+	// player's outcome can land — and the lifetime in it is what separates a
+	// chime cut inside this code (a player gone in milliseconds, killed at
+	// soundTimeout or refusing the payload) from one cut past afplay, in the
+	// host's output device. Without it the handler's "sound: ok" claims a
+	// chime nobody heard, which is the silent degradation ADR-0009 ended.
+	started := time.Now()
 	go func() {
 		defer cancel()
-		_ = cmd.Wait()
+		waitErr := cmd.Wait()
+		lived := time.Since(started).Round(time.Millisecond)
+		// Released before the log line, so a caller that has read the line
+		// knows the next chime will be spawned and not skipped.
+		soundPlaying.Store(false)
 		_ = os.Remove(path)
+		if waitErr != nil {
+			logger.Printf("sound: player failed after %s: %v file=%s", lived, waitErr, filepath.Base(path))
+			return
+		}
+		logger.Printf("sound: player done after %s file=%s", lived, filepath.Base(path))
 	}()
 	return nil
 }

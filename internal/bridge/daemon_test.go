@@ -744,3 +744,17 @@ func TestHandler_SoundReportsAPlayerThatCannotStart(t *testing.T) {
 		t.Errorf("code = %d, want 502", rr.Code)
 	}
 }
+
+// A chime dropped because one is still playing is not a failure the shim
+// should propagate: turning it into a non-2xx would send herdr down its own
+// probe chain and make it log the aggregate "no player available" warning for
+// a host that has one and is using it.
+func TestHandler_SoundSkippedChimeStillAnswersOK(t *testing.T) {
+	h := newSoundTestHandler(t, func([]byte) error { return errSoundBusy })
+
+	rr := doPostTo(t, h, RouteSound, "tok", soundBody("herdr-sound-42-2.mp3", []byte("x")))
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("code = %d, want 200 — a dropped chime is a host decision, not a shim error", rr.Code)
+	}
+}
