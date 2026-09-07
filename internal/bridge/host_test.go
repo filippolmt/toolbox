@@ -3,6 +3,8 @@ package bridge
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -43,7 +45,7 @@ func TestNewAgentRejectsAHostWithoutAHome(t *testing.T) {
 // up on that host's PATH rather than the process's. A host that resolves
 // nothing must reach the not-installed refusal without exec'ing anything.
 func TestDaemonProximoDefaultUsesTheDeclaredHost(t *testing.T) {
-	fns := handlerFns{}.withHostDefaults(fsx.Host{Home: t.TempDir()})
+	fns := handlerFns{}.withHostDefaults(fsx.Host{Home: t.TempDir()}, log.New(io.Discard, "", 0))
 	orig := proximoFallbackCandidates
 	t.Cleanup(func() { proximoFallbackCandidates = orig })
 	proximoFallbackCandidates = func(fsx.Host) []string { return nil }

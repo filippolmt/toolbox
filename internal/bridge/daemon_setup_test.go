@@ -2,6 +2,8 @@ package bridge
 
 import (
 	"context"
+	"io"
+	"log"
 	"net"
 	"testing"
 )
@@ -73,7 +75,7 @@ func TestWithHostDefaultsFillsOnlyTheGaps(t *testing.T) {
 	called := false
 	supplied := func(context.Context, string) error { called = true; return nil }
 
-	fns := handlerFns{open: supplied}.withHostDefaults(testHost(t))
+	fns := handlerFns{open: supplied}.withHostDefaults(testHost(t), log.New(io.Discard, "", 0))
 
 	if fns.edit == nil || fns.proximo == nil || fns.credential == nil || fns.sound == nil {
 		t.Fatal("withHostDefaults left a callback nil")

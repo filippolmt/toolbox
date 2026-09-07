@@ -40,10 +40,19 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 	if fns.sound == nil {
 		fns.sound = func(_ []byte) error { return nil }
 	}
-	var logBuf strings.Builder
-	logger := log.New(&logBuf, "", 0)
+	h, _ := buildTestHandlerWithLog(t, fns)
+	return h
+}
+
+// buildTestHandlerWithLog is buildTestHandler for a test that reads the daemon
+// log. /sound answers 200 whether it played the chime or dropped it, so the
+// log line is the only place the difference shows.
+func buildTestHandlerWithLog(t *testing.T, fns handlerFns) (http.Handler, *strings.Builder) {
+	t.Helper()
+	logBuf := &strings.Builder{}
+	logger := log.New(logBuf, "", 0)
 	now := func() time.Time { return time.Unix(0, 0) }
-	return newHandler("tok", fns, logger, now)
+	return newHandler("tok", fns, logger, now), logBuf
 }
 
 func newTestHandler(t *testing.T, openErr error) (http.Handler, *atomic.Int32, *atomic.Int32) {
@@ -742,5 +751,25 @@ func TestHandler_SoundReportsAPlayerThatCannotStart(t *testing.T) {
 
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("code = %d, want 502", rr.Code)
+	}
+}
+
+// A chime dropped because one is still playing is not a failure the shim
+// should propagate: turning it into a non-2xx would send herdr down its own
+// probe chain and make it log the aggregate "no player available" warning for
+// a host that has one and is using it.
+func TestHandler_SoundSkippedChimeStillAnswersOK(t *testing.T) {
+	h, logBuf := buildTestHandlerWithLog(t, handlerFns{sound: func([]byte) error { return errSoundBusy }})
+
+	rr := doPostTo(t, h, RouteSound, "tok", soundBody("herdr-sound-42-2.mp3", []byte("x")))
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("code = %d, want 200 — a dropped chime is a host decision, not a shim error", rr.Code)
+	}
+	// The 200 is shared with a chime that played, so the log is what tells
+	// the two apart — and a run of drops is what a developer chasing "the
+	// sound comes and goes" has to be able to count.
+	if got := logBuf.String(); !strings.Contains(got, "sound: skipped") {
+		t.Errorf("log = %q, want a skipped line naming the dropped chime", got)
 	}
 }

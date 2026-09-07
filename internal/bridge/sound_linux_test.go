@@ -5,6 +5,8 @@ package bridge
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +43,7 @@ func TestPlaySoundRoutesThroughTheHostChooser(t *testing.T) {
 		t.Skip("this host has a player installed — playSound would spawn it on a bogus MP3")
 	}
 
-	if err := playSound([]byte("x")); !errors.Is(err, ErrNoSoundPlayer) {
+	if err := playSound(log.New(io.Discard, "", 0), []byte("x")); !errors.Is(err, ErrNoSoundPlayer) {
 		t.Errorf("err = %v, want it to wrap ErrNoSoundPlayer", err)
 	}
 }

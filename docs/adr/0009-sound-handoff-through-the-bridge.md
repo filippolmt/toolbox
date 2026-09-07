@@ -1,6 +1,6 @@
 # Sound handoff through the bridge: herdr stays in the container, the host plays the sound
 
-Status: accepted
+Status: accepted, amended below
 
 Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
 
@@ -238,3 +238,50 @@ missing-player case to be documented. The defensible ask is that it degrade
 rather than fail silently — the client already forwards a pane's terminal bell,
 so a bell when no player is available would be audible where an unreadable log
 line is not.
+
+## Amendment: one chime at a time, and the player's outcome in the log
+
+The reasoning above — "two completions 200 ms apart would queue instead of
+overlapping … and it is what we want" — held for a decision taken without
+having heard the overlap. It sounds nothing like two chimes. A chime is
+seconds of audio and herdr coalesces only pane states far closer together than
+that, so everything in between reached the host as two players on one output
+device replaying the same MP3 out of phase: what a listener hears is one chime
+that garbles or cuts. That was the reported symptom, sound that "comes and
+goes", and the overlap was its whole cause.
+
+The daemon now holds a flag for as long as a spawned player lives and **drops**
+a chime that arrives while one is running. Dropping the later chime beats
+truncating the one already playing: overlapping chimes are indistinguishable to
+a listener, so the clean single sound carries more. Serialising is still
+rejected for the reason recorded above — a queue in the daemon would play a
+`Done` three seconds after it happened.
+
+The drop is answered `200`, with its own `sound: skipped` line. A non-2xx would
+send herdr down its own probe chain and make it write the aggregate
+`no mp3-capable audio player available` warning for a host that has a player
+and is using it — turning the diagnostic this ADR relies on into a lie.
+
+The second half of the amendment is what made the first possible. The reaping
+goroutine discarded `cmd.Wait()`, so every host-side playback failure was
+invisible and the handler's `sound: ok` claimed a chime nobody heard — the
+silent degradation this ADR was written to end, reintroduced one layer down.
+It now logs the exit status, how long the player lived and the player's own
+`stderr`, which had been going to `/dev/null`. The lifetime is the diagnostic
+that located this bug: a player outliving the gap between two requests is what
+proved the overlap, and a player gone in milliseconds would have put the
+truncation in our own code instead.
+
+That `stderr` travels through a temp file the reaper reads back, not through
+`logger.Writer()`. A `Stderr` that is not an `*os.File` makes `os/exec` build a
+pipe and copy it in a goroutine, so `cmd.Wait` returns when the pipe closes
+rather than when the player exits — a player leaving a child holding the
+descriptor would hold the one-at-a-time flag past its own death and drop every
+later chime, with `soundTimeout` reaching only the process it spawned. The file
+also keeps the child's bytes off `logger.Writer()`, which is the logger's own
+unsynchronised writer.
+
+Measured during the diagnosis, before the fix: every one of the ~300 `/sound`
+requests in the daemon log was answered `ok`, with no gap in herdr's own
+temp-file counter. The container→host channel was never losing a chime. The
+whole defect was the daemon spawning a second player.

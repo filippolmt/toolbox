@@ -159,7 +159,7 @@ func Run(ctx context.Context, opts DaemonOptions) error {
 	fns := handlerFns{open: opts.Open, edit: opts.Edit, proximo: opts.Proximo, credential: opts.Credential, sound: opts.Sound}
 
 	srv := &http.Server{
-		Handler:           newHandler(token, fns.withHostDefaults(opts.Host), logger, now),
+		Handler:           newHandler(token, fns.withHostDefaults(opts.Host, logger), logger, now),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -192,7 +192,7 @@ func resolveListener(opts DaemonOptions) (net.Listener, int, error) {
 
 // withHostDefaults fills every unset callback with its production
 // implementation for host, so a test overrides only the endpoint it exercises.
-func (f handlerFns) withHostDefaults(host fsx.Host) handlerFns {
+func (f handlerFns) withHostDefaults(host fsx.Host, logger *log.Logger) handlerFns {
 	if f.open == nil {
 		f.open = hostOpenCommand
 	}
@@ -208,7 +208,7 @@ func (f handlerFns) withHostDefaults(host fsx.Host) handlerFns {
 		f.credential = runHostCredential
 	}
 	if f.sound == nil {
-		f.sound = playSound
+		f.sound = func(data []byte) error { return playSound(logger, data) }
 	}
 	return f
 }
@@ -568,9 +568,19 @@ func (h *handler) handleSound(w http.ResponseWriter, r *http.Request) {
 	}
 	// Fire-and-forget: the player is spawned detached and the 200 goes out
 	// now. Waiting for playback would block herdr's client for the length of
-	// the chime and queue two completions moments apart, where overlapping
-	// them is what herdr does natively on a host.
+	// the chime, so a failing player can be reported only into the daemon
+	// log. Two completions moments apart do not overlap either: the second is
+	// dropped, because one output device replaying the same MP3 out of phase
+	// is heard as one garbled chime rather than as two.
 	if err := h.fns.sound(data); err != nil {
+		// A chime dropped because one is still playing is not a failure: the
+		// request was well-formed, the answer stays 200, and the line names
+		// which chime was dropped so a run of them can be counted.
+		if errors.Is(err, errSoundBusy) {
+			h.logger.Printf("sound: skipped (%v) name=%q bytes=%d", err, truncate(req.Name, 128), len(data))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		h.logger.Printf("sound: handler failed: %v name=%q bytes=%d", err, truncate(req.Name, 128), len(data))
 		http.Error(w, "sound handler failed", http.StatusBadGateway)
 		return

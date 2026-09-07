@@ -46,7 +46,9 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 **Fix:** install the bridge (`toolbox bridge install` on the host — `toolbox bridge status` if it is already installed), and make sure the host CLI is new enough to serve `/sound`: an older daemon answers 404 and the shim fails through exactly as if no player existed. Then check the herdr side, `ui.sound.enabled` and the optional `ui.toast.delivery` banner — [agent sounds](bridge.md#agent-sounds) documents both, and a running herdr server needs `herdr server reload-config` before it sees a config edit.
 
-**Sounds still only sometimes?** That is by design and it is herdr's rule, not the bridge's: `Request` (an agent waiting on a human) always fires, while `Done` fires only when the pane's tab is inactive or the terminal window is unfocused. Panes in the same tab share that state, so a single-tab split layout stays quiet on `Done` while you are looking at it.
+**Sounds still only sometimes?** Two rules drop a chime, and the daemon log says which one did. herdr's own predicate is the first, and it is not the bridge's: `Request` (an agent waiting on a human) always fires, while `Done` fires only when the pane's tab is inactive or the terminal window is unfocused. Panes in the same tab share that state, so a single-tab split layout stays quiet on `Done` while you are looking at it. The bridge adds the second: a chime that arrives while a player is still running is dropped — `sound: skipped` — because a chime lasts seconds and two players on one output device replay the same MP3 out of phase, heard as one garbled chime rather than as two.
+
+**A chime that garbles or cuts** is the third case, and the reaping goroutine's line is where it is read: `sound: player done after 1.9s` next to a two-second MP3 puts the truncation past the player, in the host's output device, while `sound: player failed after 12ms` with the player's own `stderr` quoted after it puts it in the payload or the device the player opened. `sound: ok` alone only says the request arrived.
 
 ## herdr opens in `/home/toolbox` instead of the workspace
 
