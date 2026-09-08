@@ -60,12 +60,13 @@ type SessionPlan struct {
 	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
-	// Hostname renders ContainerName as a hostname the daemon accepts: left
-	// unset, Docker defaults the container hostname to the short container ID,
-	// which changes on every create and surfaces verbatim wherever the terminal
-	// composes a title from the host. Derived by hostnameFor, never assigned
-	// independently — the name is the identity, the hostname only labels it.
-	// Fixed at ContainerCreate, so a pre-existing container keeps the ID until
+	// Hostname is a fixed alias of ContainerName: left unset, Docker defaults
+	// the container hostname to the short container ID, which changes on every
+	// create and surfaces verbatim wherever the terminal composes a title from
+	// the host. Aliasing is safe because Plan rejects a name that would not be
+	// a legal hostname, rather than rendering one — see the length check there,
+	// which is what keeps the two spellings interchangeable. Fixed at
+	// ContainerCreate, so a pre-existing container keeps the ID until
 	// `toolbox stop`.
 	Hostname string
 	Cmd      []string
@@ -283,30 +284,6 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 	return namedContainerNameFromSanitized(sanitized)
 }
 
-// hostnameFor renders a container name as a hostname the daemon accepts. The
-// two are not interchangeable: MaxContainerNameLen is a convention this
-// package applies to names, while the daemon enforces its own cap on
-// Config.Hostname and rejects the create outright when it is exceeded — and
-// the named form is unbudgeted, because containerName appends the profile
-// name and peerNameSuffix on top of MaxNamedShellNameLen, so a name
-// cmd/shell_named.go accepts can overrun what a hostname may be. Reusing
-// MaxContainerNameLen as the cut keeps the result inside the daemon's cap and
-// inside the RFC 1123 label limit at once.
-//
-// Truncating is not injective and does not need to be — the container name
-// stays the identity and nothing reads the hostname, which only has to name
-// the workspace in a window title. One collision is worth naming: a named
-// shell at the length limit renders the same hostname with and without
-// --peer, the one distinction peerNameSuffix exists to keep in the name.
-func hostnameFor(name string) string {
-	if len(name) <= MaxContainerNameLen {
-		return name
-	}
-	// TrimRight because the cut can land on a separator, which no hostname
-	// may end on.
-	return strings.TrimRight(name[:MaxContainerNameLen], "-.")
-}
-
 // Plan walks the full session pipeline for in.Cfg + in.Workspace + in.Ports
 // and returns the resolved plan handed to container.Shell. Hard fails when
 // mount-stage validation rejects the user list, when port specs cannot
@@ -368,6 +345,18 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
 	name := containerName(workspace, in.Name, in.Profile, in.Peer)
+	// The name is also the hostname, and unlike a container name a hostname is
+	// capped by the daemon, which rejects the create outright. Only the named
+	// form can overrun: ContainerNameFor budgets for MaxContainerNameLen, while
+	// MaxNamedShellNameLen budgets for the prefix alone and containerName then
+	// appends the profile name — uncapped by mountplan.NewProfile — and
+	// peerNameSuffix on top. Failing here keeps the fold injective: truncating
+	// instead would collapse `--peer` and no-`--peer` onto one name at the
+	// limit, and silently reattach a session into a shared PID namespace.
+	if len(name) > MaxContainerNameLen {
+		return nil, fmt.Errorf("container name %q is %d characters, over the %d cap: shorten the shell name or the profile name",
+			name, len(name), MaxContainerNameLen)
+	}
 	workingDir := reloadWorkingDir(mp.WorkingDir, in.ReloadFrom)
 
 	return &SessionPlan{
@@ -379,7 +368,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		PortBindings:      bindings,
 		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
-		Hostname:          hostnameFor(name),
+		Hostname:          name,
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
@@ -825,6 +814,9 @@ func ContainerNameFor(workspace, discriminator string) string {
 // name, derived from MaxContainerNameLen minus the named-shell prefix +
 // infix. cmd/ validators consume this so a prefix rename keeps the cap in
 // lockstep.
+// It budgets for the prefix only: containerName may still append a profile
+// name and peerNameSuffix, so a name within this cap is necessary but not
+// sufficient — Plan verifies the assembled name against MaxContainerNameLen.
 const MaxNamedShellNameLen = MaxContainerNameLen - len(ContainerNamePrefix) - len(NamedContainerNameInfix)
 
 // NamedContainerNameInfix separates the ContainerNamePrefix from the

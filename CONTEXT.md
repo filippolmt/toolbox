@@ -1036,9 +1036,8 @@ the prompt, without exiting*, naming no required version because a
 presence marker means the image never learns one. And **the value is a
 path**, not a boolean, because the container cannot build the path: it
 would need the state mount's target, the naming convention and its own
-container name, and the hostname it can read is only a rendering of that
-name — capped by `sessionplan.hostnameFor`, so a long one arrives
-truncated.
+container name — and while the hostname it can read now *is* that name
+(`SessionPlan.Hostname`), the other two it would still have to hardcode.
 
 The format has two writers and only one of them runs in production: the
 zsh function writes it, while `reload.WriteMarker` is the writer the Go
