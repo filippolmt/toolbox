@@ -888,6 +888,42 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
+// TestShellPassesPlanHostname verifies the create edge hands Config.Hostname
+// the plan's rendering of it. Left unset, Docker defaults the hostname to the
+// short container ID, which is what a terminal reads back when it composes a
+// window title from the host. Only the pass-through is this layer's business:
+// what the plan puts there is asserted in sessionplan.
+func TestShellPassesPlanHostname(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	var capturedHostname string
+
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			capturedHostname = cfg.Hostname
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+	}
+
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if capturedHostname != plan.Hostname {
+		t.Errorf("Config.Hostname = %q, want plan.Hostname %q", capturedHostname, plan.Hostname)
+	}
+	if capturedHostname == "" {
+		t.Error("Config.Hostname is empty; Docker would fall back to the container ID")
+	}
+}
+
 // TestShellSetsHostWorkspaceEnv verifies that ContainerCreate receives
 // TOOLBOX_HOST_WORKSPACE set to the absolute host workspace path, so that
 // nested `docker run -v` invocations against the bind-mounted host socket

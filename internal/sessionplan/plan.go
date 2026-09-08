@@ -60,7 +60,16 @@ type SessionPlan struct {
 	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
-	Cmd           []string
+	// Hostname is a fixed alias of ContainerName: left unset, Docker defaults
+	// the container hostname to the short container ID, which changes on every
+	// create and surfaces verbatim wherever the terminal composes a title from
+	// the host. Aliasing is safe because Plan rejects a name that would not be
+	// a legal hostname, rather than rendering one — see the length check there,
+	// which is what keeps the two spellings interchangeable. Fixed at
+	// ContainerCreate, so a pre-existing container keeps the ID until
+	// `toolbox stop`.
+	Hostname string
+	Cmd      []string
 	// ExecCmd overrides the command run in the attached interactive exec
 	// session. When nil the exec reuses Cmd (the normal shell). Set by Plan
 	// for a worktree session (PlanInput.Worktree), which keeps the container's
@@ -336,6 +345,18 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
 	name := containerName(workspace, in.Name, in.Profile, in.Peer)
+	// The name is also the hostname, and unlike a container name a hostname is
+	// capped by the daemon, which rejects the create outright. Only the named
+	// form can overrun: ContainerNameFor budgets for MaxContainerNameLen, while
+	// MaxNamedShellNameLen budgets for the prefix alone and containerName then
+	// appends the profile name — uncapped by mountplan.NewProfile — and
+	// peerNameSuffix on top. Failing here keeps the fold injective: truncating
+	// instead would collapse `--peer` and no-`--peer` onto one name at the
+	// limit, and silently reattach a session into a shared PID namespace.
+	if len(name) > MaxContainerNameLen {
+		return nil, fmt.Errorf("container name %q is %d characters, over the %d cap: shorten the shell name or the profile name",
+			name, len(name), MaxContainerNameLen)
+	}
 	workingDir := reloadWorkingDir(mp.WorkingDir, in.ReloadFrom)
 
 	return &SessionPlan{
@@ -347,6 +368,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		PortBindings:      bindings,
 		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
+		Hostname:          name,
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
@@ -792,6 +814,9 @@ func ContainerNameFor(workspace, discriminator string) string {
 // name, derived from MaxContainerNameLen minus the named-shell prefix +
 // infix. cmd/ validators consume this so a prefix rename keeps the cap in
 // lockstep.
+// It budgets for the prefix only: containerName may still append a profile
+// name and peerNameSuffix, so a name within this cap is necessary but not
+// sufficient — Plan verifies the assembled name against MaxContainerNameLen.
 const MaxNamedShellNameLen = MaxContainerNameLen - len(ContainerNamePrefix) - len(NamedContainerNameInfix)
 
 // NamedContainerNameInfix separates the ContainerNamePrefix from the
@@ -935,10 +960,11 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // reading $PWD directly (without a getcwd fallback) see the same path
 // bash exposes after starting in WorkingDir.
 // CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX defaults to the machine
-// hostname, which inside the container is the Docker container ID — on
-// claude.ai (web/mobile) every Remote Control session would show up as
-// hex gibberish. The workspace slug (same rule as the container name)
-// gives readable session names that match `docker ps` output.
+// hostname, which inside the container is the container name (see
+// SessionPlan.Hostname) — on claude.ai (web/mobile) every Remote Control
+// session would carry the toolbox- prefix and the path hash. The workspace
+// slug alone gives readable session names, and it is the same rule the
+// container name applies, so they still match `docker ps` output.
 //
 // HERDR_SESSION names herdr's persistent session per workspace. ~/.config/herdr
 // is one host-global bind (mountplan defaults, "herdr") and herdr persists its

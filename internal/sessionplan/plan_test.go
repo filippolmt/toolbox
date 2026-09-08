@@ -81,10 +81,12 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	if named.ContainerName == plain.ContainerName {
 		t.Errorf("named and workspace container names collided: %q", named.ContainerName)
 	}
-	// Only the container name differs — and the reload marker, which is named
-	// after it on purpose: two sessions on one workspace must not share the
-	// file that says "this one asked to reload".
+	// Only the container name differs — plus its two derivatives: the hostname,
+	// a fixed alias of it, and the reload marker, named after it on purpose so
+	// two sessions on one workspace do not share the file that says "this one
+	// asked to reload".
 	named.ContainerName = plain.ContainerName
+	named.Hostname = plain.Hostname
 	named.Env = plain.Env
 	if !reflect.DeepEqual(named, plain) {
 		t.Errorf("named plan diverges beyond ContainerName:\n named=%+v\n plain=%+v", named, plain)
@@ -1057,5 +1059,92 @@ func TestEnvValue(t *testing.T) {
 		if got := sessionplan.EnvValue(env, tc.key); got != tc.want {
 			t.Errorf("EnvValue(%q) = %q, want %q", tc.key, got, tc.want)
 		}
+	}
+}
+
+// TestPlanHostnameAliasesContainerName asserts Hostname reproduces
+// ContainerName byte-for-byte for every naming form — so the terminal title
+// and the desktop notifications name the workspace instead of the Docker
+// container ID, which changes on every create. A name that could not be a
+// hostname never reaches here: Plan rejects it, per
+// TestPlanRejectsOverlongContainerName.
+func TestPlanHostnameAliasesContainerName(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+
+	for _, tc := range []struct {
+		label string
+		in    sessionplan.PlanInput
+	}{
+		{"workspace hash", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace}},
+		{"named shell", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: "web"}},
+		{"profile", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Profile: &mountplan.Profile{Name: "work"}}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			plan, err := sessionplan.Plan(tc.in)
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+			if plan.Hostname != plan.ContainerName {
+				t.Errorf("Hostname = %q, want ContainerName %q", plan.Hostname, plan.ContainerName)
+			}
+		})
+	}
+}
+
+// TestPlanRejectsOverlongContainerName asserts Plan fails when the assembled
+// name would not be a legal hostname, instead of quietly rendering one. Only
+// the named form can get there: MaxNamedShellNameLen budgets for the prefix
+// alone, and containerName appends the profile name (uncapped) and the `.peer`
+// suffix on top — so a name cmd/shell_named.go accepts can still overrun.
+// Failing keeps the fold injective, which truncating would not: at the limit
+// `--peer` and no-`--peer` would collapse onto one name and the second session
+// would silently reattach into a shared PID namespace.
+func TestPlanRejectsOverlongContainerName(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+	long := strings.Repeat("a", sessionplan.MaxNamedShellNameLen)
+
+	for _, tc := range []struct {
+		label string
+		in    sessionplan.PlanInput
+	}{
+		{"longest accepted name, peer", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Peer: true}},
+		{"longest accepted name, long profile", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Profile: &mountplan.Profile{Name: long}}},
+		{"longest accepted name, long profile, peer", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Profile: &mountplan.Profile{Name: long}, Peer: true}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			plan, err := sessionplan.Plan(tc.in)
+			if err == nil {
+				t.Fatalf("Plan accepted a %d-char name: %q", len(plan.ContainerName), plan.ContainerName)
+			}
+			// The message has to say what to shorten: the user typed a name the
+			// CLI's own validator accepted, so "too long" alone is a dead end.
+			for _, want := range []string{"shorten", "profile"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestPlanAcceptsLongestUsableNames is the boundary the previous test leaves
+// open: the same suffixes at a length that does fit must still plan, or the
+// check would have quietly narrowed what `toolbox shell <name> --peer` accepts.
+func TestPlanAcceptsLongestUsableNames(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+	fits := strings.Repeat("a", sessionplan.MaxNamedShellNameLen-len(".peer"))
+
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost,
+		Cfg: testConfig(), Workspace: workspace, Name: fits, Peer: true,
+	})
+	if err != nil {
+		t.Fatalf("Plan rejected a name that fits: %v", err)
+	}
+	if len(plan.ContainerName) != sessionplan.MaxContainerNameLen {
+		t.Errorf("ContainerName length %d, want exactly the %d cap: %q",
+			len(plan.ContainerName), sessionplan.MaxContainerNameLen, plan.ContainerName)
+	}
+	if plan.Hostname != plan.ContainerName {
+		t.Errorf("Hostname = %q, want ContainerName %q", plan.Hostname, plan.ContainerName)
 	}
 }
