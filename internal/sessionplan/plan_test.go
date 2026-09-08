@@ -1090,12 +1090,12 @@ func TestPlanHostnameAliasesContainerName(t *testing.T) {
 	}
 }
 
-// TestPlanHostnameFitsDockerCap asserts Hostname stays a legal Docker hostname
-// for every named-shell form. The container name is only bounded where it comes
-// from ContainerNameFor: the named form's own cap (MaxNamedShellNameLen) is
-// sized for a name, and containerName appends the profile and the `.peer`
-// suffix on top of it — so a name the CLI accepts can overflow the 64-byte cap
-// the daemon enforces on Config.Hostname but not on the name.
+// TestPlanHostnameFitsDockerCap asserts Hostname stays a hostname the daemon
+// accepts for every named-shell form. The container name is only bounded where
+// it comes from ContainerNameFor: the named form's own cap
+// (MaxNamedShellNameLen) is sized for a name, and containerName appends the
+// profile and the `.peer` suffix on top of it — so a name the CLI accepts can
+// overrun the cap the daemon enforces on Config.Hostname but not on the name.
 func TestPlanHostnameFitsDockerCap(t *testing.T) {
 	planHost, workspace := planWorkspace(t)
 	long := strings.Repeat("a", sessionplan.MaxNamedShellNameLen)

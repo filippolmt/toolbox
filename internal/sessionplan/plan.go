@@ -60,11 +60,13 @@ type SessionPlan struct {
 	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
-	// Hostname renders ContainerName as a legal Docker hostname: left unset,
-	// Docker defaults the container hostname to the short container ID, which
-	// changes on every create and surfaces verbatim wherever the terminal
+	// Hostname renders ContainerName as a hostname the daemon accepts: left
+	// unset, Docker defaults the container hostname to the short container ID,
+	// which changes on every create and surfaces verbatim wherever the terminal
 	// composes a title from the host. Derived by hostnameFor, never assigned
 	// independently — the name is the identity, the hostname only labels it.
+	// Fixed at ContainerCreate, so a pre-existing container keeps the ID until
+	// `toolbox stop`.
 	Hostname string
 	Cmd      []string
 	// ExecCmd overrides the command run in the attached interactive exec
@@ -282,13 +284,20 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 }
 
 // hostnameFor renders a container name as a hostname the daemon accepts. The
-// two are not interchangeable: Docker caps Config.Hostname at 64 bytes and
-// caps a container name at nothing, and while ContainerNameFor budgets for
-// MaxContainerNameLen, the named form does not — containerName appends the
-// profile name and peerNameSuffix on top of MaxNamedShellNameLen, so a name
-// cmd/shell_named.go accepts can overflow. Truncating is not injective, and
-// does not need to be: nothing reads the hostname (the container name stays
-// the identity), it only has to name the workspace in a window title.
+// two are not interchangeable: MaxContainerNameLen is a convention this
+// package applies to names, while the daemon enforces its own cap on
+// Config.Hostname and rejects the create outright when it is exceeded — and
+// the named form is unbudgeted, because containerName appends the profile
+// name and peerNameSuffix on top of MaxNamedShellNameLen, so a name
+// cmd/shell_named.go accepts can overrun what a hostname may be. Reusing
+// MaxContainerNameLen as the cut keeps the result inside the daemon's cap and
+// inside the RFC 1123 label limit at once.
+//
+// Truncating is not injective and does not need to be — the container name
+// stays the identity and nothing reads the hostname, which only has to name
+// the workspace in a window title. One collision is worth naming: a named
+// shell at the length limit renders the same hostname with and without
+// --peer, the one distinction peerNameSuffix exists to keep in the name.
 func hostnameFor(name string) string {
 	if len(name) <= MaxContainerNameLen {
 		return name

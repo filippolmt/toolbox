@@ -346,6 +346,7 @@ func TestShellContainerNaming(t *testing.T) {
 			_, restore := stubExecShell()
 			defer restore()
 
+			plan := testPlan(t, tc.workspace, nil)
 			var capturedName, capturedHostname string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
@@ -360,15 +361,17 @@ func TestShellContainerNaming(t *testing.T) {
 				},
 			}
 
-			if _, err := Shell(context.Background(), mock, testPlan(t, tc.workspace, nil)); err != nil {
+			if _, err := Shell(context.Background(), mock, plan); err != nil {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			tc.assertName(t, capturedName)
 
-			// The hostname rides the same name: left empty, Docker falls back to
-			// the short container ID, which is what the terminal title reads.
-			if capturedHostname != capturedName {
-				t.Errorf("Config.Hostname = %q, want the container name %q", capturedHostname, capturedName)
+			// This layer owes only the pass-through: left unset, Docker defaults
+			// the hostname to the short container ID, which is what the terminal
+			// title reads back. Whether the plan's hostname tracks the container
+			// name is sessionplan's invariant, asserted there.
+			if capturedHostname != plan.Hostname {
+				t.Errorf("Config.Hostname = %q, want plan.Hostname %q", capturedHostname, plan.Hostname)
 			}
 
 			// Cross-case determinism + uniqueness checks.
