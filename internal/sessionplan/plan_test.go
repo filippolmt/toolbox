@@ -81,10 +81,12 @@ func TestPlanNameDecidesContainerName(t *testing.T) {
 	if named.ContainerName == plain.ContainerName {
 		t.Errorf("named and workspace container names collided: %q", named.ContainerName)
 	}
-	// Only the container name differs — and the reload marker, which is named
-	// after it on purpose: two sessions on one workspace must not share the
-	// file that says "this one asked to reload".
+	// Only the container name differs — plus its two derivatives: the hostname,
+	// a fixed alias of it, and the reload marker, named after it on purpose so
+	// two sessions on one workspace do not share the file that says "this one
+	// asked to reload".
 	named.ContainerName = plain.ContainerName
+	named.Hostname = plain.Hostname
 	named.Env = plain.Env
 	if !reflect.DeepEqual(named, plain) {
 		t.Errorf("named plan diverges beyond ContainerName:\n named=%+v\n plain=%+v", named, plain)
@@ -1057,5 +1059,67 @@ func TestEnvValue(t *testing.T) {
 		if got := sessionplan.EnvValue(env, tc.key); got != tc.want {
 			t.Errorf("EnvValue(%q) = %q, want %q", tc.key, got, tc.want)
 		}
+	}
+}
+
+// TestPlanHostnameAliasesContainerName asserts Hostname reproduces
+// ContainerName byte-for-byte for every naming form that fits the daemon's cap
+// — so the terminal title and the desktop notifications name the workspace
+// instead of the Docker container ID, which changes on every create. The forms
+// that do not fit are TestPlanHostnameFitsDockerCap's business.
+func TestPlanHostnameAliasesContainerName(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+
+	for _, tc := range []struct {
+		label string
+		in    sessionplan.PlanInput
+	}{
+		{"workspace hash", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace}},
+		{"named shell", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: "web"}},
+		{"profile", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Profile: &mountplan.Profile{Name: "work"}}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			plan, err := sessionplan.Plan(tc.in)
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+			if plan.Hostname != plan.ContainerName {
+				t.Errorf("Hostname = %q, want ContainerName %q", plan.Hostname, plan.ContainerName)
+			}
+		})
+	}
+}
+
+// TestPlanHostnameFitsDockerCap asserts Hostname stays a legal Docker hostname
+// for every named-shell form. The container name is only bounded where it comes
+// from ContainerNameFor: the named form's own cap (MaxNamedShellNameLen) is
+// sized for a name, and containerName appends the profile and the `.peer`
+// suffix on top of it — so a name the CLI accepts can overflow the 64-byte cap
+// the daemon enforces on Config.Hostname but not on the name.
+func TestPlanHostnameFitsDockerCap(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+	long := strings.Repeat("a", sessionplan.MaxNamedShellNameLen)
+
+	for _, tc := range []struct {
+		label string
+		in    sessionplan.PlanInput
+	}{
+		{"longest accepted name, peer", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Peer: true}},
+		{"longest accepted name, long profile", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Profile: &mountplan.Profile{Name: long}}},
+		{"longest accepted name, long profile, peer", sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: workspace, Name: long, Profile: &mountplan.Profile{Name: long}, Peer: true}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			plan, err := sessionplan.Plan(tc.in)
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+			if len(plan.Hostname) > sessionplan.MaxContainerNameLen {
+				t.Errorf("Hostname length %d exceeds %d: %q", len(plan.Hostname), sessionplan.MaxContainerNameLen, plan.Hostname)
+			}
+			// A hostname may not end on a separator, which truncation can expose.
+			if trimmed := strings.TrimRight(plan.Hostname, "-."); trimmed != plan.Hostname {
+				t.Errorf("Hostname ends on a separator: %q", plan.Hostname)
+			}
+		})
 	}
 }

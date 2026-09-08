@@ -767,6 +767,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		Name: plan.ContainerName,
 		Config: &container.Config{
 			Image:        runImage.Ref,
+			Hostname:     plan.Hostname,
 			Tty:          true,
 			OpenStdin:    true,
 			Cmd:          plan.Cmd,

@@ -60,7 +60,13 @@ type SessionPlan struct {
 	PortBindings  network.PortMap
 	Env           []string
 	ContainerName string
-	Cmd           []string
+	// Hostname renders ContainerName as a legal Docker hostname: left unset,
+	// Docker defaults the container hostname to the short container ID, which
+	// changes on every create and surfaces verbatim wherever the terminal
+	// composes a title from the host. Derived by hostnameFor, never assigned
+	// independently — the name is the identity, the hostname only labels it.
+	Hostname string
+	Cmd      []string
 	// ExecCmd overrides the command run in the attached interactive exec
 	// session. When nil the exec reuses Cmd (the normal shell). Set by Plan
 	// for a worktree session (PlanInput.Worktree), which keeps the container's
@@ -275,6 +281,23 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 	return namedContainerNameFromSanitized(sanitized)
 }
 
+// hostnameFor renders a container name as a hostname the daemon accepts. The
+// two are not interchangeable: Docker caps Config.Hostname at 64 bytes and
+// caps a container name at nothing, and while ContainerNameFor budgets for
+// MaxContainerNameLen, the named form does not — containerName appends the
+// profile name and peerNameSuffix on top of MaxNamedShellNameLen, so a name
+// cmd/shell_named.go accepts can overflow. Truncating is not injective, and
+// does not need to be: nothing reads the hostname (the container name stays
+// the identity), it only has to name the workspace in a window title.
+func hostnameFor(name string) string {
+	if len(name) <= MaxContainerNameLen {
+		return name
+	}
+	// TrimRight because the cut can land on a separator, which no hostname
+	// may end on.
+	return strings.TrimRight(name[:MaxContainerNameLen], "-.")
+}
+
 // Plan walks the full session pipeline for in.Cfg + in.Workspace + in.Ports
 // and returns the resolved plan handed to container.Shell. Hard fails when
 // mount-stage validation rejects the user list, when port specs cannot
@@ -347,6 +370,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		PortBindings:      bindings,
 		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
 		ContainerName:     name,
+		Hostname:          hostnameFor(name),
 		Cmd:               cmd,
 		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
@@ -935,10 +959,11 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // reading $PWD directly (without a getcwd fallback) see the same path
 // bash exposes after starting in WorkingDir.
 // CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX defaults to the machine
-// hostname, which inside the container is the Docker container ID — on
-// claude.ai (web/mobile) every Remote Control session would show up as
-// hex gibberish. The workspace slug (same rule as the container name)
-// gives readable session names that match `docker ps` output.
+// hostname, which inside the container is the container name (see
+// SessionPlan.Hostname) — on claude.ai (web/mobile) every Remote Control
+// session would carry the toolbox- prefix and the path hash. The workspace
+// slug alone gives readable session names, and it is the same rule the
+// container name applies, so they still match `docker ps` output.
 //
 // HERDR_SESSION names herdr's persistent session per workspace. ~/.config/herdr
 // is one host-global bind (mountplan defaults, "herdr") and herdr persists its

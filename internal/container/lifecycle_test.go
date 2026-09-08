@@ -346,7 +346,7 @@ func TestShellContainerNaming(t *testing.T) {
 			_, restore := stubExecShell()
 			defer restore()
 
-			var capturedName string
+			var capturedName, capturedHostname string
 			mock := &mockClient{
 				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
 					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
@@ -354,8 +354,8 @@ func TestShellContainerNaming(t *testing.T) {
 				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
 					return client.ImageInspectResult{}, nil
 				},
-				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
-					capturedName = name
+				createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+					capturedName, capturedHostname = name, cfg.Hostname
 					return container.CreateResponse{ID: "x"}, nil
 				},
 			}
@@ -364,6 +364,12 @@ func TestShellContainerNaming(t *testing.T) {
 				t.Fatalf("Shell() error: %v", err)
 			}
 			tc.assertName(t, capturedName)
+
+			// The hostname rides the same name: left empty, Docker falls back to
+			// the short container ID, which is what the terminal title reads.
+			if capturedHostname != capturedName {
+				t.Errorf("Config.Hostname = %q, want the container name %q", capturedHostname, capturedName)
+			}
 
 			// Cross-case determinism + uniqueness checks.
 			switch tc.workspace {

@@ -25,7 +25,7 @@ The image sets:
 - `BASH_DEFAULT_TIMEOUT_MS=300000`, `BASH_MAX_TIMEOUT_MS=1200000` — 5m default / 20m ceiling (upstream 2m/10m); in-container image builds and test suites routinely exceed the upstream default.
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — opt into agent teams (experimental upstream; in-process mode needs no tmux).
 
-Host-side (not baked — set per-shell by `sessionplan.shellEnv`): `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=<workspace basename>`. The upstream default is the machine hostname, which inside the container is the Docker container ID — every Remote Control session on claude.ai web/mobile would be named hex gibberish.
+Host-side (not baked — set per-shell by `sessionplan.shellEnv`): `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=<workspace basename>`. The upstream default is the machine hostname, which inside the container is the container name (`SessionPlan.Hostname`) — every Remote Control session on claude.ai web/mobile would carry the `toolbox-` prefix and the workspace path hash.
 
 `DISABLE_TELEMETRY` is intentionally NOT set (dropped 2026-06, was part of the original lockdown): the Statsig channel doubles as feature-flag delivery, and blocking it is reported to break Remote Control entitlements and preview-feature rollouts ([anthropics/claude-code#58383](https://github.com/anthropics/claude-code/issues/58383) — community-reported, not formally documented; re-verify before re-adding the flag). It carries product analytics, not training data: the model-improvement opt-out is the claude.ai account-level privacy setting ("Help improve Claude"), and admin usage analytics ([claude.ai/analytics](https://code.claude.com/docs/en/analytics)) are collected server-side regardless of any client flag.
 
