@@ -87,7 +87,9 @@ func dockerExec(ctx context.Context, t *testing.T, cli client.APIClient, id stri
 //
 // `Peer: true` is set here on purpose and must stay explicit: the shipped
 // default is off (ADR 0013), so a gate that inherited it from the config would
-// plan an isolated session and quietly stop testing the messaging path.
+// plan an isolated session and stop testing the messaging path. The assertions
+// below still fail in that state — the risk is not a silent pass but a red
+// gate whose message points at the mechanism when the plan is what broke.
 func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, host fsx.Host) string {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{

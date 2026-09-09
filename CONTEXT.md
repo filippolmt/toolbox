@@ -1791,14 +1791,22 @@ fourth member would have copied the old pattern.
 ### Shell
 
 A toolbox container that runs a workspace: what a developer opened with
-`toolbox shell`, and the unit `toolbox list` enumerates.
+`toolbox shell`, and the unit `toolbox list` enumerates. The bare word is the
+code's own — `List` enumerates shells, `peer.go` says the anchor "is not a
+shell" — and it names the *container*, never the `shell:` config key (which
+picks the login shell binary running inside it) nor the `toolbox shell` command
+that opens one.
 
-Concretely: created by `container.createAndStart` from a Session Plan, named
-by the unexported `sessionplan.containerName` — the single place the
-`(workspace, profile, peer)` fold lives, dispatching to `ContainerNameFor`
-(workspace hash plus a profile discriminator) or, for a named shell, to the
-sanitized-name form behind `NamedContainerName`, with the `.peer` suffix added
-by the fold and not by either of them; `AutoRemove: true`, so it is gone once
+Concretely: created by `container.createAndStart` from a Session Plan, named by
+the unexported `sessionplan.containerName` — the single place the
+`(workspace, profile, peer)` fold lives, and the two branches fold the peer
+opt-in differently: a workspace shell hashes it into the seed through
+`peerDiscriminator` and carries no visible marker, a named shell takes the
+`.peer` suffix. Neither exported entry point knows about the opt-in —
+`ContainerNameFor` receives an already-folded discriminator, and the named
+branch appends the suffix before `namedContainerNameFromSanitized`, the
+sibling `NamedContainerName` fronts for callers outside the package;
+`AutoRemove: true`, so it is gone once
 the last attached terminal exits; it carries the workspace bind at
 `mountplan.WorkspaceTarget`. Every shell is a toolbox container
 (`sessionplan.IsToolboxContainerName`), but not every toolbox container is a

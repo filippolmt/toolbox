@@ -201,8 +201,8 @@ type PlanInput struct {
 	// Peer opts the session into cross-container Claude Code peer messaging:
 	// the shared inbox-socket bind (mountplan) plus the shared PID namespace
 	// (PidMode), and the opt-in folded into the container name. Resolved by
-	// cmd from `peer_messaging:` and `--peer`. Default off — asking for it
-	// takes an explicit `peer_messaging: true` or `--peer`.
+	// cmd from `peer_messaging:` and `--peer` — the default behind that
+	// resolution is config's to state, not this field's.
 	// See docs/adr/0003-cross-container-peer-messaging.md and
 	// docs/adr/0013-peer-messaging-ships-off-by-default.md.
 	Peer bool

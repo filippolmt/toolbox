@@ -142,7 +142,7 @@ reload reproduces how the session was started, it does not guess what you were
 doing.
 
 "How the session was started" includes the flags you typed. A session opened
-with `--profile work -p 7171 --peer=false` reloads with all three: `--profile`
+with `--profile work -p 7171 --peer` reloads with all three: `--profile`
 and `--peer` decide the container's name, `--profile` also decides which
 credential root is mounted, and `-p` bindings are fixed at creation — so
 dropping any of them would land you in a *different* container from the one
