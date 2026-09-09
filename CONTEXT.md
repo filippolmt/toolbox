@@ -1788,6 +1788,37 @@ they never asked for. The scripts already referenced each other in comments
 this repo collapsed before under Tool Catalog and Config Schema: unnamed, the
 fourth member would have copied the old pattern.
 
+### Shell
+
+A toolbox container that runs a workspace: what a developer opened with
+`toolbox shell`, and the unit `toolbox list` enumerates.
+
+Concretely: created by `container.createAndStart` from a Session Plan, named
+by the unexported `sessionplan.containerName` — the single place the
+`(workspace, profile, peer)` fold lives, dispatching to `ContainerNameFor`
+(workspace hash plus a profile discriminator) or, for a named shell, to the
+sanitized-name form behind `NamedContainerName`, with the `.peer` suffix added
+by the fold and not by either of them; `AutoRemove: true`, so it is gone once
+the last attached terminal exits; it carries the workspace bind at
+`mountplan.WorkspaceTarget`. Every shell is a toolbox container
+(`sessionplan.IsToolboxContainerName`), but not every toolbox container is a
+shell — the [Peer Anchor](#peer-anchor) carries the same `toolbox-` prefix and
+runs no workspace. That asymmetry is what the term buys: `StopAll` sweeps
+toolbox containers and `List` enumerates shells. The anchor is the only
+toolbox container `List` excludes by name; the throwaway
+`toolbox-cc-socks-init` carries the prefix deliberately so that a copy
+outliving its own cleanup is visible to `list` and sweepable by
+`stop --all`, so "every listed container is a shell" is not an invariant to
+pin.
+
+Why the term exists: the distinction was enforced by two functions and
+asserted by tests, and written down nowhere — so an empty `toolbox list` reads
+as "no toolbox container on this host", which is false whenever the anchor is
+up. Unnamed, the apparent inconsistency has two obvious "fixes" and both are
+wrong: listing the anchor invites a `toolbox stop` on infrastructure, and
+dropping it from `StopAll`'s prefix match leaves no command that ever removes
+it.
+
 ### Peer Anchor
 
 The toolbox-owned container whose PID namespace every peer-messaging session
@@ -1800,8 +1831,9 @@ shell-start init but **not** past tini — `tini -g -- sleep infinity`, because
 the anchor's PID 1 is PID 1 for every session that joins the namespace and
 reaping orphans is PID 1's job — `AutoRemove: false`, created lazily by
 `container.ensureAnchor` on
-the first participating shell — with `peer_messaging` defaulting to true, that
-is effectively the first shell opened (it reuses `runplan.Compute` for the same
+the first participating shell — with `peer_messaging` defaulting to false
+([ADR 0013](docs/adr/0013-peer-messaging-ships-off-by-default.md)), only a
+shell that asked for peer messaging (it reuses `runplan.Compute` for the same
 connect / start / create branch the session container takes). Participating
 sessions get `PidMode: container:toolbox-peer-anchor` plus the
 `toolbox-cc-socks` volume mounted at `/tmp/cc-socks`. It carries the

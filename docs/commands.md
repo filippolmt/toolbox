@@ -17,7 +17,7 @@ Start an interactive shell session in the toolbox container. With no argument it
 | `--oauth <tool>` | Expand a known tool's OAuth port recipe (repeatable: `cf`, `codex`, `glab`, `oci`, `sonar`, `wrangler`). |
 | `--profile <name>` | Isolate the whole `~/.toolbox/` credential + state set under a named profile (see [Profiles](#profiles)). |
 | `--share <tool,...>` | Under `--profile`, keep the named tools on the host root instead of the profile (repeatable/comma-separated). Requires `--profile`. |
-| `--peer` | Let Claude Code sessions in other toolbox containers see and message this one — on by default, `--peer=false` declines it (see [Peer messaging](#peer-messaging)). |
+| `--peer` | Let Claude Code sessions in other toolbox containers see and message this one — off by default, `--peer` asks for it for one run (see [Peer messaging](#peer-messaging)). |
 | `--create` | Auto-bootstrap a missing named shell in `~/.toolbox.yaml`. |
 | `--path <dir>` | Directory to use with `--create` (default `$HOME/toolbox-shells/<name>`). |
 
@@ -48,23 +48,23 @@ host, and the host bridge keeps working under a profile. See
 
 ### Peer messaging
 
-Cross-container Claude Code peer messaging is **on by default**, so
+Cross-container Claude Code peer messaging is **off by default**. Turned on,
 `ListAgents` / `SendMessage` reach a session running in a *different* toolbox
 container — handing a task to a session already open on another repo, without
-mounting that repo here. `--peer=false` declines it for one run; `--peer` asks
-for it back. Both are the per-run override of the
-[`peer_messaging`](configuration.md#peer_messaging) config key.
+mounting that repo here. `--peer` asks for it for one run; `--peer=false`
+declines it against a config that turns it on. Both are the per-run override of
+the [`peer_messaging`](configuration.md#peer_messaging) config key.
 
 ```bash
-toolbox shell                   # in repo A
-toolbox shell                   # in repo B — the two sessions see each other
-toolbox shell --peer=false      # in repo C — this one stays isolated
+toolbox shell --peer            # in repo A
+toolbox shell --peer            # in repo B — the two sessions see each other
+toolbox shell                   # in repo C — the default: this one stays isolated
 ```
 
 Both ends must participate: the containers join one anchor container's PID
 namespace and share the `toolbox-cc-socks` Docker volume as their socket
 directory. The shared namespace also means they can see each other's process
-table — the reason to turn it off for workspaces that must stay apart.
+table — the reason it is not the default.
 
 A participating session runs in its own container, distinct from the isolated
 one for the same directory — the setting is folded into the container name, after a `.`
@@ -204,7 +204,7 @@ Because `git worktree remove` never deletes the branch itself, `rm` and `prune` 
 
 `create`/`open` resolve a worktree by its exact git branch, and `open` fails if the worktree directory was deleted by hand (run `prune` to clear the stale registration). Like every toolbox container, mounts are fixed at creation: to change a running worktree session's mounts, `rm` and recreate it.
 
-A worktree session reads the [`peer_messaging`](configuration.md#peer_messaging) config key like any other session, so worktrees see each other and the ordinary shells by default. There is no `--peer` flag here on purpose: worktree sessions are launched in batches, and a per-invocation override would be the flag most likely to differ between two of them — leaving one session out of the namespace with nothing on screen to say so. Set the config key when you want it changed, for all of them.
+A worktree session reads the [`peer_messaging`](configuration.md#peer_messaging) config key like any other session, so worktrees see each other and the ordinary shells wherever that key turns peer messaging on. There is no `--peer` flag here on purpose: worktree sessions are launched in batches, and a per-invocation override would be the flag most likely to differ between two of them — leaving one session out of the namespace with nothing on screen to say so. Set the config key when you want it changed, for all of them.
 
 ## toolbox list
 

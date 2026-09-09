@@ -84,6 +84,10 @@ func dockerExec(ctx context.Context, t *testing.T, cli client.APIClient, id stri
 // aliasing step, and without a second copy of the canonical ref outside
 // internal/imageref.DefaultRegistryImage. Empty falls back to the canonical ref
 // for a local run.
+//
+// `Peer: true` is set here on purpose and must stay explicit: the shipped
+// default is off (ADR 0013), so a gate that inherited it from the config would
+// plan an isolated session and quietly stop testing the messaging path.
 func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, host fsx.Host) string {
 	t.Helper()
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{

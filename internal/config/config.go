@@ -117,11 +117,13 @@ type Config struct {
 	// messaging (`ListAgents` / `SendMessage`): opted-in containers join one
 	// toolbox-owned PID namespace and share the `toolbox-cc-socks` Docker
 	// volume as their inbox-socket directory, which is what makes peers both
-	// discoverable and reachable. Default true — messaging between sessions is the useful
-	// default, and the shared namespace is scoped to toolbox's own anchor.
-	// Opt out with `peer_messaging: false`, or per session with
-	// `toolbox shell --peer=false`.
-	// See docs/adr/0003-cross-container-peer-messaging.md.
+	// discoverable and reachable. Default false — the shared namespace lets
+	// participating containers read each other's process table, a cost no
+	// workspace should pay unasked for a feature it does not use.
+	// Opt in with `peer_messaging: true`, or per session with
+	// `toolbox shell --peer`.
+	// See docs/adr/0003-cross-container-peer-messaging.md and
+	// docs/adr/0013-peer-messaging-ships-off-by-default.md.
 	PeerMessaging bool `mapstructure:"peer_messaging"`
 	// SDD opts the workspace into one or more Spec-Driven-Development skill
 	// packs (gsd, bmad, openspec, ...) installed repo-locally on every

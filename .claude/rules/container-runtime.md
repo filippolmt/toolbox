@@ -35,7 +35,7 @@ paths:
 
 ### Opt-in and what it does
 
-(`peer_messaging:` / `toolbox shell --peer`, default ON — the default is seeded in `config.Merge` (governed by [config.md](config.md)) via `seedEnvBoundKeys`, the only place a plain bool can tell "absent" from "explicitly false"; declining is `peer_messaging: false` / `--peer=false`): makes Claude Code `ListAgents`/`SendMessage` reach a session in ANOTHER toolbox container.
+(`peer_messaging:` / `toolbox shell --peer`, default OFF per [ADR 0013](../../docs/adr/0013-peer-messaging-ships-off-by-default.md) — the default is seeded in `config.Merge` (governed by [config.md](config.md)) via `seedEnvBoundKeys`, which is what makes the key env-resolvable; opting in is `peer_messaging: true` / `--peer`): makes Claude Code `ListAgents`/`SendMessage` reach a session in ANOTHER toolbox container.
 
 ### Three conditions
 
