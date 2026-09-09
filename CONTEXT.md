@@ -1477,7 +1477,8 @@ The daemon↔shim wire contract: the container-side paths and state filenames
 the shell shim (`internal/build/assets/bin/bridge-lib.sh`) uses to reach the
 host bridge daemon, and the Go constants the daemon writes them from
 (`internal/bridge/paths.go`: `ContainerDir`, `LegacyContainerDir`,
-`ContainerSocket`, `tokenFile`, `portFile`).
+`ContainerSocket`, `tokenFile`, `portFile`). Nothing here is a Docker
+bridge network — that reading belongs to [Session Network](#session-network).
 
 Concretely: the contract is two artifacts in two languages linked by one test.
 `TestBridgeContract_ShimMatchesGo` (`internal/bridge/paths_test.go`) reads the
@@ -1870,6 +1871,39 @@ anchor exists precisely because no session can play that role. Unnamed, the
 next reader sees an odd extra container in `docker ps` and the obvious
 "simplification" is to point `PidMode` at one of the shells, which breaks the
 moment that shell exits.
+
+### Session Network
+
+The Docker network a [Shell](#shell) joins — the developer's choice when the
+one the daemon would hand it owns a subnet that collides with a route the host
+already routes elsewhere. Decided in
+[ADR 0014](docs/adr/0014-the-session-network-is-the-developers-to-choose.md).
+
+**Not a [Bridge](#bridge-contract).** In this repo that word names the
+host↔shim forwarding daemon and never a Docker bridge network, and the
+collision is the reason this term exists rather than being left to prose:
+without it, "the container is on the bridge" reads two ways, one of them wrong.
+
+Concretely: a `network:` config key, with `toolbox shell --network <name>` as
+the per-run override, sets `HostConfig.NetworkMode`; absent, the daemon's own
+default applies and nothing about a session changes. The name folds into the
+container name's **hash seed** — the way `peerDiscriminator` folds the peer
+opt-in for a workspace shell, hashed and never visible — because `HostConfig`
+is fixed at `ContainerCreate` and a network the plan no longer asks for must
+not be reattachable. Free text cannot be made injective in a basename the way
+`.peer`'s separator is, so it is not put there. Toolbox joins the network and
+never creates it: a missing one is refused with the `docker network create
+--subnet=…` to run, because the subnet has to dodge routes toolbox cannot
+see and on macOS cannot reach.
+
+Why the term exists: the failure it answers is invisible from inside the
+container. A name resolves, a connection hangs, and minutes later a timeout
+arrives with nothing that says "another local network holds this address" —
+so the concept has to be named where the choice is made, or the next reader
+meets it as a broken `git push`. Naming it after the *session* rather than
+after the fix ("VPN workaround", "custom network") also keeps it honest about
+scope: it selects the network one shell joins, and says nothing about the
+routing that happens once the packet has left.
 
 ### Rule Pointer
 
