@@ -150,8 +150,10 @@ var keyDescriptors = map[string]keyDescriptor{
 	"image_reclaim":      {mutator: boolFromChoice},
 	// peer_messaging is a plain bool, not a tri-state: the pointer is always
 	// non-nil, so the editor shows true/false and never "auto". Choosing
-	// "unset" removes the key, which reads back as true (the default seeded
-	// in config.Merge) — the same value as true, written the shorter way.
+	// "unset" removes the key from THIS scope, so it reads back as whatever
+	// the layer below resolves to — the seeded false (config.Merge) when no
+	// layer sets it, but a global `true` when the repo scope is the one
+	// cleared. Writing false explicitly is the way to mean false.
 	"peer_messaging": {mutator: boolFromChoice},
 	"env": {
 		mutator: func(e *editor, _ *config.Config) configedit.Mutator {

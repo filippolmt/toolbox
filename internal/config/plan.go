@@ -174,11 +174,10 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 // seeded nor bound: non-nil must mean "the user wrote it". Explicit env name:
 // SetEnvPrefix runs later in Merge, and BindEnv with a single argument captures
 // the prefix at call time. `peer_messaging` is seeded with its real shipped
-// value (true) rather than a zero: it is a plain bool, so the seed is the only
-// place "absent" and "explicitly false" can be told apart — the file layers are
-// merged as raw maps before a single Unmarshal, so a written `peer_messaging:
-// false` still wins over the default. Seeding it also makes it env-resolvable,
-// which is why it belongs in EnvBoundKeys. Derived from EnvBoundKeys so the
+// value (false, ADR 0013): the seed is what puts the key in viper's set and so
+// makes it env-resolvable, which is why it belongs in EnvBoundKeys — the value
+// itself now matches the zero, and a written `peer_messaging: true` at either
+// file layer still wins over it. Derived from EnvBoundKeys so the
 // env-resolvable set has a single source of truth (the same set configui
 // consults for env provenance).
 func seedEnvBoundKeys(vp *viper.Viper) {
@@ -187,7 +186,7 @@ func seedEnvBoundKeys(vp *viper.Viper) {
 		case "bridge":
 			_ = vp.BindEnv(k, envVarName(k))
 		case "peer_messaging":
-			vp.SetDefault(k, true)
+			vp.SetDefault(k, false)
 		default:
 			vp.SetDefault(k, "")
 		}

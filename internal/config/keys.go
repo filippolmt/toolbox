@@ -310,15 +310,15 @@ var keyRows = []Key{
 		Kind:    KindBool,
 		Editor:  EditorTri,
 		Summary: "Let Claude Code sessions in different toolbox containers see and message each other (shared PID namespace + socket dir).",
-		Default: "true (on)",
+		Default: "false (off)",
 		Example: "# peer_messaging — let Claude Code sessions in DIFFERENT toolbox containers\n" +
 			"# see and message each other (ListAgents / SendMessage). Participating\n" +
 			"# containers join one toolbox-owned PID namespace, which also means they\n" +
 			"# see each other's process table, and share a toolbox-owned Docker volume\n" +
-			"# (toolbox-cc-socks) as their socket dir. Default TRUE: set false to keep\n" +
-			"# every workspace isolated. Per-session override:\n" +
-			"# `toolbox shell --peer=false`.\n" +
-			"# peer_messaging: false\n",
+			"# (toolbox-cc-socks) as their socket dir. Default FALSE: every workspace\n" +
+			"# stays isolated until you ask. Per-session override:\n" +
+			"# `toolbox shell --peer`.\n" +
+			"# peer_messaging: true\n",
 		Tri: func(c *Config) *bool { return &c.PeerMessaging },
 	},
 	{

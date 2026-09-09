@@ -1,6 +1,8 @@
 # Cross-Container Peer Messaging: share a PID namespace through a toolbox-owned anchor
 
-Status: accepted
+Status: accepted — the **on by default** half is superseded by
+[ADR 0013](0013-peer-messaging-ships-off-by-default.md), which ships the
+setting off and leaves everything the machinery below builds untouched.
 
 Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
 
