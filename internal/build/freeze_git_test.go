@@ -23,6 +23,17 @@ const freezeGitDest = "/usr/local/bin/freeze-git"
 
 // gitIn runs a git command in dir with a fixed identity and clock, so nothing
 // the harness itself creates carries the test's wall time.
+//
+// It also pins auto-maintenance off, which is what keeps a `.git` digest
+// stable enough to compare at all: `git commit` (and `clone`, and `fetch`)
+// spawns `git maintenance run --auto` in the background, and that child takes
+// `objects/maintenance.lock` inside the very tree treeDigest walks — before it
+// decides no task has anything to do. So the lock's mere existence, or its
+// removal mid-walk, was enough to fail a comparison of the tree before and
+// after a freeze-git run, in two directions: `lstat objects/maintenance.lock:
+// no such file or directory` from the walk, and a digest change blamed on
+// freeze-git having "walked up". The knobs go in the environment, not on the
+// command line, so the spawned child inherits them by construction.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -31,6 +42,9 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 		"GIT_AUTHOR_DATE=@1000000000 +0000", "GIT_COMMITTER_DATE=@1000000000 +0000",
+		"GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false",
+		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
