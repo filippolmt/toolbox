@@ -15,7 +15,11 @@ FULL  := $(IMAGE):$(TAG)
 CACHE_REF := $(IMAGE):buildcache-main
 
 # Go toolchain runs inside a container so Go is not required on the host.
-# A named Docker volume caches the module + build cache across runs.
+# A named Docker volume caches the module + build cache across runs: /go is the
+# GOPATH (module cache in /go/pkg/mod) and GO_CACHE_ENV puts the compile and
+# lint caches inside the same volume. Without that they would default to paths
+# under the image's /root, which every --rm target throws away — they have to
+# live in the volume or they do not live at all.
 #
 # GO_VERSION is the Go toolchain the *runtime image* is built with: the
 # `toolchain` directive in go.mod (Renovate-bumped by default), falling back to
@@ -63,9 +67,19 @@ GO_MOD_VOL      := toolbox-gomod
 HOST_SRC        := $(if $(and $(TOOLBOX_HOST_WORKSPACE),$(filter /workspace%,$(CURDIR))),$(TOOLBOX_HOST_WORKSPACE)$(patsubst /workspace%,%,$(CURDIR)),$(CURDIR))
 
 # Shared docker-run fragments. Every Go-side target reuses GO_MOUNT and
-# GO_BUILD_ENV; CGO is off by default (race detector opt-in adds it back).
+# GO_CACHE_ENV; the toolchain targets add GO_BUILD_ENV on top (the linter runs
+# a different image and must not inherit GOFLAGS=-mod=mod, which would let a
+# lint run rewrite go.mod). CGO is off by default (race detector opt-in adds it
+# back).
+#
+# GO_CACHE_ENV is what keeps the compile caches inside the volume: every target
+# runs --rm, so a cache left at the image's default under /root is discarded
+# the moment the container exits. GOCACHE covers `go build`/`go test` and the
+# type-checking golangci-lint does; GOLANGCI_LINT_CACHE covers the linter's own
+# analysis cache, which is the larger half of a repeat `make go-lint`.
 GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
-GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false"
+GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-cache
+GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
 .PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links update-skills
@@ -151,13 +165,16 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 # golangci-lint left in the volume's /go/bin would shadow the image's own binary
 # (and can be a wrong-arch build → `exec: no such file`).
 go-lint: ## Run golangci-lint inside a container
-	docker run --rm $(GO_MOUNT) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
+	docker run --rm $(GO_MOUNT) $(GO_CACHE_ENV) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
 
 go-check: go-test go-lint ## Quick Go gate: run the test suite then the linter (covers the CI test + lint jobs; run `make test` too when the change touches the image)
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash
 
+# Discards everything the volume holds: the module cache and, since GO_CACHE_ENV
+# points them inside it, the Go build cache and the golangci-lint analysis cache
+# — so the next target recompiles and re-analyses from zero.
 go-clean-cache: ## Remove the shared Go module/build cache volume
 	docker volume rm $(GO_MOD_VOL) 2>/dev/null || true
 
