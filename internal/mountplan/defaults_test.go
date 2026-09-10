@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 35 {
-		t.Fatalf("expected 35 default mounts, got %d", len(mounts))
+	if len(mounts) != 40 {
+		t.Fatalf("expected 40 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -81,6 +81,23 @@ func TestDefaults(t *testing.T) {
 	// herdr config + state (sessions, plugins): read-write, create-if-missing.
 	assertMount(t, mounts, "~/.toolbox/herdr/config", false, true)
 	assertMount(t, mounts, "~/.toolbox/herdr/state", false, true)
+
+	// Tool Cache binds (ADR 0015): one per tool, each rw + create-if-missing
+	// and each disablable by name. The targets are pinned because they are
+	// where the tools themselves put their cache — a wrong target persists an
+	// empty directory and the cache is silently lost on every recreate.
+	assertMount(t, mounts, "~/.toolbox/go-build", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/go-build", "/home/toolbox/.cache/go-build")
+	assertMount(t, mounts, "~/.toolbox/golangci-cache", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/golangci-cache", "/home/toolbox/.cache/golangci-lint")
+	// Distinct from the "uv" data mount above: cache and data are two things.
+	assertMount(t, mounts, "~/.toolbox/uv-cache", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/uv-cache", "/home/toolbox/.cache/uv")
+	// npm is the odd one out: its cache is ~/.npm, not under XDG_CACHE_HOME.
+	assertMount(t, mounts, "~/.toolbox/npm-cache", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/npm-cache", "/home/toolbox/.npm")
+	assertMount(t, mounts, "~/.toolbox/pip-cache", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/pip-cache", "/home/toolbox/.cache/pip")
 
 	// ssh + git config follow the host via symlinks, not copies. ssh stays
 	// read-only (host private keys); gitconfig is read-write so `git config`
