@@ -155,6 +155,10 @@ func defaults() []config.Mount {
 		// without root and persistent across container recreations. The prefix
 		// itself is wired via NPM_CONFIG_PREFIX + PATH in the Dockerfile.
 		{Name: "npm-global", Source: "~/.toolbox/npm-global", Target: "/home/toolbox/.npm-global", ReadOnly: false, CreateIfMissing: true},
+		// npm's download cache (_cacache). Not under XDG_CACHE_HOME — npm
+		// hardcodes ~/.npm — so the npm-global bind above does not cover it and
+		// every recreate re-downloads every tarball. Tool Cache (ADR 0015).
+		{Name: "npm-cache", Source: "~/.toolbox/npm-cache", Target: "/home/toolbox/.npm", ReadOnly: false, CreateIfMissing: true},
 		// bun state — install cache + global packages + per-user bin (~/.bun/bin).
 		// `bun add -g <pkg>` writes here; without this bind, every `toolbox stop`
 		// wipes the global package set and re-downloads the install cache.
@@ -174,6 +178,14 @@ func defaults() []config.Mount {
 		// regenerable download cache like playwright-cache, not a system-package
 		// hierarchy — `rm -rf ~/.toolbox/uv/python` reclaims it.
 		{Name: "uv", Source: "~/.toolbox/uv", Target: "/home/toolbox/.local/share/uv", ReadOnly: false, CreateIfMissing: true},
+		// uv's download cache, deliberately a separate name from the "uv" data
+		// root above: XDG splits data from cache and uv follows it, so the two
+		// live in different places and are disablable independently.
+		{Name: "uv-cache", Source: "~/.toolbox/uv-cache", Target: "/home/toolbox/.cache/uv", ReadOnly: false, CreateIfMissing: true},
+		// pip's wheel cache. The image's Python is EXTERNALLY-MANAGED (PEP 668),
+		// so pip only runs inside a virtualenv here — this bind pays off for
+		// venv work and is inert otherwise.
+		{Name: "pip-cache", Source: "~/.toolbox/pip-cache", Target: "/home/toolbox/.cache/pip", ReadOnly: false, CreateIfMissing: true},
 		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
 		// to /home/toolbox/go inside the container; this bind-mount persists
 		// the module cache (`pkg/mod`) and `go install` binaries (`bin/`)
@@ -184,6 +196,21 @@ func defaults() []config.Mount {
 		// PATH augmentation for ~/go/bin IS wired in the Dockerfile, beside the
 		// npm-global PATH entry — without it the binaries persist unreachable.
 		{Name: "go", Source: "~/.toolbox/go", Target: "/home/toolbox/go", ReadOnly: false, CreateIfMissing: true},
+		// Go's build cache. The "go" bind above is GOPATH and carries the module
+		// cache with it; GOCACHE follows XDG and lands outside, so without this
+		// bind every recreate recompiles the standard library and every
+		// dependency from zero. The most expensive of the Tool Cache binds to
+		// lose, and the one a virtiofs bind serves worst — see ADR 0015 for the
+		// measurement and for why it is still a bind and not a volume.
+		{Name: "go-build", Source: "~/.toolbox/go-build", Target: "/home/toolbox/.cache/go-build", ReadOnly: false, CreateIfMissing: true},
+		// golangci-lint's analysis cache. The odd one out: golangci-lint is not
+		// a bundled CLI (no catalog row, no Dockerfile layer) and the repo's own
+		// `make go-lint` runs it in a separate image that never sees these
+		// binds — so this row pays off only for a linter a session installed
+		// itself with `go install`, which lands in the "go" bind above and is
+		// then on PATH. Named -cache for the same reason as uv-cache: the name
+		// has to say which half of the tool's state it carries.
+		{Name: "golangci-cache", Source: "~/.toolbox/golangci-cache", Target: "/home/toolbox/.cache/golangci-lint", ReadOnly: false, CreateIfMissing: true},
 		// herdr (agent multiplexer TUI) follows XDG and splits durable state across
 		// ~/.config/herdr and ~/.local/state/herdr, so both bind sources nest
 		// under a single ~/.toolbox/herdr/ root on the host (flat layout, rtk

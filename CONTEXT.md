@@ -37,6 +37,35 @@ spread across `internal/config` (defaults + merge + root retarget),
 others; tests stubbed each in isolation and bugs hid in the handoffs.
 The "Mount Plan" name turns one fragmented walk into one deep module.
 
+### Tool Cache
+
+The rebuildable half of a tool's state: content it can regenerate from the
+network or from the CPU, kept only so it does not have to. Distinct from the
+tool's **data directory**, which carries state that cannot be rebuilt —
+installed binaries, credentials, a store the tool treats as authoritative.
+_Avoid_: "cache dir" for both halves at once; the whole point of the term is
+that they are two.
+
+Concretely: XDG splits them (`XDG_CACHE_HOME` against `XDG_DATA_HOME`) and
+several tools do not, placing the cache inside the data directory instead. The
+[Mount Plan](#mount-plan) defaults must therefore name both halves per tool
+rather than one path per tool: a tool whose cache sits under its data directory
+is covered by that tool's existing default, and a tool that follows XDG needs
+its own row, because nothing under `~/.cache` is mounted as a directory. Each
+row is a separate bind under `~/.toolbox` with its own name, so it can be
+disabled, retargeted by `mounts_root`, and deleted by hand — the reason the
+shape is a bind and not a volume is recorded in
+[ADR 0015](docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md). Owned by
+`internal/mountplan`; the cache rows carry a `-cache` suffix wherever the tool
+also has a data row, and `mountplan.Defaults()` is the list.
+
+Why the term exists: without it the defaults encoded a rule nobody had decided
+— *a tool keeps whatever it stores next to its data* — and the tools that
+followed the XDG convention were the ones punished for it, silently, once per
+container recreate. Naming the cache half separately is what makes the omission
+visible when the next tool is added: the question "where does its Tool Cache
+live" has an answer that is checkable, where "is this tool persisted" did not.
+
 ### Config Schema
 
 The single source of truth for "which config fields exist":
