@@ -453,14 +453,26 @@ RUN set -eux; \
 # Docker CLI standalone. No upstream .sha256 — T-01-08 accepted risk
 # (HTTPS + version pin only).
 FROM fetch-base AS fetch-docker
+ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG DOCKER_CLI_VERSION
-RUN set -eux; \
+# Per-stage apt cache id — see fetch-bun.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-docker \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=fetch-apt-lists-docker \
+    set -eux; \
       case "${TARGETARCH}" in amd64) DOCKER_ARCH=x86_64;; arm64) DOCKER_ARCH=aarch64;; *) DOCKER_ARCH=${TARGETARCH};; esac; \
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/docker.tgz \
         "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz"; \
       tar -xzf /tmp/docker.tgz -C /out/usr/local/bin --strip-components=1 docker/docker; \
       rm /tmp/docker.tgz; \
+      # The only one of the shipped binaries upstream leaves unstripped: a third
+      # of it is a symbol table nothing in the image reads. Go keeps panic
+      # file:line in pclntab, which strip does not touch. binutils is installed
+      # here and not in fetch-base on purpose — every fetch stage derives from
+      # fetch-base, so a package added there moves all of them (ADR 0002).
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends binutils; \
+      strip --strip-unneeded /out/usr/local/bin/docker; \
       /out/usr/local/bin/docker --version; \
       /out/usr/local/bin/docker completion zsh > /out/usr/share/zsh/vendor-completions/_docker; \
       freeze-mtimes
@@ -989,6 +1001,15 @@ RUN set -eux; \
 # dep is chosen by platform at install time. The npm meta-package is a thin shim
 # and that platform package carries the bundled runtime + compiled library, so the
 # weight prune stays scoped to the shim — never the package holding the binary.
+#
+# That platform package vendors its own Node next to the library, and the image
+# already ships one from this very base image — two full Node runtimes for one
+# major. The vendored copy is replaced by a symlink to the image's `node`, which
+# is what the shim would have found anyway had it not been told to prefer the
+# bundle. The major is asserted first and the build fails on a divergence, so an
+# upstream bump past this base image's Node is a red build, never a silent swap
+# onto an older runtime. The link is absolute: it resolves in-stage (same base
+# image) and in the final image, which is what the re-run `--version` proves.
 FROM node:24-bookworm-slim AS fetch-codegraph
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
@@ -1002,6 +1023,15 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +; \
+      vendored_count=0; \
+      for vendored in $(find /out/usr/local/lib/node_modules/@colbymchenry \
+                          -type f -name node -perm -u+x); do \
+        test "$("${vendored}" --version | cut -d. -f1)" = "$(node --version | cut -d. -f1)"; \
+        ln -sf /usr/local/bin/node "${vendored}"; \
+        vendored_count=$((vendored_count + 1)); \
+      done; \
+      test "${vendored_count}" -gt 0; \
+      /out/usr/local/bin/codegraph --version; \
       freeze-mtimes
 
 # OCI CLI. No upstream binary release, so it stays a pip install — but into its
@@ -1030,6 +1060,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
       python3 -m venv /opt/oci-cli; \
       /opt/oci-cli/bin/pip install --timeout 300 --retries 5 "oci-cli==${OCI_VERSION}"; \
       /opt/oci-cli/bin/oci --version; \
+      # The installer is not the installed thing: nothing in the image re-resolves
+      # this venv, so pip and its build-time company are dead weight the moment the
+      # install returns. `oci` imports neither (checked: no pkg_resources import in
+      # oci_cli, oci or services), and the two commands below prove the venv still
+      # runs without them — a plain `--version` would not, it never reaches a
+      # subcommand tree.
+      SP=$(echo /opt/oci-cli/lib/python3.*/site-packages); \
+      test -d "${SP}/pip"; \
+      rm -rf "${SP}"/pip "${SP}"/pip-*.dist-info \
+             "${SP}"/setuptools "${SP}"/setuptools-*.dist-info \
+             "${SP}"/pkg_resources "${SP}"/_distutils_hack \
+             "${SP}"/distutils-precedence.pth \
+             /opt/oci-cli/bin/pip /opt/oci-cli/bin/pip3 /opt/oci-cli/bin/pip3.*; \
+      /opt/oci-cli/bin/oci --help >/dev/null; \
+      /opt/oci-cli/bin/oci os ns get --help >/dev/null; \
+      # Last, because every `oci` invocation above writes bytecode back into the
+      # venv and this stage runs as root, so it can. Purge after the final run or
+      # the copy below ships it.
       find /opt/oci-cli -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
       mkdir -p /out/opt /out/usr/local/bin; \
       cp -a /opt/oci-cli /out/opt/oci-cli; \
@@ -1234,11 +1282,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       apt-get update -qqy; \
       apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
       az --version; \
-      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
       # Strip headless-useless stdlib (IDE, turtle, GUI, pydoc).
       for d in idlelib turtledemo tkinter pydoc_data; do \
         rm -rf /opt/az/lib/python*/$d; \
-      done;
+      done; \
+      # And the toolchain for building C extensions against az's bundled Python:
+      # headers, the static libpython (shipped twice, once under lib/ and once
+      # under the config dir) and the Makefile/config tree they go with. Nothing
+      # in this image compiles against that interpreter. `az extension add` is
+      # unaffected — it installs wheels through az's own pip, which stays.
+      rm -rf /opt/az/include \
+             /opt/az/lib/libpython*.a \
+             /opt/az/lib/python*/config-*; \
+      az version >/dev/null; \
+      az storage blob --help >/dev/null; \
+      # Last: every `az` above writes bytecode back into /opt/az, and this layer
+      # runs as root, so it can. Purge after the final invocation or the layer
+      # ships it.
+      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
 # ~/.toolbox/playwright-cache bind.
