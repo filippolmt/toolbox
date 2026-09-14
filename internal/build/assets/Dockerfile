@@ -465,8 +465,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-d
         "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz"; \
       tar -xzf /tmp/docker.tgz -C /out/usr/local/bin --strip-components=1 docker/docker; \
       rm /tmp/docker.tgz; \
-      # The only one of the shipped binaries upstream leaves unstripped: a third
-      # of it is a symbol table nothing in the image reads. Go keeps panic
+      # The survey behind ADR 0016 found upstream ships almost every large
+      # binary in this image already stripped. This is the one exception that
+      # can be acted on: a third of it is a symbol table nothing in the image
+      # reads, and the strip happens in the stage that fetched it, before the
+      # COPY --link. (The other unstripped one, the base image's own node, is
+      # in a layer this build did not create — stripping it there would copy
+      # the binary up and make the image bigger. ADR 0016.) Go keeps panic
       # file:line in pclntab, which strip does not touch. binutils is installed
       # here and not in fetch-base on purpose — every fetch stage derives from
       # fetch-base, so a package added there moves all of them (ADR 0002).
@@ -1066,7 +1071,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
       # oci_cli, oci or services), and the two commands below prove the venv still
       # runs without them — a plain `--version` would not, it never reaches a
       # subcommand tree.
-      SP=$(echo /opt/oci-cli/lib/python3.*/site-packages); \
+      SP=$(/opt/oci-cli/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])'); \
       test -d "${SP}/pip"; \
       rm -rf "${SP}"/pip "${SP}"/pip-*.dist-info \
              "${SP}"/setuptools "${SP}"/setuptools-*.dist-info \
@@ -1075,9 +1080,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
              /opt/oci-cli/bin/pip /opt/oci-cli/bin/pip3 /opt/oci-cli/bin/pip3.*; \
       /opt/oci-cli/bin/oci --help >/dev/null; \
       /opt/oci-cli/bin/oci os ns get --help >/dev/null; \
-      # Last, because every `oci` invocation above writes bytecode back into the
-      # venv and this stage runs as root, so it can. Purge after the final run or
-      # the copy below ships it.
+      # Below every `oci` above, never between them: why, and the test that holds
+      # it, are in .claude/rules/image-build.md ("Delete only from the layer that
+      # created the bytes").
       find /opt/oci-cli -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
       mkdir -p /out/opt /out/usr/local/bin; \
       cp -a /opt/oci-cli /out/opt/oci-cli; \
@@ -1296,9 +1301,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
              /opt/az/lib/python*/config-*; \
       az version >/dev/null; \
       az storage blob --help >/dev/null; \
-      # Last: every `az` above writes bytecode back into /opt/az, and this layer
-      # runs as root, so it can. Purge after the final invocation or the layer
-      # ships it.
+      # Below every `az` above, never between them: why, and the test that holds
+      # it, are in .claude/rules/image-build.md ("Delete only from the layer that
+      # created the bytes").
       find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into

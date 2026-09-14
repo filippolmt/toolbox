@@ -137,17 +137,17 @@ jobs:
           # never race the same manifest. The `merge` job assembles the digests
           # into the tagged manifest list.
           #
-          # zstd -19 over the default gzip -6: measured on this image, 1.256 GB ->
-          # 0.997 GB of pull, -20.6%, for ~42 s of export per leg — and a
-          # decompression side several times faster, which is the half that runs on
-          # every pull rather than once per publish. force-compression is required,
-          # not optional: without it a layer restored from cache keeps whatever
-          # compression it was stored with and the image ships half gzip, half
-          # zstd. Cost of the switch: zstd layers need Docker Engine >= 23 or a
-          # containerd-backed runtime, and the first publish re-encodes all 70
-          # layers, so it trips the Invalidation Floor gate once and wants
-          # [floor-reset] in its commit message. Figures and the level curve in
-          # docs/adr/0016-image-size-two-denominators.md.
+          # zstd replaces BuildKit's default gzip on the published blobs: a
+          # markedly smaller pull, and a decompression side several times faster
+          # — the half that runs on every pull rather than once per publish.
+          # force-compression is required, not an optimisation: without it a
+          # layer restored from the cache keeps whatever compression it was
+          # stored with and the image ships half gzip, half zstd. Cost of the
+          # switch: zstd layers need a recent Docker Engine or a containerd-backed
+          # runtime, and the publish that first re-encodes the layers trips the
+          # Invalidation Floor gate, so it wants [floor-reset] in its commit
+          # message. Figures, the level curve and the client-compatibility
+          # decision: docs/adr/0016-image-size-two-denominators.md.
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true,compression=zstd,compression-level=19,force-compression=true
           # SLSA build provenance + SPDX SBOM attached as OCI attestations at the
           # per-arch build; `imagetools create` carries them onto the merged
@@ -157,8 +157,14 @@ jobs:
           sbom: true
           # The authoritative store, and now the only one: mode=max keeps every
           # intermediate fetch-stage layer, which is what PR builds read.
+          #
+          # The cache carries the same encoding as the output above, and that is
+          # what makes `force-compression` a one-off rather than a per-publish
+          # tax: leave the cache on gzip and every restored layer is re-encoded
+          # again on the way out, every single run. Same encoding on both sides
+          # and a restored layer is already in its published form.
           cache-from: type=registry,ref=${{ inputs.cache_ref }}
-          cache-to: type=registry,ref=${{ inputs.cache_ref }},mode=max
+          cache-to: type=registry,ref=${{ inputs.cache_ref }},mode=max,compression=zstd,compression-level=19,force-compression=true
 
       # Fan-in via digest artifacts (Docker's documented multi-runner pattern):
       # matrix job outputs are last-writer-wins across legs and would clobber

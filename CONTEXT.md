@@ -1244,6 +1244,66 @@ of the stage behind it. Two stages did not hold up their end, and the gap
 had no name because the ADR that introduced the ordering had only
 measured mtimes.
 
+### Size Denominator
+
+Which of the image's two sizes a change is about: **pull**, the sum of
+the compressed layer blobs in the published manifest, or **disk**, the
+sum of the uncompressed layer sizes. They are different numbers by a
+wide margin, and a lever that is large in one can be negligible in the
+other.
+
+Concretely: a tree of Python source compresses roughly an order of
+magnitude, an opaque binary two to three times. The three cloud CLIs are
+therefore most of the image on disk and a small fraction of what a cold
+pull transfers, while the large single binaries are the reverse. Deleting
+a megabyte of Python and deleting a megabyte of binary are not the same
+decision, and ranking a size backlog by disk saved ranks it by the wrong
+number. The encoding of the blobs is a third case: changing it moves the
+pull denominator and nothing else, because no file in the image changes.
+
+The sibling of [Invalidation Floor](#invalidation-floor): the floor is
+what a change costs in layers *moved*, this is what it costs in bytes
+*weighed*, and ADR 0002 and ADR 0016 optimise them with opposite
+reflexes — many small independent layers against few dense ones.
+
+Why the term exists: "the image is too big" was two claims wearing one
+word, and the measurements answering it disagreed with each other until
+each one said which number it meant. The rule that follows — **a size
+claim names its denominator, or it is not a claim** — is the one thing
+ADR 0016 asks a reader to carry out of it. The figures live in
+`docs/adr/0016-image-size-two-denominators.md` and are dated there; this
+entry defines the term, not the measurement.
+
+### Creating Layer
+
+The layer that first wrote a file, and the only one where deleting or
+shrinking that file makes the image smaller.
+
+An overlay filesystem cannot remove bytes that a layer beneath it
+already shipped. A `rm` in a higher layer records a whiteout and the
+original stays underneath, so the image gains an entry and loses
+nothing; a `strip` is worse, because it copies the whole binary up in
+its shrunken form and the image now carries both copies. The rule that
+follows: every weight cut belongs in the stage that produced the bytes —
+which is why the one binary in this image worth stripping is stripped in
+its own `fetch-*` stage, before the `COPY --link`, and why the identical
+cut against the base image's own interpreter is a net increase rather
+than a saving.
+
+Its corollary is about ordering rather than placement, and is the half
+that actually regressed: a verification command run *after* a cleanup
+puts back what the cleanup removed, in the same layer, invisibly. Both
+venv layers run their CLI as root to prove the install survived the cut,
+and every such run writes bytecode back into the tree — so the purge is
+the last thing in the RUN, below the checks. Held by
+`TestPycachePurgeFollowsTheLastCLIRun`.
+
+Why the term exists: a whiteout is a familiar fact about overlay
+filesystems and was still not enough to stop a proposal to strip a
+binary from a base image — the arithmetic only becomes obvious once the
+layer that created a file has a name separate from the layer a command
+happens to run in. → ADR 0016
+
 ### Declared Docker Surface
 
 Every module that talks to the Docker daemon declares, unexported in its
