@@ -128,7 +128,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 
 ### [internals/image-build.md](internals/image-build.md)
 
-- [Build layout: parallel fetch stages + frequency-ordered tail](internals/image-build.md#build-layout-parallel-fetch-stages--frequency-ordered-tail)
+- [Build layout: parallel fetch stages + an empty tail](internals/image-build.md#build-layout-parallel-fetch-stages--an-empty-tail)
 - [Host UID mapping](internals/image-build.md#host-uid-mapping)
 - [SSH host-key trust](internals/image-build.md#ssh-host-key-trust)
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
