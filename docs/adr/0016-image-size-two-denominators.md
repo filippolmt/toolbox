@@ -137,6 +137,16 @@ merged:
    with, and the image ships half gzip, half zstd. The cost is that the **first**
    publish re-encodes all 70 layers, so it trips the Invalidation Floor gate once
    and wants `[floor-reset]` in that commit message — deliberately, once.
+
+   "Once" is a property of the configuration, not of `force-compression`: the
+   same three attributes go on the step's `cache-to:` as on its `outputs:`. Leave
+   the cache exporter on the default gzip and every restored layer comes back in
+   the wrong encoding on every run, so `force-compression` re-encodes the whole
+   image on each publish — ~42 s per leg, forever, instead of once. With the two
+   sides agreeing, a restored layer is already in its published form and there is
+   nothing to re-encode. The Invalidation Floor gate still trips exactly once,
+   because `zstd -19` is deterministic and the second publish reproduces the first
+   publish's blobs.
 3. **Level is a build-time cost.** Measured on a 950 MB tar of this image's own
    content (`/opt/az` + `@openai` + `/usr/lib/<triple>`), one core:
 
