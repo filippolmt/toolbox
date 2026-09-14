@@ -30,7 +30,11 @@ Two orderings there are load-bearing: `oci` above `graphifyy` (the two pip insta
 
 ### Moving a tool out of the tail
 
-Sorting cannot make a tool near the top of the tail cheap, so when a tool's cadence outgrows its depth the fix is to move it OUT: `oci` and `codegraph` now live in their own `fetch-*` stages, where a bump costs one `--link` layer whatever its position (`fetch-codegraph` must use the same node image as the final stage; `fetch-oci` installs into a venv at `/opt/oci-cli`, which also ends the shared-site-packages coupling with graphifyy). What still exceeds the bound: playwright-cli, cf, azure, playwright, pyright, typescript — same treatment applies.
+Sorting cannot make a tool near the top of the tail cheap, so when a tool's cadence outgrows its depth the fix is to move it OUT: `oci`, `codegraph`, `azure`, `codex` and `wrangler` live in their own `fetch-*` stages, where a bump costs one `--link` layer whatever its position (`fetch-codegraph`/`fetch-codex`/`fetch-wrangler` must use the same node image as the final stage — an npm global tree is only valid on the runtime that resolved it; `fetch-oci` installs into a venv at `/opt/oci-cli`, which also ends the shared-site-packages coupling with graphifyy). Still in the tail: playwright, cf, claude-code, graphify, pyright, typescript, playwright-cli — same treatment applies.
+
+**There are two reasons to move a tool out, and the second is the bigger one.** Cadence is the first: a bump of a tool near the top of the tail rebuilds everything below it. **Archive Drift is the second**: every tail RUN is parent-chained below the unpinned base apt layer, so an archive update moves the whole tail, for nothing anyone edited — ADR 0002 measured 587 MB of 639 on a one-line bump. A tool in a fetch stage moves only when its own `/out` bytes change. Rank candidates by **bytes × drift frequency**, not by total size.
+
+**An apt package a moved tool needs goes in the base apt layer** (`COPY --link` carries files, not dpkg state) — that layer is rebuilt on every drift anyway, so it is free. Only for a **static** package set: a version-derived one (`playwright install-deps chromium` computes ~109 packages from the installed playwright) must not be frozen there without a test asserting the list, or a bump ships a browser that will not start with a green build. That guard is why `playwright` has not moved.
 
 ### Gate baseline
 

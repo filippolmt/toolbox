@@ -1084,6 +1084,109 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
       ln -s /opt/oci-cli/bin/oci /out/usr/local/bin/oci; \
       freeze-mtimes
 
+# The three heaviest tail RUNs, moved out — ADR 0002 follow-up 2, which named
+# the direction and left it undone: "with the tail emptied, an archive update
+# moves the base layer and little else". Emptying the tail is not about total
+# size at all. A tail RUN is parent-chained below the unpinned apt layer, so an
+# Archive Drift moves it whole, every time, for nothing anyone edited; a
+# `COPY --link` from a fetch stage moves only when its own `/out` bytes change.
+# These three carried 857 MB of that chain between them. Everything below is
+# the pattern fetch-codegraph already established: same node base image as the
+# final stage (an npm global tree is only valid on the runtime that resolved
+# it), `--prefix /out/usr/local`, the verification run through `/out`, the
+# weight prune scoped to the installed tree, `freeze-mtimes` last.
+#
+# What did NOT move, and why: `playwright`. Its tail RUN calls
+# `playwright install-deps chromium`, whose package set is computed from the
+# installed playwright version — 109 packages on a bare bookworm, and a bump
+# can change it. Freezing that list into the base apt layer without a guard
+# fails the way this repo has been burned before: exit 0, a browser that will
+# not start. It needs the list extracted in-stage and asserted against the apt
+# layer by a test, and that is its own change. → CONTEXT.md "Archive Drift"
+
+# Azure CLI. Self-contained under /opt/az (own interpreter), so the stage copies
+# that tree plus the three files the deb puts outside it. Telemetry is off here
+# for the build, not for the user: its subprocess races the __pycache__ cleanup
+# on qemu arm64. The runtime knob of the same name lives below the tail.
+FROM fetch-base AS fetch-azure
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG AZURE_CLI_VERSION
+ENV AZURE_CORE_COLLECT_TELEMETRY=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-azure \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=fetch-apt-lists-azure \
+    set -eux; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends gnupg; \
+      install -d -m 0755 /etc/apt/keyrings; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 https://packages.microsoft.com/keys/microsoft.asc \
+        | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
+      echo "deb [arch=${TARGETARCH} signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bookworm main" \
+        > /etc/apt/sources.list.d/azure-cli.list; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
+      az --version; \
+      # Strip headless-useless stdlib (IDE, turtle, GUI, pydoc).
+      for d in idlelib turtledemo tkinter pydoc_data; do \
+        rm -rf /opt/az/lib/python*/$d; \
+      done; \
+      # And the toolchain for building C extensions against az's bundled Python:
+      # headers, the static libpython (shipped twice, once under lib/ and once
+      # under the config dir) and the Makefile/config tree they go with. Nothing
+      # in this image compiles against that interpreter. `az extension add` is
+      # unaffected — it installs wheels through az's own pip, which stays.
+      rm -rf /opt/az/include \
+             /opt/az/lib/libpython*.a \
+             /opt/az/lib/python*/config-*; \
+      az version >/dev/null; \
+      az storage blob --help >/dev/null; \
+      # Last: every `az` above writes bytecode back into /opt/az, and this stage
+      # runs as root, so it can. Purge after the final invocation or the copy
+      # below ships it.
+      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true; \
+      mkdir -p /out/opt /out/usr/bin /out/etc/bash_completion.d; \
+      cp -a /opt/az /out/opt/az; \
+      cp -a /usr/bin/az /out/usr/bin/az; \
+      cp -a /etc/bash_completion.d/azure-cli /out/etc/bash_completion.d/azure-cli; \
+      freeze-mtimes
+
+# OpenAI Codex CLI. `bubblewrap`, which its in-tool sandbox needs, is a dpkg
+# install and cannot ride a COPY — it lives in the base apt layer instead.
+FROM node:24-bookworm-slim AS fetch-codex
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG CODEX_CLI_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local /out/usr/share/zsh/vendor-completions; \
+      npm install -g --prefix /out/usr/local "@openai/codex@${CODEX_CLI_VERSION}"; \
+      /out/usr/local/bin/codex --version; \
+      /out/usr/local/bin/codex completion zsh > /out/usr/share/zsh/vendor-completions/_codex; \
+      find /out/usr/local/lib/node_modules/@openai \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      freeze-mtimes
+
+# Cloudflare Wrangler (primary Workers CLI). State under ~/.config/.wrangler/
+# via xdg-app-paths(".wrangler"). OAuth callback is static localhost:8976 —
+# use `toolbox shell -B -p 8976:8976`. The metrics knob lives below the tail.
+FROM node:24-bookworm-slim AS fetch-wrangler
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG WRANGLER_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local; \
+      npm install -g --prefix /out/usr/local "wrangler@${WRANGLER_VERSION}"; \
+      /out/usr/local/bin/wrangler --version; \
+      find /out/usr/local/lib/node_modules/wrangler \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      freeze-mtimes
+
 FROM node:24-bookworm-slim
 # Pipes in RUN fail the build when any segment fails (hadolint DL4006).
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -1108,6 +1211,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV DO_NOT_TRACK=1
 
 # Base apt deps. `rm -f docker-clean` keeps BuildKit cache mount populated.
+#
+# This layer is the one thing an Archive Drift always moves (its `apt-get
+# install` is deliberately unpinned, and `TestFinalStageFirstRUNHasNoVersionARG`
+# holds it first), so it is also the cheapest place to put an apt package a
+# fetch stage cannot install for itself: a `COPY --link` carries files, not
+# dpkg state. `bubblewrap` is here for that reason — `fetch-codex` builds the
+# CLI but codex's in-tool sandbox needs the binary in the final rootfs, and
+# adding it to a layer that is rebuilt on every drift anyway costs nothing.
+# Anything moved here must be a package whose set is *static*; a dynamic,
+# version-derived dependency set (playwright's, notably) needs a guard before
+# it can follow. → ADR 0002 follow-up 2, CONTEXT.md "Archive Drift"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     set -eux; \
@@ -1115,6 +1229,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     apt-get update -qqy; \
     apt-get install -qqy --no-install-recommends \
       bind9-dnsutils \
+      bubblewrap \
       ca-certificates \
       curl \
       file \
@@ -1267,39 +1382,6 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
-# Azure CLI from MS apt repo. AZURE_CORE_COLLECT_TELEMETRY=false also stops
-# the telemetry subprocess that races with __pycache__ cleanup on qemu arm64.
-ENV AZURE_CORE_COLLECT_TELEMETRY=false
-ARG AZURE_CLI_VERSION
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
-    set -eux; \
-      install -d -m 0755 /etc/apt/keyrings; \
-      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg; \
-      echo "deb [arch=${TARGETARCH} signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bookworm main" \
-        > /etc/apt/sources.list.d/azure-cli.list; \
-      apt-get update -qqy; \
-      apt-get install -qqy --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~bookworm"; \
-      az --version; \
-      # Strip headless-useless stdlib (IDE, turtle, GUI, pydoc).
-      for d in idlelib turtledemo tkinter pydoc_data; do \
-        rm -rf /opt/az/lib/python*/$d; \
-      done; \
-      # And the toolchain for building C extensions against az's bundled Python:
-      # headers, the static libpython (shipped twice, once under lib/ and once
-      # under the config dir) and the Makefile/config tree they go with. Nothing
-      # in this image compiles against that interpreter. `az extension add` is
-      # unaffected — it installs wheels through az's own pip, which stays.
-      rm -rf /opt/az/include \
-             /opt/az/lib/libpython*.a \
-             /opt/az/lib/python*/config-*; \
-      az version >/dev/null; \
-      az storage blob --help >/dev/null; \
-      # Last: every `az` above writes bytecode back into /opt/az, and this layer
-      # runs as root, so it can. Purge after the final invocation or the layer
-      # ships it.
-      find /opt/az -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true;
 # Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
 # WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
 # ~/.toolbox/playwright-cache bind.
@@ -1368,21 +1450,6 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +; \
       test -s /usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md;
-# OpenAI Codex CLI. bubblewrap required for its in-tool sandbox.
-ARG CODEX_CLI_VERSION
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
-    --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      apt-get update -qqy; \
-      apt-get install -qqy --no-install-recommends bubblewrap; \
-      npm install -g "@openai/codex@${CODEX_CLI_VERSION}"; \
-      codex --version; \
-      codex completion zsh > /usr/share/zsh/vendor-completions/_codex; \
-      find /usr/local/lib/node_modules/@openai \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
 # pnpm via corepack. Cache mount on COREPACK_HOME so the pnpm tarball is
 # served from cache across this layer's frequent rebuilds (36 bumps/6mo).
 ARG PNPM_VERSION
@@ -1392,19 +1459,6 @@ RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
       corepack prepare pnpm@${PNPM_VERSION} --activate; \
       pnpm --version; \
       pnpm completion zsh > /usr/share/zsh/vendor-completions/_pnpm;
-# Cloudflare Wrangler (primary Workers CLI). State under
-# ~/.config/.wrangler/ via xdg-app-paths(".wrangler"). OAuth callback is
-# static localhost:8976 — use `toolbox shell -B -p 8976:8976`.
-ENV WRANGLER_SEND_METRICS=false
-ARG WRANGLER_VERSION
-RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g "wrangler@${WRANGLER_VERSION}"; \
-      wrangler --version; \
-      find /usr/local/lib/node_modules/wrangler \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
 # Claude Code CLI. Runtime env knobs live AFTER the RUN tail (see the
 # "Claude Code env knobs" ENV block below): none of them affect the install,
 # and ENV-before-RUN would bust this layer's cache on every knob tweak.
@@ -1729,6 +1783,15 @@ RUN set -eux; \
     ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-manager-core; \
     ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-libsecret
 ENV BROWSER=xdg-open
+# Runtime knobs for two tools whose install now lives in a fetch stage. They sit
+# here, below the tail, for the reason the Claude Code block already states: an
+# ENV declared above a RUN busts that layer's cache on every knob tweak, and
+# neither of these affects an install that no longer happens in this stage.
+# AZURE_CORE_COLLECT_TELEMETRY is set a second time inside fetch-azure, where it
+# does a different job — silencing the telemetry subprocess that races the
+# __pycache__ cleanup on qemu arm64 at build time.
+ENV AZURE_CORE_COLLECT_TELEMETRY=false \
+    WRANGLER_SEND_METRICS=false
 
 # Fetched tools land here, BELOW the whole RUN tail. `COPY --link` builds each
 # layer independently of the filesystem beneath it, so position does not change
@@ -1771,6 +1834,9 @@ COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /
 COPY --link --from=fetch-codegraph /out/ /
 COPY --link --from=fetch-oci      /out/ /
+COPY --link --from=fetch-azure    /out/ /
+COPY --link --from=fetch-codex    /out/ /
+COPY --link --from=fetch-wrangler /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
 # Copies the tree, not the file: a single-file COPY makes BuildKit synthesise
 # /usr/local/bin, and those directories are stamped with the build's wall clock

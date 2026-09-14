@@ -29,6 +29,29 @@ waits for on a cold pull while looking modest on disk.
 
 So: **a size claim names its denominator, or it is not a claim.**
 
+### The third denominator, which this ADR itself missed
+
+Cold pull and disk are what a *new* machine pays. What a *returning* developer
+pays is neither: it is the **bytes a bump moves**, and that number has its own
+name in this repo already — [Archive Drift](../../CONTEXT.md#archive-drift), and
+the gate in `.github/scripts/invalidation-floor.sh` that counts it. The final
+stage's `apt-get install` is deliberately unpinned, every tail RUN is
+parent-chained below it, and so a Debian archive update moves the whole tail for
+nothing anyone edited. ADR 0002 measured one: **587 MB of 639 moved** on a bump
+whose only edit was a one-line `GCLOUD_VERSION`.
+
+That is the number that hurts in daily use, and it is the one this ADR spent its
+whole first draft not measuring — the exact error its own opening line warns
+against. Total size and moved size rank the same change differently: the three
+cloud CLIs are 23% of the disk and 11% of the cold pull, but `/opt/az` alone was
+329 MB of *every drift* until it moved out of the tail. Nothing in the Decisions
+below is wrong; they were simply aimed at the two denominators a first-time
+puller pays, and a returning one pays a third.
+
+The remedy is not in this ADR. ADR 0002's follow-up 2 already named it — "with
+the tail emptied, an archive update moves the base layer and little else" — and
+emptying the tail is tracked there, not here.
+
 ## Where the weight is
 
 Uncompressed, the image divides into three roughly equal thirds:
@@ -264,15 +287,40 @@ and any other "compile the Python down" proposal.
 ## New technology surveyed, and why it is not here
 
 - **`zstd:chunked` / eStargz / SOCI (lazy pulling).** The genuinely new answer to
-  "the image is 1.3 GB": don't transfer it. These formats embed a TOC in the blob
+  "the image is 1 GB": don't transfer it. These formats embed a TOC in the blob
   (or alongside it) so a container starts on the handful of files it needs and
-  fetches the rest on demand. For a 6 GB dev image the effect on `toolbox shell`
-  cold start would be larger than every lever in the table above combined.
-  Rejected for one reason: they need a **snapshotter on the client**
-  (stargz-snapshotter, or containerd with the zstd:chunked support), and this
-  image's audience is Docker Desktop, which ships neither. Revisit when Docker
-  Desktop's containerd image store enables it by default — the format work is
-  already merged upstream, the client side is what is missing.
+  fetches the rest on demand. For a dev image this size the effect on
+  `toolbox shell` cold start would be larger than every lever in the table above
+  combined. **Not usable here, and the gap is wider than "not enabled yet".**
+
+  Each needs a **snapshotter on the client**, and Docker Desktop offers no
+  supported way to install one. eStargz wants the `containerd-stargz-grpc`
+  daemon, a `proxy_plugins` entry in *containerd's* own config, FUSE, and a
+  `daemon.json` storage-driver switch — a Linux/systemd-only procedure, per
+  [stargz-snapshotter's INSTALL.md](https://github.com/containerd/stargz-snapshotter/blob/main/docs/INSTALL.md).
+  `zstd:chunked` has **no Docker implementation at all**: it is the
+  containers/storage stack — Podman, CRI-O, Buildah
+  ([Red Hat](https://www.redhat.com/en/blog/faster-container-image-pulls)).
+  SOCI needs `soci-snapshotter-grpc` as a containerd proxy plugin plus a
+  separately built index, and is driven through `nerdctl`; its home is AWS
+  Fargate/ECS.
+
+  **The containerd image store is not the feature.** It is the default in Docker
+  Desktop and on fresh Docker Engine installs, and Docker's own wording is
+  careful — it is "a prerequisite for unlocking … support for using containerd
+  snapshotters … such as stargz for lazy-pulling"
+  ([docs](https://docs.docker.com/desktop/features/containerd/)). What it
+  delivers today is multi-platform images, attestations and Wasm. No lazy pull.
+
+  **One citation to distrust.** stargz-snapshotter's own
+  [integration.md](https://github.com/containerd/stargz-snapshotter/blob/main/docs/integration.md)
+  says Docker Desktop's containerd image store "uses stargz-snapshotter". That
+  line is from 2022, is contradicted by the same repository's README, and is the
+  source of most second-hand claims that Desktop has lazy pulling. It does not.
+  Check Desktop's release notes before believing any successor to that claim.
+
+  Revisit only on a Docker announcement that names a snapshotter, not on one that
+  names containerd.
 - **`slim` (ex `docker-slim`).** Traces a running container and rebuilds the image
   from the files actually touched. It is designed for single-purpose service
   images; a dev shell's whole point is that the next command is unpredictable, so
