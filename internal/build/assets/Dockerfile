@@ -1401,7 +1401,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
       pip install --break-system-packages --root /out \
         --timeout 300 --retries 5 \
         "graphifyy[sql]==${GRAPHIFY_VERSION}"; \
-      PYTHONPATH="$(echo /out/usr/local/lib/python3.*/dist-packages)"; \
+      # The glob is the only way to name the interpreter's own minor here, so \
+      # it is expanded where a second match can be caught: `echo` would have \
+      # joined two of them into one path that exists nowhere, and the three \
+      # checks below would then fail for a reason that has nothing to do with \
+      # the install. \
+      set -- /out/usr/local/lib/python3.*/dist-packages; \
+      test "$#" -eq 1; \
+      test -d "$1"; \
+      PYTHONPATH="$1"; \
       export PYTHONPATH; \
       # No `--version` subcommand; `--help` is the smoke check. \
       python3 /out/usr/local/bin/graphify --help >/dev/null; \
