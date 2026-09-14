@@ -21,10 +21,13 @@
 set -euo pipefail
 
 # Calibration lives here rather than in the workflow, so there is one literal to
-# change instead of two. 6 is the bounded cost of the fifth-most-bumped tool in
-# the frequency-ordered tail; the coverage arithmetic, and why a scalar bound
-# cannot do better, are in ADR 0002's second follow-up. An env override still
-# wins, which is what lets the loop below be exercised at another bound.
+# change instead of two. 6 was the bounded cost of the fifth-most-bumped tool in
+# what was then a frequency-ordered tail of thirteen installs; the coverage
+# arithmetic, and why a scalar bound cannot do better, are in ADR 0002's second
+# follow-up. That tail is now empty and a bump moves one `--link` layer, so the
+# bound has slack rather than a denominator — lower it only with a measurement.
+# An env override still wins, which is what lets the loop below be exercised at
+# another bound.
 MAX_LAYERS="${MAX_LAYERS:-6}"
 MIN_BYTES="${MIN_BYTES:-1048576}"
 ARCH="${ARCH:-amd64}"

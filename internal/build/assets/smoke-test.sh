@@ -440,6 +440,27 @@ _pw_skill_check() {
     echo "install --skills populated SKILL.md + ${n} references in CWD"
 }
 
+# The chromium apt deps are frozen as a literal list in the base apt layer of
+# the Dockerfile, but the set playwright needs is derived from the playwright
+# version — a Renovate bump can move it with no edit there. A missing lib does
+# not fail the build: it ships a browser that will not start, behind a green
+# pipeline. So ask playwright whether the set is complete. --dry-run exits 0 and
+# says so when it is; anything else means the list has drifted and must be
+# re-derived (the Dockerfile comment records how). No single quotes, apostrophes
+# included — this body lives inside a single-quoted bash -c.
+_pw_deps_check() {
+    local out first
+    out=$(playwright install-deps --dry-run chromium 2>&1)
+    first=$(printf "%s" "$out" | head -1)
+    case "$out" in
+        *"All system dependencies are installed"*)
+            echo "install-deps --dry-run: chromium dep set complete" ;;
+        *)
+            echo "install-deps --dry-run reports: ${first}"
+            return 1 ;;
+    esac
+}
+
 check_required "node"       node --version
 check_required "npm"        npm --version
 # NODE_OPTIONS=--dns-result-order=ipv4first must make a localhost listen bind
@@ -538,7 +559,7 @@ check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
 # Wrapper strips image-wide DO_NOT_TRACK for claude only (Statsig feature
-# flags / Remote Control) — see the claude install layer in the Dockerfile.
+# flags / Remote Control) — see the fetch-claude-code stage in the Dockerfile.
 # NB: no nested sh -c and no single quotes — the whole script body lives
 # inside a single-quoted bash -c (see header comment above check_zsh).
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
@@ -548,6 +569,7 @@ check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
 check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
+check_optional  "playwright deps" playwright _pw_deps_check
 check_optional  "playwright-cli" playwright-cli playwright-cli --version
 check_optional  "playwright-cli skill install" playwright-cli _pw_skill_check
 check_optional  "uv"        uv       uv --version

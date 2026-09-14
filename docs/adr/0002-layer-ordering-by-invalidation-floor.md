@@ -496,3 +496,71 @@ three layers move on every cache miss regardless of ordering.
 Three changes, in this order: the measure, then the tail, then the
 reproducibility. The measure comes first because the other two have no honest
 signal to be judged by until it does.
+
+## Follow-up 4 (2026-09-14): the tail is empty, and what that was worth
+
+Follow-up 2 named the way out and left it undone — *"the way out is fewer
+substantial layers in the tail — moving npm/pip installs into `fetch-*` stages
+where each bump costs one `--link` layer"* — and follow-up 3 measured why it
+mattered more than the ordering ever could: of 639 MB moved by a one-line
+`GCLOUD_VERSION` bump, **587 MB was Archive Drift**, the unpinned apt layer
+taking every tail RUN with it. Ordering cannot touch that. Emptying the tail can.
+
+It is done. All thirteen tail installs are in `fetch-*` stages; `pnpm` is the
+only one left, because corepack materialises it into a cache keyed on the node
+runtime rather than into a prefix a `COPY` could carry.
+
+Measured as **apt layer + the RUN chain below it** — what a drift actually
+transfers, which is neither the total image size nor the chain on its own:
+
+| | apt layer | RUN chain below it | drift transfer |
+|---|---|---|---|
+| before | 269 MB | 1889 MB (18 RUNs) | **2158 MB** |
+| after `azure`, `codex`, `wrangler`, `playwright` | 530 MB | 727 MB (12 RUNs) | **1257 MB** |
+| after `cf`, `claude-code`, `graphify`, `pyright`, `typescript`, `playwright-cli` | 530 MB | 27 MB (8 RUNs) | **557 MB** |
+
+**−74%.** Total image size does not move at all (4.50 GB both sides): the bytes
+did not leave, they moved from RUN layers a drift rebuilds into `COPY --link`
+layers that move only when their own `/out` changes. That is the whole point,
+and it is why the denominator has to be named — ADR 0016 opens on exactly this
+and then spends its first draft measuring the two a *first-time* puller pays.
+
+Three things this cost, all of them worth writing down:
+
+- **The apt layer nearly doubled**, 269 → 530 MB. `playwright install-deps
+  chromium` is an apt operation, so it could not ride a `COPY --link`; its 19
+  named packages moved up into the base apt layer instead. Those bytes still
+  move on every drift. Playwright was therefore worth **21 MB of drift, not the
+  282 MB the chain-below-apt figure suggests** — a reading this ADR got wrong
+  once before publishing it. Moving it was still right, for the other axis: a
+  `PLAYWRIGHT_VERSION` bump no longer rebuilds every RUN below it.
+- **The version-derived package set needed a guard first.** That set is computed
+  from the installed playwright version, so a Renovate bump can change it with
+  no edit in the Dockerfile, and a missing lib ships a browser that will not
+  start behind a green build. `smoke-test.sh` asks `install-deps --dry-run` of
+  the finished image and fails unless playwright reports the set complete. It
+  lives in the smoke test and not the build because **a tail RUN must never read
+  a copied file** — that is what drags a COPY back above the tail.
+- **One `[floor-reset]`.** Moving ten substantial layers from RUN to COPY is a
+  real one-time push to every puller, and the gate counts it correctly. It is
+  suppressed once, deliberately, the same way the mtime freeze and the zstd
+  re-encode were.
+
+**What the gate is now for.** `MAX_LAYERS` = 6 was calibrated as the bounded cost
+of the fifth-most-bumped tool in a thirteen-deep ordered tail. That denominator
+is gone: a fetch-stage bump moves one layer whatever its position, so the bound
+now has slack rather than a meaning. It keeps its job — catching a structural
+regression, which follow-up 1 measured at 16-31 layers — and loses its
+calibration. Do not tighten it on the strength of a quiet month; the one thing
+that would legitimately push a publish over it is the same one that always
+would, a change to the layer structure itself.
+
+**What holds it.** The ordering rules this ADR wrote are retired, not merely
+unused, and two tests replace them:
+`TestFinalStageInstallsNothingFromAPackageRegistry` (no npm or pip install may
+return to the final stage) and `TestNodeStagesShareOneBaseImage` (the node image
+is named once, as the `node-base` stage — an npm global tree is only valid on
+the runtime that resolved it, and pip's `dist-packages` destination is derived
+from the interpreter's own minor version; both diverge silently).
+`TestFinalStageARGsScopedToTheirRUN` stays, because it binds whatever lands back
+in the final stage, not the tail it was written for.
