@@ -60,10 +60,14 @@ For GitHub releases, `gh release view --json tagName,assets -R <owner>/<repo>` g
 
 Add the version pin in the global `ARG` block at the top (before the first `FROM` — global ARGs are re-declared bare inside the consuming stage), keeping the existing groupings intact.
 
-Where the install goes depends on the source type — see [build-layout](../../../docs/internals/image-build.md#build-layout-parallel-fetch-stages--frequency-ordered-tail):
+Where the install goes depends on the source type — see [build-layout](../../../docs/internals/image-build.md#build-layout-parallel-fetch-stages--an-empty-tail):
 
 - **Static binary / tarball / relocatable bundle** → new `FROM fetch-base AS fetch-<tool>` stage next to its analogs, artefacts under `/out` mirroring the final filesystem, plus one `COPY --link --from=fetch-<tool> /out/ /` line in the final stage's COPY block. Fetch stages run in parallel and re-run independently on version bumps.
-- **npm / pip / apt installs** (need the final stage's node/python/dpkg) → final-stage `RUN` layer, **placed by Renovate bump frequency**: rarely-bumped near the top of the RUN tail (azure/oci area), frequently-bumped near the end (claude/graphify area, before the completions precompute). Place it deliberately, not at the end of the file.
+- **npm install** → new `FROM node-base AS fetch-<tool>` stage, `npm install -g --prefix /out/usr/local`, verify by running the binary **through `/out`**, `prune-node-weight` the installed tree, `freeze-mtimes` last, plus the COPY line. Copy `fetch-codex` or `fetch-cf`. `node-base` is the one place the node image is named, and deriving from it is not style: an npm global tree is only valid on the runtime that resolved it. `TestNodeStagesShareOneBaseImage` refuses a second spelling.
+- **pip install** → same shape and the same base, `pip install --break-system-packages --root /out` (copy `fetch-graphify`) — same reason one layer down, since `dist-packages` is a path derived from the interpreter's own minor version. A venv under `/opt/<tool>` is the alternative when the tool wants isolation (copy `fetch-oci`). The `__pycache__` purge is the **last** statement — every verification run writes bytecode back.
+- **apt install** → the only case that has to stay in the final stage, because `COPY --link` carries files, not dpkg state. Add the package to the base apt layer, which an Archive Drift rebuilds anyway, so the bytes ride free. A *version-derived* package set needs a guard in `smoke-test.sh` first — see the playwright case in `.claude/rules/image-build.md`.
+
+**Do not add a RUN to the final stage's tail.** It is deliberately empty of tool installs: a tail RUN is parent-chained below the unpinned apt layer, so every Debian archive update re-pushes it to every puller.
 
 New fetch stages use this template:
 

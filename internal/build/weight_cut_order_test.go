@@ -92,10 +92,10 @@ func commandsIn(line string) []string {
 // someone says which commands reach it — the same shape as stageWideARGs, and
 // for the same reason.
 var pycacheOwners = map[string][]string{
-	"/out/opt/google-cloud-sdk": {"gcloud", "gsutil", "bq", "gke-gcloud-auth-plugin"},
-	"/opt/oci-cli":              {"oci"},
-	"/opt/az":                   {"az"},
-	"/usr/local/lib/python*":    {"python3", "pip", "graphify"},
+	"/out/opt/google-cloud-sdk":  {"gcloud", "gsutil", "bq", "gke-gcloud-auth-plugin"},
+	"/opt/oci-cli":               {"oci"},
+	"/opt/az":                    {"az"},
+	"/out/usr/local/lib/python*": {"python3", "pip", "graphify"},
 }
 
 var pycachePurgeRE = regexp.MustCompile(`find (\S+) -type d -name __pycache__`)
