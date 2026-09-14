@@ -1169,6 +1169,26 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
         -prune -exec rm -rf {} +; \
       freeze-mtimes
 
+# Playwright. Only the npm package: the browser is fetched on demand at runtime
+# into the ~/.toolbox/playwright-cache bind (init.d/40-playwright-cli.sh), and
+# Chromium's apt deps are in the base apt layer — see the note there for why
+# they cannot ride this COPY and what guards the list. Firefox/WebKit deps are
+# still skipped; opt in at runtime.
+FROM node:24-bookworm-slim AS fetch-playwright
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-base /usr/local/bin/freeze-mtimes /usr/local/bin/freeze-mtimes
+ARG PLAYWRIGHT_VERSION
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    set -eux; \
+      mkdir -p /out/usr/local; \
+      npm install -g --prefix /out/usr/local "playwright@${PLAYWRIGHT_VERSION}"; \
+      /out/usr/local/bin/playwright --version; \
+      find /out/usr/local/lib/node_modules/playwright \
+        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
+        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
+        -prune -exec rm -rf {} +; \
+      freeze-mtimes
+
 # Cloudflare Wrangler (primary Workers CLI). State under ~/.config/.wrangler/
 # via xdg-app-paths(".wrangler"). OAuth callback is static localhost:8976 —
 # use `toolbox shell -B -p 8976:8976`. The metrics knob lives below the tail.
@@ -1257,6 +1277,45 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       unzip \
       vim-tiny \
       wget; \
+    # Chromium's runtime dependencies, which `playwright install-deps chromium`
+    # used to install from a tail RUN. They are here rather than in
+    # fetch-playwright because a `COPY --link` carries files, not dpkg state,
+    # and here they ride a layer an Archive Drift rebuilds anyway.
+    #
+    # This is the 19 packages playwright asks for, NOT the 109 apt resolves them
+    # to — the transitives are apt's job and pinning them would break on a Debian
+    # rename. Derived by asking playwright on a bare bookworm
+    # (`playwright install-deps --dry-run chromium`) and subtracting everything
+    # that is a dependency of something else in the set. Verified identical on
+    # amd64 and arm64.
+    #
+    # The set is version-derived, so it can move under a Renovate bump with no
+    # edit here, and a missing lib shows up as a browser that will not start —
+    # exit 0, green build. What catches that is `playwright deps` in
+    # smoke-test.sh, which runs `install-deps --dry-run chromium` against the
+    # finished image and fails unless playwright itself reports the set
+    # complete. **Do not edit this list without re-deriving it**, and do not
+    # drop that check.
+    apt-get install -qqy --no-install-recommends \
+      fonts-freefont-ttf \
+      fonts-ipafont-gothic \
+      fonts-liberation \
+      fonts-noto-color-emoji \
+      fonts-tlwg-loma-otf \
+      fonts-unifont \
+      fonts-wqy-zenhei \
+      libasound2 \
+      libatk-bridge2.0-0 \
+      libcairo2 \
+      libcups2 \
+      libgbm1 \
+      libnss3 \
+      libpango-1.0-0 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxkbcommon0 \
+      xfonts-scalable \
+      xvfb; \
     # vim-tiny is sourced as /etc/vim/vimrc.tiny when invoked as `vi`, and that
     # file sets `compatible` — which leaves arrow keys unmapped in insert mode
     # (they emit literal A/B/C/D) and backspace unable to delete past the insert
@@ -1316,11 +1375,16 @@ ENV PATH="/home/toolbox/.bun/bin:${PATH}"
 # graphify above pnpm/claude-code to spare its expensive pip+gcc layer, on the
 # then-current reading of 25 bumps/6mo. Re-measured it is 100 — the most bumped
 # tool in the tail — so it belongs last, and the inversion cost more than it
-# saved. Two orderings here ARE load-bearing: oci above graphify, so the two pip
-# installs keep resolving shared dependencies in the same order (the build
-# verifies graphify BEFORE installing oci, so an inversion ships broken on a
-# green build), and playwright above playwright-cli. Both fall out of the
-# cadence order anyway. Figures and the cost formula: ADR 0002, follow-up 2.
+# saved. **No ordering in this tail is load-bearing any more.** Two were: oci
+# above graphify, so the two pip installs kept resolving shared dependencies in
+# the same order, and playwright above playwright-cli. Both were couplings
+# between two tail RUNs sharing one global tree, and both ended when the first
+# of each pair moved into a fetch stage — oci into its own venv at /opt/oci-cli,
+# playwright into fetch-playwright, whose COPY lands below the whole tail. What
+# still holds the second pair honest is the functional check in smoke-test.sh
+# (`playwright-cli skill install`), which is what proved the inversion harmless
+# rather than an argument. Order by cadence alone; figures and the cost formula:
+# ADR 0002, follow-up 2.
 
 # zsh + fzf. OMZ + plugins arrive pre-cloned via fetch-omz above.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
@@ -1379,22 +1443,6 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       npm install -g pyright@${PYRIGHT_VERSION}; \
       pyright --version; \
       find /usr/local/lib/node_modules/pyright \
-        \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
-        -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
-        -prune -exec rm -rf {} +;
-# Playwright + Chromium apt deps (root-only, must happen at build). Firefox/
-# WebKit deps skipped; opt in at runtime. Browsers fetched on-demand into
-# ~/.toolbox/playwright-cache bind.
-ARG PLAYWRIGHT_VERSION
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
-    --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-      npm install -g "playwright@${PLAYWRIGHT_VERSION}"; \
-      playwright --version; \
-      apt-get update -qqy; \
-      playwright install-deps chromium; \
-      find /usr/local/lib/node_modules/playwright \
         \( -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' -o -name 'CHANGELOG*' -o -name 'AUTHORS*' \) \
         -o -type d \( -name docs -o -name examples -o -name example -o -name __tests__ -o -name .github \) \) \
         -prune -exec rm -rf {} +;
@@ -1836,6 +1884,7 @@ COPY --link --from=fetch-codegraph /out/ /
 COPY --link --from=fetch-oci      /out/ /
 COPY --link --from=fetch-azure    /out/ /
 COPY --link --from=fetch-codex    /out/ /
+COPY --link --from=fetch-playwright /out/ /
 COPY --link --from=fetch-wrangler /out/ /
 # rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
 # Copies the tree, not the file: a single-file COPY makes BuildKit synthesise
