@@ -725,7 +725,179 @@ set -e
 SL=/etc/toolbox/statusline-command.sh
 [ -f "$SL" ] || { echo "FAILED: $SL missing inside image"; exit 1; }
 bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
-echo "OK: managed statusline present and parses"
+
+# Render it. bash -n proves the file parses and nothing more, which is not
+# enough for a line built from Private Use Area glyphs and date arithmetic:
+# both survive a syntax check intact while rendering wrongly. Why the glyphs
+# are byte escapes: .claude/rules/image-build.md.
+now=$(date +%s)
+make_json() {  # make_json <cwd> — one fixture shape, pointed wherever the caller needs
+  j="{\"cwd\":\"$1\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
+  j="$j\"permission_mode\":\"acceptEdits\",\"pr\":{\"number\":4321,\"review_state\":\"pending\"},"
+  j="$j\"workspace\":{\"repo\":{\"name\":\"sentinel-reponame\"},\"git_worktree\":\"sentinel-wt\"},"
+  j="$j\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
+  j="$j\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
+  j="$j\"rate_limits\":{"
+  j="$j\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9000))},"
+  j="$j\"seven_day\":{\"used_percentage\":61,\"resets_at\":$((now + 230000))},"
+  j="$j\"spend_limit\":{\"used_percentage\":137,\"resets_at\":$((now + 900000))}}}"
+  printf "%s" "$j"
+}
+json=$(make_json /tmp/sentinel-cwd)
+
+# Strip the colour escapes. One of them sits between the percentage and the
+# window name, so every pattern below would otherwise have to know the palette.
+strip_ansi() { sed "s/\x1b\[[0-9;]*m//g"; }
+out=$(printf "%s" "$json" | bash "$SL" | strip_ansi)
+
+# Every glyph below is explicit UTF-8 bytes, for the reasons in
+# .claude/rules/image-build.md, plus one local to a test: a literal character
+# here is blanked in step with the bug it guards, so the pattern then matches
+# anything. Assert each is non-empty or none of them proves a thing.
+# Built with printf, never with a dollar-quoted string: this whole block is the
+# body of a single-quoted docker run bash -c argument, so one apostrophe ends it
+# early. bash -n checks the outer script, where all of this is just a string, so
+# that breakage is invisible until the assertions run. Keep this block free of
+# apostrophes, comments included.
+printf -v reset_icon "\xef\x80\xa1"   # nf-fa-refresh U+F021, precedes every countdown
+printf -v cold_icon  "\xe2\x9d\x84"   # snowflake U+2744, cold prompt cache
+printf -v git_icon   "\xee\x9c\xa5"   # nf-dev-git_branch U+E725, precedes the branch
+printf -v model_icon "\xef\x84\xb5"   # nf-fa-rocket U+F135, precedes the model name
+printf -v eff_icon   "\xef\x83\xa7"   # nf-fa-bolt U+F0E7, precedes the effort level
+printf -v wt_icon    "\xef\x84\xa6"   # nf-fa-code_fork U+F126, marks a linked worktree
+printf -v clock_icon "\xef\x80\x97"   # nf-fa-clock_o U+F017, the retired duration segment
+printf -v bar_full   "\xe2\x96\xb0"   # U+25B0, a used fifth of the context bar
+printf -v bar_empty  "\xe2\x96\xb1"   # U+25B1, a free one
+# The icons are asserted one by one rather than as a set: the failure this
+# guards emptied every assignment at once, but the bar characters survived it,
+# so a pattern that covers only some of them is how the next one ships.
+for _g in "$reset_icon" "$cold_icon" "$git_icon" "$model_icon" "$eff_icon" \
+          "$wt_icon" "$clock_icon" "$bar_full" "$bar_empty"; do
+  [ -n "$_g" ] || { echo "FAILED: a glyph in this test is empty; the assertions below would prove nothing"; exit 1; }
+done
+
+# Countdowns, never the wall-clock date they replaced. The icon is part of each
+# pattern, so an emptied glyph cannot slip through, and the deadline is matched
+# whole: 230000s is 2d15h and the day branch floors, 9000s is exactly 2h30m.
+case "$out" in
+  *"7d 61% ${reset_icon}2d"*) ;;
+  *) echo "FAILED: weekly window is not 7d 61% <icon>2d: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"5h 42% ${reset_icon}2h30m"*) ;;
+  *) echo "FAILED: five-hour window did not use the sub-24h hours branch: $out"; exit 1 ;;
+esac
+
+# The spend limit is the third window and the only one that reports past 100.
+# The colour is clamped there, never the number, so 137 must survive verbatim.
+case "$out" in
+  *"\$ 137%"*) ;;
+  *) echo "FAILED: spend limit missing or its number clamped: $out"; exit 1 ;;
+esac
+
+# Cold prompt cache. warm is false in the fixture, and the jq alternative
+# operator treats false as empty: read that field with // "" and this glyph
+# silently stops rendering for good.
+case "$out" in
+  *"$cold_icon"*) ;;
+  *) echo "FAILED: cold prompt cache glyph missing: $out"; exit 1 ;;
+esac
+
+# The context bar names its window only when it is not the default one. The
+# percentage here differs from every rate-limit percentage on purpose, so a bug
+# that renders the wrong one cannot land on a matching number. The bar itself is
+# part of the pattern: 37% fills two fifths, and nothing else on the line would
+# report a blanked bar.
+case "$out" in
+  *"${bar_full}${bar_full}${bar_empty}${bar_empty}${bar_empty} 37% 1M"*) ;;
+  *) echo "FAILED: context bar, its fill or its window name are wrong: $out"; exit 1 ;;
+esac
+
+# The model segment, for its two icons. Nothing else asserts either, and the
+# failure these escapes exist for took out every icon in the file at once.
+case "$out" in
+  *"${model_icon} M "*) ;;
+  *) echo "FAILED: model segment missing or its icon blank: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"${eff_icon}"*) ;;
+  *) echo "FAILED: effort icon missing; it falls back to high with no settings.json: $out"; exit 1 ;;
+esac
+
+# Four fields the fixture supplies are deliberately unrendered, each because
+# another surface carries it at the same moment: the open PR and the permission
+# mode (the Claude Code hint line, one row below), the repository name (the
+# herdr workspace label) and the working directory (the starship prompt). The
+# fixture carries all four, so every absence below was actually exercised. The
+# session duration is asserted with them but belongs to no such pair: it was
+# dropped because nobody acted on it, and it would come back just as silently.
+case "$out" in
+  *sentinel-cwd*) echo "FAILED: the working directory is being rendered again: $out"; exit 1 ;;
+esac
+case "$out" in
+  *sentinel-reponame*) echo "FAILED: the repository name is rendered here as well as in the herdr sidebar: $out"; exit 1 ;;
+esac
+case "$out" in
+  *4321*) echo "FAILED: the PR number is rendered here as well as on the hint line: $out"; exit 1 ;;
+esac
+case "$out" in
+  *ACCEPT*) echo "FAILED: the permission mode is rendered here as well as on the hint line: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"$clock_icon"*) echo "FAILED: the session duration segment is back: $out"; exit 1 ;;
+esac
+
+# Render once more under the C locale, the configuration that caught this. The
+# icons were \u escapes once and broke exactly here: bash converts those through
+# LC_CTYPE and emits the escape as text under a C locale, and the script cannot
+# fix it from the inside because LC_ALL outranks whatever it exports. LANG is
+# overridable by a user env passthrough, so this is reachable, not theoretical.
+out_c=$(printf "%s" "$json" | LC_ALL=C bash "$SL" | strip_ansi)
+for _g in "$reset_icon" "$cold_icon" "$model_icon" "$eff_icon" "$bar_full" "$bar_empty"; do
+  case "$out_c" in
+    *"$_g"*) ;;
+    *) echo "FAILED: a glyph does not survive LC_ALL=C; the escapes leaked as text: $out_c"; exit 1 ;;
+  esac
+done
+
+# The branch is the one thing kept for failing the same test the four absences
+# above pass, and an exception nobody tests is an exception that quietly stops
+# existing. The fixture above cannot carry it: its cwd is not a repository, so
+# the whole git segment is empty and every assertion on it would be vacuous.
+repo=/tmp/sentinel-workdir
+mkdir -p "$repo"
+git init -q -b sentinel-branch "$repo" >/dev/null 2>&1 \
+  || { echo "FAILED: cannot create the fixture repository"; exit 1; }
+out_git=$(printf "%s" "$(make_json "$repo")" | bash "$SL" | strip_ansi)
+case "$out_git" in
+  *"${git_icon} sentinel-branch"*) ;;
+  *) echo "FAILED: the branch is gone from the git segment: $out_git" ; exit 1 ;;
+esac
+case "$out_git" in
+  *"${wt_icon} sentinel-wt"*) ;;
+  *) echo "FAILED: the linked-worktree marker or its name is missing: $out_git"; exit 1 ;;
+esac
+
+echo "OK: managed statusline present, parses and renders"
+'
+
+echo ""
+echo "=== baked starship symbols ==="
+# Same failure as the statusline icons, and this file already lost one to it:
+# git_branch shipped as a bare space. The symbols are TOML escapes now, so this
+# asserts the parsed values still hold a glyph rather than whitespace.
+docker run --rm "${IMAGE}" python3 -c '
+import tomllib, sys
+cfg = tomllib.load(open("/etc/toolbox/starship.toml", "rb"))
+bad = []
+for section in ("git_branch", "kubernetes", "terraform", "gcloud", "docker_context"):
+    sym = cfg.get(section, {}).get("symbol", "")
+    if not any(ord(c) > 127 for c in sym):
+        bad.append(f"{section}={sym!r}")
+if bad:
+    print("FAILED: starship symbols carry no glyph: " + ", ".join(bad))
+    sys.exit(1)
+print("OK: starship symbols survive as glyphs")
 '
 
 echo ""

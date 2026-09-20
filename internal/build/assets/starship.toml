@@ -66,7 +66,7 @@ truncation_symbol = "…/"
 style             = "bold cyan"
 
 [git_branch]
-symbol = " "
+symbol = "\uE725 "  # nf-dev-git_branch U+E725 — same glyph the statusline uses
 style  = "bold purple"
 
 [git_status]
@@ -89,6 +89,13 @@ style    = "yellow"
 # grapheme-cluster width (mode 2027), so ZLE line redraw can never drift
 # (drift = ghost characters on Backspace). Per-symbol codepoints inline;
 # backstory + diagnostic heuristic: docs/internals/shell-start.md#prompt-glyph-width
+#
+# Written as TOML \u / \U escapes, never as literal characters: a PUA glyph
+# does not survive every tool that edits this file, and git_branch already
+# reached a shipped image as a bare space. Guardrail and tests:
+# .claude/rules/image-build.md. The non-PUA symbols above ([character],
+# [git_status]) stay literal on purpose — they are outside that hazard, and
+# escaping them would only cost the reader the glyph.
 
 # Upstream default: disabled. We enable because kubectl is bundled and a
 # misclick on the wrong context is a recurring footgun. Detection reads
@@ -100,12 +107,12 @@ style    = "yellow"
 [kubernetes]
 disabled        = false
 detect_env_vars = ["!PROMPT_HIDE_KUBE"]
-symbol          = "󱃾 "  # nf-md-kubernetes U+F10FE (replaces ☸ U+2638)
+symbol          = "\U000F10FE "  # nf-md-kubernetes U+F10FE (replaces ☸ U+2638)
 format          = '[$symbol$context( \($namespace\))]($style) '
 style           = "blue bold"
 
 [terraform]
-symbol = "󱁢 "  # nf-md-terraform U+F1062 (replaces 💠 U+1F4A0)
+symbol = "\U000F1062 "  # nf-md-terraform U+F1062 (replaces 💠 U+1F4A0)
 format = "[$symbol$workspace]($style) "
 style  = "bold purple"
 
@@ -120,7 +127,7 @@ style  = "bold purple"
 # either, so the negated env var decides): set PROMPT_HIDE_GCLOUD to hide.
 [gcloud]
 detect_env_vars = ["!PROMPT_HIDE_GCLOUD"]
-symbol          = "󰅟 "  # nf-md-cloud U+F015F (replaces ☁️ U+2601+FE0F)
+symbol          = "\U000F015F "  # nf-md-cloud U+F015F (replaces ☁️ U+2601+FE0F)
 format          = 'on [$symbol$project]($style) '
 style           = "bold blue"
 
@@ -130,7 +137,7 @@ style           = "bold blue"
 # current Docker context is non-default OR a DOCKER_CONTEXT / DOCKER_HOST /
 # DOCKER_MACHINE_NAME env var is set.
 [docker_context]
-symbol = "󰡨 "  # nf-md-docker U+F0868 (replaces 🐳 U+1F433)
+symbol = "\U000F0868 "  # nf-md-docker U+F0868 (replaces 🐳 U+1F433)
 
 # -- Right prompt segments ---------------------------------------------------
 
