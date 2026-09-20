@@ -361,3 +361,51 @@ func TestBindString(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveAllAnnouncesSkipExactlyOnce: every warning for a mount that was
+// skipped says "mount skipped" once — never twice (the defect: the message and
+// the printer both said it) and never on a mount that actually bound.
+func TestResolveAllAnnouncesSkipExactlyOnce(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	tmp := t.TempDir()
+
+	mounts := []config.Mount{
+		{Source: "", Target: "/container/empty"},
+		{Source: filepath.Join(tmp, "absent"), Target: "/container/absent"},
+		{Source: filepath.Join(tmp, "link"), Target: "/container/link", SymlinkFrom: filepath.Join(tmp, "no-target")},
+	}
+
+	_, warnings := resolveAll(mounts, home)
+	if len(warnings) != 3 {
+		t.Fatalf("expected 3 warnings, got %d: %v", len(warnings), warnings)
+	}
+	for _, w := range warnings {
+		if n := strings.Count(w, "mount skipped"); n != 1 {
+			t.Errorf("warning %q says \"mount skipped\" %d times, want 1", w, n)
+		}
+	}
+}
+
+// TestResolveAllDoesNotCallBoundMountSkipped: a mount whose symlinks cannot be
+// resolved still binds, so its warning must not be announced as a skip.
+func TestResolveAllDoesNotCallBoundMountSkipped(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "dangling")
+	if err := os.Symlink(filepath.Join(tmp, "nowhere"), src); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	mounts := []config.Mount{{Source: src, Target: "/container/x"}}
+
+	binds, warnings := resolveAll(mounts, home)
+	if len(binds) != 1 {
+		t.Fatalf("expected the mount to bind, got %d binds (warnings: %v)", len(binds), warnings)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if strings.Contains(warnings[0], "mount skipped") {
+		t.Errorf("warning %q calls a bound mount skipped", warnings[0])
+	}
+}

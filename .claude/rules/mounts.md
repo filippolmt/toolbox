@@ -10,6 +10,8 @@ paths:
 
 - **Auth isolation**: every credential under `~/.toolbox/` (canonical list `mountplan.Defaults()`); `~/.secrets` NOT mounted. `mounts:` patches/replaces/appends/disables defaults by `name`; `mounts_root` retargets pre-merge. → [auth-isolation](../../docs/mounts.md#auth-isolation-under-toolbox), [mounts](../../docs/mounts.md)
 - **Profiles** (`toolbox shell --profile <name>`): `mountplan.Profile{Name, Share}` (nil = default root) threaded through `PlanInput.Profile` → `mountplan.Merge/Plan`. `Profile.Root()` = `~/.toolbox/profiles/<name>` and wins over config `mounts_root` for the invocation (resolved in `Merge`, no `cfg` mutation). Folded into the container-name hash via `ContainerNameFor(ws, ProfileName(p))` so it gets its own container. `--share <tool,…>` = skip-set on `applyMountsRoot` (`matchesShareToken`, prefix-matched; shared by `shareCovers`+`validateShare`, typos rejected). `Profile.EffectiveShare()` always appends `bridge` — retargeting the bridge daemon dir breaks in-container forwarding; ssh/gitconfig stay host-shared for free (SymlinkFrom points at host regardless of root) and are non-shareable. → [profiles](../../docs/mounts.md#profiles), [profiles usage](../../docs/commands.md#profiles)
+- **Skip warnings**: `resolveAll` is the only place that prefixes a warning with `mount skipped: `, because only it knows whether the mount survived — the printer shows `plan.Warnings` verbatim. Messages must not say it themselves (that printed the phrase twice), and a mount that binds while warning must not get it. `TestResolveAllAnnouncesSkipExactlyOnce` + `TestResolveAllDoesNotCallBoundMountSkipped` guard both halves.
+
 ## npm-global shadow gotcha
 
 ### The shadow
