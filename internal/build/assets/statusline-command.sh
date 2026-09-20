@@ -1,9 +1,12 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
-# ┊ repo:branch[*↑↓] ⑂wt ┊ PR ┊ model ⚡effort [FAST] ┊ badge ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
+# ┊ branch[*↑↓] ⑂wt ┊ model ⚡effort [FAST] ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
 # Perf: single jq pass, git cached 5s per session_id (script runs on every tick)
-# The cwd is deliberately absent: starship's [directory] module already prints
-# it, same …/ truncation, on the line above.
+# Four things are deliberately absent because another surface already carries
+# them, on screen at the same moment: the open PR and the permission mode
+# (Claude Code's own hint line, one row below), the repository name (the herdr
+# workspace label), and the cwd (starship's [directory] module). Nothing here
+# should repeat what the screen already says.
 export LC_NUMERIC=C
 
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
@@ -13,16 +16,15 @@ input=$(cat)
 
 # Single jq pass — fields joined with \x1f (unit separator: NOT IFS-whitespace,
 # so empty fields are preserved by read instead of collapsing/shifting)
-IFS=$'\x1f' read -r cwd model used effort perm_mode \
+IFS=$'\x1f' read -r cwd model used effort \
   sid vim_mode out_style fh_pct fh_reset wd_pct wd_reset spend_pct spend_reset \
-  cache_warm cache_seen fast_mode agent_name pr_num pr_url pr_state gwt repo_name \
+  cache_warm cache_seen fast_mode agent_name gwt \
   ctx_size < <(
   echo "$input" | jq -r 2>/dev/null '[
     (.cwd // .workspace.current_dir // ""),
     (.model.display_name // ""),
     (.context_window.used_percentage // "" | tostring),
     (.effort.level // ""),
-    (.permission_mode // ""),
     (.session_id // ""),
     (.vim.mode // ""),
     (.output_style.name // ""),
@@ -36,11 +38,7 @@ IFS=$'\x1f' read -r cwd model used effort perm_mode \
     (.prompt_cache.caching_observed | tostring),
     (.fast_mode // false | tostring),
     (.agent.name // ""),
-    (.pr.number // "" | tostring),
-    (.pr.url // ""),
-    (.pr.review_state // ""),
     (.workspace.git_worktree // ""),
-    (.workspace.repo.name // ""),
     (.context_window.context_window_size // "" | tostring)
   ] | join("")'
 )
@@ -65,11 +63,7 @@ I_GIT=$'\xee\x9c\xa5'      # git-branch (nf-dev-git_branch U+E725)
 I_MODEL=$'\xef\x84\xb5'    # rocket (nf-fa-rocket U+F135)
 I_EFF=$'\xef\x83\xa7'      # bolt (nf-fa-bolt U+F0E7)
 I_RESET=$'\xef\x80\xa1'    # refresh (nf-fa-refresh U+F021)
-I_PLAN=$'\xef\x81\x84'     # pencil-square (nf-fa-pencil_square_o U+F044)
-I_SHIELD=$'\xef\x84\xb2'   # shield (nf-fa-shield U+F132)
-I_WARN=$'\xef\x81\xb1'     # warning (nf-fa-warning U+F071)
 I_WT=$'\xef\x84\xa6'  # code-fork (nf-fa-code_fork U+F126)
-I_PR=$'\xef\x90\x87'       # git-pull-request (nf-oct-git_pull_request U+F407)
 I_COLD=$'\xe2\x9d\x84'   # snowflake (U+2744) — plain Unicode, no Nerd Font needed
 
 # ── Palette (256 colours) ──────────────────────────────────────────────────
@@ -79,20 +73,15 @@ C_GIT=$'\033[38;5;179m'    # amber
 C_MODEL=$'\033[38;5;183m'  # lilac
 C_EFF=$'\033[38;5;86m'     # aquamarine
 C_COLD=$'\033[38;5;67m'    # steel blue — cold prompt cache
-C_OK=$'\033[38;5;114m'     # green — ahead, PR approved
-C_BAD=$'\033[38;5;203m'    # red — dirty, behind, PR changes-requested
+C_OK=$'\033[38;5;114m'     # green — ahead
+C_BAD=$'\033[38;5;203m'    # red — dirty, behind
 C_WT=$'\033[38;5;109m'     # sage — linked worktree
-C_PR=$'\033[38;5;110m'     # steel
 SEP=" ${DIM}│${RST} "
 
 seg_n=0
 seg() {  # seg <already-coloured text> — prepends the separator from the 2nd segment on
   if (( seg_n++ )); then printf '%s' "$SEP"; else printf ' '; fi
   printf '%s' "$1"
-}
-
-osc8() {  # osc8 <url> <text> — OSC 8 hyperlink; degrades to plain text where unsupported
-  printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"
 }
 
 pct_color() {  # pct_color <integer %> — sets $pct_c; one green→amber→red scale for every percentage
@@ -115,22 +104,22 @@ fmt_eta() {  # fmt_eta <epoch> — sets $eta to a relative countdown, empty when
   else                         eta="$(( rem / 86400 ))d"; fi
 }
 
-# ── Git: repo:branch, dirty *, ahead ↑ / behind ↓, ⑂ worktree — cache 5s ──
-# repo name and worktree prefer the statusLine JSON (workspace.repo.name /
-# workspace.git_worktree) — fewer git spawns per tick — but each keeps its git
-# fallback, because both fields are conditional: workspace.repo needs an
-# `origin` remote, and workspace.git_worktree needs a Claude Code new enough to
-# emit it. Without the fallback the marker would silently vanish rather than
-# degrade. The whole segment is cached together; the cache key includes cwd, so
-# entering a worktree recomputes immediately instead of waiting out the TTL.
+# ── Git: branch, dirty *, ahead ↑ / behind ↓, ⑂ worktree — cache 5s ──────
+# The repository name is not here: herdr labels its workspace with it, in the
+# sidebar, at the same time. The branch is, because nothing else on screen
+# carries it — herdr labels every worktree workspace of one repo identically,
+# and starship prints the branch only in the prompt, which has scrolled away by
+# the time an agent is working. The worktree name prefers the statusLine JSON
+# (workspace.git_worktree) over a git spawn, but keeps its git fallback, since
+# that field needs a Claude Code new enough to emit it; without the fallback the
+# marker would vanish rather than degrade. The whole segment is cached together,
+# and the cache key includes cwd, so entering a worktree recomputes at once
+# instead of waiting out the TTL.
 build_git_seg() {
-  local branch repo extra ab behind ahead label wt
+  local branch extra ab behind ahead wt
   branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null \
     || git -C "$cwd" --no-optional-locks rev-parse --short HEAD 2>/dev/null)
   [ -z "$branch" ] && return
-  repo="$repo_name"
-  # Fallback: workspace.repo is absent without an `origin` remote.
-  [ -z "$repo" ] && repo=$(basename "$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)")
   extra=""
   [ -n "$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null | head -1)" ] && extra+="${C_BAD}*"
   ab=$(git -C "$cwd" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null)
@@ -151,9 +140,7 @@ build_git_seg() {
       */worktrees/*) extra+=" ${C_WT}${I_WT}" ;;
     esac
   fi
-  label="$branch"
-  [ -n "$repo" ] && label="${repo}${DIM}:${RST}${C_GIT}${branch}"
-  printf '%s' "${C_GIT}${I_GIT} ${label}${extra}${RST}"
+  printf '%s' "${C_GIT}${I_GIT} ${branch}${extra}${RST}"
 }
 
 git_seg=""
@@ -176,20 +163,6 @@ else
 fi
 [ -n "$git_seg" ] && seg "$git_seg"
 
-# ── Open PR for this branch — clickable (OSC 8), coloured by review state ──
-if [ -n "$pr_num" ]; then
-  case "$pr_state" in
-    approved)          c="$C_OK"  ;;
-    changes_requested) c="$C_BAD" ;;
-    pending)           c="$C_GIT" ;;
-    draft)             c="$DIM"   ;;
-    *)                 c="$C_PR"  ;;
-  esac
-  pr_txt="${I_PR} #${pr_num}"
-  [ -n "$pr_url" ] && pr_txt=$(osc8 "$pr_url" "$pr_txt")
-  seg "${c}${pr_txt}${RST}"
-fi
-
 # ── Model + effort (+ fast mode) ──────────────────────────────────────────
 if [ -n "$model" ]; then
   model_short="${model%% (*}"
@@ -198,16 +171,6 @@ if [ -n "$model" ]; then
   [ "$fast_mode" = "true" ] && m="${m} "$'\033[1;38;5;220m'"FAST${RST}"
   seg "$m"
 fi
-
-# ── Permission mode badge ─────────────────────────────────────────────────
-case "$perm_mode" in
-  plan)              seg $'\033[1;38;5;141m'"${I_PLAN} PLAN${RST}" ;;
-  acceptEdits)       seg $'\033[1;38;5;179m'"${I_SHIELD} ACCEPT${RST}" ;;
-  bypassPermissions) seg $'\033[1;38;5;203m'"${I_WARN} BYPASS${RST}" ;;
-  dontAsk|auto)      seg $'\033[1;38;5;80m'"${I_SHIELD} ${perm_mode^^}${RST}" ;;
-  default|'')        ;;  # normal mode: no badge
-  *)                 seg $'\033[38;5;250m'"[$perm_mode]${RST}" ;;
-esac
 
 # ── Custom agent (--agent / agent settings) ─────────────────────────────────
 if [ -n "$agent_name" ]; then

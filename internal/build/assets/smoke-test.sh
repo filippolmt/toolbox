@@ -732,6 +732,7 @@ bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
 # are byte escapes: .claude/rules/image-build.md.
 now=$(date +%s)
 json="{\"cwd\":\"/tmp/sentinel-cwd\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
+json="$json\"permission_mode\":\"acceptEdits\",\"pr\":{\"number\":4321,\"review_state\":\"pending\"},"
 json="$json\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
 json="$json\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
 json="$json\"rate_limits\":{"
@@ -796,13 +797,23 @@ case "$out" in
   *) echo "FAILED: extended context window not named beside the bar: $out"; exit 1 ;;
 esac
 
-# Two segments were deliberately retired: the working directory, which starship
-# already prints, and the session duration. Both would come back silently.
+# Four segments are deliberately absent, and every one of them would come back
+# silently. The working directory and the session duration were dropped outright.
+# The open PR and the permission mode are dropped because Claude Code prints
+# both on its own hint line, one row below this one, at the same time — which is
+# what makes them duplicates rather than a second opinion. The fixture supplies
+# both, so these assert an absence that was actually exercised.
 case "$out" in
   *sentinel-cwd*) echo "FAILED: the working directory is being rendered again: $out"; exit 1 ;;
 esac
 case "$out" in
   *"$clock_icon"*) echo "FAILED: the session duration segment is back: $out"; exit 1 ;;
+esac
+case "$out" in
+  *4321*) echo "FAILED: the PR number is rendered here as well as on the hint line: $out"; exit 1 ;;
+esac
+case "$out" in
+  *ACCEPT*) echo "FAILED: the permission mode is rendered here as well as on the hint line: $out"; exit 1 ;;
 esac
 
 # Render once more under the C locale, the configuration that caught this. The
@@ -817,6 +828,25 @@ case "$out_c" in
 esac
 
 echo "OK: managed statusline present, parses and renders"
+'
+
+echo ""
+echo "=== baked starship symbols ==="
+# Same failure as the statusline icons, and this file already lost one to it:
+# git_branch shipped as a bare space. The symbols are TOML escapes now, so this
+# asserts the parsed values still hold a glyph rather than whitespace.
+docker run --rm "${IMAGE}" python3 -c '
+import tomllib, sys
+cfg = tomllib.load(open("/etc/toolbox/starship.toml", "rb"))
+bad = []
+for section in ("git_branch", "kubernetes", "terraform", "gcloud", "docker_context"):
+    sym = cfg.get(section, {}).get("symbol", "")
+    if not any(ord(c) > 127 for c in sym):
+        bad.append(f"{section}={sym!r}")
+if bad:
+    print("FAILED: starship symbols carry no glyph: " + ", ".join(bad))
+    sys.exit(1)
+print("OK: starship symbols survive as glyphs")
 '
 
 echo ""
