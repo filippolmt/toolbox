@@ -4,7 +4,7 @@ Maintainer notes on the telemetry / data-exfiltration lockdown baked into the im
 
 ## rtk hook auto-wiring + telemetry/tee lockdown
 
-`internal/build/assets/init.d/10-rtk.sh` runs `rtk init -g` (Claude) and `rtk init -g --codex` (Codex) on every shell so the Bash-tool rewrite hook stays registered even after a settings reset or a fresh `~/.toolbox/.claude` bind-mount. Gated on `command -v claude` / `command -v codex` so opted-out tools never have rtk hooks injected. Idempotent; failures are non-fatal.
+`internal/build/assets/init.d/10-rtk.sh` runs `rtk init -g` (Claude), `rtk init -g --codex` (Codex) and `rtk init -g --agent pi` (pi) on every shell so the Bash-tool rewrite hook stays registered even after a settings reset or a fresh `~/.toolbox/.claude` bind-mount. Gated on `command -v claude` / `command -v codex` / `command -v pi` so opted-out tools never get rtk hooks injected — and, for Codex and pi, on the agent's config directory too, so a bind-mount that auto-created the dir for an opted-out tool is not mistaken for the tool. Idempotent; failures are non-fatal.
 
 Privacy is enforced at the env layer image-wide:
 

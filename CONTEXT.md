@@ -1560,6 +1560,42 @@ prefix the explicit ordering signal — with the manifest-driven shape the
 boot sequence is observable from the Go side without parsing the runtime
 image.
 
+### Agent Wiring
+
+The second half of bundling a coding agent: the per-agent blocks in the
+Init Sequence that make the *other* bundled tools see it. Bundling gets
+the binary onto `PATH`; wiring gets rtk's Bash-rewrite hook, atuin's
+history capture and herdr's control integration registered against it.
+The two are independent, and only the first is declared anywhere.
+
+Concretely: `internal/catalog` + `config.SupportedAgents` + `toolbox
+worktree --agent <name>` (the bundling) vs. one block per agent in
+`init.d/10-rtk.sh`, `init.d/65-atuin.sh` and `init.d/61-herdr.sh` (the
+wiring). Each block self-gates on the binary and, where the agent's
+state is a bind mount, on the mount — never on a config directory the
+agent creates for itself on first run, which exists whether or not the
+state survives a `toolbox stop`. Whether a block takes
+`.claude-settings.lock` follows from what it writes: a shared
+`settings.json` needs the lock, an extension file of the agent's own
+does not. Held by `TestHerdrInitWiresPi` and
+`TestInitDWiresPiEverywhereItWiresCodex`; the bundling half is held by
+the Tool Catalog's own bijection tests, which is exactly why they say
+nothing about this one.
+
+Why the term exists: pi was bundled as a first-class agent — catalog
+row, default mount, smoke check, `--agent pi` — while all three wiring
+scripts still enumerated claude and codex by hand, and every test went
+green. Nothing in the catalog can notice: the bijection it enforces is
+`Entry.InitScript` ↔ `init.d/*.sh`, a statement about which *tools*
+ship a boot script, not about which *agents* each boot script knows.
+The gap is silent from both ends — the agent launches, resumes and
+works, just with none of the integrations a toolbox shell exists to
+provide, and a docs page can claim an integration persists on a mount
+that nothing ever writes to. Naming "Agent Wiring" separates the
+question "is this agent bundled?", which the Tool Catalog answers, from
+"is this agent wired?", which only these blocks do — so adding an agent
+is a checklist with two halves rather than one half and an assumption.
+
 ### Bridge Contract
 
 The daemon↔shim wire contract: the container-side paths and state filenames

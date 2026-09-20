@@ -4,7 +4,9 @@ set -euo pipefail
 # Re-register rtk hooks on every shell start so a settings reset or fresh
 # bind-mount can't leave the user unwired. `rtk init -g` patches Claude's
 # ~/.claude/settings.json; `rtk init -g --codex` writes ~/.codex/AGENTS.md
-# + RTK.md (no settings.json to patch on the Codex side).
+# + RTK.md (no settings.json to patch on the Codex side); `rtk init -g
+# --agent pi` drops ~/.pi/agent/extensions/rtk.ts (an extension of its own,
+# again nothing shared to patch).
 #
 # --auto-patch + </dev/null avoid a TTY-prompt deadlock on first run
 # (entrypoint has no terminal). Inner gates check both the binary AND the
@@ -53,5 +55,13 @@ fi
 if command -v codex >/dev/null 2>&1 && [ -d "$HOME/.codex" ]; then
     if ! rtk init -g --codex </dev/null >/dev/null 2>&1; then
         echo "  rtk: init -g --codex failed (non-fatal)"
+    fi
+fi
+# pi: no lock, rtk.ts is a file of its own. Gated on the ~/.pi bind mount and
+# not ~/.pi/agent — init.d/61-herdr.sh carries why, and the mkdir that follows
+# from it.
+if command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then
+    if ! rtk init -g --agent pi --auto-patch </dev/null >/dev/null 2>&1; then
+        echo "  rtk: init -g --agent pi failed (non-fatal)"
     fi
 fi

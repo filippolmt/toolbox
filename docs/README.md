@@ -169,7 +169,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [cf Cloudflare CLI skill auto-install](internals/shell-start.md#cf-cloudflare-cli-skill-auto-install)
 - [Per-repo code-graph skills: graphify and codegraph](internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 - [Per-repo playwright-cli skill](internals/shell-start.md#per-repo-playwright-cli-skill)
-- [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
+- [Skill discovery paths diverge between Claude and the other agents](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-the-other-agents)
 - [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
 - [git safe.directory ("dubious ownership")](internals/shell-start.md#git-safedirectory-dubious-ownership)
