@@ -69,6 +69,7 @@ var Entries = []Entry{
 	{Key: "jq"},
 	{Key: "kubectl"},
 	{Key: "oci", InitScript: "08-oci-creds.sh", HostAuthMount: &HostAuthMount{HostPath: "~/.oci", ContainerPath: "/home/toolbox/.oci"}},
+	{Key: "pi", HostAuthMount: &HostAuthMount{HostPath: "~/.pi", ContainerPath: "/home/toolbox/.pi"}},
 	{Key: "playwright"},
 	{Key: "playwright_cli", InitScript: "40-playwright-cli.sh"},
 	{Key: "pnpm"},

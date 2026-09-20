@@ -176,7 +176,7 @@ var keyRows = []Key{
 		Summary: "Default AI agent auto-launched by `toolbox worktree` sessions (--agent overrides per run).",
 		Default: DefaultAgent,
 		Example: "# agent — default AI agent auto-launched by `toolbox worktree` sessions.\n" +
-			"# One of: claude (default) | codex. The --agent flag overrides this per run.\n" +
+			"# One of: claude (default) | codex | pi. The --agent flag overrides this per run.\n" +
 			"# agent: claude\n",
 		Str:       func(c *Config) string { return c.Agent },
 		Effective: func(c *Config) string { return orElse(c.Agent, DefaultAgent) },

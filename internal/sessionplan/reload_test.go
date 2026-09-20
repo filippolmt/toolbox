@@ -234,6 +234,13 @@ func TestPlanReloadResumesTheAgent(t *testing.T) {
 			want:  "codex resume --last",
 		},
 		{
+			// pi spells it like claude, so it rides the default branch.
+			name:  "pi resumes on the same flag as claude",
+			agent: "pi",
+			from:  &reload.From{Container: "c", Cwd: canonical.WorkingDir + "/pkg", Resume: true},
+			want:  "pi --continue",
+		},
+		{
 			name:  "a rejected cwd launches bare",
 			agent: "claude",
 			from:  &reload.From{Container: "c", Cwd: "/home/toolbox", Resume: true},

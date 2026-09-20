@@ -66,8 +66,9 @@ func shellReentry(flags *pflag.FlagSet, args []string) []string {
 //
 // The agent carried is the *resolved* one rather than the flag as typed, so a
 // session started with no --agent still comes back on the agent it actually
-// ran — the resume relaunches `claude --continue` or `codex resume --last`
-// against the right lineage even if the config default changes underneath.
+// ran — the resume relaunches `claude --continue`, `codex resume --last` or
+// `pi --continue` against the right lineage even if the config default changes
+// underneath.
 func worktreeReentry(branch, agent string) []string {
 	argv := []string{"worktree", "open", branch}
 	if agent == "" {

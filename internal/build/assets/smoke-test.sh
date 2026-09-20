@@ -564,6 +564,15 @@ check_optional  "claude"    claude   claude --version
 # inside a single-quoted bash -c (see header comment above check_zsh).
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "codex"     codex    codex --version
+check_optional  "pi"        pi       pi --version
+# pi honours neither DO_NOT_TRACK nor the image-wide update-check suppression,
+# so its two knobs are the only thing standing between a bundled pi and a
+# startup telemetry ping plus a release poll it could never act on (the CLI
+# lives under root-owned /usr/local/lib). They are set in the final stage, not
+# in `fetch-pi` — a fetch stage contributes through COPY --from, which carries
+# filesystem and not image metadata — which is exactly the kind of split a
+# refactor drops on the floor. Same shape as the BROWSER env check below.
+check_optional  "pi env knobs" pi sh -c "test \"\$PI_TELEMETRY\" = 0 && test \"\$PI_SKIP_VERSION_CHECK\" = 1 && echo present"
 check_optional  "codegraph" codegraph codegraph --version
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version

@@ -77,9 +77,9 @@ if [ ! -f "$_atuin_marker" ]; then
 fi
 
 # -- AI agent hooks ----------------------------------------------------------
-# Capture Bash tool use from Claude Code + Codex into the atuin DB, tagged
-# by author (`claude-code` / `codex`). atuin's interactive search hides
-# agent-authored entries by default (filter `$all-user`); use
+# Capture Bash tool use from Claude Code, Codex and pi into the atuin DB,
+# tagged by author (`claude-code` / `codex` / `pi`). atuin's interactive
+# search hides agent-authored entries by default (filter `$all-user`); use
 # `atuin search --author claude-code` or `--author '$all-agent'` to inspect.
 #
 # `atuin hook install` is idempotent upstream, but every invocation still
@@ -115,5 +115,19 @@ if [ ! -f "$_codex_marker" ] && command -v codex >/dev/null 2>&1 && [ -d "$HOME/
         : > "$_codex_marker"
     else
         echo "  atuin: hook install codex failed (non-fatal)"
+    fi
+fi
+
+# pi: writes ~/.pi/agent/extensions/atuin.ts, a file of its own, no lock needed.
+# Gated on the ~/.pi bind mount and not ~/.pi/agent — init.d/61-herdr.sh carries
+# why. Worth one extra note here: the marker lives in the state volume, which
+# outlives a hook installed off-mount, so the wrong gate would record an install
+# that is no longer there and never retry it.
+_pi_marker="$_atuin_hooks_dir/pi-${_atuin_key}"
+if [ ! -f "$_pi_marker" ] && command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then
+    if atuin hook install pi >/dev/null 2>&1; then
+        : > "$_pi_marker"
+    else
+        echo "  atuin: hook install pi failed (non-fatal)"
     fi
 fi
