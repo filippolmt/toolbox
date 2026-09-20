@@ -59,6 +59,7 @@ sections.**
 - [mounts: merge semantics](mounts.md#mounts-merge-semantics) — [Source paths](mounts.md#source-paths)
 - [mounts_root retarget](mounts.md#mounts_root-retarget)
 - [Profiles](mounts.md#profiles)
+- [Persisting a user-installed tool's state](mounts.md#persisting-a-user-installed-tools-state)
 - [Startup hooks](mounts.md#startup-hooks) — [Per-repo startup hooks](mounts.md#per-repo-startup-hooks)
 - [Shell customisation](mounts.md#shell-customisation)
 - [CA certificate trust](mounts.md#ca-certificate-trust)
@@ -120,6 +121,8 @@ sections.**
 - [Stale local branches pile up after merges](troubleshooting.md#stale-local-branches-pile-up-after-merges)
 - [A new .test app is unreachable from the container](troubleshooting.md#a-new-test-app-is-unreachable-from-the-container)
 - ["manifest unknown" with a registry mirror](troubleshooting.md#manifest-unknown-with-a-registry-mirror)
+- [herdr reopens in the wrong directory](troubleshooting.md#herdr-reopens-in-the-wrong-directory)
+- [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
 
 ## Internals
 
@@ -166,7 +169,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [cf Cloudflare CLI skill auto-install](internals/shell-start.md#cf-cloudflare-cli-skill-auto-install)
 - [Per-repo code-graph skills: graphify and codegraph](internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 - [Per-repo playwright-cli skill](internals/shell-start.md#per-repo-playwright-cli-skill)
-- [Skill discovery paths diverge between Claude and Codex](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-codex)
+- [Skill discovery paths diverge between Claude and the other agents](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-the-other-agents)
 - [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
 - [git safe.directory ("dubious ownership")](internals/shell-start.md#git-safedirectory-dubious-ownership)

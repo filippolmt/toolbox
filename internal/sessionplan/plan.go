@@ -237,7 +237,7 @@ type WorktreeSession struct {
 	// RepoRoot is the main repository root (not the worktree path, which is
 	// the session's Workspace). A linked worktree's .git points into it.
 	RepoRoot string
-	// Agent is the resolved AI agent binary to auto-launch (claude | codex).
+	// Agent is the resolved AI agent binary to auto-launch (claude | codex | pi).
 	Agent string
 	// Prompt is the initial task handed to the agent, empty for a bare launch.
 	Prompt string
