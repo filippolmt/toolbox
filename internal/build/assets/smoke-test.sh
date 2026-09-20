@@ -725,7 +725,98 @@ set -e
 SL=/etc/toolbox/statusline-command.sh
 [ -f "$SL" ] || { echo "FAILED: $SL missing inside image"; exit 1; }
 bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
-echo "OK: managed statusline present and parses"
+
+# Render it. bash -n proves the file parses and nothing more, which is not
+# enough for a line built from Private Use Area glyphs and date arithmetic:
+# both survive a syntax check intact while rendering wrongly. Why the glyphs
+# are byte escapes: .claude/rules/image-build.md.
+now=$(date +%s)
+json="{\"cwd\":\"/tmp/sentinel-cwd\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
+json="$json\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
+json="$json\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
+json="$json\"rate_limits\":{"
+json="$json\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9000))},"
+json="$json\"seven_day\":{\"used_percentage\":61,\"resets_at\":$((now + 230000))},"
+json="$json\"spend_limit\":{\"used_percentage\":137,\"resets_at\":$((now + 900000))}}}"
+
+# Strip the colour escapes. One of them sits between the percentage and the
+# window name, so every pattern below would otherwise have to know the palette.
+strip_ansi() { sed "s/\x1b\[[0-9;]*m//g"; }
+out=$(printf "%s" "$json" | bash "$SL" | strip_ansi)
+
+# Every glyph below is explicit UTF-8 bytes: never a literal character, which
+# the failure being guarded against blanks in step with the bug so the pattern
+# then matches anything, and never a \u escape, which this shell would convert
+# through its own LC_CTYPE so the C-locale check further down would compare one
+# broken string against another. Assert each is non-empty or none proves a thing.
+# Built with printf, never with a dollar-quoted string: this whole block is the
+# body of a single-quoted docker run bash -c argument, so one apostrophe ends it
+# early. bash -n checks the outer script, where all of this is just a string, so
+# that breakage is invisible until the assertions run. Keep this block free of
+# apostrophes, comments included.
+printf -v reset_icon "\xef\x80\xa1"   # nf-fa-refresh U+F021, precedes every countdown
+printf -v cold_icon  "\xe2\x9d\x84"   # snowflake U+2744, cold prompt cache
+printf -v clock_icon "\xef\x80\x97"   # nf-fa-clock_o U+F017, the retired duration segment
+for _g in "$reset_icon" "$cold_icon" "$clock_icon"; do
+  [ -n "$_g" ] || { echo "FAILED: a glyph in this test is empty; the assertions below would prove nothing"; exit 1; }
+done
+
+# Countdowns, never the wall-clock date they replaced. The icon is part of each
+# pattern, so an emptied glyph cannot slip through, and the deadline is matched
+# whole: 230000s is 2d15h and the day branch floors, 9000s is exactly 2h30m.
+case "$out" in
+  *"7d 61% ${reset_icon}2d"*) ;;
+  *) echo "FAILED: weekly window is not 7d 61% <icon>2d: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"5h 42% ${reset_icon}2h30m"*) ;;
+  *) echo "FAILED: five-hour window did not use the sub-24h hours branch: $out"; exit 1 ;;
+esac
+
+# The spend limit is the third window and the only one that reports past 100.
+# The colour is clamped there, never the number, so 137 must survive verbatim.
+case "$out" in
+  *"\$ 137%"*) ;;
+  *) echo "FAILED: spend limit missing or its number clamped: $out"; exit 1 ;;
+esac
+
+# Cold prompt cache. warm is false in the fixture, and the jq alternative
+# operator treats false as empty: read that field with // "" and this glyph
+# silently stops rendering for good.
+case "$out" in
+  *"$cold_icon"*) ;;
+  *) echo "FAILED: cold prompt cache glyph missing: $out"; exit 1 ;;
+esac
+
+# The context bar names its window only when it is not the default one. The
+# percentage here differs from every rate-limit percentage on purpose, so a bug
+# that renders the wrong one cannot land on a matching number.
+case "$out" in
+  *"37% 1M"*) ;;
+  *) echo "FAILED: extended context window not named beside the bar: $out"; exit 1 ;;
+esac
+
+# Two segments were deliberately retired: the working directory, which starship
+# already prints, and the session duration. Both would come back silently.
+case "$out" in
+  *sentinel-cwd*) echo "FAILED: the working directory is being rendered again: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"$clock_icon"*) echo "FAILED: the session duration segment is back: $out"; exit 1 ;;
+esac
+
+# Render once more under the C locale, the configuration that caught this. The
+# icons were \u escapes once and broke exactly here: bash converts those through
+# LC_CTYPE and emits the escape as text under a C locale, and the script cannot
+# fix it from the inside because LC_ALL outranks whatever it exports. LANG is
+# overridable by a user env passthrough, so this is reachable, not theoretical.
+out_c=$(printf "%s" "$json" | LC_ALL=C bash "$SL" | strip_ansi)
+case "$out_c" in
+  *"$reset_icon"*) ;;
+  *) echo "FAILED: icons do not survive LC_ALL=C; the escapes leaked as text: $out_c"; exit 1 ;;
+esac
+
+echo "OK: managed statusline present, parses and renders"
 '
 
 echo ""

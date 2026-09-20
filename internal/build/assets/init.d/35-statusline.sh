@@ -37,10 +37,13 @@ mkdir -p "$(dirname "$_claude_lock")"
     # silently skip the patch). Only replace the live file when jq produced
     # non-empty output, so a parse failure never truncates a valid settings.json.
     # refreshInterval: event-driven ticks go quiet while the session is idle, so
-    # the duration and rate-limit reset clocks would freeze. hideVimModeIndicator:
-    # statusline-command.sh renders vim.mode itself — without this the mode shows
-    # twice (our segment + the built-in `-- INSERT --` line).
-    _patch='.statusLine = {type: "command", command: $cmd, refreshInterval: 30, hideVimModeIndicator: true}'
+    # the rate-limit countdowns — the only text on the line that moves without a
+    # new event — would sit still. They are never finer than a minute, which is
+    # what sets the interval: anything shorter re-renders for no added accuracy.
+    # hideVimModeIndicator: statusline-command.sh renders vim.mode itself —
+    # without this the mode shows twice (our segment + the built-in
+    # `-- INSERT --` line).
+    _patch='.statusLine = {type: "command", command: $cmd, refreshInterval: 60, hideVimModeIndicator: true}'
     if [ -s "$_settings" ] && jq --arg cmd "bash '$_statusline'" \
             "$_patch" \
             "$_settings" >"$_tmp" 2>/dev/null \

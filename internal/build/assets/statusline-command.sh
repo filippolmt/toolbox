@@ -1,7 +1,9 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
-# ┊ cwd ┊ repo:branch[*↑↓] ⑂wt ┊ PR ┊ model ⚡effort [FAST] ┊ badge ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ ┊ duration ┊ rate-limits
+# ┊ repo:branch[*↑↓] ⑂wt ┊ PR ┊ model ⚡effort [FAST] ┊ badge ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
 # Perf: single jq pass, git cached 5s per session_id (script runs on every tick)
+# The cwd is deliberately absent: starship's [directory] module already prints
+# it, same …/ truncation, on the line above.
 export LC_NUMERIC=C
 
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
@@ -11,16 +13,16 @@ input=$(cat)
 
 # Single jq pass — fields joined with \x1f (unit separator: NOT IFS-whitespace,
 # so empty fields are preserved by read instead of collapsing/shifting)
-IFS=$'\x1f' read -r cwd model used effort perm_mode dur_ms \
-  sid vim_mode out_style fh_pct fh_reset wd_pct wd_reset \
-  fast_mode agent_name pr_num pr_url pr_state gwt repo_name < <(
+IFS=$'\x1f' read -r cwd model used effort perm_mode \
+  sid vim_mode out_style fh_pct fh_reset wd_pct wd_reset spend_pct spend_reset \
+  cache_warm cache_seen fast_mode agent_name pr_num pr_url pr_state gwt repo_name \
+  ctx_size < <(
   echo "$input" | jq -r 2>/dev/null '[
     (.cwd // .workspace.current_dir // ""),
     (.model.display_name // ""),
     (.context_window.used_percentage // "" | tostring),
     (.effort.level // ""),
     (.permission_mode // ""),
-    (.cost.total_duration_ms   // 0 | tostring),
     (.session_id // ""),
     (.vim.mode // ""),
     (.output_style.name // ""),
@@ -28,13 +30,18 @@ IFS=$'\x1f' read -r cwd model used effort perm_mode dur_ms \
     (.rate_limits.five_hour.resets_at       // "" | tostring),
     (.rate_limits.seven_day.used_percentage // "" | tostring),
     (.rate_limits.seven_day.resets_at       // "" | tostring),
+    (.rate_limits.spend_limit.used_percentage // "" | tostring),
+    (.rate_limits.spend_limit.resets_at       // "" | tostring),
+    (.prompt_cache.warm             | tostring),
+    (.prompt_cache.caching_observed | tostring),
     (.fast_mode // false | tostring),
     (.agent.name // ""),
     (.pr.number // "" | tostring),
     (.pr.url // ""),
     (.pr.review_state // ""),
     (.workspace.git_worktree // ""),
-    (.workspace.repo.name // "")
+    (.workspace.repo.name // ""),
+    (.context_window.context_window_size // "" | tostring)
   ] | join("")'
 )
 cwd="${cwd:-$PWD}"
@@ -45,28 +52,33 @@ if [ -z "$effort" ]; then
   effort="${effort:-high}"
 fi
 
+# Explicit UTF-8 bytes, for two reasons that rule out the obvious alternatives.
+# A literal glyph loses to any tool that cannot encode it: these are Private Use
+# Area characters, and one such tool emptied every assignment here in place,
+# silently. A \u escape loses to the locale: bash converts it through LC_CTYPE,
+# and under LC_ALL=C it emits the escape as text — which the script cannot undo
+# from the inside, because LC_ALL outranks anything it exports. Bytes are both
+# pure ASCII in the source and locale-proof.
+# What holds this: .claude/rules/image-build.md.
 # ── Icons (Nerd Font) ─────────────────────────────────────────────────────
-I_DIR=$''      # folder-open
-I_GIT=$''      # git-branch
-I_MODEL=$''    # rocket
-I_EFF=$''      # bolt
-I_CLOCK=$''    # clock
-I_RESET=$''    # refresh
-I_PLAN=$''     # pencil-square
-I_SHIELD=$''   # shield
-I_WARN=$''     # warning
-I_WT=$''  # code-fork (nf-fa-code_fork U+F126) — linked worktree
-I_PR=$''       # git-pull-request (nf-oct-git_pull_request U+F407)
+I_GIT=$'\xee\x9c\xa5'      # git-branch (nf-dev-git_branch U+E725)
+I_MODEL=$'\xef\x84\xb5'    # rocket (nf-fa-rocket U+F135)
+I_EFF=$'\xef\x83\xa7'      # bolt (nf-fa-bolt U+F0E7)
+I_RESET=$'\xef\x80\xa1'    # refresh (nf-fa-refresh U+F021)
+I_PLAN=$'\xef\x81\x84'     # pencil-square (nf-fa-pencil_square_o U+F044)
+I_SHIELD=$'\xef\x84\xb2'   # shield (nf-fa-shield U+F132)
+I_WARN=$'\xef\x81\xb1'     # warning (nf-fa-warning U+F071)
+I_WT=$'\xef\x84\xa6'  # code-fork (nf-fa-code_fork U+F126)
+I_PR=$'\xef\x90\x87'       # git-pull-request (nf-oct-git_pull_request U+F407)
+I_COLD=$'\xe2\x9d\x84'   # snowflake (U+2744) — plain Unicode, no Nerd Font needed
 
 # ── Palette (256 colours) ──────────────────────────────────────────────────
 RST=$'\033[0m'
 DIM=$'\033[38;5;240m'      # separators
-C_DIR=$'\033[38;5;75m'     # blue
 C_GIT=$'\033[38;5;179m'    # amber
 C_MODEL=$'\033[38;5;183m'  # lilac
 C_EFF=$'\033[38;5;86m'     # aquamarine
-C_META=$'\033[38;5;245m'   # grey — session metadata (duration)
-C_RL=$'\033[38;5;176m'     # mauve
+C_COLD=$'\033[38;5;67m'    # steel blue — cold prompt cache
 C_OK=$'\033[38;5;114m'     # green — ahead, PR approved
 C_BAD=$'\033[38;5;203m'    # red — dirty, behind, PR changes-requested
 C_WT=$'\033[38;5;109m'     # sage — linked worktree
@@ -83,15 +95,25 @@ osc8() {  # osc8 <url> <text> — OSC 8 hyperlink; degrades to plain text where 
   printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"
 }
 
-# ── Directory ─────────────────────────────────────────────────────────────
-IFS=/ read -ra parts <<< "$cwd"
-n=${#parts[@]}
-if (( n > 3 )); then
-  short="…/${parts[n-2]}/${parts[n-1]}"
-else
-  short="$cwd"
-fi
-seg "${C_DIR}${I_DIR} ${short}${RST}"
+pct_color() {  # pct_color <integer %> — sets $pct_c; one green→amber→red scale for every percentage
+  # Its own variable, not the `c` the PR segment writes: these two run in the
+  # same shell and the only thing keeping them apart today is call order.
+  if   (( $1 >= 70 )); then pct_c="$C_BAD"
+  elif (( $1 >= 40 )); then pct_c="$C_GIT"   # amber, shared with the git segment
+  else                      pct_c="$C_OK"; fi
+}
+
+# One clock per tick, shared by the git cache TTL and every reset deadline.
+# The %(...)T builtin never forks, unlike the `date` calls this replaced.
+printf -v NOW '%(%s)T' -1
+
+fmt_eta() {  # fmt_eta <epoch> — sets $eta to a relative countdown, empty when already past
+  local rem=$(( $1 - NOW ))
+  if   (( rem <= 0 ));    then eta=""
+  elif (( rem < 3600 ));  then eta="$(( rem / 60 ))m"
+  elif (( rem < 86400 )); then eta="$(( rem / 3600 ))h$(( rem % 3600 / 60 ))m"
+  else                         eta="$(( rem / 86400 ))d"; fi
+}
 
 # ── Git: repo:branch, dirty *, ahead ↑ / behind ↓, ⑂ worktree — cache 5s ──
 # repo name and worktree prefer the statusLine JSON (workspace.repo.name /
@@ -141,8 +163,7 @@ if [ -n "$sid" ]; then
   # 5s TTL. cksum is one spawn; read is a builtin.
   read -r _cwdsum _ < <(cksum <<<"$cwd")
   GIT_CACHE="/tmp/claude-statusline-git-${sid}-${_cwdsum}"
-  now=${EPOCHSECONDS:-$(date +%s)}
-  if [ -f "$GIT_CACHE" ] && (( now - $(stat -c %Y "$GIT_CACHE" 2>/dev/null || echo 0) < 5 )); then
+  if [ -f "$GIT_CACHE" ] && (( NOW - $(stat -c %Y "$GIT_CACHE" 2>/dev/null || echo 0) < 5 )); then
     git_seg=$(<"$GIT_CACHE")
   else
     git_seg=$(build_git_seg)
@@ -216,62 +237,73 @@ emit_mode_badge() {  # $1 = glob; runs only the first script found
 emit_mode_badge "$CFG/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh"
 emit_mode_badge "$CFG/plugins/cache/caveman/caveman/*/src/hooks/caveman-statusline.sh"
 
+# The window every model had before the extended ones; anything else is worth
+# naming beside the bar, because the same percentage is then worth more tokens.
+CTX_DEFAULT_WINDOW=200000
+
 # ── Context: bar ▰▰▰▱▱ + % (green→yellow→red) ────────────────────────────
+# The percentage alone says nothing about how much room that is: the same 37%
+# is worth five times the tokens on an extended-context model. Name the window
+# whenever it is not the ordinary one, and stay quiet when it is.
 if [ -n "$used" ]; then
-  pct=$(printf '%.0f' "$used" 2>/dev/null)
+  # printf leaves pct at 0 on a value it cannot read, which would draw an empty
+  # bar as though the context were pristine. Blank it and let the guard hide it.
+  printf -v pct '%.0f' "$used" 2>/dev/null || pct=""
   if [[ "$pct" =~ ^[0-9]+$ ]]; then
-    if   (( pct >= 70 )); then c=$'\033[38;5;203m'
-    elif (( pct >= 40 )); then c=$'\033[38;5;179m'
-    else                       c=$'\033[38;5;114m'; fi
+    pct_color "$pct"
     fill=$(( (pct + 10) / 20 )); (( fill > 5 )) && fill=5
     bar=""
     for ((i=0; i<5; i++)); do
       if (( i < fill )); then bar+="▰"; else bar+="▱"; fi
     done
-    seg "${c}${bar} ${pct}%${RST}"
+    win=""
+    if [[ "$ctx_size" =~ ^[0-9]+$ ]] && (( ctx_size != CTX_DEFAULT_WINDOW )); then
+      if (( ctx_size >= 1000000 )); then win=" ${DIM}$(( ctx_size / 1000000 ))M"
+      else                               win=" ${DIM}$(( ctx_size / 1000 ))k"; fi
+    fi
+    seg "${pct_c}${bar} ${pct}%${win}${RST}"
   fi
 fi
 
-# ── Session duration ───────────────────────────────────────────────────────
-if (( ${dur_ms:-0} >= 60000 )); then
-  mins=$(( dur_ms / 60000 ))
-  if (( mins >= 60 )); then
-    dur_fmt="$(( mins / 60 ))h$(( mins % 60 ))m"
-  else
-    dur_fmt="${mins}m"
-  fi
-  seg "${C_META}${I_CLOCK} ${dur_fmt}${RST}"
+# ── Prompt cache gone cold — one glyph, nothing at all while warm ──────────
+# warm is false on a session that has simply never cached anything yet, so gate
+# on caching_observed: the glyph must mean "the cache went cold", not "no cache".
+# Both arrive through `tostring` alone, never `// ""`: jq's alternative operator
+# treats false as empty, which would collapse the one value being tested for.
+if [ "$cache_seen" = "true" ] && [ "$cache_warm" = "false" ]; then
+  seg "${C_COLD}${I_COLD}${RST}"
 fi
 
 # ── Rate limits (absent for API-key users — hidden when null) ───────────
+# Deadlines render as a countdown, never a wall clock: a bare "01:59" is
+# ambiguous the moment a window resets past midnight, which the five-hour one
+# routinely does, and the weekly one needed a date to disambiguate at all.
+# Claude Code drops a window once its resets_at passes — and re-runs this script
+# at that instant — so a deadline already in the past is never on screen.
 rl_out=""
 
-if [ -n "$fh_pct" ]; then
-  fh_pct_fmt=$(printf '%.0f' "$fh_pct")
-  fh_time=""
-  if [ -n "$fh_reset" ] && [ "$fh_reset" != "0" ]; then
-    fh_time=$(date -d "@${fh_reset}" +%H:%M 2>/dev/null || date -r "${fh_reset}" +%H:%M 2>/dev/null)
+rl_add() {  # rl_add <label> <used %> <reset epoch> — appends "label NN% ↻eta"
+  local pct pct_c eta txt
+  [ -n "$2" ] || return 0
+  printf -v pct '%.0f' "$2" 2>/dev/null || return 0
+  [[ "$pct" =~ ^[0-9]+$ ]] || return 0
+  # spend_limit is the one window that reports past 100: clamp the colour there,
+  # never the number — how far over it has gone is the whole point.
+  if (( pct > 100 )); then pct_c=$'\033[1m'"$C_BAD"; else pct_color "$pct"; fi
+  txt="${pct_c}${1} ${pct}%"
+  if [[ "$3" =~ ^[0-9]+$ ]] && (( $3 > 0 )); then
+    fmt_eta "$3"
+    [ -n "$eta" ] && txt="${txt} ${I_RESET}${eta}"
   fi
-  rl_out="5h ${fh_pct_fmt}%"
-  [ -n "$fh_time" ] && rl_out="${rl_out} ${I_RESET}${fh_time}"
-fi
+  [ -n "$rl_out" ] && rl_out="${rl_out} ${DIM}· "
+  rl_out="${rl_out}${txt}"
+}
 
-if [ -n "$wd_pct" ]; then
-  wd_pct_fmt=$(printf '%.0f' "$wd_pct")
-  wd_time=""
-  if [ -n "$wd_reset" ] && [ "$wd_reset" != "0" ]; then
-    wd_time=$(date -d "@${wd_reset}" +"%d/%m %H:%M" 2>/dev/null || date -r "${wd_reset}" +"%d/%m %H:%M" 2>/dev/null)
-  fi
-  seg7="7d ${wd_pct_fmt}%"
-  [ -n "$wd_time" ] && seg7="${seg7} ${I_RESET}${wd_time}"
-  if [ -n "$rl_out" ]; then
-    rl_out="${rl_out} ${DIM}·${RST}${C_RL} ${seg7}"
-  else
-    rl_out="$seg7"
-  fi
-fi
+rl_add 5h  "$fh_pct" "$fh_reset"
+rl_add 7d  "$wd_pct" "$wd_reset"
+rl_add '$' "$spend_pct" "$spend_reset"
 
-[ -n "$rl_out" ] && seg "${C_RL}${rl_out}${RST}"
+[ -n "$rl_out" ] && seg "${rl_out}${RST}"
 
 # Always exit 0: a failing final `[ -n ... ] &&` would exit 1
 # and Claude Code discards the statusline on a non-zero exit code

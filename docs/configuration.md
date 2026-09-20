@@ -61,14 +61,15 @@ Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-t
 
 The runtime image ships a curated Claude Code statusline and applies it to every container by force-setting `~/.claude/settings.json` `statusLine` on each shell start (only that key is rewritten — everything else in your settings is preserved). It is image-owned policy: a local edit to the statusline is overwritten on the next shell, so **change it via a PR to this repo**, not in the container.
 
-Every segment is conditional except the working directory — the line shows only what applies right now:
+Every segment is conditional — the line shows only what applies right now, and an empty one takes no room:
 
 ```
- …/github/toolbox │  toolbox:main*  feat-xyz │  #1234 │  Opus 5 high FAST │  ACCEPT
-   │ @reviewer │ vim:NORMAL │ ▰▱▱▱▱ 22% │  1h15m │ 5h 24% 17:00 · 7d 41% 06/02 17:00
+ toolbox:main*  feat-xyz │  #1234 │  Opus 5 high FAST │  ACCEPT │ @reviewer │ vim:NORMAL │ ▰▱▱▱▱ 22% 1M │ ❄ │ 5h 24% 2h30m · 7d 41% 2d
 ```
 
-Left to right: working directory, `repo:branch` with dirty/ahead/behind markers and the linked-worktree name, the open PR for the branch (clickable, coloured by review state), model with reasoning effort and fast mode, permission-mode badge, custom agent, vim mode, output style, behavioural-mode badge, context-window bar, session duration, and 5-hour / 7-day rate-limit usage with reset times.
+Left to right: `repo:branch` with dirty/ahead/behind markers and the linked-worktree name, the open PR for the branch (clickable, coloured by review state), model with reasoning effort and fast mode, permission-mode badge, custom agent, vim mode, output style, behavioural-mode badge, context-window bar (named when the window is not the ordinary one), a snowflake while the prompt cache is cold, and rate-limit usage per window with the time left before each resets.
+
+The working directory is deliberately absent: starship already prints it, with the same truncation, on the line above. Reset deadlines are countdowns rather than clock times — a bare `01:59` says nothing about which day it falls on, and the five-hour window crosses midnight routinely.
 
 ![The managed statusline rendered in a toolbox shell, in colour with Nerd Font glyphs.](img/statusline.png)
 

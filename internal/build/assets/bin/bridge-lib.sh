@@ -9,6 +9,8 @@
 # user-facing message and exit policy (xdg-open exits 0 so OAuth flows never
 # block; code/proximo exit non-zero), so only the mechanics live here.
 
+# shellcheck shell=sh
+
 BRIDGE_STATE_DIR="/home/toolbox/.toolbox/bridge"
 # Pre-rename host CLI mounts only the legacy browser-bridge location; fall
 # back so a new image keeps working until the host toolbox is updated.

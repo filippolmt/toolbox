@@ -191,3 +191,27 @@ jobs:
         run: |
           npx --yes --package "renovate@${RENOVATE_VERSION}" \
             renovate-config-validator renovate.json
+
+  shellcheck:
+    # The image's shell assets were never linted anywhere: the gate table
+    # covered `.github/scripts/**` and stopped there. These are the container's
+    # whole boot path — the entrypoint, every init.d hook, the statusline and
+    # the smoke test itself — so a breakage here ships inside an image instead
+    # of failing a workflow.
+    #
+    # Error severity, deliberately. At warning level the run only goes green by
+    # silencing two findings that are not bugs: SC2034 across the sourced
+    # bridge library, whose variables the sourcing shim reads, and SC1078 on a
+    # valid nested-quote idiom in the smoke test that shellcheck misparses. A
+    # gate held green by suppressions measures the suppressions. zshrc.sh is
+    # excluded outright: it is zsh, which shellcheck does not parse.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Lint the image shell assets
+        run: |
+          find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \
+            | xargs -0 shellcheck -S error

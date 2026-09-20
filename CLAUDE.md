@@ -23,6 +23,7 @@
 | `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
 | `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push |
+| `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
 
 Two of the real-daemon gates `docker-ci.yml` runs for those paths (`go test -tags dockergate` — peer messaging and the session reload) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place they run. The third, the image-reclamation refusal (`internal/imagereclaim`), mounts nothing and does run locally with the socket and `IMAGE_TAG` in hand.
 
