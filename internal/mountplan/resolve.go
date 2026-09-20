@@ -20,7 +20,17 @@ import (
 func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []string) {
 	for _, m := range mounts {
 		b, ok, warns := resolveOne(m, home)
-		warnings = append(warnings, warns...)
+		for _, w := range warns {
+			// Only resolveOne knows whether the mount survived: a skipped
+			// one is announced as such here, once, while a mount that bound
+			// and still warned (unresolvable symlinks) is not. The printer
+			// must not guess — prefixing every warning called a bound mount
+			// skipped, and doubled the phrase on those that said it too.
+			if !ok {
+				w = "mount skipped: " + w
+			}
+			warnings = append(warnings, w)
+		}
 		if ok {
 			binds = append(binds, b)
 		}
@@ -31,13 +41,15 @@ func resolveAll(mounts []config.Mount, home string) (binds []Bind, warnings []st
 // resolveOne resolves a single mount to its Bind. ok is false when the mount
 // must be skipped; the warnings to surface are returned either way, since a
 // mount can bind successfully and still warn (e.g. unresolvable symlinks).
+// No warning says "mount skipped" itself — resolveAll adds that, and only
+// where it is true.
 func resolveOne(m config.Mount, home string) (b Bind, ok bool, warnings []string) {
 	// An empty source would resolve to CWD via filepath.Abs("") and
 	// silently bind the project dir. Defend at the resolver too — the
 	// validation in mergeMounts only covers config-file paths, not
 	// programmatic Mount{} construction by callers.
 	if m.Source == "" {
-		return Bind{}, false, []string{"mount with empty source skipped (target " + m.Target + ")"}
+		return Bind{}, false, []string{"empty source (target " + m.Target + ")"}
 	}
 
 	src := resolveSource(m.Source, home)
@@ -111,7 +123,7 @@ func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 	case m.SymlinkFrom != "":
 		target := filepath.Clean(fsx.ExpandTilde(m.SymlinkFrom, home))
 		if _, statErr := os.Stat(target); statErr != nil {
-			return false, fmt.Errorf("symlink target missing, mount skipped: %s: %w", m.SymlinkFrom, statErr)
+			return false, fmt.Errorf("host path %s does not exist: %w", m.SymlinkFrom, statErr)
 		}
 		if mkErr := os.MkdirAll(filepath.Dir(src), 0o700); mkErr != nil {
 			return false, fmt.Errorf("failed to create parent dir for %s: %w", m.Source, mkErr)
@@ -128,6 +140,6 @@ func ensureSource(m config.Mount, src, home string) (ready bool, err error) {
 		return true, nil
 
 	default:
-		return false, fmt.Errorf("path not found, mount skipped: %s", m.Source)
+		return false, fmt.Errorf("host path %s does not exist", m.Source)
 	}
 }

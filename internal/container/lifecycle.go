@@ -351,7 +351,7 @@ func NewClient() (client.APIClient, error) {
 // The cycle lives in the sequence of processes, not inside any one of them.
 func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (rl *reload.From, err error) {
 	for _, w := range plan.Warnings {
-		ui.Warning("mount skipped: " + w)
+		ui.Warning(w)
 	}
 
 	// A reload arrives owning a container it must replace, and it must do so
