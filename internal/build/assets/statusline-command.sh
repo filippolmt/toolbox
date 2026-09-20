@@ -2,11 +2,10 @@
 # Claude Code statusLine — pretty
 # ┊ branch[*↑↓] ⑂wt ┊ model ⚡effort [FAST] ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
 # Perf: single jq pass, git cached 5s per session_id (script runs on every tick)
-# Four things are deliberately absent because another surface already carries
-# them, on screen at the same moment: the open PR and the permission mode
-# (Claude Code's own hint line, one row below), the repository name (the herdr
-# workspace label), and the cwd (starship's [directory] module). Nothing here
-# should repeat what the screen already says.
+# Nothing here repeats what another surface shows at the same moment: pr.*,
+# permission_mode, workspace.repo.name and cwd are all in the stdin JSON and all
+# deliberately unrendered. Which surface carries each, and why the branch is the
+# exception: .claude/rules/image-build.md.
 export LC_NUMERIC=C
 
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
@@ -50,14 +49,9 @@ if [ -z "$effort" ]; then
   effort="${effort:-high}"
 fi
 
-# Explicit UTF-8 bytes, for two reasons that rule out the obvious alternatives.
-# A literal glyph loses to any tool that cannot encode it: these are Private Use
-# Area characters, and one such tool emptied every assignment here in place,
-# silently. A \u escape loses to the locale: bash converts it through LC_CTYPE,
-# and under LC_ALL=C it emits the escape as text — which the script cannot undo
-# from the inside, because LC_ALL outranks anything it exports. Bytes are both
-# pure ASCII in the source and locale-proof.
-# What holds this: .claude/rules/image-build.md.
+# Explicit UTF-8 bytes: a literal PUA glyph loses to any tool that cannot encode
+# it (one emptied every assignment here in place), and a \u escape loses to the
+# locale. Guardrail and tests: .claude/rules/image-build.md.
 # ── Icons (Nerd Font) ─────────────────────────────────────────────────────
 I_GIT=$'\xee\x9c\xa5'      # git-branch (nf-dev-git_branch U+E725)
 I_MODEL=$'\xef\x84\xb5'    # rocket (nf-fa-rocket U+F135)
@@ -84,9 +78,7 @@ seg() {  # seg <already-coloured text> — prepends the separator from the 2nd s
   printf '%s' "$1"
 }
 
-pct_color() {  # pct_color <integer %> — sets $pct_c; one green→amber→red scale for every percentage
-  # Its own variable, not the `c` the PR segment writes: these two run in the
-  # same shell and the only thing keeping them apart today is call order.
+set_pct_color() {  # set_pct_color <integer %> — sets $pct_c; one green→amber→red scale for every percentage
   if   (( $1 >= 70 )); then pct_c="$C_BAD"
   elif (( $1 >= 40 )); then pct_c="$C_GIT"   # amber, shared with the git segment
   else                      pct_c="$C_OK"; fi
@@ -96,7 +88,7 @@ pct_color() {  # pct_color <integer %> — sets $pct_c; one green→amber→red 
 # The %(...)T builtin never forks, unlike the `date` calls this replaced.
 printf -v NOW '%(%s)T' -1
 
-fmt_eta() {  # fmt_eta <epoch> — sets $eta to a relative countdown, empty when already past
+set_eta() {  # set_eta <epoch> — sets $eta to a relative countdown, empty when already past
   local rem=$(( $1 - NOW ))
   if   (( rem <= 0 ));    then eta=""
   elif (( rem < 3600 ));  then eta="$(( rem / 60 ))m"
@@ -105,16 +97,12 @@ fmt_eta() {  # fmt_eta <epoch> — sets $eta to a relative countdown, empty when
 }
 
 # ── Git: branch, dirty *, ahead ↑ / behind ↓, ⑂ worktree — cache 5s ──────
-# The repository name is not here: herdr labels its workspace with it, in the
-# sidebar, at the same time. The branch is, because nothing else on screen
-# carries it — herdr labels every worktree workspace of one repo identically,
-# and starship prints the branch only in the prompt, which has scrolled away by
-# the time an agent is working. The worktree name prefers the statusLine JSON
-# (workspace.git_worktree) over a git spawn, but keeps its git fallback, since
-# that field needs a Claude Code new enough to emit it; without the fallback the
-# marker would vanish rather than degrade. The whole segment is cached together,
-# and the cache key includes cwd, so entering a worktree recomputes at once
-# instead of waiting out the TTL.
+# The branch, never the repository name — see the header. The worktree name
+# prefers the statusLine JSON (workspace.git_worktree) over a git spawn, but
+# keeps its git fallback, since that field needs a Claude Code new enough to
+# emit it; without the fallback the marker would vanish rather than degrade.
+# The whole segment is cached together, and the cache key includes cwd, so
+# entering a worktree recomputes at once instead of waiting out the TTL.
 build_git_seg() {
   local branch extra ab behind ahead wt
   branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null \
@@ -213,7 +201,7 @@ if [ -n "$used" ]; then
   # bar as though the context were pristine. Blank it and let the guard hide it.
   printf -v pct '%.0f' "$used" 2>/dev/null || pct=""
   if [[ "$pct" =~ ^[0-9]+$ ]]; then
-    pct_color "$pct"
+    set_pct_color "$pct"
     fill=$(( (pct + 10) / 20 )); (( fill > 5 )) && fill=5
     bar=""
     for ((i=0; i<5; i++)); do
@@ -252,10 +240,10 @@ rl_add() {  # rl_add <label> <used %> <reset epoch> — appends "label NN% ↻et
   [[ "$pct" =~ ^[0-9]+$ ]] || return 0
   # spend_limit is the one window that reports past 100: clamp the colour there,
   # never the number — how far over it has gone is the whole point.
-  if (( pct > 100 )); then pct_c=$'\033[1m'"$C_BAD"; else pct_color "$pct"; fi
+  if (( pct > 100 )); then pct_c=$'\033[1m'"$C_BAD"; else set_pct_color "$pct"; fi
   txt="${pct_c}${1} ${pct}%"
   if [[ "$3" =~ ^[0-9]+$ ]] && (( $3 > 0 )); then
-    fmt_eta "$3"
+    set_eta "$3"
     [ -n "$eta" ] && txt="${txt} ${I_RESET}${eta}"
   fi
   [ -n "$rl_out" ] && rl_out="${rl_out} ${DIM}· "

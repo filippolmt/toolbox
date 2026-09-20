@@ -160,6 +160,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 ### [internals/shell-start.md](internals/shell-start.md)
 
 - [Prompt glyph width](internals/shell-start.md#prompt-glyph-width)
+- [Glyph escapes in image assets](internals/shell-start.md#glyph-escapes-in-image-assets)
 - [Prompt module toggles](internals/shell-start.md#prompt-module-toggles)
 - [UTF-8 locale](internals/shell-start.md#utf-8-locale)
 - [SHELL in the image env](internals/shell-start.md#shell-in-the-image-env)

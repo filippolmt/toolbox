@@ -90,11 +90,12 @@ style    = "yellow"
 # (drift = ghost characters on Backspace). Per-symbol codepoints inline;
 # backstory + diagnostic heuristic: docs/internals/shell-start.md#prompt-glyph-width
 #
-# Written as TOML \u / \U escapes, never as literal characters. The literal
-# form does not survive every tool that edits this file: git_branch reached a
-# shipped image as a bare space, and only the four supplementary-plane symbols
-# below came through intact. Same guardrail, same reason, as the statusline
-# icons: .claude/rules/image-build.md.
+# Written as TOML \u / \U escapes, never as literal characters: a PUA glyph
+# does not survive every tool that edits this file, and git_branch already
+# reached a shipped image as a bare space. Guardrail and tests:
+# .claude/rules/image-build.md. The non-PUA symbols above ([character],
+# [git_status]) stay literal on purpose — they are outside that hazard, and
+# escaping them would only cost the reader the glyph.
 
 # Upstream default: disabled. We enable because kubectl is bundled and a
 # misclick on the wrong context is a recurring footgun. Detection reads

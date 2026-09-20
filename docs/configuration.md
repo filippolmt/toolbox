@@ -64,16 +64,14 @@ The runtime image ships a curated Claude Code statusline and applies it to every
 Every segment is conditional — the line shows only what applies right now, and an empty one takes no room:
 
 ```
- main*  feat-xyz │  Opus 5 high FAST │ @reviewer │ vim:NORMAL │ ▰▱▱▱▱ 22% 1M │ ❄ │ 5h 24% 2h30m · 7d 41% 2d
+ main*  feat-xyz │  Opus 5 high FAST │ @reviewer │ vim:NORMAL │ ▰▱▱▱▱ 22% 1M │ ❄ │ 5h 24% 2h30m · 7d 41% 2d · $ 137% 10d
 ```
 
-Left to right: the branch with dirty/ahead/behind markers and the linked-worktree name, model with reasoning effort and fast mode, custom agent, vim mode, output style, behavioural-mode badge, context-window bar (named when the window is not the ordinary one), a snowflake while the prompt cache is cold, and rate-limit usage per window with the time left before each resets.
-
-Four things are absent on purpose, each because another surface already shows it **at the same moment**, which is what separates a duplicate from a second opinion. The open PR and the permission mode: Claude Code prints both on its own hint line, one row below. The repository name: herdr labels its workspace with it, in the sidebar. The working directory: starship prints it with the same truncation.
-
-The branch stays, and the distinction is worth the words. starship prints it too, but only in the prompt — which has scrolled out of view by the time an agent has been working for a while, and which goes stale the moment that agent switches branch under you. herdr labels every worktree workspace of one repository identically, so its sidebar cannot tell them apart either.
+Left to right: the branch with dirty/ahead/behind markers and the linked-worktree name, model with reasoning effort and fast mode, custom agent, vim mode, output style, behavioural-mode badge, context-window bar (named when the window is not the ordinary one), a snowflake while the prompt cache is cold, and usage per rate-limit window — five-hour, weekly, and spend where your plan has one — with the time left before each resets. The spend window is the only one that reports past 100%: its colour stops at the top of the scale, its number does not.
 
 Reset deadlines are countdowns rather than clock times — a bare `01:59` says nothing about which day it falls on, and the five-hour window crosses midnight routinely.
+
+Four things the statusline could show are absent on purpose, each because another surface already shows it **at the same moment**: the open PR and the permission mode (Claude Code's own hint line, one row below), the repository name (the herdr workspace label) and the working directory (starship's prompt, with the same truncation). The branch is kept because nothing else passes that test — starship prints it only in the prompt, which has scrolled away by the time an agent has been working, and which goes stale the moment that agent switches branch under you.
 
 ![The managed statusline rendered in a toolbox shell, in colour with Nerd Font glyphs.](img/statusline.png)
 

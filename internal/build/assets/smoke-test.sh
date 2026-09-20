@@ -731,25 +731,29 @@ bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
 # both survive a syntax check intact while rendering wrongly. Why the glyphs
 # are byte escapes: .claude/rules/image-build.md.
 now=$(date +%s)
-json="{\"cwd\":\"/tmp/sentinel-cwd\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
-json="$json\"permission_mode\":\"acceptEdits\",\"pr\":{\"number\":4321,\"review_state\":\"pending\"},"
-json="$json\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
-json="$json\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
-json="$json\"rate_limits\":{"
-json="$json\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9000))},"
-json="$json\"seven_day\":{\"used_percentage\":61,\"resets_at\":$((now + 230000))},"
-json="$json\"spend_limit\":{\"used_percentage\":137,\"resets_at\":$((now + 900000))}}}"
+make_json() {  # make_json <cwd> — one fixture shape, pointed wherever the caller needs
+  j="{\"cwd\":\"$1\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
+  j="$j\"permission_mode\":\"acceptEdits\",\"pr\":{\"number\":4321,\"review_state\":\"pending\"},"
+  j="$j\"workspace\":{\"repo\":{\"name\":\"sentinel-reponame\"},\"git_worktree\":\"sentinel-wt\"},"
+  j="$j\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
+  j="$j\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
+  j="$j\"rate_limits\":{"
+  j="$j\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9000))},"
+  j="$j\"seven_day\":{\"used_percentage\":61,\"resets_at\":$((now + 230000))},"
+  j="$j\"spend_limit\":{\"used_percentage\":137,\"resets_at\":$((now + 900000))}}}"
+  printf "%s" "$j"
+}
+json=$(make_json /tmp/sentinel-cwd)
 
 # Strip the colour escapes. One of them sits between the percentage and the
 # window name, so every pattern below would otherwise have to know the palette.
 strip_ansi() { sed "s/\x1b\[[0-9;]*m//g"; }
 out=$(printf "%s" "$json" | bash "$SL" | strip_ansi)
 
-# Every glyph below is explicit UTF-8 bytes: never a literal character, which
-# the failure being guarded against blanks in step with the bug so the pattern
-# then matches anything, and never a \u escape, which this shell would convert
-# through its own LC_CTYPE so the C-locale check further down would compare one
-# broken string against another. Assert each is non-empty or none proves a thing.
+# Every glyph below is explicit UTF-8 bytes, for the reasons in
+# .claude/rules/image-build.md, plus one local to a test: a literal character
+# here is blanked in step with the bug it guards, so the pattern then matches
+# anything. Assert each is non-empty or none of them proves a thing.
 # Built with printf, never with a dollar-quoted string: this whole block is the
 # body of a single-quoted docker run bash -c argument, so one apostrophe ends it
 # early. bash -n checks the outer script, where all of this is just a string, so
@@ -757,8 +761,18 @@ out=$(printf "%s" "$json" | bash "$SL" | strip_ansi)
 # apostrophes, comments included.
 printf -v reset_icon "\xef\x80\xa1"   # nf-fa-refresh U+F021, precedes every countdown
 printf -v cold_icon  "\xe2\x9d\x84"   # snowflake U+2744, cold prompt cache
+printf -v git_icon   "\xee\x9c\xa5"   # nf-dev-git_branch U+E725, precedes the branch
+printf -v model_icon "\xef\x84\xb5"   # nf-fa-rocket U+F135, precedes the model name
+printf -v eff_icon   "\xef\x83\xa7"   # nf-fa-bolt U+F0E7, precedes the effort level
+printf -v wt_icon    "\xef\x84\xa6"   # nf-fa-code_fork U+F126, marks a linked worktree
 printf -v clock_icon "\xef\x80\x97"   # nf-fa-clock_o U+F017, the retired duration segment
-for _g in "$reset_icon" "$cold_icon" "$clock_icon"; do
+printf -v bar_full   "\xe2\x96\xb0"   # U+25B0, a used fifth of the context bar
+printf -v bar_empty  "\xe2\x96\xb1"   # U+25B1, a free one
+# The icons are asserted one by one rather than as a set: the failure this
+# guards emptied every assignment at once, but the bar characters survived it,
+# so a pattern that covers only some of them is how the next one ships.
+for _g in "$reset_icon" "$cold_icon" "$git_icon" "$model_icon" "$eff_icon" \
+          "$wt_icon" "$clock_icon" "$bar_full" "$bar_empty"; do
   [ -n "$_g" ] || { echo "FAILED: a glyph in this test is empty; the assertions below would prove nothing"; exit 1; }
 done
 
@@ -791,29 +805,46 @@ esac
 
 # The context bar names its window only when it is not the default one. The
 # percentage here differs from every rate-limit percentage on purpose, so a bug
-# that renders the wrong one cannot land on a matching number.
+# that renders the wrong one cannot land on a matching number. The bar itself is
+# part of the pattern: 37% fills two fifths, and nothing else on the line would
+# report a blanked bar.
 case "$out" in
-  *"37% 1M"*) ;;
-  *) echo "FAILED: extended context window not named beside the bar: $out"; exit 1 ;;
+  *"${bar_full}${bar_full}${bar_empty}${bar_empty}${bar_empty} 37% 1M"*) ;;
+  *) echo "FAILED: context bar, its fill or its window name are wrong: $out"; exit 1 ;;
 esac
 
-# Four segments are deliberately absent, and every one of them would come back
-# silently. The working directory and the session duration were dropped outright.
-# The open PR and the permission mode are dropped because Claude Code prints
-# both on its own hint line, one row below this one, at the same time — which is
-# what makes them duplicates rather than a second opinion. The fixture supplies
-# both, so these assert an absence that was actually exercised.
+# The model segment, for its two icons. Nothing else asserts either, and the
+# failure these escapes exist for took out every icon in the file at once.
+case "$out" in
+  *"${model_icon} M "*) ;;
+  *) echo "FAILED: model segment missing or its icon blank: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"${eff_icon}"*) ;;
+  *) echo "FAILED: effort icon missing; it falls back to high with no settings.json: $out"; exit 1 ;;
+esac
+
+# Four fields the fixture supplies are deliberately unrendered, each because
+# another surface carries it at the same moment: the open PR and the permission
+# mode (the Claude Code hint line, one row below), the repository name (the
+# herdr workspace label) and the working directory (the starship prompt). The
+# fixture carries all four, so every absence below was actually exercised. The
+# session duration is asserted with them but belongs to no such pair: it was
+# dropped because nobody acted on it, and it would come back just as silently.
 case "$out" in
   *sentinel-cwd*) echo "FAILED: the working directory is being rendered again: $out"; exit 1 ;;
 esac
 case "$out" in
-  *"$clock_icon"*) echo "FAILED: the session duration segment is back: $out"; exit 1 ;;
+  *sentinel-reponame*) echo "FAILED: the repository name is rendered here as well as in the herdr sidebar: $out"; exit 1 ;;
 esac
 case "$out" in
   *4321*) echo "FAILED: the PR number is rendered here as well as on the hint line: $out"; exit 1 ;;
 esac
 case "$out" in
   *ACCEPT*) echo "FAILED: the permission mode is rendered here as well as on the hint line: $out"; exit 1 ;;
+esac
+case "$out" in
+  *"$clock_icon"*) echo "FAILED: the session duration segment is back: $out"; exit 1 ;;
 esac
 
 # Render once more under the C locale, the configuration that caught this. The
@@ -822,9 +853,29 @@ esac
 # fix it from the inside because LC_ALL outranks whatever it exports. LANG is
 # overridable by a user env passthrough, so this is reachable, not theoretical.
 out_c=$(printf "%s" "$json" | LC_ALL=C bash "$SL" | strip_ansi)
-case "$out_c" in
-  *"$reset_icon"*) ;;
-  *) echo "FAILED: icons do not survive LC_ALL=C; the escapes leaked as text: $out_c"; exit 1 ;;
+for _g in "$reset_icon" "$cold_icon" "$model_icon" "$eff_icon" "$bar_full" "$bar_empty"; do
+  case "$out_c" in
+    *"$_g"*) ;;
+    *) echo "FAILED: a glyph does not survive LC_ALL=C; the escapes leaked as text: $out_c"; exit 1 ;;
+  esac
+done
+
+# The branch is the one thing kept for failing the same test the four absences
+# above pass, and an exception nobody tests is an exception that quietly stops
+# existing. The fixture above cannot carry it: its cwd is not a repository, so
+# the whole git segment is empty and every assertion on it would be vacuous.
+repo=/tmp/sentinel-workdir
+mkdir -p "$repo"
+git init -q -b sentinel-branch "$repo" >/dev/null 2>&1 \
+  || { echo "FAILED: cannot create the fixture repository"; exit 1; }
+out_git=$(printf "%s" "$(make_json "$repo")" | bash "$SL" | strip_ansi)
+case "$out_git" in
+  *"${git_icon} sentinel-branch"*) ;;
+  *) echo "FAILED: the branch is gone from the git segment: $out_git" ; exit 1 ;;
+esac
+case "$out_git" in
+  *"${wt_icon} sentinel-wt"*) ;;
+  *) echo "FAILED: the linked-worktree marker or its name is missing: $out_git"; exit 1 ;;
 esac
 
 echo "OK: managed statusline present, parses and renders"

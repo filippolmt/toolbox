@@ -2056,3 +2056,55 @@ one: measured across the rule files when the hygiene test first learned to see
 Go qualifiers, every uncovered mention was a pointer and none was an ownership
 question, so an exemption-only answer would have buried the signal it exists to
 carry.
+
+### Simultaneous Surface
+
+The test a managed-statusline segment has to pass: something is rendered only
+when no other surface already shows it **at the same moment**. Simultaneity is
+the whole criterion — a fact shown twice at once is a duplicate, and the same
+fact shown again later, or shown stale, is a second opinion worth the columns.
+
+Concretely: `statusline-command.sh` drops `pr.*` and `permission_mode` because
+Claude Code prints both on its own hint line one row below, inside the same
+TUI; `workspace.repo.name` because herdr labels its workspace with it in the
+sidebar; and `cwd` because starship's `[directory]` module prints it with the
+same truncation. The branch is the exception the test itself produces: starship
+prints it in the prompt, which has scrolled out of view once an agent has been
+working and goes stale the moment that agent switches branch, and herdr labels
+every worktree workspace of one repository identically. Mechanism and the full
+list: [managed statusline](docs/internals/shell-start.md#managed-statusline).
+Guardrail and test names:
+[`.claude/rules/image-build.md`](.claude/rules/image-build.md).
+
+Why the term exists: "don't duplicate" is the obvious phrasing and it is the
+wrong one — it deletes the branch along with the repository name, because both
+are printed somewhere else by something. Naming the *moment* is what separates
+them, and it is also what keeps the decision reviewable: the surrounding TUI is
+not in this repository, so every entry on the list is a claim about software
+that can change underneath it, and a claim has to be stated to be re-checked.
+
+### Blanked Glyph
+
+A Private Use Area character that a tool unable to encode it empties in place,
+leaving the assignment syntactically intact and the glyph gone. The name is for
+the failure, not the fix, because the failure is what a reader meets first: a
+statusline rendering a row of stray spaces, with a file that parses.
+
+Concretely: it has hit `statusline-command.sh`, where every Nerd Font icon
+reached shipped images as an empty string, and `starship.toml`, where
+`git_branch` shipped as a bare space. Hence the guardrail — no image asset
+writes a PUA glyph as a literal character, each format escaping it the way its
+own hazards require — and hence the shape of the tests, which render or parse
+the asset rather than reading the source, and escape their own glyphs so an
+assertion is not blanked in step with the bug it guards. Mechanism:
+[glyph escapes](docs/internals/shell-start.md#glyph-escapes-in-image-assets).
+Guardrail and test names:
+[`.claude/rules/image-build.md`](.claude/rules/image-build.md).
+
+Why the term exists: every cheap description of this bug names the wrong agent.
+"Encoding bug" and "mojibake" both suggest bytes arriving wrong, and here they
+arrive *absent*; "the icons broke" suggests the terminal or the font, which is
+where three earlier glyph problems in this repo actually lived. Naming the
+blanking makes the diagnostic obvious instead — an empty string in the source,
+not a wrong one — and makes the second instance recognisable as the first,
+which is how `starship.toml` was checked at all.
