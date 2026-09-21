@@ -20,29 +20,18 @@ set -euo pipefail
 command -v codegraph >/dev/null 2>&1 || exit 0
 [ -d "$PWD/.codegraph" ] || exit 0
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    # Stamp is toolbox-owned and lives outside the workspace, keyed by
-    # (workspace, tool); content is the version last installed from. $PWD is
-    # hashed so an arbitrarily deep workspace path still yields a valid name.
-    _cg_ver=$(codegraph --version 2>/dev/null | tr -d '\n' || true)
-    _cg_stamp="$HOME/.toolbox-state/install-refresh/$(printf '%s' "$PWD" | sha256sum | cut -c1-16)-codegraph"
-    _cg_stamped=""
-    if [ -f "$_cg_stamp" ]; then
-        read -r _cg_stamped < "$_cg_stamp" 2>/dev/null || true
-    fi
+# The gate itself lives in one place, sourced by every member that re-runs a
+# per-repo installer — stamp shape, the -n guard and the failure message are
+# its business, not each member's.
+# shellcheck source=bin/install-refresh-lib.sh
+. /usr/local/lib/toolbox/install-refresh-lib.sh
 
-    # The -n guard scopes to the version half ONLY. If the version probe ever
-    # breaks upstream, an unreadable version must not read as "differs from the
-    # stamp" — that would reopen the gate on every shell and hand back exactly
-    # the churn this gate removes. Guarding the whole condition instead would be
-    # the opposite bug: a deleted install would stop self-healing, silently.
-    if { [ -n "$_cg_ver" ] && [ "$_cg_stamped" != "$_cg_ver" ]; } || [ ! -f "$PWD/.mcp.json" ]; then
-        if codegraph install --refresh >/dev/null 2>&1; then
-            mkdir -p "$(dirname "$_cg_stamp")"
-            printf '%s' "$_cg_ver" > "$_cg_stamp"
-        else
-            echo "toolbox: codegraph skill refresh failed (non-fatal — run \`codegraph install --refresh\` manually to retry)"
-        fi
-    fi
-    unset _cg_ver _cg_stamp _cg_stamped
+
+if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+    _cg_ver=$(codegraph --version 2>/dev/null | tr -d '\n' || true)
+    # The artefact half is .mcp.json, not a skill dir: codegraph writes an MCP
+    # config, and it is what must come back if the repo loses it.
+    toolbox_install_refresh codegraph "$PWD/.mcp.json" "$_cg_ver" \
+        codegraph install --refresh || true
+    unset _cg_ver
 fi

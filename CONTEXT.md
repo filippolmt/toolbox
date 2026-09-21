@@ -1875,19 +1875,36 @@ The rule every Init Sequence script follows when it re-runs a tool's *per-repo*
 installer: refresh only when the bundled tool version differs from a
 toolbox-owned stamp, **or** the artefact that installer should have written is
 missing. Members today are `30-graphify.sh`, `31-codegraph.sh` and
-`40-playwright-cli.sh`.
+`40-playwright-cli.sh`. The rule itself is one function,
+`toolbox_install_refresh` in `bin/install-refresh-lib.sh` (sourced from
+`/usr/local/lib/toolbox/`, like `bridge-lib.sh`): a member supplies the stamp
+key, the artefact, the version and the install command, and nothing else. It
+used to be twenty lines copied into each member, which is one wording drift
+away from two gates that no longer agree.
 
 Concretely: the stamp lives outside the workspace at
-`$HOME/.toolbox-state/install-refresh/<sha256($PWD)[0:16]>-<tool>` (host
-`~/.toolbox/state/`, so it survives `toolbox stop` and is per-host), and its
-content is the version last installed from. The emptiness guard scopes to the
+`$HOME/.toolbox-state/install-refresh/<sha256($PWD)[0:16]>-<tool>[-<agent>]`
+(host `~/.toolbox/state/`, so it survives `toolbox stop` and is per-host), and
+its content is the version last installed from. The agent suffix is what makes
+a second pass possible: a tool that writes a separate copy per agent refreshes
+once per agent, and each pass needs its own stamp. Share one and the bug is
+silent — the first pass moves the stamp to the bundled version, the second
+reads it as current and its agent's copy is never written, freezing at whatever
+first installed it. The emptiness guard scopes to the
 version half alone — `{ [ -n "$ver" ] && [ "$stamped" != "$ver" ]; } || [ ! -f
-<artefact> ]` — because an unreadable version must not read as "differs" (the
+"$artefact" ]` — because an unreadable version must not read as "differs" (the
 gate would reopen every shell) and must not suppress the artefact half either (a
-deleted install would stop self-healing). One artefact per tool is watched, on
-purpose: `SKILL.md` for graphify and playwright-cli, `.mcp.json` for codegraph,
-and never the PreToolUse hook block or the `## graphify` section in `CLAUDE.md`,
-which a user may remove deliberately. `30-graphify.sh` additionally narrows the
+deleted install would stop self-healing). The function returns 0 when the gate
+opened, whatever the install then did, so a caller can hang its own
+post-install work off the same decision — which is how `30-graphify.sh` keeps
+its matcher narrowing tied to the refresh. One artefact per pass is watched, on
+purpose: `SKILL.md` for graphify and playwright-cli — under the root the pass's
+own agent reads, so deleting one agent's skill self-heals without touching the
+other's — `.mcp.json` for codegraph, and never the PreToolUse hook block or the
+`## graphify` section in `CLAUDE.md`, which a user may remove deliberately. The
+repo-level opt-in marker stays one per member (`graphify-out/`, the claude
+skill dir, `.codegraph/`): a pass adds an agent to a repo already opted in,
+never a repo. `30-graphify.sh` additionally narrows the
 matchers `graphify install` writes (`Bash|Grep` → `Grep`, `Read|Glob` → `Glob`)
 only while they are still the known upstream values, so a hand-edited hook
 survives — and, because that rename is exactly what blinds upstream's own
@@ -1898,8 +1915,11 @@ is checked only on the drop, and the drop only fires when a wide graphify entry
 is actually present, so neither a hand-written `Grep` hook nor a failed install
 loses anything. `graphify hook install` stays outside the gate, because `.git/hooks/`
 is never committed and so absent from a fresh clone. Held by
-`TestWorkspaceInstallRefreshGate` + `TestGraphifyHookInstallOutsideGate`
-(`internal/build/workspace_install_refresh_test.go`) over the embedded scripts,
+`TestWorkspaceInstallRefreshGate`, `TestWorkspaceInstallRefreshGateLivesInOneplace`
+(no member may hand-roll a stamp path again),
+`TestGraphifyHookInstallOutsideGate`
+(`internal/build/workspace_install_refresh_test.go`) and
+`TestPerRepoInstallersRefreshWhatPiReads` over the embedded scripts,
 and by the `Workspace Install Refresh` block in `smoke-test.sh`, which boots
 `30-graphify.sh` in a throwaway workspace and reads the result back out.
 Rationale and rejected options: `docs/adr/0001-workspace-install-refresh.md`.

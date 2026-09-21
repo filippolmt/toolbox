@@ -490,6 +490,7 @@ check_required "certutil"   sh -c "command -v certutil"
 check_required "xterm-ghostty terminfo" sh -c "infocmp xterm-ghostty >/dev/null && echo present"
 # The shared transport every bridge shim sources; the state-dir constant
 # lives here (not in the shims), so this is where the marker is asserted.
+check_required "install-refresh-lib" sh -c "test -r /usr/local/lib/toolbox/install-refresh-lib.sh && grep -q toolbox_install_refresh /usr/local/lib/toolbox/install-refresh-lib.sh && echo present"
 check_required "bridge-lib" sh -c "test -r /usr/local/lib/toolbox/bridge-lib.sh && grep -q /home/toolbox/.toolbox/browser /usr/local/lib/toolbox/bridge-lib.sh && grep -q unix-socket /usr/local/lib/toolbox/bridge-lib.sh && echo present"
 check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && grep -q bridge-lib.sh /usr/local/bin/xdg-open && echo present"
 check_required "xdg-open symlinks" sh -c "test -L /usr/local/bin/open && test -L /usr/local/bin/x-www-browser && test -L /usr/local/bin/sensible-browser && test -L /usr/local/bin/gnome-open && test -L /usr/local/bin/www-browser && echo present"
@@ -926,6 +927,11 @@ set -e
 command -v graphify >/dev/null 2>&1 || { echo "SKIP: graphify not installed"; exit 0; }
 command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
 mkdir -p "$HOME/.claude"
+# pi refreshes into .pi/agent/skills behind a stamp of its own, and its gate is
+# the ~/.pi bind mount — absent in a throwaway container, so the pass would be
+# skipped and its half of this block would prove nothing. Create it here: that
+# is the one condition a real session always has and this one never does.
+mkdir -p "$HOME/.pi"
 d=$(mktemp -d)
 cd "$d"
 mkdir -p graphify-out .claude
@@ -964,6 +970,18 @@ snaps=$(find graphify-out -maxdepth 1 -type d -name "20*" | wc -l)
 [ ! -e .claude/settings.json.graphify-bak ] || { echo "FAILED: settings.json.graphify-bak left in the workspace"; exit 1; }
 stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/null | head -n1)
 [ -n "$stamp" ] || { echo "FAILED: no version stamp under ~/.toolbox-state/install-refresh — the gate would reopen every shell"; exit 1; }
+# The pi pass: its own artefact, under the root pi reads, and its own stamp.
+# A shared stamp is the silent failure this asserts against — the claude pass
+# would have set it to the bundled version and pi would never be written.
+[ -f .pi/agent/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/agent/skills/graphify/SKILL.md"; exit 1; }
+pi_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify-pi" 2>/dev/null | head -n1)
+[ -n "$pi_stamp" ] || { echo "FAILED: no -graphify-pi stamp — the pi gate would reopen every shell"; exit 1; }
+[ "$pi_stamp" != "$stamp" ] || { echo "FAILED: the pi pass reused the claude stamp"; exit 1; }
+# Deleting one agent copy must self-heal it without reopening the gate of the
+# other pass: the artefact halves are per pass.
+rm -f .pi/agent/skills/graphify/SKILL.md
+/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the pi self-heal"; exit 1; }
+[ -f .pi/agent/skills/graphify/SKILL.md ] || { echo "FAILED: a deleted pi skill did not self-heal"; exit 1; }
 # Second refresh, the case the normalisation itself creates: graphify install
 # recognises its own hooks by (wide upstream matcher) AND (entry mentions
 # graphify), so once we have narrowed the matcher it no longer sees its own work
@@ -999,5 +1017,82 @@ rm -f .claude/skills/graphify/SKILL.md
 assert_narrowed "third refresh, changed payload"
 stale=$(jq "[.hooks.PreToolUse[] | select(tostring | contains(\"--stale-payload\"))] | length" .claude/settings.json)
 [ "$stale" = "0" ] || { echo "FAILED: ${stale} stale-payload PreToolUse entr(ies) survived the refresh that replaced them"; exit 1; }
-echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, stamped $(cat "$stamp")"
+echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, pi copy stamped separately, stamped $(cat "$stamp")"
+'
+
+echo "=== npm-global shadow heal (15-npm-shadow-dedupe.sh, real roots) ==="
+# Runtime half of the npm_shadow_dedupe tests, which drive the script with
+# fixture roots. Here it runs with NO arguments, against the real
+# ~/.npm-global and the real /usr/local/lib/node_modules, through the real npm
+# — the production path, which no unit test can reach.
+#
+# Four fixtures, one per branch of the decision. The container is throwaway and
+# its npm-global is empty, so nothing else is in scope. No single quotes — this
+# body lives inside a single-quoted bash -c.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+seed_volume() {
+    mkdir -p "$HOME/.npm-global/lib/node_modules/$1" "$HOME/.npm-global/bin"
+    printf "{\"name\":\"%s\",\"version\":\"%s\",\"bin\":{\"%s\":\"cli.js\"}}" "$1" "$2" "$1" > "$HOME/.npm-global/lib/node_modules/$1/package.json"
+    printf "#!/usr/bin/env node\n" > "$HOME/.npm-global/lib/node_modules/$1/cli.js"
+    ln -sf "../lib/node_modules/$1/cli.js" "$HOME/.npm-global/bin/$1"
+}
+seed_hoisted() {
+    mkdir -p "$HOME/.npm-global/lib/node_modules/$1"
+    printf "{\"name\":\"%s\",\"version\":\"%s\"}" "$1" "$2" > "$HOME/.npm-global/lib/node_modules/$1/package.json"
+}
+seed_baked() {
+    sudo mkdir -p "/usr/local/lib/node_modules/$1"
+    printf "{\"name\":\"%s\",\"version\":\"%s\"}" "$1" "$2" | sudo tee "/usr/local/lib/node_modules/$1/package.json" >/dev/null
+}
+# Stale: the image moved past the volume copy. Goes, link and all.
+seed_volume smoke-stale 1.0.0;        seed_baked smoke-stale 2.0.0
+# Ahead of the image, the self-update case. Stays.
+seed_volume smoke-ahead 3.0.0;        seed_baked smoke-ahead 2.0.0
+# Prerelease of the version the image ships: older, whatever sort -V thinks.
+seed_volume smoke-pre 2.0.0-beta.1;   seed_baked smoke-pre 2.0.0
+# Hoisted dependency: no bin link, so not ours to remove even though it is stale.
+seed_hoisted smoke-dep 1.0.0;         seed_baked smoke-dep 9.0.0
+/usr/local/lib/toolbox/init.d/15-npm-shadow-dedupe.sh || { echo "FAILED: 15-npm-shadow-dedupe.sh exited non-zero"; exit 1; }
+[ ! -d "$HOME/.npm-global/lib/node_modules/smoke-stale" ] || { echo "FAILED: the stale shadow survived"; exit 1; }
+[ ! -e "$HOME/.npm-global/bin/smoke-stale" ] || { echo "FAILED: the stale bin symlink outlived its package — PATH now resolves to nothing"; exit 1; }
+[ -d "$HOME/.npm-global/lib/node_modules/smoke-ahead" ] || { echo "FAILED: a volume copy newer than the image was removed — a self-update would be rolled back on every shell"; exit 1; }
+[ ! -d "$HOME/.npm-global/lib/node_modules/smoke-pre" ] || { echo "FAILED: a prerelease older than the baked release survived"; exit 1; }
+[ -d "$HOME/.npm-global/lib/node_modules/smoke-dep" ] || { echo "FAILED: a hoisted dependency was removed — its dependent resolves it from there"; exit 1; }
+echo "OK: stale shadow and its bin link removed, prerelease ranked below its release, self-update and hoisted dependency untouched"
+'
+
+echo "=== Workspace Install Refresh (40-playwright-cli.sh, agents pass, real boot) ==="
+# Runtime half of the playwright-cli side of TestPerRepoInstallersRefreshWhatPiReads.
+# codex and pi read .agents/skills, which the claude install never writes, so
+# the second pass is the only thing that puts the skill where they look. Boot
+# the real script in a throwaway workspace opted in the way a user opts in.
+#
+# PLAYWRIGHT_BROWSERS_PATH points at an empty dir with the sentinel pre-written
+# so the Chromium sync at the top of the same script is a no-op here: this block
+# is about the skill passes, and the browser cache has its own check above. No
+# single quotes — this body lives inside a single-quoted bash -c.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+command -v playwright-cli >/dev/null 2>&1 || { echo "SKIP: playwright-cli not installed"; exit 0; }
+command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
+mkdir -p "$HOME/.claude"
+d=$(mktemp -d)
+cd "$d"
+export PLAYWRIGHT_BROWSERS_PATH="$d/pw-cache"
+mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+node -p "require(process.argv[1]).version" /usr/local/lib/node_modules/playwright/package.json | tr -d "\n" > "$PLAYWRIGHT_BROWSERS_PATH/.toolbox-chromium-version"
+mkdir -p .claude/skills/playwright-cli
+/usr/local/lib/toolbox/init.d/40-playwright-cli.sh >/dev/null 2>&1 || { echo "FAILED: 40-playwright-cli.sh exited non-zero"; exit 1; }
+[ -f .claude/skills/playwright-cli/SKILL.md ] || { echo "FAILED: the claude pass did not install .claude/skills/playwright-cli/SKILL.md"; exit 1; }
+[ -f .agents/skills/playwright-cli/SKILL.md ] || { echo "FAILED: the agents pass did not install .agents/skills/playwright-cli/SKILL.md — codex and pi read nothing else"; exit 1; }
+claude_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-playwright-cli" 2>/dev/null | head -n1)
+agents_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-playwright-cli-agents" 2>/dev/null | head -n1)
+[ -n "$claude_stamp" ] || { echo "FAILED: no -playwright-cli stamp — the gate would reopen every shell"; exit 1; }
+[ -n "$agents_stamp" ] || { echo "FAILED: no -playwright-cli-agents stamp — the agents gate would reopen every shell"; exit 1; }
+[ "$claude_stamp" != "$agents_stamp" ] || { echo "FAILED: the agents pass reused the claude stamp"; exit 1; }
+rm -f .agents/skills/playwright-cli/SKILL.md
+/usr/local/lib/toolbox/init.d/40-playwright-cli.sh >/dev/null 2>&1 || { echo "FAILED: 40-playwright-cli.sh exited non-zero on the agents self-heal"; exit 1; }
+[ -f .agents/skills/playwright-cli/SKILL.md ] || { echo "FAILED: a deleted agents skill did not self-heal"; exit 1; }
+echo "OK: both playwright-cli skill roots installed and stamped separately, agents copy self-heals"
 '

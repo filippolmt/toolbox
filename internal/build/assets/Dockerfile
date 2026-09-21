@@ -1888,6 +1888,9 @@ RUN grep -qxF 'Include /etc/ssh/ssh_config.d/*.conf' /etc/ssh/ssh_config \
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
+# Workspace Install Refresh gate, sourced by the init.d members that re-run a
+# per-repo installer (one gate, one stamp shape, one failure message).
+COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh
 # Bridge shim transport, sourced by the xdg-open/code/proximo/paplay shims
 # below (state-dir location + readiness checks + curl POST in one place).
 COPY --link --chmod=0644 bin/bridge-lib.sh /usr/local/lib/toolbox/bridge-lib.sh

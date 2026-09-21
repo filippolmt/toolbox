@@ -54,29 +54,33 @@ fi
 command -v playwright-cli >/dev/null 2>&1 || exit 0
 [ -d "$PWD/.claude/skills/playwright-cli" ] || exit 0
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    # Stamp is toolbox-owned and lives outside the workspace, keyed by
-    # (workspace, tool); content is the version last installed from. $PWD is
-    # hashed so an arbitrarily deep workspace path still yields a valid name.
-    _pwc_ver=$(playwright-cli --version 2>/dev/null | tr -d '\n' || true)
-    _pwc_stamp="$HOME/.toolbox-state/install-refresh/$(printf '%s' "$PWD" | sha256sum | cut -c1-16)-playwright-cli"
-    _pwc_stamped=""
-    if [ -f "$_pwc_stamp" ]; then
-        read -r _pwc_stamped < "$_pwc_stamp" 2>/dev/null || true
-    fi
+# The gate itself lives in one place, sourced by every member that re-runs a
+# per-repo installer — stamp shape, the -n guard and the failure message are
+# its business, not each member's.
+# shellcheck source=bin/install-refresh-lib.sh
+. /usr/local/lib/toolbox/install-refresh-lib.sh
 
-    # The -n guard scopes to the version half ONLY. If the version probe ever
-    # breaks upstream, an unreadable version must not read as "differs from the
-    # stamp" — that would reopen the gate on every shell and hand back exactly
-    # the churn this gate removes. Guarding the whole condition instead would be
-    # the opposite bug: a deleted install would stop self-healing, silently.
-    if { [ -n "$_pwc_ver" ] && [ "$_pwc_stamped" != "$_pwc_ver" ]; } || [ ! -f "$PWD/.claude/skills/playwright-cli/SKILL.md" ]; then
-        if playwright-cli install --skills claude >/dev/null 2>&1; then
-            mkdir -p "$(dirname "$_pwc_stamp")"
-            printf '%s' "$_pwc_ver" > "$_pwc_stamp"
-        else
-            echo "toolbox: playwright-cli skill refresh failed (non-fatal — run \`playwright-cli install --skills claude\` manually to retry)"
-        fi
-    fi
-    unset _pwc_ver _pwc_stamp _pwc_stamped
+
+# One version probe for both passes below: same bundled playwright-cli, two
+# skill roots.
+_pwc_ver=$(playwright-cli --version 2>/dev/null | tr -d '\n' || true)
+
+if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+    toolbox_install_refresh playwright-cli "$PWD/.claude/skills/playwright-cli/SKILL.md" "$_pwc_ver" \
+        playwright-cli install --skills claude || true
 fi
+
+# codex and pi read the cross-agent .agents/skills, which the claude install
+# above never writes — one pass covers both readers, gated on either being
+# present. Its own stamp and its own artefact: a shared stamp would leave the
+# agents copy unwritten for good, because the claude pass already moved it to
+# the bundled version.
+#
+# The repo-level opt-in stays the claude skill dir checked at the top — this
+# adds agents to an already opted-in repo, and `pwcli-init` opts in both at
+# once. No ~/.agents gate here: this copy is the repo's, not the home one.
+if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
+    toolbox_install_refresh playwright-cli-agents "$PWD/.agents/skills/playwright-cli/SKILL.md" "$_pwc_ver" \
+        playwright-cli install --skills agents || true
+fi
+unset _pwc_ver

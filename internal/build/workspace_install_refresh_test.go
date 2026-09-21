@@ -6,23 +6,36 @@ import (
 	"testing"
 )
 
-// refreshStampRoot is the toolbox-owned stamp dir every Workspace Install
-// Refresh member keys its (workspace, tool) version stamp under. It lives
-// outside the workspace on purpose — a stamp next to the installation would be
-// the very churn the gate exists to remove.
+// refreshStampRoot is the toolbox-owned stamp dir the library keys every
+// (workspace, pass) version stamp under. It lives outside the workspace on
+// purpose — a stamp next to the installation would be the very churn the gate
+// exists to remove.
 // See docs/adr/0001-workspace-install-refresh.md.
 const refreshStampRoot = `$HOME/.toolbox-state/install-refresh`
 
-// gateShape spells out the one condition every member must carry: the emptiness
+// refreshLibSource is the line that makes a member a member. Sourced by
+// absolute path, never through PATH.
+const refreshLibSource = `. /usr/local/lib/toolbox/install-refresh-lib.sh`
+
+// refreshLib is where the gate lives now: one implementation, sourced by every
+// member. Before it, each member carried its own copy of the same twenty
+// lines, and the stamp path, the guard and the failure message could drift
+// apart one script at a time.
+const refreshLib = "bin/install-refresh-lib.sh"
+
+// refreshCall is how a member asks for a refresh. The library takes the stamp
+// key, the artefact and the version, then the install command — so a call site
+// carries the four things that actually differ between passes and nothing else.
+const refreshCall = "toolbox_install_refresh "
+
+// gateShape spells out the one condition the library must carry: the emptiness
 // guard scopes to the version half ALONE. Both ways of getting this wrong are
 // live failure modes, which is why the shape is pinned verbatim rather than
 // grepped loosely. Drop the guard and an unreadable version reads as "differs
 // from the stamp", reopening the gate on every shell — the exact churn the gate
 // removes. Stretch it over the whole condition and a deleted install stops
 // self-healing, silently, because the artefact half never gets evaluated.
-func gateShape(verVar, stampedVar string) string {
-	return `{ [ -n "$` + verVar + `" ] && [ "$` + stampedVar + `" != "$` + verVar + `" ]; } || [ ! -f `
-}
+const gateShape = `{ [ -n "$ver" ] && [ "$stamped" != "$ver" ]; } || [ ! -f "$artefact" ] || return 1`
 
 // gateEndMarker closes the gated block. `graphify hook install` must sit after
 // it: it writes .git/hooks/, which is never committed and therefore absent from
@@ -47,13 +60,12 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 		{
 			script: "init.d/30-graphify.sh",
 			needles: []string{
-				// Version half of the gate: bundled version vs. stamp. The -n
-				// guard must scope to this half alone — see gateShape.
-				refreshStampRoot,
+				// Version half of the gate: bundled version vs. stamp, both
+				// handed to the one implementation in the library.
+				refreshLibSource,
 				`graphify --version`,
-				gateShape("_gfy_ver", "_gfy_stamped"),
-				// Artefact half: a deleted skill still self-heals.
-				`[ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]`,
+				refreshCall + `graphify "$PWD/.claude/skills/graphify/SKILL.md" "$_gfy_ver"`,
+				`graphify install --project --platform claude`,
 				// Matcher normalisation, only from the known upstream values so
 				// a hand-edited hook survives (Q5/Q13).
 				`(.hooks.PreToolUse[]? | select(.matcher == $wide) | .matcher) = $new`,
@@ -77,10 +89,9 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 		{
 			script: "init.d/31-codegraph.sh",
 			needles: []string{
-				refreshStampRoot,
+				refreshLibSource,
 				`codegraph --version`,
-				gateShape("_cg_ver", "_cg_stamped"),
-				`[ ! -f "$PWD/.mcp.json" ]`,
+				refreshCall + `codegraph "$PWD/.mcp.json" "$_cg_ver"`,
 				// Upstream's own "rewrite what previous installs configured"
 				// semantics (Q8/Q18) — narrower than a full local install.
 				`codegraph install --refresh`,
@@ -90,10 +101,9 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 		{
 			script: "init.d/40-playwright-cli.sh",
 			needles: []string{
-				refreshStampRoot,
+				refreshLibSource,
 				`playwright-cli --version`,
-				gateShape("_pwc_ver", "_pwc_stamped"),
-				`[ ! -f "$PWD/.claude/skills/playwright-cli/SKILL.md" ]`,
+				refreshCall + `playwright-cli "$PWD/.claude/skills/playwright-cli/SKILL.md" "$_pwc_ver"`,
 			},
 		},
 	}
@@ -109,6 +119,35 @@ func TestWorkspaceInstallRefreshGate(t *testing.T) {
 			if strings.Contains(body, gone) {
 				t.Errorf("%s: still contains %q — the ungated install was meant to be replaced", tc.script, gone)
 			}
+		}
+	}
+}
+
+// TestWorkspaceInstallRefreshGateLivesInOneplace is the anti-duplication half
+// of the family. Every member used to spell the stamp path, the -n guard, the
+// stamp write and the failure message out for itself, which is how two of them
+// ended up with subtly different wording and how a third could have drifted
+// without any test noticing. The gate now lives in the library and nowhere
+// else: a member that hand-rolls a stamp path has forked it back apart.
+func TestWorkspaceInstallRefreshGateLivesInOneplace(t *testing.T) {
+	lib := readAsset(t, refreshLib)
+	for _, needle := range []string{refreshStampRoot, gateShape, "toolbox_install_refresh()"} {
+		if !strings.Contains(lib, needle) {
+			t.Errorf("%s: missing %q — the shared gate drifted", refreshLib, needle)
+		}
+	}
+
+	for _, member := range []string{
+		"init.d/30-graphify.sh",
+		"init.d/31-codegraph.sh",
+		"init.d/40-playwright-cli.sh",
+	} {
+		body := readAsset(t, member)
+		if !strings.Contains(body, refreshLibSource) {
+			t.Errorf("%s: does not source %s", member, refreshLib)
+		}
+		if strings.Contains(body, refreshStampRoot) {
+			t.Errorf("%s: builds a stamp path of its own instead of calling the library", member)
 		}
 	}
 }

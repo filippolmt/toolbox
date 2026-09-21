@@ -25,6 +25,13 @@ set -euo pipefail
 command -v graphify >/dev/null 2>&1 || exit 0
 [ -d "$PWD/graphify-out" ] || exit 0
 
+# The gate itself lives in one place, sourced by every member that re-runs a
+# per-repo installer — stamp shape, the -n guard and the failure message are
+# its business, not each member's.
+# shellcheck source=bin/install-refresh-lib.sh
+. /usr/local/lib/toolbox/install-refresh-lib.sh
+
+
 # Snapshot retention. Every graphify run drops a dated directory (graph.json +
 # GRAPH_REPORT.md, ~2.5 MB) beside the live graph and never removes one, so an
 # actively indexed repo accumulates indefinitely — upstream exposes no knob for
@@ -40,29 +47,13 @@ command -v graphify >/dev/null 2>&1 || exit 0
 find "$PWD/graphify-out" -maxdepth 1 -type d -name '20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' -printf '%T@ %p\n' 2>/dev/null \
     | sort -n | head -n -10 | cut -d' ' -f2- | while IFS= read -r _gfy_old; do rm -rf "$_gfy_old"; done || true
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    # Stamp is toolbox-owned and lives outside the workspace, keyed by
-    # (workspace, tool); content is the version last installed from. $PWD is
-    # hashed so an arbitrarily deep workspace path still yields a valid name.
-    _gfy_ver=$(graphify --version 2>/dev/null | tr -d '\n' || true)
-    _gfy_stamp="$HOME/.toolbox-state/install-refresh/$(printf '%s' "$PWD" | sha256sum | cut -c1-16)-graphify"
-    _gfy_stamped=""
-    if [ -f "$_gfy_stamp" ]; then
-        read -r _gfy_stamped < "$_gfy_stamp" 2>/dev/null || true
-    fi
+# One version probe for every pass below: they install the same bundled
+# graphify, they just write it where a different agent reads.
+_gfy_ver=$(graphify --version 2>/dev/null | tr -d '\n' || true)
 
-    # The -n guard scopes to the version half ONLY. If the version probe ever
-    # breaks upstream, an unreadable version must not read as "differs from the
-    # stamp" — that would reopen the gate on every shell and hand back exactly
-    # the churn this gate removes. Guarding the whole condition instead would be
-    # the opposite bug: a deleted install would stop self-healing, silently.
-    if { [ -n "$_gfy_ver" ] && [ "$_gfy_stamped" != "$_gfy_ver" ]; } || [ ! -f "$PWD/.claude/skills/graphify/SKILL.md" ]; then
-        if graphify install --project --platform claude >/dev/null 2>&1; then
-            mkdir -p "$(dirname "$_gfy_stamp")"
-            printf '%s' "$_gfy_ver" > "$_gfy_stamp"
-        else
-            echo "toolbox: graphify skill refresh failed (non-fatal — run \`graphify install --project --platform claude\` manually to retry)"
-        fi
+if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+    if toolbox_install_refresh graphify "$PWD/.claude/skills/graphify/SKILL.md" "$_gfy_ver" \
+        graphify install --project --platform claude; then
 
         # graphify install writes a backup beside the settings it patched; it is
         # never read back, so drop it instead of leaving an untracked file in
@@ -115,8 +106,25 @@ if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
         fi
         unset _gfy_settings _gfy_tmp
     fi
-    unset _gfy_ver _gfy_stamp _gfy_stamped
 fi
+# pi reads .pi/agent/skills, which the claude install above never writes, so the
+# refresh needs a second pass per agent — same gate, its own stamp, its own
+# artefact. A shared stamp would be the silent bug: the claude pass would leave
+# it at the bundled version and pi's copy would never be written at all.
+#
+# The agent gate is the ~/.pi bind mount and NOT ~/.pi/agent, which pi creates on
+# its own first run whether the state is mounted or not — installing behind the
+# wrong gate writes a skill the next `toolbox stop` throws away. The repo-level
+# opt-in is still graphify-out/, checked at the top: this block adds an agent to
+# an already opted-in repo, never a repo.
+#
+# No jq/settings pass here: the hooks and the CLAUDE.md section are claude's,
+# and graphify writes neither for pi.
+if command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then
+    toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver" \
+        graphify install --project --platform pi || true
+fi
+unset _gfy_ver
 # --- end Workspace Install Refresh gate ---
 
 # Git commit hook only makes sense inside a git repo; skip non-git workspaces.

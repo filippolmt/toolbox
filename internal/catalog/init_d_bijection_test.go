@@ -25,8 +25,8 @@ import (
 var systemInitScripts = map[string]struct{}{
 	// `toolbox shell -B` loopback bridge — host-CLI flag, not a tool toggle.
 	"70-loopback-bridge.sh": {},
-	// LSP version-drift heal — system hygiene, not a tool toggle.
-	"15-npm-lsp-dedupe.sh": {},
+	// npm-global shadow heal — system hygiene, not a tool toggle.
+	"15-npm-shadow-dedupe.sh": {},
 	// Managed Claude Code statusline — image-owned policy, not a tool toggle.
 	"35-statusline.sh": {},
 	// Reconcile ponytail/caveman mode flags with enabledPlugins — image policy.

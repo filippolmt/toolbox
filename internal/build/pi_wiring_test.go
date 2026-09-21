@@ -63,3 +63,55 @@ func TestInitDWiresPiEverywhereItWiresCodex(t *testing.T) {
 		}
 	}
 }
+
+// TestPerRepoInstallersRefreshWhatPiReads extends the Workspace Install Refresh
+// family to pi's skill roots. graphify and playwright-cli each install a
+// per-agent copy of their skill — graphify into the repo's
+// .pi/agent/skills/graphify/, playwright-cli into the cross-agent
+// .agents/skills/playwright-cli/ that codex and pi both read — and neither is
+// written by the claude install the members already refresh. Without a second
+// pass the two agents see a skill frozen at whatever version first installed
+// it, silently, exactly like the claude half would without its own gate.
+//
+// Each agent carries its OWN stamp. A shared one would let the claude install
+// satisfy pi's gate: the stamp would already equal the bundled version, so the
+// pi copy would never be written at all. And each keeps its own artefact half,
+// so deleting one agent's skill self-heals without touching the other's.
+func TestPerRepoInstallersRefreshWhatPiReads(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		wants  []string
+	}{
+		{
+			script: "assets/init.d/30-graphify.sh",
+			wants: []string{
+				// Gate is the ~/.pi bind mount, never ~/.pi/agent — same
+				// reasoning as TestInitDWiresPiEverywhereItWiresCodex.
+				`if command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then`,
+				`toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver"`,
+				`graphify install --project --platform pi`,
+			},
+		},
+		{
+			script: "assets/init.d/40-playwright-cli.sh",
+			wants: []string{
+				// One pass for both readers of .agents/skills, gated on either
+				// agent being present — the same shape 61-herdr.sh uses for the
+				// home-directory copy.
+				`if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then`,
+				`toolbox_install_refresh playwright-cli-agents "$PWD/.agents/skills/playwright-cli/SKILL.md" "$_pwc_ver"`,
+				`playwright-cli install --skills agents`,
+			},
+		},
+	} {
+		b, err := Assets.ReadFile(tc.script)
+		if err != nil {
+			t.Fatalf("read %s: %v", tc.script, err)
+		}
+		for _, want := range tc.wants {
+			if !strings.Contains(string(b), want) {
+				t.Errorf("%s is missing %q", tc.script, want)
+			}
+		}
+	}
+}
