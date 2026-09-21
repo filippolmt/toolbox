@@ -114,13 +114,23 @@ alias la='ls -A'
 alias l='ls -CF'
 # Toolbox-specific: `cdw` jumps to the fixed workspace mount; `reload` re-execs
 # the shell to pick up config edits without leaving the container.
+# pi's extensions (rtk, atuin, herdr) are installed into ~/.pi/agent/extensions
+# by init.d at container start and then never touched again, so each one stays
+# at whatever version installed it. Refresh them on the way in. Chained with `;`
+# and NOT `&&` on purpose: an offline shell must still get a pi, and a stale
+# extension is the smaller failure. `command` on both halves, or the alias
+# recurses into itself.
+alias pi='command pi update --extensions >/dev/null; command pi'
 alias cdw='cd /workspace'
 alias reload='exec zsh'
 
 # Per-repo opt-in initialisers. Each `*-init` alias runs the one-time command
 # that opts the CURRENT repo into its tool's agent integration (never global);
-# the matching init.d/ script then refreshes that repo on every shell, gated on
-# a per-repo marker dir, leaving un-opted-in repos untouched. `codegraph-init`
+# where the tool writes a separate copy per agent, the alias opts in every agent
+# the image bundles — claude reads .claude/skills, pi reads .pi/agent/skills and
+# codex+pi share .agents/skills. The matching init.d/ script then refreshes each
+# copy on every shell behind its own stamp, gated on a per-repo marker dir,
+# leaving un-opted-in repos untouched. `codegraph-init`
 # and `pwcli-init` also create that marker (`.codegraph/` resp.
 # `.claude/skills/playwright-cli/`); `graphify-init` installs the project-scoped
 # `/graphify` skill (`.claude/skills/graphify/`) plus the CLAUDE.md section + hooks,
@@ -128,10 +138,10 @@ alias reload='exec zsh'
 # built (by the hooks on first use, or `graphify update .`).
 # → docs/internals/shell-start.md (per-repo skill / code-graph sections)
 if command -v playwright-cli >/dev/null 2>&1; then
-    alias pwcli-init='playwright-cli install --skills claude'
+    alias pwcli-init='playwright-cli install --skills claude && playwright-cli install --skills agents'
 fi
 if command -v graphify >/dev/null 2>&1; then
-    alias graphify-init='graphify install --project --platform claude'
+    alias graphify-init='graphify install --project --platform claude && graphify install --project --platform pi'
 fi
 if command -v codegraph >/dev/null 2>&1; then
     alias codegraph-init='codegraph install --target=claude --location=local --yes'

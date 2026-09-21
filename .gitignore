@@ -41,11 +41,15 @@ graphify-out/
 # reads it back; init.d/30-graphify.sh removes it, this is the belt-and-braces
 # half for anyone running graphify install by hand.
 .claude/settings.json.graphify-bak
-# `graphify install --project --platform claude` regenerates this whole skill
+# `graphify install --project --platform <agent>` regenerates this whole skill
 # dir (SKILL.md, references/, .graphify_version) on every version bump, so
 # tracking it only adds diff noise. init.d/30-graphify.sh installs it in the
-# container; the version stamp is write-only in project scope.
+# container; the version stamp is write-only in project scope. One entry per
+# agent root: graphify writes a separate copy for each platform it is given,
+# and upstream's own advice ("git add .pi/") is the opposite call from the one
+# this repo made for the claude copy.
 .claude/skills/graphify/
+.pi/agent/skills/graphify/
 docs/superpowers/specs/
 docs/superpowers/plans/
 

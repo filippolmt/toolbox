@@ -71,14 +71,17 @@ Every fetch stage ends with `freeze-mtimes` (mtime freeze) so layer digests depe
 
 Definition, the exact stamp path, the guard expression and the rationale: → [Workspace Install Refresh](../../CONTEXT.md#workspace-install-refresh), [ADR 0001](../../docs/adr/0001-workspace-install-refresh.md).
 
+The gate is one function, `toolbox_install_refresh` in `bin/install-refresh-lib.sh`, sourced by every member from `/usr/local/lib/toolbox/` — **never re-spell the stamp path, the `-n` guard or the failure message in a member**, which is what `TestWorkspaceInstallRefreshGateLivesInOneplace` refuses. A new member sources the library, calls it, and adds its `COPY`-free asset nowhere else; the library ships through the existing `bin/` COPY block.
+
 Editing a member (`30-graphify.sh`, `31-codegraph.sh`, `40-playwright-cli.sh`, or a fourth) means holding four things:
 
 - Both halves stay live: the emptiness guard scopes to the **version half alone**.
 - `graphify hook install` stays **outside** the gate.
 - `30-graphify.sh`'s matcher narrowing stays rename-aware — the same jq drops the graphify-owned entries already parked at the narrowed matcher, because that rename is what blinds upstream's own drop filter (`install.py:1768`: wide literal AND the entry mentions `graphify`). A verbatim dedup appends a second pair per reopened gate: a payload bump yields two *differing* entries.
 - A new member joins `TestWorkspaceInstallRefreshGate` + `TestGraphifyHookInstallOutsideGate` (`internal/build/workspace_install_refresh_test.go`, over the embedded scripts) and the `Workspace Install Refresh` block in `smoke-test.sh`.
+- **A member refreshes once per agent; give each pass its own stamp suffix and its own artefact** — `graphify install --project --platform pi` (`.pi/agent/skills/graphify/`), `playwright-cli install --skills agents` (the `.agents/skills/playwright-cli/` codex and pi share). Never reuse the claude stamp, and keep the repo-level opt-in marker one per member. Why both, and what breaks otherwise: → [Workspace Install Refresh](../../CONTEXT.md#workspace-install-refresh). pi's agent gate is the `~/.pi` bind mount, never `~/.pi/agent`, as in [container-runtime.md](container-runtime.md). Held by `TestPerRepoInstallersRefreshWhatPiReads` + the `Workspace Install Refresh` block in `smoke-test.sh`.
 
-`.claude/skills/graphify/` is gitignored, so the graphify refresh no longer touches tracked files at all.
+`.claude/skills/graphify/` and `.pi/agent/skills/graphify/` are gitignored, so the graphify refresh no longer touches tracked files at all — one entry per agent root, since graphify writes a separate copy per platform.
 
 ## Adding shell completion for a CLI requires 2 synced edits
 
