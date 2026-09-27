@@ -655,13 +655,13 @@ by reading the obvious name.
 ### Foreign-Arch Runtime
 
 The x86_64 loader and shared libraries that let Google's x86_64-only Android
-host binaries (`aapt2`, `adb`, build-tools) run in the arm64 image under
-Docker Desktop's Rosetta emulation. It lives in the Android SDK's data
-directory, never in the image: the arm64 image carries only zero-byte
-symlinks at the absolute paths an x86_64 ELF names for its loader and
-libraries, which dangle until the Android installer fills that directory.
+host binaries (`aapt2`, `adb`, build-tools, `sdkmanager`) run in the arm64
+image under Docker Desktop's Rosetta emulation. It lives in the Android SDK's
+data directory, never in the image: the arm64 image carries only two
+zero-byte directory symlinks, `/usr/lib/x86_64-linux-gnu` into that directory
+and `/lib64` onto it, which dangle until the Android installer fills it.
 The amd64 image carries none of it — there, those paths hold the real
-loader, and the SDK runs natively. Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md) (proposed).
+loader, and the SDK runs natively. Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md).
 _Avoid_: "x86 libs", "multiarch" (the image does no `dpkg --add-architecture`;
 that would put the weight in the image the term exists to keep out).
 
@@ -2074,7 +2074,7 @@ The developer's own adb server on the host, which the container's `adb`
 client reaches over the host's loopback to install on, run and read logs from
 an emulator or device attached to the host. The container never runs an
 emulator and never starts a server of its own. Decided in
-[ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md) (proposed).
+[ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md).
 
 **Not a [Bridge](#bridge-contract).** It has no token, no verb allowlist and
 no rate limit: whoever reaches it controls every device attached to the host,
