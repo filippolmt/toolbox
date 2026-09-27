@@ -204,6 +204,12 @@ fi
 # which the static ENV can't. Guard pattern matches atuin above: brew refuses
 # to run as root (e.g. `docker exec -u 0 … zsh`) with a multi-line stderr
 # error — suppress inside the subshell so it never reaches the prompt.
+# Android SDK env (ANDROID_HOME, ADB_SERVER_SOCKET, …), silent until
+# android-sdk-install has filled the android-sdk bind. ADR 0017.
+if [ -r /usr/local/lib/toolbox/android-env.sh ]; then
+    . /usr/local/lib/toolbox/android-env.sh
+fi
+
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" 2>/dev/null || true
 fi

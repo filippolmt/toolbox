@@ -26,8 +26,22 @@
       "matchFileNames": ["internal/build/assets/Dockerfile"],
       "groupName": "dockerfile image",
       "groupSlug": "dockerfile"
+    },
+    {
+      "description": "The Android SDK installer's two pins (ADR 0017) get their own PR and never automerge: CI runs the installer against stubs only, so nothing green says the new cmdline-tools build or Temurin tag downloads and runs. Run android-sdk-install --accept-licenses from an arm64 toolbox before merging. maxMajorIncrement is off because a cmdline-tools build number reads as one huge major under loose versioning, and the default cap drops every bump.",
+      "matchDepNames": ["android-cmdline-tools", "temurin21"],
+      "groupName": "android sdk installer",
+      "groupSlug": "android-sdk",
+      "automerge": false,
+      "maxMajorIncrement": 0
     }
   ],
+  "customDatasources": {
+    "android-cmdline-tools": {
+      "defaultRegistryUrlTemplate": "https://dl.google.com/android/repository/repository2-3.xml",
+      "format": "plain"
+    }
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -465,6 +479,26 @@
       "matchStrings": ["RENOVATE_VERSION:\\s+(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "renovate"
+    },
+    {
+      "description": "Android cmdline-tools build the Android SDK installer bootstraps from (ADR 0017). The plain datasource yields one release per manifest line; the extract template keeps the Linux archive's build number and drops every other line. Preview builds share the line shape, so check the channel in the manifest before merging.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/bin/android-sdk-install\\.sh$/"],
+      "matchStrings": ["CMDLINE_TOOLS_BUILD=(?<currentValue>\\d+)"],
+      "datasourceTemplate": "custom.android-cmdline-tools",
+      "depNameTemplate": "android-cmdline-tools",
+      "versioningTemplate": "loose",
+      "extractVersionTemplate": "^<url>commandlinetools-linux-(?<version>\\d+)_latest\\.zip</url>$"
+    },
+    {
+      "description": "Temurin 21 release tag the Android SDK installer fetches as the Gradle JDK (ADR 0017). The tag is also the release name the Adoptium binary API takes. The versioning reads a respin's fourth field (jdk-21.0.12.1+1) and ignores early-access tags; the repository is the JDK 21 line, so the major cannot move.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/bin/android-sdk-install\\.sh$/"],
+      "matchStrings": ["TEMURIN_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "temurin21",
+      "packageNameTemplate": "adoptium/temurin21-binaries",
+      "versioningTemplate": "regex:^jdk-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(\\.(?<build>\\d+))?\\+(?<revision>\\d+)$"
     }
   ]
 }
