@@ -652,6 +652,24 @@ overwriting the first removes the corrective parameters and the class of
 mistake with them: a callee that reads the wrong ref can no longer do it
 by reading the obvious name.
 
+### Foreign-Arch Runtime
+
+The x86_64 loader and shared libraries that let Google's x86_64-only Android
+host binaries (`aapt2`, `adb`, build-tools) run in the arm64 image under
+Docker Desktop's Rosetta emulation. It lives in the Android SDK's data
+directory, never in the image: the arm64 image carries only zero-byte
+symlinks at the absolute paths an x86_64 ELF names for its loader and
+libraries, which dangle until the Android installer fills that directory.
+The amd64 image carries none of it — there, those paths hold the real
+loader, and the SDK runs natively. Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md) (proposed).
+_Avoid_: "x86 libs", "multiarch" (the image does no `dpkg --add-architecture`;
+that would put the weight in the image the term exists to keep out).
+
+Why the term exists: the dangling symlinks look like a packaging mistake, and
+the obvious "fix" — install `libc6:amd64` in the Dockerfile — makes every user
+pay for what only a mobile developer needs. Naming the split keeps both halves
+visible: paths in the image, payload in the data directory.
+
 ### Start-up Refresh Prompt
 
 The one branch of the [Image Plan](#image-plan) that asks: a countdown
@@ -2049,6 +2067,26 @@ meets it as a broken `git push`. Naming it after the *session* rather than
 after the fix ("VPN workaround", "custom network") also keeps it honest about
 scope: it selects the network one shell joins, and says nothing about the
 routing that happens once the packet has left.
+
+### Host Device Server
+
+The developer's own adb server on the host, which the container's `adb`
+client reaches over the host's loopback to install on, run and read logs from
+an emulator or device attached to the host. The container never runs an
+emulator and never starts a server of its own. Decided in
+[ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md) (proposed).
+
+**Not a [Bridge](#bridge-contract).** It has no token, no verb allowlist and
+no rate limit: whoever reaches it controls every device attached to the host,
+a physical phone on USB included. It opens no new path into the host itself —
+`adb forward` and `adb reverse` reach only loopback services the container
+reaches already.
+_Avoid_: "adb bridge", "Android bridge".
+
+Why the term exists: an Android route that looks like a host bridge invites
+the assumption that it carries the Bridge's guarantees. Naming it separately
+states the opposite where the choice is made: the exposure is the device, and
+it is accepted, not contained.
 
 ### Rule Pointer
 
