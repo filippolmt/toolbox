@@ -52,27 +52,27 @@ else
 fi`,
 	}
 	for name, body := range stubs {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
-			t.Fatalf("write stub %s: %v", name, err)
-		}
+		writeExecutable(t, filepath.Join(bin, name), "#!/bin/sh\n"+body+"\n")
 	}
 	return bin
 }
 
+// installRun is what one installer run leaves behind: its combined output,
+// its exit code and the external commands it called.
+type installRun struct {
+	out   string
+	code  int
+	calls string
+}
+
 // runAndroidInstall runs the embedded installer (the artefact the image
 // ships) with HOME set to home, the stubs first on PATH, and the given arch.
-// It returns the combined output, the exit code and the recorded calls.
-func runAndroidInstall(t *testing.T, home, arch string, args ...string) (string, int, string) {
+func runAndroidInstall(t *testing.T, home, arch string, args ...string) installRun {
 	t.Helper()
-	body, err := fs.ReadFile(Assets, AssetDir+"/bin/android-sdk-install.sh")
-	if err != nil {
-		t.Fatalf("read embedded android-sdk-install.sh: %v", err)
-	}
+	body := installerScript(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "android-sdk-install")
-	if err := os.WriteFile(script, body, 0o755); err != nil {
-		t.Fatalf("write script: %v", err)
-	}
+	writeExecutable(t, script, string(body))
 	calls := filepath.Join(dir, "calls")
 	cmd := exec.Command("sh", append([]string{script}, args...)...)
 	cmd.Env = append(os.Environ(),
@@ -89,7 +89,7 @@ func runAndroidInstall(t *testing.T, home, arch string, args ...string) (string,
 		t.Fatalf("run installer: %v", err)
 	}
 	recorded, _ := os.ReadFile(calls)
-	return string(out), code, string(recorded)
+	return installRun{out: string(out), code: code, calls: string(recorded)}
 }
 
 // fakeSdkmanager plants a recording cmdline-tools where the installer would
@@ -102,9 +102,9 @@ func fakeSdkmanager(t *testing.T, home string) string {
 	t.Helper()
 	dir := filepath.Join(home, ".android-sdk", "cmdline-tools", "latest", "bin")
 	log := filepath.Join(home, "sdkmanager-calls")
-	writeFile(t, filepath.Join(dir, "sdkmanager"), `#!/bin/sh
+	writeExecutable(t, filepath.Join(dir, "sdkmanager"), `#!/bin/sh
 echo "sdkmanager $* ANDROID_USER_HOME=$ANDROID_USER_HOME ANDROID_CLI_BIN=$ANDROID_CLI_BIN" >> `+log+"\n")
-	writeFile(t, filepath.Join(dir, "android"), `#!/bin/sh
+	writeExecutable(t, filepath.Join(dir, "android"), `#!/bin/sh
 echo "android $*" >> `+log+`
 mkdir -p "$ANDROID_USER_HOME/bin"
 printf '#!/bin/sh\necho "android-cli $*" >> `+log+`\n' > "$ANDROID_USER_HOME/bin/android-cli"
@@ -120,16 +120,16 @@ func TestAndroidSdkInstallWithoutAcceptPrintsLicenceAndNeverRunsSdkmanager(t *te
 	home := t.TempDir()
 	sdkLog := fakeSdkmanager(t, home)
 
-	out, code, _ := runAndroidInstall(t, home, "amd64")
+	run := runAndroidInstall(t, home, "amd64")
 
-	if code == 0 {
-		t.Errorf("exit code = 0 without --accept-licenses, want non-zero\n%s", out)
+	if run.code == 0 {
+		t.Errorf("exit code = 0 without --accept-licenses, want non-zero\n%s", run.out)
 	}
-	if !strings.Contains(out, "FAKE SDK LICENCE TEXT") {
-		t.Errorf("licence text not printed:\n%s", out)
+	if !strings.Contains(run.out, "FAKE SDK LICENCE TEXT") {
+		t.Errorf("licence text not printed:\n%s", run.out)
 	}
-	if !strings.Contains(out, "--accept-licenses") {
-		t.Errorf("output does not name the flag to pass:\n%s", out)
+	if !strings.Contains(run.out, "--accept-licenses") {
+		t.Errorf("output does not name the flag to pass:\n%s", run.out)
 	}
 	if _, err := os.Stat(sdkLog); err == nil {
 		got, _ := os.ReadFile(sdkLog)
@@ -142,14 +142,8 @@ func TestAndroidSdkInstallWithoutAcceptPrintsLicenceAndNeverRunsSdkmanager(t *te
 // anything else for "the setting is off".
 func fakeRuntime(t *testing.T, home string, loaderExit int) {
 	t.Helper()
-	dir := filepath.Join(home, ".android-sdk", "x86_64-runtime")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stub := "#!/bin/sh\nexit " + strconv.Itoa(loaderExit) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "ld-linux-x86-64.so.2"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	loader := filepath.Join(home, ".android-sdk", "x86_64-runtime", "ld-linux-x86-64.so.2")
+	writeExecutable(t, loader, "#!/bin/sh\nexit "+strconv.Itoa(loaderExit)+"\n")
 }
 
 // binfmt_misc is empty inside the container even with Rosetta on, so the only
@@ -160,13 +154,13 @@ func TestAndroidSdkInstallOnArm64FailsFastNamingRosettaWhenTheLoaderCannotRun(t 
 	sdkLog := fakeSdkmanager(t, home)
 	fakeRuntime(t, home, 1)
 
-	out, code, _ := runAndroidInstall(t, home, "arm64", "--accept-licenses")
+	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
 
-	if code == 0 {
-		t.Errorf("exit code = 0 with a loader that cannot run, want non-zero\n%s", out)
+	if run.code == 0 {
+		t.Errorf("exit code = 0 with a loader that cannot run, want non-zero\n%s", run.out)
 	}
-	if !strings.Contains(out, "Use Rosetta for x86_64/amd64 emulation") {
-		t.Errorf("output does not name the Docker Desktop setting:\n%s", out)
+	if !strings.Contains(run.out, "Use Rosetta for x86_64/amd64 emulation") {
+		t.Errorf("output does not name the Docker Desktop setting:\n%s", run.out)
 	}
 	if _, err := os.Stat(sdkLog); err == nil {
 		t.Errorf("sdkmanager ran although x86_64 binaries cannot run")
@@ -179,15 +173,15 @@ func TestAndroidSdkInstallOnArm64FailsFastNamingRosettaWhenTheLoaderCannotRun(t 
 func TestAndroidSdkInstallOnArm64BuildsTheForeignArchRuntime(t *testing.T) {
 	home := t.TempDir()
 
-	out, _, calls := runAndroidInstall(t, home, "arm64")
+	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
 
-	if !strings.Contains(calls, "download libc6:amd64 libgcc-s1:amd64 libstdc++6:amd64 zlib1g:amd64") {
-		t.Errorf("the four amd64 packages were not downloaded; calls:\n%s", calls)
+	if !strings.Contains(run.calls, "download libc6:amd64 libgcc-s1:amd64 libstdc++6:amd64 zlib1g:amd64") {
+		t.Errorf("the four amd64 packages were not downloaded; calls:\n%s", run.calls)
 	}
 	runtime := filepath.Join(home, ".android-sdk", "x86_64-runtime")
 	for _, f := range []string{"ld-linux-x86-64.so.2", "libgcc-s1.so", "libstdc++6.so", "zlib1g.so"} {
 		if _, err := os.Stat(filepath.Join(runtime, f)); err != nil {
-			t.Errorf("runtime is missing %s: %v\n%s", f, err, out)
+			t.Errorf("runtime is missing %s: %v\n%s", f, err, run.out)
 		}
 	}
 }
@@ -197,32 +191,38 @@ func TestAndroidSdkInstallOnArm64BuildsTheForeignArchRuntime(t *testing.T) {
 func TestAndroidSdkInstallOnAmd64BuildsNoRuntime(t *testing.T) {
 	home := t.TempDir()
 
-	_, _, calls := runAndroidInstall(t, home, "amd64")
+	run := runAndroidInstall(t, home, "amd64", "--accept-licenses")
 
-	if strings.Contains(calls, "apt-get") {
-		t.Errorf("apt-get ran on amd64; calls:\n%s", calls)
+	if strings.Contains(run.calls, "apt-get") {
+		t.Errorf("apt-get ran on amd64; calls:\n%s", run.calls)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".android-sdk", "x86_64-runtime")); err == nil {
 		t.Errorf("a runtime directory was created on amd64")
 	}
 }
 
+// installerScript is the embedded installer, the artefact the image ships.
+func installerScript(t *testing.T) []byte {
+	t.Helper()
+	body, err := fs.ReadFile(Assets, AssetDir+"/bin/android-sdk-install.sh")
+	if err != nil {
+		t.Fatalf("read embedded android-sdk-install.sh: %v", err)
+	}
+	return body
+}
+
 // installerPin reads a NAME=value pin out of the embedded installer, so a
 // case can plant an install that already matches it without restating it.
 func installerPin(t *testing.T, name string) string {
 	t.Helper()
-	body, err := fs.ReadFile(Assets, AssetDir+"/bin/android-sdk-install.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`(?m)^` + name + `=(\S+)$`).FindSubmatch(body)
+	m := regexp.MustCompile(`(?m)^` + name + `=(\S+)$`).FindSubmatch(installerScript(t))
 	if m == nil {
 		t.Fatalf("installer pins no %s", name)
 	}
 	return string(m[1])
 }
 
-func writeFile(t *testing.T, path, body string) {
+func writeExecutable(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -244,19 +244,19 @@ func TestAndroidSdkInstallAcceptedInstallsPlatformToolsWithoutMetrics(t *testing
 	sdk := filepath.Join(home, ".android-sdk")
 	userHome := filepath.Join(sdk, "user-home")
 	sdkLog := fakeSdkmanager(t, home)
-	writeFile(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
-	writeFile(t, filepath.Join(sdk, "jdk", "bin", "java"), "#!/bin/sh\n")
-	writeFile(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", "bin", "java"), "#!/bin/sh\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
 	props := filepath.Join(home, ".gradle", "gradle.properties")
-	writeFile(t, props, "org.gradle.jvmargs=-Xmx2g\norg.gradle.java.home=/stale\n")
+	writeExecutable(t, props, "org.gradle.jvmargs=-Xmx2g\norg.gradle.java.home=/stale\n")
 
-	out, code, calls := runAndroidInstall(t, home, "amd64", "--accept-licenses")
+	run := runAndroidInstall(t, home, "amd64", "--accept-licenses")
 
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0\n%s", code, out)
+	if run.code != 0 {
+		t.Fatalf("exit code = %d, want 0\n%s", run.code, run.out)
 	}
-	if strings.Contains(calls, "curl") {
-		t.Errorf("a re-run with everything pinned in place downloaded something; calls:\n%s", calls)
+	if strings.Contains(run.calls, "curl") {
+		t.Errorf("a re-run with everything pinned in place downloaded something; calls:\n%s", run.calls)
 	}
 	logged, _ := os.ReadFile(sdkLog)
 	var cliBin string
@@ -317,10 +317,7 @@ func TestRenovateBumpsBothAndroidInstallerPins(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("parse renovate.json: %v", err)
 	}
-	body, err := fs.ReadFile(Assets, AssetDir+"/bin/android-sdk-install.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := installerScript(t)
 	pins := map[string]string{
 		"android-cmdline-tools": installerPin(t, "CMDLINE_TOOLS_BUILD"),
 		"temurin21":             installerPin(t, "TEMURIN_VERSION"),
@@ -332,8 +329,9 @@ func TestRenovateBumpsBothAndroidInstallerPins(t *testing.T) {
 				continue
 			}
 			for _, ms := range cm.MatchStrings {
-				m := regexp.MustCompile(ms).FindSubmatch(body)
-				if m == nil || string(m[regexp.MustCompile(ms).SubexpIndex("currentValue")]) != pin {
+				re := regexp.MustCompile(ms)
+				m := re.FindSubmatch(body)
+				if m == nil || string(m[re.SubexpIndex("currentValue")]) != pin {
 					t.Errorf("%s: matchString %q does not capture the pin %q", dep, ms, pin)
 				}
 				matched = true
@@ -375,5 +373,45 @@ func TestRenovateBumpsBothAndroidInstallerPins(t *testing.T) {
 	}
 	if vre.MatchString("jdk-21.0.13+3-ea-beta") {
 		t.Errorf("temurin21 versioning %q accepts an early-access tag", versioning)
+	}
+}
+
+// Nothing is downloaded before the developer accepts the licence, on arm64
+// included: the Foreign-Arch Runtime waits for the flag too. The manifest the
+// licence text comes from is the only fetch.
+func TestAndroidSdkInstallWithoutAcceptDownloadsNothingButTheLicence(t *testing.T) {
+	home := t.TempDir()
+
+	run := runAndroidInstall(t, home, "arm64")
+
+	for _, line := range strings.Split(strings.TrimSpace(run.calls), "\n") {
+		if strings.HasPrefix(line, "apt-get") || (strings.HasPrefix(line, "curl") && !strings.Contains(line, "repository2-3.xml")) {
+			t.Errorf("downloaded before the licence was accepted: %q", line)
+		}
+	}
+}
+
+// android-cli has its own update channel, and ANDROID_CLI_BIN bypasses the
+// launcher that would otherwise check it: a re-run updates the android-cli
+// already in the bind, still without metrics, instead of fetching a new one.
+func TestAndroidSdkInstallUpdatesAnInstalledAndroidCliWithoutMetrics(t *testing.T) {
+	home := t.TempDir()
+	sdk := filepath.Join(home, ".android-sdk")
+	sdkLog := fakeSdkmanager(t, home)
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "user-home", "bin", "android-cli"), "#!/bin/sh\necho \"android-cli $*\" >> "+sdkLog+"\n")
+
+	run := runAndroidInstall(t, home, "amd64", "--accept-licenses")
+
+	if run.code != 0 {
+		t.Fatalf("exit code = %d, want 0\n%s", run.code, run.out)
+	}
+	logged, _ := os.ReadFile(sdkLog)
+	if !strings.Contains(string(logged), "android-cli --no-metrics update") {
+		t.Errorf("the installed android-cli was not updated without metrics; calls:\n%s", logged)
+	}
+	if strings.Contains(string(logged), "\nandroid ") || strings.HasPrefix(string(logged), "android ") {
+		t.Errorf("the launcher fetched android-cli again although one is installed; calls:\n%s", logged)
 	}
 }

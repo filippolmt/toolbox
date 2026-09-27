@@ -23,8 +23,8 @@ func androidEnv(t *testing.T, home string, env ...string) map[string]string {
 	}
 	dir := t.TempDir()
 	lib := filepath.Join(dir, "android-env.sh")
-	writeFile(t, lib, string(body))
-	writeFile(t, filepath.Join(dir, "bin", "getent"), `#!/bin/sh
+	writeExecutable(t, lib, string(body))
+	writeExecutable(t, filepath.Join(dir, "bin", "getent"), `#!/bin/sh
 [ "$1 $2" = "ahostsv4 host.docker.internal" ] && echo "192.168.65.254  STREAM host.docker.internal"
 `)
 	cmd := exec.Command("sh", "-c", `. "$0" && env`, lib)
@@ -68,7 +68,7 @@ func TestAndroidEnvIsSilentUntilTheSdkIsInstalled(t *testing.T) {
 func TestAndroidEnvPointsAdbAtTheHostDeviceServerOnceInstalled(t *testing.T) {
 	home := t.TempDir()
 	sdk := filepath.Join(home, ".android-sdk")
-	writeFile(t, filepath.Join(sdk, "platform-tools", "adb"), "#!/bin/sh\n")
+	writeExecutable(t, filepath.Join(sdk, "platform-tools", "adb"), "#!/bin/sh\n")
 
 	vars := androidEnv(t, home)
 
@@ -89,7 +89,7 @@ func TestAndroidEnvPointsAdbAtTheHostDeviceServerOnceInstalled(t *testing.T) {
 // keeps that choice.
 func TestAndroidEnvKeepsAnAdbServerSocketTheDeveloperSet(t *testing.T) {
 	home := t.TempDir()
-	writeFile(t, filepath.Join(home, ".android-sdk", "platform-tools", "adb"), "#!/bin/sh\n")
+	writeExecutable(t, filepath.Join(home, ".android-sdk", "platform-tools", "adb"), "#!/bin/sh\n")
 
 	vars := androidEnv(t, home, "ADB_SERVER_SOCKET=tcp:10.0.0.5:5037")
 
@@ -101,10 +101,9 @@ func TestAndroidEnvKeepsAnAdbServerSocketTheDeveloperSet(t *testing.T) {
 // The Foreign-Arch Runtime's two symlinks exist on arm64 only: on amd64 the
 // paths hold the real libraries and the distro's /lib64 link, and CI
 // smoke-tests only amd64, so a link reaching that image would break every
-// binary in it while
-// the arm64 build it was meant for goes unexercised. The link also has to
-// point into the android-sdk bind's target, where the installer builds the
-// runtime.
+// binary in it while the arm64 build it was meant for goes unexercised. The
+// link also has to point into the android-sdk bind's target, where the
+// installer builds the runtime.
 func TestForeignArchRuntimeSymlinksAreArm64OnlyAndPointIntoTheSdkBind(t *testing.T) {
 	var sdk string
 	for _, m := range mountplan.Defaults() {
@@ -116,7 +115,7 @@ func TestForeignArchRuntimeSymlinksAreArm64OnlyAndPointIntoTheSdkBind(t *testing
 		t.Fatal("no android-sdk default mount")
 	}
 	stage := finalStage(t)
-	block := regexp.MustCompile(`(?s)if \[ "\$\{TARGETARCH\}" = "arm64" \]; then(.*?)\bfi\b`).FindAllStringSubmatch(stage, -1)
+	arm64Branches := regexp.MustCompile(`(?s)if \[ "\$\{TARGETARCH\}" = "arm64" \]; then(.*?)\bfi\b`).FindAllStringSubmatch(stage, -1)
 	links := []string{
 		"ln -s " + sdk + "/x86_64-runtime /usr/lib/x86_64-linux-gnu",
 		"ln -s /usr/lib/x86_64-linux-gnu /lib64",
@@ -127,7 +126,7 @@ func TestForeignArchRuntimeSymlinksAreArm64OnlyAndPointIntoTheSdkBind(t *testing
 			continue
 		}
 		inside := false
-		for _, b := range block {
+		for _, b := range arm64Branches {
 			inside = inside || strings.Contains(b[1], l)
 		}
 		if !inside {

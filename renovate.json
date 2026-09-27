@@ -28,7 +28,7 @@
       "groupSlug": "dockerfile"
     },
     {
-      "description": "The Android SDK installer's two pins (ADR 0017) get their own PR and never automerge: CI runs the installer against stubs only, so nothing green says the new cmdline-tools build or Temurin tag downloads and runs. Run android-sdk-install --accept-licenses from an arm64 toolbox before merging. maxMajorIncrement is off because a cmdline-tools build number reads as one huge major under loose versioning, and the default cap drops every bump.",
+      "description": "The Android SDK installer's two pins (ADR 0017) get their own PR and never automerge: CI runs the installer against stubs only, so nothing green says the new cmdline-tools build or Temurin tag downloads and runs. Run android-sdk-install --accept-licenses from an arm64 toolbox before merging. #1080 tracks the CI job that would let this group automerge. maxMajorIncrement is off because a cmdline-tools build number reads as one huge major under loose versioning, and the default cap drops every bump.",
       "matchDepNames": ["android-cmdline-tools", "temurin21"],
       "groupName": "android sdk installer",
       "groupSlug": "android-sdk",
@@ -491,7 +491,7 @@
       "extractVersionTemplate": "^<url>commandlinetools-linux-(?<version>\\d+)_latest\\.zip</url>$"
     },
     {
-      "description": "Temurin 21 release tag the Android SDK installer fetches as the Gradle JDK (ADR 0017). The tag is also the release name the Adoptium binary API takes. The versioning reads a respin's fourth field (jdk-21.0.12.1+1) and ignores early-access tags; the repository is the JDK 21 line, so the major cannot move.",
+      "description": "Temurin 21 release tag the Android SDK installer fetches as the Gradle JDK (ADR 0017). The tag is also the release name the Adoptium binary API takes. The versioning reads a respin's fourth field (jdk-X.Y.Z.N+R) and ignores early-access tags; the repository is the JDK 21 line, so the major cannot move.",
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/bin/android-sdk-install\\.sh$/"],
       "matchStrings": ["TEMURIN_VERSION=(?<currentValue>\\S+)"],

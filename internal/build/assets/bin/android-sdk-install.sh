@@ -8,7 +8,11 @@ set -eu
 MANIFEST_URL=https://dl.google.com/android/repository/repository2-3.xml
 # Renovate bumps both pins (renovate.json). cmdline-tools is a build number in
 # Google's manifest; Temurin is the release tag, which is also the name the
-# Adoptium binary API takes. The Capacitor Android template needs JDK 21.
+# Adoptium binary API takes, on the JDK line the Capacitor Android template
+# needs. Three downloads follow upstream instead, because none offers a pin
+# the tool takes: sdkmanager installs only the latest platform-tools, the
+# cmdline-tools launcher fetches the latest android-cli, and the runtime comes
+# from the Debian archive, like the image's own apt layer.
 CMDLINE_TOOLS_BUILD=16111833
 TEMURIN_VERSION=jdk-21.0.12.1+1
 
@@ -23,6 +27,24 @@ for arg in "$@"; do
 	esac
 done
 
+# sdkmanager writes the licence file on its own, with no prompt, so this flag
+# is the only gate. Nothing below runs, or downloads, before it is passed.
+if [ "$accept" -eq 0 ]; then
+	if ! manifest=$(curl -fsSL "$MANIFEST_URL"); then
+		echo "android-sdk-install: cannot fetch the SDK licence from $MANIFEST_URL" >&2
+		exit 1
+	fi
+
+	printf '%s\n' "$manifest" |
+		sed -n '/<license id="android-sdk-license"/,/<\/license>/p' |
+		sed -e 's/^.*<license [^>]*>//' -e 's/<\/license>.*$//' \
+			-e 's/&quot;/"/g' -e "s/&apos;/'/g" -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g'
+	echo
+	echo "Installing the Android SDK means accepting the licence above." >&2
+	echo "Re-run with --accept-licenses to accept it and install." >&2
+	exit 1
+fi
+
 SDK="$HOME/.android-sdk"
 # The arm64 image's /usr/lib/x86_64-linux-gnu symlink points here.
 RUNTIME="$SDK/x86_64-runtime"
@@ -33,8 +55,8 @@ arch=$(dpkg --print-architecture)
 # directory, and the image's arm64 dpkg database is never touched. Bookworm
 # splits them between lib/ and usr/lib/; both land in $RUNTIME.
 build_runtime() {
-	work=$(mktemp -d)
-	trap 'rm -rf "$work"' EXIT
+	work="$SDK/.runtime-build"
+	rm -rf "$work"
 	mkdir -p "$work/lists/partial" "$work/cache/archives/partial"
 	set -- \
 		-o Dir::State::Lists="$work/lists" -o Dir::Cache="$work/cache" \
@@ -49,9 +71,9 @@ build_runtime() {
 	for d in "$work/root/lib/x86_64-linux-gnu" "$work/root/usr/lib/x86_64-linux-gnu"; do
 		if [ -d "$d" ]; then cp -a "$d/." "$work/runtime/"; fi
 	done
-	mkdir -p "$SDK"
 	rm -rf "$RUNTIME"
 	mv "$work/runtime" "$RUNTIME"
+	rm -rf "$work"
 }
 
 case "$arch" in
@@ -77,44 +99,24 @@ EOF
 	;;
 esac
 
-# sdkmanager writes the licence file on its own, with no prompt, so this flag
-# is the only gate. Nothing below may run sdkmanager before it is passed.
-if [ "$accept" -eq 0 ]; then
-	curl -fsSL "$MANIFEST_URL" |
-		sed -n '/<license id="android-sdk-license"/,/<\/license>/p' |
-		sed -e 's/^.*<license [^>]*>//' -e 's/<\/license>.*$//'
-	echo
-	echo "Installing the Android SDK means accepting the licence above." >&2
-	echo "Re-run with --accept-licenses to accept it and install." >&2
-	exit 1
-fi
-
 # pinned DIR VERSION: true when DIR holds the install of VERSION.
 pinned() {
 	[ "$(cat "$1/.toolbox-version" 2>/dev/null)" = "$2" ]
 }
 
-# The Gradle JDK runs natively: only Google's host binaries are x86_64.
-if ! pinned "$SDK/jdk" "$TEMURIN_VERSION"; then
-	case "$arch" in amd64) jdk_arch=x64 ;; *) jdk_arch=aarch64 ;; esac
-	tag=$(printf '%s' "$TEMURIN_VERSION" | sed 's/+/%2B/g')
-	rm -rf "$SDK/jdk.tmp" && mkdir -p "$SDK/jdk.tmp"
-	curl -fsSL "https://api.adoptium.net/v3/binary/version/$tag/linux/$jdk_arch/jdk/hotspot/normal/eclipse" |
-		tar -xz -C "$SDK/jdk.tmp" --strip-components=1
-	echo "$TEMURIN_VERSION" >"$SDK/jdk.tmp/.toolbox-version"
-	rm -rf "$SDK/jdk" && mv "$SDK/jdk.tmp" "$SDK/jdk"
-fi
-
 latest="$SDK/cmdline-tools/latest"
 if ! pinned "$latest" "$CMDLINE_TOOLS_BUILD"; then
-	zip=$(mktemp)
+	zip="$SDK/cmdline-tools.zip"
+	staging="$SDK/cmdline-tools.tmp"
+	rm -rf "$staging"
+	mkdir -p "$staging" "$SDK/cmdline-tools"
 	curl -fsSL -o "$zip" "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip"
-	rm -rf "$SDK/cmdline-tools.tmp" && mkdir -p "$SDK/cmdline-tools.tmp"
-	unzip -q "$zip" -d "$SDK/cmdline-tools.tmp" && rm -f "$zip"
-	echo "$CMDLINE_TOOLS_BUILD" >"$SDK/cmdline-tools.tmp/cmdline-tools/.toolbox-version"
-	mkdir -p "$SDK/cmdline-tools"
-	rm -rf "$latest" && mv "$SDK/cmdline-tools.tmp/cmdline-tools" "$latest"
-	rm -rf "$SDK/cmdline-tools.tmp"
+	unzip -q "$zip" -d "$staging"
+	rm -f "$zip"
+	echo "$CMDLINE_TOOLS_BUILD" >"$staging/cmdline-tools/.toolbox-version"
+	rm -rf "$latest"
+	mv "$staging/cmdline-tools" "$latest"
+	rm -rf "$staging"
 fi
 
 # sdkmanager runs android-cli, which lives in ANDROID_USER_HOME (~/.android by
@@ -123,14 +125,31 @@ fi
 # the same two variables for the sdkmanager a developer runs by hand.
 export ANDROID_USER_HOME="$SDK/user-home"
 export ANDROID_CLI_BIN="$SDK/android-cli-no-metrics"
-if [ ! -x "$ANDROID_USER_HOME/bin/android-cli" ]; then
-	# The launcher fetches android-cli, then runs it with these arguments.
-	JAVA_HOME="$SDK/jdk" "$latest/bin/android" --no-metrics --version >/dev/null
-fi
 printf '#!/bin/sh\nexec "%s/bin/android-cli" --no-metrics "$@"\n' "$ANDROID_USER_HOME" >"$ANDROID_CLI_BIN"
 chmod +x "$ANDROID_CLI_BIN"
+if [ -x "$ANDROID_USER_HOME/bin/android-cli" ]; then
+	# ANDROID_CLI_BIN bypasses the launcher that would check for a newer one.
+	"$ANDROID_CLI_BIN" update
+else
+	# The launcher fetches android-cli, then runs it with these arguments.
+	"$latest/bin/android" --no-metrics --version >/dev/null
+fi
 
-JAVA_HOME="$SDK/jdk" "$latest/bin/sdkmanager" --sdk_root="$SDK" platform-tools
+"$latest/bin/sdkmanager" --sdk_root="$SDK" platform-tools
+
+# The Gradle JDK runs natively: only Google's host binaries are x86_64.
+if ! pinned "$SDK/jdk" "$TEMURIN_VERSION"; then
+	case "$arch" in amd64) jdk_arch=x64 ;; *) jdk_arch=aarch64 ;; esac
+	tag=$(printf '%s' "$TEMURIN_VERSION" | sed 's/+/%2B/g')
+	staging="$SDK/jdk.tmp"
+	rm -rf "$staging"
+	mkdir -p "$staging"
+	curl -fsSL "https://api.adoptium.net/v3/binary/version/$tag/linux/$jdk_arch/jdk/hotspot/normal/eclipse" |
+		tar -xz -C "$staging" --strip-components=1
+	echo "$TEMURIN_VERSION" >"$staging/.toolbox-version"
+	rm -rf "$SDK/jdk"
+	mv "$staging" "$SDK/jdk"
+fi
 
 # ~/.gradle is the gradle-cache bind, deletable on its own: rewrite the JDK
 # pointer on every run, keeping whatever else the file holds.

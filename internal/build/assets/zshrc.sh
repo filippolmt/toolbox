@@ -198,18 +198,19 @@ if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" 2>/dev/null || true
 fi
 
+# -- Android SDK --------------------------------------------------------------
+# Android SDK env (ANDROID_HOME, ADB_SERVER_SOCKET and the rest), silent until
+# android-sdk-install has filled the android-sdk bind. ADR 0017.
+if [ -r /usr/local/lib/toolbox/android-env.sh ]; then
+    . /usr/local/lib/toolbox/android-env.sh
+fi
+
 # -- Homebrew (Linuxbrew) -----------------------------------------------------
 # PATH already carries the brew bins via image ENV; shellenv is idempotent
 # (prepends only when missing) and fills in HOMEBREW_PREFIX/MANPATH/INFOPATH,
 # which the static ENV can't. Guard pattern matches atuin above: brew refuses
 # to run as root (e.g. `docker exec -u 0 … zsh`) with a multi-line stderr
 # error — suppress inside the subshell so it never reaches the prompt.
-# Android SDK env (ANDROID_HOME, ADB_SERVER_SOCKET, …), silent until
-# android-sdk-install has filled the android-sdk bind. ADR 0017.
-if [ -r /usr/local/lib/toolbox/android-env.sh ]; then
-    . /usr/local/lib/toolbox/android-env.sh
-fi
-
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null)" 2>/dev/null || true
 fi
