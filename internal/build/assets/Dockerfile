@@ -1936,6 +1936,13 @@ COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
 # one-shot --add-host pins fixed at container create, so stacks started after
 # `toolbox shell` become reachable without recreating the container.
 COPY --link --chmod=0755 bin/proximo-hosts /usr/local/bin/proximo-hosts
+# Android toolchain installer and its shell env (ADR 0017). The SDK, the
+# Gradle JDK and the Foreign-Arch Runtime live in the android-sdk bind, never
+# in the image; `android-sdk-install --accept-licenses` fills it, and zshrc
+# sources android-env.sh, which exports ANDROID_HOME and ADB_SERVER_SOCKET
+# once it is filled.
+COPY --link --chmod=0755 bin/android-sdk-install.sh /usr/local/bin/android-sdk-install
+COPY --link --chmod=0644 bin/android-env.sh /usr/local/lib/toolbox/android-env.sh
 RUN set -eux; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/sensible-browser; \
     ln -sf /usr/local/bin/xdg-open /usr/local/bin/gnome-open; \
@@ -1954,7 +1961,19 @@ RUN set -eux; \
     ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-osxkeychain; \
     ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-manager; \
     ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-manager-core; \
-    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-libsecret
+    ln -sf /usr/local/bin/git-credential-toolbox /usr/local/bin/git-credential-libsecret; \
+    # Foreign-Arch Runtime (ADR 0017): Google ships the Android host tools for
+    # x86_64 only, and an x86_64 ELF names its loader at /lib64 and searches
+    # /usr/lib/x86_64-linux-gnu. On arm64 both paths are free, so they become
+    # zero-byte links into the android-sdk bind, dangling until
+    # android-sdk-install fills it; Rosetta runs what they resolve to
+    # (/lib is already usr/lib, so the first link covers both multiarch
+    # paths). NEVER on amd64: there the directory holds the real libraries
+    # and /lib64 is the distro link to usr/lib64 (merged /usr).
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+        ln -s /home/toolbox/.android-sdk/x86_64-runtime /usr/lib/x86_64-linux-gnu; \
+        ln -s /usr/lib/x86_64-linux-gnu /lib64; \
+    fi
 ENV BROWSER=xdg-open
 # Runtime knobs for tools whose install now lives in a fetch stage. They sit
 # here, below the tail, for the reason the Claude Code block already states: an

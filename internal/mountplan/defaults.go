@@ -189,6 +189,18 @@ func defaults() []config.Mount {
 		// so pip only runs inside a virtualenv here — this bind pays off for
 		// venv work and is inert otherwise.
 		{Name: "pip-cache", Source: "~/.toolbox/pip-cache", Target: "/home/toolbox/.cache/pip", ReadOnly: false, CreateIfMissing: true},
+		// Gradle's cache, dependencies and wrapper distributions. Gradle keeps
+		// them in ~/.gradle, not under XDG_CACHE_HOME — the npm-cache shape. It
+		// also holds the user gradle.properties the Android installer writes
+		// org.gradle.java.home into, which is why the installer rewrites it on
+		// every run: deleting this cache by hand drops the pointer. ADR 0017.
+		{Name: "gradle-cache", Source: "~/.toolbox/gradle-cache", Target: "/home/toolbox/.gradle", ReadOnly: false, CreateIfMissing: true},
+		// Android SDK data directory, filled by `android-sdk-install`: the SDK,
+		// the JDK Gradle needs, the Foreign-Arch Runtime and the accepted
+		// licences. Empty until the installer runs, and an empty bind costs
+		// nothing. The arm64 image's /usr/lib/x86_64-linux-gnu symlink points
+		// into this target, so it must not move. ADR 0017.
+		{Name: "android-sdk", Source: "~/.toolbox/android-sdk", Target: "/home/toolbox/.android-sdk", ReadOnly: false, CreateIfMissing: true},
 		// Per-user Go workspace (GOPATH). Go's default `$HOME/go` resolves
 		// to /home/toolbox/go inside the container; this bind-mount persists
 		// the module cache (`pkg/mod`) and `go install` binaries (`bin/`)

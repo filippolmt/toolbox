@@ -61,8 +61,8 @@ also carries the two zero-byte directory symlinks of the
 installer runs. The installer downloads the x86_64 loader and libraries without
 root, using `apt-get download` and `dpkg-deb -x`. It does this first, because
 `sdkmanager` itself is an x86_64 binary (see Spike results). The amd64 image
-carries no symlinks, because on amd64 those paths are real directories that
-hold the real loader and libraries.
+carries no symlinks, because on amd64 `/usr/lib/x86_64-linux-gnu` holds the
+real libraries and `/lib64` is the distribution's own link to `usr/lib64`.
 
 **The SDK lives in two binds under `~/.toolbox`, never in the image.** The two
 rows follow the [Tool Cache](../../CONTEXT.md#tool-cache) split and
@@ -155,9 +155,9 @@ the client, not the server. The guide has to say this plainly next to the
 
 **The Foreign-Arch Runtime's symlinks must never reach the amd64 image.** The
 Dockerfile adds them only when `TARGETARCH=arm64`. A test has to assert that
-they are absent on amd64, because CI smoke-tests only amd64. On amd64 both
-paths are the real library and loader directories, so a symlink in their place
-would break every binary in the image.
+they are absent on amd64, because CI smoke-tests only amd64. On amd64 those
+paths hold the real libraries and the distribution's `/lib64` link, so a
+symlink in their place would break every binary in the image.
 
 **Rosetta is a hard prerequisite on Apple Silicon.** Toolbox cannot turn it on,
 so the installer's fail-fast check is the only thing standing between a

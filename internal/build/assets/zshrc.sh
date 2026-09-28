@@ -198,6 +198,13 @@ if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init zsh --disable-up-arrow 2>/dev/null)" 2>/dev/null || true
 fi
 
+# -- Android SDK --------------------------------------------------------------
+# Android SDK env (ANDROID_HOME, ADB_SERVER_SOCKET and the rest), silent until
+# android-sdk-install has filled the android-sdk bind. ADR 0017.
+if [ -r /usr/local/lib/toolbox/android-env.sh ]; then
+    . /usr/local/lib/toolbox/android-env.sh
+fi
+
 # -- Homebrew (Linuxbrew) -----------------------------------------------------
 # PATH already carries the brew bins via image ENV; shellenv is idempotent
 # (prepends only when missing) and fills in HOMEBREW_PREFIX/MANPATH/INFOPATH,

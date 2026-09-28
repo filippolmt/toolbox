@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 41 {
-		t.Fatalf("expected 41 default mounts, got %d", len(mounts))
+	if len(mounts) != 43 {
+		t.Fatalf("expected 43 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -100,6 +100,15 @@ func TestDefaults(t *testing.T) {
 	assertMountTarget(t, mounts, "~/.toolbox/npm-cache", "/home/toolbox/.npm")
 	assertMount(t, mounts, "~/.toolbox/pip-cache", false, true)
 	assertMountTarget(t, mounts, "~/.toolbox/pip-cache", "/home/toolbox/.cache/pip")
+	// Gradle keeps its cache in ~/.gradle, not under XDG_CACHE_HOME (ADR 0017).
+	assertMount(t, mounts, "~/.toolbox/gradle-cache", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/gradle-cache", "/home/toolbox/.gradle")
+
+	// Android SDK data directory (ADR 0017): the SDK, the Gradle JDK and the
+	// Foreign-Arch Runtime. The target is pinned because the arm64 image's
+	// symlinks point into it.
+	assertMount(t, mounts, "~/.toolbox/android-sdk", false, true)
+	assertMountTarget(t, mounts, "~/.toolbox/android-sdk", "/home/toolbox/.android-sdk")
 
 	// ssh + git config follow the host via symlinks, not copies. ssh stays
 	// read-only (host private keys); gitconfig is read-write so `git config`
