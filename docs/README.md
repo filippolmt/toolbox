@@ -14,6 +14,7 @@ sections.**
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
+| [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
 | [internals/](#internals) | explanation | Maintainer-only material |
 
@@ -108,6 +109,16 @@ sections.**
 - [CLI usage](sdd.md#cli-usage)
 - [SDD install steps](sdd.md#sdd-install-steps)
 - [SDD .gitignore fence](sdd.md#sdd-gitignore-fence)
+
+## mobile.md
+
+- [Prerequisites](mobile.md#prerequisites) — [Rosetta](mobile.md#apple-silicon-turn-on-rosetta-in-docker-desktop) · [The host's adb server](mobile.md#the-hosts-adb-server)
+- [Installing the SDK](mobile.md#installing-the-sdk)
+- [Building and running](mobile.md#building-and-running)
+- [Security](mobile.md#security)
+- [iOS](mobile.md#ios)
+- [Disk](mobile.md#disk)
+- [Troubleshooting](mobile.md#troubleshooting)
 
 ## troubleshooting.md
 
