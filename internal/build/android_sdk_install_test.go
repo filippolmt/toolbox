@@ -26,7 +26,6 @@ func androidStubs(t *testing.T) string {
 	bin := t.TempDir()
 	stubs := map[string]string{
 		"dpkg": `echo "dpkg $*" >> "$CALLS"
-[ -z "${FAKE_READY:-}" ] || : > "$FAKE_READY"
 [ "$1" = "--print-architecture" ] && echo "$FAKE_ARCH"`,
 		"curl": `echo "curl $*" >> "$CALLS"
 case "$*" in
@@ -355,16 +354,25 @@ chmod +x "$dest/bin/java"
 case "$1" in *gradle.properties.tmp) phase gradle-properties ;; esac
 exec /bin/mv "$@"
 `)
+			realFlock, err := exec.LookPath("flock")
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeExecutable(t, filepath.Join(bin, "flock"), `#!/bin/sh
+if [ "${INSTALLER_RUN:-}" = second ] && [ "$1" = 8 ]; then
+	: > "$FAKE_READY"
+fi
+exec `+strconv.Quote(realFlock)+` "$@"
+`)
 
 			first := installer.command(filepath.Join(dir, "calls-first"), []string{"--accept-licenses"},
 				"INSTALLER_RUN=first", "SLOW_PHASE="+slowPhase)
 			second := installer.command(filepath.Join(dir, "calls-second"), []string{"--accept-licenses"},
 				"INSTALLER_RUN=second", "SLOW_PHASE="+slowPhase, "FAKE_READY="+secondReady)
 			runInstallersWhileFirstBlocked(t, first, second, active, release, func() {
-				if !pathAppears(secondReady) {
+				if !waitForPath(secondReady) {
 					t.Fatal("second installer never reached the mutation lock")
 				}
-				time.Sleep(100 * time.Millisecond)
 			})
 			if _, err := os.Stat(overlap); err == nil {
 				t.Error("a second installer entered the mutation tail before the first finished")
@@ -414,9 +422,7 @@ func TestAndroidSdkInstallRuntimeRefreshDoesNotWaitForConcurrentMutations(t *tes
 	home := t.TempDir()
 	sdk := filepath.Join(home, ".android-sdk")
 	fakeRuntime(t, home, 0)
-	fakeSdkmanager(t, home)
-	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
-	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	fakePinnedAndroidInstall(t, home)
 	writeExecutable(t, filepath.Join(sdk, "user-home", "bin", "android-cli"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", "bin", "sdkmanager"), `#!/bin/sh
 if [ "${INSTALLER_RUN:-}" = first ]; then
@@ -436,7 +442,7 @@ fi
 	}
 	refreshed := false
 	runInstallersWhileFirstBlocked(t, runtimeRefreshCommand("first"), runtimeRefreshCommand("second"), active, release, func() {
-		refreshed = pathAppears(observed)
+		refreshed = waitForPath(observed)
 	})
 	if !refreshed {
 		t.Error("runtime refresh waited for the unrelated mutation lock")
@@ -448,7 +454,7 @@ func runInstallersWhileFirstBlocked(t *testing.T, first, second *exec.Cmd, activ
 	if err := first.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if !pathAppears(active) {
+	if !waitForPath(active) {
 		t.Fatal("first installer never reached its blocked phase")
 	}
 	if err := second.Start(); err != nil {
@@ -466,7 +472,7 @@ func runInstallersWhileFirstBlocked(t *testing.T, first, second *exec.Cmd, activ
 	}
 }
 
-func pathAppears(path string) bool {
+func waitForPath(path string) bool {
 	for range 100 {
 		if _, err := os.Stat(path); err == nil {
 			return true
@@ -482,16 +488,13 @@ func pinnedInstall(t *testing.T, dir, want string) bool {
 	return err == nil && strings.TrimSpace(string(got)) == want
 }
 
-// The Android bind is shared by every shell on the same profile. Two runtime
-// refreshes serialize their staging and publication under the narrower runtime
-// lock, before the Android Installer Mutation Lock is acquired.
+// The Android bind is shared by every shell on the same profile. Concurrent
+// runtime refreshes serialize their staging and publication under the narrower
+// runtime lock, before the Android Installer Mutation Lock is acquired.
 func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	home := t.TempDir()
-	sdk := filepath.Join(home, ".android-sdk")
 	fakeRuntime(t, home, 0)
-	fakeSdkmanager(t, home)
-	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
-	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	fakePinnedAndroidInstall(t, home)
 
 	dir := t.TempDir()
 	installer := androidInstaller{script: writeInstallerScript(t), home: home, bin: androidStubs(t), arch: "arm64"}
@@ -512,6 +515,14 @@ func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".apt-overlap")); err == nil {
 		t.Error("concurrent installers reached apt at the same time")
 	}
+}
+
+func fakePinnedAndroidInstall(t *testing.T, home string) {
+	t.Helper()
+	sdk := filepath.Join(home, ".android-sdk")
+	fakeSdkmanager(t, home)
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
 }
 
 type androidInstaller struct {
