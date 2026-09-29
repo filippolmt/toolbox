@@ -34,6 +34,16 @@ esac`,
 		// `apt-get download` drops one .deb per requested pkg:amd64 in the
 		// working directory, the way the real one does.
 		"apt-get": `echo "apt-get $*" >> "$CALLS"
+[ "${FAKE_APT_FAIL:-0}" = 1 ] && exit 1
+if [ "${FAKE_APT_SLOW:-0}" = 1 ]; then
+	if mkdir "$HOME/.apt-active" 2>/dev/null; then
+		sleep 0.2
+		rmdir "$HOME/.apt-active"
+	else
+		: > "$HOME/.apt-overlap"
+		sleep 0.2
+	fi
+fi
 case " $* " in *" download "*)
 	for a in "$@"; do case "$a" in *:amd64) : > "${a%:amd64}_amd64.deb" ;; esac; done ;;
 esac`,
@@ -44,11 +54,16 @@ esac`,
 name=$(basename "$2" _amd64.deb)
 if [ "$name" = libc6 ]; then
 	mkdir -p "$3/lib/x86_64-linux-gnu"
-	printf '#!/bin/sh\nexit 0\n' > "$3/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+	printf '#!/bin/sh\nexit %s\n' "${FAKE_LOADER_EXIT:-0}" > "$3/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
 	chmod +x "$3/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
 else
 	mkdir -p "$3/usr/lib/x86_64-linux-gnu"
-	: > "$3/usr/lib/x86_64-linux-gnu/$name.so"
+	case "$name" in
+	libgcc-s1) library=libgcc_s.so.1 ;;
+	libstdc++6) library=libstdc++.so.6 ;;
+	zlib1g) library=libz.so.1 ;;
+	esac
+	[ "${FAKE_MISSING_LIBRARY:-}" = "$library" ] || : > "$3/usr/lib/x86_64-linux-gnu/$library"
 fi`,
 	}
 	for name, body := range stubs {
@@ -142,8 +157,13 @@ func TestAndroidSdkInstallWithoutAcceptPrintsLicenceAndNeverRunsSdkmanager(t *te
 // anything else for "the setting is off".
 func fakeRuntime(t *testing.T, home string, loaderExit int) {
 	t.Helper()
-	loader := filepath.Join(home, ".android-sdk", "x86_64-runtime", "ld-linux-x86-64.so.2")
+	runtimes := filepath.Join(home, ".android-sdk", "x86_64-runtimes")
+	generation := filepath.Join(runtimes, "generation.old")
+	loader := filepath.Join(generation, "ld-linux-x86-64.so.2")
 	writeExecutable(t, loader, "#!/bin/sh\nexit "+strconv.Itoa(loaderExit)+"\n")
+	if err := os.Symlink(filepath.Base(generation), filepath.Join(runtimes, "current")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // binfmt_misc is empty inside the container even with Rosetta on, so the only
@@ -152,7 +172,7 @@ func fakeRuntime(t *testing.T, home string, loaderExit int) {
 func TestAndroidSdkInstallOnArm64FailsFastNamingRosettaWhenTheLoaderCannotRun(t *testing.T) {
 	home := t.TempDir()
 	sdkLog := fakeSdkmanager(t, home)
-	fakeRuntime(t, home, 1)
+	t.Setenv("FAKE_LOADER_EXIT", "1")
 
 	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
 
@@ -178,11 +198,78 @@ func TestAndroidSdkInstallOnArm64BuildsTheForeignArchRuntime(t *testing.T) {
 	if !strings.Contains(run.calls, "download libc6:amd64 libgcc-s1:amd64 libstdc++6:amd64 zlib1g:amd64") {
 		t.Errorf("the four amd64 packages were not downloaded; calls:\n%s", run.calls)
 	}
-	runtime := filepath.Join(home, ".android-sdk", "x86_64-runtime")
-	for _, f := range []string{"ld-linux-x86-64.so.2", "libgcc-s1.so", "libstdc++6.so", "zlib1g.so"} {
+	runtime := filepath.Join(home, ".android-sdk", "x86_64-runtimes", "current")
+	if info, err := os.Lstat(runtime); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("runtime current = %v, %v; want symlink", info, err)
+	}
+	for _, f := range []string{"ld-linux-x86-64.so.2", "libgcc_s.so.1", "libstdc++.so.6", "libz.so.1"} {
 		if _, err := os.Stat(filepath.Join(runtime, f)); err != nil {
 			t.Errorf("runtime is missing %s: %v\n%s", f, err, run.out)
 		}
+	}
+}
+
+// Re-running the installer refreshes the Foreign-Arch Runtime from Debian's
+// current indexes instead of treating the loader's presence as a permanent
+// cache hit. That is how security updates reach an existing Android SDK bind.
+func TestAndroidSdkInstallOnArm64RefreshesAnExistingForeignArchRuntime(t *testing.T) {
+	home := t.TempDir()
+	fakeRuntime(t, home, 0)
+	stale := filepath.Join(home, ".android-sdk", "x86_64-runtimes", "generation.stale")
+	if err := os.Mkdir(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
+
+	if !strings.Contains(run.calls, "apt-get -o") || !strings.Contains(run.calls, " update") {
+		t.Errorf("the existing runtime was not refreshed; calls:\n%s", run.calls)
+	}
+	current := filepath.Join(home, ".android-sdk", "x86_64-runtimes", "current")
+	if target, err := os.Readlink(current); err != nil || target == "generation.old" {
+		t.Errorf("current target = %q, %v; want a refreshed generation", target, err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale runtime generation survived refresh: %v", err)
+	}
+}
+
+// Download, extraction and Rosetta validation all happen before publication.
+// A failure at any stage leaves current on the last complete generation.
+func TestAndroidSdkInstallOnArm64KeepsTheExistingRuntimeAfterARefreshFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		env   string
+		value string
+	}{
+		{"download fails", "FAKE_APT_FAIL", "1"},
+		{"candidate cannot run", "FAKE_LOADER_EXIT", "1"},
+		{"candidate library is missing", "FAKE_MISSING_LIBRARY", "libz.so.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			fakeRuntime(t, home, 0)
+			t.Setenv(tc.env, tc.value)
+
+			run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
+
+			if run.code == 0 {
+				t.Fatalf("exit code = 0 after refresh failure, want non-zero\n%s", run.out)
+			}
+			assertRuntimeWorks(t, home)
+		})
+	}
+}
+
+func assertRuntimeWorks(t *testing.T, home string) {
+	t.Helper()
+	current := filepath.Join(home, ".android-sdk", "x86_64-runtimes", "current")
+	if target, err := os.Readlink(current); err != nil || target != "generation.old" {
+		t.Errorf("current target = %q, %v; want unchanged generation.old", target, err)
+	}
+	loader := filepath.Join(current, "ld-linux-x86-64.so.2")
+	if out, err := exec.Command(loader, "--version").CombinedOutput(); err != nil {
+		t.Errorf("the working runtime was replaced: %v\n%s", err, out)
 	}
 }
 
@@ -196,8 +283,53 @@ func TestAndroidSdkInstallOnAmd64BuildsNoRuntime(t *testing.T) {
 	if strings.Contains(run.calls, "apt-get") {
 		t.Errorf("apt-get ran on amd64; calls:\n%s", run.calls)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".android-sdk", "x86_64-runtime")); err == nil {
+	if _, err := os.Stat(filepath.Join(home, ".android-sdk", "x86_64-runtimes")); err == nil {
 		t.Errorf("a runtime directory was created on amd64")
+	}
+}
+
+// The Android bind is shared by every shell on the same profile. Two runtime
+// refreshes serialize their staging and publication without locking the rest of
+// the installer.
+func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
+	home := t.TempDir()
+	sdk := filepath.Join(home, ".android-sdk")
+	fakeRuntime(t, home, 0)
+	fakeSdkmanager(t, home)
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "android-sdk-install")
+	writeExecutable(t, script, string(installerScript(t)))
+	bin := androidStubs(t)
+	command := func(calls string) *exec.Cmd {
+		cmd := exec.Command("sh", script, "--accept-licenses")
+		cmd.Env = append(os.Environ(),
+			"HOME="+home,
+			"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"FAKE_ARCH=arm64",
+			"FAKE_APT_SLOW=1",
+			"CALLS="+calls,
+		)
+		return cmd
+	}
+	first := command(filepath.Join(dir, "calls-first"))
+	second := command(filepath.Join(dir, "calls-second"))
+	if err := first.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Wait(); err != nil {
+		t.Errorf("first installer: %v", err)
+	}
+	if err := second.Wait(); err != nil {
+		t.Errorf("second installer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".apt-overlap")); err == nil {
+		t.Error("concurrent installers reached apt at the same time")
 	}
 }
 

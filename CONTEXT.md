@@ -658,10 +658,15 @@ The x86_64 loader and shared libraries that let Google's x86_64-only Android
 host binaries (`aapt2`, `adb`, build-tools, `sdkmanager`) run in the arm64
 image under Docker Desktop's Rosetta emulation. It lives in the Android SDK's
 data directory, never in the image: the arm64 image carries only two
-zero-byte directory symlinks, `/usr/lib/x86_64-linux-gnu` into that directory
-and `/lib64` onto it, which dangle until the Android installer fills it.
-The amd64 image carries none of it — there, those paths hold the real
-loader, and the SDK runs natively. Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md).
+zero-byte directory symlinks, `/usr/lib/x86_64-linux-gnu` through the runtime's
+`current` generation and `/lib64` onto it, which dangle until the Android
+installer fills it. Each accepted installer run rebuilds from Debian's current
+indexes, validates the staged generation, then switches `current` atomically;
+a failed refresh leaves the working generation intact. Shell startup moves a
+runtime from the original flat layout behind `current`, so an existing bind
+survives the layout change before any Android tool runs. The amd64 image carries
+none of it — there, those paths hold the real loader, and the SDK runs natively.
+Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md).
 _Avoid_: "x86 libs", "multiarch" (the image does no `dpkg --add-architecture`;
 that would put the weight in the image the term exists to keep out).
 

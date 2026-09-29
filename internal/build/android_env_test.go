@@ -98,6 +98,30 @@ func TestAndroidEnvKeepsAnAdbServerSocketTheDeveloperSet(t *testing.T) {
 	}
 }
 
+// A bind populated by the original installer still works with an image whose
+// system loader link follows the generation layout. Shell startup moves that
+// complete legacy directory behind current before any Android tool can run.
+func TestAndroidEnvMigratesTheLegacyForeignArchRuntime(t *testing.T) {
+	home := t.TempDir()
+	sdk := filepath.Join(home, ".android-sdk")
+	legacy := filepath.Join(sdk, "x86_64-runtime")
+	writeExecutable(t, filepath.Join(sdk, "platform-tools", "adb"), "#!/bin/sh\n")
+	writeExecutable(t, filepath.Join(legacy, "ld-linux-x86-64.so.2"), "#!/bin/sh\n")
+
+	androidEnv(t, home)
+
+	current := filepath.Join(sdk, "x86_64-runtimes", "current")
+	if info, err := os.Lstat(current); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("runtime current = %v, %v; want symlink", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(current, "ld-linux-x86-64.so.2")); err != nil {
+		t.Errorf("migrated runtime has no loader: %v", err)
+	}
+	if _, err := os.Lstat(legacy); !os.IsNotExist(err) {
+		t.Errorf("legacy runtime still exists: %v", err)
+	}
+}
+
 // The Foreign-Arch Runtime's two symlinks exist on arm64 only: on amd64 the
 // paths hold the real libraries and the distro's /lib64 link, and CI
 // smoke-tests only amd64, so a link reaching that image would break every
@@ -117,7 +141,7 @@ func TestForeignArchRuntimeSymlinksAreArm64OnlyAndPointIntoTheSdkBind(t *testing
 	stage := finalStage(t)
 	arm64Branches := regexp.MustCompile(`(?s)if \[ "\$\{TARGETARCH\}" = "arm64" \]; then(.*?)\bfi\b`).FindAllStringSubmatch(stage, -1)
 	links := []string{
-		"ln -s " + sdk + "/x86_64-runtime /usr/lib/x86_64-linux-gnu",
+		"ln -s " + sdk + "/x86_64-runtimes/current /usr/lib/x86_64-linux-gnu",
 		"ln -s /usr/lib/x86_64-linux-gnu /lib64",
 	}
 	for _, l := range links {

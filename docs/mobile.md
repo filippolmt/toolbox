@@ -81,15 +81,20 @@ without asking, so this flag is the only point where the choice is yours.
 
 The installer, in order:
 
-1. On arm64, builds the Foreign-Arch Runtime: Debian's x86_64 loader and the
-   four libraries Google's binaries link, downloaded without root. It then runs
-   the loader, so a Rosetta problem stops here with the setting named.
+1. On arm64, refreshes the Foreign-Arch Runtime from Debian's current package
+   indexes: the x86_64 loader and the libraries Google's binaries link,
+   downloaded without root. It validates the complete candidate before an
+   atomic switch, so a failed download or Rosetta check leaves the working
+   runtime intact.
 2. Installs the cmdline-tools and the platform-tools.
 3. Installs the JDK Gradle needs and points `org.gradle.java.home` at it in
    `~/.gradle/gradle.properties`. The image's system `java` stays as it is.
 
-It is idempotent. Run it again after a toolbox update to pick up new pins, or
-after deleting either bind.
+Runtime refreshes are serialized per Android SDK bind. A shell opened after
+this layout changed migrates an existing runtime into the generation layout
+before any Android tool can run. Run the installer again after a toolbox update
+or periodically to pick up new pins and Debian security updates, or after
+deleting either bind.
 
 **Open a new shell afterwards.** The shell exports `ANDROID_HOME` and
 `ADB_SERVER_SOCKET` only once the SDK is installed, and it decides that when
