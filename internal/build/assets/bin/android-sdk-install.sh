@@ -129,10 +129,10 @@ esac
 
 # The SDK bind is shared by every shell on the same profile. Keep the
 # Foreign-Arch Runtime lock scoped to its refresh above, then serialize every
-# remaining mutation under a separate installer lock. Waiting is deliberate:
+# remaining mutation under a separate mutation lock. Waiting is deliberate:
 # proceeding unlocked could corrupt the shared SDK.
 mkdir -p "$SDK"
-exec 8>"$SDK/.install.lock"
+exec 8>"$SDK/.mutation.lock"
 flock 8
 
 # pinned DIR VERSION: true when DIR holds the install of VERSION.
