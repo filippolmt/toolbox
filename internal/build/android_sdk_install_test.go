@@ -35,6 +35,9 @@ esac`,
 		// `apt-get download` drops one .deb per requested pkg:amd64 in the
 		// working directory, the way the real one does.
 		"apt-get": `echo "apt-get $*" >> "$CALLS"
+if [ -n "${FAKE_APT_WHILE:-}" ] && [ -e "$FAKE_APT_WHILE" ]; then
+	: > "$FAKE_APT_OBSERVED"
+fi
 [ "${FAKE_APT_FAIL:-0}" = 1 ] && exit 1
 if [ "${FAKE_APT_SLOW:-0}" = 1 ]; then
 	if mkdir "$HOME/.apt-active" 2>/dev/null; then
@@ -88,13 +91,7 @@ func runAndroidInstall(t *testing.T, home, arch string, args ...string) installR
 	dir := t.TempDir()
 	script := writeInstallerScript(t)
 	calls := filepath.Join(dir, "calls")
-	cmd := exec.Command("sh", append([]string{script}, args...)...)
-	cmd.Env = append(os.Environ(),
-		"HOME="+home,
-		"PATH="+androidStubs(t)+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"FAKE_ARCH="+arch,
-		"CALLS="+calls,
-	)
+	cmd := androidInstallerCommand(script, home, androidStubs(t), arch, calls, args)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
@@ -357,22 +354,16 @@ exec /bin/mv "$@"
 `)
 
 			first := androidInstallerCommand(script, home, bin, "amd64", filepath.Join(dir, "calls-first"),
-				"INSTALLER_RUN=first", "SLOW_PHASE="+slowPhase)
+				[]string{"--accept-licenses"}, "INSTALLER_RUN=first", "SLOW_PHASE="+slowPhase)
 			if err := first.Start(); err != nil {
 				t.Fatal(err)
 			}
-			for range 100 {
-				if _, err := os.Stat(active); err == nil {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			if _, err := os.Stat(active); err != nil {
-				t.Fatalf("first installer never reached %s: %v", slowPhase, err)
+			if !pathAppears(active) {
+				t.Fatalf("first installer never reached %s", slowPhase)
 			}
 
 			second := androidInstallerCommand(script, home, bin, "amd64", filepath.Join(dir, "calls-second"),
-				"INSTALLER_RUN=second", "SLOW_PHASE="+slowPhase)
+				[]string{"--accept-licenses"}, "INSTALLER_RUN=second", "SLOW_PHASE="+slowPhase)
 			if err := second.Start(); err != nil {
 				t.Fatal(err)
 			}
@@ -427,6 +418,71 @@ exec /bin/mv "$@"
 	}
 }
 
+// The runtime lock ends before the mutation lock begins. While one installer
+// is paused in the mutation tail, another can refresh the independent runtime
+// before waiting for the mutation lock itself.
+func TestAndroidSdkInstallRuntimeRefreshDoesNotWaitForConcurrentMutations(t *testing.T) {
+	home := t.TempDir()
+	sdk := filepath.Join(home, ".android-sdk")
+	fakeRuntime(t, home, 0)
+	fakeSdkmanager(t, home)
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "user-home", "bin", "android-cli"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(sdk, "cmdline-tools", "latest", "bin", "sdkmanager"), `#!/bin/sh
+if [ "${INSTALLER_RUN:-}" = first ]; then
+	: > "$HOME/.mutation-active"
+	while [ ! -e "$HOME/.mutation-release" ]; do sleep 0.01; done
+fi
+`)
+
+	dir := t.TempDir()
+	script := writeInstallerScript(t)
+	bin := androidStubs(t)
+	active := filepath.Join(home, ".mutation-active")
+	release := filepath.Join(home, ".mutation-release")
+	observed := filepath.Join(home, ".runtime-during-mutation")
+	runtimeRefreshCommand := func(name string) *exec.Cmd {
+		return androidInstallerCommand(script, home, bin, "arm64", filepath.Join(dir, "calls-"+name),
+			[]string{"--accept-licenses"}, "INSTALLER_RUN="+name,
+			"FAKE_APT_WHILE="+active, "FAKE_APT_OBSERVED="+observed)
+	}
+	first := runtimeRefreshCommand("first")
+	if err := first.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if !pathAppears(active) {
+		t.Fatal("first installer never reached the mutation tail")
+	}
+	second := runtimeRefreshCommand("second")
+	if err := second.Start(); err != nil {
+		t.Fatal(err)
+	}
+	refreshed := pathAppears(observed)
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Wait(); err != nil {
+		t.Errorf("first installer: %v", err)
+	}
+	if err := second.Wait(); err != nil {
+		t.Errorf("second installer: %v", err)
+	}
+	if !refreshed {
+		t.Error("runtime refresh waited for the unrelated mutation lock")
+	}
+}
+
+func pathAppears(path string) bool {
+	for range 100 {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
 func pinnedInstall(t *testing.T, dir, want string) bool {
 	t.Helper()
 	got, err := os.ReadFile(filepath.Join(dir, ".toolbox-version"))
@@ -447,8 +503,8 @@ func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	dir := t.TempDir()
 	script := writeInstallerScript(t)
 	bin := androidStubs(t)
-	first := androidInstallerCommand(script, home, bin, "arm64", filepath.Join(dir, "calls-first"), "FAKE_APT_SLOW=1")
-	second := androidInstallerCommand(script, home, bin, "arm64", filepath.Join(dir, "calls-second"), "FAKE_APT_SLOW=1")
+	first := androidInstallerCommand(script, home, bin, "arm64", filepath.Join(dir, "calls-first"), []string{"--accept-licenses"}, "FAKE_APT_SLOW=1")
+	second := androidInstallerCommand(script, home, bin, "arm64", filepath.Join(dir, "calls-second"), []string{"--accept-licenses"}, "FAKE_APT_SLOW=1")
 	if err := first.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -466,8 +522,8 @@ func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	}
 }
 
-func androidInstallerCommand(script, home, bin, arch, calls string, env ...string) *exec.Cmd {
-	cmd := exec.Command("sh", script, "--accept-licenses")
+func androidInstallerCommand(script, home, bin, arch, calls string, args []string, env ...string) *exec.Cmd {
+	cmd := exec.Command("sh", append([]string{script}, args...)...)
 	cmd.Env = append(os.Environ(), append([]string{
 		"HOME=" + home,
 		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
