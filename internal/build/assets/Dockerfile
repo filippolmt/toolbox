@@ -1965,13 +1965,13 @@ RUN set -eux; \
     # Foreign-Arch Runtime (ADR 0017): Google ships the Android host tools for
     # x86_64 only, and an x86_64 ELF names its loader at /lib64 and searches
     # /usr/lib/x86_64-linux-gnu. On arm64 both paths are free, so they become
-    # zero-byte links into the android-sdk bind, dangling until
-    # android-sdk-install fills it; Rosetta runs what they resolve to
+    # zero-byte links through the android-sdk bind's atomic current generation,
+    # dangling until android-sdk-install fills it; Rosetta runs what they resolve to
     # (/lib is already usr/lib, so the first link covers both multiarch
     # paths). NEVER on amd64: there the directory holds the real libraries
     # and /lib64 is the distro link to usr/lib64 (merged /usr).
     if [ "${TARGETARCH}" = "arm64" ]; then \
-        ln -s /home/toolbox/.android-sdk/x86_64-runtime /usr/lib/x86_64-linux-gnu; \
+        ln -s /home/toolbox/.android-sdk/x86_64-runtimes/current /usr/lib/x86_64-linux-gnu; \
         ln -s /usr/lib/x86_64-linux-gnu /lib64; \
     fi
 ENV BROWSER=xdg-open

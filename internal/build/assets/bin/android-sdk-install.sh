@@ -1,8 +1,8 @@
 #!/bin/sh
 # android-sdk-install — fill the android-sdk bind (~/.android-sdk) with what an
 # Android build needs: on arm64 the Foreign-Arch Runtime, then the Gradle JDK,
-# cmdline-tools and platform-tools. Idempotent: re-running skips what is
-# already there. See docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md.
+# cmdline-tools and platform-tools. Re-running refreshes moving dependencies and
+# skips installs already at their pin. See ADR 0017.
 set -eu
 
 MANIFEST_URL=https://dl.google.com/android/repository/repository2-3.xml
@@ -46,9 +46,25 @@ if [ "$accept" -eq 0 ]; then
 fi
 
 SDK="$HOME/.android-sdk"
-# The arm64 image's /usr/lib/x86_64-linux-gnu symlink points here.
-RUNTIME="$SDK/x86_64-runtime"
+mkdir -p "$SDK"
+# One bind is shared by every shell on the same profile. Serialize the whole
+# install so their fixed staging paths and runtime publication cannot race.
+exec 9>"$SDK/.install.lock"
+flock 9
+
+# The arm64 image's /usr/lib/x86_64-linux-gnu symlink points through current.
+RUNTIMES="$SDK/x86_64-runtimes"
+RUNTIME="$RUNTIMES/current"
 arch=$(dpkg --print-architecture)
+
+runtime_cannot_run() {
+	cat >&2 <<'EOF'
+android-sdk-install: this container cannot run x86_64 binaries, and Google
+ships the Android host tools for x86_64 only. In Docker Desktop, turn on
+Settings > General > "Use Rosetta for x86_64/amd64 emulation on Apple Silicon",
+apply and restart, then run `toolbox stop` and open a new shell.
+EOF
+}
 
 # build_runtime downloads Debian's amd64 loader and the libraries Google's
 # binaries link, without root: apt's state is redirected into a scratch
@@ -71,27 +87,38 @@ build_runtime() {
 	for d in "$work/root/lib/x86_64-linux-gnu" "$work/root/usr/lib/x86_64-linux-gnu"; do
 		if [ -d "$d" ]; then cp -a "$d/." "$work/runtime/"; fi
 	done
-	rm -rf "$RUNTIME"
-	mv "$work/runtime" "$RUNTIME"
+	# Validate the staged loader and the libraries the Google tools need before
+	# publishing, so a failed refresh leaves the working runtime untouched.
+	for required in ld-linux-x86-64.so.2 libgcc_s.so.1 libstdc++.so.6 libz.so.1; do
+		if [ ! -e "$work/runtime/$required" ]; then
+			echo "android-sdk-install: Foreign-Arch Runtime is missing $required" >&2
+			return 1
+		fi
+	done
+	if ! "$work/runtime/ld-linux-x86-64.so.2" --library-path "$work/runtime" --version >/dev/null 2>&1; then
+		runtime_cannot_run
+		return 1
+	fi
+	mkdir -p "$RUNTIMES"
+	generation=$(mktemp -d "$RUNTIMES/generation.XXXXXX")
+	rmdir "$generation"
+	mv "$work/runtime" "$generation"
+	old=$(readlink "$RUNTIME" 2>/dev/null || true)
+	rm -f "$RUNTIMES/.current.new"
+	ln -s "$(basename "$generation")" "$RUNTIMES/.current.new"
+	mv -Tf "$RUNTIMES/.current.new" "$RUNTIME"
+	case "$old" in
+	generation.*) case "$old" in */*) ;; *) rm -rf "$RUNTIMES/$old" ;; esac ;;
+	esac
 	rm -rf "$work"
 }
 
 case "$arch" in
 amd64) ;; # Google's binaries run natively; the image's loader is the real one.
 arm64)
-	if [ ! -e "$RUNTIME/ld-linux-x86-64.so.2" ]; then
-		build_runtime
-	fi
-	# binfmt_misc is not visible in the container, so run the loader instead.
-	if ! "$RUNTIME/ld-linux-x86-64.so.2" --version >/dev/null 2>&1; then
-		cat >&2 <<'EOF'
-android-sdk-install: this container cannot run x86_64 binaries, and Google
-ships the Android host tools for x86_64 only. In Docker Desktop, turn on
-Settings > General > "Use Rosetta for x86_64/amd64 emulation on Apple Silicon",
-apply and restart, then run `toolbox stop` and open a new shell.
-EOF
-		exit 1
-	fi
+	# binfmt_misc is not visible in the container, so build_runtime validates
+	# the staged x86_64 loader itself before publishing it.
+	build_runtime
 	;;
 *)
 	echo "android-sdk-install: unsupported architecture $arch" >&2

@@ -117,7 +117,7 @@ func TestForeignArchRuntimeSymlinksAreArm64OnlyAndPointIntoTheSdkBind(t *testing
 	stage := finalStage(t)
 	arm64Branches := regexp.MustCompile(`(?s)if \[ "\$\{TARGETARCH\}" = "arm64" \]; then(.*?)\bfi\b`).FindAllStringSubmatch(stage, -1)
 	links := []string{
-		"ln -s " + sdk + "/x86_64-runtime /usr/lib/x86_64-linux-gnu",
+		"ln -s " + sdk + "/x86_64-runtimes/current /usr/lib/x86_64-linux-gnu",
 		"ln -s /usr/lib/x86_64-linux-gnu /lib64",
 	}
 	for _, l := range links {
