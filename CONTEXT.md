@@ -662,7 +662,9 @@ zero-byte directory symlinks, `/usr/lib/x86_64-linux-gnu` through the runtime's
 `current` generation and `/lib64` onto it, which dangle until the Android
 installer fills it. Each accepted installer run rebuilds from Debian's current
 indexes, validates the staged generation, then switches `current` atomically;
-a failed refresh leaves the working generation intact. The amd64 image carries
+a failed refresh leaves the working generation intact. Shell startup moves a
+runtime from the original flat layout behind `current`, so an existing bind
+survives the layout change before any Android tool runs. The amd64 image carries
 none of it — there, those paths hold the real loader, and the SDK runs natively.
 Decided in [ADR 0017](docs/adr/0017-android-builds-in-the-toolbox-ios-stays-on-the-host.md).
 _Avoid_: "x86 libs", "multiarch" (the image does no `dpkg --add-architecture`;

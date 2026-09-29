@@ -46,12 +46,6 @@ if [ "$accept" -eq 0 ]; then
 fi
 
 SDK="$HOME/.android-sdk"
-mkdir -p "$SDK"
-# One bind is shared by every shell on the same profile. Serialize the whole
-# install so their fixed staging paths and runtime publication cannot race.
-exec 9>"$SDK/.install.lock"
-flock 9
-
 # The arm64 image's /usr/lib/x86_64-linux-gnu symlink points through current.
 RUNTIMES="$SDK/x86_64-runtimes"
 RUNTIME="$RUNTIMES/current"
@@ -103,22 +97,29 @@ build_runtime() {
 	generation=$(mktemp -d "$RUNTIMES/generation.XXXXXX")
 	rmdir "$generation"
 	mv "$work/runtime" "$generation"
-	old=$(readlink "$RUNTIME" 2>/dev/null || true)
 	rm -f "$RUNTIMES/.current.new"
 	ln -s "$(basename "$generation")" "$RUNTIMES/.current.new"
 	mv -Tf "$RUNTIMES/.current.new" "$RUNTIME"
-	case "$old" in
-	generation.*) case "$old" in */*) ;; *) rm -rf "$RUNTIMES/$old" ;; esac ;;
-	esac
+	current=$(readlink "$RUNTIME")
+	for stale in "$RUNTIMES"/generation.*; do
+		[ -d "$stale" ] || continue
+		[ "$(basename "$stale")" = "$current" ] || rm -rf "$stale"
+	done
 	rm -rf "$work"
 }
 
 case "$arch" in
 amd64) ;; # Google's binaries run natively; the image's loader is the real one.
 arm64)
+	# The SDK bind is shared by every shell on the same profile. Serialize only
+	# the runtime refresh; the rest of the installer owns no part of this lock.
+	mkdir -p "$SDK"
+	exec 9>"$SDK/.runtime.lock"
+	flock 9
 	# binfmt_misc is not visible in the container, so build_runtime validates
 	# the staged x86_64 loader itself before publishing it.
 	build_runtime
+	flock -u 9
 	;;
 *)
 	echo "android-sdk-install: unsupported architecture $arch" >&2

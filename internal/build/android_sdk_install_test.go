@@ -215,6 +215,10 @@ func TestAndroidSdkInstallOnArm64BuildsTheForeignArchRuntime(t *testing.T) {
 func TestAndroidSdkInstallOnArm64RefreshesAnExistingForeignArchRuntime(t *testing.T) {
 	home := t.TempDir()
 	fakeRuntime(t, home, 0)
+	stale := filepath.Join(home, ".android-sdk", "x86_64-runtimes", "generation.stale")
+	if err := os.Mkdir(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
 
@@ -225,51 +229,36 @@ func TestAndroidSdkInstallOnArm64RefreshesAnExistingForeignArchRuntime(t *testin
 	if target, err := os.Readlink(current); err != nil || target == "generation.old" {
 		t.Errorf("current target = %q, %v; want a refreshed generation", target, err)
 	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale runtime generation survived refresh: %v", err)
+	}
 }
 
-// A candidate that Rosetta cannot execute never replaces the working runtime:
-// validation is part of staging, before the publish step.
-func TestAndroidSdkInstallOnArm64KeepsTheExistingRuntimeWhenTheCandidateCannotRun(t *testing.T) {
-	home := t.TempDir()
-	fakeRuntime(t, home, 0)
-	t.Setenv("FAKE_LOADER_EXIT", "1")
+// Download, extraction and Rosetta validation all happen before publication.
+// A failure at any stage leaves current on the last complete generation.
+func TestAndroidSdkInstallOnArm64KeepsTheExistingRuntimeAfterARefreshFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		env   string
+		value string
+	}{
+		{"download fails", "FAKE_APT_FAIL", "1"},
+		{"candidate cannot run", "FAKE_LOADER_EXIT", "1"},
+		{"candidate library is missing", "FAKE_MISSING_LIBRARY", "libz.so.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			fakeRuntime(t, home, 0)
+			t.Setenv(tc.env, tc.value)
 
-	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
+			run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
 
-	if run.code == 0 {
-		t.Fatalf("exit code = 0 with an unusable candidate, want non-zero\n%s", run.out)
+			if run.code == 0 {
+				t.Fatalf("exit code = 0 after refresh failure, want non-zero\n%s", run.out)
+			}
+			assertRuntimeWorks(t, home)
+		})
 	}
-	assertRuntimeWorks(t, home)
-}
-
-// A failed archive refresh also leaves current pointing at the last complete
-// generation; downloading never mutates the live runtime.
-func TestAndroidSdkInstallOnArm64KeepsTheExistingRuntimeWhenTheDownloadFails(t *testing.T) {
-	home := t.TempDir()
-	fakeRuntime(t, home, 0)
-	t.Setenv("FAKE_APT_FAIL", "1")
-
-	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
-
-	if run.code == 0 {
-		t.Fatalf("exit code = 0 after a failed download, want non-zero\n%s", run.out)
-	}
-	assertRuntimeWorks(t, home)
-}
-
-// Extraction must produce the complete runtime, not merely an executable
-// loader. A partial candidate never becomes current.
-func TestAndroidSdkInstallOnArm64KeepsTheExistingRuntimeWhenACandidateLibraryIsMissing(t *testing.T) {
-	home := t.TempDir()
-	fakeRuntime(t, home, 0)
-	t.Setenv("FAKE_MISSING_LIBRARY", "libz.so.1")
-
-	run := runAndroidInstall(t, home, "arm64", "--accept-licenses")
-
-	if run.code == 0 {
-		t.Fatalf("exit code = 0 with an incomplete candidate, want non-zero\n%s", run.out)
-	}
-	assertRuntimeWorks(t, home)
 }
 
 func assertRuntimeWorks(t *testing.T, home string) {
@@ -299,10 +288,10 @@ func TestAndroidSdkInstallOnAmd64BuildsNoRuntime(t *testing.T) {
 	}
 }
 
-// The Android bind is shared by every shell on the same profile. Two installer
-// runs serialize the whole mutation instead of racing on staging paths or the
-// current runtime generation.
-func TestAndroidSdkInstallSerializesConcurrentRuns(t *testing.T) {
+// The Android bind is shared by every shell on the same profile. Two runtime
+// refreshes serialize their staging and publication without locking the rest of
+// the installer.
+func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	home := t.TempDir()
 	sdk := filepath.Join(home, ".android-sdk")
 	fakeRuntime(t, home, 0)
