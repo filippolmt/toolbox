@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // androidStubs writes stand-ins for every external command the installer
@@ -288,9 +289,138 @@ func TestAndroidSdkInstallOnAmd64BuildsNoRuntime(t *testing.T) {
 	}
 }
 
+// The Android Installer Mutation Lock begins before cmdline-tools publication
+// and stays held through the final Gradle configuration write. A second
+// accepted installer waits instead of touching any shared staging path.
+func TestAndroidSdkInstallSerializesConcurrentMutationsAfterTheRuntime(t *testing.T) {
+	home := t.TempDir()
+	sdk := filepath.Join(home, ".android-sdk")
+	latest := filepath.Join(sdk, "cmdline-tools", "latest")
+	fakeSdkmanager(t, home)
+	writeExecutable(t, filepath.Join(latest, ".toolbox-version"), installerPin(t, "CMDLINE_TOOLS_BUILD")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", ".toolbox-version"), installerPin(t, "TEMURIN_VERSION")+"\n")
+	writeExecutable(t, filepath.Join(sdk, "jdk", "bin", "java"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(sdk, "user-home", "bin", "android-cli"), `#!/bin/sh
+[ ! -e "$HOME/.installer-final-active" ] || : > "$HOME/.installer-overlap"
+`)
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "android-sdk-install")
+	writeExecutable(t, script, string(installerScript(t)))
+	bin := androidStubs(t)
+	writeExecutable(t, filepath.Join(bin, "mv"), `#!/bin/sh
+if [ "${FAKE_FINAL_SLOW:-0}" = 1 ] && [ "$1" = "$HOME/.gradle/gradle.properties.tmp" ]; then
+	: > "$HOME/.installer-final-active"
+	sleep 0.3
+	/bin/mv "$@"
+	rm -f "$HOME/.installer-final-active"
+else
+	exec /bin/mv "$@"
+fi
+`)
+	writeExecutable(t, filepath.Join(bin, "curl"), `#!/bin/sh
+echo "curl $*" >> "$CALLS"
+[ ! -e "$HOME/.installer-final-active" ] || : > "$HOME/.installer-overlap"
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = -o ]; then shift; : > "$1"; exit 0; fi
+	shift
+done
+exit 22
+`)
+	writeExecutable(t, filepath.Join(bin, "unzip"), `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = -d ]; then shift; dest=$1; break; fi
+	shift
+done
+mkdir -p "$dest/cmdline-tools/bin"
+printf '#!/bin/sh\nexit 0\n' > "$dest/cmdline-tools/bin/android"
+printf '#!/bin/sh\nexit 0\n' > "$dest/cmdline-tools/bin/sdkmanager"
+chmod +x "$dest/cmdline-tools/bin/android" "$dest/cmdline-tools/bin/sdkmanager"
+`)
+	command := func(calls string, env ...string) *exec.Cmd {
+		cmd := exec.Command("sh", script, "--accept-licenses")
+		cmd.Env = append(os.Environ(), append([]string{
+			"HOME=" + home,
+			"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"FAKE_ARCH=amd64",
+			"CALLS=" + calls,
+		}, env...)...)
+		return cmd
+	}
+	first := command(filepath.Join(dir, "calls-first"), "FAKE_FINAL_SLOW=1")
+	if err := first.Start(); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(home, ".installer-final-active")
+	for range 100 {
+		if _, err := os.Stat(active); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(active); err != nil {
+		t.Fatalf("first installer never reached its final mutation: %v", err)
+	}
+	if err := os.RemoveAll(latest); err != nil {
+		t.Fatal(err)
+	}
+	second := command(filepath.Join(dir, "calls-second"))
+	if err := second.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Wait(); err != nil {
+		t.Errorf("first installer: %v", err)
+	}
+	if err := second.Wait(); err != nil {
+		t.Errorf("second installer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".installer-overlap")); err == nil {
+		t.Error("a second installer began mutating the bind before the first finished")
+	}
+	for _, path := range []string{
+		filepath.Join(sdk, "cmdline-tools.zip"),
+		filepath.Join(sdk, "cmdline-tools.tmp"),
+		filepath.Join(sdk, "jdk.tmp"),
+		filepath.Join(home, ".gradle", "gradle.properties.tmp"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("staging path survived successful installers: %s", path)
+		}
+	}
+	if !pinnedInstall(t, latest, installerPin(t, "CMDLINE_TOOLS_BUILD")) {
+		t.Error("cmdline-tools install is incomplete")
+	}
+	if !pinnedInstall(t, filepath.Join(sdk, "jdk"), installerPin(t, "TEMURIN_VERSION")) {
+		t.Error("JDK install is incomplete")
+	}
+	for _, path := range []string{
+		filepath.Join(latest, "bin", "sdkmanager"),
+		filepath.Join(sdk, "user-home", "bin", "android-cli"),
+		filepath.Join(sdk, "jdk", "bin", "java"),
+	} {
+		if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+			t.Errorf("installed tool is not executable: %s", path)
+		}
+	}
+	props, err := os.ReadFile(filepath.Join(home, ".gradle", "gradle.properties"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProps := "org.gradle.java.home=" + filepath.Join(sdk, "jdk") + "\n"
+	if string(props) != wantProps {
+		t.Errorf("gradle.properties = %q, want %q", props, wantProps)
+	}
+}
+
+func pinnedInstall(t *testing.T, dir, want string) bool {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(dir, ".toolbox-version"))
+	return err == nil && strings.TrimSpace(string(got)) == want
+}
+
 // The Android bind is shared by every shell on the same profile. Two runtime
-// refreshes serialize their staging and publication without locking the rest of
-// the installer.
+// refreshes serialize their staging and publication under the narrower runtime
+// lock, before the Android Installer Mutation Lock is acquired.
 func TestAndroidSdkInstallSerializesConcurrentRuntimeRefreshes(t *testing.T) {
 	home := t.TempDir()
 	sdk := filepath.Join(home, ".android-sdk")

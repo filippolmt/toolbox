@@ -90,11 +90,14 @@ The installer, in order:
 3. Installs the JDK Gradle needs and points `org.gradle.java.home` at it in
    `~/.gradle/gradle.properties`. The image's system `java` stays as it is.
 
-Runtime refreshes are serialized per Android SDK bind. A shell opened after
-this layout changed migrates an existing runtime into the generation layout
-before any Android tool can run. Run the installer again after a toolbox update
-or periodically to pick up new pins and Debian security updates, or after
-deleting either bind.
+Runtime refreshes are serialized per Android SDK bind. After that refresh, the
+[Android Installer Mutation Lock](../CONTEXT.md#android-installer-mutation-lock)
+serializes the remaining writes to the SDK and Gradle configuration. A
+concurrent installer waits until those writes finish; it never proceeds
+unlocked. A shell opened after this layout changed migrates an existing runtime
+into the generation layout before any Android tool can run. Run the installer
+again after a toolbox update or periodically to pick up new pins and Debian
+security updates, or after deleting either bind.
 
 **Open a new shell afterwards.** The shell exports `ANDROID_HOME` and
 `ADB_SERVER_SOCKET` only once the SDK is installed, and it decides that when
