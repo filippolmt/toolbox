@@ -680,13 +680,15 @@ visible: paths in the image, payload in the data directory.
 The per-Android-SDK-bind single-writer boundary for accepted installer work
 that mutates cmdline-tools, android-cli, platform-tools, the JDK and Gradle's
 JDK pointer after the Foreign-Arch Runtime refresh. It waits rather than
-proceeding unlocked; the runtime refresh keeps its own narrower boundary.
+proceeding unlocked; the runtime refresh keeps its own narrower boundary. It
+is owned by `internal/build`.
 _Avoid_: "runtime lock", "installer-wide lock" (it covers neither the licence
 gate nor the runtime refresh).
 
-Why the term exists: the installer has two independent concurrency contracts.
-Calling both "the installer lock" invites a future change to widen the runtime
-lock accidentally or leave later shared mutations outside either boundary.
+Why the term exists: the installer's independent concurrency contracts need
+distinct names. Calling both "the installer lock" invites a future change to
+widen the runtime lock accidentally or leave later shared mutations outside
+either boundary.
 
 ### Start-up Refresh Prompt
 
