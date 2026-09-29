@@ -17,9 +17,7 @@ if [ -d "${_toolbox_legacy_runtime}" ] || { [ -d "${_toolbox_migrated_runtime}" 
             mv "${_toolbox_legacy_runtime}" "${_toolbox_migrated_runtime}"
         fi
         if [ -d "${_toolbox_migrated_runtime}" ] && [ ! -e "${_toolbox_runtimes}/current" ]; then
-            rm -f "${_toolbox_runtimes}/.current.migrate"
-            ln -s "generation.legacy" "${_toolbox_runtimes}/.current.migrate"
-            mv -Tf "${_toolbox_runtimes}/.current.migrate" "${_toolbox_runtimes}/current"
+            ln -s "generation.legacy" "${_toolbox_runtimes}/current"
         fi
     ) 9>"${_toolbox_sdk}/.runtime.lock"
 fi
