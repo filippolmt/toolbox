@@ -55,7 +55,7 @@ func TestAndroidEnvIsSilentUntilTheSdkIsInstalled(t *testing.T) {
 
 	vars := androidEnv(t, home)
 
-	for _, k := range []string{"ANDROID_HOME", "ADB_SERVER_SOCKET", "ANDROID_USER_HOME", "ANDROID_CLI_BIN"} {
+	for _, k := range []string{"ANDROID_HOME", "ADB_SERVER_SOCKET", "ANDROID_USER_HOME", "ANDROID_CLI_BIN", "JAVA_HOME"} {
 		if v, ok := vars[k]; ok {
 			t.Errorf("%s=%s exported with an empty SDK bind", k, v)
 		}
@@ -77,11 +77,15 @@ func TestAndroidEnvPointsAdbAtTheHostDeviceServerOnceInstalled(t *testing.T) {
 		"ADB_SERVER_SOCKET": "tcp:192.168.65.254:5037",
 		"ANDROID_USER_HOME": filepath.Join(sdk, "user-home"),
 		"ANDROID_CLI_BIN":   filepath.Join(sdk, "android-cli-no-metrics"),
+		"JAVA_HOME":         filepath.Join(sdk, "jdk"),
 	}
 	for k, v := range want {
 		if vars[k] != v {
 			t.Errorf("%s = %q, want %q", k, vars[k], v)
 		}
+	}
+	if got := strings.Split(vars["PATH"], string(os.PathListSeparator))[0]; got != filepath.Join(sdk, "jdk", "bin") {
+		t.Errorf("PATH starts with %q, want the Gradle JDK bin", got)
 	}
 }
 

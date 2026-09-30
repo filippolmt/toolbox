@@ -68,6 +68,7 @@ jobs:
               - 'go.mod'
             android_e2e:
               - 'internal/build/assets/bin/android-sdk-install.sh'
+              - 'internal/build/assets/bin/android-env.sh'
               - '.github/fixtures/android-e2e/**'
               - '.github/workflows/docker-ci.yml'
       - name: Build matrix
