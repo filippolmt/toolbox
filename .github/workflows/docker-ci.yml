@@ -1,33 +1,11 @@
 name: Toolbox Docker PR
 run-name: Toolbox Docker PR #${{ github.event.pull_request.number }}
 
+# Deliberately unfiltered: `docker-ci` is a required status check, so the
+# workflow must report even when no image build is needed. `detect` keeps those
+# PRs cheap by skipping `docker-build`; the final job accepts that skip.
 on:
   pull_request:
-    paths:
-      - 'internal/build/assets/**'
-      - '.github/workflows/docker-ci.yml'
-      # go.mod's `toolchain` directive is the single source of truth for the
-      # runtime image's Go (injected via the GO_VERSION build-arg), so a Go
-      # bump there must rebuild + smoke-test the image even though it leaves
-      # internal/build/assets/** untouched.
-      - 'go.mod'
-      # The real-daemon gates at the end of docker-build are `go test` runs
-      # driving the host CLI against the image it just built, so they regress
-      # on host-side changes that touch no image asset at all — and nothing
-      # else can catch that: every unit test around this wiring runs on Docker
-      # mocks. Package-wide globs on purpose; the gates go through
-      # lifecycle.go, mountplan.Plan and sessionplan.Plan for peer messaging,
-      # and through reload.go plus the internal/reload payload for the session
-      # reload — so a file-level list would drift out of date without anyone
-      # noticing. Not cmd/**: both gates call container.Shell directly, so no
-      # amount of cmd/ change can reach them, and the glob would buy a ~10 min
-      # image build on every unrelated CLI edit. The `detect` job below still
-      # keeps arm64 off these builds — the risk here is not arch-specific.
-      - 'internal/container/**'
-      - 'internal/mountplan/**'
-      - 'internal/sessionplan/**'
-      - 'internal/reload/**'
-      - 'internal/imagereclaim/**'
   # No push: branches: [main] trigger — docker-publish.yml runs the same
   # smoke-test pre-publish on main, so a re-run here would be redundant work
   # (~7min). Pre-merge validation happens on the pull_request event above.
@@ -64,6 +42,8 @@ jobs:
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
+      docker: ${{ steps.filter.outputs.docker }}
+      android_e2e: ${{ steps.filter.outputs.android_e2e }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -72,10 +52,25 @@ jobs:
         uses: dorny/paths-filter@v4
         with:
           filters: |
+            docker:
+              - 'internal/build/assets/**'
+              - '.github/fixtures/android-e2e/**'
+              - '.github/workflows/docker-ci.yml'
+              - 'go.mod'
+              - 'internal/container/**'
+              - 'internal/mountplan/**'
+              - 'internal/sessionplan/**'
+              - 'internal/reload/**'
+              - 'internal/imagereclaim/**'
             arch_coverage:
               - 'internal/build/assets/Dockerfile'
               - '.github/workflows/docker-ci.yml'
               - 'go.mod'
+            android_e2e:
+              - 'internal/build/assets/bin/android-sdk-install.sh'
+              - 'internal/build/assets/bin/android-env.sh'
+              - '.github/fixtures/android-e2e/**'
+              - '.github/workflows/docker-ci.yml'
       - name: Build matrix
         id: set
         env:
@@ -89,6 +84,7 @@ jobs:
 
   docker-build:
     needs: detect
+    if: needs.detect.outputs.docker == 'true'
     # Builds the runtime image and runs the smoke-test on every PR so that
     # Dockerfile ARG bumps (azure-cli, oci-cli, playwright, …) are validated
     # before merge — not after, inside docker-publish.yml. Cached via GHA.
@@ -156,6 +152,34 @@ jobs:
           IMAGE_TAG: ${{ matrix.tag }}
         run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
 
+      # This is the proof that lets Renovate merge Android installer pin bumps:
+      # use the real upstream downloads, then make Capacitor and Gradle consume
+      # the result. HOME is an anonymous volume removed with the container; the
+      # fixture is copied out of its read-only bind before Capacitor modifies it.
+      - name: Android SDK end to end
+        if: matrix.load && needs.detect.outputs.android_e2e == 'true'
+        env:
+          IMAGE_TAG: ${{ matrix.tag }}
+        run: |
+          docker run --rm \
+            --mount type=volume,destination=/home/toolbox \
+            --mount type=bind,source="$PWD/.github/fixtures/android-e2e",destination=/fixture,readonly \
+            "$IMAGE_TAG" bash -euc '
+              android-sdk-install --accept-licenses
+              . /usr/local/lib/toolbox/android-env.sh
+              cp -R /fixture /tmp/android-e2e
+              cd /tmp/android-e2e
+              npm ci
+              npx cap init "Toolbox Android E2E" dev.toolbox.android.e2e --web-dir www
+              npx cap add android
+              (cd android && ./gradlew assembleDebug)
+              spool="$ANDROID_USER_HOME/cli/analytics/metrics/spool"
+              if find "$spool" -type f -print -quit 2>/dev/null | grep -q .; then
+                echo "android-sdk-install: analytics metrics spool is not empty" >&2
+                exit 1
+              fi
+            '
+
       # Cross-container peer messaging rests on Claude Code implementation
       # detail (a pid-keyed session registry, a liveness check run in the
       # reading session's PID namespace), and the image upgrades Claude Code on
@@ -188,3 +212,22 @@ jobs:
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: go test -tags dockergate -count=1 ./internal/container/ ./internal/imagereclaim/
+
+  docker-ci:
+    # Stable required context. The matrix job does not exist on unrelated PRs,
+    # but a required check must always report or GitHub leaves it pending.
+    if: ${{ always() }}
+    needs: [detect, docker-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every applicable Docker gate
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          BUILD_RESULT: ${{ needs.docker-build.result }}
+        run: |
+          test "$DETECT_RESULT" = success
+          case "$BUILD_RESULT" in
+            success|skipped) ;;
+            *) exit 1 ;;
+          esac

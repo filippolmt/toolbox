@@ -28,11 +28,10 @@
       "groupSlug": "dockerfile"
     },
     {
-      "description": "The Android SDK installer's two pins (ADR 0017) get their own PR and never automerge: CI runs the installer against stubs only, so nothing green says the new cmdline-tools build or Temurin tag downloads and runs. Run android-sdk-install --accept-licenses from an arm64 toolbox before merging. #1080 tracks the CI job that would let this group automerge. maxMajorIncrement is off because a cmdline-tools build number reads as one huge major under loose versioning, and the default cap drops every bump.",
+      "description": "The Android SDK installer's two pins (ADR 0017) get their own PR. The required docker-ci check installs them for real and builds the locked Capacitor fixture on amd64 before GitHub permits automerge. maxMajorIncrement is off because a cmdline-tools build number reads as one huge major under loose versioning, and the default cap drops every bump.",
       "matchDepNames": ["android-cmdline-tools", "temurin21"],
       "groupName": "android sdk installer",
       "groupSlug": "android-sdk",
-      "automerge": false,
       "maxMajorIncrement": 0
     }
   ],

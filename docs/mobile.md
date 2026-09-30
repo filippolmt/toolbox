@@ -77,7 +77,10 @@ android-sdk-install --accept-licenses
 
 An agent working in the session must ask you before passing
 `--accept-licenses`. The underlying `sdkmanager` accepts the licence on its own
-without asking, so this flag is the only point where the choice is yours.
+without asking, so this flag is the only point where the choice is yours. The
+repository's disposable Android CI environment is the exception: it accepts
+the licence automatically to verify installer updates before Renovate merges
+them.
 
 The installer, in order:
 
@@ -87,8 +90,10 @@ The installer, in order:
    atomic switch, so a failed download or Rosetta check leaves the working
    runtime intact.
 2. Installs the cmdline-tools and the platform-tools.
-3. Installs the JDK Gradle needs and points `org.gradle.java.home` at it in
-   `~/.gradle/gradle.properties`. The image's system `java` stays as it is.
+3. Installs the JDK Gradle needs, exports it as `JAVA_HOME` when the Android
+   environment is active, and points `org.gradle.java.home` at it in
+   `~/.gradle/gradle.properties`. The Gradle wrapper can therefore start with
+   the same JDK its daemon uses.
 
 Runtime refreshes are serialized per Android SDK bind. After that refresh, the
 [Android Installer Mutation Lock](../CONTEXT.md#android-installer-mutation-lock)

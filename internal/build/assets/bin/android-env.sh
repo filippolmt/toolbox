@@ -29,6 +29,10 @@ if [ -x "${_toolbox_sdk}/platform-tools/adb" ]; then
     # debug.keystore, so debug builds keep one signature across recreates.
     export ANDROID_USER_HOME="${_toolbox_sdk}/user-home"
     export ANDROID_CLI_BIN="${_toolbox_sdk}/android-cli-no-metrics"
+    # The Gradle wrapper needs Java before it can read gradle.properties and
+    # start the daemon with org.gradle.java.home.
+    export JAVA_HOME="${_toolbox_sdk}/jdk"
+    export PATH="${JAVA_HOME}/bin:${PATH}"
     # The Host Device Server: the developer's own adb server, reached on the
     # host's loopback through host.docker.internal's IPv4 address (the name
     # resolves IPv6 first, and that address is unreachable). No fallback: no

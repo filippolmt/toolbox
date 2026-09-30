@@ -1,0 +1,9 @@
+{
+  "name": "toolbox-android-e2e",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/cli": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  }
+}
