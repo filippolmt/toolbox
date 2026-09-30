@@ -190,8 +190,6 @@ func TestShareCovers(t *testing.T) {
 		{[]string{"gh"}, "gh", true},
 		{[]string{"cf"}, "cf-auth", true},
 		{[]string{"cf"}, "cf-config", true},
-		{[]string{"rtk"}, "rtk", true},
-		{[]string{"rtk"}, "rtk-data", true},
 		{[]string{"gh"}, "ghost", false}, // prefix match requires a '-' boundary
 		{[]string{"gh"}, "claude", false},
 		{nil, "gh", false},

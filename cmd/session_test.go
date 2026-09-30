@@ -216,6 +216,21 @@ func TestStartSessionMigratesLegacyStateForEveryIntent(t *testing.T) {
 // install hint for the host-side bridge used to reach the `shell` path only,
 // so a developer whose every session is a worktree session was never told the
 // forwarding they had enabled in config was not installed.
+func TestStartSessionRemovesLegacyRTKState(t *testing.T) {
+	sessionHarness(t)
+	ws := sessionWorkspace(t, "ws")
+	legacy := filepath.Join(os.Getenv("HOME"), ".toolbox", "rtk", "data")
+	writeFile(t, filepath.Join(legacy, "history.db"), "old")
+
+	if err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
+		Cfg:       &config.Config{Shell: "zsh"},
+		Workspace: ws,
+	}}); err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+	mustAbsent(t, filepath.Join(os.Getenv("HOME"), ".toolbox", "rtk"))
+}
+
 func TestStartSessionOffersTheBridgeTipForEveryIntent(t *testing.T) {
 	sessionHarness(t)
 	root := sessionWorkspace(t, "repo")

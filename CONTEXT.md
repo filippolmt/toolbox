@@ -1255,22 +1255,19 @@ dropping the reflog, and reading the index back from `HEAD` with its
 stat cache zeroed. Neither stage can simply drop `.git`: Homebrew *is* a
 git checkout, and `omz update` needs one.
 
-`rtk-builder` belongs here on arm64 and not on amd64, and the two are
-worth separating. On amd64 its binary comes from a checksummed tarball
-and is identical across builds; its layer moved because the COPY named a
-single file, and a `--link` layer stamps the destination directories it
-has to synthesise with the build clock — a defect of the copy, not of
-the stage's output. On arm64 the binary is compiled, and a base image
-tag that floats is enough to make `/out` stop being a function of
-`RTK_VERSION`: the same version and the same `--locked` dependency graph
-built on two toolchains produce two different binaries. That is this
-term and not Archive Drift, because what moves is the stage's own output
-rather than the layers it sits on — the base image here is not a host
-for a download, it is compiled *into* the result. Holding the base still
-would close it, and is deliberately not done: the moved-layer gate
-measures amd64 only, so the pin would cost a digest PR on every upstream
-rebuild and buy nothing anything measures. Accepted at the stage, not
-excused in the gate.
+The retired `rtk-builder` exposed both sides of this distinction. On
+amd64 its binary came from a checksummed tarball and was identical across
+builds; its layer moved because the COPY named a single file, and a `--link`
+layer stamped the destination directories it synthesised with the build clock
+— a defect of the copy, not of the stage's output. On arm64 the binary was
+compiled, and a floating base image tag made `/out` stop being a function of
+`RTK_VERSION`: the same version and the same `--locked` dependency graph built
+on two toolchains produced two different binaries. That was this term and not
+Archive Drift, because the stage's own output moved rather than the layers it
+sat on — the base image was compiled *into* the result instead of merely
+hosting a download. Holding the base still would have closed it, but the
+moved-layer gate measured amd64 only, so the pin would have cost a digest PR
+on every upstream rebuild and bought nothing the gate measured.
 
 The cost of any of this stays invisible while BuildKit reuses the stage
 and appears in full whenever anything invalidates it — an archive
@@ -1581,7 +1578,7 @@ executability` block in `smoke-test.sh` shell-side (mode 0755 verified
 inside the built image).
 
 Why the term exists: before this concept was named, per-tool boot logic
-(rtk hook wiring, cf skill seed, graphify install, playwright-cli skills,
+(the former RTK hook wiring, cf skill seed, graphify install, playwright-cli skills,
 MCP plugin auto-build, and the per-provider credential probes for
 gh / glab / gcloud / az / oci) accumulated as inline blocks in
 `entrypoint.sh` with heterogeneous failure handling — only the MCP block
@@ -1602,14 +1599,13 @@ image.
 
 The second half of bundling a coding agent: the per-agent blocks in the
 Init Sequence that make the *other* bundled tools see it. Bundling gets
-the binary onto `PATH`; wiring gets rtk's Bash-rewrite hook, atuin's
-history capture and herdr's control integration registered against it.
+the binary onto `PATH`; wiring gets atuin's history capture and herdr's
+control integration registered against it.
 The two are independent, and only the first is declared anywhere.
 
 Concretely: `internal/catalog` + `config.SupportedAgents` + `toolbox
 worktree --agent <name>` (the bundling) vs. one block per agent in
-`init.d/10-rtk.sh`, `init.d/65-atuin.sh` and `init.d/61-herdr.sh` (the
-wiring). Each block self-gates on the binary and, where the agent's
+`init.d/65-atuin.sh` and `init.d/61-herdr.sh` (the wiring). Each block self-gates on the binary and, where the agent's
 state is a bind mount, on the mount — never on a config directory the
 agent creates for itself on first run, which exists whether or not the
 state survives a `toolbox stop`. Whether a block takes

@@ -74,7 +74,6 @@ var Entries = []Entry{
 	{Key: "playwright_cli", InitScript: "40-playwright-cli.sh"},
 	{Key: "pnpm"},
 	{Key: "pyright"},
-	{Key: "rtk", InitScript: "10-rtk.sh"},
 	{Key: "shellcheck"},
 	{Key: "shfmt"},
 	{Key: "sonar"},

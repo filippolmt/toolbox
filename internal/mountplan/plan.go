@@ -129,6 +129,7 @@ func Plan(in PlanInput) (Result, error) {
 	}
 
 	binds, warnings := resolveAll(merged, in.Host.Home)
+	warnings = append(legacyRTKWarnings(in.Cfg.Mounts, in.Profile), warnings...)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
 
 	// The peer socket mount joins the set after resolveAll: its source is a
@@ -175,7 +176,7 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	if err := config.ValidateMountsRoot(root); err != nil {
 		return nil, err
 	}
-	if err := validateShare(defaults(), shared); err != nil {
+	if err := validateShare(defaults(), withoutLegacyRTKShares(shared)); err != nil {
 		return nil, err
 	}
 	// Two things behind this function read host.Home: the inherit_host_auth
@@ -204,7 +205,7 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	if m, ok := gate.CAMount(); ok {
 		base = append(base, m)
 	}
-	return mergeMounts(base, cfg.Mounts)
+	return mergeMounts(base, withoutLegacyRTKMounts(cfg.Mounts))
 }
 
 // dropMountByName returns a copy of base with the entry whose Name matches

@@ -55,11 +55,13 @@ func TestKeysReturnsAllEntries(t *testing.T) {
 
 // TestFindByKey spot-checks the lookup accessor.
 func TestFindByKey(t *testing.T) {
-	if entry, ok := catalog.Find("rtk"); !ok || entry.Key != "rtk" {
-		t.Errorf("Find(\"rtk\") = %+v, %v; want Entry with Key=\"rtk\", true", entry, ok)
+	if entry, ok := catalog.Find("jq"); !ok || entry.Key != "jq" {
+		t.Errorf("Find(\"jq\") = %+v, %v; want Entry with Key=\"jq\", true", entry, ok)
 	}
-	if _, ok := catalog.Find("no-such-tool"); ok {
-		t.Error("Find(\"no-such-tool\") should report not found")
+	for _, key := range []string{"rtk", "no-such-tool"} {
+		if _, ok := catalog.Find(key); ok {
+			t.Errorf("Find(%q) should report not found", key)
+		}
 	}
 }
 

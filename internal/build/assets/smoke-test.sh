@@ -64,6 +64,17 @@ check_optional() {
     fi
 }
 
+check_absent() {
+    local name="$1"
+    if command -v "$name" >/dev/null 2>&1; then
+        echo "FAILED: retired ${name} is still installed"
+        FAIL=$((FAIL+1))
+    else
+        echo "OK: retired ${name} absent"
+        PASS=$((PASS+1))
+    fi
+}
+
 # Bundled zsh stack (ZSH-01..08).
 #
 # Each sub-check is a named function (`_zsh_<name>_check`); the `_zsh_assert`
@@ -624,7 +635,7 @@ check_optional  "fd"        fd       fd --version
 check_optional  "eza"       eza      eza --version
 check_optional  "shellcheck" shellcheck shellcheck --version
 check_optional  "shfmt"     shfmt    shfmt --version
-check_optional  "rtk"       rtk      rtk --version
+check_absent    "rtk"
 check_optional  "tmux"      tmux     tmux -V
 
 check_zsh
@@ -715,7 +726,7 @@ for f in "$INIT_D"/*.sh; do
     count=$((count+1))
 done
 if [ "$count" -ne 18 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 18 (14 catalog InitScripts + 4 system)"
+    echo "FAILED: $count init.d/*.sh found, expected exactly 18 (13 catalog InitScripts + 5 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

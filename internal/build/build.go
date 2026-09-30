@@ -128,7 +128,7 @@ func goVersion(raw string) string {
 // Docker daemon can consume as a build context. Filenames inside the tar are
 // the path of each asset relative to AssetDir — top-level files keep their
 // basename (so `COPY zshrc.sh …` resolves) and nested entries (e.g.
-// `init.d/10-rtk.sh`) keep their subdirectory prefix so `COPY init.d/ …`
+// `init.d/10-remove-rtk.sh`) keep their subdirectory prefix so `COPY init.d/ …`
 // resolves too.
 //
 // Files under init.d/ get tar mode 0755 unconditionally because embed.FS

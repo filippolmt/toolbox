@@ -1,17 +1,6 @@
 # Runtime privacy internals
 
-Maintainer notes on the telemetry / data-exfiltration lockdown baked into the image: rtk's env-layer defenses and the Claude Code env-var matrix (what is set, what is deliberately not, and why).
-
-## rtk hook auto-wiring + telemetry/tee lockdown
-
-`internal/build/assets/init.d/10-rtk.sh` runs `rtk init -g` (Claude), `rtk init -g --codex` (Codex) and `rtk init -g --agent pi` (pi) on every shell so the Bash-tool rewrite hook stays registered even after a settings reset or a fresh `~/.toolbox/.claude` bind-mount. Gated on `command -v claude` / `command -v codex` / `command -v pi` so opted-out tools never get rtk hooks injected — and, for Codex and pi, on the agent's config directory too, so a bind-mount that auto-created the dir for an opted-out tool is not mistaken for the tool. Idempotent; failures are non-fatal.
-
-Privacy is enforced at the env layer image-wide:
-
-- `RTK_TELEMETRY_DISABLED=1` blocks every telemetry code path regardless of consent state.
-- `RTK_TEE=0` blocks the tee feature regardless of `[tee] enabled` in the TOML — so failed-command stdout (which often carries auth tokens from `gh auth status`, `aws sts`, `curl -H Authorization:`) is never written to disk under `~/.local/share/rtk/`.
-
-The entrypoint additionally pre-seeds `~/.config/rtk/config.toml` with `[tee] enabled = false` and `[telemetry] enabled = false` on first launch (belt-and-braces, so `rtk telemetry status` reports a consistent state and unsetting either env var still inherits safe defaults). Seed gated on file absence — env vars are the load-bearing defense for users with a stale config.toml from before the seed existed, and survive `rtk telemetry enable/disable` rewriting the whole TOML.
+Maintainer notes on the telemetry and data-exfiltration controls baked into the image, including the Claude Code env-var matrix (what is set, what is deliberately not, and why).
 
 ## Claude Code env-var matrix
 

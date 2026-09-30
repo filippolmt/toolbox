@@ -217,8 +217,8 @@ func init() {
 			"Overrides a configured mounts_root for this invocation. Runs in its own container.")
 	shellCmd.Flags().StringSliceVar(&shellShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root instead of the profile "+
-			"(repeatable/comma-separated). Names match 'toolbox mounts' identifiers; a prefix like 'cf' or "+
-			"'rtk' covers its split mounts. Requires --profile.")
+			"(repeatable/comma-separated). Names match 'toolbox mounts' identifiers; a prefix like 'cf' "+
+			"covers its split mounts. Requires --profile.")
 	shellCmd.Flags().BoolVar(&shellPeer, "peer", false,
 		"let Claude Code sessions in other toolbox containers see and message this one "+
 			"(ListAgents / SendMessage). Off by default; --peer asks for it for this run and "+

@@ -79,7 +79,7 @@ func TestEmbedAssetsContainsInitDDir(t *testing.T) {
 		t.Fatalf("ReadDir init.d: %v", err)
 	}
 	if len(entries) < 5 {
-		t.Fatalf("init.d/ has %d entries, want >= 5 (10-rtk.sh, 20-cf.sh, 30-graphify.sh, 40-playwright-cli.sh, 50-mcp-plugins.sh)", len(entries))
+		t.Fatalf("init.d/ has %d entries, want >= 5 (10-remove-rtk.sh, 20-cf.sh, 30-graphify.sh, 40-playwright-cli.sh, 50-mcp-plugins.sh)", len(entries))
 	}
 }
 
@@ -107,7 +107,7 @@ func TestTarEmbeddedContextShipsInitDDir(t *testing.T) {
 		}
 	}
 	want := []string{
-		"init.d/10-rtk.sh",
+		"init.d/10-remove-rtk.sh",
 		"init.d/20-cf.sh",
 		"init.d/30-graphify.sh",
 		"init.d/40-playwright-cli.sh",

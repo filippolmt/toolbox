@@ -148,9 +148,6 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)
-- [rtk arm64 is built from source](internals/image-build.md#rtk-arm64-is-built-from-source)
-- [Rust base image tag scheme](internals/image-build.md#rust-base-image-tag-scheme)
-- [Slim Rust images ship no curl / ca-certificates](internals/image-build.md#slim-rust-images-ship-no-curl--ca-certificates)
 - [Homebrew](internals/image-build.md#homebrew)
 - [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
@@ -188,7 +185,6 @@ host-CLI primitives, the static-analysis and coverage gates.
 
 ### [internals/privacy.md](internals/privacy.md)
 
-- [rtk hook auto-wiring + telemetry/tee lockdown](internals/privacy.md#rtk-hook-auto-wiring--telemetrytee-lockdown)
 - [Claude Code env-var matrix](internals/privacy.md#claude-code-env-var-matrix)
 
 ### [internals/host-cli.md](internals/host-cli.md)
