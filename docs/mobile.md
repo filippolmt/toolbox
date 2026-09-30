@@ -77,7 +77,10 @@ android-sdk-install --accept-licenses
 
 An agent working in the session must ask you before passing
 `--accept-licenses`. The underlying `sdkmanager` accepts the licence on its own
-without asking, so this flag is the only point where the choice is yours.
+without asking, so this flag is the only point where the choice is yours. The
+repository's disposable Android CI environment is the exception: it accepts
+the licence automatically to verify installer updates before Renovate merges
+them.
 
 The installer, in order:
 
