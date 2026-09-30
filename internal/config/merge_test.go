@@ -91,7 +91,7 @@ func TestMergeScenarios(t *testing.T) {
 		},
 		{
 			name:    "inherit_host_auth_ineligible_rejected",
-			project: "inherit_host_auth: [rtk]\n",
+			project: "inherit_host_auth: [jq]\n",
 			want:    want{ErrSubstr: "does not support host inheritance"},
 		},
 		{

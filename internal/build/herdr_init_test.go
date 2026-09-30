@@ -65,7 +65,7 @@ func TestHerdrInitInstallsBothSkillPaths(t *testing.T) {
 //
 // `herdr integration install claude` registers its hook in
 // ~/.claude/settings.json, which makes this script the FOURTH concurrent writer
-// of that one file — 10-rtk.sh, 35-statusline.sh and 65-atuin.sh are the other
+// of that one file — 10-remove-rtk.sh, 35-statusline.sh and 65-atuin.sh are the other
 // three, and all of them hold .claude-settings.lock. init.d runs backgrounded in
 // parallel, so an unlocked read-modify-write here loses either herdr's own hook
 // or another writer's patch, silently and non-deterministically.
@@ -106,7 +106,7 @@ func TestHerdrInitLocksClaudeSettings(t *testing.T) {
 //
 // And ~/.pi/agent must be CREATED before the install. `herdr integration
 // install pi` refuses a ~/.pi that pi has never populated ("pi extension
-// directory not found"), while 10-rtk.sh and 65-atuin.sh create the tree
+// directory not found"), while 65-atuin.sh creates the tree
 // themselves — and init.d runs backgrounded in parallel, so on a fresh ~/.pi
 // mount herdr loses the race and prints a failure for a mount that is perfectly
 // good.
@@ -129,8 +129,8 @@ func TestHerdrInitWiresPi(t *testing.T) {
 	}
 
 	// No lock: `herdr integration install pi` writes its own
-	// ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from the rtk and
-	// atuin extensions the other init.d members drop in the same directory.
+	// ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from the atuin
+	// extension another init.d member drops in the same directory.
 	// Taking .claude-settings.lock here would serialise pi behind a file it
 	// never touches — and settings.json, the one file that does need the lock,
 	// has exactly one writer in this script (the claude install, pinned by

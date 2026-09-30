@@ -114,7 +114,7 @@ alias la='ls -A'
 alias l='ls -CF'
 # Toolbox-specific: `cdw` jumps to the fixed workspace mount; `reload` re-execs
 # the shell to pick up config edits without leaving the container.
-# pi's extensions (rtk, atuin, herdr) are installed into ~/.pi/agent/extensions
+# pi's extensions (atuin, herdr) are installed into ~/.pi/agent/extensions
 # by init.d at container start and then never touched again, so each one stays
 # at whatever version installed it. Refresh them on the way in. Chained with `;`
 # and NOT `&&` on purpose: an offline shell must still get a pi, and a stale

@@ -84,7 +84,7 @@ func defaults() []config.Mount {
 		{Name: "docker", Source: "~/.toolbox/docker", Target: "/home/toolbox/.docker", ReadOnly: false, CreateIfMissing: true},
 		// Cloudflare CLI (`cf`, Wrangler vNext preview) splits state across two
 		// hard-coded upstream paths (no env override on either), so we follow the
-		// rtk pattern: both bind sources nested under a single ~/.toolbox/cf/ root
+		// Split-state pattern: both bind sources nested under a single ~/.toolbox/cf/ root
 		// on the host (flat layout) while the container keeps the upstream split.
 		//
 		// The two names read inverted against the upstream dirs (cf-auth backs
@@ -111,21 +111,6 @@ func defaults() []config.Mount {
 		// ~/.config/.wrangler/config/default.toml. Without this bind every
 		// `wrangler login` wipes on `toolbox stop`.
 		{Name: "wrangler", Source: "~/.toolbox/wrangler", Target: "/home/toolbox/.config/.wrangler", ReadOnly: false, CreateIfMissing: true},
-		// rtk follows XDG, which means it splits state across ~/.config/rtk
-		// (config) and ~/.local/share/rtk (data). Both bind sources are
-		// nested under a single ~/.toolbox/rtk/ root on the host so all rtk
-		// state lives under one parent dir; inside the container the two
-		// XDG-compliant targets stay separate because rtk hard-codes the
-		// data path (RTK_DB_PATH only partially redirects writes).
-		//
-		// "rtk" — config.toml (also stores GDPR telemetry consent in
-		// [telemetry]) and filters.toml. Written by `rtk config --create`
-		// and `rtk init`.
-		{Name: "rtk", Source: "~/.toolbox/rtk/config", Target: "/home/toolbox/.config/rtk", ReadOnly: false, CreateIfMissing: true},
-		// "rtk-data" — analytics database (history.db, read by `rtk gain`),
-		// the telemetry salt file, and tee dumps. Without this bind the
-		// savings history wipes on every `toolbox stop`.
-		{Name: "rtk-data", Source: "~/.toolbox/rtk/data", Target: "/home/toolbox/.local/share/rtk", ReadOnly: false, CreateIfMissing: true},
 		// kubeconfig — populated by `gcloud container clusters get-credentials`,
 		// `aws eks update-kubeconfig`, manual edits, etc. Persists across the
 		// auto-remove-on-exit container lifecycle so cluster context survives
@@ -228,8 +213,8 @@ func defaults() []config.Mount {
 		{Name: "golangci-cache", Source: "~/.toolbox/golangci-cache", Target: "/home/toolbox/.cache/golangci-lint", ReadOnly: false, CreateIfMissing: true},
 		// herdr (agent multiplexer TUI) follows XDG and splits durable state across
 		// ~/.config/herdr and ~/.local/state/herdr, so both bind sources nest
-		// under a single ~/.toolbox/herdr/ root on the host (flat layout, rtk
-		// pattern) while the container keeps the XDG-compliant split. Without
+		// under a single ~/.toolbox/herdr/ root on the host (flat layout) while
+		// the container keeps the XDG-compliant split. Without
 		// these binds every detachable session, installed/enabled plugin, and
 		// config wipes on `toolbox stop` — herdr's whole value is persistence.
 		//

@@ -84,7 +84,7 @@ fi
 #
 # `atuin hook install` is idempotent upstream, but every invocation still
 # opens + parses the agent's config file (and takes the claude-settings
-# flock against init.d/10-rtk.sh). Gate per agent via a marker file keyed
+# flock against init.d/10-remove-rtk.sh). Gate per agent via a marker file keyed
 # on the atuin binary's mtime+size — when atuin upgrades the hook stub may
 # change, so we re-run on binary churn but skip on every other boot.
 _atuin_bin=$(command -v atuin)
@@ -93,7 +93,7 @@ _atuin_hooks_dir="$HOME/.toolbox-state/atuin-hooks"
 mkdir -p "$_atuin_hooks_dir"
 
 # Claude Code: writes to ~/.claude/settings.json — flock-guarded against
-# rtk's concurrent patch in init.d/10-rtk.sh.
+# the concurrent migration in init.d/10-remove-rtk.sh.
 _claude_marker="$_atuin_hooks_dir/claude-${_atuin_key}"
 if [ ! -f "$_claude_marker" ] && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
     _claude_lock="$HOME/.toolbox-state/.claude-settings.lock"

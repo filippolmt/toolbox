@@ -56,8 +56,8 @@ func applyMountsRoot(base []config.Mount, root string, shared []string) []config
 
 // matchesShareToken reports whether a --share token covers the mount named
 // name: an exact match, or a "<token>-" prefix so a single token covers a
-// tool's split mounts (e.g. "cf" covers "cf-auth"/"cf-config", "rtk" covers
-// "rtk"/"rtk-data"). The one place the token-matching rule lives.
+// tool's split mounts (e.g. "cf" covers "cf-auth"/"cf-config"). The one
+// place the token-matching rule lives.
 func matchesShareToken(token, name string) bool {
 	return token == name || strings.HasPrefix(name, token+"-")
 }
@@ -81,6 +81,9 @@ func shareCovers(shared []string, name string) bool {
 func validateShare(base []config.Mount, shared []string) error {
 	var unknown []string
 	for _, s := range shared {
+		if s == "rtk" || s == "rtk-data" {
+			continue
+		}
 		if s == "" {
 			// An empty token would only ever match a mount named "-…"; reject it
 			// explicitly instead of relying on that naming coincidence.
@@ -106,6 +109,33 @@ func validateShare(base []config.Mount, shared []string) error {
 		return fmt.Errorf("share references unknown or non-shareable mount name(s): %s", strings.Join(unknown, ", "))
 	}
 	return nil
+}
+
+// legacyRTKWarnings tells users which retired references can now be deleted.
+func legacyRTKWarnings(mounts []config.Mount, profile *Profile) []string {
+	for _, m := range mounts {
+		if m.Name == "rtk" || m.Name == "rtk-data" {
+			return []string{"retired RTK mount configuration is ignored; remove rtk and rtk-data from mounts"}
+		}
+	}
+	if profile != nil {
+		for _, name := range profile.Share {
+			if name == "rtk" || name == "rtk-data" {
+				return []string{"retired RTK share configuration is ignored; remove rtk and rtk-data from --share"}
+			}
+		}
+	}
+	return nil
+}
+
+func withoutLegacyRTKMounts(mounts []config.Mount) []config.Mount {
+	out := make([]config.Mount, 0, len(mounts))
+	for _, m := range mounts {
+		if m.Name != "rtk" && m.Name != "rtk-data" {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // profileHostSharedWarnings flags any post-merge mount left on the host

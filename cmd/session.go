@@ -113,6 +113,12 @@ func startSession(in sessionIntent) error {
 	}
 	defer cli.Close()
 
+	// Retired RTK state belongs to the active credential root. Best-effort: a
+	// stale directory must not prevent the shell from opening.
+	if err := mountplan.RemoveLegacyRTKState(host, in.Plan.Cfg, in.Plan.Profile); err != nil {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: remove retired RTK state: %v\n", err)
+	}
+
 	// Resolve the running image's repo digest host-side and thread it to the
 	// planner, which stamps it into the container as its record of what it was
 	// created from — the baseline the update prefetch compares the local image

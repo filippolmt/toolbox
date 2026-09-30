@@ -35,7 +35,7 @@ toolbox shell                    # default identity, untouched by the profile
 
 Isolation is all-or-nothing, not per-tool. To keep specific tools shared with
 the host while isolating the rest, list them with `--share` (repeatable, matches
-`toolbox mounts` names; a prefix like `cf` or `rtk` covers its split mounts):
+`toolbox mounts` names; a prefix like `cf` covers its split mounts):
 
 ```bash
 toolbox shell --profile work --share gh,docker   # gh + docker stay host-shared, everything else isolated

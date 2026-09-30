@@ -11,8 +11,8 @@ import (
 func TestDefaults(t *testing.T) {
 	mounts := Defaults()
 
-	if len(mounts) != 43 {
-		t.Fatalf("expected 43 default mounts, got %d", len(mounts))
+	if len(mounts) != 41 {
+		t.Fatalf("expected 41 default mounts, got %d", len(mounts))
 	}
 
 	// ~/.secrets must NOT be present (D-08).
@@ -58,8 +58,6 @@ func TestDefaults(t *testing.T) {
 	assertMountTarget(t, mounts, "~/.toolbox/cf/auth", "/home/toolbox/.config/cloudflare")
 	assertMountTarget(t, mounts, "~/.toolbox/cf/config", "/home/toolbox/.config/.cf")
 	assertMount(t, mounts, "~/.toolbox/wrangler", false, true)
-	assertMount(t, mounts, "~/.toolbox/rtk/config", false, true)
-	assertMount(t, mounts, "~/.toolbox/rtk/data", false, true)
 	assertMount(t, mounts, "~/.toolbox/kube", false, true)
 	assertMount(t, mounts, "~/.toolbox/playwright-cache", false, true)
 	// Playwright-cli workspace config: read-write, create-if-missing.

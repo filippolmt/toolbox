@@ -25,6 +25,8 @@ import (
 var systemInitScripts = map[string]struct{}{
 	// `toolbox shell -B` loopback bridge — host-CLI flag, not a tool toggle.
 	"70-loopback-bridge.sh": {},
+	// Permanent cleanup for persisted homes from before RTK was retired.
+	"10-remove-rtk.sh": {},
 	// npm-global shadow heal — system hygiene, not a tool toggle.
 	"15-npm-shadow-dedupe.sh": {},
 	// Managed Claude Code statusline — image-owned policy, not a tool toggle.

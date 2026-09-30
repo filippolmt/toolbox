@@ -72,8 +72,8 @@ sudo flock /tmp/toolbox-gitconfig.lock sh -c '
 # on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`
 # so a failed init never aborts boot.
 #
-# Scripts touch disjoint config trees (~/.config/rtk, ~/.claude/skills/<name>,
-# ~/.codex, ~/.claude/plugins/cache) and gate on their own binaries — safe to
+# Scripts touch disjoint config trees (~/.claude/skills/<name>, ~/.codex,
+# ~/.claude/plugins/cache) and gate on their own binaries — safe to
 # run in parallel. Stdout per script is buffered to a temp file and replayed
 # in lexical filename order after `wait`, preserving the visible "Building
 # Claude Code MCP plugins:" output from 50-mcp-plugins.

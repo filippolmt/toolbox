@@ -39,13 +39,13 @@ set -euo pipefail
 # Skill writes are atomic (mktemp + mv): a target under ~/.claude is ONE host
 # mount shared by every toolbox container, so a container starting mid-write must
 # never see a partial SKILL.md. The claude integration install takes
-# .claude-settings.lock, the same lock 10-rtk.sh / 35-statusline.sh / 65-atuin.sh
+# .claude-settings.lock, the same lock 10-remove-rtk.sh / 35-statusline.sh / 65-atuin.sh
 # hold: it registers its hook in settings.json, making this the fourth
 # concurrent writer of that one file.
 #
 # Only the claude install takes that lock. codex's hook and pi's are files of
 # their own — pi's is ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from
-# the rtk and atuin extensions 10-rtk.sh and 65-atuin.sh drop in that same
+# the migration and atuin extension 10-remove-rtk.sh and 65-atuin.sh touch in that same
 # directory — so there is no shared writer to serialise against.
 #
 # Non-fatal throughout, and the installs are independent: one failing never

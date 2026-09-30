@@ -39,7 +39,6 @@
 # (no value) immediately above the RUN — not merely inside the stage — that
 # consumes them, so a bump lands in that RUN's cache key and not in every one
 # below it.
-ARG RTK_VERSION=0.50.0
 ARG GH_VERSION=2.102.0
 ARG GLAB_VERSION=1.120.0
 ARG GWS_VERSION=0.22.5
@@ -98,67 +97,6 @@ ARG ZOXIDE_VERSION=0.10.0
 ARG SHELLCHECK_VERSION=0.11.0
 # shellcheck: use the .tar.gz asset (slim base has no xz for the .xz build).
 ARG SHFMT_VERSION=3.14.1
-
-# rtk builder: amd64 uses upstream MUSL tarball, arm64 builds from source
-# against bookworm sysroot. Upstream aarch64-gnu binary links GLIBC 2.39;
-# bookworm ships 2.36, no aarch64-musl release. Revisit when upstream
-# publishes aarch64-musl OR Azure CLI apt repo gains trixie suite.
-#
-# **On arm64 this stage is not reproducible, knowingly.** It is the one FROM in
-# the file whose contents are compiled *into* a stage's `/out` rather than
-# merely hosting the download of one, so a floating tag here is Fetch
-# Nondeterminism — `/out` stops being a function of RTK_VERSION — and not the
-# Archive Drift a moving base usually is. Two toolchains, same RTK_VERSION and
-# same `--locked` graph, give two different binaries; ADR 0002 follow-up 3
-# carries the measurement.
-#
-# Holding the base still would close it, but pinning by digest costs a Renovate
-# PR on every upstream rebuild of the same tag, and the moved-layer gate
-# measures amd64 only — where the binary is a checksummed tarball and identical
-# across builds. So this is accepted rather than fixed, and it is accepted here
-# rather than excused in the gate, which never sees it. Revisit if the gate
-# grows an arm64 leg.
-#
-# Two `--no-cache` builds against the *same* base agree to the byte, which is
-# why no SOURCE_DATE_EPOCH and no --remap-path-prefix would help: `--locked`
-# pins the dependency graph and the paths rustc records are container paths.
-# → CONTEXT.md "Fetch Nondeterminism"
-FROM rust:1-slim-bookworm AS rtk-builder
-# Pipes in RUN fail the build when any segment fails (hadolint DL4006).
-# Per-stage: SHELL does not survive a FROM that targets an external image.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ARG TARGETARCH
-ARG RTK_VERSION
-# slim rust ships no curl/ca-certs; arm64 cargo build needs build-essential
-# + pkg-config (rusqlite bundled SQLite pulls in cc).
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=rtk-apt-cache \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=rtk-apt-lists \
-    --mount=type=cache,target=/usr/local/cargo/registry,id=rtk-cargo-registry \
-    --mount=type=cache,target=/usr/local/cargo/git,id=rtk-cargo-git \
-    set -eux; \
-    mkdir -p /out/usr/local/bin; \
-    rm -f /etc/apt/apt.conf.d/docker-clean; \
-    apt-get update -qqy; \
-    apt-get install -qqy --no-install-recommends curl ca-certificates; \
-    if [ "${TARGETARCH}" = "amd64" ]; then \
-      RTK_ARCH=x86_64-unknown-linux-musl; \
-      RTK_TARBALL="rtk-${RTK_ARCH}.tar.gz"; \
-      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${RTK_TARBALL}" \
-        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_TARBALL}"; \
-      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/rtk_checksums.txt \
-        "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/checksums.txt"; \
-      cd /tmp && grep "${RTK_TARBALL}" rtk_checksums.txt | sha256sum -c -; \
-      tar -xzf "/tmp/${RTK_TARBALL}" -C /out/usr/local/bin rtk; \
-      chmod 0755 /out/usr/local/bin/rtk; \
-    elif [ "${TARGETARCH}" = "arm64" ]; then \
-      apt-get install -qqy --no-install-recommends build-essential pkg-config; \
-      cargo install --git https://github.com/rtk-ai/rtk --tag "v${RTK_VERSION}" --root /tmp/cargo --locked rtk; \
-      install -m 0755 /tmp/cargo/bin/rtk /out/usr/local/bin/rtk; \
-    else \
-      echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
-    fi; \
-    /out/usr/local/bin/rtk --version; \
-    find /out -exec touch -h -d @1 {} +
 
 # Shared parent for the fetch-* stages: curl + CA bundle + git. tar/gzip/awk/
 # sha256sum ship with the slim base. Children inherit the SHELL config.
@@ -1595,11 +1533,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
 #     canonical upgrade path is bumping GCLOUD_VERSION (Renovate-managed).
 #   CLOUDSDK_SURVEY_PROMPT_DISABLE: suppress the survey nag printed at the
 #     tail of authenticated commands.
-#   RTK_TELEMETRY_DISABLED=1: hard kill-switch surviving any `rtk telemetry
-#     enable` rewrite of config.toml.
-#   RTK_TEE=0: hard kill-switch for tee feature — writes failed-command
-#     stdout/stderr (often carrying tokens) to ~/.local/share/rtk/tee/*.log.
-#     Source-side override checked at src/core/tee.rs (v0.37.2 lines 152, 200).
 #   SONARQUBE_CLI_KEYCHAIN_FILE: sonar stores tokens via Bun.secrets →
 #     libsecret, which fails fatally without a D-Bus secret service; the
 #     file backend (src/lib/keychain.ts) lands the token (plaintext JSON)
@@ -1622,9 +1555,7 @@ ENV CHECKPOINT_DISABLE=1 \
     ATUIN_CONFIG_DIR=/home/toolbox/.local/share/atuin/config \
     CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true \
     CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=1 \
-    CLOUDSDK_SURVEY_PROMPT_DISABLE=1 \
-    RTK_TELEMETRY_DISABLED=1 \
-    RTK_TEE=0
+    CLOUDSDK_SURVEY_PROMPT_DISABLE=1
 ENV PATH="/usr/local/go/bin:${PATH}"
 # Per-user bun global bin in PATH.
 ENV PATH="/home/toolbox/.bun/bin:${PATH}"
@@ -1852,8 +1783,8 @@ ENV PNPM_HOME="/home/toolbox/.local/share/pnpm" \
 ENV PATH="/home/toolbox/go/bin:/home/toolbox/.local/share/pnpm/bin:/home/toolbox/.local/share/uv/bin:${PATH}"
 # Homebrew on PATH for non-interactive `docker exec` too; interactive zsh
 # additionally evals `brew shellenv` (idempotent w.r.t. this entry) for
-# HOMEBREW_PREFIX/MANPATH/INFOPATH. Analytics off (privacy posture, rtk
-# telemetry-lockdown precedent); auto-update off (pin-everything policy —
+# HOMEBREW_PREFIX/MANPATH/INFOPATH. Analytics off for privacy; auto-update off
+# (pin-everything policy —
 # also avoids the shallow-clone `brew update` trip on every install).
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}" \
     HOMEBREW_NO_ANALYTICS=1 \
@@ -2051,13 +1982,6 @@ COPY --link --from=fetch-cf       /out/ /
 COPY --link --from=fetch-playwright-cli /out/ /
 COPY --link --from=fetch-claude-code /out/ /
 COPY --link --from=fetch-graphify /out/ /
-# rtk (Rust CLI proxy). Binary built + version-checked in rtk-builder.
-# Copies the tree, not the file: a single-file COPY makes BuildKit synthesise
-# /usr/local/bin, and those directories are stamped with the build's wall clock
-# however frozen the file's own mtime is — so the layer digest moved on every
-# rebuild. Same shape as the fetch-* stages for the same reason. → ADR 0002
-COPY --link --from=rtk-builder /out/ /
-
 USER toolbox
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/entrypoint"]

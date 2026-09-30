@@ -8,7 +8,7 @@ IMAGE := ghcr.io/filippolmt/toolbox
 TAG   := latest
 FULL  := $(IMAGE):$(TAG)
 # BuildKit registry cache published by CI (docker-publish.yml, mode=max,
-# multi-arch — includes the arm64 rtk cargo build). Seeding from it makes the
+# multi-arch). Seeding from it makes the
 # first local build (or a rebuild after an upstream bump) mostly a layer pull.
 # Cache-import failures are non-fatal warnings, so offline builds still work.
 # Override: `make build CACHE_REF=...`.

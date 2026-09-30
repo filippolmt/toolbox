@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Only the .statusLine key is rewritten — everything else in settings.json
 # (permissions, hooks, enabledPlugins, …) is preserved. Shares the
-# .claude-settings.lock with 10-rtk.sh / 65-atuin.sh because entrypoint runs
+# .claude-settings.lock with 10-remove-rtk.sh / 65-atuin.sh because entrypoint runs
 # init.d scripts in parallel and all three rewrite the same file. flock +
 # atomic mktemp+mv avoid clobbering a concurrent writer's result.
 # Opt-out: `managed_statusline: false` in .toolbox.yaml → host injects

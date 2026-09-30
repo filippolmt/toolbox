@@ -420,14 +420,6 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
-      "matchStrings": ["ARG\\s+RTK_VERSION=(?<currentValue>\\S+)"],
-      "datasourceTemplate": "github-releases",
-      "packageNameTemplate": "rtk-ai/rtk",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "customType": "regex",
       "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
       "matchStrings": [
         "NpmPackage:\\s*\"@opengsd/gsd-core\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
