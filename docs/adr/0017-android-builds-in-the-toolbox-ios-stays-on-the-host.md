@@ -73,8 +73,10 @@ rows follow the [Tool Cache](../../CONTEXT.md#tool-cache) split and
 - a `gradle-cache` Tool Cache on `~/.gradle`.
 
 Both are `CreateIfMissing` and always mounted, like `playwright-cache`. An empty
-bind costs nothing. The Gradle JDK is set with `org.gradle.java.home` in the
-user `gradle.properties`, so the system `java` does not change for anything else.
+bind costs nothing. Once the SDK is populated, the shell exports its Gradle JDK
+as `JAVA_HOME` so the Gradle wrapper can start, and sets
+`org.gradle.java.home` in the user `gradle.properties` so the daemon uses the
+same JDK.
 
 **No config key turns it on.** The shell exports `ANDROID_HOME` and
 `ADB_SERVER_SOCKET` only when the SDK directory is populated. The installer

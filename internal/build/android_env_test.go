@@ -62,10 +62,10 @@ func TestAndroidEnvIsSilentUntilTheSdkIsInstalled(t *testing.T) {
 	}
 }
 
-// Once installed, adb talks to the host's own server over the IPv4 gateway
-// (host.docker.internal resolves IPv6 first, and that address is
-// unreachable), and android-cli keeps its home in the bind, without metrics.
-func TestAndroidEnvPointsAdbAtTheHostDeviceServerOnceInstalled(t *testing.T) {
+// Once installed, the Android tools use the SDK bind: adb reaches the host's
+// server over its IPv4 gateway, android-cli keeps its home there without
+// metrics, and Gradle starts with the installed JDK.
+func TestAndroidEnvExportsTheInstalledToolchain(t *testing.T) {
 	home := t.TempDir()
 	sdk := filepath.Join(home, ".android-sdk")
 	writeExecutable(t, filepath.Join(sdk, "platform-tools", "adb"), "#!/bin/sh\n")
