@@ -38,6 +38,27 @@ func TestLegacyRTKMountReferencesAreIgnoredWithAWarning(t *testing.T) {
 	}
 }
 
+func TestLegacyRTKShareReferenceWarnsWithoutLegacyMounts(t *testing.T) {
+	home := t.TempDir()
+	profile, err := NewProfile("work", []string{legacyRTKMountName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Plan(PlanInput{Host: fsx.Host{Home: home}, Cfg: &config.Config{}, Profile: profile, Workspace: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(result.Warnings, "\n"); !strings.Contains(got, "share configuration") {
+		t.Errorf("Warnings = %q, want retired share notice", got)
+	}
+}
+
+func TestRemoveLegacyRTKStateRejectsAnUnsetHome(t *testing.T) {
+	if err := RemoveLegacyRTKState(fsx.Host{}, &config.Config{}, nil); err == nil {
+		t.Fatal("RemoveLegacyRTKState accepted an unset host home")
+	}
+}
+
 func TestRemoveLegacyRTKStateRejectsAnUnsafeRoot(t *testing.T) {
 	home := t.TempDir()
 	if err := RemoveLegacyRTKState(fsx.Host{Home: home}, &config.Config{MountsRoot: "."}, nil); err == nil {
@@ -75,6 +96,30 @@ func TestRemoveLegacyRTKStateHonorsLegacyDataOnlyShare(t *testing.T) {
 		if gotExists := err == nil; gotExists != wantExists {
 			t.Errorf("%s exists = %v, want %v", name, gotExists, wantExists)
 		}
+	}
+}
+
+func TestRemoveLegacyRTKStateHonorsLegacyWholeShare(t *testing.T) {
+	home := t.TempDir()
+	shared := filepath.Join(home, ".toolbox", "rtk", "data")
+	profileState := filepath.Join(home, ".toolbox", "profiles", "work", "rtk", "data")
+	for _, dir := range []string{shared, profileState} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile, err := NewProfile("work", []string{legacyRTKMountName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveLegacyRTKState(fsx.Host{Home: home}, &config.Config{}, profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(shared); !os.IsNotExist(err) {
+		t.Errorf("shared RTK state still exists: %v", err)
+	}
+	if _, err := os.Stat(profileState); err != nil {
+		t.Errorf("inactive profile state was touched: %v", err)
 	}
 }
 

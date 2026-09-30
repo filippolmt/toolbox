@@ -176,7 +176,7 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	if err := config.ValidateMountsRoot(root); err != nil {
 		return nil, err
 	}
-	if err := validateShare(defaults(), shared); err != nil {
+	if err := validateShare(defaults(), withoutLegacyRTKShares(shared)); err != nil {
 		return nil, err
 	}
 	// Two things behind this function read host.Home: the inherit_host_auth

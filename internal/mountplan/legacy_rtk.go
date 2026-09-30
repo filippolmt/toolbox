@@ -18,10 +18,10 @@ func RemoveLegacyRTKState(host fsx.Host, cfg *config.Config, profile *Profile) e
 	if profile == nil {
 		return removeLegacyRTKPath(host, cfg.MountsRoot, "")
 	}
-	if shareCovers(profile.Share, "rtk") {
+	if shareCovers(profile.Share, legacyRTKMountName) {
 		return removeLegacyRTKPath(host, "", "")
 	}
-	if shareCovers(profile.Share, "rtk-data") {
+	if shareCovers(profile.Share, legacyRTKDataMountName) {
 		if err := removeLegacyRTKPath(host, profile.Root(), "config"); err != nil {
 			return err
 		}

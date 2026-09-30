@@ -11,7 +11,11 @@ import (
 // mountsRootPrefix is the source-path prefix that applyMountsRoot rewrites.
 // Every default mount whose Source begins with this prefix is retargeted
 // when the user sets mounts_root in their config.
-const mountsRootPrefix = "~/.toolbox/"
+const (
+	mountsRootPrefix       = "~/.toolbox/"
+	legacyRTKMountName     = "rtk"
+	legacyRTKDataMountName = "rtk-data"
+)
 
 // mountsRootJoin joins name onto a mounts root, defaulting an empty root to
 // the ~/.toolbox/ prefix and tolerating either spelling of the trailing
@@ -81,9 +85,6 @@ func shareCovers(shared []string, name string) bool {
 func validateShare(base []config.Mount, shared []string) error {
 	var unknown []string
 	for _, s := range shared {
-		if s == "rtk" || s == "rtk-data" {
-			continue
-		}
 		if s == "" {
 			// An empty token would only ever match a mount named "-…"; reject it
 			// explicitly instead of relying on that naming coincidence.
@@ -111,16 +112,20 @@ func validateShare(base []config.Mount, shared []string) error {
 	return nil
 }
 
+func isLegacyRTKName(name string) bool {
+	return name == legacyRTKMountName || name == legacyRTKDataMountName
+}
+
 // legacyRTKWarnings tells users which retired references can now be deleted.
 func legacyRTKWarnings(mounts []config.Mount, profile *Profile) []string {
 	for _, m := range mounts {
-		if m.Name == "rtk" || m.Name == "rtk-data" {
+		if isLegacyRTKName(m.Name) {
 			return []string{"retired RTK mount configuration is ignored; remove rtk and rtk-data from mounts"}
 		}
 	}
 	if profile != nil {
 		for _, name := range profile.Share {
-			if name == "rtk" || name == "rtk-data" {
+			if isLegacyRTKName(name) {
 				return []string{"retired RTK share configuration is ignored; remove rtk and rtk-data from --share"}
 			}
 		}
@@ -128,10 +133,20 @@ func legacyRTKWarnings(mounts []config.Mount, profile *Profile) []string {
 	return nil
 }
 
+func withoutLegacyRTKShares(shared []string) []string {
+	out := make([]string, 0, len(shared))
+	for _, name := range shared {
+		if !isLegacyRTKName(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func withoutLegacyRTKMounts(mounts []config.Mount) []config.Mount {
 	out := make([]config.Mount, 0, len(mounts))
 	for _, m := range mounts {
-		if m.Name != "rtk" && m.Name != "rtk-data" {
+		if !isLegacyRTKName(m.Name) {
 			out = append(out, m)
 		}
 	}
