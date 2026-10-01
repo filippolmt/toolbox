@@ -345,12 +345,14 @@ func TestLaunchProximo_PlainVerbKeepsHostHome(t *testing.T) {
 	dir := fakeProximo(t, `printf 'HOME=%s ARGV=%s' "$HOME" "$*"`)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	out, _, err := launchProximo(context.Background(), proximoHostAt(t, home, dir), "errors", []string{"transcript"}, proximoAgentHome{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := string(out), "HOME="+home+" ARGV=errors transcript"; got != want {
-		t.Errorf("execution = %q, want %q", got, want)
+	for _, cmd := range []string{"errors", "doctor", "update", "version"} {
+		out, _, err := launchProximo(context.Background(), proximoHostAt(t, home, dir), cmd, []string{"transcript"}, proximoAgentHome{Home: t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(out), "HOME="+home+" ARGV="+cmd+" transcript"; got != want {
+			t.Errorf("%s: execution = %q, want %q", cmd, got, want)
+		}
 	}
 }
 

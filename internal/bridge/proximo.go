@@ -21,12 +21,17 @@ import (
 // host root — an unattended container→host-root path is one a prompt-injected
 // agent inherits — and `config`, whose one mutating form (`config tld`) rewrites
 // the host resolver while its queries describe a host the container cannot change.
+// doctor/update/version are in: none needs root, and none writes a host file
+// outside the stack `up` already manages.
 var proximoAllowlist = map[string]struct{}{
-	"up":     {},
-	"down":   {},
-	"status": {},
-	"errors": {},
-	"skill":  {},
+	"up":      {},
+	"down":    {},
+	"status":  {},
+	"errors":  {},
+	"skill":   {},
+	"doctor":  {},
+	"update":  {},
+	"version": {},
 }
 
 // isProximoOutputFlag reports whether arg is proximo's output-redirection
@@ -196,8 +201,8 @@ func setEnv(env []string, key, value string) []string {
 const proximoRunFailure = "run %s %s: %w"
 
 // proximoTimeout bounds a /proximo execution. Far above the shared 5s
-// requestTimeout because the first `proximo up` pulls/builds the stack
-// images; status/down complete in seconds.
+// requestTimeout because the first `proximo up` — and `proximo update` —
+// pulls/builds the stack images; status/down complete in seconds.
 const proximoTimeout = 120 * time.Second
 
 // ErrProximoNotInstalled is returned when no proximo binary resolves on the

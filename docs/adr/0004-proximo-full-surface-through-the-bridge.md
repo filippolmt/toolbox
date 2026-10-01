@@ -1,6 +1,6 @@
 # Proximo's full surface: reach it through the bridge, never through a container-side binary
 
-Status: accepted
+Status: accepted, amended below
 
 Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
 
@@ -159,3 +159,20 @@ message names the workspace case.
 Uninstalling proximo from the host leaves the skill behind, and at that point the
 daemon has no binary with which to remove it: `proximo skill uninstall` has to run
 *before* the host uninstall, or the directory has to be deleted by hand.
+
+## Amendment: the maintenance verbs are bridged too
+
+`doctor`, `update` and `version` join the allowlist. The test this ADR applies
+to every verb is *where the effect lands*, and all three pass it the way `up`
+does: none takes positional arguments, none needs host root, and none writes a
+host file outside the stack `up` already manages — `version` and `doctor` are
+pure output, and `update` acts on the same stack. They run in the plain
+execution mode; only `skill` rewrites the agent home. `update` may pull an
+image, which the existing execution budget sized for the first `up` already
+covers. `install`, `uninstall`, `trust` and `config` stay host-only for the
+reasons above.
+
+"A verb or flag added upstream needs no toolbox change" holds for flags only:
+a new verb still has to pass the verb gate, so admitting one means editing the
+allowlist and the shim's dispatch, which `TestBridgeContract_ProximoAllowlistMatchesShim`
+keeps in step.
