@@ -1771,8 +1771,8 @@ container-side request: *plain*, and *with the agent home rewritten*. Decided in
 [ADR-0004](docs/adr/0004-proximo-full-surface-through-the-bridge.md).
 
 Concretely: plain execution covers every verb whose effect is on the host or is
-pure output — `up`, `down`, `status`, `errors` — and is just the resolved binary
-with the request's argv. Home-rewritten execution exists for exactly one verb,
+pure output — `up`, `down`, `status`, `errors`, `doctor`, `update`, `version` —
+and is just the resolved binary with the request's argv. Home-rewritten execution exists for exactly one verb,
 `skill`, whose effect is *files an in-container agent must read*: the daemon sets
 `HOME` and `CODEX_HOME` to the host directories *the calling session* binds to
 `/home/toolbox/.claude` and `/home/toolbox/.codex` and passes `--scope global`,

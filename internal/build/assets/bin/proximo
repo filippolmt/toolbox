@@ -35,14 +35,14 @@ MSG
 }
 
 usage() {
-    echo "usage: proximo up|down|status|errors|skill [args...]   (toolbox bridge shim — everything else runs on the host)" >&2
+    echo "usage: proximo up|down|status|errors|skill|doctor|update|version [args...]   (toolbox bridge shim — everything else runs on the host)" >&2
     exit 2
 }
 
 [ "$#" -ge 1 ] || usage
 
 case "$1" in
-up | down | status | errors | skill) COMMAND="$1" ;;
+up | down | status | errors | skill | doctor | update | version) COMMAND="$1" ;;
 install | uninstall | trust)
     echo "proximo: '$1' is host-only — it needs root on the host, which is deliberately not reachable from a container" >&2
     exit 1
@@ -89,7 +89,7 @@ BODY_FILE=$(mktemp)
 trap 'rm -f "${BODY_FILE}"' EXIT
 
 # --max-time slightly above the daemon's 120s execution budget: the first
-# `up` pulls the proximo stack images.
+# `up`, and `update`, pull the proximo stack images.
 STATUS=$(bridge_post /proximo "${PAYLOAD}" "${BODY_FILE}" 135)
 
 case "${STATUS}" in

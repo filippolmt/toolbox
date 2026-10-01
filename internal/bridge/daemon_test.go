@@ -295,9 +295,11 @@ func TestHandler_ProximoPropagatesExitCode(t *testing.T) {
 }
 
 // TestHandler_ProximoAllowsBridgedVerbs pins the verb gate as a whole: the
-// three lifecycle verbs plus the two that make the agent-facing loop work —
-// `errors` reads the inspector's browser reports back, `skill` installs
-// proximo's own agent skill where the container's agents look for it.
+// lifecycle verbs (up, down, status), the agent-facing loop — `errors` reads
+// the inspector's browser reports back, `skill` installs proximo's own agent
+// skill where the container's agents look for it — and the maintenance verbs
+// (doctor, update, version), which need no root and write no host file
+// outside the stack.
 func TestHandler_ProximoAllowsBridgedVerbs(t *testing.T) {
 	for _, cmd := range AllowedProximoCommands() {
 		called := false
@@ -313,7 +315,7 @@ func TestHandler_ProximoAllowsBridgedVerbs(t *testing.T) {
 			t.Errorf("command %q: executor must run", cmd)
 		}
 	}
-	for _, cmd := range []string{"errors", "skill"} {
+	for _, cmd := range []string{"errors", "skill", "doctor", "update", "version"} {
 		if !slices.Contains(AllowedProximoCommands(), cmd) {
 			t.Errorf("%q must be bridged", cmd)
 		}
