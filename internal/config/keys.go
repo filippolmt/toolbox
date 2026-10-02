@@ -270,13 +270,13 @@ var keyRows = []Key{
 			"# (https://github.com/filippolmt/proximo). Tri-state, default AUTO: omit this key\n" +
 			"# and the integration turns on by itself iff proximo is installed on the host\n" +
 			"# (its root CA exists) — no per-repo opt-in. Set `true` to force on, `false` to\n" +
-			"# opt out. When on, `toolbox shell` discovers every running container labelled\n" +
-			"# `proximo.hosts=…`, pins each routed hostname to the Docker host-gateway (so\n" +
+			"# opt out. When on, `toolbox shell` reads proximo's effective-route inventory,\n" +
+			"# pins every served bare and qualified host to the Docker host-gateway (so\n" +
 			"# https://<name>.test reaches the host's Traefik, not the container's loopback)\n" +
 			"# for ANY client, and trusts proximo's CA seamlessly: curl/git/wget/python-ssl\n" +
 			"# (system bundle), chromium incl. Playwright (NSS), Node (NODE_EXTRA_CA_CERTS).\n" +
 			"# Only python-requests needs a nudge: REQUESTS_CA_BUNDLE=$TOOLBOX_PROXIMO_CA.\n" +
-			"# Extra-hosts are fixed at container creation — re-run `toolbox shell` for new hosts.\n" +
+			"# A runtime watcher keeps names aligned as routes start and stop.\n" +
 			"# proximo: false\n",
 		Tri: func(c *Config) *bool { return c.Proximo },
 	},

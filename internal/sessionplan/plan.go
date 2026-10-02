@@ -102,6 +102,11 @@ type SessionPlan struct {
 	// holds. The CA bind + NODE_EXTRA_CA_CERTS/TOOLBOX_PROXIMO_CA env are
 	// already resolved into Binds/Env here (pure, host-side).
 	Proximo bool
+	// ProximoInventoryDir is the host directory containing proximo's effective
+	// routes.json. The container edge reads it immediately before create; empty
+	// means the installed proximo predates the inventory contract and discovery
+	// falls back to Docker labels.
+	ProximoInventoryDir string
 	// ReclaimImages mirrors `image_reclaim`, resolved from its tri-state:
 	// absent means on, since Image Reclamation runs unless the developer
 	// disabled it in so many words. The container edge starts the sweep with
@@ -339,8 +344,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	// Host path of the state mount, for the host-side update prefetch — read
 	// off the plan above, never re-derived: mountplan.StateDirPath merges a
-	// second time, and the merge resolves the proximo gate, so asking here is
-	// the second `proximo config ca-path` spawn one session used to pay.
+	// second time, and rebuilding the gate would repeat its host queries.
 	stateDir := mp.StateDir
 
 	// Resolved before the env is composed: the reload marker is named after the
@@ -359,27 +363,32 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 			name, len(name), MaxContainerNameLen)
 	}
 	workingDir := reloadWorkingDir(mp.WorkingDir, in.ReloadFrom)
+	inventoryDir := ""
+	if in.Proximo.InventoryExists {
+		inventoryDir = in.Proximo.InventoryDir
+	}
 
 	return &SessionPlan{
-		Image:             Image{Ref: ref, PullPolicy: in.Cfg.Pull},
-		Binds:             mp.Binds,
-		Warnings:          mp.Warnings,
-		WorkingDir:        workingDir,
-		ExposedPorts:      exposed,
-		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
-		ContainerName:     name,
-		Hostname:          name,
-		Cmd:               cmd,
-		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
-		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
-		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
-		OverlayDockerfile: overlayDockerfile,
-		StateDir:          stateDir,
-		Proximo:           in.Proximo.Enabled,
-		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
-		PidMode:           peerPidMode(in.Peer),
-		ReloadFrom:        in.ReloadFrom,
+		Image:               Image{Ref: ref, PullPolicy: in.Cfg.Pull},
+		Binds:               mp.Binds,
+		Warnings:            mp.Warnings,
+		WorkingDir:          workingDir,
+		ExposedPorts:        exposed,
+		PortBindings:        bindings,
+		Env:                 composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
+		ContainerName:       name,
+		Hostname:            name,
+		Cmd:                 cmd,
+		ExecCmd:             worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
+		SecurityOpt:         NestedSandboxSecurityOpt(in.Cfg),
+		ExtraHosts:          browserBridgeExtraHosts(in.Cfg),
+		OverlayDockerfile:   overlayDockerfile,
+		StateDir:            stateDir,
+		Proximo:             in.Proximo.Enabled,
+		ProximoInventoryDir: inventoryDir,
+		ReclaimImages:       in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
+		PidMode:             peerPidMode(in.Peer),
+		ReloadFrom:          in.ReloadFrom,
 	}, nil
 }
 

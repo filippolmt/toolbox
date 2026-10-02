@@ -9,29 +9,28 @@
 # 127.0.0.1 (correct for the host, wrong inside the container) and the
 # connection is refused.
 #
-# This command is the runtime complement: it re-discovers the `proximo.hosts`
-# labels from the host Docker daemon (over the mounted /var/run/docker.sock)
-# and rewrites a managed block in /etc/hosts pinning every routed hostname to
-# the host-gateway, where proximo's Traefik publishes :443. /etc/hosts is
-# mutable at runtime (unlike --add-host), so reachability tracks the running
-# stacks without recreating the container.
+# This command is the runtime complement: it reads proximo's effective-route
+# inventory from its read-only bind and rewrites a managed block in /etc/hosts
+# pinning every bare and qualified hostname to the host-gateway. For an older
+# proximo without that inventory it falls back to labels from the host Docker
+# daemon. /etc/hosts is mutable at runtime (unlike --add-host), so reachability
+# tracks the running stacks without recreating the container.
 #
 # Usage:
 #   proximo-hosts            sync once and exit (idempotent)
-#   proximo-hosts --watch    sync, then keep syncing on every start/die of a
-#                            proximo.hosts-labelled container (docker events).
-#                            entrypoint.sh launches this in the background when
-#                            proximo is enabled, so the sync is automatic.
+#   proximo-hosts --watch    sync, then follow inventory replacements (or
+#                            Docker events on the legacy label fallback).
+#                            entrypoint.sh launches this automatically.
 
 set -eu
 
 BEGIN_MARKER="# >>> toolbox proximo (managed) >>>"
 END_MARKER="# <<< toolbox proximo (managed) <<<"
-HOSTS_FILE="/etc/hosts"
+HOSTS_FILE="${TOOLBOX_HOSTS_FILE:-/etc/hosts}"
+INVENTORY_DIR="${TOOLBOX_PROXIMO_INVENTORY_DIR:-/etc/toolbox/proximo}"
+INVENTORY_FILE="${INVENTORY_DIR}/routes.json"
 
 note() { echo "proximo-hosts: $1" >&2; }
-
-command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; exit 1; }
 
 # host-gateway IP: the host.docker.internal entry (pinned at create unless
 # `bridge: false`), else the default-route gateway (docker0) so the sync still
@@ -47,19 +46,26 @@ gateway_ip() {
     fi
 }
 
-# run_sync rewrites the managed /etc/hosts block from the current proximo.hosts
-# labels. Returns non-zero on a recoverable error (so --watch keeps running)
-# rather than exiting, leaving /etc/hosts untouched.
-run_sync() {
-    _gw=$(gateway_ip)
-    [ -n "${_gw:-}" ] || { note "cannot determine host-gateway IP"; return 1; }
+inventory_hosts() {
+    command -v python3 >/dev/null 2>&1 || { note "python3 missing in image"; return 1; }
+    python3 - "${INVENTORY_FILE}" <<'PY'
+import json
+import sys
 
-    # Discover proximo.hosts labels from running containers via the host daemon.
-    # `docker ps --format` exposes .Labels as a flat string, so list the matching
-    # container IDs and read the label off each via `docker inspect`, whose
-    # .Config.Labels IS a map. Each value is a comma-separated hostname list;
-    # split, trim, drop blanks, de-duplicate and sort — the shell mirror of the
-    # host-side internal/proximo.ExtraHosts parser.
+with open(sys.argv[1], encoding="utf-8") as source:
+    routes = json.load(source).get("routes", [])
+hosts = set()
+for route in routes:
+    for key in ("bare", "qualified"):
+        value = route.get(key)
+        if isinstance(value, str) and value:
+            hosts.add(value)
+print("\n".join(sorted(hosts)))
+PY
+}
+
+label_hosts() {
+    command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; return 1; }
     _ids=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
         { note "docker ps failed — is /var/run/docker.sock mounted?"; return 1; }
     _raw=""
@@ -68,11 +74,29 @@ run_sync() {
         _raw=$(docker inspect --format '{{index .Config.Labels "proximo.hosts"}}' ${_ids} 2>/dev/null) ||
             { note "docker inspect failed"; return 1; }
     fi
-    _hosts=$(printf '%s\n' "${_raw}" |
+    printf '%s\n' "${_raw}" |
         tr ',' '\n' |
         sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
         grep -v '^$' |
-        sort -u)
+        sort -u
+}
+
+discover_hosts() {
+    if [ -f "${INVENTORY_FILE}" ]; then
+        inventory_hosts
+    else
+        label_hosts
+    fi
+}
+
+# run_sync rewrites the managed /etc/hosts block from proximo's effective-route
+# inventory, falling back to proximo.hosts labels for an older installation.
+# Returns non-zero on a recoverable error rather than touching the current block.
+run_sync() {
+    _gw=$(gateway_ip)
+    [ -n "${_gw:-}" ] || { note "cannot determine host-gateway IP"; return 1; }
+
+    _hosts=$(discover_hosts) || { note "cannot read routed hosts"; return 1; }
 
     # Build the candidate /etc/hosts: strip any prior managed block, then append
     # a fresh one. The markers are emitted even when no host is routed, so a
@@ -112,11 +136,16 @@ case "${1:-}" in
     run_sync
     ;;
 --watch)
-    # Initial sync, then re-sync on every start/die of a proximo.hosts-labelled
-    # container. docker events is a streaming long-poll (near-zero idle cost);
-    # the outer loop reconnects if the stream ends (daemon restart / socket
-    # blip). run_sync never exits, so a transient error can't kill the watcher.
     run_sync || true
+    if [ -d "${INVENTORY_DIR}" ]; then
+        # The inventory is atomically replaced, so polling the document avoids
+        # racing proximo's watcher on the Docker event that caused the change.
+        while :; do
+            sleep 2
+            run_sync || true
+        done
+    fi
+    # Compatibility path for a proximo predating the mounted inventory.
     while :; do
         docker events \
             --filter 'label=proximo.hosts' \

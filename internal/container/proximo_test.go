@@ -2,6 +2,8 @@ package container
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -26,13 +28,60 @@ func proximoCreatePlan(t *testing.T, proximoOn bool) *sessionplan.SessionPlan {
 	}
 }
 
-// TestShellProximoAugmentsExtraHosts asserts that, on the create path, a
-// proximo-enabled plan has every proximo.hosts label (from running containers)
-// appended to ExtraHosts as <host>:host-gateway, keeping the base entries.
+func TestShellProximoUsesTheEffectiveInventory(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	inventoryDir := t.TempDir()
+	inventory := `{"routes":[
+		{"bare":"api.test","qualified":"api.shop.test","peer":{"bare":"api.machine.example"}},
+		{"claimed":"starting.test","warning":"starting"},
+		{"collision":{"host":"lost.test","served_by":"other"}}
+	]}`
+	if err := os.WriteFile(filepath.Join(inventoryDir, "routes.json"), []byte(inventory), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := proximoCreatePlan(t, true)
+	plan.ProximoInventoryDir = inventoryDir
+
+	var capturedHosts []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		// No listFn: an authoritative inventory must not fall back to labels.
+		createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
+			capturedHosts = hostCfg.ExtraHosts
+			return container.CreateResponse{ID: "inventory"}, nil
+		},
+	}
+
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	for _, want := range []string{"api.test:host-gateway", "api.shop.test:host-gateway"} {
+		if !slices.Contains(capturedHosts, want) {
+			t.Errorf("ExtraHosts missing %q, got %v", want, capturedHosts)
+		}
+	}
+	for _, unwanted := range []string{"api.machine.example:host-gateway", "starting.test:host-gateway", "lost.test:host-gateway"} {
+		if slices.Contains(capturedHosts, unwanted) {
+			t.Errorf("ExtraHosts unexpectedly contains %q: %v", unwanted, capturedHosts)
+		}
+	}
+}
+
+// TestShellProximoAugmentsExtraHosts asserts the compatibility path: when the
+// inventory file is absent, declared proximo.hosts labels are still pinned.
 func TestShellProximoAugmentsExtraHosts(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
 
+	plan := proximoCreatePlan(t, true)
+	plan.ProximoInventoryDir = t.TempDir() // directory present, routes.json absent
 	var capturedHosts []string
 	mock := &mockClient{
 		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
@@ -53,7 +102,7 @@ func TestShellProximoAugmentsExtraHosts(t *testing.T) {
 		},
 	}
 
-	if _, err := Shell(context.Background(), mock, proximoCreatePlan(t, true)); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 

@@ -80,17 +80,15 @@ type Config struct {
 	//     every toolbox shell reaches `.test` apps with no per-repo opt-in.
 	//   - true  → force on (even if the CA is absent; the mount soft-skips).
 	//   - false → force off.
-	// When enabled, `toolbox shell` discovers every running container labelled
-	// `proximo.hosts=…` and pins each routed hostname to the Docker
-	// host-gateway (so https://<name>.<tld> reaches the host where proximo's
-	// Traefik publishes :443 instead of the container's own loopback) and
-	// bind-mounts proximo's root CA read-only. entrypoint.sh then trusts that
+	// When enabled, `toolbox shell` reads proximo's effective-route inventory
+	// and pins each served bare and qualified hostname to the Docker host-gateway
+	// (falling back to `proximo.hosts` labels for an older proximo), then
+	// bind-mounts proximo's root CA read-only. entrypoint.sh trusts that
 	// CA seamlessly for every in-container HTTPS client: update-ca-certificates
 	// (curl/git/wget/python-ssl), certutil into ~/.pki/nssdb (Chromium, incl.
 	// Playwright's browsers), and NODE_EXTRA_CA_CERTS (Node). TOOLBOX_PROXIMO_CA
-	// is exported for the certifi gap (REQUESTS_CA_BUNDLE). Extra-hosts are
-	// fixed at container creation, so re-run `toolbox shell` to pick up newly
-	// routed hosts. See docs/proximo.md#proximo-integration.
+	// is exported for the certifi gap (REQUESTS_CA_BUNDLE). The runtime watcher
+	// keeps /etc/hosts aligned with inventory changes. See docs/proximo.md.
 	Proximo *bool `mapstructure:"proximo"`
 	// ManagedStatusline controls the image-owned Claude Code statusline that
 	// init.d/35-statusline.sh force-applies to ~/.claude/settings.json on every

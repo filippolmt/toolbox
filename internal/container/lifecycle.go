@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -759,7 +760,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	// here at the create edge rather than in the pure session planner.
 	extraHosts := plan.ExtraHosts
 	if plan.Proximo {
-		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts)
+		extraHosts = augmentProximoHosts(ctx, cli, plan.ExtraHosts, plan.ProximoInventoryDir)
 	}
 
 	ui.Info("Creating container " + plan.ContainerName + "...")
@@ -803,13 +804,23 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	return resp.ID, nil
 }
 
-// augmentProximoHosts appends the proximo-routed hostnames (discovered from
-// the proximo.hosts label on running containers, each pinned to host-gateway)
-// to the plan's base ExtraHosts. A Docker error warns and returns base
-// unchanged; an empty result returns base silently (no routed stack right now)
-// so a missing/stopped proximo stack degrades to "names unreachable" rather
-// than failing — or spamming — the shell.
-func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []string) []string {
+// augmentProximoHosts appends proximo's effective bare and qualified names,
+// each pinned to host-gateway, to the plan's base ExtraHosts. The mounted
+// inventory is authoritative when readable; labels are the compatibility path
+// for an older proximo. Discovery failures warn and return base unchanged so a
+// missing or stopped stack never blocks a shell.
+func augmentProximoHosts(ctx context.Context, cli client.APIClient, base []string, inventoryDir string) []string {
+	if inventoryDir != "" {
+		hosts, err := proximo.InventoryExtraHosts(inventoryDir)
+		if err == nil {
+			out := make([]string, 0, len(base)+len(hosts))
+			out = append(out, base...)
+			return append(out, hosts...)
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			ui.Warning("proximo: effective-route inventory unreadable; falling back to labels: " + err.Error())
+		}
+	}
 	args := make(client.Filters).Add("label", proximo.HostsLabel)
 	list, err := cli.ContainerList(ctx, client.ContainerListOptions{Filters: args})
 	if err != nil {

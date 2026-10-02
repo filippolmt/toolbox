@@ -82,9 +82,9 @@ Deletes use `git branch -D` (force), since a squash-merged branch never reads as
 
 **Symptom:** `https://<name>.test` works in the host browser but fails to resolve/connect inside a shell that was already open.
 
-**Cause:** proximo-routed hosts are discovered and pinned at container create time; apps started afterwards are invisible to the running container.
+**Cause:** a current shell normally follows proximo's Effective Route Inventory automatically. If it does not, the container predates the inventory mount, proximo's stack has not been re-materialized since gaining the inventory, or `proximo-hosts --watch` stopped; its log is `~/.toolbox-state/proximo-hosts.log`.
 
-**Fix:** start the proximo stack (or the new app) first, then `toolbox stop` + `toolbox shell` to re-discover. Details: [proximo boundaries](proximo.md#boundaries-and-caveats).
+**Fix:** run `proximo up` on the host to materialize the inventory, then `toolbox stop` and reopen the shell once to add its read-only mount. Later route changes need no recreate. Details: [proximo runtime host sync](proximo.md#runtime-host-sync-proximo-hosts-automatic).
 
 ## "manifest unknown" with a registry mirror
 
