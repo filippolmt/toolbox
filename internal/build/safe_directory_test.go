@@ -2,7 +2,6 @@ package build
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -69,65 +68,28 @@ esac
 `
 
 type safeDirHarness struct {
-	dir, script, db, argv string
+	*gitConfigBlockHarness
+	db, argv string
 }
 
 func newSafeDirHarness(t *testing.T) *safeDirHarness {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatalf("mkdir stub bin: %v", err)
-	}
-	// sudo runs its argv as-is; flock drops the lock path and runs the rest.
-	// The block's serialisation is not what this test is about — its effect on
-	// the config is.
-	write := func(name, body string) {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
-			t.Fatalf("write stub %s: %v", name, err)
-		}
-	}
-	write("sudo", "#!/bin/sh\nexec \"$@\"\n")
-	write("flock", "#!/bin/sh\nshift\nexec \"$@\"\n")
-	write("git", gitStub)
-
-	// `set -eu` stands in for the entrypoint's `set -euo pipefail`: a step that
-	// fails without being tolerated takes the whole boot down, which is what the
-	// test looks for. `pipefail` is not needed to reproduce that here — the only
-	// pipeline lives inside the `sh -c` child, where shell options do not cross
-	// the exec — but inlining that pipeline later would change this.
-	script := filepath.Join(dir, "block.sh")
-	body := "#!/bin/sh\nset -eu\n" + extractSafeDirectoryBlock(t)
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
-		t.Fatalf("write block script: %v", err)
-	}
+	h := newGitConfigBlockHarness(t, extractSafeDirectoryBlock(t))
+	h.writeStub(t, "git", gitStub)
 	return &safeDirHarness{
-		dir:    dir,
-		script: script,
-		db:     filepath.Join(dir, "safe-directories"),
-		argv:   filepath.Join(dir, "git-argv"),
+		gitConfigBlockHarness: h,
+		db:                    filepath.Join(h.dir, "safe-directories"),
+		argv:                  filepath.Join(h.dir, "git-argv"),
 	}
 }
 
-func (h *safeDirHarness) run(t *testing.T, extraEnv ...string) (output string, exitCode int) {
+func (h *safeDirHarness) run(t *testing.T, extraEnv ...string) (string, int) {
 	t.Helper()
 	env := []string{
-		"PATH=" + filepath.Join(h.dir, "bin") + ":/usr/bin:/bin",
-		"HOME=" + h.dir,
 		"SAFE_DIR_DB=" + h.db,
 		"SAFE_DIR_ARGV=" + h.argv,
 	}
-	cmd := exec.Command("/bin/sh", h.script)
-	cmd.Env = append(env, extraEnv...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		var ee *exec.ExitError
-		if !asExitError(err, &ee) {
-			t.Fatalf("run safe.directory block: %v (output %q)", err, out)
-		}
-		exitCode = ee.ExitCode()
-	}
-	return string(out), exitCode
+	return h.gitConfigBlockHarness.run(t, "safe.directory", append(env, extraEnv...)...)
 }
 
 func (h *safeDirHarness) registered(t *testing.T) []string {

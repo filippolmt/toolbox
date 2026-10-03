@@ -2,7 +2,6 @@ package build
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,7 +15,7 @@ const (
 
 // extractCheckStatBlock lifts the runtime filesystem policy out of the embedded
 // entrypoint so the test observes the same shell Git users run at container
-// start. CI has no virtiofs mount on which to reproduce the inode instability;
+// start. CI has no virtiofs mount on which to reproduce the stat instability;
 // the real-mount repro is therefore complemented by exercising the mitigation's
 // complete detection-and-registration boundary here.
 func extractCheckStatBlock(t *testing.T) string {
@@ -40,66 +39,39 @@ func extractCheckStatBlock(t *testing.T) string {
 }
 
 type checkStatHarness struct {
-	dir, script, gitArgv, findmntArgv string
+	*gitConfigBlockHarness
+	gitArgv, findmntArgv string
 }
 
 func newCheckStatHarness(t *testing.T) *checkStatHarness {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatalf("mkdir stub bin: %v", err)
-	}
-	write := func(name, body string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
-			t.Fatalf("write stub %s: %v", name, err)
-		}
-	}
-	write("sudo", "#!/bin/sh\nexec \"$@\"\n")
-	write("flock", "#!/bin/sh\nshift\nexec \"$@\"\n")
-	write("findmnt", `#!/bin/sh
+	h := newGitConfigBlockHarness(t, extractCheckStatBlock(t))
+	gitArgv := filepath.Join(h.dir, "git-argv")
+	findmntArgv := filepath.Join(h.dir, "findmnt-argv")
+	h.writeStub(t, "findmnt", `#!/bin/sh
 printf '%s\n' "$*" >> "$CHECKSTAT_FINDMNT_ARGV"
 [ -z "${FINDMNT_FAIL:-}" ] || exit 1
 printf '%s\n' "$FINDMNT_FSTYPE"
 `)
-	write("git", `#!/bin/sh
+	h.writeStub(t, "git", `#!/bin/sh
 printf '%s\n' "$*" >> "$CHECKSTAT_GIT_ARGV"
 [ -z "${GIT_STUB_FAIL:-}" ] || exit 1
 `)
-
-	script := filepath.Join(dir, "block.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nset -eu\n"+extractCheckStatBlock(t)), 0o755); err != nil {
-		t.Fatalf("write block script: %v", err)
-	}
 	return &checkStatHarness{
-		dir:         dir,
-		script:      script,
-		gitArgv:     filepath.Join(dir, "git-argv"),
-		findmntArgv: filepath.Join(dir, "findmnt-argv"),
+		gitConfigBlockHarness: h,
+		gitArgv:               gitArgv,
+		findmntArgv:           findmntArgv,
 	}
 }
 
 func (h *checkStatHarness) run(t *testing.T, fsType string, extraEnv ...string) (string, int) {
 	t.Helper()
-	cmd := exec.Command("/bin/sh", h.script)
-	cmd.Dir = h.dir
-	cmd.Env = append([]string{
-		"PATH=" + filepath.Join(h.dir, "bin") + ":/usr/bin:/bin",
-		"HOME=" + h.dir,
+	env := []string{
 		"FINDMNT_FSTYPE=" + fsType,
 		"CHECKSTAT_GIT_ARGV=" + h.gitArgv,
 		"CHECKSTAT_FINDMNT_ARGV=" + h.findmntArgv,
-	}, extraEnv...)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return string(out), 0
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
-		return string(out), ee.ExitCode()
-	}
-	t.Fatalf("run core.checkStat block: %v (output %q)", err, out)
-	return "", -1
+	return h.gitConfigBlockHarness.run(t, "core.checkStat", append(env, extraEnv...)...)
 }
 
 func TestVirtiofsCheckStatRegistration(t *testing.T) {
