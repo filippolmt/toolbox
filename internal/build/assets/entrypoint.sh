@@ -69,12 +69,12 @@ sudo flock /tmp/toolbox-gitconfig.lock sh -c '
   || echo "toolbox: git safe.directory registration failed (non-fatal — git may report dubious ownership on any bind-mounted repository)"
 
 # git core.checkStat for virtiofs
-# Docker Desktop's virtiofs can report a new inode immediately after git writes
-# a file while its content and every other indexed stat field remain unchanged.
+# Docker Desktop's virtiofs can make a file's stat identity disagree with the
+# index immediately after git writes it, even though its content is unchanged.
 # During a multi-file rebase or checkout, git's default index check sees that
 # race as local modifications and refuses to overwrite a clean worktree.
-# `minimal` omits inode (along with device, uid, gid and sub-second timestamps)
-# from the comparison. Apply that trade-off only to a workspace on virtiofs;
+# `minimal` omits the unstable identity fields (inode, device, uid and gid) and
+# sub-second timestamps. Apply that trade-off only to a workspace on virtiofs;
 # native Linux filesystems retain git's full stat check. Detection failure also
 # retains the default. System scope keeps the host-mounted ~/.gitconfig clean,
 # and the shared lock serializes every writer of the container-local config.

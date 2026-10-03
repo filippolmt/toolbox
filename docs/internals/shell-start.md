@@ -139,12 +139,13 @@ The lock file lives inside glab's own config dir, so under `inherit_host_auth: [
 ## git index stat checks on virtiofs
 
 On Docker Desktop for macOS, the workspace bind arrives as virtiofs. After git
-rewrites a file, virtiofs can immediately report an inode different from the
-one git just recorded even though the content, size, timestamps, device and
-ownership are unchanged. Multi-file operations such as rebase, cherry-pick and
-checkout can then reject a clean worktree with `Your local changes … would be
-overwritten by merge`; `git status` remains clean because hashing the file
-finds no content change.
+rewrites a file, virtiofs can immediately report a stat identity field
+differently from the value git just recorded even though the content is
+unchanged. The failure is confined to fields that `core.checkStat = minimal`
+omits — inode, device, uid or gid — rather than ctime alone. Multi-file
+operations such as rebase, cherry-pick and checkout can then reject a clean
+worktree with `Your local changes … would be overwritten by merge`; `git
+status` remains clean because hashing the file finds no content change.
 
 At startup, `entrypoint.sh` asks `findmnt` for the filesystem containing the
 working directory. Only when that filesystem is virtiofs, it writes
@@ -158,8 +159,8 @@ The trade-off is explicit: `minimal` compares whole-second mtime and ctime plus
 size, but omits inode, device, uid, gid and sub-second timestamps. A same-size
 edit made within the same second can therefore escape the initial stat check
 until git refreshes the index. That window is accepted only on virtiofs, where
-including the unstable inode makes ordinary multi-file operations fail. The
-detection and registration policy is held by
+including the unstable identity fields makes ordinary multi-file operations
+fail. The detection and registration policy is held by
 `TestVirtiofsCheckStatRegistration`; CI does not provide a virtiofs mount on
 which to reproduce the underlying filesystem race itself.
 
