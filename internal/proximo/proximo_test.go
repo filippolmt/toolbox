@@ -189,6 +189,50 @@ func TestResolveAutoDetectsViaTheQueriedPath(t *testing.T) {
 	}
 }
 
+func TestResolveCarriesTheExistingInventoryDirectory(t *testing.T) {
+	host, _ := setupCA(t, false)
+	root := t.TempDir()
+	caPath := filepath.Join(root, "tls", "ca.pem")
+	inventoryDir := filepath.Join(root, "inventory")
+	if err := os.MkdirAll(filepath.Dir(caPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(caPath, []byte("ca"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(inventoryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host = fakeProximo(t, host, `
+		case "$2" in
+		ca-path) echo `+caPath+` ;;
+		inventory-dir) echo `+inventoryDir+` ;;
+		esac`)
+
+	gate := proximo.Resolve(host, autoCfg())
+	if gate.InventoryDir != inventoryDir || !gate.InventoryExists {
+		t.Errorf("resolved inventory = %q exists=%v, want %q present", gate.InventoryDir, gate.InventoryExists, inventoryDir)
+	}
+	mount, ok := gate.InventoryMount()
+	if !ok || mount.Source != inventoryDir || mount.Target != proximo.InventoryTarget || !mount.ReadOnly {
+		t.Errorf("InventoryMount = %+v, %v", mount, ok)
+	}
+}
+
+func TestInventoryDirPrefersProximoQuery(t *testing.T) {
+	host, _ := setupCA(t, false)
+	host = fakeProximo(t, host, `
+		if [ "$2" = "inventory-dir" ]; then
+			echo /custom/state/inventory
+		else
+			exit 1
+		fi`)
+	path, ok := proximo.InventoryDir(host)
+	if !ok || path != "/custom/state/inventory" {
+		t.Errorf("InventoryDir = %q, %v; want query result /custom/state/inventory, true", path, ok)
+	}
+}
+
 // TestCAPathPrefersProximoQuery pins the stable contract from
 // filippolmt/proximo#20: when `proximo config ca-path` answers, its output
 // wins over the hardcoded state-home fallback.
@@ -271,30 +315,44 @@ func TestGateEnvNamesBothTrustVariables(t *testing.T) {
 	}
 }
 
-// TestResolveQueriesProximoOnceForEveryReader is the reason the gate is a
-// value rather than three derivations: the CA path query is a subprocess
-// spawn, and Resolve pays it once for the whole invocation no matter how many
-// of the gate's answers a caller goes on to read.
-func TestResolveQueriesProximoOnceForEveryReader(t *testing.T) {
+// TestResolveQueriesEachProximoPathOnceForEveryReader is the reason the gate is
+// a value rather than several derivations: Resolve pays each host query once
+// for the whole invocation no matter how many answers a caller reads.
+func TestResolveQueriesEachProximoPathOnceForEveryReader(t *testing.T) {
 	host, caPath := setupCA(t, true)
+	inventoryDir := filepath.Join(t.TempDir(), "inventory")
+	if err := os.MkdirAll(inventoryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	queries := filepath.Join(t.TempDir(), "queries")
-	host = fakeProximo(t, host, "echo q >>"+queries+"; echo "+caPath)
+	host = fakeProximo(t, host, `
+		echo "$2" >>`+queries+`
+		case "$2" in
+		ca-path) echo `+caPath+` ;;
+		inventory-dir) echo `+inventoryDir+` ;;
+		esac`)
 
 	gate := proximo.Resolve(host, autoCfg())
 
-	// Every reader the callers use, in the order a session asks them.
 	if !gate.Enabled {
 		t.Error("gate.Enabled = false with the CA present, want true")
 	}
 	if _, ok := gate.CAMount(); !ok {
 		t.Error("gate.CAMount reported no mount with the CA present")
 	}
+	if _, ok := gate.InventoryMount(); !ok {
+		t.Error("gate.InventoryMount reported no mount with the inventory present")
+	}
 	if len(gate.Env()) == 0 {
 		t.Error("gate.Env is empty with the CA present")
 	}
 
-	if got := queryCount(t, queries); got != 1 {
-		t.Errorf("`proximo config ca-path` ran %d times, want exactly 1 per Resolve", got)
+	got, err := os.ReadFile(queries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ca-path\ninventory-dir\n" {
+		t.Errorf("proximo path queries = %q, want each query once", got)
 	}
 }
 

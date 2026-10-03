@@ -88,9 +88,9 @@ func startSession(in sessionIntent) error {
 	in.Plan.Host = host
 
 	// The Proximo Availability Gate, derived once against that same host and
-	// threaded from here on: the mount stage, the CA-trust env and the
-	// create-edge discovery flag all read this one value, so the session pays
-	// the `proximo config ca-path` spawn once instead of once per reader.
+	// threaded from here on: the CA and inventory mounts, trust env and
+	// create-edge discovery all read this one value, so no planner asks the
+	// host again.
 	in.Plan.Proximo = proximo.Resolve(host, in.Plan.Cfg)
 
 	// One-time relocation of toolbox-own state into the ~/.toolbox/toolbox

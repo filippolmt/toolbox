@@ -512,9 +512,9 @@ check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr
 # ships as a real binary in the image; a dropped COPY fails here too.
 check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q bridge-lib.sh /usr/local/bin/proximo && echo present"
 # proximo-hosts is the runtime /etc/hosts sync (no flag invocation — running it
-# would mutate /etc/hosts). Assert it ships executable and references the
-# proximo.hosts label it discovers, so a dropped COPY fails here too.
-check_required "proximo-hosts" sh -c "test -x /usr/local/bin/proximo-hosts && grep -q proximo.hosts /usr/local/bin/proximo-hosts && echo present"
+# would mutate /etc/hosts). Assert both the effective inventory and legacy label
+# paths ship, so a dropped or stale COPY fails here too.
+check_required "proximo-hosts" sh -c "test -x /usr/local/bin/proximo-hosts && grep -q routes.json /usr/local/bin/proximo-hosts && grep -q proximo.hosts /usr/local/bin/proximo-hosts && echo present"
 # entrypoint auto-starts the watcher (background, gated on the proximo CA mount)
 # so the /etc/hosts sync is automatic — assert the wiring is present.
 check_required "proximo-hosts watcher wired" sh -c "grep -q proximo-hosts.--watch /usr/local/bin/entrypoint && echo present"

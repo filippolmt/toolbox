@@ -89,7 +89,7 @@ sections.**
 
 - [Why .test is unreachable from a sibling container](proximo.md#why-test-is-unreachable-from-a-sibling-container)
 - [Enablement is auto-detected (tri-state proximo)](proximo.md#enablement-is-auto-detected-tri-state-proximo)
-- [The two host-side ingredients](proximo.md#the-two-host-side-ingredients)
+- [The host-side ingredients](proximo.md#the-host-side-ingredients)
 - [Trust establishment (entrypoint, self-gated on the mount)](proximo.md#trust-establishment-entrypoint-self-gated-on-the-mount)
 - [Lifecycle from inside the container (bridge shim)](proximo.md#lifecycle-from-inside-the-container-bridge-shim)
 - [Boundaries and caveats](proximo.md#boundaries-and-caveats)

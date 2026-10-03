@@ -53,7 +53,7 @@ type Result struct {
 	// the merge this plan already performed. It is here rather than re-derived
 	// by the caller because re-deriving means merging a second time, and the
 	// merge resolves the proximo gate: a session that asked twice paid two
-	// `proximo config ca-path` spawns to describe one set of mounts.
+	// proximo path queries spawn to describe one set of mounts.
 	StateDir string
 }
 
@@ -156,8 +156,8 @@ func Plan(in PlanInput) (Result, error) {
 // can inspect the resolved set without touching the filesystem the plan
 // describes.
 //
-// gate is declared, never derived here: deriving it costs a `proximo config
-// ca-path` spawn, and a function that spawns when you thought you were only
+// gate is declared, never derived here: deriving it costs proximo path-query
+// spawns, and a function that spawns when you thought you were only
 // reading a list is how one invocation came to pay for the same answer more
 // than once. Every caller resolves it at its own composition root —
 // cmd.startSession for a session, the command edge for the read-only
@@ -203,6 +203,9 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	// is host-specific and only relevant when the gate is on. resolveAll
 	// soft-skips it with a warning when proximo is not installed.
 	if m, ok := gate.CAMount(); ok {
+		base = append(base, m)
+	}
+	if m, ok := gate.InventoryMount(); ok {
 		base = append(base, m)
 	}
 	return mergeMounts(base, withoutLegacyRTKMounts(cfg.Mounts))

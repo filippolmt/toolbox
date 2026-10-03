@@ -1794,13 +1794,32 @@ the host's `~/.claude`, which is not the `~/.claude` any container-side agent
 reads. Naming the modes makes "which home does this verb write into" a question
 the reader is forced to ask.
 
+### Proximo Effective Route Inventory
+
+The machine-readable list of local names proximo actually serves after host
+qualification, health gating and Collision resolution. Proximo owns the answer
+and atomically replaces `routes.json` under the directory printed by `proximo
+config inventory-dir`; Toolbox mounts that directory read-only and projects only
+`bare` and `qualified` into host-gateway pins. `claimed`, `collision.host` and
+`peer` explain other states but are never local pins. The directory is the mount
+unit because a file bind would retain the inode proximo replaces. An absent
+inventory means an older proximo, and only then Toolbox falls back to the
+`proximo.hosts` declarations. Owned on the host by `internal/proximo`, at create
+by `internal/container`, and at runtime by `bin/proximo-hosts`.
+
+Why the term exists: `proximo.hosts` is intent, not routing state. Treating it as
+state omitted every generated Qualified host and could not represent a withdrawn
+name. Naming the inventory keeps the ownership boundary explicit: proximo decides
+what it serves; Toolbox decides how those names reach its own network namespace.
+
 ### Proximo Availability Gate
 
 The single predicate for "is proximo usable in this shell": the presence of
 proximo's root CA at the container path `/etc/ssl/proximo-ca.pem`.
 
-Concretely: host-side the gate is one resolved value, `proximo.Gate{Enabled,
-CAPath, CAExists}`, derived by `proximo.Resolve(host, cfg)` once per
+Concretely: host-side the gate is one resolved value, carrying enablement plus
+the resolved CA and Effective Route Inventory paths, derived by
+`proximo.Resolve(host, cfg)` once per
 *configuration it is asked about* — which for a session is once, full stop.
 That is the precise invariant, and the loose reading ("once per process") would
 be wrong in a way that matters: a write lints the candidate stack against the
@@ -1810,9 +1829,10 @@ same configuration being asked twice
 — explicit `proximo: true`/`false` wins, `nil` auto-detects from the host CA's
 existence, and `false` short-circuits before the `proximo config ca-path` query
 so an opted-out workspace never pays that subprocess. Everything downstream
-*reads* that value rather than re-deriving the rule: `Gate.CAMount` is the bind
-`mountplan` injects, `Gate.Env` the CA-trust variables `sessionplan` composes,
-and `Gate.Enabled` the discovery flag the Docker edge acts on. It reaches both
+*reads* that value rather than re-deriving the rule: `Gate.CAMount` and
+`Gate.InventoryMount` are the binds `mountplan` injects, `Gate.Env` the CA-trust
+variables `sessionplan` composes, and `Gate.Enabled` the discovery flag the
+Docker edge acts on. It reaches both
 planners through their `PlanInput`, the seam that already carries the session's
 resolved host-side facts, and `cmd.startSession` is where the one derivation
 happens — beside the [Declared Host](#declared-host) it is resolved against.

@@ -16,6 +16,39 @@ import (
 // (nil), and nothing sits at the host's ~/.proximo fallback — so a plan that
 // asked the question again would bind nothing, and the CA that does get bound
 // can only have come from the gate.
+func TestPlanBindsTheProximoInventoryItsGateResolved(t *testing.T) {
+	home := t.TempDir()
+	workspace := filepath.Join(home, "ws")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("setup workspace: %v", err)
+	}
+	inventoryDir := filepath.Join(t.TempDir(), "inventory")
+	if err := os.MkdirAll(inventoryDir, 0o755); err != nil {
+		t.Fatalf("setup inventory: %v", err)
+	}
+
+	result, err := Plan(PlanInput{
+		Host:      fsx.Host{Home: home},
+		Cfg:       &config.Config{},
+		Workspace: workspace,
+		Proximo: proximo.Gate{
+			Enabled:         true,
+			InventoryDir:    inventoryDir,
+			InventoryExists: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	inventory, ok := findBind(result.Binds, proximo.InventoryTarget)
+	if !ok {
+		t.Fatalf("no bind at %q; binds = %v", proximo.InventoryTarget, result.Binds)
+	}
+	if inventory.Source != inventoryDir || inventory.Mode != "ro" {
+		t.Errorf("inventory bind = %+v, want source %q read-only", inventory, inventoryDir)
+	}
+}
+
 func TestPlanBindsTheProximoCAItsGateResolved(t *testing.T) {
 	home := t.TempDir()
 	workspace := filepath.Join(home, "ws")

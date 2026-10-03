@@ -68,8 +68,8 @@ func TestPlanWiresProximo(t *testing.T) {
 }
 
 // TestPlanFollowsTheProximoGateItWasGiven pins the seam the gate now crosses:
-// all three of the session's proximo-shaped outputs — the create-edge
-// discovery flag, the CA bind and the trust env — come from
+// all of the session's proximo-shaped outputs — create-edge discovery,
+// inventory path, CA bind and trust env — come from
 // PlanInput.Proximo, and the plan never re-derives the decision from cfg.
 //
 // The config here is auto (nil) with no CA under the host's home, so a plan
@@ -83,6 +83,10 @@ func TestPlanFollowsTheProximoGateItWasGiven(t *testing.T) {
 	if err := os.WriteFile(caPath, []byte("-----BEGIN CERTIFICATE-----\n"), 0o600); err != nil {
 		t.Fatalf("write CA: %v", err)
 	}
+	inventoryDir := filepath.Join(t.TempDir(), "inventory")
+	if err := os.MkdirAll(inventoryDir, 0o755); err != nil {
+		t.Fatalf("write inventory dir: %v", err)
+	}
 
 	workspace := filepath.Join(tmp, "ws")
 	if err := mkdirAll(t, workspace); err != nil {
@@ -93,7 +97,10 @@ func TestPlanFollowsTheProximoGateItWasGiven(t *testing.T) {
 		Host:      planHost,
 		Cfg:       testConfig(),
 		Workspace: workspace,
-		Proximo:   proximo.Gate{Enabled: true, CAPath: caPath, CAExists: true},
+		Proximo: proximo.Gate{
+			Enabled: true, CAPath: caPath, CAExists: true,
+			InventoryDir: inventoryDir, InventoryExists: true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -113,6 +120,9 @@ func TestPlanFollowsTheProximoGateItWasGiven(t *testing.T) {
 	}
 	if bound != caPath {
 		t.Errorf("proximo CA bound from %q, want the gate's path %q", bound, caPath)
+	}
+	if plan.ProximoInventoryDir != inventoryDir {
+		t.Errorf("plan.ProximoInventoryDir = %q, want gate path %q", plan.ProximoInventoryDir, inventoryDir)
 	}
 }
 
