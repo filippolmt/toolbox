@@ -68,6 +68,21 @@ sudo flock /tmp/toolbox-gitconfig.lock sh -c '
 ' _ '*' \
   || echo "toolbox: git safe.directory registration failed (non-fatal — git may report dubious ownership on any bind-mounted repository)"
 
+# git core.checkStat for virtiofs
+# Docker Desktop's virtiofs can make a file's stat identity disagree with the
+# index immediately after git writes it, even though its content is unchanged.
+# During a multi-file rebase or checkout, git's default index check sees that
+# race as local modifications and refuses to overwrite a clean worktree.
+# `minimal` omits the unstable identity fields (inode, device, uid and gid) and
+# sub-second timestamps. Apply that trade-off only to a workspace on virtiofs;
+# native Linux filesystems retain git's full stat check. Detection failure also
+# retains the default. System scope keeps the host-mounted ~/.gitconfig clean,
+# and the shared lock serializes every writer of the container-local config.
+[ "$(findmnt -n -o FSTYPE --target "$PWD" 2>/dev/null)" != "virtiofs" ] \
+  || sudo flock /tmp/toolbox-gitconfig.lock \
+       git config --system core.checkStat minimal \
+  || echo "toolbox: git core.checkStat registration failed (non-fatal — git operations on virtiofs may report false local changes)"
+
 # Init Sequence (CONTEXT.md). Stderr → ~/.toolbox-state/init/<name>.log;
 # on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`
 # so a failed init never aborts boot.

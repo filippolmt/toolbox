@@ -136,6 +136,34 @@ Because the timeout falls through to an unlocked run, the lock cannot protect a 
 
 The lock file lives inside glab's own config dir, so under `inherit_host_auth: [glab]` (`catalog.go`, `HostAuthMount{HostPath: "~/.config/glab-cli"}`) it is written into the user's real host config directory rather than the toolbox-owned `~/.toolbox/glab`. glab ignores dotfiles it does not own, so this is cosmetic — but it is host-visible, which is why it is named here.
 
+## git index stat checks on virtiofs
+
+On Docker Desktop for macOS, the workspace bind arrives as virtiofs. After git
+rewrites a file, virtiofs can immediately report a stat identity field
+differently from the value git just recorded even though the content is
+unchanged. The failure is confined to fields that `core.checkStat = minimal`
+omits — inode, device, uid or gid — rather than ctime alone. Multi-file
+operations such as rebase, cherry-pick and checkout can then reject a clean
+worktree with `Your local changes … would be overwritten by merge`; `git
+status` remains clean because hashing the file finds no content change.
+
+At startup, `entrypoint.sh` asks `findmnt` for the filesystem containing the
+working directory. Only when that filesystem is virtiofs, it writes
+`core.checkStat = minimal` to the container's system gitconfig under the shared
+`/tmp/toolbox-gitconfig.lock`. Native Linux filesystems keep git's default stat
+check, and failed filesystem detection changes nothing. System scope is
+intentional: the setting describes the running container's workspace mount,
+while `~/.gitconfig` is host-synced and must not be changed.
+
+The trade-off is explicit: `minimal` compares whole-second mtime and ctime plus
+size, but omits inode, device, uid, gid and sub-second timestamps. A same-size
+edit made within the same second can therefore escape the initial stat check
+until git refreshes the index. That window is accepted only on virtiofs, where
+including the unstable identity fields makes ordinary multi-file operations
+fail. The detection and registration policy is held by
+`TestVirtiofsCheckStatRegistration`; CI does not provide a virtiofs mount on
+which to reproduce the underlying filesystem race itself.
+
 ## git safe.directory ("dubious ownership")
 
 `entrypoint.sh` registers one `safe.directory` entry — the wildcard — in the container's system gitconfig. Since the entrypoint is baked into the image, a container that predates a change to this block does not get it: rebuild or pull, then let the container be recreated.
