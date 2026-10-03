@@ -65,7 +65,7 @@ PATH: image `ENV` prepends `…/.linuxbrew/bin:…/.linuxbrew/sbin` (covers non-
 
 ## System git settings
 
-One layer writes `/etc/gitconfig` at build time, for git settings that are properties of **the git this image ships** rather than of anything a running container knows. The runtime counterpart is `entrypoint.sh`, which registers what only the container can know — `safe.directory` for the bind mounts, the bridge credential helper. System scope in both places, never `--global`: `~/.gitconfig` is a host mount. → [git safe.directory](shell-start.md#git-safedirectory-dubious-ownership)
+One layer writes `/etc/gitconfig` at build time, for git settings that are properties of **the git this image ships** rather than of anything a running container knows. The runtime counterpart is `entrypoint.sh`, which registers what only the container can know — `safe.directory` for the bind mounts, the [virtiofs index-stat policy](shell-start.md#git-index-stat-checks-on-virtiofs), and the bridge credential helper. System scope in both places, never `--global`: `~/.gitconfig` is a host mount. → [git safe.directory](shell-start.md#git-safedirectory-dubious-ownership)
 
 - `safe.directory` for the root-owned Homebrew clone, described under [Homebrew](#homebrew). The entrypoint's wildcard entry subsumes it; it stays because that registration is deliberately non-fatal, and brew is the one thing in the image that breaks on *every* git call when it does not land.
 - `http.version = HTTP/1.1`, without which HTTPS clones and fetches from github.com fail most of the time — pinned here **and** in `fetch-base`, where the build's own clones need it.
