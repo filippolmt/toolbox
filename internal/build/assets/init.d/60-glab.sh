@@ -19,8 +19,8 @@ set -euo pipefail
 #      Covers private GitLab HTTPS clones, e.g. `brew tap` of a private tap.
 #      Non-fatal: on failure SSH remotes keep working via the RO ~/.ssh mount.
 #   3. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.
-#      Two passes: Claude Code reads only ~/.claude/skills; Codex reads
-#      only ~/.agents/skills (cross-agent USER scope per agentskills.io).
+#      Two passes: Claude Code reads only ~/.claude/skills; Codex and pi read
+#      ~/.agents/skills (cross-agent USER scope per agentskills.io).
 command -v glab >/dev/null 2>&1 || exit 0
 
 _glab_config="${HOME}/.config/glab-cli/config.yml"
@@ -100,10 +100,11 @@ _install() {
         echo "toolbox: glab skills install ($label) failed (non-fatal — retry: \`glab skills install $* --force\`)"
 }
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    _install claude --path "$HOME/.claude/skills"
+_glab_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if command -v claude >/dev/null 2>&1 && [ -d "$_glab_claude_dir" ]; then
+    _install claude --path "$_glab_claude_dir/skills"
 fi
 
-if command -v codex >/dev/null 2>&1; then
-    _install codex --global
+if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
+    _install cross-agent --global
 fi
