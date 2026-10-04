@@ -19,10 +19,17 @@ jobs:
     runs-on: [self-hosted, macOS, virtiofs]
     timeout-minutes: 45
     env:
-      IMAGE_TAG: toolbox:virtiofs-gate-${{ github.run_id }}-${{ github.run_attempt }}
+      # Stable because concurrency admits only one run. A recovered runner can
+      # remove this tag before rebuilding instead of leaking per-run images.
+      IMAGE_TAG: toolbox:virtiofs-gate
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Remove an interrupted run's image
+        run: |
+          docker image rm -f "$IMAGE_TAG" 2>/dev/null || true
+          docker image prune -f --filter 'label=dev.toolbox.virtiofs-gate=true'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -40,16 +47,16 @@ jobs:
             GO_VERSION=${{ steps.gover.outputs.version }}
           load: true
           tags: ${{ env.IMAGE_TAG }}
+          labels: dev.toolbox.virtiofs-gate=true
 
       - name: Rebase on a virtiofs bind
         run: .github/scripts/virtiofs-git-rewrite.sh "$IMAGE_TAG"
 
-      - name: Clean runner state
+      # The gate's EXIT trap owns its container and repository. This step owns
+      # only the image built by the workflow, so cleanup has one owner per
+      # resource. The label catches an older image left dangling by replacement.
+      - name: Clean runner image state
         if: ${{ always() }}
         run: |
-          while IFS= read -r container; do
-            [ -z "$container" ] || docker rm -f "$container"
-          done < <(docker ps -aq --filter 'name=toolbox-virtiofs-git-')
           docker image rm -f "$IMAGE_TAG" 2>/dev/null || true
-          find "$RUNNER_TEMP" "$GITHUB_WORKSPACE" -maxdepth 1 -type d \
-            -name '.toolbox-virtiofs-git.*' -exec rm -rf {} +
+          docker image prune -f --filter 'label=dev.toolbox.virtiofs-gate=true'

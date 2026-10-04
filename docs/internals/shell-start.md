@@ -167,6 +167,16 @@ by `.github/scripts/virtiofs-git-rewrite.sh`: the scheduled/manual
 a fresh repository through Docker Desktop, and rebases shared-file rewrites on
 the real virtiofs mount.
 
+That runner is an explicit infrastructure dependency, not something the
+workflow can create. Its Actions registration must carry the `self-hosted`,
+`macOS`, and `virtiofs` labels; Docker Desktop must start unattended with
+virtiofs file sharing enabled; and the runner account's Actions workspace must
+be shared with the Docker VM. The workflow uses one stable image tag, removes
+it before and after the gate, and labels the image so a replacement left it
+dangling can be reclaimed. The script's exit trap separately owns its one
+container and temporary repository. Provisioning and recovery after the host
+itself is interrupted are tracked in [#1143](https://github.com/filippolmt/toolbox/issues/1143).
+
 ## git safe.directory ("dubious ownership")
 
 `entrypoint.sh` registers one `safe.directory` entry — the wildcard — in the container's system gitconfig. Since the entrypoint is baked into the image, a container that predates a change to this block does not get it: rebuild or pull, then let the container be recreated.
