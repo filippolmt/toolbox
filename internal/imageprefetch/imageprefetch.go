@@ -266,15 +266,15 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
 	local, ok := localDigest(ctx, cli, in.Ref)
 	res := readResult(in.StateDir)
-	cliKnown := comparableCLIVersion(in.CLIVersion) && res.cliLatest != ""
-	if cliKnown {
+	canCompareCLI := comparableCLIVersion(in.CLIVersion) && res.cliLatest != ""
+	if canCompareCLI {
 		res.cliUpdate = newerVersion(in.CLIVersion, res.cliLatest)
 	}
 
 	if !ok {
 		// A local `toolbox build` makes only the image axis abstain. The CLI
 		// axis can still retract a cached banner without either registry.
-		if cliKnown {
+		if canCompareCLI {
 			writeResult(in.StateDir, res)
 		}
 		return
