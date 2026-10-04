@@ -76,3 +76,17 @@ Two indexes, split by what you are asking about:
 - **Everything else — architecture, docs, cross-file structure**: `graphify query "<question>"`, plus `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for one concept. `graphify-out/wiki/index.md` navigates broadly; `GRAPH_REPORT.md` only when those fall short. After modifying code: `graphify update .` (AST-only, no API cost).
 
 `graphify install` re-appends a `## graphify` block asserting graphify-first for every codebase question. Delete it — the split above is the rule.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles map directly to GitHub labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain layout with `CONTEXT.md` as its glossary and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
