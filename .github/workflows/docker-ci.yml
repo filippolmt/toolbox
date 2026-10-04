@@ -98,7 +98,7 @@ jobs:
     #             binary that builds but does not start, or the arm64-only
     #             branch of the final stage (the Foreign-Arch Runtime links).
     #             Every per-arch ARG case in the Dockerfile (zoxide, gws, bat,
-    #             rtk, …) lives or dies here. Native arm64 (ubuntu-24.04-arm) is
+    #             …) lives or dies here. Native arm64 (ubuntu-24.04-arm) is
     #             free for public repos and faster than QEMU on amd64.
     # `e2e_gates` marks the leg that also runs the Android end-to-end and the
     # real-daemon gates — amd64 only. On arm64 the x86_64 build-tools need
