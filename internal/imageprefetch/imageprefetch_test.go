@@ -155,6 +155,34 @@ func TestPollRetractsTheCLIBannerAfterTheHostCLIUpgrade(t *testing.T) {
 	}
 }
 
+// A stale attempt stamp opens the network gate, but clearing a stale CLI
+// banner still owes the network nothing. If both remote axes then fail, the
+// local comparison must already have retracted the obsolete result.
+func TestPollRetractsTheCLIBannerBeforeAFailedProbe(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{cliUpdate: true, cliLatest: "v1.2.3"})
+	path := filepath.Join(dir, stampFile)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * probeTTL)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	releasesServer(t, 500, "boom")
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	Poll(t.Context(), cli.docker(), Input{
+		Ref:        testRef,
+		StateDir:   dir,
+		CLIVersion: "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", "", stateNone, "0", "v1.2.3"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
 // Reading the shared result before the local image inspect leaves a window in
 // which a sibling can publish newer registry facts that this gated poll then
 // overwrites with its stale snapshot. Read only after the inspect, so the last
