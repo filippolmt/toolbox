@@ -241,11 +241,11 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 	}
 }
 
-// publishFromStore refreshes the banner without asking the registry anything.
-// The session axis is always this session's to state — whether the container
-// is behind the local store is a local comparison, and the published result
-// carries whoever wrote it last, which on a state mount shared by every
-// workspace need not be a session running this container.
+// publishFromStore refreshes the banner without asking either registry. The
+// session-local facts are always this process's to state: whether its container
+// is behind the local image store, and whether its CLI is behind the latest tag
+// already cached. The published result carries whichever session wrote it last,
+// which on a state mount shared by every workspace need not be this one.
 //
 // synced says the shell start's refresh has just made the store current with
 // the registry. It governs the two claims that are about the *registry* and
@@ -264,13 +264,21 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 //     that an adoptable image still outranks it, which is imageState's own
 //     rule and the one the renderer relies on to never print both lines.
 func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
+	res := readResult(in.StateDir)
+	cliKnown := in.CLIVersion != "" && in.CLIVersion != "dev" && res.cliLatest != ""
+	if cliKnown {
+		res.cliUpdate = newerVersion(in.CLIVersion, res.cliLatest)
+	}
+
 	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
-		// The fingerprint of a local `toolbox build`: the prefetch abstains
-		// on it everywhere, and this path is no exception.
+		// A local `toolbox build` makes only the image axis abstain. The CLI
+		// axis can still retract a cached banner without either registry.
+		if cliKnown {
+			writeResult(in.StateDir, res)
+		}
 		return
 	}
-	res := readResult(in.StateDir)
 	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
 
 	remote, known := knownRemote(in.StateDir)

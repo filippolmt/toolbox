@@ -131,6 +131,30 @@ func TestPollAsksTheRegistryNothingWhileStampIsFresh(t *testing.T) {
 	}
 }
 
+// The shared stamp may still be fresh when Homebrew replaces the host CLI.
+// The cached latest tag is enough to retract the stale CLI banner locally;
+// waiting for another GitHub request makes a completed upgrade look pending
+// until the probe cadence expires.
+func TestPollRetractsTheCLIBannerAfterTheHostCLIUpgrade(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{cliUpdate: true, cliLatest: "v1.2.3"})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	// The image axis abstains, leaving only the CLI symptom under test.
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	Poll(t.Context(), cli.docker(), Input{
+		Ref:        testRef,
+		StateDir:   dir,
+		CLIVersion: "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", "", stateNone, "0", "v1.2.3"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
 // The gate stops the registry, not the banner. #864: the published result is
 // whichever session wrote last, and image_update is computed against *that*
 // session's container — so a sibling already on the new image publishes a 0
