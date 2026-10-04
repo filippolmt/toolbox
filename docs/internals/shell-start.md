@@ -161,8 +161,11 @@ edit made within the same second can therefore escape the initial stat check
 until git refreshes the index. That window is accepted only on virtiofs, where
 including the unstable identity fields makes ordinary multi-file operations
 fail. The detection and registration policy is held by
-`TestVirtiofsCheckStatRegistration`; CI does not provide a virtiofs mount on
-which to reproduce the underlying filesystem race itself.
+`TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
+by `.github/scripts/virtiofs-git-rewrite.sh`: the scheduled/manual
+`virtiofs-git.yml` workflow builds the image on a dedicated macOS runner, binds
+a fresh repository through Docker Desktop, and rebases shared-file rewrites on
+the real virtiofs mount.
 
 ## git safe.directory ("dubious ownership")
 

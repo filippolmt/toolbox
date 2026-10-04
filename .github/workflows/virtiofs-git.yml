@@ -1,0 +1,55 @@
+name: Virtiofs Git Rewrite
+
+# GitHub-hosted macOS runners cannot run Docker Desktop. This gate targets a
+# dedicated Mac whose custom label promises that Docker Desktop uses virtiofs.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: virtiofs-git-rewrite
+  cancel-in-progress: true
+
+jobs:
+  rebase:
+    runs-on: [self-hosted, macOS, virtiofs]
+    timeout-minutes: 45
+    env:
+      IMAGE_TAG: toolbox:virtiofs-gate-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve Go version from go.mod
+        id: gover
+        run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
+          build-args: |
+            GO_VERSION=${{ steps.gover.outputs.version }}
+          load: true
+          tags: ${{ env.IMAGE_TAG }}
+
+      - name: Rebase on a virtiofs bind
+        run: .github/scripts/virtiofs-git-rewrite.sh "$IMAGE_TAG"
+
+      - name: Clean runner state
+        if: ${{ always() }}
+        run: |
+          while IFS= read -r container; do
+            [ -z "$container" ] || docker rm -f "$container"
+          done < <(docker ps -aq --filter 'name=toolbox-virtiofs-git-')
+          docker image rm -f "$IMAGE_TAG" 2>/dev/null || true
+          find "$RUNNER_TEMP" "$GITHUB_WORKSPACE" -maxdepth 1 -type d \
+            -name '.toolbox-virtiofs-git.*' -exec rm -rf {} +
