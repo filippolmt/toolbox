@@ -155,6 +155,33 @@ func TestPollRetractsTheCLIBannerAfterTheHostCLIUpgrade(t *testing.T) {
 	}
 }
 
+// Reading the shared result before the local image inspect leaves a window in
+// which a sibling can publish newer registry facts that this gated poll then
+// overwrites with its stale snapshot. Read only after the inspect, so the last
+// real probe remains authoritative.
+func TestPollKeepsAProbePublishedDuringTheLocalInspect(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{imageLatest: digestNew, cliLatest: "v1.2.3"})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+
+	cli := &dockertest.Fake{ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
+		writeResult(dir, result{imageLatest: digestNewer, cliUpdate: true, cliLatest: "v1.2.4"})
+		return inspectWith(digestOld), nil
+	}}
+	Poll(t.Context(), cli, Input{
+		Ref:             testRef,
+		ContainerDigest: digestOld,
+		StateDir:        dir,
+		CLIVersion:      "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", digestNewer, stateNone, "1", "v1.2.4"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
 // The gate stops the registry, not the banner. #864: the published result is
 // whichever session wrote last, and image_update is computed against *that*
 // session's container — so a sibling already on the new image publishes a 0

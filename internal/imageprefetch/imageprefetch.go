@@ -264,13 +264,13 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 //     that an adoptable image still outranks it, which is imageState's own
 //     rule and the one the renderer relies on to never print both lines.
 func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
+	local, ok := localDigest(ctx, cli, in.Ref)
 	res := readResult(in.StateDir)
 	cliKnown := comparableCLIVersion(in.CLIVersion) && res.cliLatest != ""
 	if cliKnown {
 		res.cliUpdate = newerVersion(in.CLIVersion, res.cliLatest)
 	}
 
-	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
 		// A local `toolbox build` makes only the image axis abstain. The CLI
 		// axis can still retract a cached banner without either registry.
