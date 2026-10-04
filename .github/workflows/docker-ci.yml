@@ -77,9 +77,9 @@ jobs:
           ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
         run: |
           if [ "$ARCH_COVERAGE" = "true" ]; then
-            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","load":true},{"variant":"arm64","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64","load":false}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","gates":true},{"variant":"arm64","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64"}]}' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","load":true}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","gates":true}]}' >> "$GITHUB_OUTPUT"
           fi
 
   docker-build:
@@ -92,11 +92,18 @@ jobs:
     # Matrix is computed by the `detect` job above:
     #   amd64   — always; smoke-test must report OK for the full tool set.
     #   arm64   — only on Dockerfile/workflow change. Builds for linux/arm64 on
-    #             a native arm64 runner. Catches arch-specific breakage (wrong
-    #             SHA, GLIBC mismatch) BEFORE the multi-arch publish step. Every
-    #             per-arch ARG case in the Dockerfile (zoxide, gws, bat, rtk, …)
-    #             lives or dies here. Native arm64 (ubuntu-24.04-arm) is free
-    #             for public repos and ~3x faster than QEMU on amd64.
+    #             a native arm64 runner and smoke-tests it there. Catches
+    #             arch-specific breakage BEFORE the multi-arch publish step:
+    #             at build time a wrong SHA or a GLIBC mismatch, at run time a
+    #             binary that builds but does not start, or the arm64-only
+    #             branch of the final stage (the Foreign-Arch Runtime links).
+    #             Every per-arch ARG case in the Dockerfile (zoxide, gws, bat,
+    #             rtk, …) lives or dies here. Native arm64 (ubuntu-24.04-arm) is
+    #             free for public repos and faster than QEMU on amd64.
+    # `gates` marks the leg that also runs the Android end-to-end and the
+    # real-daemon gates — amd64 only. On arm64 the x86_64 build-tools need
+    # Rosetta (ADR 0017), which a Linux runner lacks, and the real-daemon gates
+    # pin Claude Code and toolbox behaviour, not the image's arch.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -131,7 +138,7 @@ jobs:
           file: internal/build/assets/Dockerfile
           build-args: |
             GO_VERSION=${{ steps.gover.outputs.version }}
-          load: ${{ matrix.load }}
+          load: true
           platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
           # Cache scope per matrix variant so concurrent variants don't
@@ -147,7 +154,6 @@ jobs:
           cache-from: type=registry,ref=${{ env.CACHE_REF }}
 
       - name: Smoke test
-        if: matrix.load
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"
@@ -157,7 +163,7 @@ jobs:
       # the result. HOME is an anonymous volume removed with the container; the
       # fixture is copied out of its read-only bind before Capacitor modifies it.
       - name: Android SDK end to end
-        if: matrix.load && needs.detect.outputs.android_e2e == 'true'
+        if: matrix.gates && needs.detect.outputs.android_e2e == 'true'
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: |
@@ -190,12 +196,12 @@ jobs:
       # See docs/adr/0003-cross-container-peer-messaging.md.
       #
       # It shares the job with the image build because the image is only
-      # loaded on this runner (`load: true`); a separate job would have to
+      # loaded on this runner; a separate job would have to
       # rebuild it or ship a multi-GB tarball between jobs. `!cancelled()`
       # keeps it independent of the smoke test all the same, so a smoke-test
       # failure reports both gates instead of hiding this one.
       - name: Set up Go
-        if: ${{ !cancelled() && matrix.load }}
+        if: ${{ !cancelled() && matrix.gates }}
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -208,7 +214,7 @@ jobs:
       # earns it later. Packages are listed because the tag alone cannot find
       # them: a gate lives beside the code it pins.
       - name: Real-daemon gates (peer messaging, session reload, image reclamation)
-        if: ${{ !cancelled() && matrix.load }}
+        if: ${{ !cancelled() && matrix.gates }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: go test -tags dockergate -count=1 ./internal/container/ ./internal/imagereclaim/

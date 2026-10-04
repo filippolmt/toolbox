@@ -57,8 +57,8 @@ jobs:
       matrix:
         include:
           # `load` flags the leg that runs the smoke-test gate before publish
-          # (amd64 only — arm64 can't execute on the amd64 control plane);
-          # mirrors docker-ci.yml's `if: matrix.load` convention.
+          # (amd64 only — docker-ci.yml smoke-tests arm64 on the PR whenever
+          # the Dockerfile changes).
           - variant: amd64
             runner: ubuntu-latest
             platforms: linux/amd64
