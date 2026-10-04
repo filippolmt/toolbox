@@ -1,0 +1,62 @@
+name: Virtiofs Git Rewrite
+
+# GitHub-hosted macOS runners cannot run Docker Desktop. This gate targets a
+# dedicated Mac whose custom label promises that Docker Desktop uses virtiofs.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: virtiofs-git-rewrite
+  cancel-in-progress: true
+
+jobs:
+  rebase:
+    runs-on: [self-hosted, macOS, virtiofs]
+    timeout-minutes: 45
+    env:
+      # Stable because concurrency admits only one run. A recovered runner can
+      # remove this tag before rebuilding instead of leaking per-run images.
+      IMAGE_TAG: toolbox:virtiofs-gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Remove an interrupted run's image
+        run: |
+          docker image rm -f "$IMAGE_TAG" 2>/dev/null || true
+          docker image prune -f --filter 'label=dev.toolbox.virtiofs-gate=true'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve Go version from go.mod
+        id: gover
+        run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: internal/build/assets
+          file: internal/build/assets/Dockerfile
+          build-args: |
+            GO_VERSION=${{ steps.gover.outputs.version }}
+          load: true
+          tags: ${{ env.IMAGE_TAG }}
+          labels: dev.toolbox.virtiofs-gate=true
+
+      - name: Rebase on a virtiofs bind
+        run: .github/scripts/virtiofs-git-rewrite.sh "$IMAGE_TAG"
+
+      # The gate's EXIT trap owns its container and repository. This step owns
+      # only the image built by the workflow, so cleanup has one owner per
+      # resource. The label catches an older image left dangling by replacement.
+      - name: Clean runner image state
+        if: ${{ always() }}
+        run: |
+          docker image rm -f "$IMAGE_TAG" 2>/dev/null || true
+          docker image prune -f --filter 'label=dev.toolbox.virtiofs-gate=true'

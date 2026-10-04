@@ -161,8 +161,21 @@ edit made within the same second can therefore escape the initial stat check
 until git refreshes the index. That window is accepted only on virtiofs, where
 including the unstable identity fields makes ordinary multi-file operations
 fail. The detection and registration policy is held by
-`TestVirtiofsCheckStatRegistration`; CI does not provide a virtiofs mount on
-which to reproduce the underlying filesystem race itself.
+`TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
+by `.github/scripts/virtiofs-git-rewrite.sh`: the scheduled/manual
+`virtiofs-git.yml` workflow builds the image on a dedicated macOS runner, binds
+a fresh repository through Docker Desktop, and rebases shared-file rewrites on
+the real virtiofs mount.
+
+That runner is an explicit infrastructure dependency, not something the
+workflow can create. Its Actions registration must carry the `self-hosted`,
+`macOS`, and `virtiofs` labels; Docker Desktop must start unattended with
+virtiofs file sharing enabled; and the runner account's Actions workspace must
+be shared with the Docker VM. The workflow uses one stable image tag, removes
+it before and after the gate, and labels the image so a replacement left it
+dangling can be reclaimed. The script's exit trap separately owns its one
+container and temporary repository. Provisioning and recovery after the host
+itself is interrupted are tracked in [#1143](https://github.com/filippolmt/toolbox/issues/1143).
 
 ## git safe.directory ("dubious ownership")
 
