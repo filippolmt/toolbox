@@ -3,7 +3,7 @@
 # the two callers differ only in trigger, concurrency group, cache ref and tag
 # set, so the build/merge logic lives here once.
 #
-# Pattern: native per-arch build (no QEMU) -> amd64 smoke-test gate -> push by
+# Pattern: native per-arch build (no QEMU) -> per-arch smoke-test gate -> push by
 # digest -> manifest merge.
 #
 # Each architecture builds on its own native runner (amd64 on ubuntu-latest,
@@ -56,17 +56,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `load` flags the leg that runs the smoke-test gate before publish
-          # (amd64 only — docker-ci.yml smoke-tests arm64 on the PR whenever
-          # the Dockerfile changes).
           - variant: amd64
             runner: ubuntu-latest
             platforms: linux/amd64
-            load: true
           - variant: arm64
             runner: ubuntu-24.04-arm
             platforms: linux/arm64
-            load: false
     name: build (${{ matrix.variant }})
     steps:
       - name: Checkout
@@ -95,14 +90,13 @@ jobs:
         id: gover
         run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
 
-      # amd64-only pre-publish gate: load the native image and smoke-test it
-      # before any digest is pushed. arm64 cannot execute on the amd64 control
-      # plane, so it has no smoke-test here (its binary correctness is gated
-      # pre-merge by docker-ci.yml's arm64 leg). The push step below reuses this
+      # Pre-publish gate, on every leg: load the native image and smoke-test it
+      # before any digest is pushed. Each leg runs on its own arch, so this
+      # needs no emulation, and it covers arm64 changes docker-ci.yml's
+      # arch_coverage filter lets through. The push step below reuses this
       # build's layers from cache, so it's cheaper than a cold build — but not
       # free: the SBOM + provenance pass it adds is not layer-cached.
       - name: Build and load for testing
-        if: matrix.load
         uses: docker/build-push-action@v7
         with:
           context: internal/build/assets
@@ -118,7 +112,6 @@ jobs:
           cache-from: type=registry,ref=${{ inputs.cache_ref }}
 
       - name: Smoke test
-        if: matrix.load
         env:
           IMAGE_TAG: ${{ env.TEST_TAG }}
         run: internal/build/assets/smoke-test.sh "$IMAGE_TAG"

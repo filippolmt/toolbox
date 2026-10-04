@@ -76,11 +76,11 @@ jobs:
         env:
           ARCH_COVERAGE: ${{ steps.filter.outputs.arch_coverage }}
         run: |
+          legs='{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","e2e_gates":true}'
           if [ "$ARCH_COVERAGE" = "true" ]; then
-            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","gates":true},{"variant":"arm64","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64"}]}' >> "$GITHUB_OUTPUT"
-          else
-            echo 'matrix={"include":[{"variant":"amd64","runner":"ubuntu-latest","tag":"toolbox:ci-amd64","platforms":"linux/amd64","gates":true}]}' >> "$GITHUB_OUTPUT"
+            legs="$legs"',{"variant":"arm64","runner":"ubuntu-24.04-arm","tag":"toolbox:ci-arm64","platforms":"linux/arm64"}'
           fi
+          echo "matrix={\"include\":[$legs]}" >> "$GITHUB_OUTPUT"
 
   docker-build:
     needs: detect
@@ -100,7 +100,7 @@ jobs:
     #             Every per-arch ARG case in the Dockerfile (zoxide, gws, bat,
     #             rtk, …) lives or dies here. Native arm64 (ubuntu-24.04-arm) is
     #             free for public repos and faster than QEMU on amd64.
-    # `gates` marks the leg that also runs the Android end-to-end and the
+    # `e2e_gates` marks the leg that also runs the Android end-to-end and the
     # real-daemon gates — amd64 only. On arm64 the x86_64 build-tools need
     # Rosetta (ADR 0017), which a Linux runner lacks, and the real-daemon gates
     # pin Claude Code and toolbox behaviour, not the image's arch.
@@ -163,7 +163,7 @@ jobs:
       # the result. HOME is an anonymous volume removed with the container; the
       # fixture is copied out of its read-only bind before Capacitor modifies it.
       - name: Android SDK end to end
-        if: matrix.gates && needs.detect.outputs.android_e2e == 'true'
+        if: matrix.e2e_gates && needs.detect.outputs.android_e2e == 'true'
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: |
@@ -201,7 +201,7 @@ jobs:
       # keeps it independent of the smoke test all the same, so a smoke-test
       # failure reports both gates instead of hiding this one.
       - name: Set up Go
-        if: ${{ !cancelled() && matrix.gates }}
+        if: ${{ !cancelled() && matrix.e2e_gates }}
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -214,7 +214,7 @@ jobs:
       # earns it later. Packages are listed because the tag alone cannot find
       # them: a gate lives beside the code it pins.
       - name: Real-daemon gates (peer messaging, session reload, image reclamation)
-        if: ${{ !cancelled() && matrix.gates }}
+        if: ${{ !cancelled() && matrix.e2e_gates }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}
         run: go test -tags dockergate -count=1 ./internal/container/ ./internal/imagereclaim/

@@ -569,8 +569,7 @@ check_required "git-prune-dead" sh -c "test -x /usr/local/bin/git-prune-dead && 
 # directory must be the real one and /lib64 the distro link to usr/lib64
 # (merged /usr), never ours. On arm64 the targets are compared, not just the
 # link type: the runtime link dangles until android-sdk-install fills the bind,
-# so readlink is the only way to catch a wrong one. docker-ci.yml runs this on
-# both arches when the Dockerfile changes.
+# so readlink is the only way to catch a wrong one. CI runs this on both arches.
 check_required "android-sdk-install" sh -c "test -x /usr/local/bin/android-sdk-install && command -v android-sdk-install >/dev/null && command -v flock >/dev/null && test -r /usr/local/lib/toolbox/android-env.sh && echo present"
 check_required "foreign-arch links arm64-only" sh -c "if [ \"\$(dpkg --print-architecture)\" = amd64 ]; then ! test -L /usr/lib/x86_64-linux-gnu && test \"\$(readlink /lib64)\" = usr/lib64 && test -x /lib64/ld-linux-x86-64.so.2 && echo real loader; else test \"\$(readlink /usr/lib/x86_64-linux-gnu)\" = /home/toolbox/.android-sdk/x86_64-runtimes/current && test \"\$(readlink /lib64)\" = /usr/lib/x86_64-linux-gnu && echo links; fi"
 check_required "BROWSER env"       sh -c "test \"\$BROWSER\" = xdg-open && echo present"
