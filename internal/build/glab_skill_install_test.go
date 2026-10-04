@@ -27,9 +27,9 @@ if [ "${1:-}" = skills ] && [ "${2:-}" = install ]; then
     printf '%s\n' "$*" >> "$GLAB_CALL_LOG"
 fi
 `
-	writeGlabTestExecutable(t, filepath.Join(binDir, "glab"), glab)
+	writeTestExecutable(t, filepath.Join(binDir, "glab"), glab)
 	for _, name := range fakeCommands {
-		writeGlabTestExecutable(t, filepath.Join(binDir, name), "#!/bin/sh\nexit 0\n")
+		writeTestExecutable(t, filepath.Join(binDir, name), "#!/bin/sh\nexit 0\n")
 	}
 
 	body, err := Assets.ReadFile(glabInitScript)
@@ -65,7 +65,7 @@ fi
 	return strings.Split(strings.TrimSpace(string(calls)), "\n")
 }
 
-func writeGlabTestExecutable(t *testing.T, path, body string) {
+func writeTestExecutable(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write %s: %v", path, err)

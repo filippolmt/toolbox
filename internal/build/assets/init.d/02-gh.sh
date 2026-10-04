@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Two responsibilities, gated together on `command -v gh`:
-#   1. Credential probe — reports whether gh is authenticated. Self-gates so
-#      an INSTALL_GH=false image exits silently.
-#   2. Install gh's official agent skill, non-fatally. Claude gets its own
-#      config root; Codex and pi share the portable ~/.agents/skills root.
+# gh startup integration, gated on `command -v gh` so an INSTALL_GH=false
+# image exits silently. Reports credential state and installs gh's official
+# agent skill non-fatally. Claude gets its own config root; Codex and pi share
+# the portable ~/.agents/skills root.
 #
-# Three-way credential outcome (decision D-08-creds-tristate):
+# Credential outcomes (decision D-08-creds-tristate):
 #   configured        — `gh auth status` exits 0.
 #   auth check failed — token stored but verification fails (expired /
 #                       revoked / network unreachable on first call).

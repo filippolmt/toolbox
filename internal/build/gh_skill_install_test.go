@@ -8,9 +8,11 @@ import (
 	"testing"
 )
 
-const ghInitScript = "assets/init.d/02-gh-creds.sh"
+const ghInitScript = "assets/init.d/02-gh.sh"
 
-func TestGhSkillInstallWiresEveryBundledAgentNonFatally(t *testing.T) {
+func runGhInit(t *testing.T, fakeCommands ...string) (home, claudeDir string, calls []string) {
+	t.Helper()
+
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	if err := os.Mkdir(binDir, 0o755); err != nil {
@@ -24,22 +26,22 @@ if [ "${1:-}" = skill ] && [ "${2:-}" = install ]; then
 fi
 exit 1
 `
-	writeGlabTestExecutable(t, filepath.Join(binDir, "gh"), gh)
-	for _, name := range []string{"claude", "pi"} {
-		writeGlabTestExecutable(t, filepath.Join(binDir, name), "#!/bin/sh\nexit 0\n")
+	writeTestExecutable(t, filepath.Join(binDir, "gh"), gh)
+	for _, name := range fakeCommands {
+		writeTestExecutable(t, filepath.Join(binDir, name), "#!/bin/sh\nexit 0\n")
 	}
 
 	body, err := Assets.ReadFile(ghInitScript)
 	if err != nil {
 		t.Fatalf("read %s: %v", ghInitScript, err)
 	}
-	scriptPath := filepath.Join(dir, "02-gh-creds.sh")
+	scriptPath := filepath.Join(dir, filepath.Base(ghInitScript))
 	if err := os.WriteFile(scriptPath, body, 0o755); err != nil {
 		t.Fatalf("write init script: %v", err)
 	}
 
-	home := filepath.Join(dir, "home")
-	claudeDir := filepath.Join(home, "custom-claude")
+	home = filepath.Join(dir, "home")
+	claudeDir = filepath.Join(home, "custom-claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatalf("create Claude config dir: %v", err)
 	}
@@ -54,11 +56,26 @@ exit 1
 		t.Fatalf("run %s: %v\n%s", ghInitScript, err, out)
 	}
 
-	calls, err := os.ReadFile(callsPath)
+	loggedCalls, err := os.ReadFile(callsPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return home, claudeDir, nil
+		}
 		t.Fatalf("read gh calls: %v", err)
 	}
-	got := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	return home, claudeDir, strings.Split(strings.TrimSpace(string(loggedCalls)), "\n")
+}
+
+func TestGhSkillInstallIncludesCodexWithoutPi(t *testing.T) {
+	home, _, calls := runGhInit(t, "codex")
+	want := "skill install cli/cli gh --dir " + filepath.Join(home, ".agents", "skills") + " --force"
+	if len(calls) != 1 || calls[0] != want {
+		t.Fatalf("gh calls = %q, want [%q]", calls, want)
+	}
+}
+
+func TestGhSkillInstallWiresClaudeAndPiNonFatally(t *testing.T) {
+	home, claudeDir, got := runGhInit(t, "claude", "pi")
 	want := []string{
 		"skill install cli/cli gh --dir " + filepath.Join(claudeDir, "skills") + " --force",
 		"skill install cli/cli gh --dir " + filepath.Join(home, ".agents", "skills") + " --force",
