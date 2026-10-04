@@ -1,6 +1,6 @@
 # Android builds in the toolbox and runs on the host's emulator; iOS stays on the host
 
-Status: accepted
+Status: accepted, amended below
 
 Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
 
@@ -157,7 +157,8 @@ the client, not the server. The guide has to say this plainly next to the
 
 **The Foreign-Arch Runtime's symlinks must never reach the amd64 image.** The
 Dockerfile adds them only when `TARGETARCH=arm64`. A test has to assert that
-they are absent on amd64, because CI smoke-tests only amd64. On amd64 those
+they are absent on amd64, because CI smoke-tests only amd64 (no longer true —
+see the amendment below). On amd64 those
 paths hold the real libraries and the distribution's `/lib64` link, so a
 symlink in their place would break every binary in the image.
 
@@ -257,3 +258,12 @@ Unpacked sizes after one build: the SDK (`cmdline-tools`, `platform-tools`, one
 platform, one build-tools) 489 MiB, the Gradle JDK 346 MiB, the Foreign-Arch
 Runtime 26 MiB, `android-cli` 89 MiB, `~/.gradle` 1.1 GiB. That totals about
 2.2 GB, inside the 2–2.5 GB estimate above.
+
+## Amendment: CI smoke-tests both arches
+
+The arm64 image is now loaded and smoke-tested on its native runner, both in
+`docker-ci.yml` and before publish (#1089). The arm64 half of
+`foreign-arch links arm64-only` compares each link's target with `readlink`,
+so a link to the wrong place fails CI and not only a missing one. The static
+test that keeps the links inside the arm64 branch stays: it fails before any
+image is built.
