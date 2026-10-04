@@ -897,15 +897,17 @@ last — and `image_update` is computed against *that* session's
 container. A sibling already on the new image publishes a `0` that is
 true only for it, and keeps warm the very stamp that holds the gate
 shut; a session whose own container is older would render the sibling's
-answer for as long as that lasts. So every poll turned away at the gate
-still publishes from the store: the session axis is a local comparison
-and owes the registry nothing. Every pass, not just the first — a
-session outlives many ticks, and fixing only the first would hand the
-sibling all of them. It
-restates that axis and nothing else — `image_latest` is the *registry's*
-digest, which `knownRemote` reads back for `AheadOfStore`, and
-`image_state`'s `unavailable` rides a first-failure clock that a
-groundless "the store is current" would reset forever. On the connect
+answer for as long as that lasts. Every poll first republishes
+`cli_update` from this process's version and the cached latest tag,
+before the gate, so a failed probe cannot preserve an obsolete warning.
+A poll turned away at the gate additionally republishes `image_update`
+from the store and this container's digest. Every pass, not just the
+first — a session outlives many ticks, and fixing only the first would
+hand the sibling all of them. Neither restates a registry fact —
+`image_latest` is the image registry's digest that `knownRemote` reads
+back for `AheadOfStore`, and `image_state`'s `unavailable` rides a
+first-failure clock that a groundless "the store is current" would reset
+forever. On the connect
 branch, where the start-up refresh is never offered, that publish is what
 keeps the banner a channel at all.
 

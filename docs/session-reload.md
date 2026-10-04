@@ -258,18 +258,19 @@ state mount, that is one probe per window *for you* rather than one per open
 shell — best effort, since two sessions whose
 ticks coincide can both find the stamp stale and both probe; the daemon
 deduplicates the pull that follows, so the cost is a second manifest lookup.
-The first poll runs as soon as a shell attaches, subject to the same gate —
-but a poll turned away by it still republishes `image_update` from the local
-store, on every pass, because that field says whether *your* container is
-behind while the one cache is shared by every workspace: the result on disk
-may have been written by a sibling session whose container is already on the
-new image, and that sibling is what keeps the gate shut. The restatement is
-local-only; `image_latest` stays as the last real probe left it. Delete the
-cache files to force a check on the next tick.
+The first poll runs as soon as a shell attaches. Before consulting the gate,
+every poll republishes `cli_update` from the running CLI and the cached latest
+tag, so a completed host upgrade retracts its warning even if the next probe
+fails. A poll turned away by the gate additionally republishes `image_update`
+from the store and this container's digest. The one cache is shared by every
+workspace and may have been written by a sibling session with a different
+container or host CLI. Registry facts stay untouched; `image_latest` and
+`cli_latest` remain what the last real probes published. Delete the cache files
+to force a check on the next tick.
 
-If the registry cannot be reached, the previous (still valid) result is left
-alone rather than blanked, and the stamp still advances — an offline machine
-costs one failed probe per cadence, not one per tick.
+If the registry cannot be reached, its previous result is left alone rather
+than blanked, and the stamp still advances — an offline machine costs one
+failed probe per cadence, not one per tick.
 
 ## Opt out
 

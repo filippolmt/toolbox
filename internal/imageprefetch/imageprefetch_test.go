@@ -131,6 +131,85 @@ func TestPollAsksTheRegistryNothingWhileStampIsFresh(t *testing.T) {
 	}
 }
 
+// The shared stamp may still be fresh when Homebrew replaces the host CLI.
+// The cached latest tag is enough to retract the stale CLI banner locally;
+// waiting for another GitHub request makes a completed upgrade look pending
+// until the probe cadence expires.
+func TestPollRetractsTheCLIBannerAfterTheHostCLIUpgrade(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{cliUpdate: true, cliLatest: "v1.2.3"})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+	// The image axis abstains, leaving only the CLI symptom under test.
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	Poll(t.Context(), cli.docker(), Input{
+		Ref:        testRef,
+		StateDir:   dir,
+		CLIVersion: "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", "", stateNone, "0", "v1.2.3"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
+// A stale attempt stamp opens the network gate, but clearing a stale CLI
+// banner still owes the network nothing. If both remote axes then fail, the
+// local comparison must already have retracted the obsolete result.
+func TestPollRetractsTheCLIBannerBeforeAFailedProbe(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{cliUpdate: true, cliLatest: "v1.2.3"})
+	path := filepath.Join(dir, stampFile)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * probeTTL)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	releasesServer(t, 500, "boom")
+	cli := &pollStub{inspects: []client.ImageInspectResult{inspectWith("")}}
+
+	Poll(t.Context(), cli.docker(), Input{
+		Ref:        testRef,
+		StateDir:   dir,
+		CLIVersion: "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", "", stateNone, "0", "v1.2.3"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
+// Reading the shared result before the local image inspect leaves a window in
+// which a sibling can publish newer registry facts that this gated poll then
+// overwrites with its stale snapshot. Read only after the inspect, so the last
+// real probe remains authoritative.
+func TestPollKeepsAProbePublishedDuringTheLocalInspect(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{imageLatest: digestNew, cliLatest: "v1.2.3"})
+	if !stamp(dir) {
+		t.Fatal("seed the attempt stamp")
+	}
+
+	cli := &dockertest.Fake{ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
+		writeResult(dir, result{imageLatest: digestNewer, cliUpdate: true, cliLatest: "v1.2.4"})
+		return inspectWith(digestOld), nil
+	}}
+	Poll(t.Context(), cli, Input{
+		Ref:             testRef,
+		ContainerDigest: digestOld,
+		StateDir:        dir,
+		CLIVersion:      "v1.2.3",
+	})
+
+	if got, want := readCache(t, dir), cacheBody("0", digestNewer, stateNone, "1", "v1.2.4"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
 // The gate stops the registry, not the banner. #864: the published result is
 // whichever session wrote last, and image_update is computed against *that*
 // session's container — so a sibling already on the new image publishes a 0

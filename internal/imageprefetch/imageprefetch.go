@@ -241,11 +241,10 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 	}
 }
 
-// publishFromStore refreshes the banner without asking the registry anything.
-// The session axis is always this session's to state — whether the container
-// is behind the local store is a local comparison, and the published result
-// carries whoever wrote it last, which on a state mount shared by every
-// workspace need not be a session running this container.
+// publishFromStore refreshes the image banner without asking the registry.
+// Whether this container is behind the local image store is always this
+// session's to state. The published result carries whichever session wrote it
+// last, which on a state mount shared by every workspace need not be this one.
 //
 // synced says the shell start's refresh has just made the store current with
 // the registry. It governs the two claims that are about the *registry* and
@@ -266,8 +265,7 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
 	local, ok := localDigest(ctx, cli, in.Ref)
 	if !ok {
-		// The fingerprint of a local `toolbox build`: the prefetch abstains
-		// on it everywhere, and this path is no exception.
+		// The fingerprint of a local `toolbox build`: the image axis abstains.
 		return
 	}
 	res := readResult(in.StateDir)
@@ -383,6 +381,7 @@ func knownRemote(stateDir string) (string, bool) {
 // Every failure path is silent and leaves the previous cached result in
 // place. A banner is an advisory, and this runs beside a developer's cursor.
 func Poll(ctx context.Context, cli registryStore, in Input) {
+	publishCachedCLI(in)
 	if attemptFresh(in.StateDir) {
 		publishFromStore(ctx, cli, in, false)
 		return
@@ -470,7 +469,7 @@ func fetched(ctx context.Context, cli registryStore, ref, have string) string {
 // unstamped build ("dev", or empty in a test binary) has no release to be
 // behind, so it abstains before the network.
 func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
-	if in.CLIVersion == "" || in.CLIVersion == "dev" {
+	if !comparableCLIVersion(in.CLIVersion) {
 		return res, false
 	}
 	tag, err := latestRelease(ctx)
@@ -480,6 +479,26 @@ func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
 	res.cliLatest = tag
 	res.cliUpdate = newerVersion(in.CLIVersion, tag)
 	return res, true
+}
+
+func comparableCLIVersion(v string) bool {
+	return v != "" && v != "dev"
+}
+
+// publishCachedCLI restates the CLI update flag from facts already on this
+// host. It runs before the network gate so a completed upgrade retracts its
+// stale banner even when the next probe fails.
+func publishCachedCLI(in Input) {
+	res := readResult(in.StateDir)
+	if !comparableCLIVersion(in.CLIVersion) || res.cliLatest == "" {
+		return
+	}
+	update := newerVersion(in.CLIVersion, res.cliLatest)
+	if res.cliUpdate == update {
+		return
+	}
+	res.cliUpdate = update
+	writeResult(in.StateDir, res)
 }
 
 // localDigest reports the repo digest the local store holds for ref. The
