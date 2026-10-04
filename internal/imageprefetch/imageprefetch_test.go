@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -85,6 +86,15 @@ func inspectWith(repoDigest string) client.ImageInspectResult {
 func stateDir(t *testing.T) string {
 	t.Helper()
 	return t.TempDir()
+}
+
+// writeResult replaces the cache through the production transaction seam.
+// Tests use it to spell a sibling publisher without bypassing the lock.
+func writeResult(stateDir string, next result) {
+	mutateResult(stateDir, func(current *result) bool {
+		*current = next
+		return true
+	})
 }
 
 // cacheBody renders the expected cache in the writer's own field order, so a
@@ -208,6 +218,108 @@ func TestPollKeepsAProbePublishedDuringTheLocalInspect(t *testing.T) {
 	if got, want := readCache(t, dir), cacheBody("0", digestNewer, stateNone, "1", "v1.2.4"); got != want {
 		t.Errorf("cache = %q, want %q", got, want)
 	}
+}
+
+// Two attached shells are two host processes sharing one result. The child
+// starts an image probe from the old cache and pauses after that read; the
+// parent then publishes a newer CLI answer. Finishing the image probe must
+// merge its own axis into the latest cache rather than roll the CLI axis back.
+func TestPollPreservesAConcurrentAxisPublicationAcrossProcesses(t *testing.T) {
+	dir := stateDir(t)
+	writeResult(dir, result{imageLatest: digestOld, cliLatest: "v1.2.3"})
+	ready, release := filepath.Join(dir, "helper-ready"), filepath.Join(dir, "helper-release")
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestPollConcurrentWriterHelper$")
+	var child bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &child, &child
+	cmd.Env = append(os.Environ(),
+		"TOOLBOX_TEST_STATE_DIR="+dir,
+		"TOOLBOX_TEST_READY="+ready,
+		"TOOLBOX_TEST_RELEASE="+release,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	})
+
+	writeResult(dir, result{imageLatest: digestNew, cliUpdate: true, cliLatest: "v1.2.4"})
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("helper failed: %v\n%s", err, child.String())
+	}
+
+	if got, want := readCache(t, dir), cacheBody("0", digestOld, stateNone, "1", "v1.2.4"); got != want {
+		t.Errorf("cache = %q, want %q", got, want)
+	}
+}
+
+func TestPollConcurrentWriterHelper(t *testing.T) {
+	dir := os.Getenv("TOOLBOX_TEST_STATE_DIR")
+	if dir == "" {
+		return
+	}
+	ready, release := os.Getenv("TOOLBOX_TEST_READY"), os.Getenv("TOOLBOX_TEST_RELEASE")
+	cli := &pollStub{
+		inspects:   []client.ImageInspectResult{inspectWith(digestOld)},
+		distDigest: digestOld,
+	}
+	cli.docker().ImageInspectFn = func(context.Context, string) (client.ImageInspectResult, error) {
+		if err := os.WriteFile(ready, nil, 0o600); err != nil {
+			return client.ImageInspectResult{}, err
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(release); err == nil {
+				return inspectWith(digestOld), nil
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return client.ImageInspectResult{}, errors.New("parent never released helper")
+	}
+
+	Poll(t.Context(), cli.docker(), Input{
+		Ref:             testRef,
+		ContainerDigest: digestOld,
+		StateDir:        dir,
+		CLIVersion:      "dev",
+	})
+}
+
+// The lock belongs to an open file description, not to the lock file's bytes.
+// A host process that dies in its critical section must therefore leave the
+// next session able to publish without cleanup or a stale-lock timeout.
+func TestResultLockIsReleasedWhenTheHolderExits(t *testing.T) {
+	dir := stateDir(t)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestResultLockExitHelper$")
+	cmd.Env = append(os.Environ(), "TOOLBOX_TEST_LOCK_EXIT="+dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("helper failed: %v\n%s", err, out)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		writeResult(dir, result{cliLatest: "v1.2.3"})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("result lock survived its holder process")
+	}
+}
+
+func TestResultLockExitHelper(t *testing.T) {
+	dir := os.Getenv("TOOLBOX_TEST_LOCK_EXIT")
+	if dir == "" {
+		return
+	}
+	withResultLock(dir, func() { os.Exit(0) })
+	t.Fatal("lock was not acquired")
 }
 
 // The gate stops the registry, not the banner. #864: the published result is
@@ -713,7 +825,8 @@ func mtime(t *testing.T, path string) time.Time {
 //
 // The unavailable-since marker stays: it records whether the registry can be
 // reached, which a reload does not change, and resetting it would restart a
-// clock that has to elapse before the word "unavailable" is earned.
+// clock that has to elapse before the word "unavailable" is earned. The lock
+// inode stays too, or a new opener could bypass a process holding the old one.
 func TestClearResult(t *testing.T) {
 	dir := t.TempDir()
 	seed := func(name string) string {
@@ -726,6 +839,11 @@ func TestClearResult(t *testing.T) {
 	}
 	gone := []string{seed(cacheFile), seed(cacheFile + ".shown"), seed(stampFile)}
 	kept := seed(unavailableFile)
+	lockPath := seed(lockFile)
+	lockBefore, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ClearResult(dir)
 
@@ -736,6 +854,11 @@ func TestClearResult(t *testing.T) {
 	}
 	if _, err := os.Stat(kept); err != nil {
 		t.Errorf("%s was cleared, restarting a clock the reload did not change: %v", filepath.Base(kept), err)
+	}
+	if lockAfter, err := os.Stat(lockPath); err != nil {
+		t.Errorf("lock file was cleared: %v", err)
+	} else if !os.SameFile(lockBefore, lockAfter) {
+		t.Error("lock inode was replaced")
 	}
 }
 

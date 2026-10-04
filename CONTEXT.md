@@ -911,6 +911,17 @@ forever. On the connect
 branch, where the start-up refresh is never offered, that publish is what
 keeps the banner a channel at all.
 
+Every result mutation is a short cross-process transaction under
+`<state>/update-check.lock`: acquire, re-read, merge only the axes this
+publisher owns, atomically replace, release. Probe, pull and local image
+inspection all happen before the lock, so a stalled registry never blocks a
+sibling publisher. The lock file is a permanent inode whose bytes mean
+nothing — deleting it would let a new opener bypass a process holding the old
+inode — while the advisory lock itself dies with its file descriptor, so a
+killed host process leaves no stale lock to clean up. Atomic replacement and
+the lock solve different problems: the first protects readers from partial
+bytes, the second protects writers from lost updates.
+
 One poll is probe → prefetch → publish:
 `DistributionInspect` resolves the remote digest through the daemon
 (so a `registry_mirror` is honoured and no registry HTTP lives in this

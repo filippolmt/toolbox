@@ -232,6 +232,7 @@ profile-aware), which is how the two ends meet:
 | File | Role |
 |------|------|
 | `update-check` | Latest comparison result the prompt renders. Written host-side, atomically. |
+| `update-check.lock` | Advisory host-process lock for short result read/merge/write transactions. Its presence carries no state; the kernel releases the lock when its holder exits. |
 | `update-check.stamp` | Records each poll attempt (success *or* failure) so the cadence throttles retries even while offline. |
 | `update-check.unavailable-since` | When the download *first* started failing. Removed as soon as the bytes land. |
 
@@ -265,8 +266,13 @@ fails. A poll turned away by the gate additionally republishes `image_update`
 from the store and this container's digest. The one cache is shared by every
 workspace and may have been written by a sibling session with a different
 container or host CLI. Registry facts stay untouched; `image_latest` and
-`cli_latest` remain what the last real probes published. Delete the cache files
-to force a check on the next tick.
+`cli_latest` remain what the last real probes published. Probe and pull work
+happens before taking `update-check.lock`; under the lock, a publisher re-reads
+the result and replaces only the axis its probe answered. Thus a session cannot
+roll a sibling's other-axis answer back with the snapshot it started from. The
+lock file itself is never deleted — replacing its inode would let a new opener
+bypass a holder of the old one. Delete the other cache files to force a check on
+the next tick.
 
 If the registry cannot be reached, its previous result is left alone rather
 than blanked, and the stamp still advances — an offline machine costs one

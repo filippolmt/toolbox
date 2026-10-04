@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
+	"golang.org/x/sys/unix"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/imageref"
@@ -89,6 +90,7 @@ const httpTimeout = 10 * time.Second
 // the shell, never on a mount every session shares.
 const (
 	cacheFile       = "update-check"
+	lockFile        = "update-check.lock"
 	stampFile       = "update-check.stamp"
 	unavailableFile = "update-check.unavailable-since"
 )
@@ -268,20 +270,21 @@ func publishFromStore(ctx context.Context, cli registryStore, in Input, synced b
 		// The fingerprint of a local `toolbox build`: the image axis abstains.
 		return
 	}
-	res := readResult(in.StateDir)
-	res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
+	mutateResult(in.StateDir, func(res *result) bool {
+		res.imageUpdate = in.ContainerDigest != "" && local != in.ContainerDigest
 
-	remote, known := knownRemote(in.StateDir)
-	switch {
-	case synced:
-		res.imageLatest = local
-		res.imageState = imageState(in.StateDir, false, res.imageUpdate)
-	case known:
-		res.imageState = imageState(in.StateDir, remote != local, res.imageUpdate)
-	case res.imageUpdate:
-		res.imageState = stateReady
-	}
-	writeResult(in.StateDir, res)
+		remote, known := knownRemoteResult(in.StateDir, *res)
+		switch {
+		case synced:
+			res.imageLatest = local
+			res.imageState = imageState(in.StateDir, false, res.imageUpdate)
+		case known:
+			res.imageState = imageState(in.StateDir, remote != local, res.imageUpdate)
+		case res.imageUpdate:
+			res.imageState = stateReady
+		}
+		return true
+	})
 }
 
 // AheadOfStore reports whether the registry holds a newer image than the local
@@ -355,11 +358,14 @@ func attemptFresh(stateDir string) bool {
 // records the attempt and the cache records the answer, so both are needed: a
 // stamp with no published digest is a probe that failed.
 func knownRemote(stateDir string) (string, bool) {
+	return knownRemoteResult(stateDir, readResult(stateDir))
+}
+
+func knownRemoteResult(stateDir string, res result) (string, bool) {
 	if stateDir == "" || !attemptFresh(stateDir) {
 		return "", false
 	}
-	remote := readResult(stateDir).imageLatest
-	return remote, remote != ""
+	return res.imageLatest, res.imageLatest != ""
 }
 
 // Poll runs one gated attempt: it asks the registry nothing while the shared
@@ -392,14 +398,25 @@ func Poll(ctx context.Context, cli registryStore, in Input) {
 		return
 	}
 
-	res, reached := collect(ctx, cli, in, readResult(in.StateDir))
-	if !reached {
+	next, imageReached, cliReached := collect(ctx, cli, in)
+	if !imageReached && !cliReached {
 		// Offline, every axis failed, or nothing to ask: keep the last result
 		// the registry actually answered for rather than blanking a still
 		// valid banner.
 		return
 	}
-	writeResult(in.StateDir, res)
+	mutateResult(in.StateDir, func(res *result) bool {
+		if imageReached {
+			res.imageUpdate = next.imageUpdate
+			res.imageLatest = next.imageLatest
+			res.imageState = next.imageState
+		}
+		if cliReached {
+			res.cliUpdate = next.cliUpdate
+			res.cliLatest = next.cliLatest
+		}
+		return true
+	})
 }
 
 // result is the cache body, field-for-field the contract the zsh precmd
@@ -413,17 +430,16 @@ type result struct {
 	cliLatest   string
 }
 
-// collect runs both axes over the currently published result and reports
-// whether either of them reached its registry. The axes are independent —
-// either can fire, fail or abstain without the other — so each one overwrites
-// only its
-// own fields, and one that did not reach its registry leaves the previous
-// answer standing instead of retracting a banner that is still true. An axis
-// that abstains outright writes nothing at all.
-func collect(ctx context.Context, cli registryStore, in Input, res result) (result, bool) {
+// collect runs both axes without holding the result lock: registry probes and
+// image pulls can be slow, while the lock protects only the short merge that
+// follows. The reached flags let that merge replace only the axes that got an
+// answer, preserving a sibling process's newer publication on every other
+// axis.
+func collect(ctx context.Context, cli registryStore, in Input) (result, bool, bool) {
+	var res result
 	res, imageReached := collectImage(ctx, cli, in, res)
 	res, cliReached := collectCLI(ctx, in, res)
-	return res, imageReached || cliReached
+	return res, imageReached, cliReached
 }
 
 // collectImage runs the image axis and reports whether it reached the
@@ -489,16 +505,17 @@ func comparableCLIVersion(v string) bool {
 // host. It runs before the network gate so a completed upgrade retracts its
 // stale banner even when the next probe fails.
 func publishCachedCLI(in Input) {
-	res := readResult(in.StateDir)
-	if !comparableCLIVersion(in.CLIVersion) || res.cliLatest == "" {
-		return
-	}
-	update := newerVersion(in.CLIVersion, res.cliLatest)
-	if res.cliUpdate == update {
-		return
-	}
-	res.cliUpdate = update
-	writeResult(in.StateDir, res)
+	mutateResult(in.StateDir, func(res *result) bool {
+		if !comparableCLIVersion(in.CLIVersion) || res.cliLatest == "" {
+			return false
+		}
+		update := newerVersion(in.CLIVersion, res.cliLatest)
+		if res.cliUpdate == update {
+			return false
+		}
+		res.cliUpdate = update
+		return true
+	})
 }
 
 // localDigest reports the repo digest the local store holds for ref. The
@@ -693,10 +710,44 @@ func readResult(stateDir string) result {
 	return res
 }
 
-// writeResult publishes the comparison for the renderer. Atomic because
-// sibling sessions are N host processes writing one file, and the reader is a
-// prompt hook that must never observe a half-written body.
-func writeResult(stateDir string, res result) {
+// mutateResult serializes one short read/merge/write transaction across every
+// host process sharing the state mount. The callback never performs network or
+// daemon work; callers finish that first and merge only the axes they own.
+func mutateResult(stateDir string, mutate func(*result) bool) {
+	withResultLock(stateDir, func() {
+		res := readResult(stateDir)
+		if mutate(&res) {
+			writeResultUnlocked(stateDir, res)
+		}
+	})
+}
+
+func withResultLock(stateDir string, fn func()) {
+	if stateDir == "" {
+		return
+	}
+	lock, err := os.OpenFile(filepath.Join(stateDir, lockFile), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = lock.Close() }()
+	for {
+		err = unix.Flock(int(lock.Fd()), unix.LOCK_EX)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.EINTR) {
+			return
+		}
+	}
+	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }()
+	fn()
+}
+
+// writeResultUnlocked keeps the prompt-facing publication atomic: a reader
+// observes either complete old bytes or complete new bytes, never a partial
+// transaction.
+func writeResultUnlocked(stateDir string, res result) {
 	if res.imageState == "" {
 		res.imageState = stateNone
 	}
@@ -724,19 +775,24 @@ func writeResult(stateDir string, res result) {
 // to a full probeTTL of a cadence the reload has just invalidated.
 //
 // The unavailable-since marker is deliberately left: it records whether the
-// registry can be reached, which a reload does not change.
+// registry can be reached, which a reload does not change. The lock file stays
+// too: replacing its inode would let a new opener bypass a holder of the old
+// one; its contents carry no state and the kernel drops the lock on close.
 func ClearResult(stateDir string) {
 	if stateDir == "" {
 		return
 	}
-	// The `.shown` sibling is no longer written by this image's renderer, which
-	// keeps its signature in the shell. It is still removed: a new CLI driving
-	// an older image is skew this repo supports, that renderer does read the
-	// file, and the removal also retires the orphan left on existing mounts.
-	for _, name := range []string{cacheFile, cacheFile + ".shown", stampFile} {
-		// Best-effort: a stale banner is the whole cost of failing here.
-		_ = os.Remove(filepath.Join(stateDir, name))
-	}
+	withResultLock(stateDir, func() {
+		// The `.shown` sibling is no longer written by this image's renderer,
+		// which keeps its signature in the shell. It is still removed: a new
+		// CLI driving an older image is skew this repo supports, that renderer
+		// does read the file, and the removal also retires the orphan left on
+		// existing mounts.
+		for _, name := range []string{cacheFile, cacheFile + ".shown", stampFile} {
+			// Best-effort: a stale banner is the whole cost of failing here.
+			_ = os.Remove(filepath.Join(stateDir, name))
+		}
+	})
 }
 
 // boolField renders a flag in the cache's 0/1 spelling, which the shell-side
