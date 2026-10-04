@@ -1902,7 +1902,7 @@ RUN set -eux; \
     # and /lib64 is the distro link to usr/lib64 (merged /usr).
     if [ "${TARGETARCH}" = "arm64" ]; then \
         ln -s /home/toolbox/.android-sdk/x86_64-runtimes/current /usr/lib/x86_64-linux-gnu; \
-        ln -s /usr/lib/x86_64-linux-gnu /lib64; \
+        ln -s /usr/lib/x86_64-linux-gnu-wrong /lib64; \
     fi
 ENV BROWSER=xdg-open
 # Runtime knobs for tools whose install now lives in a fetch stage. They sit
