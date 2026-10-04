@@ -15,6 +15,7 @@ sections.**
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
+| [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
 | [internals/](#internals) | explanation | Maintainer-only material |
 
@@ -119,6 +120,14 @@ sections.**
 - [iOS](mobile.md#ios)
 - [Disk](mobile.md#disk)
 - [Troubleshooting](mobile.md#troubleshooting)
+
+## serial-devices.md
+
+- [Why `--device` does not work](serial-devices.md#why---device-does-not-work)
+- [The host's RFC 2217 server](serial-devices.md#the-hosts-rfc-2217-server)
+- [Using it from the container](serial-devices.md#using-it-from-the-container)
+- [Boards that reset on connect](serial-devices.md#boards-that-reset-on-connect)
+- [Security](serial-devices.md#security)
 
 ## troubleshooting.md
 
