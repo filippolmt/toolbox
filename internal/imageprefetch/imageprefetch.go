@@ -265,7 +265,7 @@ func newPoller(ctx context.Context, cli registryStore, in Input, polls *sync.Wai
 //     rule and the one the renderer relies on to never print both lines.
 func publishFromStore(ctx context.Context, cli registryStore, in Input, synced bool) {
 	res := readResult(in.StateDir)
-	cliKnown := in.CLIVersion != "" && in.CLIVersion != "dev" && res.cliLatest != ""
+	cliKnown := comparableCLIVersion(in.CLIVersion) && res.cliLatest != ""
 	if cliKnown {
 		res.cliUpdate = newerVersion(in.CLIVersion, res.cliLatest)
 	}
@@ -478,7 +478,7 @@ func fetched(ctx context.Context, cli registryStore, ref, have string) string {
 // unstamped build ("dev", or empty in a test binary) has no release to be
 // behind, so it abstains before the network.
 func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
-	if in.CLIVersion == "" || in.CLIVersion == "dev" {
+	if !comparableCLIVersion(in.CLIVersion) {
 		return res, false
 	}
 	tag, err := latestRelease(ctx)
@@ -488,6 +488,10 @@ func collectCLI(ctx context.Context, in Input, res result) (result, bool) {
 	res.cliLatest = tag
 	res.cliUpdate = newerVersion(in.CLIVersion, tag)
 	return res, true
+}
+
+func comparableCLIVersion(v string) bool {
+	return v != "" && v != "dev"
 }
 
 // localDigest reports the repo digest the local store holds for ref. The
