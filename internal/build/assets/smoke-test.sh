@@ -180,6 +180,12 @@ check_zsh() {
         zsh -i -c "type z" 2>/dev/null | grep -q function
     }
 
+    # k2. atuin stays local-only and owns Ctrl-R after fzf is loaded.
+    _zsh_atuin_local_check() {
+        [ "$(atuin config get auto_sync 2>/dev/null)" = "false" ] || return 1
+        zsh -i -c "bindkey \"^R\"" 2>/dev/null | grep -q "atuin-search"
+    }
+
     # l. vendor-completions populated. Three sources feed the directory: the
     # final-stage precompute layer (<tool> completion zsh > _<tool>), fetch
     # stages that extract a prebuilt _<tool> from a release tarball or repo,
@@ -417,6 +423,7 @@ cli_latest=
     _zsh_assert "18 plugins loaded"            _zsh_plugin_count_check
     _zsh_assert "alias tf=tofu"                _zsh_alias_tf_check
     _zsh_assert "zoxide z function"            _zsh_z_function_check
+    _zsh_assert "atuin local history integration" _zsh_atuin_local_check
     _zsh_assert "vendor-completions floor"     _zsh_vendor_completions_check
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
     _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
