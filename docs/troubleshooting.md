@@ -26,6 +26,28 @@ Symptoms, causes, and fixes for the failure modes users actually hit. Bridge-spe
 
 **Fix:** check the spelling against the default names in [mounts](mounts.md#mounts-merge-semantics) (`toolbox mounts list` shows the effective set; the CLI suggests close matches). To add a genuinely new mount, set `target:` too (append form).
 
+## npx reports `ECOMPROMISED` or `Lock compromised`
+
+**Symptom:** an `npx` invocation that spends long enough installing a package
+aborts with `ECOMPROMISED` / `Lock compromised`, commonly on Docker Desktop.
+
+**Cause:** the container predates the container-local `_npx` mount, or an
+explicit mount still places `/home/toolbox/.npm/_npx` on a host filesystem
+whose inode identity is unstable. npm checks that identity while holding its
+install lock and treats a change as compromise.
+
+**Fix:** run `toolbox stop --all` and reopen the shell so its fixed-at-create
+mount set includes the `_npx` tmpfs. If you explicitly mount `_npx`, remove
+that entry or point it at storage with stable inode identity. The old default
+cache data is safe to remove while no sessions are running:
+
+```console
+$ rm -rf ~/.toolbox/npm-cache/_npx
+```
+
+This removes only regenerable npx installation trees; npm's reusable
+`_cacache` remains persistent.
+
 ## Nerd Font placeholders in the prompt
 
 **Symptom:** the starship prompt shows `?` / `▢` replacement glyphs instead of icons (git branch, kubernetes, language logos).

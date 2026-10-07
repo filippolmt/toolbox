@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -754,6 +755,14 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 	identity := dockeridentity.Resolve(bindTargets)
 
+	// npm keeps npx's lock-protected exec trees under its cache root. Keep the
+	// download cache on the host bind, but put those trees on a stable local
+	// filesystem; an explicit child bind remains the developer's choice.
+	var tmpfs map[string]string
+	if slices.Contains(bindTargets, "/home/toolbox/.npm") && !slices.Contains(bindTargets, "/home/toolbox/.npm/_npx") {
+		tmpfs = map[string]string{"/home/toolbox/.npm/_npx": "rw,exec,uid=" + strings.Replace(identity.UserSpec, ":", ",gid=", 1) + ",mode=0700"}
+	}
+
 	// proximo: pin the host-routed `.test` names at the host-gateway so they
 	// resolve to the host where Traefik publishes :443 instead of the
 	// container's own loopback. Discovery needs the Docker client, so it lives
@@ -779,6 +788,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		},
 		HostConfig: &container.HostConfig{
 			Binds:        binds,
+			Tmpfs:        tmpfs,
 			GroupAdd:     identity.GroupAdd,
 			PortBindings: plan.PortBindings,
 			SecurityOpt:  plan.SecurityOpt,

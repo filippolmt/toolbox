@@ -68,6 +68,22 @@ disable, retarget through `mounts_root`, or inspect from the host — and it is
 the caches, of all things, that a developer is most likely to want to move,
 share between profiles, or throw away by hand.
 
+**npm's exec trees are the narrow exception.** npm puts both its reusable
+content cache and npx's lock-protected `_npx` installation trees under
+`~/.npm`, but Docker Desktop's virtiofs can report a different inode for an
+unchanged lock directory while npm is installing beside it. npm interprets
+that as a compromised lock and aborts; a cache optimisation has become a
+correctness failure. The `npm-cache` bind therefore still persists `_cacache`,
+while the Docker edge overlays `/home/toolbox/.npm/_npx` with a writable,
+executable per-container tmpfs whenever the parent bind is present — executable
+because npx launches the installed package's bin from that tree. When no bind
+lands at the parent target, npm writes to the container filesystem already and
+needs no overlay; an explicit child bind wins rather than being silently
+hidden. The tmpfs carries no size policy of its own: an
+arbitrary cap would turn large valid executions into a different failure.
+Existing `_npx` data on the host is left untouched because deleting shared
+cache state while an older session is using it is unsafe.
+
 ## Considered options
 
 **Mount `~/.cache` wholesale, or as a volume.** Covered above: the first
