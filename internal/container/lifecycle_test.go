@@ -581,7 +581,8 @@ func TestShellCreatesNewContainer(t *testing.T) {
 	}
 }
 
-func TestShellKeepsNpxExecTreesOffTheNpmCacheBind(t *testing.T) {
+func shellTmpfs(t *testing.T, plan *sessionplan.SessionPlan) map[string]string {
+	t.Helper()
 	_, restore := stubExecShell()
 	defer restore()
 
@@ -598,10 +599,14 @@ func TestShellKeepsNpxExecTreesOffTheNpmCacheBind(t *testing.T) {
 			return container.CreateResponse{ID: "new123"}, nil
 		},
 	}
-
-	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
+	return tmpfs
+}
+
+func TestShellKeepsNpxExecTreesOffTheNpmCacheBind(t *testing.T) {
+	tmpfs := shellTmpfs(t, testPlan(t, testWorkspace(t), nil))
 	want := fmt.Sprintf("rw,exec,uid=%d,gid=%d,mode=0700", os.Getuid(), os.Getgid())
 	if got := tmpfs["/home/toolbox/.npm/_npx"]; got != want {
 		t.Errorf("npm _npx tmpfs = %q, want %q", got, want)
@@ -620,28 +625,9 @@ func TestShellDoesNotOverrideNpxMountChoices(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, restore := stubExecShell()
-			defer restore()
-
-			var tmpfs map[string]string
-			mock := &mockClient{
-				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
-					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
-				},
-				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
-					return client.ImageInspectResult{}, nil
-				},
-				createFn: func(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ string) (container.CreateResponse, error) {
-					tmpfs = hostCfg.Tmpfs
-					return container.CreateResponse{ID: "new123"}, nil
-				},
-			}
 			plan := testPlan(t, testWorkspace(t), nil)
 			plan.Binds = tc.binds
-
-			if _, err := Shell(context.Background(), mock, plan); err != nil {
-				t.Fatalf("Shell() error: %v", err)
-			}
+			tmpfs := shellTmpfs(t, plan)
 			if _, ok := tmpfs["/home/toolbox/.npm/_npx"]; ok {
 				t.Errorf("npm _npx tmpfs must not override the effective mount choices: %v", tmpfs)
 			}
