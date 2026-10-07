@@ -120,6 +120,9 @@ jobs:
           version: ${{ steps.gola.outputs.version }}
           skip-cache: true
 
+      - name: Test project agent extensions
+        run: node --test .pi/tests/*.test.ts
+
   cask:
     # `goreleaser check` validates the config's schema and renders no template,
     # so it passes happily on a `{{staged_path}}` that GoReleaser would try to

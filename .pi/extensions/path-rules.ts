@@ -1,4 +1,6 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+// Pi-only enforcement. Codex follows the rule pointers in AGENTS.md; this
+// extension closes the equivalent gap for Pi's edit and write tools.
+import type { ExtensionAPI, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { readFile, readdir } from "node:fs/promises";
 import { matchesGlob, relative, resolve, sep } from "node:path";
 
@@ -35,6 +37,23 @@ export function rulesForPath(cwd: string, target: string, rules: Rule[]): Rule[]
   return rules.filter((rule) => rule.globs.some((glob) => matchesGlob(portable, glob)));
 }
 
+export class ReadCoverage {
+  private readonly through = new Map<string, number>();
+
+  clear() {
+    this.through.clear();
+  }
+
+  complete(file: string, totalLines: number): boolean {
+    return (this.through.get(file) ?? 0) >= totalLines;
+  }
+
+  record(file: string, start: number, end: number) {
+    const through = this.through.get(file) ?? 0;
+    if (start <= through + 1) this.through.set(file, Math.max(through, end));
+  }
+}
+
 async function discoverRules(cwd: string): Promise<Rule[]> {
   const dir = resolve(cwd, ".claude/rules");
   let names: string[];
@@ -50,8 +69,12 @@ async function discoverRules(cwd: string): Promise<Rule[]> {
   }));
 }
 
+function resultText(event: ToolResultEvent): string {
+  return event.content.filter((item) => item.type === "text").map((item) => item.text).join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
-  const readRules = new Set<string>();
+  const coverage = new ReadCoverage();
   const byCwd = new Map<string, Promise<Rule[]>>();
   const rulesAt = (cwd: string) => {
     let rules = byCwd.get(cwd);
@@ -63,22 +86,52 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "read" && event.toolName !== "edit" && event.toolName !== "write") return undefined;
+    if (event.toolName !== "edit" && event.toolName !== "write") return undefined;
     const input = event.input as { path?: string };
     if (!input.path) return undefined;
 
     const rules = await rulesAt(ctx.cwd);
-    const target = resolve(ctx.cwd, input.path);
-    if (event.toolName === "read") {
-      if (rules.some((rule) => rule.file === target)) readRules.add(target);
-      return undefined;
+    const missing: Rule[] = [];
+    for (const rule of rulesForPath(ctx.cwd, input.path, rules)) {
+      const total = (await readFile(rule.file, "utf8")).split("\n").length;
+      if (!coverage.complete(rule.file, total)) missing.push(rule);
     }
-
-    const missing = rulesForPath(ctx.cwd, target, rules).filter((rule) => !readRules.has(rule.file));
     if (missing.length === 0) return undefined;
     return {
       block: true,
-      reason: `Read the path-scoped rules before editing ${input.path}: ${missing.map((rule) => relative(ctx.cwd, rule.file)).join(", ")}`,
+      reason: `Read the complete path-scoped rules before editing ${input.path}: ${missing.map((rule) => relative(ctx.cwd, rule.file)).join(", ")}`,
     };
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.isError) return undefined;
+
+    if (event.toolName === "read") {
+      const input = event.input as { path?: string; offset?: number; limit?: number };
+      if (!input.path) return undefined;
+      const file = resolve(ctx.cwd, input.path);
+      const rules = await rulesAt(ctx.cwd);
+      if (!rules.some((rule) => rule.file === file)) return undefined;
+
+      const total = (await readFile(file, "utf8")).split("\n").length;
+      const start = input.offset ?? 1;
+      const continuation = resultText(event).match(/Use offset=(\d+) to continue/);
+      const end = continuation
+        ? Number(continuation[1]) - 1
+        : Math.min(total, start + (input.limit ?? total) - 1);
+      coverage.record(file, start, end);
+      return undefined;
+    }
+
+    if (event.toolName === "edit" || event.toolName === "write") {
+      const input = event.input as { path?: string };
+      const path = input.path && resolve(ctx.cwd, input.path);
+      const rulesDir = resolve(ctx.cwd, ".claude/rules") + sep;
+      if (path?.startsWith(rulesDir)) {
+        byCwd.delete(ctx.cwd);
+        coverage.clear();
+      }
+    }
+    return undefined;
   });
 }

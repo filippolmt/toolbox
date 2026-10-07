@@ -17,6 +17,7 @@
 | Touched | Run | CI job |
 |---|---|---|
 | Any Go file | `make go-check` | `ci.yml` (test + lint) |
+| `.pi/**` | `make check-agent` | `ci.yml` (lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
 | `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` — the extra CI gates have no local equivalent | `docker-ci.yml` (build + smoke + real-daemon gates) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |

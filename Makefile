@@ -82,7 +82,7 @@ GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-c
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links update-skills
+.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -111,7 +111,10 @@ check-links: ## Validate Markdown links and anchors offline (lychee in Docker)
 	docker run --rm -w /input -v "$(HOST_SRC)":/input $(LYCHEE_IMAGE) \
 	  --offline --include-fragments --no-progress \
 	  --exclude-path docs/superpowers \
-	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md docs .claude/rules .claude/skills
+	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md CODING_STANDARDS.md docs .claude/rules .claude/skills
+
+check-agent: ## Test project agent extensions
+	node --test .pi/tests/*.test.ts
 
 # Refresh the vendored third-party skills recorded in skills-lock.json to their
 # latest upstream versions (source of truth = the lockfile). Needs node/npx on
