@@ -10,7 +10,7 @@
 
 - `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. → [image selection](docs/configuration.md#image-selection)
-- Single test: `make go-shell`, then `go test ./internal/mountplan -run TestFoo -count=1`.
+- Single test: `make go-test-one PKG=./internal/mountplan RUN=TestFoo`.
 
 **Pre-push gate** — run what CI would run for the paths you touched:
 
