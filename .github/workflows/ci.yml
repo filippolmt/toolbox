@@ -79,7 +79,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Keep the required `lint` job present on every PR, but do not compile the
+      # unchanged Go tree for Dockerfile/docs-only dependency bumps. Changes to
+      # this workflow still exercise the action they changed.
+      - name: Detect Go lint inputs
+        id: go-lint-inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')
+          if grep -Eq '(\.go$|^go\.|^\.golangci\.yml$|^Makefile$)' <<<"$files" \
+            || { [ "$ACTOR" != 'renovate[bot]' ] && grep -qx '.github/workflows/ci.yml' <<<"$files"; }; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'No Go lint inputs changed; keeping the required job green without rerunning golangci-lint.'
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Go
+        if: steps.go-lint-inputs.outputs.run == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -89,6 +115,7 @@ jobs:
       # in the Makefile (Renovate-bumped); read it here so CI and `make go-lint`
       # never drift.
       - name: Resolve golangci-lint version from Makefile
+        if: steps.go-lint-inputs.outputs.run == 'true'
         id: gola
         run: echo "version=$(awk -F'[[:space:]:=]+' '/^GOLANGCI_VERSION/{print $2}' Makefile)" >> "$GITHUB_OUTPUT"
 
@@ -103,10 +130,12 @@ jobs:
       # another branch's or a previous day's cache, so a poisoning is contained to
       # one branch for at most a day and then self-heals.
       - name: Daily cache bucket
+        if: steps.go-lint-inputs.outputs.run == 'true'
         id: bucket
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: golangci-lint cache (per-branch, daily)
+        if: steps.go-lint-inputs.outputs.run == 'true'
         uses: actions/cache@v6
         with:
           path: ~/.cache/golangci-lint
@@ -115,6 +144,7 @@ jobs:
           key: golangci-${{ runner.os }}-${{ steps.gola.outputs.version }}-${{ github.head_ref || github.ref_name }}-${{ steps.bucket.outputs.day }}
 
       - name: Run golangci-lint
+        if: steps.go-lint-inputs.outputs.run == 'true'
         uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ steps.gola.outputs.version }}

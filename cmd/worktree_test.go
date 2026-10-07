@@ -185,6 +185,22 @@ func TestSeedWorktreeFiles(t *testing.T) {
 		}
 	})
 
+	// an existing worktree-local parent symlink must not redirect a seeded
+	// secret outside the worktree.
+	t.Run("refuses a symlinked destination parent", func(t *testing.T) {
+		root, wt := t.TempDir(), t.TempDir()
+		gitInitRepo(t, root, "config/\n")
+		writeFile(t, filepath.Join(root, "config", "local.yaml"), "secret")
+		external := t.TempDir()
+		if err := os.Symlink(external, filepath.Join(wt, "config")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		seedWorktreeFiles(root, wt, []string{"config/local.yaml"})
+
+		mustAbsent(t, filepath.Join(external, "local.yaml"))
+	})
+
 	// when `git check-ignore` itself fails, fall back to the permission allowlist
 	t.Run("git error falls back to allowlist", func(t *testing.T) {
 		root, wt := t.TempDir(), t.TempDir() // NOT a git repo => check-ignore errors

@@ -217,7 +217,7 @@ func openWorktreeSession(root, wtPath, branch, agent, prompt string) error {
 func seedWorktreeFiles(root, wtPath string, extra []string) {
 	candidates := worktree.DedupeSeeds(worktree.DefaultSeeds, extra, envSeeds(root))
 
-	seed := func(rel string) { seedEntry(filepath.Join(root, rel), filepath.Join(wtPath, rel)) }
+	seed := func(rel string) { seedEntry(root, wtPath, rel) }
 
 	gated := classifySeedCandidates(root, candidates, seed)
 	if len(gated) == 0 {
@@ -343,7 +343,12 @@ func gitIgnoredSubset(root string, rels []string) ([]string, error) {
 // lives outside the repo is not materialised as a real file in the worktree; a
 // regular file is copied. Parent dirs are created. Best-effort: every failure
 // warns and returns without blocking the caller.
-func seedEntry(src, dst string) {
+func seedEntry(root, wtRoot, rel string) {
+	if !filepath.IsLocal(rel) || unsafeSeedParent(root, rel) || unsafeSeedParent(wtRoot, rel) {
+		fmt.Fprintf(os.Stderr, "toolbox: warning: refusing to seed unsafe path %q\n", rel)
+		return
+	}
+	src, dst := filepath.Join(root, rel), filepath.Join(wtRoot, rel)
 	if _, err := os.Lstat(dst); err == nil {
 		return // already present (Lstat: a dangling link still counts) — keep it
 	}
@@ -378,9 +383,24 @@ func seedEntry(src, dst string) {
 	// 0o600, not the source mode: seeded files are per-repo dev state, some
 	// auth-adjacent (the permission allowlist, .env secrets). Keep the copy
 	// owner-only rather than inheriting a world-readable source mode.
-	if err := os.WriteFile(dst, data, 0o600); err != nil { //nolint:gosec // dst joins the worktree root with a validated or root-derived relative path
+	if err := os.WriteFile(dst, data, 0o600); err != nil { //nolint:gosec // rel is local and every existing parent below the worktree root was rejected if symlinked
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 	}
+}
+
+// unsafeSeedParent refuses an existing symlink or unreadable component below
+// root. The leaf itself may be a symlink: seedEntry recreates it verbatim.
+func unsafeSeedParent(root, rel string) bool {
+	for parent := filepath.Dir(rel); parent != "."; parent = filepath.Dir(parent) {
+		info, err := os.Lstat(filepath.Join(root, parent))
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+	}
+	return false
 }
 
 func runWorktreeCreate(cmd *cobra.Command, args []string) error {
