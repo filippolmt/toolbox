@@ -197,7 +197,7 @@ func runShellsAdd(cmd *cobra.Command, args []string) error {
 	if shellsAddCreateDir {
 		if shellsAddDryRun {
 			reportSkippedSideEffect(cmd.ErrOrStderr(), "--create-dir would create %s", path)
-		} else if err := os.MkdirAll(path, 0o755); err != nil {
+		} else if err := os.MkdirAll(path, 0o755); err != nil { //nolint:gosec // a user-selected workspace is ordinary non-secret host content
 			return fmt.Errorf("create %s: %w", path, err)
 		}
 	}

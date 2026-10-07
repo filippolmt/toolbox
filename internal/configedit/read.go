@@ -122,7 +122,7 @@ func nodeEntries(node *yaml.Node) int {
 // readMaybe returns a file's bytes, or nil when it does not exist — a missing
 // config file is an empty layer, never an error.
 func readMaybe(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // reading the caller-selected config path is the explicit contract
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

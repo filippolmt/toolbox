@@ -624,7 +624,7 @@ func hostOpenCommand(ctx context.Context, url string) error {
 // /usr/bin/open hides the only useful part ("Unable to find application named
 // …"), which the audit log is the sole place to read.
 func runQuiet(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // name is a platform command or allowlisted editor; args are validated URL/path operands
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
 	var stderr strings.Builder
@@ -642,7 +642,7 @@ func runQuiet(ctx context.Context, name string, args ...string) error {
 // log.Logger plus a close func. Logs are kept simple (timestamped lines) so
 // `tail -f ~/.toolbox/toolbox/bridge/log` is the supported diagnostic path.
 func openLogger(path string) (*log.Logger, func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // caller passes the bridge state layout's audit-log path
 	if err != nil {
 		noop := func() {
 			// The open failed, so there is no file to close — callers can

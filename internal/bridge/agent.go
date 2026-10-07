@@ -96,7 +96,7 @@ func renderTemplate(name, tpl string, data map[string]string) (string, error) {
 // writeServiceFile writes a rendered unit/plist to path, creating its parent
 // directory. Shared mkdir-then-write skeleton for both platform Install paths.
 func writeServiceFile(path string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // service-manager config directories contain no secrets
 		return err
 	}
 	return fsx.AtomicWriteFile(path, body, 0o644)

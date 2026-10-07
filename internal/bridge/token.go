@@ -41,7 +41,7 @@ func LoadToken(s HostState) (string, error) {
 }
 
 func loadToken(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // caller passes the bridge state layout's token path
 	if err != nil {
 		return "", err
 	}

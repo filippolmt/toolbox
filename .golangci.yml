@@ -8,11 +8,23 @@ linters:
   enable:
     - errcheck
     - govet
+    - gosec
     - ineffassign
     - misspell
+    - nolintlint
     - staticcheck
     - unused
+  exclusions:
+    rules:
+      # Test fixtures intentionally use executable files, open permissions, and
+      # dynamic subprocesses; they are not part of the shipped attack surface.
+      - path: _test\.go
+        linters:
+          - gosec
   settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     errcheck:
       exclude-functions:
         # Close() on clients/streams is idiomatic fire-and-forget.
@@ -25,6 +37,11 @@ linters:
         - (*github.com/spf13/cobra.Command).GenFishCompletion
         # Terminal state restore is best-effort.
         - golang.org/x/term.Restore
+
+issues:
+  # Security baselines need the complete finding set in one run; the default
+  # per-message cap otherwise reveals another batch only after each fix.
+  max-same-issues: 0
 
 formatters:
   enable:

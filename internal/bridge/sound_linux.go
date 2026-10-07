@@ -16,5 +16,5 @@ func hostSoundCommand(ctx context.Context, path string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	return exec.CommandContext(ctx, name, append(args, path)...), nil
+	return exec.CommandContext(ctx, name, append(args, path)...), nil //nolint:gosec // name and args come from the package-owned player allowlist
 }

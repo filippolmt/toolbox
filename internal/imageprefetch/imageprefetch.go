@@ -685,7 +685,7 @@ func imageState(stateDir string, storeBehind, sessionBehind bool) string {
 // both hide a true banner and re-fire the remaining one.
 func readResult(stateDir string) result {
 	var res result
-	raw, err := os.ReadFile(filepath.Join(stateDir, cacheFile))
+	raw, err := os.ReadFile(filepath.Join(stateDir, cacheFile)) //nolint:gosec // cache filename is fixed under the resolved state directory
 	if err != nil {
 		return res
 	}
@@ -726,7 +726,7 @@ func withResultLock(stateDir string, fn func()) {
 	if stateDir == "" {
 		return
 	}
-	lock, err := os.OpenFile(filepath.Join(stateDir, lockFile), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := os.OpenFile(filepath.Join(stateDir, lockFile), os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // lock filename is fixed under the resolved state directory
 	if err != nil {
 		return
 	}

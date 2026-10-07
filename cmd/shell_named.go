@@ -193,7 +193,7 @@ func ensureNamedShellPath(sanitized, path string, createDir bool) (string, error
 		if !createDir {
 			return "", errors.New(missingPathHint(sanitized, path))
 		}
-		if mkErr := os.MkdirAll(path, 0o755); mkErr != nil {
+		if mkErr := os.MkdirAll(path, 0o755); mkErr != nil { //nolint:gosec // a user-selected workspace is ordinary non-secret host content
 			return "", fmt.Errorf("create %s: %w", path, mkErr)
 		}
 		info, err = os.Lstat(path)

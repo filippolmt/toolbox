@@ -150,7 +150,7 @@ func TouchDeclined(stateDir, containerName string) error {
 // TestReloadMarkerWriterMatchesGo, which is what makes undoing exactly one the
 // right inverse.
 func TakeMarker(path string) (cwd string, requested bool) {
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) //nolint:gosec // reading the caller-selected marker path is the explicit contract
 	if err != nil {
 		return "", false
 	}

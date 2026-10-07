@@ -17,7 +17,7 @@ const (
 	RouteOpen       = "/open"
 	RouteEdit       = "/edit"
 	RouteProximo    = "/proximo"
-	RouteCredential = "/credential"
+	RouteCredential = "/credential" //nolint:gosec // HTTP route name, not a credential
 	RouteSound      = "/sound"
 	RouteHealth     = "/healthz"
 )

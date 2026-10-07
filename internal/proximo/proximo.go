@@ -219,7 +219,7 @@ func configPath(host fsx.Host, query string, fallback ...string) (string, bool) 
 	ctx, cancel := context.WithTimeout(context.Background(), pathQueryTimeout)
 	defer cancel()
 	if bin, err := host.Look("proximo"); err == nil {
-		if out, err := exec.CommandContext(ctx, bin, "config", query).Output(); err == nil {
+		if out, err := exec.CommandContext(ctx, bin, "config", query).Output(); err == nil { //nolint:gosec // bin is the user's resolved proximo executable; query is package-controlled
 			if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
 				return p, true
 			}
@@ -235,7 +235,7 @@ func configPath(host fsx.Host, query string, fallback ...string) (string, bool) 
 // consumers. Only bare and qualified are pinnable; peer, claimed and collision
 // fields deliberately have no place in this projection.
 func InventoryExtraHosts(dir string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, InventoryFile))
+	data, err := os.ReadFile(filepath.Join(dir, InventoryFile)) //nolint:gosec // reading the inventory from the caller-selected directory is the explicit contract
 	if err != nil {
 		return nil, err
 	}
