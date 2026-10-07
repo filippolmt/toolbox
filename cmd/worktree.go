@@ -375,7 +375,7 @@ func seedEntry(root, wtRoot, rel string) {
 		}
 		return
 	}
-	data, err := os.ReadFile(src) //nolint:gosec // src joins the repository root with a validated or root-derived relative path
+	data, err := os.ReadFile(src) //nolint:gosec // rel is local and every existing parent below the repository root was rejected if symlinked
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
 		return
