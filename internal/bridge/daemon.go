@@ -624,7 +624,7 @@ func hostOpenCommand(ctx context.Context, url string) error {
 // /usr/bin/open hides the only useful part ("Unable to find application named
 // …"), which the audit log is the sole place to read.
 func runQuiet(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // name is a platform command or an allowlisted editor; no shell is invoked
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // name is a platform command or allowlisted editor; args are validated URL/path operands
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
 	var stderr strings.Builder

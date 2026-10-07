@@ -325,7 +325,7 @@ func launchProximo(ctx context.Context, host fsx.Host, command string, args []st
 		}
 		args, env = proximoSkillArgs(args), agentEnv
 	}
-	cmd := exec.CommandContext(ctx, bin, append([]string{command}, args...)...) //nolint:gosec // bin is resolved locally and the handler allowlists command; argv never enters a shell
+	cmd := exec.CommandContext(ctx, bin, append([]string{command}, args...)...) //nolint:gosec // bin is resolved locally; the handler allowlists verbs and rejects host-writing arguments
 	cmd.Stdin = nil
 	cmd.Env = env
 	// Stop waiting on the stdout/stderr pipes shortly after a deadline kill:
