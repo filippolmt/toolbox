@@ -139,7 +139,7 @@ func (s Service) excludeWorktreesDir(root string) {
 		return
 	}
 	excludePath := filepath.Join(gitDir, "info", "exclude")
-	body, err := os.ReadFile(excludePath)
+	body, err := os.ReadFile(excludePath) //nolint:gosec // path is Git's own absolute common-dir plus the fixed info/exclude suffix
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not read %s: %v\n", excludePath, err)
 		return
@@ -148,11 +148,11 @@ func (s Service) excludeWorktreesDir(root string) {
 	if !changed {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil { //nolint:gosec // standard Git metadata directories contain no secrets
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not create %s: %v\n", filepath.Dir(excludePath), err)
 		return
 	}
-	if err := os.WriteFile(excludePath, []byte(next), 0o644); err != nil {
+	if err := os.WriteFile(excludePath, []byte(next), 0o644); err != nil { //nolint:gosec // git's exclude file contains patterns, not secrets
 		_, _ = fmt.Fprintf(os.Stderr, "toolbox: warning: could not update %s: %v\n", excludePath, err)
 	}
 }

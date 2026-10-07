@@ -31,7 +31,7 @@ func MigrateLegacyToolboxState(home string) error {
 	if _, err := os.Stat(dest); err == nil {
 		return os.RemoveAll(legacy)
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // state root must be traversable by the mapped container UID
 		return err
 	}
 	if err := os.Rename(legacy, dest); err != nil {

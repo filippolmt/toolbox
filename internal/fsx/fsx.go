@@ -123,10 +123,10 @@ func MarkerOlderThan(path string, ttl time.Duration) bool {
 // different fixes: a missing directory usually means a mount is not there,
 // an un-writable file means ENOSPC, EROFS or permissions.
 func TouchMarker(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // marker directories contain no secrets and must be traversable by the mapped container UID
 		return fmt.Errorf("create marker dir for %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
+	if err := os.WriteFile(path, nil, 0o644); err != nil { //nolint:gosec // an empty timestamp marker contains no sensitive data
 		return fmt.Errorf("write marker %s: %w", path, err)
 	}
 	return nil

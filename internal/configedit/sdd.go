@@ -78,7 +78,7 @@ func WriteSDDGitignore(gitignorePath string, skill sdd.Skill) (bool, error) {
 	if len(skill.GitignoreEntries) == 0 {
 		return false, nil
 	}
-	existing, err := os.ReadFile(gitignorePath)
+	existing, err := os.ReadFile(gitignorePath) //nolint:gosec // reading the caller-selected .gitignore path is the explicit contract
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("read %s: %w", gitignorePath, err)
 	}
@@ -93,7 +93,7 @@ func WriteSDDGitignore(gitignorePath string, skill sdd.Skill) (bool, error) {
 // RemoveSDDGitignore removes the skill's fenced block from gitignorePath. A
 // missing file or absent fence is a no-op (changed=false).
 func RemoveSDDGitignore(gitignorePath string, skill sdd.Skill) (bool, error) {
-	existing, err := os.ReadFile(gitignorePath)
+	existing, err := os.ReadFile(gitignorePath) //nolint:gosec // reading the caller-selected .gitignore path is the explicit contract
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

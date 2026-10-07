@@ -188,7 +188,7 @@ func playSoundWith(logger *log.Logger, player func(ctx context.Context, path str
 // otherwise write the daemon log full. A file that cannot be read means the
 // same as a silent player — the reaper is its only reader.
 func soundPlayerStderr(path string) string {
-	raw, _ := os.ReadFile(path)
+	raw, _ := os.ReadFile(path) //nolint:gosec // caller passes the private temporary stderr file created for this player
 	said := strings.TrimSpace(string(raw))
 	if said == "" {
 		return ""

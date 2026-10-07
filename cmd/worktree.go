@@ -306,7 +306,7 @@ func envSeeds(root string) []string {
 // filesystem-shaped git query (check-ignore with piped stdin), not the
 // orchestration git the seam abstracts.
 func gitIgnores(root, rel string) bool {
-	return exec.Command("git", "-C", root, "check-ignore", "-q", "--", rel).Run() == nil
+	return exec.Command("git", "-C", root, "check-ignore", "-q", "--", rel).Run() == nil //nolint:gosec // executable and options are fixed; -- terminates options before the validated relative path
 }
 
 // gitIgnoredSubset returns the subset of repo-relative paths that git ignores
@@ -318,7 +318,7 @@ func gitIgnoredSubset(root string, rels []string) ([]string, error) {
 	// -z: NUL-delimited stdin AND stdout. Without it git C-quotes any path with
 	// non-ASCII or special bytes (e.g. `.env.località`) as `"...\303..."`, which
 	// no longer matches a real file and would silently drop that seed.
-	cmd := exec.Command("git", "-C", root, "check-ignore", "-z", "--stdin")
+	cmd := exec.Command("git", "-C", root, "check-ignore", "-z", "--stdin") //nolint:gosec // executable and options are fixed; paths are supplied as data on stdin
 	cmd.Stdin = strings.NewReader(strings.Join(rels, "\x00") + "\x00")
 	out, err := cmd.Output()
 	if err != nil {
@@ -355,7 +355,7 @@ func seedEntry(src, dst string) {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot stat %s to seed worktree: %v\n", src, err)
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec // worktree directories hold ordinary project files and must keep normal traversal permissions
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 		return
 	}
@@ -370,7 +370,7 @@ func seedEntry(src, dst string) {
 		}
 		return
 	}
-	data, err := os.ReadFile(src)
+	data, err := os.ReadFile(src) //nolint:gosec // src joins the repository root with a validated or root-derived relative path
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot read %s to seed worktree: %v\n", src, err)
 		return
@@ -378,7 +378,7 @@ func seedEntry(src, dst string) {
 	// 0o600, not the source mode: seeded files are per-repo dev state, some
 	// auth-adjacent (the permission allowlist, .env secrets). Keep the copy
 	// owner-only rather than inheriting a world-readable source mode.
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
+	if err := os.WriteFile(dst, data, 0o600); err != nil { //nolint:gosec // dst joins the worktree root with a validated or root-derived relative path
 		fmt.Fprintf(os.Stderr, "toolbox: warning: cannot seed %s: %v\n", dst, err)
 	}
 }

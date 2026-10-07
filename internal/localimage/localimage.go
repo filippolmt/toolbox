@@ -76,7 +76,7 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 	if dockerfilePath == "" {
 		return base, nil
 	}
-	dockerfileBytes, err := os.ReadFile(dockerfilePath)
+	dockerfileBytes, err := os.ReadFile(dockerfilePath) //nolint:gosec // path is the resolved, user-configurable overlay Dockerfile
 	if errors.Is(err, fs.ErrNotExist) {
 		return base, nil
 	}
@@ -108,7 +108,7 @@ func Ensure(ctx context.Context, cli overlayBuilder, base sessionplan.Image, doc
 	}
 	// AtomicWriteFile does not create the destination dir; ensure the state
 	// dir exists (normally already materialised by the "state" mount).
-	if err := os.MkdirAll(filepath.Dir(markerFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(markerFile), 0o755); err != nil { //nolint:gosec // state mount must be traversable by the mapped container UID
 		return base, fmt.Errorf("creating overlay marker dir: %w", err)
 	}
 	if err := fsx.AtomicWriteFile(markerFile, []byte(marker), 0o644); err != nil {
@@ -155,7 +155,7 @@ func localImagePresent(ctx context.Context, cli overlayBuilder) bool {
 // unreadable so the caller treats it as a mismatch and rebuilds rather than
 // silently skipping on uncertainty.
 func storedMarker(path string) string {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // caller passes the internally composed overlay marker path
 	if err != nil {
 		return ""
 	}

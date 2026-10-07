@@ -52,7 +52,7 @@ func checkHostCredentialHelper(git func(...string) string, goos string, lookPath
 func gitOutput(args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), gitQueryTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
+	out, err := exec.CommandContext(ctx, "git", args...).Output() //nolint:gosec // executable is fixed; callers supply only the two read-only queries above
 	if err != nil {
 		return ""
 	}

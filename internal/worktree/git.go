@@ -40,7 +40,7 @@ type RealGit struct{}
 // Output runs git and returns its trimmed stdout, wrapping failures with the
 // captured stderr for a useful message.
 func (RealGit) Output(args ...string) (string, error) {
-	out, err := exec.Command("git", args...).Output()
+	out, err := exec.Command("git", args...).Output() //nolint:gosec // executable is fixed and argv is passed directly without a shell
 	if err != nil {
 		return "", gitError(args, err)
 	}
@@ -50,7 +50,7 @@ func (RealGit) Output(args ...string) (string, error) {
 // Run runs git with stdout/stderr wired through, for mutating commands whose
 // progress output the user should see.
 func (RealGit) Run(args ...string) error {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", args...) //nolint:gosec // executable is fixed and argv is passed directly without a shell
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -71,7 +71,7 @@ func (RealGit) PushDelete(ctx context.Context, root string, branches []string) e
 	ctx, cancel := context.WithTimeout(ctx, remoteDeleteTimeout)
 	defer cancel()
 	args := append([]string{"-C", root, "push", "origin", "--delete"}, branches...)
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // executable is fixed and argv is passed directly without a shell
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")

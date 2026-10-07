@@ -52,7 +52,7 @@ func Plan(searchFrom string, explicitOverride string) (*Config, error) {
 // `config path` reuse the single load implementation.
 func LoadLayers(searchFrom string, explicitOverride string) (global, project, explicit []byte, projectPath string, err error) {
 	if explicitOverride != "" {
-		b, rerr := os.ReadFile(explicitOverride)
+		b, rerr := os.ReadFile(explicitOverride) //nolint:gosec // reading the user-selected --config path is the explicit contract
 		if rerr != nil {
 			return nil, nil, nil, "", fmt.Errorf("read --config %q: %w", explicitOverride, rerr)
 		}
@@ -65,7 +65,7 @@ func LoadLayers(searchFrom string, explicitOverride string) (global, project, ex
 	// user notices the broken file even though startup keeps going.
 	if home, herr := os.UserHomeDir(); herr == nil && home != "" {
 		globalPath := filepath.Join(home, ".toolbox.yaml")
-		b, rerr := os.ReadFile(globalPath)
+		b, rerr := os.ReadFile(globalPath) //nolint:gosec // fixed config basename under the current user's home
 		switch {
 		case rerr == nil:
 			if perr := dryParseYAML(b); perr != nil {
@@ -86,7 +86,7 @@ func LoadLayers(searchFrom string, explicitOverride string) (global, project, ex
 
 	// Project .toolbox.yaml via walk-up — optional.
 	if path := walkUp(searchFrom); path != "" {
-		b, rerr := os.ReadFile(path)
+		b, rerr := os.ReadFile(path) //nolint:gosec // walkUp returns only the fixed project config basename
 		if rerr != nil {
 			return nil, nil, nil, "", fmt.Errorf("read project config %q: %w", path, rerr)
 		}
