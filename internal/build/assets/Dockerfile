@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27
+# syntax=docker/dockerfile:1.28
 # Toolbox image. BuildKit required.
 #
 # Build-time strategy (wall-clock first):
