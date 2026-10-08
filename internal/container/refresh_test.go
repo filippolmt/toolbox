@@ -18,7 +18,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockertest"
-	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -29,7 +29,7 @@ import (
 // reclaimCall carries its `before` for the same reason, snapshotted the same
 // way, inside the stub that stands in for the act.
 type refreshCall struct {
-	reason imageplan.Reason
+	kind   imagefreshness.StartKind
 	before []string
 }
 
@@ -39,24 +39,24 @@ type refreshCall struct {
 // costs on the branch it took, what it then does with the answer, and where
 // the act falls among the daemon calls around it — the one thing a terminal
 // would otherwise be needed to reach.
-func stubRefresh(t *testing.T, mock *mockClient, out imageplan.Outcome) *[]refreshCall {
+func stubRefresh(t *testing.T, mock *mockClient, directive imagefreshness.Directive) *[]refreshCall {
 	t.Helper()
 	var calls []refreshCall
-	orig := refreshAtStart
-	refreshAtStart = func(_ context.Context, _ client.APIClient, _ sessionplan.Image, _ string, reason imageplan.Reason) imageplan.Outcome {
-		calls = append(calls, refreshCall{reason: reason, before: slices.Clone(mock.calls)})
-		return out
+	orig := prepareStartOverride
+	prepareStartOverride = func(_ context.Context, kind imagefreshness.StartKind) imagefreshness.Directive {
+		calls = append(calls, refreshCall{kind: kind, before: slices.Clone(mock.calls)})
+		return directive
 	}
-	t.Cleanup(func() { refreshAtStart = orig })
+	t.Cleanup(func() { prepareStartOverride = orig })
 	return &calls
 }
 
-// refreshReasons is the stakes half of the recorded calls, for the tests that
-// assert on the question that was put rather than on when it was put.
-func refreshReasons(calls *[]refreshCall) []imageplan.Reason {
-	out := make([]imageplan.Reason, 0, len(*calls))
+// refreshKinds is the observed-state half of the recorded calls, for tests
+// that assert which lifecycle fact was stated rather than when it was stated.
+func refreshKinds(calls *[]refreshCall) []imagefreshness.StartKind {
+	out := make([]imagefreshness.StartKind, 0, len(*calls))
 	for _, c := range *calls {
-		out = append(out, c.reason)
+		out = append(out, c.kind)
 	}
 	return out
 }
@@ -89,9 +89,9 @@ func startPathMock(repoDigest string) *mockClient {
 func TestShellStampsADeclinedRefresh(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	got, _ := stubPrefetch(t)
+	stubPrefetch(t)
 	mock := createPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeDeclined)
+	stubRefresh(t, mock, imagefreshness.Postpone)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), mock, plan); err != nil {
@@ -100,9 +100,6 @@ func TestShellStampsADeclinedRefresh(t *testing.T) {
 
 	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err != nil {
 		t.Errorf("a declined refresh left no stamp: %v", err)
-	}
-	if len(*got) != 1 || (*got)[0].StartSynced {
-		t.Errorf("prefetch input = %+v, want StartSynced false after a decline", *got)
 	}
 }
 
@@ -116,7 +113,7 @@ func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
 	defer restore()
 	got, _ := stubPrefetch(t)
 	mock := createPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeInterrupted)
+	stubRefresh(t, mock, imagefreshness.Interrupt)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), mock, plan); err == nil {
@@ -141,9 +138,9 @@ func TestShellAbandonsAnInterruptedRefresh(t *testing.T) {
 func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
 	_, restore := stubExecShell()
 	defer restore()
-	got, _ := stubPrefetch(t)
+	stubPrefetch(t)
 	mock := createPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeCurrent)
+	stubRefresh(t, mock, imagefreshness.Proceed)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	if _, err := Shell(context.Background(), mock, plan); err != nil {
@@ -152,9 +149,6 @@ func TestShellStampsNothingWhenTheStoreIsCurrent(t *testing.T) {
 
 	if _, err := os.Stat(reload.DeclinedPath(plan.StateDir, plan.ContainerName)); err == nil {
 		t.Error("a synced refresh must leave no decline stamp")
-	}
-	if len(*got) != 1 || !(*got)[0].StartSynced {
-		t.Errorf("prefetch input = %+v, want StartSynced true", *got)
 	}
 }
 
@@ -167,13 +161,13 @@ func TestShellConnectNeverReachesTheStartUpPrompt(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := &mockClient{inspectFn: runningContainer(nil)}
-	refreshes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+	refreshes := stubRefresh(t, mock, imagefreshness.Proceed)
 
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if len(*refreshes) != 0 {
-		t.Errorf("the connect path ran the start-up refresh %d times, want 0", len(*refreshes))
+	if got, want := refreshKinds(refreshes), []imagefreshness.StartKind{imagefreshness.StartRunning}; !slices.Equal(got, want) {
+		t.Errorf("freshness starts = %v, want %v", got, want)
 	}
 }
 
@@ -186,12 +180,12 @@ func TestShellStartAsksWithTheContainerAtStake(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := &mockClient{inspectFn: stoppedContainer(nil)}
-	refreshes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+	refreshes := stubRefresh(t, mock, imagefreshness.Proceed)
 
 	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
-	if got, want := refreshReasons(refreshes), []imageplan.Reason{imageplan.ReasonStart}; !slices.Equal(got, want) {
+	if got, want := refreshKinds(refreshes), []imagefreshness.StartKind{imagefreshness.StartStopped}; !slices.Equal(got, want) {
 		t.Errorf("the start path asked under %v, want %v", got, want)
 	}
 }
@@ -205,7 +199,7 @@ func TestShellStartRecreatesOnAnAcceptedRefresh(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := startPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+	stubRefresh(t, mock, imagefreshness.Replace)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	// What the banner would render at the first prompt: a result published
@@ -246,7 +240,7 @@ func TestShellStartKeepsTheContainerWhenTheRecreateCannotSucceed(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := startPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+	stubRefresh(t, mock, imagefreshness.Replace)
 
 	mock.listFn = func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
 		return []container.Summary{holderSummary("/nginx-proxy", 8877)}, nil
@@ -276,7 +270,7 @@ func TestShellStartKeepsTheContainerWhenTheOverlayCannotBuild(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := startPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeAccepted)
+	stubRefresh(t, mock, imagefreshness.Replace)
 
 	// The overlay pins its FROM to the base image's ID, so a store that
 	// cannot answer for the base is a build that cannot start.
@@ -378,7 +372,7 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 			t.Cleanup(func() { execShellFn = origExec })
 
 			mock := startPathMock("sha256:fresh")
-			stubRefresh(t, mock, imageplan.OutcomeAccepted)
+			stubRefresh(t, mock, imagefreshness.Replace)
 			reads := 0
 			mock.inspectFn = func(ctx context.Context, name string) (container.InspectResponse, error) {
 				reads++
@@ -431,18 +425,18 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 func TestShellStartWarnsAboutAContainerItIsActuallyJoining(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		refresh  imageplan.Outcome
+		refresh  imagefreshness.Directive
 		wantWarn bool
 	}{
 		{
 			name:    "an accepted recreate applies the fix instead of prescribing it",
-			refresh: imageplan.OutcomeAccepted,
+			refresh: imagefreshness.Replace,
 		},
 		{
 			// Nothing was replaced, so the container being joined really is
 			// short of what was asked for, and the advice stands.
 			name:     "a declined refresh leaves the mismatch to warn about",
-			refresh:  imageplan.OutcomeDeclined,
+			refresh:  imagefreshness.Postpone,
 			wantWarn: true,
 		},
 	} {
@@ -488,7 +482,7 @@ func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
 	stubPrefetch(t)
 	started := ""
 	mock := startPathMock("sha256:fresh")
-	stubRefresh(t, mock, imageplan.OutcomeDeclined)
+	stubRefresh(t, mock, imagefreshness.Postpone)
 
 	mock.startFn = func(_ context.Context, id string, _ client.ContainerStartOptions) error {
 		started = id

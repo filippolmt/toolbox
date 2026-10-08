@@ -764,8 +764,8 @@ func writeResultUnlocked(stateDir string, res result) {
 }
 
 // ClearResult drops the published result, the attempt stamp and the legacy
-// shown-signature. Called by a session reload, whose container is new while
-// all of them still describe the old one.
+// shown-signature. Image Freshness calls it after a replacement, whose new
+// container makes all of them describe the old one.
 //
 // Deletion, never a rewrite with the digest just landed on: the state mount is
 // shared across every session the user runs, so a rewritten result would tell

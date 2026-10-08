@@ -14,7 +14,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockertest"
-	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -609,7 +609,7 @@ func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
 	defer restore()
 	stubPrefetch(t)
 	mock := createAfterReloadMock()
-	stakes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+	stakes := stubRefresh(t, mock, imagefreshness.Proceed)
 
 	if _, err := Shell(context.Background(), mock, reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
 		t.Fatalf("Shell(): %v", err)

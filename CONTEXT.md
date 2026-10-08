@@ -541,15 +541,41 @@ gets its own home, and its tests are then about it. `package build` keeps the
 driver (`BuildImage`, `BuildOverlay`, `tarEmbeddedContext`), the embedded
 assets, and the suite that pins the [Invalidation Floor](#invalidation-floor).
 
+### Image Freshness
+
+The caller-facing lifecycle protocol that joins synchronous image readiness to
+background update detection without exposing their cache handshake.
+
+Concretely: `imagefreshness.New(cli, Input{Image, StateDir, CLIVersion,
+NoUpdateCheck})` creates one `Session` for an invocation of `container.Shell`.
+The container states facts through `PrepareReload`, `PrepareStart`, `Replaced`
+and `Attach`; the session retains the Image Plan settlement and probe
+provenance, translates it into a lifecycle `Directive`, and privately supplies
+the Image Prefetch's `StartSynced`. `Ensure` keeps the hard pre-create image
+guarantee behind the same seam. A replacement invalidates the shared result
+only after the old container is gone, and attachment returns the stop function
+that ends background work with the shell. Owned by `internal/imagefreshness`;
+`internal/imageplan` and `internal/imageprefetch` remain distinct deep
+implementations behind it.
+
+Why the term exists: the container previously called both implementations,
+converted `Outcome.Synced()` into `Input.StartSynced`, and cleared prefetch
+files after replacement. Prompt settlement therefore leaked into probe cadence
+and container replacement knew which cache files had become stale. Naming the
+combined protocol moves those transitions behind one seam while leaving Docker
+orchestration, decline-triggered idle reload and the two internal policies with
+their existing owners.
+
 ### Image Plan
 
 The two-phase decision tree that guarantees the image referenced by a
 `SessionPlan.Image` is ready before `ContainerCreate`.
 
 Concretely: `imageplan.Sync(ctx, cli, image, stateDir, reason)` —
-policy in, reason in, `Outcome` out. It runs at the top of
-`container.Shell` and, on the [Session Reload](#session-reload) path,
-before that reload destroys anything; it best-effort syncs the image
+policy in, reason in, `Outcome` out. It is driven through the
+[Image Freshness](#image-freshness) session at the top of `container.Shell`
+and, on the [Session Reload](#session-reload) path, before that reload destroys
+anything; it best-effort syncs the image
 against its registry, steered by the Image's pull policy — `never` skips
 the round-trip, `always` forces an unconditional pull, `auto` (default)
 probes and then *asks*, see
@@ -583,17 +609,10 @@ falls back to the default state location under the overlay Dockerfile's
 own root, because losing it costs not one extra check per shell but a
 rebuild of the derived image on every shell for the life of the setting.
 
-One TTL stayed outside: `imageprefetch`'s `probeTTL`, which paces the
-background probe. Folding that package in is not available — `internal/container`
-calls its `Start`, `ClearResult` and `Input` directly, so its deletion would
-not be invisible the way the pull's was. Nor is handing the cadence in the way
-`StateDir` is handed: the calls that read it (`AheadOfStore`, `Poll`) are
-reached from `internal/container`, so a declared input would make *that*
-package import this one for a constant to pass on — a dependency added to
-relocate a number. What was available was the reason the two needed a
-paragraph apiece to disambiguate: one of them was called `TTL`. Named
-`probeTTL` against `pullTTL`, the prose that existed only to say which was
-which is gone.
+One TTL stays outside: `imageprefetch`'s `probeTTL`, which paces the
+background probe. The [Image Freshness](#image-freshness) seam joins outcomes
+to that cadence without merging their policies: `pullTTL` remains Image Plan
+state and `probeTTL` remains Image Prefetch state.
 
 The pull itself is a file in this package, not a package of its own. Its
 whole interface was two functions differing by one cache check, nothing
@@ -749,9 +768,9 @@ digest that would baseline this session's update banner on an image it is not
 running. One already removed leaves the name free, and an unreadable answer
 destroys nothing and learns nothing, so the start stays exactly the one the
 question was put about. The removal itself is `removeAndWait`, shared with the
-reload, and it is followed by
-`imageprefetch.ClearResult` for the reload's own reason — the banner's cache
-describes the container that was just replaced. The question owns the terminal in
+reload, and it is followed by the [Image Freshness](#image-freshness)
+replacement event for the reload's own reason — the banner's cache describes
+the container that was just replaced. The question owns the terminal in
 raw mode for as long as it is asked, so a single `y` or `n` answers it on the
 keystroke — a question with a countdown on it cannot also wait for a Return,
 or the developer watches a clock they have already stopped. What is typed
@@ -801,8 +820,8 @@ reach the question at all in
 0005 on that one clause, the create-only rule having rested on a
 justification that was only ever true of a running container. Owned by
 `internal/imageplan` (the tree), `internal/ui` (the countdown),
-`internal/container` (which branch, and honouring a yes) and
-`internal/imageprefetch` (the shared answer).
+[Image Freshness](#image-freshness) (the lifecycle handoff and shared answer)
+and `internal/container` (honouring a replacement directive).
 
 ### Prompt Stake
 
@@ -822,11 +841,11 @@ that a clock could accept would be a bug on its own. A stake the method does
 not know is worded as the download — the form that spends nothing but time.
 A reason the method does not know is worded as the download — the form that
 spends nothing but time, and the reading the zero value must get.
-`container.offerRefresh` derives the reason and returns it alongside the
-outcome, and that is the **only** place the branch is classified: honouring a
-yes reads the reason rather than re-deriving from the [Run Plan](#run-plan)'s
-`Op` what a yes meant. Owned by `internal/imageplan`; the branch that supplies
-it by `internal/container`.
+`imagefreshness.Session.PrepareStart` derives the reason from the observed
+start kind and retains the outcome, and that is the **only** place the branch
+is classified: the container receives `Replace` rather than re-deriving what
+a yes meant from the [Run Plan](#run-plan)'s `Op`. Owned by
+`internal/imageplan`; the lifecycle handoff by `internal/imagefreshness`.
 
 Why the term exists: while the prompt fired on a fresh create alone, what a
 yes cost was a constant — a download — and needed no name. Extending the
@@ -875,8 +894,9 @@ attached — and downloads them when they are not. The separation it names is
 design rather than an implementation detail.
 
 Concretely: `imageprefetch.Start(ctx, cli, Input{Ref, ContainerDigest,
-StateDir, StartSynced})`, launched from `container.Shell` behind the
-`startPrefetch` var and cancelled with the session. Its ticker is only an
+StateDir, StartSynced})`, launched and cancelled by the
+[Image Freshness](#image-freshness) session when the container attaches. Its
+ticker is only an
 **alarm**: the "poll now?" decision is a `stat` on an attempt stamp
 (`<state>/update-check.stamp`), so the cadence lives on the state mount,
 is shared across sibling sessions, and would survive a re-exec of the
@@ -887,7 +907,9 @@ bound that lets the act refuse backoff and metering entirely. Cancelling
 is free: a partial ingest is never a blob, it expires on its own, and the
 next pull resumes from what landed.
 
-`StartSynced` closes the cold start. The refresh at shell start is itself
+`StartSynced` closes the cold start. It is private to the handoff from
+[Image Freshness](#image-freshness): the container never derives or supplies
+it. The refresh at shell start is itself
 a probe, so when it established the store to be current *here and now* — a
 pull that landed, or a live probe that found it current already, never an
 answer read from the shared cache — it takes that TTL's

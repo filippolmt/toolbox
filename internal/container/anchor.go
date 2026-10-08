@@ -40,7 +40,7 @@ func anchorEntrypoint() []string { return []string{tiniPath, "-g", "--", "sleep"
 // overlay it may run itself — the anchor is host-global and outlives the
 // session that created it, so one developer's ~/.toolbox/Dockerfile would
 // otherwise become PID 1 for every other session on the host. It is present
-// locally either way: with no overlay imageplan.Ensure has just proved it,
+// locally either way: with no overlay Image Freshness has just proved it,
 // and with one the overlay could not have been built without it.
 //
 // Its entrypoint is overridden past the image's shell-start init — none of
