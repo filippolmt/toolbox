@@ -57,7 +57,13 @@ disabled, retargeted by `mounts_root`, and deleted by hand — the reason the
 shape is a bind and not a volume is recorded in
 [ADR 0015](docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md). Owned by
 `internal/mountplan`; the cache rows carry a `-cache` suffix wherever the tool
-also has a data row, and `mountplan.Defaults()` is the list.
+also has a data row, and `mountplan.Defaults()` is the list. The `npm-cache`
+row deliberately persists only the useful content cache in practice: the
+Docker edge overlays npm's `_npx` exec trees with a per-container tmpfs when
+the parent bind is present, because npm treats a changed lock-directory inode
+as compromise and virtiofs does not provide stable inode identity under the
+real install workload. When no bind lands at the parent target there is no
+overlay; an explicit child bind remains authoritative.
 
 Why the term exists: without it the defaults encoded a rule nobody had decided
 — *a tool keeps whatever it stores next to its data* — and the tools that

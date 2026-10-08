@@ -209,11 +209,11 @@ jobs:
       # IMAGE_TAG reaches the gate as the `image:` config override, so the
       # canonical ref lives only in internal/build.
       # No -run filter: the `dockergate` tag means "needs a real daemon and the
-      # built image", so the tag itself selects the set — peer messaging, the
-      # session reload and the image-reclamation refusal today, whatever else
+      # built image", so the tag itself selects the set — peer messaging,
+      # session reload, the npx tmpfs and image-reclamation refusal, whatever else
       # earns it later. Packages are listed because the tag alone cannot find
       # them: a gate lives beside the code it pins.
-      - name: Real-daemon gates (peer messaging, session reload, image reclamation)
+      - name: Real-daemon gates (peer messaging, session reload, npx tmpfs, image reclamation)
         if: ${{ !cancelled() && matrix.e2e_gates }}
         env:
           IMAGE_TAG: ${{ matrix.tag }}

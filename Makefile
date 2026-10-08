@@ -82,7 +82,7 @@ GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-c
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 
-.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
+.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-one go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -159,6 +159,11 @@ go-build-macos: ## Build the Go CLI binary for macOS explicitly, ignoring the de
 
 go-test: ## Run Go tests inside a golang container
 	$(GO_RUN) go test ./... -count=1
+
+go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName)
+	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
+	@test -n "$(RUN)" || { echo 'RUN is required' >&2; exit 2; }
+	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' -count=1
 
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./...
