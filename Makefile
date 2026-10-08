@@ -81,8 +81,11 @@ GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-cache
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
+# Keep the workflow as the threshold's single source of truth; an empty answer
+# makes go-coverage fail closed before it runs the suite.
+COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-test-one go-test-verbose go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
+.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -160,6 +163,15 @@ go-build-macos: ## Build the Go CLI binary for macOS explicitly, ignoring the de
 go-test: ## Run Go tests inside a golang container
 	$(GO_RUN) go test ./... -count=1
 
+go-coverage: ## Run Go tests and enforce CI's total coverage floor
+	@test -n "$(COVERAGE_MIN)" || { echo 'COVERAGE_MIN not found in .github/workflows/ci.yml' >&2; exit 2; }
+	$(GO_RUN) sh -ec 'go test ./... -count=1 -coverprofile=/tmp/coverage.out -covermode=atomic; \
+		total=$$(go tool cover -func=/tmp/coverage.out | awk '\''/^total:/{print $$3}'\'' | tr -d '\''%'\''); \
+		echo "total coverage: $${total}% (floor $(COVERAGE_MIN)%)"; \
+		if awk -v t="$$total" -v m="$(COVERAGE_MIN)" '\''BEGIN{exit !(t+0 < m+0)}'\''; then \
+			echo "total coverage $${total}% is below the $(COVERAGE_MIN)% floor" >&2; exit 1; \
+		fi'
+
 go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName)
 	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
 	@test -n "$(RUN)" || { echo 'RUN is required' >&2; exit 2; }
@@ -168,6 +180,9 @@ go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName)
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./...
 
+go-fmt: ## Format Go files inside a golang container
+	$(GO_RUN) sh -ec 'find . -name '\''*.go'\'' -type f -print0 | xargs -0 gofmt -w'
+
 # Absolute path, not bare `golangci-lint`: GO_MOUNT binds the shared GOPATH
 # volume over /go, and the image PATH lists /go/bin before /usr/bin, so a stray
 # golangci-lint left in the volume's /go/bin would shadow the image's own binary
@@ -175,7 +190,7 @@ go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
 go-lint: ## Run golangci-lint inside a container
 	docker run --rm $(GO_MOUNT) $(GO_CACHE_ENV) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
 
-go-check: go-test go-lint ## Quick Go gate: run the test suite then the linter (covers the CI test + lint jobs; run `make test` too when the change touches the image)
+go-check: go-coverage go-lint ## Go gate: run CI's coverage-enforced tests and linter (run `make test` too when the change touches the image)
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash

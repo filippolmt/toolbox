@@ -16,7 +16,7 @@
 
 | Touched | Run | CI job |
 |---|---|---|
-| Any Go file | `make go-check` | `ci.yml` (test + lint) |
+| Any Go file | `make go-check` | `ci.yml` (coverage-enforced test + lint) |
 | `.pi/**` | `make check-agent` | `ci.yml` (lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
 | `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` — the extra CI gates have no local equivalent | `docker-ci.yml` (build + smoke + real-daemon gates) |
@@ -30,9 +30,9 @@ Two of the real-daemon gates `docker-ci.yml` runs for those paths (`go test -tag
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — it carries the checks `main` requires, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 
-**Coverage must be at least 80%**, and two gates enforce it — `make go-check` mirrors neither:
+**Coverage must be at least 80%**, and two gates enforce it:
 
-- `ci.yml` (`test`) enforces the 80% floor on **total statement coverage**, pinned as `COVERAGE_MIN` in the workflow. Always runs. `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` reproduces it locally.
+- `ci.yml` (`test`) enforces the 80% floor on **total statement coverage**, pinned as `COVERAGE_MIN` in the workflow. Always runs. `make go-coverage` reproduces it locally and reads that pin rather than copying it; `make go-check` includes this target.
 - `sonar.yml` (`analyze`) is a required check on `main` and goes red on a failing Quality Gate — the same 80%, on **new code**, as a server-side threshold. Skipped, and therefore silently satisfied, whenever the SonarQube server is powered down (it runs 09:00–19:00 Europe/Rome, Mon–Fri).
 
 One threshold, two denominators on purpose. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-denominators)
