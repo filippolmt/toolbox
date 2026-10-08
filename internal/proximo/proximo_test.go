@@ -17,42 +17,14 @@ func forceOnCfg() *config.Config  { return &config.Config{Proximo: new(true)} }
 func forceOffCfg() *config.Config { return &config.Config{Proximo: new(false)} }
 func autoCfg() *config.Config     { return &config.Config{} } // Proximo nil → auto-detect
 
-func TestExtraHostsDedupesSortsAndPinsGateway(t *testing.T) {
-	got := proximo.ExtraHosts([]string{
-		"zeromiglia.test, mailpit.test",
-		"zeromiglia.test",
-		"  api.test ",
-		"",
-		"   ",
-	})
-	want := []string{
-		"api.test:host-gateway",
-		"mailpit.test:host-gateway",
-		"zeromiglia.test:host-gateway",
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("ExtraHosts = %v, want %v", got, want)
-	}
-}
-
-func TestExtraHostsEmpty(t *testing.T) {
-	if got := proximo.ExtraHosts(nil); len(got) != 0 {
-		t.Errorf("ExtraHosts(nil) = %v, want empty", got)
-	}
-	if got := proximo.ExtraHosts([]string{"", " , "}); len(got) != 0 {
-		t.Errorf("ExtraHosts(blank) = %v, want empty", got)
-	}
-}
-
 // TestResolveDecidesTheTristate covers the three Proximo states against both
 // CA presences, and asserts all three of the gate's answers per arm — the
 // point of one resolved value being that the mount and the env can no longer
 // disagree with the decision they are supposed to follow.
 //
 // Explicit true/false win regardless of the CA; nil auto-detects on CA
-// presence. The mount rides on the decision alone (a forced-on gate keeps it
-// so the resolver can warn about the missing source), the env additionally on
-// the file being there.
+// presence. The mount and projection marker ride on the decision alone (a
+// forced-on gate keeps them), while trust additionally requires the CA file.
 func TestResolveDecidesTheTristate(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -60,13 +32,13 @@ func TestResolveDecidesTheTristate(t *testing.T) {
 		ca        bool
 		enabled   bool
 		wantMount bool
-		wantEnv   bool
+		wantTrust bool
 	}{
 		{name: "nil config"},
 		{name: "auto, no CA", cfg: autoCfg()},
-		{name: "auto, CA present", cfg: autoCfg(), ca: true, enabled: true, wantMount: true, wantEnv: true},
+		{name: "auto, CA present", cfg: autoCfg(), ca: true, enabled: true, wantMount: true, wantTrust: true},
 		{name: "explicit true, no CA", cfg: forceOnCfg(), enabled: true, wantMount: true},
-		{name: "explicit true, CA present", cfg: forceOnCfg(), ca: true, enabled: true, wantMount: true, wantEnv: true},
+		{name: "explicit true, CA present", cfg: forceOnCfg(), ca: true, enabled: true, wantMount: true, wantTrust: true},
 		{name: "explicit false, no CA", cfg: forceOffCfg()},
 		{name: "explicit false, CA present", cfg: forceOffCfg(), ca: true},
 	}
@@ -96,8 +68,14 @@ func TestResolveDecidesTheTristate(t *testing.T) {
 					t.Error("gate.CAMount must be read-only")
 				}
 			}
-			if got := len(gate.Env()) > 0; got != tc.wantEnv {
-				t.Errorf("gate.Env non-empty = %v, want %v (env %v)", got, tc.wantEnv, gate.Env())
+			env := gate.Env()
+			if got := slices.Contains(env, "TOOLBOX_PROXIMO_ENABLED=1"); got != tc.enabled {
+				t.Errorf("runtime enablement env present = %v, want %v (env %v)", got, tc.enabled, env)
+			}
+			hasNodeTrust := slices.Contains(env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget)
+			hasCATarget := slices.Contains(env, "TOOLBOX_PROXIMO_CA="+proximo.CATarget)
+			if hasNodeTrust != tc.wantTrust || hasCATarget != tc.wantTrust {
+				t.Errorf("CA trust env = node:%v target:%v, want both %v (env %v)", hasNodeTrust, hasCATarget, tc.wantTrust, env)
 			}
 		})
 	}
@@ -273,9 +251,8 @@ func TestCAPathFallback(t *testing.T) {
 // TestResolveWithNoResolvableCAPath covers the host that answers nothing: no
 // proximo on PATH and no home to hang the state-home fallback off — the
 // degraded shape mountplan.Merge relies on, where a Host with no home must
-// drop the CA bind rather than fail. Auto-detect has nothing to detect, and
-// even a forced-on config gets a gate with no mount and no trust env: the
-// decision is the config's to make, the CA is not.
+// drop the CA bind rather than fail. Auto-detect has nothing to detect; a
+// forced-on config still signals route projection but emits no trust paths.
 func TestResolveWithNoResolvableCAPath(t *testing.T) {
 	host := fsx.Host{} // no home, no resolver
 
@@ -293,8 +270,8 @@ func TestResolveWithNoResolvableCAPath(t *testing.T) {
 	if _, ok := gate.CAMount(); ok {
 		t.Error("gate.CAMount reported a mount with no CA path to mount")
 	}
-	if got := gate.Env(); got != nil {
-		t.Errorf("gate.Env = %v, want nil with no CA on the host", got)
+	if got := gate.Env(); !slices.Equal(got, []string{"TOOLBOX_PROXIMO_ENABLED=1"}) {
+		t.Errorf("gate.Env = %v, want projection enablement without CA trust", got)
 	}
 }
 

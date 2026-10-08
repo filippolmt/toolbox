@@ -7,8 +7,8 @@ Every figure below is **as measured when this decision was taken** — evidence 
 Proximo (<https://github.com/filippolmt/proximo>) runs on the host: it terminates
 TLS there, installs a host resolver, and its stack bind-mounts host paths. Toolbox
 already carries the two ingredients that make routed `.test` names reachable from
-inside a container — `ExtraHosts` pins to the host gateway and the root CA
-bind-mounted at `/etc/ssl/proximo-ca.pem` (see [proximo integration](../proximo.md)).
+inside a container — `/etc/hosts` route projection to the host gateway and the
+root CA bind-mounted at `/etc/ssl/proximo-ca.pem` (see [proximo integration](../proximo.md)).
 What was missing is *administration*: an agent inside the container could only run
 `up`, `down` and `status`, as bare verbs with no arguments, through the bridge shim.
 

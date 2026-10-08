@@ -1861,10 +1861,9 @@ COPY --link --chmod=0755 bin/paplay /usr/local/bin/paplay
 # upstream alone is never enough — it looks the same for an abandoned branch.
 # Never touches the current or default branch.
 COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
-# proximo /etc/hosts sync. Reads the mounted effective-route inventory (legacy
+# proximo route projection. Reads the mounted effective-route inventory (legacy
 # fallback: proximo.hosts labels over docker.sock) and rewrites a managed block
-# pinning served bare + qualified names to host-gateway — the runtime complement
-# to the one-shot --add-host pins fixed at container create.
+# pinning served bare + qualified names to host-gateway at startup and runtime.
 COPY --link --chmod=0755 bin/proximo-hosts /usr/local/bin/proximo-hosts
 # Android toolchain installer and its shell env (ADR 0017). The SDK, the
 # Gradle JDK and the Foreign-Arch Runtime live in the android-sdk bind, never

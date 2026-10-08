@@ -6,13 +6,11 @@
 // inside a sibling container, where 127.0.0.1 is the container itself, not the
 // host where Traefik listens.
 //
-// This package supplies the host-side ingredients that restore reachability
-// from within a toolbox container, gated on the `proximo` config flag:
+// This package supplies the host-side mounts and trust inputs that restore
+// reachability from within a toolbox container, gated on the `proximo` config
+// flag. The in-container proximo-hosts command owns route projection from the
+// mounted inventory (or legacy Docker labels) into /etc/hosts.
 //
-//   - ExtraHosts: every effective bare and qualified hostname (read from
-//     proximo's route inventory, with a label fallback for older installs) is
-//     pinned to the Docker host-gateway, so https://<host> reaches the host
-//     where Traefik listens instead of the container's own loopback.
 //   - CA trust: proximo's local CA (path queried from proximo itself, with a
 //     ~/.proximo state-home fallback — see CAPath) is
 //     bind-mounted read-only at CATarget. entrypoint.sh then establishes
@@ -27,20 +25,13 @@
 // availability decision plus the CA and inventory paths once per invocation,
 // and the planners read that value through their PlanInput instead of asking
 // again.
-//
-// Inventory parsing is host-local. Legacy label discovery — the only
-// Docker-dependent step — lives in internal/container, which already owns the
-// Docker client; ExtraHosts here is the pure parser it feeds. This keeps the
-// Docker SDK out of the mount/session planners.
 package proximo
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -49,14 +40,6 @@ import (
 )
 
 const (
-	// HostsLabel is the Docker label proximo reads to route a container; its
-	// value is a comma-separated list of hostnames.
-	HostsLabel = "proximo.hosts"
-
-	// gateway is Docker's reserved ExtraHosts target that resolves to the
-	// host's gateway IP — the host where proximo's Traefik publishes :443.
-	gateway = "host-gateway"
-
 	// InventoryFile is the effective-route inventory proximo writes.
 	InventoryFile = "routes.json"
 
@@ -80,14 +63,13 @@ const (
 
 // Gate is the resolved [Proximo Availability Gate] for one invocation: the
 // enablement decision plus the host CA path it was decided against. Resolve
-// derives it once and every reader — the mount, the trust env, the create-edge
-// discovery flag — reads that value instead of re-deriving the rule and
-// re-paying the host path queries, which are subprocess spawns.
+// derives it once and every reader — the mounts and trust env — reads that
+// value instead of re-deriving the rule and re-paying the host path queries,
+// which are subprocess spawns.
 //
 // It reaches the planners as a mountplan/sessionplan PlanInput field, the same
 // seam that already carries the session's other resolved host-side facts. The
-// zero value is a session with proximo off: nothing mounted, nothing exported,
-// nothing discovered at the Docker edge.
+// zero value is a session with proximo off: nothing mounted or exported.
 //
 // [Proximo Availability Gate]: https://github.com/filippolmt/toolbox/blob/main/CONTEXT.md#proximo-availability-gate
 type Gate struct {
@@ -180,18 +162,21 @@ func (g Gate) CAMount() (config.Mount, bool) {
 	}, true
 }
 
-// Env returns the environment entries that make in-container tooling trust
-// proximo's CA. Emitted only when the gate is on AND the CA exists on the
-// host, so a missing CA never leaves Node pointing at an absent
-// NODE_EXTRA_CA_CERTS file.
+// Env signals an enabled route projection independently from CA availability,
+// then adds trust paths only when the CA exists. A forced-on session can still
+// project routes without leaving Node pointed at a missing certificate.
 func (g Gate) Env() []string {
-	if !g.Enabled || !g.CAExists {
+	if !g.Enabled {
 		return nil
 	}
-	return []string{
-		"NODE_EXTRA_CA_CERTS=" + CATarget,
-		"TOOLBOX_PROXIMO_CA=" + CATarget,
+	env := []string{"TOOLBOX_PROXIMO_ENABLED=1"}
+	if !g.CAExists {
+		return env
 	}
+	return append(env,
+		"NODE_EXTRA_CA_CERTS="+CATarget,
+		"TOOLBOX_PROXIMO_CA="+CATarget,
+	)
 }
 
 // pathQueryTimeout bounds each side-effect-free `proximo config *-path` query
@@ -229,51 +214,4 @@ func configPath(host fsx.Host, query string, fallback ...string) (string, bool) 
 		return "", false
 	}
 	return host.Join(append([]string{".proximo"}, fallback...)...), true
-}
-
-// InventoryExtraHosts reads the effective local names proximo publishes for
-// consumers. Only bare and qualified are pinnable; peer, claimed and collision
-// fields deliberately have no place in this projection.
-func InventoryExtraHosts(dir string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, InventoryFile)) //nolint:gosec // reading the inventory from the caller-selected directory is the explicit contract
-	if err != nil {
-		return nil, err
-	}
-	var doc struct {
-		Routes []struct {
-			Bare      string `json:"bare"`
-			Qualified string `json:"qualified"`
-		} `json:"routes"`
-	}
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	values := make([]string, 0, len(doc.Routes)*2)
-	for _, route := range doc.Routes {
-		values = append(values, route.Bare, route.Qualified)
-	}
-	return ExtraHosts(values), nil
-}
-
-// ExtraHosts turns a set of proximo.hosts label values (each a comma-separated
-// hostname list) into sorted, de-duplicated Docker --add-host entries pinning
-// every declared hostname to host-gateway. Pure: the Docker container listing
-// that produces labelValues lives in internal/container.
-func ExtraHosts(labelValues []string) []string {
-	seen := make(map[string]struct{})
-	for _, raw := range labelValues {
-		for _, h := range strings.Split(raw, ",") {
-			h = strings.TrimSpace(h)
-			if h == "" {
-				continue
-			}
-			seen[h] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for h := range seen {
-		out = append(out, h+":"+gateway)
-	}
-	sort.Strings(out)
-	return out
 }
