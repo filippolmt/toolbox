@@ -80,6 +80,14 @@ Two indexes, split by what you are asking about:
 
 ## Agent skills
 
+### Change workflow
+
+For ticket implementation, unless the user selects a branch, record the starting
+HEAD and create the `feat/<slug>` or `fix/<slug>` branch before the first commit;
+pass that recorded SHA to the final code review. If the review skill requests
+sub-agents but the harness exposes no delegation tool, run the Standards and
+Spec axes as separate sequential passes and disclose that fallback.
+
 ### Issue tracker
 
 Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
