@@ -31,6 +31,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Validate branch name
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          ACTOR: ${{ github.actor }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          .github/scripts/check-branch-name.sh --self-test
+          .github/scripts/check-branch-name.sh "$HEAD_REF" "$ACTOR" "$HEAD_REPOSITORY" "$BASE_REPOSITORY"
+
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -244,7 +255,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Lint the image shell assets
+      - name: Lint repository shell assets
         run: |
-          find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \
+          find .github/scripts internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \
             | xargs -0 shellcheck -S error
