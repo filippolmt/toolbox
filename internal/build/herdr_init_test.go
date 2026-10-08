@@ -40,10 +40,7 @@ func TestHerdrInitInstallsBothSkillPaths(t *testing.T) {
 	s := readHerdrInit(t)
 
 	for _, want := range []string{
-		`_herdr_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"`,
-		`_herdr_codex_dir="${CODEX_HOME:-$HOME/.codex}"`,
-		`_herdr_install_skill "$_herdr_claude_dir"`,
-		`_herdr_install_skill "$HOME/.agents"`,
+		`toolbox_for_each_active_skill_root _herdr_install_skill`,
 		// Atomic per target: a Claude skill dir is one host mount shared by
 		// every toolbox container, so a concurrent start must never observe a
 		// half-written SKILL.md.
@@ -72,16 +69,9 @@ func TestHerdrInitInstallsBothSkillPaths(t *testing.T) {
 func TestHerdrInitLocksClaudeSettings(t *testing.T) {
 	s := readHerdrInit(t)
 
-	lock := `$HOME/.toolbox-state/.claude-settings.lock`
-	if !strings.Contains(s, lock) {
-		t.Fatalf("%s does not take %s; it writes settings.json via `herdr integration install claude`", herdrInitScript, lock)
-	}
-
-	// The install must sit INSIDE the flock subshell, not merely somewhere in a
-	// script that happens to mention the lock.
-	guarded := "flock 200\n        _herdr_install_integration claude"
+	guarded := "toolbox_with_claude_settings_lock _herdr_install_integration claude"
 	if !strings.Contains(s, guarded) {
-		t.Errorf("%s: `_herdr_install_integration claude` is not inside the flock subshell (want %q)", herdrInitScript, guarded)
+		t.Errorf("%s: `_herdr_install_integration claude` does not use the shared settings lock", herdrInitScript)
 	}
 }
 
@@ -115,12 +105,12 @@ func TestHerdrInitWiresPi(t *testing.T) {
 
 	for _, want := range []string{
 		// Binary presence only, so the skill half is not gated on the mount.
-		"if command -v pi >/dev/null 2>&1; then\n    _herdr_pi=1",
+		"if toolbox_agent_available pi; then\n    _herdr_pi=1",
 		// The mount gate sits on the hook install, and only there.
-		`if [ -n "$_herdr_pi" ] && [ -d "$HOME/.pi" ]; then`,
-		`mkdir -p "$HOME/.pi/agent"`,
+		`if [ -n "$_herdr_pi" ] && toolbox_agent_persistent pi; then`,
+		`mkdir -p "$_herdr_pi_dir/agent"`,
 		`[ -n "${_herdr_claude}${_herdr_codex}${_herdr_pi}" ]`,
-		`if [ -n "$_herdr_codex" ] || [ -n "$_herdr_pi" ]; then`,
+		`toolbox_for_each_active_skill_root _herdr_install_skill`,
 		`_herdr_install_integration pi`,
 	} {
 		if !strings.Contains(s, want) {
@@ -137,7 +127,7 @@ func TestHerdrInitWiresPi(t *testing.T) {
 	// TestHerdrInitLocksClaudeSettings). Counting the locked sites catches a
 	// second one wherever it is indented; matching a literal flock+pi pair
 	// would only catch it at one exact indent.
-	if n := strings.Count(s, "flock 200"); n != 1 {
-		t.Errorf("%s takes flock %d times, want 1 (only the claude install writes a shared file)", herdrInitScript, n)
+	if n := strings.Count(s, "toolbox_with_claude_settings_lock"); n != 1 {
+		t.Errorf("%s takes the Claude settings lock %d times, want 1", herdrInitScript, n)
 	}
 }

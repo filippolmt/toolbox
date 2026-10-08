@@ -1,5 +1,8 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
+
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
 # ┊ branch[*↑↓] ⑂wt ┊ model ⚡effort [FAST] ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
 # Perf: single jq pass, git cached 5s per session_id (script runs on every tick)
 # Nothing here repeats what another surface shows at the same moment: pr.*,
@@ -9,7 +12,7 @@
 export LC_NUMERIC=C
 
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
-CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CFG=$(toolbox_agent_home claude)
 
 input=$(cat)
 

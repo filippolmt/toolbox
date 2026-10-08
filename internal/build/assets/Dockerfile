@@ -1819,6 +1819,9 @@ RUN grep -qxF 'Include /etc/ssh/ssh_config.d/*.conf' /etc/ssh/ssh_config \
 COPY --link --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint
 # Per-tool init manifest.
 COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
+# Agent Topology owns agent roots, persistence gates and shared resources for
+# init.d members and the managed statusline.
+COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
 # Workspace Install Refresh gate, sourced by the init.d members that re-run a
 # per-repo installer (one gate, one stamp shape, one failure message).
 COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh

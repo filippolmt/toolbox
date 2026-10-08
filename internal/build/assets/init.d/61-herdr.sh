@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Two things, per agent, so an agent running inside a herdr pane can drive herdr
 # and herdr can see what it is doing:
 #
@@ -24,10 +27,10 @@ set -euo pipefail
 # 60-glab.sh). The integration hooks diverge per agent — claude's lands under
 # the Claude config dir, codex's under codex's own, pi's under
 # ~/.pi/agent/extensions — so the three are handled separately. The claude and
-# codex roots come from CLAUDE_CONFIG_DIR / CODEX_HOME with the ~ fallback (the
-# Dockerfile sets both; same idiom as 35-statusline.sh and 25-codex.sh) — herdr
-# honours those vars too, so gating on a bare $HOME path would skip an install
-# that would have landed, or probe a directory the agent never reads. pi has no
+# Agent Topology resolves the claude and codex roots from CLAUDE_CONFIG_DIR /
+# CODEX_HOME with the ~ fallback. Herdr honours those vars too, so a bare $HOME
+# path would skip an install that would have landed, or probe a directory the
+# agent never reads. pi has no
 # such var baked, so the hook half gates on the bind mount itself, ~/.pi — see
 # the block at the foot of this file.
 #
@@ -38,10 +41,8 @@ set -euo pipefail
 #
 # Skill writes are atomic (mktemp + mv): a target under ~/.claude is ONE host
 # mount shared by every toolbox container, so a container starting mid-write must
-# never see a partial SKILL.md. The claude integration install takes
-# .claude-settings.lock, the same lock 10-remove-rtk.sh / 35-statusline.sh / 65-atuin.sh
-# hold: it registers its hook in settings.json, making this the fourth
-# concurrent writer of that one file.
+# never see a partial SKILL.md. The claude integration install uses Agent
+# Topology's settings lock because it registers its hook in settings.json.
 #
 # Only the claude install takes that lock. codex's hook and pi's are files of
 # their own — pi's is ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from
@@ -52,18 +53,17 @@ set -euo pipefail
 # skips another. A missing skill or hook costs herdr control, not a shell.
 command -v herdr >/dev/null 2>&1 || exit 0
 
-_herdr_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-_herdr_codex_dir="${CODEX_HOME:-$HOME/.codex}"
+_herdr_pi_dir=$(toolbox_agent_home pi)
 _herdr_claude=""
 _herdr_codex=""
 _herdr_pi=""
-if command -v claude >/dev/null 2>&1 && [ -d "$_herdr_claude_dir" ]; then
+if toolbox_agent_available claude && toolbox_agent_persistent claude; then
     _herdr_claude=1
 fi
-if command -v codex >/dev/null 2>&1; then
+if toolbox_agent_available codex; then
     _herdr_codex=1
 fi
-if command -v pi >/dev/null 2>&1; then
+if toolbox_agent_available pi; then
     _herdr_pi=1
 fi
 # No agent present: nothing to install, and no reason to run herdr at all.
@@ -72,13 +72,13 @@ fi
 # Skill root, not config root: Codex and pi read the cross-agent ~/.agents/skills
 # while their hooks live under CODEX_HOME and ~/.pi/agent respectively.
 _herdr_install_skill() {
-    local root="$1" dir="$1/skills/herdr" tmp
+    local root="$2" dir="$2/herdr" tmp
     if ! mkdir -p "$dir" \
         || ! tmp=$(mktemp "$dir/.SKILL.md.XXXXXX") \
         || ! printf '%s\n' "$_herdr_skill" > "$tmp" \
         || ! mv -f "$tmp" "$dir/SKILL.md"; then
         rm -f "${tmp:-}"
-        echo "toolbox: herdr skill install into $root/skills failed (non-fatal — retry: \`herdr --skill > $root/skills/herdr/SKILL.md\`)"
+        echo "toolbox: herdr skill install into $root failed (non-fatal — retry: \`herdr --skill > $root/herdr/SKILL.md\`)"
     fi
 }
 
@@ -88,28 +88,16 @@ _herdr_install_integration() {
 }
 
 if _herdr_skill=$(herdr --skill 2>/dev/null); then
-    if [ -n "$_herdr_claude" ]; then
-        _herdr_install_skill "$_herdr_claude_dir"
-    fi
-    # One pass for both readers of ~/.agents/skills. Created, not gated on:
-    # see the ~/.agents note above.
-    if [ -n "$_herdr_codex" ] || [ -n "$_herdr_pi" ]; then
-        _herdr_install_skill "$HOME/.agents"
-    fi
+    toolbox_for_each_active_skill_root _herdr_install_skill
 else
     echo "toolbox: herdr --skill failed (non-fatal — herdr agent skill not installed)"
 fi
 
 if [ -n "$_herdr_claude" ]; then
-    _herdr_lock="$HOME/.toolbox-state/.claude-settings.lock"
-    mkdir -p "$(dirname "$_herdr_lock")"
-    (
-        flock 200
-        _herdr_install_integration claude
-    ) 200>"$_herdr_lock"
+    toolbox_with_claude_settings_lock _herdr_install_integration claude
 fi
 
-if [ -n "$_herdr_codex" ] && [ -d "$_herdr_codex_dir" ]; then
+if [ -n "$_herdr_codex" ] && toolbox_agent_persistent codex; then
     _herdr_install_integration codex
 fi
 
@@ -126,7 +114,7 @@ fi
 # build the tree on their way in; init.d runs them backgrounded in parallel, so
 # herdr would otherwise lose that race on a fresh mount and report a failure for
 # a mount that is fine.
-if [ -n "$_herdr_pi" ] && [ -d "$HOME/.pi" ]; then
-    mkdir -p "$HOME/.pi/agent"
+if [ -n "$_herdr_pi" ] && toolbox_agent_persistent pi; then
+    mkdir -p "$_herdr_pi_dir/agent"
     _herdr_install_integration pi
 fi

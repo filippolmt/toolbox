@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Sync the bundled Chromium to the pinned playwright version. The Dockerfile
 # bakes the playwright npm package + apt deps only — browser binaries live in
 # the ~/.toolbox/playwright-cache bind (host-persisted, kept out of the image).
@@ -65,7 +68,7 @@ command -v playwright-cli >/dev/null 2>&1 || exit 0
 # skill roots.
 _pwc_ver=$(playwright-cli --version 2>/dev/null | tr -d '\n' || true)
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+if toolbox_agent_available claude && toolbox_agent_persistent claude; then
     toolbox_install_refresh playwright-cli "$PWD/.claude/skills/playwright-cli/SKILL.md" "$_pwc_ver" \
         playwright-cli install --skills claude || true
 fi
@@ -79,7 +82,7 @@ fi
 # The repo-level opt-in stays the claude skill dir checked at the top — this
 # adds agents to an already opted-in repo, and `pwcli-init` opts in both at
 # once. No ~/.agents gate here: this copy is the repo's, not the home one.
-if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
+if toolbox_agent_available codex || toolbox_agent_available pi; then
     toolbox_install_refresh playwright-cli-agents "$PWD/.agents/skills/playwright-cli/SKILL.md" "$_pwc_ver" \
         playwright-cli install --skills agents || true
 fi

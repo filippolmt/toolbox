@@ -1636,40 +1636,58 @@ prefix the explicit ordering signal — with the manifest-driven shape the
 boot sequence is observable from the Go side without parsing the runtime
 image.
 
+### Agent Topology
+
+The shell-side model of the coding agents bundled in the canonical image: the
+supported agent names, how to detect an available binary, each native state
+root and persistence gate, which agents share a skill root, and the lock that
+owns concurrent mutation of Claude's `settings.json`. Tool-specific commands
+do not belong to it.
+
+Concretely: `internal/build/assets/bin/agent-topology-lib.sh` is sourced by Init
+Sequence members and the managed statusline. It resolves Claude through
+`CLAUDE_CONFIG_DIR`, Codex through `CODEX_HOME`, and pi through the `~/.pi`
+bind-mount gate. It visits the Claude and cross-agent skill roots once each,
+even though Codex and pi share the latter, and exposes the container-local
+cross-agent root without treating it as persistent state. Its
+resource-specific lock helper serializes only callers that mutate Claude's
+shared settings file. `TestAgentTopologyDeclaresEverySupportedAgent` holds its
+agent list equal to `config.SupportedAgents`; root, skill-sharing, image-copy
+and consumer tests hold the rest of the interface.
+
+Why the term exists: root selection, persistence and serialization used to be
+re-derived independently in each tool's boot script. A new agent could be
+bundled while a consumer silently omitted it, and a new installer had to copy
+the same root matrix. Naming Agent Topology gives those invariant facts one
+owner while leaving commands, refresh policy and failure handling with each
+tool.
+
 ### Agent Wiring
 
-The second half of bundling a coding agent: the per-agent blocks in the
-Init Sequence that make the *other* bundled tools see it. Bundling gets
-the binary onto `PATH`; wiring gets atuin's history capture and herdr's
-control integration registered against it.
-The two are independent, and only the first is declared anywhere.
+The second half of bundling a coding agent: the per-agent Init Sequence logic
+that makes the *other* bundled tools see it. Bundling gets the binary onto
+`PATH`; wiring registers Atuin's history capture and Herdr's control
+integration. Skill installers run in the opposite direction — they make an
+agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
-Concretely: `internal/catalog` + `config.SupportedAgents` + `toolbox
-worktree --agent <name>` (the bundling) vs. one block per agent in
-`init.d/65-atuin.sh` and `init.d/61-herdr.sh` (the wiring). Each block self-gates on the binary and, where the agent's
-state is a bind mount, on the mount — never on a config directory the
-agent creates for itself on first run, which exists whether or not the
-state survives a `toolbox stop`. Whether a block takes
-`.claude-settings.lock` follows from what it writes: a shared
-`settings.json` needs the lock, an extension file of the agent's own
-does not. Held by `TestHerdrInitWiresPi` and
-`TestInitDWiresPiEverywhereItWiresCodex`; the bundling half is held by
-the Tool Catalog's own bijection tests, which is exactly why they say
-nothing about this one.
+Concretely: `internal/catalog` + `config.SupportedAgents` + `toolbox worktree
+--agent <name>` provide bundling, while `init.d/65-atuin.sh` and
+`init.d/61-herdr.sh` own their distinct wiring commands. Both consume Agent
+Topology for availability, native roots and persistence. A persistent hook is
+gated on the mounted state root, never on a directory the agent creates for
+itself. Only a writer of Claude's shared `settings.json` asks Agent Topology for
+its lock; independent Codex and pi files remain unlocked.
+`TestAgentWiringDeclaresEverySupportedAgent` fails when a supported agent lacks
+an explicit Herdr or Atuin adapter, while the Tool Catalog's bijection tests
+hold only the bundling half.
 
-Why the term exists: pi was bundled as a first-class agent — catalog
-row, default mount, smoke check, `--agent pi` — while all three wiring
-scripts still enumerated claude and codex by hand, and every test went
-green. Nothing in the catalog can notice: the bijection it enforces is
-`Entry.InitScript` ↔ `init.d/*.sh`, a statement about which *tools*
-ship a boot script, not about which *agents* each boot script knows.
-The gap is silent from both ends — the agent launches, resumes and
-works, just with none of the integrations a toolbox shell exists to
-provide, and a docs page can claim an integration persists on a mount
-that nothing ever writes to. Naming "Agent Wiring" separates the
-question "is this agent bundled?", which the Tool Catalog answers, from
-"is this agent wired?", which only these blocks do — so adding an agent
-is a checklist with two halves rather than one half and an assumption.
+Why the term exists: pi was bundled as a first-class agent while the wiring
+scripts still knew only the earlier agents, and every catalog test stayed
+green. The catalog's `Entry.InitScript` ↔ `init.d/*.sh` bijection says which
+tools ship boot scripts, not which agents those scripts integrate. Naming
+Agent Wiring separates "is this agent bundled?" from "is this agent wired?";
+Agent Topology now makes the latter exhaustive instead of relying on parallel
+hand-written lists.
 
 ### Bridge Contract
 

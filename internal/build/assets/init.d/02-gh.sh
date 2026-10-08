@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # gh startup integration, gated on `command -v gh` so an INSTALL_GH=false
 # image exits silently. Reports credential state and installs gh's official
 # agent skill non-fatally. Claude gets its own config root; Codex and pi share
@@ -31,11 +34,4 @@ _install_skill() {
         echo "toolbox: gh skill install ($label) failed (non-fatal — retry: \`gh skill install cli/cli gh --dir $dir --force\`)"
 }
 
-_gh_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-if command -v claude >/dev/null 2>&1 && [ -d "$_gh_claude_dir" ]; then
-    _install_skill claude "$_gh_claude_dir/skills"
-fi
-
-if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
-    _install_skill cross-agent "$HOME/.agents/skills"
-fi
+toolbox_for_each_active_skill_root _install_skill
