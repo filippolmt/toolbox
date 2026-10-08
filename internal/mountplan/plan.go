@@ -91,8 +91,8 @@ type PlanInput struct {
 	// the decision plus the host CA path it was decided against, derived once
 	// by the caller (proximo.Resolve) and read here rather than re-derived —
 	// the derivation pays a subprocess spawn, and the same gate also answers
-	// the session's env and its create-edge discovery flag. The zero value is
-	// a session with proximo off, so a plan that declares nothing binds no CA.
+	// the session's trust env. The zero value is a session with proximo off, so
+	// a plan that declares nothing binds no CA or inventory.
 	Proximo proximo.Gate
 }
 

@@ -15,9 +15,9 @@ import (
 )
 
 // TestPlanWiresProximo asserts that a gate resolved from proximo: true on a
-// host whose CA is present sets the SessionPlan.Proximo flag (the create-edge
-// discovery signal), emits the CA-trust env, and binds the CA file — the whole
-// chain from config to plan, through the one proximo.Resolve a session pays.
+// host whose CA is present emits the CA-trust env and binds the CA file — the
+// whole chain from config to plan, through the one proximo.Resolve a session
+// pays.
 func TestPlanWiresProximo(t *testing.T) {
 	tmp := t.TempDir()
 	planHost := fsx.Host{Home: tmp} // no resolver → no proximo on this host
@@ -46,9 +46,6 @@ func TestPlanWiresProximo(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	if !plan.Proximo {
-		t.Error("plan.Proximo = false, want true")
-	}
 	if !slices.Contains(plan.Env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget) {
 		t.Errorf("plan.Env missing NODE_EXTRA_CA_CERTS, got %v", plan.Env)
 	}
@@ -67,14 +64,13 @@ func TestPlanWiresProximo(t *testing.T) {
 	}
 }
 
-// TestPlanFollowsTheProximoGateItWasGiven pins the seam the gate now crosses:
-// all of the session's proximo-shaped outputs — create-edge discovery,
-// inventory path, CA bind and trust env — come from
-// PlanInput.Proximo, and the plan never re-derives the decision from cfg.
+// TestPlanFollowsTheProximoGateItWasGiven pins the seam the gate crosses: the
+// inventory mount, CA bind and trust env come from PlanInput.Proximo, and the
+// plan never re-derives the decision from cfg.
 //
 // The config here is auto (nil) with no CA under the host's home, so a plan
-// that asked again would produce none of the three; every one of them present
-// can only have come from the gate on the input.
+// that asked again would produce none of them; every one present can only have
+// come from the gate on the input.
 func TestPlanFollowsTheProximoGateItWasGiven(t *testing.T) {
 	tmp := t.TempDir()
 	planHost := fsx.Host{Home: tmp} // no resolver → no proximo on this host
@@ -106,30 +102,25 @@ func TestPlanFollowsTheProximoGateItWasGiven(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	if !plan.Proximo {
-		t.Error("plan.Proximo = false, want the gate's decision")
-	}
 	if !slices.Contains(plan.Env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget) {
 		t.Errorf("plan.Env missing NODE_EXTRA_CA_CERTS, got %v", plan.Env)
 	}
-	var bound string
+	bound := map[string]string{}
 	for _, b := range plan.Binds {
-		if b.Target == proximo.CATarget {
-			bound = b.Source
-		}
+		bound[b.Target] = b.Source
 	}
-	if bound != caPath {
-		t.Errorf("proximo CA bound from %q, want the gate's path %q", bound, caPath)
+	if bound[proximo.CATarget] != caPath {
+		t.Errorf("proximo CA bound from %q, want the gate's path %q", bound[proximo.CATarget], caPath)
 	}
-	if plan.ProximoInventoryDir != inventoryDir {
-		t.Errorf("plan.ProximoInventoryDir = %q, want gate path %q", plan.ProximoInventoryDir, inventoryDir)
+	if bound[proximo.InventoryTarget] != inventoryDir {
+		t.Errorf("proximo inventory bound from %q, want the gate's path %q", bound[proximo.InventoryTarget], inventoryDir)
 	}
 }
 
 // TestPlanProximoDisabled is the negative: with proximo unset (auto-detect) and
-// no proximo CA on the host, the plan carries no proximo flag and no CA-trust
-// env. HOME points at a CA-less dir so auto-detect is deterministically off
-// regardless of whether the test host has proximo installed.
+// no proximo CA on the host, the plan carries no CA-trust env or mount. HOME
+// points at a CA-less dir so auto-detect is deterministically off regardless
+// of whether the test host has proximo installed.
 func TestPlanProximoDisabled(t *testing.T) {
 	tmp := t.TempDir()              // no CA written → auto off
 	planHost := fsx.Host{Home: tmp} // no resolver → no proximo on this host
@@ -148,12 +139,14 @@ func TestPlanProximoDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Proximo {
-		t.Error("plan.Proximo = true for default config, want false")
-	}
 	for _, e := range plan.Env {
 		if strings.HasPrefix(e, "NODE_EXTRA_CA_CERTS=") {
 			t.Errorf("unexpected proximo env on default config: %q", e)
+		}
+	}
+	for _, b := range plan.Binds {
+		if b.Target == proximo.CATarget || b.Target == proximo.InventoryTarget {
+			t.Errorf("unexpected proximo bind on default config: %v", b)
 		}
 	}
 }
@@ -205,7 +198,7 @@ func TestPlanNeverRederivesTheProximoGate(t *testing.T) {
 
 	// Guards the guard: a plan that ignored proximo entirely would also report
 	// zero lookups, so pin that the gate was in fact consumed.
-	if !plan.Proximo {
-		t.Error("plan.Proximo = false: the gate was never read, so the zero count proves nothing")
+	if !slices.Contains(plan.Env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget) {
+		t.Errorf("plan.Env missing proximo trust entry: %v", plan.Env)
 	}
 }

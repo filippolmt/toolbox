@@ -13,6 +13,26 @@ import (
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
 
+// TestEntrypointSyncsProximoHostsBeforeTheWatcherAndShell pins the startup
+// contract: one bounded foreground attempt finishes before the background
+// watcher starts, and both happen before the interactive command is execed.
+func TestEntrypointSyncsProximoHostsBeforeTheWatcherAndShell(t *testing.T) {
+	body, err := fs.ReadFile(Assets, AssetDir+"/entrypoint.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	sync := strings.Index(text, "if ! timeout 10s proximo-hosts")
+	watch := strings.Index(text, "setsid nohup proximo-hosts --watch")
+	shell := strings.LastIndex(text, `exec "$@"`)
+	if sync < 0 || watch < 0 || shell < 0 {
+		t.Fatalf("entrypoint startup sequence missing: sync=%d watch=%d shell=%d", sync, watch, shell)
+	}
+	if sync >= watch || watch >= shell {
+		t.Fatalf("entrypoint startup order = sync:%d watch:%d shell:%d, want sync < watch < shell", sync, watch, shell)
+	}
+}
+
 // TestProximoHostsReadsTheEffectiveInventory exercises the shipped command at
 // its user-visible seam: only effectively served local names reach /etc/hosts,
 // and inventory mode never asks Docker to reconstruct proximo's model.
@@ -85,8 +105,120 @@ func TestProximoHostsReadsTheEffectiveInventory(t *testing.T) {
 	}
 }
 
-// TestProximoHostsWatchFollowsAtomicInventoryReplacement proves the runtime
-// complement observes proximo's rename-based publication without a Docker
+// TestProximoHostsFallsBackToLegacyLabels keeps older proximo installations
+// reachable when no effective-route inventory is mounted.
+func TestProximoHostsFallsBackToLegacyLabels(t *testing.T) {
+	body, err := fs.ReadFile(Assets, AssetDir+"/bin/proximo-hosts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "proximo-hosts")
+	if err := os.WriteFile(script, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hosts := filepath.Join(dir, "hosts")
+	if err := os.WriteFile(hosts, []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commands := map[string]string{
+		"getent": `echo "192.168.65.254 STREAM host.docker.internal"`,
+		"sudo":   `exec "$@"`,
+		"docker": `case "$1" in ps) printf 'one\ntwo\n' ;; inspect) printf ' api.test, mailpit.test \napi.test\n' ;; *) exit 99 ;; esac`,
+	}
+	for name, content := range commands {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+content+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := exec.Command(script)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"TOOLBOX_PROXIMO_INVENTORY_DIR="+filepath.Join(dir, "absent"),
+		"TOOLBOX_HOSTS_FILE="+hosts,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("proximo-hosts: %v\n%s", err, out)
+	}
+	contents, err := os.ReadFile(hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	for _, want := range []string{"192.168.65.254\tapi.test", "192.168.65.254\tmailpit.test"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("hosts missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Count(text, "api.test") != 1 {
+		t.Errorf("duplicate legacy host was not removed:\n%s", text)
+	}
+}
+
+// TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable ensures a
+// transient publication failure neither falls back to declared intent nor
+// destroys the last valid managed block.
+func TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable(t *testing.T) {
+	body, err := fs.ReadFile(Assets, AssetDir+"/bin/proximo-hosts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "proximo-hosts")
+	if err := os.WriteFile(script, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inventoryDir := filepath.Join(dir, "inventory")
+	if err := os.Mkdir(inventoryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inventoryDir, proximo.InventoryFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const previous = "127.0.0.1 localhost\n# >>> toolbox proximo (managed) >>>\n192.168.65.254\tlast.test\n# <<< toolbox proximo (managed) <<<\n"
+	hosts := filepath.Join(dir, "hosts")
+	if err := os.WriteFile(hosts, []byte(previous), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"getent": `echo "192.168.65.254 STREAM host.docker.internal"`,
+		"docker": `echo "docker must not be called when inventory is present" >&2; exit 99`,
+		"sudo":   `echo "sudo must not be called after discovery fails" >&2; exit 99`,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+content+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := exec.Command(script)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"TOOLBOX_PROXIMO_INVENTORY_DIR="+inventoryDir,
+		"TOOLBOX_HOSTS_FILE="+hosts,
+	)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("proximo-hosts unexpectedly succeeded:\n%s", out)
+	}
+	contents, err := os.ReadFile(hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != previous {
+		t.Fatalf("hosts changed after unreadable inventory:\n%s", contents)
+	}
+}
+
+// TestProximoHostsWatchFollowsAtomicInventoryReplacement proves the route
+// projection observes proximo's rename-based publication without a Docker
 // event or a container recreate.
 func TestProximoHostsWatchFollowsAtomicInventoryReplacement(t *testing.T) {
 	body, err := fs.ReadFile(Assets, AssetDir+"/bin/proximo-hosts")

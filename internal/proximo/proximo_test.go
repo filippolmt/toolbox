@@ -17,33 +17,6 @@ func forceOnCfg() *config.Config  { return &config.Config{Proximo: new(true)} }
 func forceOffCfg() *config.Config { return &config.Config{Proximo: new(false)} }
 func autoCfg() *config.Config     { return &config.Config{} } // Proximo nil → auto-detect
 
-func TestExtraHostsDedupesSortsAndPinsGateway(t *testing.T) {
-	got := proximo.ExtraHosts([]string{
-		"zeromiglia.test, mailpit.test",
-		"zeromiglia.test",
-		"  api.test ",
-		"",
-		"   ",
-	})
-	want := []string{
-		"api.test:host-gateway",
-		"mailpit.test:host-gateway",
-		"zeromiglia.test:host-gateway",
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("ExtraHosts = %v, want %v", got, want)
-	}
-}
-
-func TestExtraHostsEmpty(t *testing.T) {
-	if got := proximo.ExtraHosts(nil); len(got) != 0 {
-		t.Errorf("ExtraHosts(nil) = %v, want empty", got)
-	}
-	if got := proximo.ExtraHosts([]string{"", " , "}); len(got) != 0 {
-		t.Errorf("ExtraHosts(blank) = %v, want empty", got)
-	}
-}
-
 // TestResolveDecidesTheTristate covers the three Proximo states against both
 // CA presences, and asserts all three of the gate's answers per arm — the
 // point of one resolved value being that the mount and the env can no longer

@@ -169,15 +169,16 @@ if [ -f "$_proximo_ca" ]; then
           || certutil -d "sql:$_nssdb" -A -t C,, -n proximo -i "$_proximo_ca" >/dev/null 2>&1 || true
         unset _nssdb
     fi
-    # Auto-sync proximo .test names into /etc/hosts and keep them in sync as
-    # stacks come and go. --add-host pins are fixed at container create, so a
-    # stack started later would otherwise be unreachable until a re-shell; the
-    # backgrounded watcher (docker events) makes it automatic — no manual
-    # `proximo-hosts`. Best-effort: needs the mounted docker socket; a missing
-    # socket just leaves the watcher idle-looping with no effect.
+    # Auto-sync proximo .test names into /etc/hosts before the shell starts,
+    # then keep them current as stacks come and go. The bounded foreground
+    # attempt is best-effort so unavailable legacy Docker discovery cannot
+    # block access; the watcher retries immediately in the background.
     if command -v docker >/dev/null 2>&1 && command -v proximo-hosts >/dev/null 2>&1; then
         _px_log="$HOME/.toolbox-state/proximo-hosts.log"
         mkdir -p "$(dirname "$_px_log")" 2>/dev/null || true
+        if ! timeout 10s proximo-hosts >>"$_px_log" 2>&1; then
+            echo "proximo-hosts: initial sync failed or timed out" >>"$_px_log"
+        fi
         setsid nohup proximo-hosts --watch >>"$_px_log" 2>&1 </dev/null &
         disown 2>/dev/null || true
         unset _px_log

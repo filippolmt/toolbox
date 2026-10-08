@@ -202,11 +202,14 @@ them.
   Pinned by `TestSafeDirectoryRegistration`,
   `TestVirtiofsCheckStatRegistration` and the image smoke test. → [shell start](../../docs/internals/shell-start.md)
 
-- **Proximo gate:** derive `proximo.Resolve` once per configuration at each
-  command edge and thread the answer through planning; do not re-run it for
-  mount lookups. Runtime host discovery augments create-time hosts and the
-  watcher maintains later changes. Trust setup stays in `entrypoint.sh`, not a
+- **Proximo gate and projection:** derive `proximo.Resolve` once per
+  configuration at each command edge and thread the answer through planning;
+  do not re-run it for mount lookups. `proximo-hosts` owns route discovery and
+  `/etc/hosts` projection: entrypoint completes one bounded best-effort sync
+  before the shell, then starts its watcher. Container creation never parses
+  the inventory or lists routes. Trust setup stays in `entrypoint.sh`, not a
   catalog init script. Pinned by `TestResolveQueriesProximoOnceForEveryReader`,
-  `TestPlanNeverRederivesTheProximoGate` and
-  `TestStartSessionResolvesTheProximoGate`. →
+  `TestPlanNeverRederivesTheProximoGate`,
+  `TestStartSessionResolvesTheProximoGate` and the `TestProximoHosts*` runtime
+  tests. → [Proximo Route Projection](../../CONTEXT.md#proximo-route-projection),
   [proximo](../../docs/proximo.md)

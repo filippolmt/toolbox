@@ -14,6 +14,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/worktree"
@@ -120,14 +121,17 @@ func TestStartSessionPlansWhatTheIntentDescribes(t *testing.T) {
 // TestStartSessionResolvesTheProximoGate pins the other half of the assembly's
 // own contribution: the Proximo Availability Gate is derived here, once, from
 // the same host the plan is built against — an intent declares none, and a
-// session that reached the planner without one would silently run with the
-// integration off.
-//
-// `proximo: true` is the arm that needs no host state, so what this asserts is
-// that the gate was resolved at all, on any machine.
+// session that reached the planner without one would silently omit trust.
 func TestStartSessionResolvesTheProximoGate(t *testing.T) {
 	attached := sessionHarness(t)
 	ws := sessionWorkspace(t, "ws")
+	ca := filepath.Join(os.Getenv("HOME"), ".proximo", "tls", "ca.pem")
+	if err := os.MkdirAll(filepath.Dir(ca), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ca, []byte("CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
 		Cfg:       &config.Config{Shell: "zsh", Proximo: new(true)},
@@ -141,8 +145,8 @@ func TestStartSessionResolvesTheProximoGate(t *testing.T) {
 	if plan == nil {
 		t.Fatal("the session never attached")
 	}
-	if !plan.Proximo {
-		t.Error("plan.Proximo = false — the assembly never resolved the gate")
+	if !slices.Contains(plan.Env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget) {
+		t.Errorf("plan.Env missing proximo trust entry: %v", plan.Env)
 	}
 }
 

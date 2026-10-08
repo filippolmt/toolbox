@@ -6,7 +6,7 @@ Symptoms, causes, and fixes for the failure modes users actually hit. Bridge-spe
 
 **Symptom:** you edited `.toolbox.yaml` (mounts, env, proximo) or re-ran `toolbox shell -p <port>` / `-B`, but the running container behaves as before.
 
-**Cause:** mounts, [port bindings](commands.md#publishing-ports), env vars, and proximo `ExtraHosts` are all fixed at `ContainerCreate` — Docker accepts no post-hoc changes, and `toolbox shell` reattaches to an existing container instead of recreating it.
+**Cause:** mounts, [port bindings](commands.md#publishing-ports), and env vars are fixed at `ContainerCreate` — Docker accepts no post-hoc changes, and `toolbox shell` reattaches to an existing container instead of recreating it.
 
 **Fix:** `toolbox stop`, then re-run `toolbox shell …`. The container is disposable; all persistent state lives on the `~/.toolbox/` binds, so nothing is lost.
 
@@ -104,7 +104,7 @@ Deletes use `git branch -D` (force), since a squash-merged branch never reads as
 
 **Symptom:** `https://<name>.test` works in the host browser but fails to resolve/connect inside a shell that was already open.
 
-**Cause:** a current shell normally follows proximo's Effective Route Inventory automatically. If it does not, the container predates the inventory mount, proximo's stack has not been re-materialized since gaining the inventory, or `proximo-hosts --watch` stopped; its log is `~/.toolbox-state/proximo-hosts.log`.
+**Cause:** a current shell normally follows proximo's Effective Route Inventory automatically. If it does not, the initial best-effort sync failed, the container predates the inventory mount, proximo's stack has not been re-materialized since gaining the inventory, or `proximo-hosts --watch` stopped; its log is `~/.toolbox-state/proximo-hosts.log`.
 
 **Fix:** run `proximo up` on the host to materialize the inventory, then `toolbox stop` and reopen the shell once to add its read-only mount. Later route changes need no recreate. Details: [proximo runtime host sync](proximo.md#runtime-host-sync-proximo-hosts-automatic).
 

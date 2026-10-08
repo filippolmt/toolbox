@@ -1823,13 +1823,30 @@ config inventory-dir`; Toolbox mounts that directory read-only and projects only
 `peer` explain other states but are never local pins. The directory is the mount
 unit because a file bind would retain the inode proximo replaces. An absent
 inventory means an older proximo, and only then Toolbox falls back to the
-`proximo.hosts` declarations. Owned on the host by `internal/proximo`, at create
-by `internal/container`, and at runtime by `bin/proximo-hosts`.
+`proximo.hosts` declarations. Owned on the host by `internal/proximo` and
+consumed in the container by `bin/proximo-hosts`.
 
 Why the term exists: `proximo.hosts` is intent, not routing state. Treating it as
 state omitted every generated Qualified host and could not represent a withdrawn
 name. Naming the inventory keeps the ownership boundary explicit: proximo decides
 what it serves; Toolbox decides how those names reach its own network namespace.
+
+### Proximo Route Projection
+
+The translation of Proximo's effectively served local names into host-gateway
+entries in a Toolbox session's `/etc/hosts`. `bin/proximo-hosts` owns the whole
+projection: it filters the Effective Route Inventory, falls back to
+`proximo.hosts` declarations only when that inventory is absent, resolves the
+session's host gateway and replaces one managed block. Entrypoint performs one
+bounded best-effort projection before the interactive shell, then starts the
+watcher for later inventory replacements or legacy Docker events. A failed read
+preserves the last valid block rather than projecting declared intent over
+unknown routing state.
+
+Why the term exists: the Effective Route Inventory is Proximo-owned state, while
+projection is Toolbox's use of that state inside one network namespace. Naming
+them separately keeps inventory discovery out of container creation and gives
+startup plus runtime changes one owner and one fallback rule.
 
 ### Proximo Availability Gate
 
@@ -1849,10 +1866,9 @@ same configuration being asked twice
 existence, and `false` short-circuits before the `proximo config ca-path` query
 so an opted-out workspace never pays that subprocess. Everything downstream
 *reads* that value rather than re-deriving the rule: `Gate.CAMount` and
-`Gate.InventoryMount` are the binds `mountplan` injects, `Gate.Env` the CA-trust
-variables `sessionplan` composes, and `Gate.Enabled` the discovery flag the
-Docker edge acts on. It reaches both
-planners through their `PlanInput`, the seam that already carries the session's
+`Gate.InventoryMount` are the binds `mountplan` injects and `Gate.Env` the
+CA-trust variables `sessionplan` composes. It reaches both planners through
+their `PlanInput`, the seam that already carries the session's
 resolved host-side facts, and `cmd.startSession` is where the one derivation
 happens — beside the [Declared Host](#declared-host) it is resolved against.
 No function derives it on the side: `mountplan.Merge` and everything built on

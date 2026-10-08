@@ -1,20 +1,14 @@
 #!/bin/sh
 # toolbox proximo /etc/hosts sync.
 #
-# proximo routes *.<tld> apps on the HOST via a wildcard resolver, so it never
-# goes stale there. The toolbox container instead gets one-shot `--add-host`
-# pins computed once at container create (HostConfig.ExtraHosts, immutable
-# afterwards): any proximo stack started AFTER `toolbox shell` is invisible to
-# those pins, so `<name>.test` falls through to the host resolver, resolves to
-# 127.0.0.1 (correct for the host, wrong inside the container) and the
-# connection is refused.
-#
-# This command is the runtime complement: it reads proximo's effective-route
-# inventory from its read-only bind and rewrites a managed block in /etc/hosts
-# pinning every bare and qualified hostname to the host-gateway. For an older
-# proximo without that inventory it falls back to labels from the host Docker
-# daemon. /etc/hosts is mutable at runtime (unlike --add-host), so reachability
-# tracks the running stacks without recreating the container.
+# proximo routes *.<tld> apps on the HOST via a wildcard resolver, which maps
+# them to host loopback. That address is wrong inside a toolbox container, so
+# this command owns the complete route projection into its network namespace:
+# it reads proximo's effective-route inventory from its read-only bind and
+# rewrites a managed block in /etc/hosts, pinning every bare and qualified name
+# to the host-gateway. For an older proximo without that inventory it falls back
+# to labels from the host Docker daemon. /etc/hosts is mutable at runtime, so
+# reachability tracks the running stacks without recreating the container.
 #
 # Usage:
 #   proximo-hosts            sync once and exit (idempotent)
