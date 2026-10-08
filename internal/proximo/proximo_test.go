@@ -72,24 +72,12 @@ func TestResolveDecidesTheTristate(t *testing.T) {
 			if got := slices.Contains(env, "TOOLBOX_PROXIMO_ENABLED=1"); got != tc.enabled {
 				t.Errorf("runtime enablement env present = %v, want %v (env %v)", got, tc.enabled, env)
 			}
-			if got := slices.Contains(env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget); got != tc.wantTrust {
-				t.Errorf("CA trust env present = %v, want %v (env %v)", got, tc.wantTrust, env)
+			hasNodeTrust := slices.Contains(env, "NODE_EXTRA_CA_CERTS="+proximo.CATarget)
+			hasCATarget := slices.Contains(env, "TOOLBOX_PROXIMO_CA="+proximo.CATarget)
+			if hasNodeTrust != tc.wantTrust || hasCATarget != tc.wantTrust {
+				t.Errorf("CA trust env = node:%v target:%v, want both %v (env %v)", hasNodeTrust, hasCATarget, tc.wantTrust, env)
 			}
 		})
-	}
-}
-
-func TestForcedOnGateSignalsRuntimeWithoutCA(t *testing.T) {
-	host, _ := setupCA(t, false)
-	gate := proximo.Resolve(host, forceOnCfg())
-
-	if !slices.Contains(gate.Env(), "TOOLBOX_PROXIMO_ENABLED=1") {
-		t.Fatalf("gate.Env = %v, want runtime enablement without CA trust", gate.Env())
-	}
-	for _, entry := range gate.Env() {
-		if strings.HasPrefix(entry, "NODE_EXTRA_CA_CERTS=") {
-			t.Fatalf("gate.Env unexpectedly trusts a missing CA: %v", gate.Env())
-		}
 	}
 }
 
