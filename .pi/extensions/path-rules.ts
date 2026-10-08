@@ -99,7 +99,7 @@ export default function (pi: ExtensionAPI) {
     if (missing.length === 0) return undefined;
     return {
       block: true,
-      reason: `Read the complete path-scoped rules before editing ${input.path}: ${missing.map((rule) => relative(ctx.cwd, rule.file)).join(", ")}`,
+      reason: `Read or re-read the complete path-scoped rules before editing ${input.path} (rule edits invalidate prior reads): ${missing.map((rule) => relative(ctx.cwd, rule.file)).join(", ")}`,
     };
   });
 

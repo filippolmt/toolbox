@@ -5,7 +5,7 @@ Issues and specs for this repository live as GitHub issues. Use the `gh` CLI for
 ## Conventions
 
 - Create: `gh issue create --title "..." --body "..."`
-- Read: `gh issue view <number> --comments`
+- Read: `gh issue view <number> --json number,title,body,comments,state,url`
 - List: `gh issue list --state open --json number,title,body,labels,comments`
 - Comment: `gh issue comment <number> --body "..."`
 - Apply or remove labels: `gh issue edit <number> --add-label "..."` or `--remove-label "..."`
@@ -23,4 +23,4 @@ GitHub shares one number space across issues and pull requests. When a bare refe
 
 When a skill says “publish to the issue tracker,” create a GitHub issue.
 
-When a skill says “fetch the relevant ticket,” run `gh issue view <number> --comments`.
+When a skill says “fetch the relevant ticket,” use the structured read command above. `--comments` is only for human-formatted output and cannot be combined with `--json`; the `comments` JSON field carries the same discussion for agent use.

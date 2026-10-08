@@ -71,7 +71,10 @@ three
     assert.equal(await call(edit, ctx), undefined);
 
     await result({ toolName: "write", isError: false, input: { path: rule }, content: [] }, ctx);
-    assert.equal((await call(edit, ctx)).block, true);
+    const invalidated = await call(edit, ctx);
+    assert.equal(invalidated.block, true);
+    assert.match(invalidated.reason, /re-read/);
+    assert.match(invalidated.reason, /rule edits invalidate prior reads/);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
