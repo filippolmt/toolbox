@@ -1841,8 +1841,9 @@ session's host gateway and replaces one managed block. Entrypoint performs one
 bounded best-effort projection before the interactive shell, then starts the
 watcher for later inventory replacements or legacy Docker events. The legacy
 adapter requires the default Docker socket mount because an older Proximo
-publishes no inventory. A failed read preserves the last valid block rather
-than projecting declared intent over unknown routing state.
+publishes no inventory; legacy Proximo without that mount is unsupported and
+produces a non-fatal session warning. A failed read preserves the last valid
+block rather than projecting declared intent over unknown routing state.
 
 Why the term exists: the Effective Route Inventory is Proximo-owned state, while
 projection is Toolbox's use of that state inside one network namespace. Naming

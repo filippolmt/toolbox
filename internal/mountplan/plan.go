@@ -16,6 +16,7 @@ package mountplan
 
 import (
 	"path/filepath"
+	"slices"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -131,6 +132,11 @@ func Plan(in PlanInput) (Result, error) {
 	binds, warnings := resolveAll(merged, in.Host.Home)
 	warnings = append(legacyRTKWarnings(in.Cfg.Mounts, in.Profile), warnings...)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)
+	if in.Proximo.Enabled && !in.Proximo.InventoryExists && !slices.ContainsFunc(binds, func(b Bind) bool {
+		return b.Target == "/var/run/docker.sock"
+	}) {
+		warnings = append(warnings, "legacy proximo route discovery requires the docker-sock mount; upgrade proximo and run 'toolbox stop' to recreate the container, or re-enable docker-sock")
+	}
 
 	// The peer socket mount joins the set after resolveAll: its source is a
 	// named volume, so there is no host path to expand, create or stat, and

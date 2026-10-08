@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -140,6 +141,47 @@ func TestPlanEndToEnd(t *testing.T) {
 		t.Errorf("expected symlink at %s: %v", sshSrc, err)
 	} else if info.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("expected symlink at %s, got mode %v", sshSrc, info.Mode())
+	}
+}
+
+// TestPlanWarnsWhenLegacyProximoHasNoDockerSocket pins the supported discovery matrix.
+func TestPlanWarnsWhenLegacyProximoHasNoDockerSocket(t *testing.T) {
+	legacyGate := proximo.Gate{Enabled: true}
+	inventoryGate := proximo.Gate{Enabled: true, InventoryDir: t.TempDir(), InventoryExists: true}
+
+	tests := []struct {
+		name     string
+		gate     proximo.Gate
+		disable  bool
+		wantWarn bool
+	}{
+		{name: "legacy with socket", gate: legacyGate},
+		{name: "legacy without socket", gate: legacyGate, disable: true, wantWarn: true},
+		{name: "inventory without socket", gate: inventoryGate, disable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{}
+			if tt.disable {
+				cfg.Mounts = []config.Mount{{Name: "docker-sock", Disabled: true}}
+			} else {
+				socket := filepath.Join(t.TempDir(), "docker.sock")
+				if err := os.WriteFile(socket, nil, 0o600); err != nil {
+					t.Fatalf("create socket fixture: %v", err)
+				}
+				cfg.Mounts = []config.Mount{{Name: "docker-sock", Source: socket, Target: "/var/run/docker.sock"}}
+			}
+			result, err := Plan(PlanInput{Host: testHost(t), Cfg: &cfg, Workspace: "/workspace", Proximo: tt.gate})
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+			gotWarn := slices.ContainsFunc(result.Warnings, func(w string) bool {
+				return strings.Contains(w, "legacy proximo route discovery requires the docker-sock mount")
+			})
+			if gotWarn != tt.wantWarn {
+				t.Errorf("legacy Proximo warning = %v, want %v; warnings: %v", gotWarn, tt.wantWarn, result.Warnings)
+			}
+		})
 	}
 }
 
