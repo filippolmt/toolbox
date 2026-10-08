@@ -76,7 +76,7 @@ label_hosts() {
 }
 
 discover_hosts() {
-    if [ -f "${INVENTORY_FILE}" ]; then
+    if [ -d "${INVENTORY_DIR}" ]; then
         inventory_hosts
     else
         label_hosts

@@ -162,18 +162,21 @@ func (g Gate) CAMount() (config.Mount, bool) {
 	}, true
 }
 
-// Env returns the environment entries that make in-container tooling trust
-// proximo's CA. Emitted only when the gate is on AND the CA exists on the
-// host, so a missing CA never leaves Node pointing at an absent
-// NODE_EXTRA_CA_CERTS file.
+// Env signals an enabled route projection independently from CA availability,
+// then adds trust paths only when the CA exists. A forced-on session can still
+// project routes without leaving Node pointed at a missing certificate.
 func (g Gate) Env() []string {
-	if !g.Enabled || !g.CAExists {
+	if !g.Enabled {
 		return nil
 	}
-	return []string{
-		"NODE_EXTRA_CA_CERTS=" + CATarget,
-		"TOOLBOX_PROXIMO_CA=" + CATarget,
+	env := []string{"TOOLBOX_PROXIMO_ENABLED=1"}
+	if !g.CAExists {
+		return env
 	}
+	return append(env,
+		"NODE_EXTRA_CA_CERTS="+CATarget,
+		"TOOLBOX_PROXIMO_CA="+CATarget,
+	)
 }
 
 // pathQueryTimeout bounds each side-effect-free `proximo config *-path` query

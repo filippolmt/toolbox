@@ -210,8 +210,9 @@ type PlanInput struct {
 	// Proximo is the resolved Proximo Availability Gate for this session: the
 	// decision plus the host CA path it was decided against, derived once by
 	// cmd (proximo.Resolve) alongside the Host it was probed on. The CA and
-	// inventory binds (through mountplan) plus the CA-trust env read this one
-	// value rather than each re-deriving a rule that costs a subprocess spawn.
+	// inventory binds (through mountplan), projection marker and CA-trust env
+	// read this one value rather than each re-deriving a rule that costs a
+	// subprocess spawn.
 	// The zero value is a session with proximo off.
 	Proximo proximo.Gate
 
@@ -314,8 +315,8 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Profile:   in.Profile,
 		GitDir:    in.gitDir(),
 		Peer:      in.Peer,
-		// Handed down, not re-resolved: the mount stage and trust env below
-		// read the same gate.
+		// Handed down, not re-resolved: the mount stage, projection marker and
+		// trust env below read the same gate.
 		Proximo: in.Proximo,
 	})
 	if err != nil {

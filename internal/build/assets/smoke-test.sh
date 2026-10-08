@@ -523,7 +523,7 @@ check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q b
 # paths ship, so a dropped or stale COPY fails here too.
 check_required "proximo-hosts" sh -c "test -x /usr/local/bin/proximo-hosts && grep -q routes.json /usr/local/bin/proximo-hosts && grep -q proximo.hosts /usr/local/bin/proximo-hosts && echo present"
 # entrypoint performs the bounded startup sync before launching the watcher,
-# gated on the proximo CA mount — assert both halves are wired.
+# gated on the projection marker or legacy CA signal — assert both halves.
 check_required "proximo-hosts startup and watcher wired" sh -c "grep -q timeout /usr/local/bin/entrypoint && grep -q proximo-hosts.--watch /usr/local/bin/entrypoint && echo present"
 # entrypoint carries the generic CA-trust block (gated on /etc/toolbox/certs,
 # beside the proximo block) — assert the wiring is present. No init.d bijection

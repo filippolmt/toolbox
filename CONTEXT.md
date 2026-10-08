@@ -1866,8 +1866,9 @@ same configuration being asked twice
 existence, and `false` short-circuits before the `proximo config ca-path` query
 so an opted-out workspace never pays that subprocess. Everything downstream
 *reads* that value rather than re-deriving the rule: `Gate.CAMount` and
-`Gate.InventoryMount` are the binds `mountplan` injects and `Gate.Env` the
-CA-trust variables `sessionplan` composes. It reaches both planners through
+`Gate.InventoryMount` are the binds `mountplan` injects, while `Gate.Env`
+composes the route-projection enablement marker and, only when the CA exists,
+the CA-trust variables. It reaches both planners through
 their `PlanInput`, the seam that already carries the session's
 resolved host-side facts, and `cmd.startSession` is where the one derivation
 happens — beside the [Declared Host](#declared-host) it is resolved against.
@@ -1880,8 +1881,10 @@ looked like it was only reading a list. So the
 mounted file *is* the in-container shadow of that decision: `entrypoint.sh`
 self-gates its whole trust block on it; the bridge shim tests the same file
 before any POST, and refuses with one message naming both causes (proximo
-absent on the host, or disabled for this workspace). No third state, no extra
-env var, and no round-trip to the daemon to learn the answer.
+absent on the host, or disabled for this workspace). `TOOLBOX_PROXIMO_ENABLED`
+carries the host decision separately to Route Projection, including the
+forced-on/no-CA arm; it conveys no trust. No round-trip to the daemon is needed
+to learn either answer.
 
 Why the term exists: enablement was readable from three unrelated places — a
 tri-state config field on the host, a file test in the entrypoint, and, for

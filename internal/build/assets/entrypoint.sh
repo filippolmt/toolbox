@@ -169,6 +169,11 @@ if [ -f "$_proximo_ca" ]; then
           || certutil -d "sql:$_nssdb" -A -t C,, -n proximo -i "$_proximo_ca" >/dev/null 2>&1 || true
         unset _nssdb
     fi
+fi
+
+# Route projection follows enablement even when a forced-on integration has no
+# CA to trust. The CA remains a compatibility signal for an older host CLI.
+if [ -f "$_proximo_ca" ] || [ "${TOOLBOX_PROXIMO_ENABLED:-}" = "1" ]; then
     # Auto-sync proximo .test names into /etc/hosts before the shell starts,
     # then keep them current as stacks come and go. The bounded foreground
     # attempt is best-effort so unavailable legacy Docker discovery cannot
