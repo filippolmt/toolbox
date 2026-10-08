@@ -29,7 +29,7 @@ func TestInitDWiresPiEverywhereItWiresCodex(t *testing.T) {
 			script: "assets/init.d/65-atuin.sh",
 			wants: []string{
 				`_pi_marker="$_atuin_hooks_dir/pi-${_atuin_key}"`,
-				`[ ! -f "$_pi_marker" ] && command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]`,
+				`[ ! -f "$_pi_marker" ] && toolbox_agent_available pi && toolbox_agent_persistent pi`,
 				`atuin hook install pi`,
 			},
 		},
@@ -75,7 +75,7 @@ func TestPerRepoInstallersRefreshWhatPiReads(t *testing.T) {
 			wants: []string{
 				// Gate is the ~/.pi bind mount, never ~/.pi/agent — same
 				// reasoning as TestInitDWiresPiEverywhereItWiresCodex.
-				`if command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then`,
+				`if toolbox_agent_available pi && toolbox_agent_persistent pi; then`,
 				`toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver"`,
 				`graphify install --project --platform pi`,
 			},
@@ -86,7 +86,7 @@ func TestPerRepoInstallersRefreshWhatPiReads(t *testing.T) {
 				// One pass for both readers of .agents/skills, gated on either
 				// agent being present — the same shape 61-herdr.sh uses for the
 				// home-directory copy.
-				`if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then`,
+				`if toolbox_agent_available codex || toolbox_agent_available pi; then`,
 				`toolbox_install_refresh playwright-cli-agents "$PWD/.agents/skills/playwright-cli/SKILL.md" "$_pwc_ver"`,
 				`playwright-cli install --skills agents`,
 			},

@@ -36,6 +36,7 @@ fi
 	if err != nil {
 		t.Fatalf("read %s: %v", glabInitScript, err)
 	}
+	body = wireAgentTopologyForTest(t, dir, body)
 	scriptPath := filepath.Join(dir, "60-glab.sh")
 	if err := os.WriteFile(scriptPath, body, 0o755); err != nil {
 		t.Fatalf("write init script: %v", err)

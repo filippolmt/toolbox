@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Reconcile behavioral-mode flag files with enabledPlugins in settings.json.
 # ponytail/caveman drop a ~/.claude/.<mode>-active flag (read by the managed
 # statusline to draw the [PONYTAIL]/[CAVEMAN] badge) from their SessionStart
@@ -12,7 +15,7 @@ set -euo pipefail
 # at once when both plugins are enabled.
 command -v jq >/dev/null 2>&1 || exit 0
 # Resolve the config dir like statusline-command.sh and the plugin hooks do.
-_cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+_cfg=$(toolbox_agent_home claude)
 _settings="$_cfg/settings.json"
 [ -s "$_settings" ] || exit 0
 

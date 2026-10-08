@@ -50,6 +50,7 @@ func TestRTKRemovalMigrationCleansManagedAgentWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
+	script = wireAgentTopologyForTest(t, home, script)
 	cmd := exec.Command("bash", "-c", string(script))
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()

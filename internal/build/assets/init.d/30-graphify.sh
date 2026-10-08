@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Per-repo opt-in. The user runs `graphify install --project --platform claude`
 # once inside a repo to install the project-scoped `/graphify` skill into the
 # repo's `.claude/skills/graphify/`, wire the `## graphify` section into that
@@ -51,7 +54,7 @@ find "$PWD/graphify-out" -maxdepth 1 -type d -name '20[0-9][0-9]-[0-9][0-9]-[0-9
 # graphify, they just write it where a different agent reads.
 _gfy_ver=$(graphify --version 2>/dev/null | tr -d '\n' || true)
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+if toolbox_agent_available claude && toolbox_agent_persistent claude; then
     if toolbox_install_refresh graphify "$PWD/.claude/skills/graphify/SKILL.md" "$_gfy_ver" \
         graphify install --project --platform claude; then
 
@@ -120,7 +123,7 @@ fi
 #
 # No jq/settings pass here: the hooks and the CLAUDE.md section are claude's,
 # and graphify writes neither for pi.
-if command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then
+if toolbox_agent_available pi && toolbox_agent_persistent pi; then
     toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver" \
         graphify install --project --platform pi || true
 fi

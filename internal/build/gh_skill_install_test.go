@@ -35,6 +35,7 @@ exit 1
 	if err != nil {
 		t.Fatalf("read %s: %v", ghInitScript, err)
 	}
+	body = wireAgentTopologyForTest(t, dir, body)
 	scriptPath := filepath.Join(dir, filepath.Base(ghInitScript))
 	if err := os.WriteFile(scriptPath, body, 0o755); err != nil {
 		t.Fatalf("write init script: %v", err)

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Permanent migration for installations that once bundled RTK. Keep this
 # idempotent: users may skip any number of image releases before reopening a
 # persisted agent home.
@@ -79,26 +82,25 @@ _drop_rtk_reference() {
     mv "$tmp" "$file"
 }
 
-# Claude settings share a file with other parallel init scripts.
-_claude_lock="$HOME/.toolbox-state/.claude-settings.lock"
-mkdir -p "$(dirname "$_claude_lock")"
-(
-    flock 200
-    _clean_hooks_json "$HOME/.claude/settings.json"
-) 200>"$_claude_lock"
-rm -f "$HOME/.claude/RTK.md" \
-      "$HOME/.claude/hooks/rtk-rewrite.sh" \
-      "$HOME/.claude/hooks/rtk-rewrite.json" \
-      "$HOME/.claude/hooks/.rtk-hook.sha256"
-_drop_rtk_reference "$HOME/.claude/CLAUDE.md"
+_claude_home=$(toolbox_agent_home claude)
+_codex_home=$(toolbox_agent_home codex)
+_pi_home=$(toolbox_agent_home pi)
 
-_clean_hooks_json "$HOME/.codex/hooks.json"
-rm -f "$HOME/.codex/RTK.md"
-_drop_rtk_reference "$HOME/.codex/AGENTS.md"
+# Claude settings share a file with other parallel init scripts.
+toolbox_with_claude_settings_lock _clean_hooks_json "$_claude_home/settings.json"
+rm -f "$_claude_home/RTK.md" \
+      "$_claude_home/hooks/rtk-rewrite.sh" \
+      "$_claude_home/hooks/rtk-rewrite.json" \
+      "$_claude_home/hooks/.rtk-hook.sha256"
+_drop_rtk_reference "$_claude_home/CLAUDE.md"
+
+_clean_hooks_json "$_codex_home/hooks.json"
+rm -f "$_codex_home/RTK.md"
+_drop_rtk_reference "$_codex_home/AGENTS.md"
 
 # Pi's extension may contain user edits. Match the stock payload hashes that
 # upstream's own uninstaller recognises; anything else is preserved and named.
-_pi_extension="$HOME/.pi/agent/extensions/rtk.ts"
+_pi_extension="$_pi_home/agent/extensions/rtk.ts"
 if [ -f "$_pi_extension" ]; then
     _pi_hash=$(tr -d '\r' <"$_pi_extension" | awk '{ lines[NR]=$0 } END { last=NR; while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--; for (i=1; i<=last; i++) printf "%s%s", lines[i], (i < last ? "\n" : "") }' | sha256sum | awk '{print $1}')
     case "$_pi_hash" in
@@ -112,12 +114,12 @@ if [ -f "$_pi_extension" ]; then
         eb56dd08b8d5f4704906d037d70b357d84d827abe1063135cc7c998efe6cf7f2|\
         628308173ae41c488b76bcf90eafbd4c0c72435927645d81cdbec652eac4b107|\
         3eb16108f51a29c2a62a453d5c97a6ea2da8aea1061da34c50fdcfaa32dc0ff7)
-            rm -f "$_pi_extension" "$HOME/.pi/agent/extensions/.rtk-agents"
+            rm -f "$_pi_extension" "$_pi_home/agent/extensions/.rtk-agents"
             ;;
         *) echo "  rtk removal: kept modified $_pi_extension" ;;
     esac
 else
-    rm -f "$HOME/.pi/agent/extensions/.rtk-agents"
+    rm -f "$_pi_home/agent/extensions/.rtk-agents"
 fi
 
 # These are bind mounts under older host CLIs and ordinary home directories
@@ -129,4 +131,4 @@ for _rtk_dir in "$HOME/.config/rtk" "$HOME/.local/share/rtk"; do
     rmdir "$_rtk_dir" 2>/dev/null || true
 done
 
-unset _claude_lock _pi_extension _pi_hash _rtk_dir
+unset _claude_home _codex_home _pi_home _pi_extension _pi_hash _rtk_dir

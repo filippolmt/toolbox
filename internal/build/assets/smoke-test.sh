@@ -508,6 +508,7 @@ check_required "certutil"   sh -c "command -v certutil"
 check_required "xterm-ghostty terminfo" sh -c "infocmp xterm-ghostty >/dev/null && echo present"
 # The shared transport every bridge shim sources; the state-dir constant
 # lives here (not in the shims), so this is where the marker is asserted.
+check_required "agent-topology-lib" sh -c "test -r /usr/local/lib/toolbox/agent-topology-lib.sh && grep -q toolbox_agent_names /usr/local/lib/toolbox/agent-topology-lib.sh && echo present"
 check_required "install-refresh-lib" sh -c "test -r /usr/local/lib/toolbox/install-refresh-lib.sh && grep -q toolbox_install_refresh /usr/local/lib/toolbox/install-refresh-lib.sh && echo present"
 check_required "bridge-lib" sh -c "test -r /usr/local/lib/toolbox/bridge-lib.sh && grep -q /home/toolbox/.toolbox/browser /usr/local/lib/toolbox/bridge-lib.sh && grep -q unix-socket /usr/local/lib/toolbox/bridge-lib.sh && echo present"
 check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && grep -q bridge-lib.sh /usr/local/bin/xdg-open && echo present"

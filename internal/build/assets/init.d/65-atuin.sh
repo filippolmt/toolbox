@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Seed atuin config + one-shot history import on every shell start.
 # Idempotent: sentinel comment marks the config block (file absent → create,
 # file present without sentinel → append, sentinel present → no-op). User
@@ -83,8 +86,8 @@ fi
 # `atuin search --author claude-code` or `--author '$all-agent'` to inspect.
 #
 # `atuin hook install` is idempotent upstream, but every invocation still
-# opens + parses the agent's config file (and takes the claude-settings
-# flock against init.d/10-remove-rtk.sh). Gate per agent via a marker file keyed
+# opens + parses the agent's config file (and uses Agent Topology's shared
+# Claude-settings lock). Gate per agent via a marker file keyed
 # on the atuin binary's mtime+size — when atuin upgrades the hook stub may
 # change, so we re-run on binary churn but skip on every other boot.
 _atuin_bin=$(command -v atuin)
@@ -95,12 +98,8 @@ mkdir -p "$_atuin_hooks_dir"
 # Claude Code: writes to ~/.claude/settings.json — flock-guarded against
 # the concurrent migration in init.d/10-remove-rtk.sh.
 _claude_marker="$_atuin_hooks_dir/claude-${_atuin_key}"
-if [ ! -f "$_claude_marker" ] && command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    _claude_lock="$HOME/.toolbox-state/.claude-settings.lock"
-    if (
-        flock 200
-        atuin hook install claude-code >/dev/null 2>&1
-    ) 200>"$_claude_lock"; then
+if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent_persistent claude; then
+    if toolbox_with_claude_settings_lock atuin hook install claude-code >/dev/null 2>&1; then
         : > "$_claude_marker"
     else
         echo "  atuin: hook install claude-code failed (non-fatal)"
@@ -110,7 +109,7 @@ fi
 # Codex: writes to ~/.codex/hooks.json (disjoint from init.d/25-codex.sh's
 # config.toml edits, no lock needed).
 _codex_marker="$_atuin_hooks_dir/codex-${_atuin_key}"
-if [ ! -f "$_codex_marker" ] && command -v codex >/dev/null 2>&1 && [ -d "$HOME/.codex" ]; then
+if [ ! -f "$_codex_marker" ] && toolbox_agent_available codex && toolbox_agent_persistent codex; then
     if atuin hook install codex >/dev/null 2>&1; then
         : > "$_codex_marker"
     else
@@ -124,7 +123,7 @@ fi
 # outlives a hook installed off-mount, so the wrong gate would record an install
 # that is no longer there and never retry it.
 _pi_marker="$_atuin_hooks_dir/pi-${_atuin_key}"
-if [ ! -f "$_pi_marker" ] && command -v pi >/dev/null 2>&1 && [ -d "$HOME/.pi" ]; then
+if [ ! -f "$_pi_marker" ] && toolbox_agent_available pi && toolbox_agent_persistent pi; then
     if atuin hook install pi >/dev/null 2>&1; then
         : > "$_pi_marker"
     else

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Per-repo opt-in. The user runs `codegraph install --location=local` once
 # inside a repo they want indexed; that writes .codegraph/ + per-project MCP
 # config + a marker-fenced section into the repo's CLAUDE.md/AGENTS.md.
@@ -27,7 +30,7 @@ command -v codegraph >/dev/null 2>&1 || exit 0
 . /usr/local/lib/toolbox/install-refresh-lib.sh
 
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
+if toolbox_agent_available claude && toolbox_agent_persistent claude; then
     _cg_ver=$(codegraph --version 2>/dev/null | tr -d '\n' || true)
     # The artefact half is .mcp.json, not a skill dir: codegraph writes an MCP
     # config, and it is what must come back if the repo loses it.

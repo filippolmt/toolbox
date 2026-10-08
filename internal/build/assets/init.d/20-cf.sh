@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Seed the cf Claude skill on every shell start. Idempotent: writes only when
 # the file is absent or carries an older version marker, so a fresh
 # ~/.toolbox/.claude bind-mount re-materialises the skill and a corrected text
@@ -17,8 +20,8 @@ command -v cf >/dev/null 2>&1 || exit 0
 
 _cf_skill_version=2
 
-if command -v claude >/dev/null 2>&1 && [ -d "$HOME/.claude" ]; then
-    _cf_skill_file="$HOME/.claude/skills/cf/SKILL.md"
+if toolbox_agent_available claude && toolbox_agent_persistent claude; then
+    _cf_skill_file="$(toolbox_agent_skill_root claude)/cf/SKILL.md"
     _cf_skill_marker="<!-- toolbox-cf-skill: v${_cf_skill_version} -->"
     if ! grep -qF "$_cf_skill_marker" "$_cf_skill_file" 2>/dev/null; then
         mkdir -p "$(dirname "$_cf_skill_file")"

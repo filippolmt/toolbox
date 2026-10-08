@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Build Claude Code MCP plugins that ship src/ only — some marketplace
 # plugins skip `npm install && npm run build` at install time, leaving the
 # MCP server failing on "cannot find module dist/index.js".
@@ -14,7 +17,7 @@ set -euo pipefail
 # absent on first boot before any plugin is installed.
 command -v npm >/dev/null 2>&1 || exit 0
 
-_plugins_cache="$HOME/.claude/plugins/cache"
+_plugins_cache="$(toolbox_agent_home claude)/plugins/cache"
 if [ -d "$_plugins_cache" ] && command -v node >/dev/null 2>&1; then
     shopt -s nullglob
     _mcp_dirs=( "$_plugins_cache"/*/*/*/mcp )

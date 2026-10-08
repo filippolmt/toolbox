@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
 # Three responsibilities, gated together on `command -v glab`:
 #   1. Credential probe — same three-way surface the other cred scripts emit,
 #      so all five providers report uniformly through the Init Sequence.
@@ -100,11 +103,12 @@ _install() {
         echo "toolbox: glab skills install ($label) failed (non-fatal — retry: \`glab skills install $* --force\`)"
 }
 
-_glab_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-if command -v claude >/dev/null 2>&1 && [ -d "$_glab_claude_dir" ]; then
-    _install claude --path "$_glab_claude_dir/skills"
-fi
+_install_skill_root() {
+    if [ "$1" = claude ]; then
+        _install claude --path "$2"
+    else
+        _install cross-agent --global
+    fi
+}
 
-if command -v codex >/dev/null 2>&1 || command -v pi >/dev/null 2>&1; then
-    _install cross-agent --global
-fi
+toolbox_for_each_active_skill_root _install_skill_root
