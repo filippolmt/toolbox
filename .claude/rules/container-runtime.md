@@ -208,8 +208,11 @@ them.
   `/etc/hosts` projection: entrypoint completes one bounded best-effort sync
   before the shell, then starts its watcher. Container creation never parses
   the inventory or lists routes. Trust setup stays in `entrypoint.sh`, not a
-  catalog init script. Pinned by `TestResolveQueriesProximoOnceForEveryReader`,
+  catalog init script. Pinned by
+  `TestResolveQueriesEachProximoPathOnceForEveryReader`,
   `TestPlanNeverRederivesTheProximoGate`,
-  `TestStartSessionResolvesTheProximoGate` and the `TestProximoHosts*` runtime
-  tests. → [Proximo Route Projection](../../CONTEXT.md#proximo-route-projection),
+  `TestStartSessionResolvesTheProximoGate`,
+  `TestEntrypointSyncsProximoHostsBeforeTheWatcherAndShell` and the
+  `TestProximoHosts*` runtime tests. →
+  [Proximo Route Projection](../../CONTEXT.md#proximo-route-projection),
   [proximo](../../docs/proximo.md)

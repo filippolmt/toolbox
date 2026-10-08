@@ -159,46 +159,17 @@ func TestProximoHostsFallsBackToLegacyLabels(t *testing.T) {
 	}
 }
 
-// TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable ensures a
-// transient publication failure neither falls back to declared intent nor
-// destroys the last valid managed block.
-func TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable(t *testing.T) {
-	const previous = "127.0.0.1 localhost\n# >>> toolbox proximo (managed) >>>\n192.168.65.254\tlast.test\n# <<< toolbox proximo (managed) <<<\n"
-	h := newProximoHostsHarness(t, previous)
+const projectedHosts = "127.0.0.1 localhost\n# >>> toolbox proximo (managed) >>>\n192.168.65.254\tlast.test\n# <<< toolbox proximo (managed) <<<\n"
+
+func assertInventoryFailurePreservesProjection(t *testing.T, prepare func(*proximoHostsHarness)) {
+	t.Helper()
+	h := newProximoHostsHarness(t, projectedHosts)
 	if err := os.Mkdir(h.inventoryDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(h.inventoryDir, proximo.InventoryFile), []byte("{"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	prepare(h)
 	h.writeCommand(t, "getent", `echo "192.168.65.254 STREAM host.docker.internal"`)
-	h.writeCommand(t, "docker", `echo "docker must not be called when inventory is present" >&2; exit 99`)
-	h.writeCommand(t, "sudo", `echo "sudo must not be called after discovery fails" >&2; exit 99`)
-
-	cmd := exec.Command(h.script)
-	cmd.Env = h.env()
-	if out, err := cmd.CombinedOutput(); err == nil {
-		t.Fatalf("proximo-hosts unexpectedly succeeded:\n%s", out)
-	}
-	contents, err := os.ReadFile(h.hosts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(contents) != previous {
-		t.Fatalf("hosts changed after unreadable inventory:\n%s", contents)
-	}
-}
-
-// TestProximoHostsKeepsTheLastProjectionWhenMountedInventoryIsMissing ensures
-// a temporary gap during publication is not mistaken for an older Proximo.
-func TestProximoHostsKeepsTheLastProjectionWhenMountedInventoryIsMissing(t *testing.T) {
-	const previous = "127.0.0.1 localhost\n# >>> toolbox proximo (managed) >>>\n192.168.65.254\tlast.test\n# <<< toolbox proximo (managed) <<<\n"
-	h := newProximoHostsHarness(t, previous)
-	if err := os.Mkdir(h.inventoryDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	h.writeCommand(t, "getent", `echo "192.168.65.254 STREAM host.docker.internal"`)
-	h.writeCommand(t, "docker", `touch "$DOCKER_CALLED"; echo "legacy discovery must not run for a mounted inventory" >&2; exit 99`)
+	h.writeCommand(t, "docker", `touch "$DOCKER_CALLED"; exit 99`)
 	h.writeCommand(t, "sudo", `echo "sudo must not be called after discovery fails" >&2; exit 99`)
 
 	dockerCalled := filepath.Join(h.dir, "docker-called")
@@ -214,9 +185,26 @@ func TestProximoHostsKeepsTheLastProjectionWhenMountedInventoryIsMissing(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) != previous {
-		t.Fatalf("hosts changed while mounted inventory was missing:\n%s", contents)
+	if string(contents) != projectedHosts {
+		t.Fatalf("hosts changed after inventory failure:\n%s", contents)
 	}
+}
+
+// TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable ensures a
+// transient publication failure neither falls back to declared intent nor
+// destroys the last valid managed block.
+func TestProximoHostsKeepsTheLastProjectionWhenInventoryIsUnreadable(t *testing.T) {
+	assertInventoryFailurePreservesProjection(t, func(h *proximoHostsHarness) {
+		if err := os.WriteFile(filepath.Join(h.inventoryDir, proximo.InventoryFile), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestProximoHostsKeepsTheLastProjectionWhenMountedInventoryIsMissing ensures
+// a temporary gap during publication is not mistaken for an older Proximo.
+func TestProximoHostsKeepsTheLastProjectionWhenMountedInventoryIsMissing(t *testing.T) {
+	assertInventoryFailurePreservesProjection(t, func(*proximoHostsHarness) {})
 }
 
 // TestProximoHostsWatchFollowsAtomicInventoryReplacement proves the route
