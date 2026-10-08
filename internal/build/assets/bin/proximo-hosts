@@ -59,6 +59,8 @@ PY
 }
 
 label_hosts() {
+    # ponytail: legacy Proximo has no inventory; this adapter requires the
+    # default Docker socket mount until upstream inventory support is ubiquitous.
     command -v docker >/dev/null 2>&1 || { note "docker CLI missing in image"; return 1; }
     _ids=$(docker ps --filter 'label=proximo.hosts' --quiet 2>/dev/null) ||
         { note "docker ps failed — is /var/run/docker.sock mounted?"; return 1; }
