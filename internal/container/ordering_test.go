@@ -17,7 +17,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/imageplan"
+	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -86,7 +86,7 @@ func TestShellPreflightsThePortConflictBeforeItOffersToRefresh(t *testing.T) {
 			mock.listFn = func(context.Context, client.ContainerListOptions) ([]container.Summary, error) {
 				return tc.holders, nil
 			}
-			refreshes := stubRefresh(t, mock, imageplan.OutcomeUnsettled)
+			refreshes := stubRefresh(t, mock, imagefreshness.Proceed)
 
 			_, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), []string{"8877:8877"}))
 			if gotErr := err != nil; gotErr != tc.wantErr {
@@ -114,7 +114,7 @@ func TestShellRefreshesTheBaseBeforeItBuildsTheOverlay(t *testing.T) {
 	stubPrefetch(t)
 
 	mock := createPathMock("sha256:fresh")
-	refreshes := stubRefresh(t, mock, imageplan.OutcomeAccepted)
+	refreshes := stubRefresh(t, mock, imagefreshness.Proceed)
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	withOverlay(t, plan)

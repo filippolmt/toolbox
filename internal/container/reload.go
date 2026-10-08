@@ -12,8 +12,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/imageplan"
-	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -56,20 +54,19 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 // the caller can name the act unconditionally rather than hide it behind a
 // condition.
 //
-// imageplan.Ensure is a local-presence check that never pulls, so the gate
-// needs no new code and gives the contract outright — a reload that finds no
+// Image Freshness's local-presence check never pulls, so the gate gives the
+// contract outright — a reload that finds no
 // usable image is not a failed reload, it is a no-op that leaves the session
 // alive. Everything after the teardown can still fail (a port conflict, a
 // `:local` overlay that will not build), and those failures must print the
 // re-entry command, because the shell that would have printed it is gone.
-func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) error {
+func replaceForReload(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan) error {
 	from := plan.ReloadFrom
 	if from == nil {
 		return nil
 	}
 
-	imageplan.Sync(ctx, cli, plan.Image, plan.StateDir, imageplan.ReasonReload)
-	if err := imageplan.Ensure(ctx, cli, plan.Image); err != nil {
+	if err := freshness.PrepareReload(ctx); err != nil {
 		return fmt.Errorf("reload aborted, session left as it was: %w", err)
 	}
 
@@ -83,7 +80,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, plan *sessionpl
 	}
 
 	// The container is new; the banner's cache still describes the old one.
-	imageprefetch.ClearResult(plan.StateDir)
+	freshness.Replaced()
 
 	// A store that cannot be read and one carrying no digest (a local build)
 	// collapse to the same "" here on purpose: the digest is summary text, not

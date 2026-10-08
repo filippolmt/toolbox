@@ -5,6 +5,7 @@ paths:
   - "internal/runplan/**"
   - "internal/imageplan/**"
   - "internal/imageprefetch/**"
+  - "internal/imagefreshness/**"
   - "internal/imagereclaim/**"
   - "internal/imageref/**"
   - "internal/dockertest/**"
@@ -87,6 +88,15 @@ them.
 
 ## Image lifecycle
 
+- **One freshness seam:** `internal/container` states create, stopped, running,
+  replacement and attachment facts through one `imagefreshness.Session`; it
+  never imports Image Plan or Image Prefetch directly. The session privately
+  retains sync provenance, maps settlements to lifecycle directives and owns
+  result invalidation. `TestContainerUsesOnlyTheImageFreshnessSeam`,
+  `TestAttachReusesTheStartSync` and
+  `TestReplacedInvalidatesPublishedFreshness` pin the seam. →
+  [Image Freshness](../../CONTEXT.md#image-freshness)
+
 - **Reference identity:** resolve image overrides through
   `imageref.ResolveImage`; repository-digest lookup has one spelling in
   `imageref.LocalRepoDigest`. `SessionPlan.Image` remains the base ref; a local
@@ -95,11 +105,12 @@ them.
   → [Image Ref Identity](../../CONTEXT.md#image-ref-identity),
   [Run Image](../../CONTEXT.md#run-image)
 
-- **One synchronous image entry point:** `imageplan.Sync` takes a Reason. Reload
-  is silent and is the only reason that trusts the pull TTL; create/start may
-  reach the start-up prompt. Keep `ReasonCreate` the zero value and do not add a
-  second silent API. `imageplan.Ensure` guarantees local presence and never
-  builds. Pinned by `TestSyncAsksBeforeSpendingTheDevelopersTime`,
+- **One synchronous image entry point:** Image Freshness drives
+  `imageplan.Sync` with a Reason. Reload is silent and is the only reason that
+  trusts the pull TTL; create/start may reach the start-up prompt. Keep
+  `ReasonCreate` the zero value and do not add a second silent API.
+  `imageplan.Ensure` guarantees local presence and never builds. Pinned by
+  `TestSyncAsksBeforeSpendingTheDevelopersTime`,
   `TestSyncOnAReloadNeverAsks` and `TestSyncPullPolicyOnAReload`. →
   [Image Plan](../../CONTEXT.md#image-plan)
 

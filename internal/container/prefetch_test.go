@@ -11,6 +11,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/imageprefetch"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
 	"github.com/filippolmt/toolbox/internal/localimage"
@@ -25,13 +26,48 @@ const (
 	prefetchRef  = prefetchRepo + ":latest"
 )
 
-// TestMain neutralises the update prefetch for the whole package. Shell
-// starts it just before attaching, and its first poll fires immediately — so
-// left live it would drive the test's own mock from a second goroutine, which
-// is both a data race and a stream of Docker calls no test asked for. Tests
-// that assert on the prefetch install their own stub over this one.
+var (
+	prepareStartOverride func(context.Context, imagefreshness.StartKind) imagefreshness.Directive
+	attachOverride       func(context.Context, imagefreshness.Input, string)
+)
+
+type testFreshness struct {
+	real           *imagefreshness.Session
+	in             imagefreshness.Input
+	reloadPrepared bool
+}
+
+func (f *testFreshness) PrepareReload(ctx context.Context) error {
+	if err := f.real.PrepareReload(ctx); err != nil {
+		return err
+	}
+	f.reloadPrepared = true
+	return nil
+}
+func (f *testFreshness) PrepareStart(ctx context.Context, kind imagefreshness.StartKind) imagefreshness.Directive {
+	if prepareStartOverride != nil && !f.reloadPrepared {
+		return prepareStartOverride(ctx, kind)
+	}
+	return f.real.PrepareStart(ctx, kind)
+}
+func (f *testFreshness) Ensure(ctx context.Context, image sessionplan.Image) error {
+	return f.real.Ensure(ctx, image)
+}
+func (f *testFreshness) Replaced() { f.real.Replaced() }
+func (f *testFreshness) Attach(ctx context.Context, digest string) func() {
+	attachCtx, stop := context.WithCancel(ctx)
+	if attachOverride != nil && f.in.Image.PullPolicy != config.PullNever && !f.in.NoUpdateCheck {
+		attachOverride(attachCtx, f.in, digest)
+	}
+	return stop
+}
+
+// TestMain keeps the real freshness preparation and image guarantee, but
+// substitutes attachment so package tests never start a registry goroutine.
 func TestMain(m *testing.M) {
-	startPrefetch = func(context.Context, client.APIClient, imageprefetch.Input) {}
+	newFreshness = func(cli client.APIClient, in imagefreshness.Input) freshnessSession {
+		return &testFreshness{real: imagefreshness.New(cli, in), in: in}
+	}
 	// The reclaim sweep is neutralised for the same reason: Shell starts it
 	// just before attaching and it would delete images out of the test's own
 	// mock from a second goroutine.
@@ -93,12 +129,17 @@ func stubPrefetch(t *testing.T) (*[]imageprefetch.Input, *context.Context) {
 	t.Helper()
 	var got []imageprefetch.Input
 	var ctx context.Context
-	orig := startPrefetch
-	startPrefetch = func(c context.Context, _ client.APIClient, in imageprefetch.Input) {
+	orig := attachOverride
+	attachOverride = func(c context.Context, in imagefreshness.Input, digest string) {
 		ctx = c
-		got = append(got, in)
+		got = append(got, imageprefetch.Input{
+			Ref:             in.Image.Ref,
+			ContainerDigest: digest,
+			StateDir:        in.StateDir,
+			CLIVersion:      in.CLIVersion,
+		})
 	}
-	t.Cleanup(func() { startPrefetch = orig })
+	t.Cleanup(func() { attachOverride = orig })
 	return &got, &ctx
 }
 

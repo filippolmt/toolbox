@@ -10,7 +10,7 @@
 //
 // The orchestration Module lives in lifecycle.go (this file). The
 // stop/remove + shell-exit policy is owned by internal/teardown; image
-// readiness by internal/imageplan; host-process identity by
+// readiness and freshness by internal/imagefreshness; host-process identity by
 // internal/dockeridentity. The TTY/signal Adapter lives in attach.go
 // and is kept as a separate file because its concern (raw mode, signal
 // forwarding) is independent from Docker SDK orchestration.
@@ -27,10 +27,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/dockeridentity"
-	"github.com/filippolmt/toolbox/internal/imageplan"
-	"github.com/filippolmt/toolbox/internal/imageprefetch"
+	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/imagereclaim"
 	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/localimage"
@@ -47,74 +45,32 @@ import (
 // Exposed as a package-level var so tests can substitute it.
 var execShellFn = execShell
 
-// The three seams into the image family are wrapped rather than assigned. Each
-// leaf declares its own Docker surface, unexported in its own package, so a
-// bare `var x = leaf.F` would take the type of that unnameable interface and
-// no test in *this* package could write a stub for it. The wrapper restates
-// the parameter as what this package holds anyway — the whole client, since
-// internal/container is the Docker edge and does not narrow.
-// → CONTEXT.md, Declared Docker Surface.
+// freshnessSession is the one seam from container lifecycle into image
+// freshness. Production uses imagefreshness.Session; tests substitute the
+// whole session rather than splitting its synchronous and background halves.
+type freshnessSession interface {
+	PrepareReload(context.Context) error
+	PrepareStart(context.Context, imagefreshness.StartKind) imagefreshness.Directive
+	Ensure(context.Context, sessionplan.Image) error
+	Replaced()
+	Attach(context.Context, string) func()
+}
 
-// startPrefetch launches the host-side update probe + prefetch for the
-// lifetime of the attached session. A package-level var for the same reason
-// as execShellFn: every lifecycle test would otherwise start a goroutine that
-// talks to a registry.
-var startPrefetch = func(ctx context.Context, cli client.APIClient, in imageprefetch.Input) {
-	imageprefetch.Start(ctx, cli, in)
+var newFreshness = func(cli client.APIClient, in imagefreshness.Input) freshnessSession {
+	return imagefreshness.New(cli, in)
 }
 
 // reclaimImages is the Image Reclamation sweep for the lifetime of the
-// attached session. A package-level var for the same reason as startPrefetch:
-// every lifecycle test would otherwise have a second goroutine deleting images
-// out of its own mock.
+// attached session. A package-level var so lifecycle tests do not start a
+// second goroutine deleting images out of their own mock.
 var reclaimImages = func(ctx context.Context, cli client.APIClient, in imagereclaim.Input) {
 	imagereclaim.Start(ctx, cli, in)
 }
 
-// refreshAtStart is the shell-start image refresh, prompt and all — one of the
-// two asking reasons, never imageplan.ReasonReload, which the reload path
-// reaches through imageplan.Sync directly. A package-level var for the same
-// reason as startPrefetch: the tree behind it asks a question on a terminal,
-// and what Shell owns is only what it does with the answer.
-var refreshAtStart = func(ctx context.Context, cli client.APIClient, image sessionplan.Image, stateDir string, reason imageplan.Reason) imageplan.Outcome {
-	return imageplan.Sync(ctx, cli, image, stateDir, reason)
-}
-
-// refreshAnswer is what the start-up refresh settled: the outcome, and the
-// reason it ran under — which is what a yes to it was staked on. offerRefresh
-// establishes the two together and every consumer needs both, so they travel
-// as one rather than as a pair of arguments.
-//
-// A named field rather than an embedding, now that imageplan.Outcome is one
-// value with a String of its own: embedding would promote that String and make
-// refreshAnswer a fmt.Stringer that prints the settlement and silently drops
-// the reason — half of the only thing this type exists to keep together.
-type refreshAnswer struct {
-	outcome imageplan.Outcome
-	reason  imageplan.Reason
-}
-
-// offerRefresh runs the shell-start image refresh — prompt and all — on the
-// paths that can honour its answer, and records a "no" as the postponement it
-// is.
-//
-// Two paths skip the act whole. A reload has already refreshed and proved the
-// image in replaceForReload, and its premise is that the move onto the newer
-// image was asked for — so there is nothing left to ask, and the same path is
-// what an unattended trigger walks. A *running* container is the case where
-// the answer could not be honoured: Docker cannot swap the image under it, and
-// replacing it would end whatever else is attached to it — panes, agents, a
-// sibling shell — none of which volunteered. The Idle Reload is the accepted
-// answer there (ADR 0006), and the prefetch fetches behind either way.
-//
-// What is left is create and start, and the two differ in what a yes costs:
-// on create it buys the image, on start it also spends the stopped container
-// the developer was about to reuse. The branch is handed to the tree as the
-// imageplan.Reason, which derives the Prompt Stake from it — the wording, and
-// the part no clock may decide, the unanswered window. It is carried in the
-// answer alongside the outcome, and it is the only place this branch is
-// classified: honouring a yes reads the reason rather than re-deriving what a
-// yes meant from the op.
+// prepareFreshness states the observed container branch and records a "no" as
+// the postponement it is. Image Freshness owns whether that fact reaches the
+// prompt and translates the settlement back into a lifecycle directive; this
+// package owns only the lifecycle effect.
 //
 // The stamp a decline leaves is the moment, and it is what arms the Idle
 // Reload for this session alone — even where that is otherwise off, because
@@ -123,21 +79,21 @@ type refreshAnswer struct {
 // an unwritable state mount costs the postponement, not the shell, and a
 // stamp older than the container it names is inert by construction, so
 // nothing has to clear it.
-func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op) refreshAnswer {
-	reason := imageplan.ReasonCreate
-	if op.Action == runplan.ActionStart {
-		reason = imageplan.ReasonStart
+func prepareFreshness(ctx context.Context, freshness freshnessSession, plan *sessionplan.SessionPlan, op runplan.Op) imagefreshness.Directive {
+	kind := imagefreshness.StartCreate
+	switch op.Action {
+	case runplan.ActionStart:
+		kind = imagefreshness.StartStopped
+	case runplan.ActionConnect:
+		kind = imagefreshness.StartRunning
 	}
-	if plan.ReloadFrom != nil || op.Action == runplan.ActionConnect {
-		return refreshAnswer{reason: reason}
-	}
-	refresh := refreshAtStart(ctx, cli, plan.Image, plan.StateDir, reason)
-	if refresh == imageplan.OutcomeDeclined && plan.StateDir != "" {
+	directive := freshness.PrepareStart(ctx, kind)
+	if directive == imagefreshness.Postpone && plan.StateDir != "" {
 		if err := reload.TouchDeclined(plan.StateDir, plan.ContainerName); err != nil {
 			ui.Warning("start-up refresh: cannot record the postponement: " + err.Error())
 		}
 	}
-	return refreshAnswer{outcome: refresh, reason: reason}
+	return directive
 }
 
 // replaceForRefresh honours a yes given on the start branch, by destroying the
@@ -175,7 +131,7 @@ func offerRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 //   - unreadable: nothing is destroyed on an answer the daemon would not give,
 //     and nothing is learned from it either — the asked pair is returned
 //     unchanged, which is what starting it as it is means.
-func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
+func replaceForRefresh(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan,
 	asked container.InspectResponse, askedOp runplan.Op) (container.InspectResponse, runplan.Op, error) {
 	if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
 		// Zero rather than the asked pair: the caller aborts on an error, and
@@ -204,7 +160,7 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, plan *sessionp
 	// removed: either way the container the banner's cache was published about
 	// is gone, and left in place that cache would announce an update this
 	// session has adopted. Same call, same reason, as the reload's own.
-	imageprefetch.ClearResult(plan.StateDir)
+	freshness.Replaced()
 	// No record with a create: the container the read described is gone, or was
 	// never there, and the consumers of the pair read the plan on this branch.
 	return container.InspectResponse{}, runplan.Op{Action: runplan.ActionCreate}, nil
@@ -337,7 +293,7 @@ func NewClient() (client.APIClient, error) {
 // Image ensure: the image ref defaults to the canonical GHCR tag but can be
 // relocated opt-in (config Image / RegistryMirror). Refresh attempts a
 // best-effort registry sync steered by the pull policy (auto/always/never),
-// Ensure (called from createAndStart) hard-requires the image be present
+// Image Freshness hard-requires the image be present before dispatch
 // locally — `toolbox build` is the explicit path to a local rebuild.
 //
 // Multi-session caveat: if two terminals open a shell into the same
@@ -354,10 +310,17 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		ui.Warning(w)
 	}
 
+	freshness := newFreshness(cli, imagefreshness.Input{
+		Image:         plan.Image,
+		StateDir:      plan.StateDir,
+		CLIVersion:    version.Version,
+		NoUpdateCheck: sessionplan.EnvValue(plan.Env, sessionplan.NoUpdateCheckEnv) != "",
+	})
+
 	// A reload arrives owning a container it must replace, and it must do so
 	// before the inspect below — which would otherwise compute a connect to the
 	// very container being retired. A no-op for every other session.
-	if reloadErr := replaceForReload(ctx, cli, plan); reloadErr != nil {
+	if reloadErr := replaceForReload(ctx, cli, freshness, plan); reloadErr != nil {
 		return nil, reloadErr
 	}
 
@@ -367,15 +330,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, resolveErr
 	}
 
-	// Best-effort registry sync of the base image, which on the one case that
-	// is not already settled *asks* — see the Image Plan's own tree, and
-	// offerRefresh for the two paths that skip the act whole. Hard guarantee
-	// runs in imageplan.Ensure inside createAndStart. Whether the store was
-	// established current is threaded to the prefetch below: a synchronous
-	// probe is a probe, and the background poller must not re-ask the question
-	// this just answered.
-	answer := offerRefresh(ctx, cli, plan, op)
-	if answer.outcome == imageplan.OutcomeInterrupted {
+	// State the observed branch to Image Freshness. It owns the synchronous
+	// decision and retains any live-probe provenance for the later attachment;
+	// container sees only the directive it must honour.
+	directive := prepareFreshness(ctx, freshness, plan, op)
+	if directive == imagefreshness.Interrupt {
 		// A ctrl+c at the start-up prompt. The prompt has already re-raised
 		// the signal raw mode swallowed, but the answer is reported rather
 		// than left to the signal alone: whether cmd's signal context has
@@ -409,7 +368,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// After the overlay, not before — see replaceIfRefreshAccepted for what that
 	// ordering protects and for why a yes at the recreate stake spends the
 	// container.
-	inspect, op, replaceErr := replaceIfRefreshAccepted(ctx, cli, plan, inspect, op, answer)
+	inspect, op, replaceErr := replaceIfRefreshAccepted(ctx, cli, freshness, plan, inspect, op, directive)
 	if replaceErr != nil {
 		return nil, replaceErr
 	}
@@ -425,6 +384,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// chance to pull. Only the create path can be wrong — a connect or start
 	// reads the digest off a container that already exists.
 	restampImageDigest(ctx, cli, plan, op)
+
+	if op.Action == runplan.ActionCreate {
+		if ensureErr := freshness.Ensure(ctx, runImage); ensureErr != nil {
+			return nil, ensureErr
+		}
+	}
 
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)
 	if dispatchErr != nil {
@@ -442,8 +407,8 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// past it, the other must never reclaim it.
 	sessionDigest := createdImageDigest(plan, inspect, op)
 
-	stopPrefetch := beginPrefetch(ctx, cli, plan, sessionDigest, answer.outcome.Synced())
-	defer stopPrefetch()
+	stopFreshness := freshness.Attach(ctx, sessionDigest)
+	defer stopFreshness()
 
 	stopReclaim := beginReclaim(ctx, cli, plan, sessionDigest)
 	defer stopReclaim()
@@ -503,12 +468,12 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 // the other way this start can still fail, and failing it once the container is
 // gone would leave the developer with neither a session nor the container they
 // were asked about.
-func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan,
-	inspect container.InspectResponse, op runplan.Op, answer refreshAnswer) (container.InspectResponse, runplan.Op, error) {
-	if answer.outcome != imageplan.OutcomeAccepted || answer.reason != imageplan.ReasonStart {
+func replaceIfRefreshAccepted(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan,
+	inspect container.InspectResponse, op runplan.Op, directive imagefreshness.Directive) (container.InspectResponse, runplan.Op, error) {
+	if directive != imagefreshness.Replace {
 		return inspect, op, nil
 	}
-	return replaceForRefresh(ctx, cli, plan, inspect, op)
+	return replaceForRefresh(ctx, cli, freshness, plan, inspect, op)
 }
 
 // shellTeardown is the exit decision Shell defers: auto-remove the container
@@ -532,21 +497,6 @@ func shellTeardown(cli client.APIClient, name string, handingOff bool, err error
 	return err
 }
 
-// beginPrefetch starts the host-side update probe for as long as the shell is
-// attached, and returns the func that stops it. One detector: the probe that
-// decides whether to pull is the same act that knows whether the bytes landed,
-// which is the fact the prompt banner states. The returned stop is always
-// live, refusal included, so the caller defers one thing unconditionally —
-// cancelling it with the session leaves no blob behind, an interrupted pull
-// expiring on its own.
-func beginPrefetch(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) func() {
-	prefetchCtx, stop := context.WithCancel(ctx)
-	if in, ok := prefetchInput(plan, containerDigest, startSynced); ok {
-		startPrefetch(prefetchCtx, cli, in)
-	}
-	return stop
-}
-
 // beginReclaim starts the Image Reclamation sweep for as long as the shell is
 // attached, and returns the func that stops it. Called from Shell *after*
 // dispatchOp and never before: the ordering is the design, because only once
@@ -566,35 +516,6 @@ func beginReclaim(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 		reclaimImages(reclaimCtx, cli, imagereclaim.Input{Ref: plan.Image.Ref, KeepDigest: sessionDigest})
 	}
 	return stop
-}
-
-// prefetchInput assembles the update prefetch's input and reports whether the
-// act runs at all. Two refusals, both settled on the map:
-//
-//   - pull: never means "do not talk to the registry", and a probe talks to
-//     the registry — so it silences probe, prefetch and banner as one act.
-//   - TOOLBOX_NO_UPDATE_CHECK silences the host half here and the render half
-//     in zshrc. Honoured only in its `env:` passthrough form, which is what
-//     reaches the composed plan env; an export typed inside a live shell still
-//     stops the rendering, which is what that variable is now for.
-//
-// The image tracked is plan.Image, which is the *base* ref and never the
-// `:local` overlay tag: the overlay is built, not pulled, and it is the base
-// moving underneath it that a reload would adopt.
-func prefetchInput(plan *sessionplan.SessionPlan, containerDigest string, startSynced bool) (imageprefetch.Input, bool) {
-	if plan.Image.PullPolicy == config.PullNever {
-		return imageprefetch.Input{}, false
-	}
-	if sessionplan.EnvValue(plan.Env, sessionplan.NoUpdateCheckEnv) != "" {
-		return imageprefetch.Input{}, false
-	}
-	return imageprefetch.Input{
-		Ref:             plan.Image.Ref,
-		ContainerDigest: containerDigest,
-		StateDir:        plan.StateDir,
-		StartSynced:     startSynced,
-		CLIVersion:      version.Version,
-	}, true
 }
 
 // restampImageDigest rewrites the plan's TOOLBOX_IMAGE_DIGEST to the repo
@@ -726,16 +647,13 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 	}
 }
 
-// createAndStart owns the not-found path: ensure the image is present,
-// create the container from the SessionPlan, start it, return its ID.
+// createAndStart owns the not-found Docker path: create the container from the
+// SessionPlan, start it, return its ID. Image Freshness has already guaranteed
+// the run image is present.
 //
 // runImage is the ref this container runs (see dispatchOp); plan.Image is the
 // base, and stays the base for ensurePeerRuntime below.
 func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image) (string, error) {
-	if ensureErr := imageplan.Ensure(ctx, cli, runImage); ensureErr != nil {
-		return "", ensureErr
-	}
-
 	// Resolved before the bind set is flattened because an unusable anchor or
 	// socket volume degrades the session to its own PID namespace, without the
 	// shared socket mount, rather than failing it.
