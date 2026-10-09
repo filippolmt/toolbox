@@ -40,7 +40,7 @@
 # consumes them, so a bump lands in that RUN's cache key and not in every one
 # below it.
 ARG GH_VERSION=2.102.0
-ARG GLAB_VERSION=1.121.0
+ARG GLAB_VERSION=1.122.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.23.0
 ARG HERDR_VERSION=0.9.3
