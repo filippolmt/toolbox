@@ -73,7 +73,7 @@ var Skills = []Skill{
 		// --yes` triggers the non-interactive Quick Update path.
 		Key:            "bmad",
 		NpmPackage:     "bmad-method",
-		Version:        "6.12.3",
+		Version:        "6.12.4",
 		BinName:        "bmad-method",
 		InstallSteps:   [][]string{{"install", "--directory", ".", "--yes"}},
 		RequiresMarker: "_bmad",
@@ -112,7 +112,7 @@ var Skills = []Skill{
 		// so it is deliberately NOT fenced here.
 		Key:        "gsd",
 		NpmPackage: "@opengsd/gsd-core",
-		Version:    "1.16.0",
+		Version:    "1.17.0",
 		BinName:    "gsd-core",
 		InstallSteps: [][]string{
 			{"--claude", "--global", "--config-dir", "./.claude"},
@@ -175,7 +175,7 @@ var Skills = []Skill{
 		// init command unconditionally enables both adapter sets.
 		Key:        "openspec",
 		NpmPackage: "@fission-ai/openspec",
-		Version:    "1.14.1",
+		Version:    "1.14.2",
 		BinName:    "openspec",
 		InstallSteps: [][]string{
 			{"init", "--tools=claude,codex", "--force"},
