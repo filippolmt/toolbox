@@ -49,7 +49,10 @@ func TestPullResponseStreamsNothing(t *testing.T) {
 		t.Errorf("Wait() = %v, want nil", err)
 	}
 	count := 0
-	for range resp.JSONMessages(t.Context()) {
+	for _, err := range resp.JSONMessages(t.Context()) {
+		if err != nil {
+			t.Errorf("JSONMessages yielded error %v", err)
+		}
 		count++
 	}
 	if count != 0 {
