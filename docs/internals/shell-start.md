@@ -164,7 +164,8 @@ including the unstable identity fields makes ordinary multi-file operations
 fail. The detection and registration policy is held by
 `TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
 by `.github/scripts/virtiofs-git-rewrite.sh`, run through `make test-virtiofs`:
-it builds the image, binds a fresh repository through Docker Desktop, checks
+it builds the image (overwriting the local registry tag, as `make test` does),
+binds a fresh repository through Docker Desktop, checks
 that the bind is virtiofs and the policy active, and rebases shared-file
 rewrites on the real mount. Without the policy the same rebase fails with the
 false `would be overwritten by merge` error, so the gate tells the two apart.
