@@ -9,11 +9,17 @@ if [ "$#" -ne 1 ]; then
 fi
 
 image=$1
-# Keep the bind source under the checked-out workspace unless Actions exposes a
-# runner temp directory. Both paths are visible to the host daemon when this
-# gate is launched from inside a toolbox container (Docker-outside-of-Docker).
-bind_root=${RUNNER_TEMP:-$PWD}
-worktree=$(mktemp -d "$bind_root/.toolbox-virtiofs-git.XXXXXX")
+# Keep the bind source under the checkout: from inside a toolbox container
+# (Docker-outside-of-Docker) it is a host path the daemon can bind, where the
+# scratch temp directory is not. A workspace mounted at /workspace is
+# translated back to its host path, as the Makefile's HOST_SRC does.
+worktree=$(mktemp -d "$PWD/.toolbox-virtiofs-git.XXXXXX")
+source=$worktree
+if [ -n "${TOOLBOX_HOST_WORKSPACE:-}" ]; then
+  case $worktree in
+    /workspace/*) source=$TOOLBOX_HOST_WORKSPACE${worktree#/workspace} ;;
+  esac
+fi
 container="toolbox-virtiofs-git-$$"
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -22,11 +28,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Run as the host user, as toolbox does, so every file remains removable by the
-# runner. The repository is created inside the bind: the operation must exercise
+# caller. The repository is created inside the bind: the operation must exercise
 # Docker Desktop's real file-sharing path rather than the container overlay.
 docker run --rm --name "$container" \
   --user "$(id -u):$(id -g)" \
-  --mount "type=bind,source=$worktree,destination=/workspace" \
+  --mount "type=bind,source=$source,destination=/workspace" \
   --workdir /workspace \
   "$image" bash -euc '
     if [ "$(findmnt -n -o FSTYPE --target "$PWD")" != virtiofs ]; then

@@ -13,6 +13,10 @@ coverage.out
 # coverage.out — a CI by-product that a local dry run also leaves behind.
 sonar-comment.md
 
+# Temporary repository of `make test-virtiofs`: its exit trap removes it, a
+# killed run leaves it behind.
+.toolbox-virtiofs-git.*/
+
 # Per-developer toolbox config override
 .toolbox.yaml
 
