@@ -163,20 +163,22 @@ until git refreshes the index. That window is accepted only on virtiofs, where
 including the unstable identity fields makes ordinary multi-file operations
 fail. The detection and registration policy is held by
 `TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
-by `.github/scripts/virtiofs-git-rewrite.sh`: the scheduled/manual
-`virtiofs-git.yml` workflow builds the image on a dedicated macOS runner, binds
-a fresh repository through Docker Desktop, and rebases shared-file rewrites on
-the real virtiofs mount.
+by `.github/scripts/virtiofs-git-rewrite.sh`, run through `make test-virtiofs`:
+it builds the image, binds a fresh repository through Docker Desktop, checks
+that the bind is virtiofs and the policy active, and rebases shared-file
+rewrites on the real mount. Without the policy the same rebase fails with the
+false `would be overwritten by merge` error, so the gate tells the two apart.
 
-That runner is an explicit infrastructure dependency, not something the
-workflow can create. Its Actions registration must carry the `self-hosted`,
-`macOS`, and `virtiofs` labels; Docker Desktop must start unattended with
-virtiofs file sharing enabled; and the runner account's Actions workspace must
-be shared with the Docker VM. The workflow uses one stable image tag, removes
-it before and after the gate, and labels the image so a replacement left it
-dangling can be reclaimed. The script's exit trap separately owns its one
-container and temporary repository. Provisioning and recovery after the host
-itself is interrupted are tracked in [#1143](https://github.com/filippolmt/toolbox/issues/1143).
+The gate runs by hand on a Mac with Docker Desktop, never in CI. GitHub-hosted
+macOS runners cannot run Docker Desktop, and a self-hosted runner is not worth
+its exposure here: the repository is public and owned by a user account, which
+has no runner groups to restrict a runner to one workflow, so any approved fork
+PR could edit a workflow to target it. The two events that can break the
+boundary are both visible from the Mac it runs on: a change to the entrypoint
+policy, which the pre-push table in `CLAUDE.md` maps to this target, and a
+Docker Desktop upgrade, after which the gate is worth one run. The script's exit
+trap owns its container and temporary repository; a killed run leaves the
+repository behind as a gitignored `.toolbox-virtiofs-git.*` directory.
 
 ## git safe.directory ("dubious ownership")
 

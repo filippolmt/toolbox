@@ -85,7 +85,7 @@ GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(G
 # makes go-coverage fail closed before it runs the suite.
 COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-check go-shell go-clean-cache go-run go-run-clean check-links check-agent update-skills
+.PHONY: build test shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-check go-shell go-clean-cache go-run go-run-clean test-virtiofs check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -95,6 +95,9 @@ build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:lates
 
 test: build ## Build the image and run the smoke test
 	internal/build/assets/smoke-test.sh $(FULL)
+
+test-virtiofs: build ## Build the image and rebase on a real virtiofs bind (macOS Docker Desktop only)
+	.github/scripts/virtiofs-git-rewrite.sh $(FULL)
 
 shell: build ## Build the image and open an interactive zsh shell in it
 	docker run --rm -it $(FULL) zsh

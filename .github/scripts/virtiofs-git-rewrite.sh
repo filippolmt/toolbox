@@ -9,11 +9,10 @@ if [ "$#" -ne 1 ]; then
 fi
 
 image=$1
-# Keep the bind source under the checked-out workspace unless Actions exposes a
-# runner temp directory. Both paths are visible to the host daemon when this
-# gate is launched from inside a toolbox container (Docker-outside-of-Docker).
-bind_root=${RUNNER_TEMP:-$PWD}
-worktree=$(mktemp -d "$bind_root/.toolbox-virtiofs-git.XXXXXX")
+# Keep the bind source under the checkout: it is visible to the host daemon
+# when this gate is launched from inside a toolbox container
+# (Docker-outside-of-Docker), where the scratch temp directory is not.
+worktree=$(mktemp -d "$PWD/.toolbox-virtiofs-git.XXXXXX")
 container="toolbox-virtiofs-git-$$"
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
