@@ -33,6 +33,11 @@
       "groupName": "android sdk installer",
       "groupSlug": "android-sdk",
       "maxMajorIncrement": 0
+    },
+    {
+      "description": "The typescript nested under typescript-language-server exists only to provide tsserver.js, which the native (Go) majors from 7 on no longer ship. Hold it below 7 until typescript-language-server can drive the native server.",
+      "matchDepNames": ["typescript-tsserver"],
+      "allowedVersions": "<7"
     }
   ],
   "customDatasources": {
@@ -221,6 +226,14 @@
       "matchStrings": ["ARG\\s+TYPESCRIPT_LANGUAGE_SERVER_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "npm",
       "packageNameTemplate": "typescript-language-server"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+TYPESCRIPT_TSSERVER_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "typescript",
+      "depNameTemplate": "typescript-tsserver"
     },
     {
       "customType": "regex",
