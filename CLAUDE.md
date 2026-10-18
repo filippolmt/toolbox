@@ -84,9 +84,9 @@ Branches are `feat/<slug>` or `fix/<slug>` — a dependency bump takes `fix/`;
 `.github/scripts/check-branch-name.sh` rejects anything else outside Renovate's
 own `renovate/*`, in CI and as a `PreToolUse` hook. Unless the user
 selects a branch, record the starting HEAD and create the branch before the
-first commit; pass that recorded SHA to the final review,
-`code-review:code-review` (the built-in `code-review` shares the slash name and
-checks neither axis). If the review skill requests sub-agents but the harness
+first commit; before opening a PR, run `code-review:code-review` against that
+recorded SHA, or the merge-base with `main` when there is none (the built-in
+`code-review` shares the slash name and checks neither axis). If the review skill requests sub-agents but the harness
 exposes no delegation tool, run the Standards and Spec axes as separate
 sequential passes and disclose that fallback.
 
