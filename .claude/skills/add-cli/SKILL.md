@@ -110,6 +110,8 @@ Two Go tests enforce the catalog↔image bijection, so a missing or misspelled e
 
 Add a `check_optional "<key>" <binary> <version-command>` line in the same alphabetical-ish block as the other tool checks. `<binary>` is what `command -v` checks; the version command confirms the binary is functional. Skip only if the tool has no version flag at all.
 
+A tool another program drives, rather than one you run by hand, needs a second check through that consumer's path: `--version` stays green when a bump keeps the binary alive but breaks how it is driven. A language server gets `check_optional "<key> LSP initialize" <binary> _lsp_init_check <binary> --stdio`, which sends a real LSP `initialize`; a library another tool resolves at runtime gets a check that does that resolve.
+
 If you also added an `init.d/<NN>-<tool>.sh` script, bump the counts in the smoke-test's init.d bijection block; if the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the floor in `_zsh_vendor_completions_check`. Both are covered by `.claude/rules/image-build.md` — the synced edits, and which test names the number for you.
 
 ### 5. `renovate.json`

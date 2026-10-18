@@ -67,6 +67,7 @@ ARG WRANGLER_VERSION=4.151.1
 ARG PYRIGHT_VERSION=1.1.414
 ARG TYPESCRIPT_VERSION=7.0.2
 ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.0.2
+ARG TYPESCRIPT_TSSERVER_VERSION=6.0.3
 ARG GCLOUD_VERSION=589.0.0
 ARG AZURE_CLI_VERSION=2.91.0
 ARG OCI_VERSION=3.95.0
@@ -1221,24 +1222,35 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # `--prefix /out/usr/local`, the verification run through `/out`, the weight
 # prune scoped to the installed tree, `freeze-mtimes` last.
 
-# TypeScript language server (TS/JS LSP for Claude Code typescript-lsp plugin).
-# Global typescript alongside: the server resolves the workspace's own
-# typescript when present, global tsserver is the fallback for checkouts
-# without node_modules.
+# TypeScript language server (TS/JS LSP for Claude Code typescript-lsp plugin)
+# plus the global `tsc`. The server drives tsserver.js: it takes the
+# workspace's own typescript when present, else `require.resolve('typescript')`
+# from its own bundle. The global typescript is the native (Go) major, which
+# ships no tsserver.js, so a JS-major typescript is nested in the server's own
+# node_modules, where that resolve finds it before the global one. Installed
+# via a scratch prefix: `npm install` inside the server's package dir would
+# pull its whole devDependencies tree. The resolve check mirrors the server's
+# fallback and fails the build if either side moves.
 FROM node-base AS fetch-typescript
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --link --from=fetch-base /usr/local/bin/ /usr/local/bin/
 ARG TYPESCRIPT_VERSION
 ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
+ARG TYPESCRIPT_TSSERVER_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       mkdir -p /out/usr/local; \
       npm install -g --prefix /out/usr/local "typescript@${TYPESCRIPT_VERSION}" \
         "typescript-language-server@${TYPESCRIPT_LANGUAGE_SERVER_VERSION}"; \
+      tls=/out/usr/local/lib/node_modules/typescript-language-server; \
+      npm install -g --prefix /tmp/tsserver "typescript@${TYPESCRIPT_TSSERVER_VERSION}"; \
+      mkdir -p "${tls}/node_modules"; \
+      mv /tmp/tsserver/lib/node_modules/typescript "${tls}/node_modules/typescript"; \
+      rm -rf /tmp/tsserver; \
+      node -e "const p=require('path'),r=require('module').createRequire(p.join(process.argv[1],'lib/cli.mjs')); require('fs').accessSync(p.join(p.dirname(r.resolve('typescript')),'tsserver.js'))" "${tls}"; \
       /out/usr/local/bin/tsc --version; \
       /out/usr/local/bin/typescript-language-server --version; \
-      prune-node-weight /out/usr/local/lib/node_modules/typescript \
-                        /out/usr/local/lib/node_modules/typescript-language-server; \
+      prune-node-weight /out/usr/local/lib/node_modules/typescript "${tls}"; \
       freeze-mtimes
 
 # Pyright language server (Python LSP for Claude Code plugin).
