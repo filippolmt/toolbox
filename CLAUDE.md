@@ -71,12 +71,9 @@ Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to 
 
 ## Code intelligence
 
-Two indexes, split by what you are asking about:
+Code questions — symbols, call paths, blast radius — go to `codegraph_explore`.
 
-- **Code — symbols, call paths, blast radius**: `codegraph_explore`.
-- **Everything else — architecture, docs, cross-file structure**: `graphify query "<question>"`, plus `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for one concept. `graphify-out/wiki/index.md` navigates broadly; `GRAPH_REPORT.md` only when those fall short. After modifying code: `graphify update .` (AST-only, no API cost).
-
-`graphify install` re-appends a `## graphify` block asserting graphify-first for every codebase question. Delete it — the split above is the rule.
+This repo does not use graphify; the image still bundles it for other projects. A `graphify install` run here adds a `## graphify` block to `.claude/CLAUDE.md` and `graphify hook-guard` `PreToolUse` hooks to `.claude/settings.json`, both asserting graphify-first: remove both.
 
 ## Agent skills
 
