@@ -15,7 +15,7 @@ sonar-comment.md
 
 # Temporary repository of `make test-virtiofs`: its exit trap removes it, a
 # killed run leaves it behind.
-/.toolbox-virtiofs-git.*/
+.toolbox-virtiofs-git.*/
 
 # Per-developer toolbox config override
 .toolbox.yaml
