@@ -479,6 +479,33 @@ _pw_deps_check() {
     esac
 }
 
+# Language servers are consumed over LSP by the Claude Code plugins, not run
+# by hand, so `--version` proves nothing about them: a bump can keep the binary
+# alive while the server can no longer start (the typescript major that dropped
+# tsserver.js did exactly that behind a green build). This sends a real LSP
+# initialize from an empty workspace and fails on an error response, a dead
+# server or no answer within 30s. No single quotes and no dollar signs in the
+# node source — this body lives inside a single-quoted bash -c.
+_lsp_init_check() {
+    local d rc
+    d=$(mktemp -d) || return 1
+    ( cd "$d" && node -e "
+const cp=require(\"child_process\");const a=process.argv.slice(1);
+const p=cp.spawn(a[0],a.slice(1));const done=(c,s)=>{console.log(s);p.kill();process.exit(c)};
+setTimeout(()=>done(1,\"no initialize response within 30s\"),30000);
+p.on(\"error\",e=>done(1,e.message));
+let b=Buffer.alloc(0);
+p.stdout.on(\"data\",d=>{b=Buffer.concat([b,d]);for(;;){const i=b.indexOf(\"\r\n\r\n\");if(i<0)return;
+const n=+/Content-Length: (\d+)/i.exec(b.subarray(0,i).toString())[1];if(b.length<i+4+n)return;
+const m=JSON.parse(b.subarray(i+4,i+4+n).toString());b=b.subarray(i+4+n);
+if(m.id===1)done(m.error?1:0,m.error?m.error.message:\"initialize ok\")}});
+const r=JSON.stringify({jsonrpc:\"2.0\",id:1,method:\"initialize\",params:{processId:process.pid,rootUri:\"file://\"+process.cwd(),capabilities:{}}});
+p.stdin.write(\"Content-Length: \"+Buffer.byteLength(r)+\"\r\n\r\n\"+r);
+" "$@" ); rc=$?
+    rm -rf "$d"
+    return $rc
+}
+
 check_required "node"       node --version
 check_required "npm"        npm --version
 # NODE_OPTIONS=--dns-result-order=ipv4first must make a localhost listen bind
@@ -603,7 +630,9 @@ check_optional  "pi"        pi       pi --version
 check_optional  "pi env knobs" pi sh -c "test \"\$PI_TELEMETRY\" = 0 && test \"\$PI_SKIP_VERSION_CHECK\" = 1 && echo present"
 check_optional  "codegraph" codegraph codegraph --version
 check_optional  "pyright"   pyright-langserver pyright --version
+check_optional  "pyright LSP initialize" pyright-langserver _lsp_init_check pyright-langserver --stdio
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
+check_optional  "typescript-language-server LSP initialize" typescript-language-server _lsp_init_check typescript-language-server --stdio
 check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright deps" playwright _pw_deps_check
