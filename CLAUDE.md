@@ -80,11 +80,14 @@ This repo does not use graphify; the image still bundles it for other projects. 
 
 ### Change workflow
 
-For ticket implementation, unless the user selects a branch, record the starting
-HEAD and create the `feat/<slug>` or `fix/<slug>` branch before the first commit;
-pass that recorded SHA to the final code review. If the review skill requests
-sub-agents but the harness exposes no delegation tool, run the Standards and
-Spec axes as separate sequential passes and disclose that fallback.
+Branches are `feat/<slug>` or `fix/<slug>` — a dependency bump takes `fix/`;
+`.github/scripts/check-branch-name.sh` rejects anything else. Unless the user
+selects a branch, record the starting HEAD and create the branch before the
+first commit; pass that recorded SHA to the final review,
+`code-review:code-review` (the built-in `code-review` shares the slash name and
+checks neither axis). If the review skill requests sub-agents but the harness
+exposes no delegation tool, run the Standards and Spec axes as separate
+sequential passes and disclose that fallback.
 
 ### Issue tracker
 
