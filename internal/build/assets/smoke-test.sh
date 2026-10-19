@@ -832,7 +832,7 @@ make_json() {  # make_json <cwd> — one fixture shape, pointed wherever the cal
   j="$j\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
   j="$j\"prompt_cache\":{\"warm\":false,\"caching_observed\":true},"
   j="$j\"rate_limits\":{"
-  j="$j\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9000))},"
+  j="$j\"five_hour\":{\"used_percentage\":42,\"resets_at\":$((now + 9030))},"
   j="$j\"seven_day\":{\"used_percentage\":61,\"resets_at\":$((now + 230000))},"
   j="$j\"spend_limit\":{\"used_percentage\":137,\"resets_at\":$((now + 900000))}}}"
   printf "%s" "$j"
@@ -872,7 +872,8 @@ done
 
 # Countdowns, never the wall-clock date they replaced. The icon is part of each
 # pattern, so an emptied glyph cannot slip through, and the deadline is matched
-# whole: 230000s is 2d15h and the day branch floors, 9000s is exactly 2h30m.
+# whole: 230000s is 2d15h and the day branch floors, 9030s is 2h30m30s, the
+# half minute absorbing the seconds between this now and the render.
 case "$out" in
   *"7d 61% ${reset_icon}2d"*) ;;
   *) echo "FAILED: weekly window is not 7d 61% <icon>2d: $out"; exit 1 ;;
