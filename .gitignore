@@ -73,3 +73,7 @@ openspec/
 openspec/config.yaml
 # <<< sdd-managed/openspec (toolbox)
 .claude/skills/write-docs-workspace/
+
+# codegraph skips every directory named build by default; this negation is its
+# documented opt-in, and git ignores nothing here for it to undo.
+!internal/build/
