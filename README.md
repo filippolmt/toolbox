@@ -8,7 +8,7 @@ Exact pinned versions live in [`internal/build/assets/Dockerfile`](internal/buil
 
 - **Runtimes / package managers** — Node.js (24 LTS), pnpm, bun (JS runtime + package manager + bundler), Python 3, uv, Go toolchain (+ gopls, goimports)
 - **AI agents** — Claude Code, OpenAI Codex CLI, pi (`@earendil-works/pi-coding-agent`), herdr (agent multiplexer TUI — detachable panes running AI agents)
-- **Language servers / formatters** — Pyright (`pyright-langserver`), TypeScript language server, TypeScript (`tsc`), shellcheck, shfmt
+- **Language servers / formatters** — Pyright (`pyright-langserver`), TypeScript language server (+ `@vue/typescript-plugin`, active once a project lists it in its tsconfig `compilerOptions.plugins`), TypeScript (`tsc`), shellcheck, shfmt
 - **Browser automation** — Playwright CLI (+ `playwright-cli` SKILLS build)
 - **Kubernetes / infra** — kubectl, kubectx + kubens, Helm, OpenTofu
 - **Cloud CLIs** — Google Cloud SDK (gcloud), Azure CLI (az), Oracle OCI CLI, Google Workspace CLI (`gws`), Cloudflare CLI (`cf`, Wrangler vNext preview) + Wrangler (`wrangler`)

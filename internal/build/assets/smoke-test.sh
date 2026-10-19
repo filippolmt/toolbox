@@ -506,6 +506,42 @@ p.stdin.write(\"Content-Length: \"+Buffer.byteLength(r)+\"\r\n\r\n\"+r);
     return $rc
 }
 
+# The Vue plugin nested beside the language server tsserver is inert until a
+# project tsconfig names it, and its pin and the tsserver pin move
+# independently, so a load check proves nothing about it working. This builds
+# a Vue app in a subfolder of the workspace root (no workspace typescript, so
+# the nested tsserver serves it), opens a .ts that imports a .vue next to a
+# control error, and fails if the import reports TS2307 or no diagnostics carry
+# the control error within 60s. Same quoting rules as _lsp_init_check.
+_vue_ts_plugin_check() {
+    local d rc
+    d=$(mktemp -d) || return 1
+    ( cd "$d" && node -e "
+const cp=require(\"child_process\"),fs=require(\"fs\"),path=require(\"path\");
+const app=path.join(process.cwd(),\"app\");fs.mkdirSync(app);
+fs.writeFileSync(path.join(app,\"tsconfig.json\"),JSON.stringify({compilerOptions:{strict:true,module:\"ESNext\",moduleResolution:\"bundler\",noEmit:true,plugins:[{name:\"@vue/typescript-plugin\"}]},include:[\"*.ts\",\"*.vue\"]}));
+fs.writeFileSync(path.join(app,\"Foo.vue\"),\"<script setup lang=\\\"ts\\\">\ndefineProps<{ msg: string }>()\n</script>\n\");
+const f=path.join(app,\"a.ts\"),uri=\"file://\"+f;
+fs.writeFileSync(f,\"import Foo from \\\"./Foo.vue\\\"\nexport const c = Foo\nexport const n: number = \\\"x\\\"\n\");
+const p=cp.spawn(\"typescript-language-server\",[\"--stdio\"]);const done=(c,s)=>{console.log(s);p.kill();process.exit(c)};
+setTimeout(()=>done(1,\"no diagnostics with the control error within 60s\"),60000);
+p.on(\"error\",e=>done(1,e.message));
+const send=o=>{const r=JSON.stringify(Object.assign({jsonrpc:\"2.0\"},o));p.stdin.write(\"Content-Length: \"+Buffer.byteLength(r)+\"\r\n\r\n\"+r)};
+let b=Buffer.alloc(0);
+p.stdout.on(\"data\",d=>{b=Buffer.concat([b,d]);for(;;){const i=b.indexOf(\"\r\n\r\n\");if(i<0)return;
+const n=+/Content-Length: (\d+)/i.exec(b.subarray(0,i).toString())[1];if(b.length<i+4+n)return;
+const m=JSON.parse(b.subarray(i+4,i+4+n).toString());b=b.subarray(i+4+n);
+if(m.id===1){if(m.error)done(1,m.error.message);send({method:\"initialized\",params:{}});
+send({method:\"textDocument/didOpen\",params:{textDocument:{uri:uri,languageId:\"typescript\",version:1,text:fs.readFileSync(f,\"utf8\")}}})}
+else if(m.method===\"textDocument/publishDiagnostics\"&&m.params.uri===uri){const c=m.params.diagnostics.map(x=>x.code);
+if(c.includes(2322))done(c.includes(2307)?1:0,c.includes(2307)?\"TS2307 on the .vue import\":\".vue import resolved\")}
+else if(m.id!==undefined&&m.method)send({id:m.id,result:null})}});
+send({id:1,method:\"initialize\",params:{processId:process.pid,rootUri:\"file://\"+process.cwd(),capabilities:{textDocument:{publishDiagnostics:{}}}}});
+" ); rc=$?
+    rm -rf "$d"
+    return $rc
+}
+
 check_required "node"       node --version
 check_required "npm"        npm --version
 # NODE_OPTIONS=--dns-result-order=ipv4first must make a localhost listen bind
@@ -633,6 +669,7 @@ check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "pyright LSP initialize" pyright-langserver _lsp_init_check pyright-langserver --stdio
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
 check_optional  "typescript-language-server LSP initialize" typescript-language-server _lsp_init_check typescript-language-server --stdio
+check_optional  "vue typescript-plugin resolves .vue imports" typescript-language-server _vue_ts_plugin_check
 check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright deps" playwright _pw_deps_check
