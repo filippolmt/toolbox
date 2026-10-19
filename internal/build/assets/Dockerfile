@@ -68,6 +68,7 @@ ARG PYRIGHT_VERSION=1.1.414
 ARG TYPESCRIPT_VERSION=7.0.2
 ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.0.2
 ARG TYPESCRIPT_TSSERVER_VERSION=6.0.3
+ARG VUE_TYPESCRIPT_PLUGIN_VERSION=3.3.13
 ARG GCLOUD_VERSION=589.0.0
 ARG AZURE_CLI_VERSION=2.91.0
 ARG OCI_VERSION=3.95.0
@@ -1231,12 +1232,19 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # via a scratch prefix: `npm install` inside the server's package dir would
 # pull its whole devDependencies tree. The resolve check mirrors the server's
 # fallback and fails the build if either side moves.
+# `@vue/typescript-plugin` is nested beside that typescript for the same
+# reason: a tsserver probes for tsconfig `compilerOptions.plugins` only next to
+# its own install, so the nested one never sees a project's node_modules. The
+# language server finds a workspace typescript only at or above the workspace
+# root, so a Vue app in a subfolder of the repo lands on the nested tsserver.
+# Inert until a project names the plugin in its tsconfig.
 FROM node-base AS fetch-typescript
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --link --from=fetch-base /usr/local/bin/ /usr/local/bin/
 ARG TYPESCRIPT_VERSION
 ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION
 ARG TYPESCRIPT_TSSERVER_VERSION
+ARG VUE_TYPESCRIPT_PLUGIN_VERSION
 RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
     set -eux; \
       mkdir -p /out/usr/local; \
@@ -1247,7 +1255,12 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       mkdir -p "${tls}/node_modules"; \
       mv /tmp/tsserver/lib/node_modules/typescript "${tls}/node_modules/typescript"; \
       rm -rf /tmp/tsserver; \
+      npm install -g --prefix /tmp/vueplugin "@vue/typescript-plugin@${VUE_TYPESCRIPT_PLUGIN_VERSION}"; \
+      mkdir -p "${tls}/node_modules/@vue"; \
+      mv /tmp/vueplugin/lib/node_modules/@vue/typescript-plugin "${tls}/node_modules/@vue/typescript-plugin"; \
+      rm -rf /tmp/vueplugin; \
       node -e "const p=require('path'),r=require('module').createRequire(p.join(process.argv[1],'lib/cli.mjs')); require('fs').accessSync(p.join(p.dirname(r.resolve('typescript')),'tsserver.js'))" "${tls}"; \
+      node -e "require('module').createRequire(require('path').join(process.argv[1],'node_modules/typescript/lib/tsserver.js')).resolve('@vue/typescript-plugin')" "${tls}"; \
       /out/usr/local/bin/tsc --version; \
       /out/usr/local/bin/typescript-language-server --version; \
       prune-node-weight /out/usr/local/lib/node_modules/typescript "${tls}"; \
