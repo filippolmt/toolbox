@@ -85,7 +85,9 @@ Branches are `feat/<slug>` or `fix/<slug>` — a dependency bump takes `fix/`;
 own `renovate/*`, in CI and as a `PreToolUse` hook. Unless the user
 selects a branch, record the starting HEAD and create the branch before the
 first commit; before opening a PR, run `code-review:code-review` against that
-recorded SHA, or the merge-base with `main` when there is none (the built-in
+recorded SHA, or the merge-base with `main` when there is none — when a design
+session re-scoped the issue, update the issue first so the Spec axis reads it
+from the tracker (the built-in
 `code-review` shares the slash name and checks neither axis). If the review skill requests sub-agents but the harness
 exposes no delegation tool, run the Standards and Spec axes as separate
 sequential passes and disclose that fallback.
