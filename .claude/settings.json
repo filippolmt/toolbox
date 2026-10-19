@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "codegraph prompt-hook"
+            "command": "in=$(cat); printf %s \"$in\" | jq -e \".prompt | test(\\\"^\\\\\\\\s*<(cross-session-message|task-notification)\\\")\" >/dev/null && exit 0; printf %s \"$in\" | codegraph prompt-hook"
           }
         ]
       }
