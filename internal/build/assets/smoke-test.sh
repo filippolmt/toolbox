@@ -633,7 +633,7 @@ check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "pyright LSP initialize" pyright-langserver _lsp_init_check pyright-langserver --stdio
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
 check_optional  "typescript-language-server LSP initialize" typescript-language-server _lsp_init_check typescript-language-server --stdio
-check_optional  "vue typescript-plugin beside nested tsserver" typescript-language-server node -p "require(\"module\").createRequire(\"/usr/local/lib/node_modules/typescript-language-server/node_modules/typescript/lib/tsserver.js\").resolve(\"@vue/typescript-plugin\")"
+check_optional  "vue typescript-plugin loads beside nested tsserver" typescript-language-server node -p "typeof require(\"module\").createRequire(\"/usr/local/lib/node_modules/typescript-language-server/node_modules/typescript/lib/tsserver.js\")(\"@vue/typescript-plugin\")"
 check_optional  "tsc"       tsc      tsc --version
 check_optional  "playwright" playwright playwright --version
 check_optional  "playwright deps" playwright _pw_deps_check
