@@ -68,7 +68,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`sdd.md`](.claude/rules/sdd.md) — SDD skill packs, `.gitignore` fence.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
-Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch` — a red publish leaves `:latest` on the previous image with nothing else signalling it. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Code intelligence
 
