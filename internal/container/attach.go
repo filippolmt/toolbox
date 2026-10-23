@@ -2,6 +2,8 @@ package container
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -40,25 +42,49 @@ func shellExecEnv() []string {
 // execShell attaches an interactive shell session to the container using the
 // caller-supplied cmd (already resolved upstream by sessionplan.Plan via
 // sessionplan.ResolveShellCmd). Handles TTY raw mode, signal forwarding
-// (SIGINT/SIGTERM), terminal resize (SIGWINCH), and bidirectional I/O.
-func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) error {
-	execResp, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+// (SIGINT/SIGTERM/SIGHUP), terminal resize (SIGWINCH), and bidirectional I/O.
+func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) (err error) {
+	signalCtx, stopSignals := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stopSignals()
+	sessionCtx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+
+	marker := "/tmp/toolbox-shell-" + rand.Text()
+	wrapped := append([]string{"/usr/bin/python3", "-c", shellProcessWrapper, marker}, cmd...)
+	execResp, err := cli.ExecCreate(sessionCtx, containerID, client.ExecCreateOptions{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		Cmd:          cmd,
+		Cmd:          wrapped,
 		Env:          shellExecEnv(),
 	})
 	if err != nil {
 		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("create exec for container %s: %w", containerID, err))
 	}
 
-	resp, err := cli.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{TTY: true})
+	defer func() { err = errors.Join(err, cleanupShell(cli, containerID, execResp.ID, marker)) }()
+
+	resp, err := cli.ExecAttach(sessionCtx, execResp.ID, client.ExecAttachOptions{TTY: true})
 	if err != nil {
 		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("attach exec %s: %w", execResp.ID, err))
 	}
 	defer resp.Close()
+
+	if sessionCtx.Err() != nil {
+		return nil
+	}
+
+	streamDone := make(chan struct{})
+	defer close(streamDone)
+	go func() {
+		select {
+		case <-sessionCtx.Done():
+			// Cancellation alone cannot unblock the hijacked output stream.
+			_ = resp.Conn.Close()
+		case <-streamDone:
+		}
+	}()
 
 	fd := int(os.Stdin.Fd())
 	restoreTerm, isTTY, err := ui.RawTerminal(fd)
@@ -66,30 +92,6 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 		return err
 	}
 	defer restoreTerm()
-
-	// Cancellable child context scopes the signal and resize goroutines so
-	// they exit cleanly when execShell returns.
-	sessionCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// External SIGINT/SIGTERM: in raw mode the user's ctrl+c is a byte
-	// delivered via stdin, so this only catches OS-level kills. Restore the
-	// TTY and cancel the session; do NOT os.Exit here — that would skip the
-	// caller's container-teardown defers in Shell().
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	go func() {
-		select {
-		case <-sigCh:
-			restoreTerm()
-			cancel()
-			// Unblock the main io.Copy on resp.Reader; ctx alone doesn't.
-			_ = resp.Conn.Close()
-		case <-sessionCtx.Done():
-		}
-	}()
 
 	// Forward terminal resize (SIGWINCH) to the container exec session.
 	if isTTY {
@@ -111,9 +113,17 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	// *variable* races anything that reassigns it afterwards — which is what
 	// a test restoring its pipe does, and what the race detector reports.
 	stdin := os.Stdin
-	go func() { _, _ = io.Copy(resp.Conn, stdin) }()
-	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
+	go func() {
+		_, _ = io.Copy(resp.Conn, stdin)
+		if isTTY {
+			cancel()
+		}
+	}()
+	_, copyErr := io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
+	if sessionCtx.Err() != nil || (isTTY && copyErr != nil) {
+		return nil
+	}
 	return diagnoseSessionExit(ctx, cli, containerID, tail.String())
 }
 

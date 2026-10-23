@@ -22,10 +22,12 @@ import (
 type attachMock struct {
 	client.APIClient
 
-	createFn  func(ctx context.Context, containerID string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
-	attachFn  func(ctx context.Context, execID string, opts client.ExecAttachOptions) (client.HijackedResponse, error)
-	resizeFn  func(ctx context.Context, execID string, opts client.ExecResizeOptions) error
-	inspectFn func(ctx context.Context, id string) (container.InspectResponse, error)
+	createFn      func(ctx context.Context, containerID string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
+	attachFn      func(ctx context.Context, execID string, opts client.ExecAttachOptions) (client.HijackedResponse, error)
+	resizeFn      func(ctx context.Context, execID string, opts client.ExecResizeOptions) error
+	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
+	execInspectFn func(ctx context.Context, id string) (client.ExecInspectResult, error)
+	startFn       func(ctx context.Context, id string, opts client.ExecStartOptions) (client.ExecStartResult, error)
 }
 
 // ContainerInspect feeds diagnoseExecFailure. The default reports a running
@@ -54,6 +56,146 @@ func (a *attachMock) ExecResize(ctx context.Context, id string, opts client.Exec
 	return client.ExecResizeResult{}, nil
 }
 
+func (a *attachMock) ExecInspect(ctx context.Context, id string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
+	if a.execInspectFn == nil {
+		return client.ExecInspectResult{}, nil
+	}
+	return a.execInspectFn(ctx, id)
+}
+
+func (a *attachMock) ExecStart(ctx context.Context, id string, opts client.ExecStartOptions) (client.ExecStartResult, error) {
+	if a.startFn == nil {
+		return client.ExecStartResult{}, nil
+	}
+	return a.startFn(ctx, id, opts)
+}
+
+// Cancellation can arrive after Docker starts the shell but before any output
+// reaches the client. Cleanup must not depend on that stream and must drain
+// its helper before the caller decides whether a sibling is attached.
+func TestExecShell_HangupDuringStartupWaitsForItsExecs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server, conn := net.Pipe()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = conn.Close() }()
+
+	started := false
+	helperInspects := 0
+	marker := ""
+	cli := &attachMock{
+		createFn: func(ctx context.Context, _ string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			if ctx.Err() != nil {
+				t.Fatal("shell cleanup inherited the cancelled session context")
+			}
+			if opts.Cmd[2] == shellProcessCleanup {
+				if opts.Cmd[3] != marker {
+					t.Fatal("cleanup targeted a different shell marker")
+				}
+				return client.ExecCreateResult{ID: "hangup"}, nil
+			}
+			marker = opts.Cmd[3]
+			return client.ExecCreateResult{ID: "shell"}, nil
+		},
+		attachFn: func(_ context.Context, _ string, _ client.ExecAttachOptions) (client.HijackedResponse, error) {
+			cancel()
+			return client.NewHijackedResponse(conn, ""), nil
+		},
+		startFn: func(_ context.Context, id string, _ client.ExecStartOptions) (client.ExecStartResult, error) {
+			if id != "hangup" {
+				t.Fatalf("started %q instead of signalling the disconnected shell", id)
+			}
+			started = true
+			return client.ExecStartResult{}, nil
+		},
+		execInspectFn: func(_ context.Context, id string) (client.ExecInspectResult, error) {
+			if id == "hangup" {
+				helperInspects++
+				return client.ExecInspectResult{Running: helperInspects == 1}, nil
+			}
+			return client.ExecInspectResult{Running: !started}, nil
+		},
+	}
+	if err := execShell(ctx, cli, "cid", []string{"/bin/zsh"}); err != nil {
+		t.Fatal(err)
+	}
+	if !started || helperInspects < 2 {
+		t.Fatal("returned while the disconnected shell or its signal helper was still running")
+	}
+}
+
+func TestExecShell_FailedAttachCleansUpWithoutOutput(t *testing.T) {
+	for _, stage := range []string{"success", "create", "start", "helper inspect", "shell inspect", "helper exit", "removed"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			attachErr := errors.New("attach lost after remote start")
+			cleanupErr := errors.New("cleanup failed")
+			created, started := false, false
+			cli := &attachMock{
+				createFn: func(ctx context.Context, _ string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
+					if opts.Cmd[2] != shellProcessCleanup {
+						return client.ExecCreateResult{ID: "shell"}, nil
+					}
+					created = true
+					if ctx.Err() != nil {
+						t.Fatal("cleanup inherited attach cancellation")
+					}
+					if stage == "create" {
+						return client.ExecCreateResult{}, cleanupErr
+					}
+					if stage == "removed" {
+						return client.ExecCreateResult{}, &dockertest.NotFoundError{Msg: "container removed"}
+					}
+					return client.ExecCreateResult{ID: "helper"}, nil
+				},
+				attachFn: func(context.Context, string, client.ExecAttachOptions) (client.HijackedResponse, error) {
+					cancel()
+					return client.HijackedResponse{}, attachErr
+				},
+				startFn: func(context.Context, string, client.ExecStartOptions) (client.ExecStartResult, error) {
+					started = true
+					if stage == "start" {
+						return client.ExecStartResult{}, cleanupErr
+					}
+					return client.ExecStartResult{}, nil
+				},
+				execInspectFn: func(_ context.Context, id string) (client.ExecInspectResult, error) {
+					if (stage == "helper inspect" && id == "helper") || (stage == "shell inspect" && id == "shell") {
+						return client.ExecInspectResult{}, cleanupErr
+					}
+					if stage == "helper exit" && id == "helper" {
+						return client.ExecInspectResult{ExitCode: 1}, nil
+					}
+					return client.ExecInspectResult{}, nil
+				},
+			}
+			err := execShell(ctx, cli, "cid", []string{"/bin/zsh"})
+			if !errors.Is(err, attachErr) || !created {
+				t.Fatalf("failed attach did not preserve its error and attempt targeted cleanup: %v", err)
+			}
+			switch stage {
+			case "success":
+				if !started || errors.Is(err, cleanupErr) {
+					t.Fatalf("cleanup did not finish: %v", err)
+				}
+			case "helper exit":
+				if !strings.Contains(err.Error(), "cleanup exited with code") {
+					t.Fatalf("helper failure was hidden: %v", err)
+				}
+			case "removed":
+				if started {
+					t.Fatal("started cleanup after the container disappeared")
+				}
+			default:
+				if !errors.Is(err, cleanupErr) {
+					t.Fatalf("cleanup error was lost: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestExecShell_ExecCreateError(t *testing.T) {
 	wantErr := errors.New("create boom")
 	cli := &attachMock{
@@ -64,8 +206,8 @@ func TestExecShell_ExecCreateError(t *testing.T) {
 			if !opts.AttachStdin || !opts.AttachStdout || !opts.AttachStderr || !opts.TTY {
 				t.Errorf("exec opts missing flags: %+v", opts)
 			}
-			if got, want := opts.Cmd, []string{"/bin/zsh"}; !reflect.DeepEqual(got, want) {
-				t.Errorf("exec Cmd = %v, want %v", got, want)
+			if len(opts.Cmd) != 5 || opts.Cmd[0] != "/usr/bin/python3" || opts.Cmd[2] != shellProcessWrapper || opts.Cmd[4] != "/bin/zsh" {
+				t.Errorf("exec command does not wrap the requested shell")
 			}
 			return client.ExecCreateResult{}, wantErr
 		},
@@ -203,13 +345,8 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 		_ = devNull.Close()
 	})
 
-	// net.Pipe gives us two connected net.Conn ends. Closing the server
-	// side immediately makes the client side return EOF on the first read,
-	// which unblocks the io.Copy(os.Stdout, resp.Reader) in execShell.
 	serverConn, clientConn := net.Pipe()
-	if err := serverConn.Close(); err != nil {
-		t.Fatalf("close server conn: %v", err)
-	}
+	_ = serverConn.Close()
 	t.Cleanup(func() { _ = clientConn.Close() })
 
 	cli := &attachMock{
