@@ -22,7 +22,11 @@ if [[ $source != /* || $source == *:* ]]; then
   exit 2
 fi
 # Peer gates own this global anchor; never run them over a developer's anchor.
-if [[ -n $(docker ps -aq --filter 'name=^toolbox-peer-anchor$') ]]; then
+if ! anchors=$(docker ps -aq --filter 'name=^toolbox-peer-anchor$'); then
+  echo 'Cannot inspect the peer anchor; refusing to run gates against an unknown daemon state.' >&2
+  exit 1
+fi
+if [[ -n $anchors ]]; then
   echo 'An existing peer anchor prevents a safe gate run; use a dedicated daemon or close peer sessions first.' >&2
   exit 1
 fi

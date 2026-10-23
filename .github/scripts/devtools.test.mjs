@@ -181,6 +181,7 @@ test("dockergate runner maps identity, socket group and daemon-visible fixture p
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.CALL_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'ps' && process.env.TEST_PS_FAILURE) process.exit(1);
 if (args[0] === 'ps' && process.env.TEST_ANCHOR) console.log('existing-anchor');
 if (args.includes('stat')) console.log('43212');
 `, { mode: 0o755 });
@@ -203,6 +204,11 @@ if (args.includes('stat')) console.log('43212');
     assert.match(blocked.stderr, /peer anchor/);
     const after = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
     assert.equal(after.length, calls.length + 1, "runner touched the daemon after detecting a live peer anchor");
+    const failed = spawnSync("bash", args, { cwd: directory, env: { ...env, TEST_PS_FAILURE: "1" }, encoding: "utf8" });
+    assert.equal(failed.status, 1, "runner treated a failed anchor inspection as absence");
+    assert.match(failed.stderr, /Cannot inspect.*peer anchor/);
+    const finalCalls = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+    assert.equal(finalCalls.length, after.length + 1, "runner continued after the daemon refused inspection");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
