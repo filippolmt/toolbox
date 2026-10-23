@@ -85,6 +85,11 @@ not on us.
   half still self-heals while the version is unreadable.
 - The stamp lives on the state bind mount, so it survives `toolbox stop` and is
   per-host, not per-container.
-- `graphify hook install` stays outside the gate. It writes into `.git/hooks/`,
-  which is never committed and is therefore absent from a fresh clone, and it
-  touches nothing tracked.
+- `graphify hook install` stays outside the gate so fresh clones get local git
+  hooks even with a current stamp. It follows `core.hooksPath`, which can point
+  to tracked hooks: those hooks have only the interpreter pin in graphify's
+  block cleared after installation, so machine-local paths do not get committed
+  but payload upgrades still refresh. The installer also writes merge
+  attributes. When the graph is ignored, a newly created `.gitattributes` is
+  removed only if it contains exactly the default graphify merge rule; existing
+  or tracked attributes belong to the repository and are preserved.

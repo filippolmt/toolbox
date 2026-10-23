@@ -19,9 +19,9 @@ set -euo pipefail
 #
 # Two distinct installs run here: `graphify install` (skill + PreToolUse hook +
 # CLAUDE.md section) and `graphify hook install` (git post-commit/post-checkout
-# hooks that rebuild graph.json on commit). The latter lives in .git/hooks/ —
-# never committed, so absent from a fresh clone — and touches nothing tracked,
-# which is why it stays OUTSIDE the gate and runs every shell.
+# hooks that rebuild graph.json on commit). The latter runs every shell so a
+# fresh clone gets its hooks. It follows core.hooksPath, which may be tracked;
+# normalise machine-local output below without suppressing payload upgrades.
 #
 # Inner gate: `claude` binary AND ~/.claude exist (bind-mount auto-creates
 # the dir even when tools.claude=false).
@@ -135,6 +135,33 @@ unset _gfy_ver
 # `.git` is a gitdir-pointer file, not a directory, so a `-d` test would wrongly
 # skip the install and let the graph go stale on commit.
 if git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    _gfy_root=$(git -C "$PWD" rev-parse --show-toplevel)
+    _gfy_attrs="$_gfy_root/.gitattributes"
+    _gfy_drop_attrs=false
+    # Existing or tracked attributes belong to the user, even when the graph is ignored.
+    if [ ! -e "$_gfy_attrs" ] && [ ! -L "$_gfy_attrs" ] \
+        && ! git -C "$_gfy_root" ls-files --error-unmatch -- .gitattributes >/dev/null 2>&1 \
+        && git -C "$_gfy_root" check-ignore -q graphify-out/graph.json; then
+        _gfy_drop_attrs=true
+    fi
+
     graphify hook install >/dev/null 2>&1 || \
         echo "toolbox: graphify git-hook install failed (non-fatal — run \`graphify hook install\` manually to retry)"
+
+    _gfy_hooks=$(git -C "$_gfy_root" rev-parse --path-format=absolute --git-path hooks)
+    # graphify installs beside Husky's generated wrappers, in the user-editable parent.
+    if [ "${_gfy_hooks##*/}" = _ ]; then _gfy_hooks=${_gfy_hooks%/*}; fi
+    for _gfy_h in post-commit post-checkout post-merge post-rewrite; do
+        if [ -f "$_gfy_hooks/$_gfy_h" ] \
+            && git -C "$_gfy_root" ls-files --error-unmatch -- "$_gfy_hooks/$_gfy_h" >/dev/null 2>&1; then
+            # Only graphify's block owns this pin; a user's identically named variable stays.
+            sed --follow-symlinks -i -E "/^# graphify(-(checkout|merge|rewrite))?-hook-start\$/,/^# graphify(-(checkout|merge|rewrite))?-hook-end\$/s|^_PINNED='[^']*'\$|_PINNED=''|" "$_gfy_hooks/$_gfy_h"
+        fi
+    done
+    # The merge driver cannot apply to an ignored graph; remove only its newly created file.
+    if [ "$_gfy_drop_attrs" = true ] \
+        && printf '%s\n' 'graphify-out/graph.json merge=graphify' | cmp -s - "$_gfy_attrs"; then
+        rm -f "$_gfy_attrs"
+    fi
+    unset _gfy_root _gfy_attrs _gfy_drop_attrs _gfy_hooks _gfy_h
 fi
