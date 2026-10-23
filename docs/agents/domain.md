@@ -4,7 +4,7 @@ This repository uses a single-context domain documentation layout.
 
 ## Before exploring
 
-- Read `CONTEXT.md` for project vocabulary and concept ownership.
+- Locate the relevant `CONTEXT.md` headings with `rg -n '^### ' CONTEXT.md`, then read only the matching entries for vocabulary and concept ownership.
 - Read relevant ADRs under `docs/adr/`.
 - Follow topic pointers from `docs/README.md`.
 
