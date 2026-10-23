@@ -16,7 +16,7 @@ import uuid
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary", type=Path)
 parser.add_argument("--workspace-parent", type=Path)
-parser.add_argument("--image", default="ghcr.io/filippolmt/toolbox:latest")
+parser.add_argument("--image")
 args = parser.parse_args()
 binary = args.binary.resolve()
 
@@ -53,8 +53,8 @@ with tempfile.TemporaryDirectory(dir=args.workspace_parent) as directory:
     config = workspace / "config.yaml"
     config.write_text(
         f"mounts_root: {workspace}/state\n"
-        f"image: {args.image}\n"
-        "pull: never\nbridge: false\nproximo: false\nimage_reclaim: false\n"
+        + (f"image: {args.image}\n" if args.image else "")
+        + "pull: never\nbridge: false\nproximo: false\nimage_reclaim: false\n"
         "mounts:\n"
         "  - {name: ssh, disabled: true}\n"
         "  - {name: gitconfig, disabled: true}\n"
