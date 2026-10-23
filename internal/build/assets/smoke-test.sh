@@ -1114,6 +1114,9 @@ stale=$(jq "[.hooks.PreToolUse[] | select(tostring | contains(\"--stale-payload\
 echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, pi copy stamped separately, stamped $(cat "$stamp")"
 '
 
+echo "=== graphify tracked git hooks (30-graphify.sh, real installer) ==="
+bash "$(dirname "${BASH_SOURCE[0]}")/../../../.github/scripts/test-graphify-hooks.sh" "${IMAGE}"
+
 echo "=== npm-global shadow heal (15-npm-shadow-dedupe.sh, real roots) ==="
 # Runtime half of the npm_shadow_dedupe tests, which drive the script with
 # fixture roots. Here it runs with NO arguments, against the real

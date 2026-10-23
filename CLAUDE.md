@@ -42,7 +42,7 @@ One threshold, two denominators on purpose. → [sonarqube](docs/internals/sonar
 
 Host CLI in `cmd/` (cobra) + internal pipelines `config` → `mountplan` → `sessionplan` → `container` (Docker SDK). Runtime image baked from `internal/build/assets/` (Dockerfile + entrypoint + smoke-test + init.d/), embedded so `toolbox build` runs anywhere. Tool catalog (`internal/catalog`) declares every bundled CLI — it drives the init.d bijection, the smoke-test count literals and `inherit_host_auth` eligibility.
 
-[`CONTEXT.md`](CONTEXT.md) is the glossary: every named concept (Mount Plan, Config Schema, Invalidation Floor, Peer Anchor, …) with its meaning, its owning package and why it was named. Read the entry before refactoring across a pipeline seam; add one when a design conversation names a new concept. Topic guides are mapped in [`docs/README.md`](docs/README.md), section by section. A rule under `.claude/rules/` carries the guardrail and the test names, the glossary carries the meaning and the why — link across, never restate.
+[`CONTEXT.md`](CONTEXT.md) is the glossary: every named concept (Mount Plan, Config Schema, Invalidation Floor, Peer Anchor, …) with its meaning, its owning package and why it was named. Before crossing a pipeline seam, use the [heading-first lookup](docs/agents/domain.md#before-exploring); add an entry when a design conversation names a new concept. Topic guides are mapped in [`docs/README.md`](docs/README.md), section by section. A rule under `.claude/rules/` carries the guardrail and the test names, the glossary carries the meaning and the why — link across, never restate.
 
 Shared fs primitives live in `internal/fsx` — its package doc lists them, and `Home()` sets the tone: strict, with an empty-`$HOME` guard. Call them directly from every package; no package re-exports them under a local name. Soft sites that tolerate an empty home keep calling `os.UserHomeDir` directly. → [shared-fs-primitives](docs/internals/host-cli.md#shared-fs-primitives)
 
@@ -72,7 +72,7 @@ Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to 
 
 ## Code intelligence
 
-Code questions — symbols, call paths, blast radius — go to `codegraph_explore`.
+Code questions — symbols, call paths, blast radius — go to `codegraph_explore` with a specific symbol or owning module. Bound CLI source output with `--max-files`.
 
 This repo does not use graphify; the image still bundles it for other projects. A `graphify install` run here adds a `## graphify` block to `.claude/CLAUDE.md` and `graphify hook-guard` `PreToolUse` hooks to `.claude/settings.json`, both asserting graphify-first: remove both.
 

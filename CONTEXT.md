@@ -2047,8 +2047,12 @@ entry mentioning `graphify`), the same jq first drops the graphify-owned entries
 already parked at the narrowed matcher, which are the previous run's. Ownership
 is checked only on the drop, and the drop only fires when a wide graphify entry
 is actually present, so neither a hand-written `Grep` hook nor a failed install
-loses anything. `graphify hook install` stays outside the gate, because `.git/hooks/`
-is never committed and so absent from a fresh clone. Held by
+loses anything. `graphify hook install` stays outside the gate so fresh clones
+get local git hooks even with a current stamp. It follows `core.hooksPath`, so
+tracked hooks retain an empty interpreter pin in graphify's block while their
+payload still refreshes. A newly created `.gitattributes` containing only the
+default merge rule is removed when the graph is ignored; existing or tracked
+attributes are preserved. Held by
 `TestWorkspaceInstallRefreshGate`, `TestWorkspaceInstallRefreshGateLivesInOneplace`
 (no member may hand-roll a stamp path again),
 `TestGraphifyHookInstallOutsideGate`

@@ -54,6 +54,7 @@ jobs:
           filters: |
             docker:
               - 'internal/build/assets/**'
+              - '.github/scripts/test-graphify-hooks.sh'
               - '.github/fixtures/android-e2e/**'
               - '.github/workflows/docker-ci.yml'
               - 'go.mod'

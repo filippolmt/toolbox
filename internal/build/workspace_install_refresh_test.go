@@ -153,10 +153,9 @@ func TestWorkspaceInstallRefreshGateLivesInOneplace(t *testing.T) {
 }
 
 // TestGraphifyHookInstallOutsideGate holds the one deliberate exception in the
-// family: `graphify hook install` writes .git/hooks/, which is never committed,
-// so a fresh clone (or one made inside the container) has no hook at all. Put
-// it inside the version gate and the graph silently stops rebuilding on commit
-// for every workspace whose stamp is already current.
+// family: a fresh clone needs its local git hooks even with a current stamp.
+// core.hooksPath may instead point to tracked hooks; the script normalises their
+// machine-local pin after refreshing, without suppressing payload upgrades.
 func TestGraphifyHookInstallOutsideGate(t *testing.T) {
 	body := readAsset(t, "init.d/30-graphify.sh")
 
@@ -169,7 +168,7 @@ func TestGraphifyHookInstallOutsideGate(t *testing.T) {
 		t.Fatal("30-graphify.sh: `graphify hook install` invocation is gone")
 	}
 	if hook < end {
-		t.Error("30-graphify.sh: `graphify hook install` runs inside the version gate — it writes .git/hooks/, absent from a fresh clone, so it must run on every shell")
+		t.Error("30-graphify.sh: `graphify hook install` runs inside the version gate — fresh clones need hooks even with a current stamp")
 	}
 }
 
