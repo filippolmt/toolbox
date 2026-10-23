@@ -121,6 +121,16 @@ with tempfile.TemporaryDirectory(dir=args.workspace_parent) as directory:
         exit_shell(sibling)
         assert_removed()
         print("PASS: hangup preserves the sibling; its final exit removes the container", flush=True)
+
+        first = launch()
+        sibling = launch()
+        os.write(first[1], b"trap '' HUP\n")
+        ready(first[1])
+        hangup(first)
+        ready(sibling[1])
+        exit_shell(sibling)
+        assert_removed()
+        print("PASS: a shell ignoring HUP is removed without killing its sibling", flush=True)
     finally:
         for proc, fd in sessions:
             if proc.poll() is None:
