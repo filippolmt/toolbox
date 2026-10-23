@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/moby/moby/client"
 
@@ -66,35 +66,35 @@ func TestPrepareStartDoesNotRepeatAReloadPreparation(t *testing.T) {
 
 func TestAttachStillProbesAfterReloadPreparation(t *testing.T) {
 	dir := t.TempDir()
-	fake := &dockertest.Fake{
-		ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
-			return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
-		},
-		ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
-			return dockertest.ImageInspectResult(testRepo, testDigest), nil
-		},
-		DistributionInspectFn: func(context.Context, string) (client.DistributionInspectResult, error) {
-			return dockertest.DistributionResult(testDigest), nil
-		},
-	}
-	session := imagefreshness.New(fake, imagefreshness.Input{
-		Image:      sessionplan.Image{Ref: testRef, PullPolicy: config.PullAlways},
-		StateDir:   dir,
-		CLIVersion: "dev",
-	})
-	if err := session.PrepareReload(t.Context()); err != nil {
-		t.Fatalf("PrepareReload() error: %v", err)
-	}
+	// The bubble drains cancelled workers before the outer TempDir cleanup.
+	synctest.Test(t, func(t *testing.T) {
+		fake := &dockertest.Fake{
+			ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
+				return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
+			},
+			ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
+				return dockertest.ImageInspectResult(testRepo, testDigest), nil
+			},
+			DistributionInspectFn: func(context.Context, string) (client.DistributionInspectResult, error) {
+				return dockertest.DistributionResult(testDigest), nil
+			},
+		}
+		session := imagefreshness.New(fake, imagefreshness.Input{
+			Image:      sessionplan.Image{Ref: testRef, PullPolicy: config.PullAlways},
+			StateDir:   dir,
+			CLIVersion: "dev",
+		})
+		if err := session.PrepareReload(t.Context()); err != nil {
+			t.Fatalf("PrepareReload() error: %v", err)
+		}
 
-	stop := session.Attach(t.Context(), testDigest)
-	t.Cleanup(stop)
-	deadline := time.Now().Add(time.Second)
-	for fake.DistributionInspectCalls() == 0 {
-		if time.Now().After(deadline) {
+		stop := session.Attach(t.Context(), testDigest)
+		defer stop()
+		synctest.Wait()
+		if fake.DistributionInspectCalls() == 0 {
 			t.Fatal("Attach made no probe: reload preparation must not claim the start-up probe turn")
 		}
-		time.Sleep(time.Millisecond)
-	}
+	})
 }
 
 func TestAttachHonoursRegistryCommunicationRefusals(t *testing.T) {
@@ -127,42 +127,33 @@ func TestAttachHonoursRegistryCommunicationRefusals(t *testing.T) {
 
 func TestAttachReusesTheStartSync(t *testing.T) {
 	dir := t.TempDir()
-	fake := &dockertest.Fake{
-		ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
-			return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
-		},
-		ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
-			return dockertest.ImageInspectResult(testRepo, testDigest), nil
-		},
-	}
-	session := imagefreshness.New(fake, imagefreshness.Input{
-		Image:      sessionplan.Image{Ref: testRef, PullPolicy: config.PullAlways},
-		StateDir:   dir,
-		CLIVersion: "dev",
-	})
-
-	if got := session.PrepareStart(t.Context(), imagefreshness.StartCreate); got != imagefreshness.Proceed {
-		t.Fatalf("PrepareStart() = %v, want Proceed", got)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	stop := session.Attach(ctx, testDigest)
-	t.Cleanup(func() {
-		stop()
-		cancel()
-	})
-
-	stamp := filepath.Join(dir, "update-check.stamp")
-	deadline := time.Now().Add(time.Second)
-	for {
-		if _, err := os.Stat(stamp); err == nil {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		fake := &dockertest.Fake{
+			ImagePullFn: func(context.Context, string) (client.ImagePullResponse, error) {
+				return dockertest.PullResponse{ReadCloser: io.NopCloser(strings.NewReader(""))}, nil
+			},
+			ImageInspectFn: func(context.Context, string) (client.ImageInspectResult, error) {
+				return dockertest.ImageInspectResult(testRepo, testDigest), nil
+			},
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("Attach left no attempt stamp for the sync already performed by PrepareStart")
+		session := imagefreshness.New(fake, imagefreshness.Input{
+			Image:      sessionplan.Image{Ref: testRef, PullPolicy: config.PullAlways},
+			StateDir:   dir,
+			CLIVersion: "dev",
+		})
+
+		if got := session.PrepareStart(t.Context(), imagefreshness.StartCreate); got != imagefreshness.Proceed {
+			t.Fatalf("PrepareStart() = %v, want Proceed", got)
 		}
-		time.Sleep(time.Millisecond)
-	}
-	if got := fake.DistributionInspectCalls(); got != 0 {
-		t.Errorf("DistributionInspect calls = %d, want 0: PrepareStart already synchronized the store", got)
-	}
+		stop := session.Attach(t.Context(), testDigest)
+		defer stop()
+		synctest.Wait()
+
+		if _, err := os.Stat(filepath.Join(dir, "update-check.stamp")); err != nil {
+			t.Fatalf("Attach left no attempt stamp for the sync already performed by PrepareStart: %v", err)
+		}
+		if got := fake.DistributionInspectCalls(); got != 0 {
+			t.Errorf("DistributionInspect calls = %d, want 0: PrepareStart already synchronized the store", got)
+		}
+	})
 }
