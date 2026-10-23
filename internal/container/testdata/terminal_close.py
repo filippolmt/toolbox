@@ -1,6 +1,7 @@
 """Real-CLI regression: terminal hangup must not leave an orphan exec."""
 
 import argparse
+from dataclasses import dataclass
 import errno
 import fcntl
 import os
@@ -12,6 +13,12 @@ import tempfile
 import termios
 import time
 import uuid
+
+@dataclass
+class Session:
+    process: subprocess.Popen
+    terminal: int | None
+
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary", type=Path)
@@ -78,21 +85,19 @@ with tempfile.TemporaryDirectory(dir=args.workspace_parent) as directory:
         proc = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave,
                                 preexec_fn=terminal, env=env)
         os.close(slave)
-        session = [proc, master]
+        session = Session(proc, master)
         sessions.append(session)
         ready(master)
         return session
 
     def hangup(session):
-        proc, fd = session
-        os.close(fd)
-        session[1] = None
-        assert proc.wait(timeout=10) == 0, "terminal hangup skipped clean shell teardown"
+        os.close(session.terminal)
+        session.terminal = None
+        assert session.process.wait(timeout=10) == 0, "terminal hangup skipped clean shell teardown"
 
     def exit_shell(session):
-        proc, fd = session
-        os.write(fd, b"exit\n")
-        assert proc.wait(timeout=10) == 0, "exit returned an error"
+        os.write(session.terminal, b"exit\n")
+        assert session.process.wait(timeout=10) == 0, "exit returned an error"
 
     def assert_removed():
         deadline = time.monotonic() + 5
@@ -117,26 +122,26 @@ with tempfile.TemporaryDirectory(dir=args.workspace_parent) as directory:
         first = launch()
         sibling = launch()
         hangup(first)
-        ready(sibling[1])
+        ready(sibling.terminal)
         exit_shell(sibling)
         assert_removed()
         print("PASS: hangup preserves the sibling; its final exit removes the container", flush=True)
 
         first = launch()
         sibling = launch()
-        os.write(first[1], b"trap '' HUP\n")
-        ready(first[1])
+        os.write(first.terminal, b"trap '' HUP\n")
+        ready(first.terminal)
         hangup(first)
-        ready(sibling[1])
+        ready(sibling.terminal)
         exit_shell(sibling)
         assert_removed()
         print("PASS: a shell ignoring HUP is removed without killing its sibling", flush=True)
     finally:
-        for proc, fd in sessions:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-            if fd is not None:
-                os.close(fd)
+        for session in sessions:
+            if session.process.poll() is None:
+                session.process.kill()
+                session.process.wait()
+            if session.terminal is not None:
+                os.close(session.terminal)
         subprocess.run(["docker", "rm", "-f", "toolbox-named-" + name],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
