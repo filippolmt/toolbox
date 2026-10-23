@@ -70,6 +70,31 @@ with tempfile.TemporaryDirectory() as directory:
     assert run(wrapper, sys.executable, '-c', 'pass').returncode == 0
     assert run(cleanup).returncode == 0
     assert not path.exists(), 'normal exit leaked the session marker'
+    # Pause the filesystem publication boundary after the identity is written:
+    # cleanup must win the race without ever allowing the payload to run.
+    paused = '''import os, sys
+link = os.link
+def publish(*args):
+    print('PENDING', flush=True)
+    input()
+    return link(*args)
+os.link = publish
+exec(sys.argv.pop(1))
+'''
+    delayed = subprocess.Popen([sys.executable, '-c', paused, wrapper, str(path),
+                                sys.executable, '-c', f'open({str(payload)!r}, "w").close()'],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert delayed.stdout.readline().strip() == 'PENDING'
+        assert run(cleanup).returncode == 0
+        delayed.communicate('\n', timeout=5)
+        assert delayed.returncode == 0
+        assert not payload.exists(), 'concurrent cleanup allowed the payload to run'
+    finally:
+        if delayed.poll() is None:
+            delayed.kill()
+            delayed.wait()
+    path.unlink()
     sibling = subprocess.Popen(['sleep', 'infinity'])
     try:
         with open(f'/proc/{sibling.pid}/stat') as stat:
@@ -86,5 +111,35 @@ with tempfile.TemporaryDirectory() as directory:
 `
 	if output, code := dockerExec(ctx, t, cli, id, "/usr/bin/python3", "-c", probe, shellProcessWrapper, shellProcessCleanup); code != 0 {
 		t.Fatalf("session identity probe exited %d: %s", code, output)
+	}
+
+	// Start a real Docker exec without ever attaching its output, as when
+	// the client loses the attach response after the process has started.
+	marker := "/tmp/toolbox-shell-" + rand.Text()
+	created, err := cli.ExecCreate(ctx, id, client.ExecCreateOptions{
+		Cmd: []string{"/usr/bin/python3", "-c", shellProcessWrapper, marker, "sleep", "infinity"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.ExecStart(ctx, created.ID, client.ExecStartOptions{Detach: true}); err != nil {
+		t.Fatal(err)
+	}
+	const published = `import pathlib, sys, time
+path = pathlib.Path(sys.argv[1])
+deadline = time.monotonic() + 5
+while not path.exists() and time.monotonic() < deadline:
+    time.sleep(0.01)
+assert path.exists(), 'remote exec did not publish its identity'
+`
+	if output, code := dockerExec(ctx, t, cli, id, "/usr/bin/python3", "-c", published, marker); code != 0 {
+		t.Fatalf("unattached exec startup exited %d: %s", code, output)
+	}
+	if err := cleanupShell(cli, id, created.ID, marker); err != nil {
+		t.Fatal(err)
+	}
+	result, err := cli.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
+	if err != nil || result.Running {
+		t.Fatalf("unattached exec survived cleanup: running=%v, err=%v", result.Running, err)
 	}
 }
