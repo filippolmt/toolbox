@@ -21,7 +21,8 @@ import (
 // reproduce the remote shell surviving the client's terminal hangup.
 func TestTerminalCloseDoesNotStrandTheContainer(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "toolbox")
-	build := exec.Command("go", "build", "-o", binary, "../..")
+	// Downloaded modules under the temporary HOME must stay removable too.
+	build := exec.Command("go", "build", "-modcacherw", "-o", binary, "../..")
 	// The package's TestMain guards the ambient HOME against writes.
 	build.Env = append(os.Environ(), "HOME="+t.TempDir())
 	if output, err := build.CombinedOutput(); err != nil {
