@@ -22,10 +22,12 @@ import (
 type attachMock struct {
 	client.APIClient
 
-	createFn  func(ctx context.Context, containerID string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
-	attachFn  func(ctx context.Context, execID string, opts client.ExecAttachOptions) (client.HijackedResponse, error)
-	resizeFn  func(ctx context.Context, execID string, opts client.ExecResizeOptions) error
-	inspectFn func(ctx context.Context, id string) (container.InspectResponse, error)
+	createFn      func(ctx context.Context, containerID string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
+	attachFn      func(ctx context.Context, execID string, opts client.ExecAttachOptions) (client.HijackedResponse, error)
+	resizeFn      func(ctx context.Context, execID string, opts client.ExecResizeOptions) error
+	inspectFn     func(ctx context.Context, id string) (container.InspectResponse, error)
+	execInspectFn func(ctx context.Context, id string) (client.ExecInspectResult, error)
+	startFn       func(ctx context.Context, id string, opts client.ExecStartOptions) (client.ExecStartResult, error)
 }
 
 // ContainerInspect feeds diagnoseExecFailure. The default reports a running
@@ -54,6 +56,67 @@ func (a *attachMock) ExecResize(ctx context.Context, id string, opts client.Exec
 	return client.ExecResizeResult{}, nil
 }
 
+func (a *attachMock) ExecInspect(ctx context.Context, id string, _ client.ExecInspectOptions) (client.ExecInspectResult, error) {
+	return a.execInspectFn(ctx, id)
+}
+
+func (a *attachMock) ExecStart(ctx context.Context, id string, opts client.ExecStartOptions) (client.ExecStartResult, error) {
+	return a.startFn(ctx, id, opts)
+}
+
+// Cancellation can arrive after Docker starts the shell but before its PID
+// reaches the client. Cleanup must still close only that shell and drain the
+// signal helper before the caller decides whether a sibling is attached.
+func TestExecShell_HangupDuringStartupWaitsForItsExecs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server, conn := net.Pipe()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = conn.Close() }()
+
+	started := false
+	helperInspects := 0
+	cli := &attachMock{
+		createFn: func(ctx context.Context, _ string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			if ctx.Err() != nil {
+				t.Fatal("shell cleanup inherited the cancelled session context")
+			}
+			if reflect.DeepEqual(opts.Cmd, []string{"/bin/kill", "-HUP", "42"}) {
+				return client.ExecCreateResult{ID: "hangup"}, nil
+			}
+			return client.ExecCreateResult{ID: "shell"}, nil
+		},
+		attachFn: func(ctx context.Context, _ string, _ client.ExecAttachOptions) (client.HijackedResponse, error) {
+			cancel()
+			if ctx.Err() != nil {
+				t.Fatal("cancellation can truncate the startup handshake")
+			}
+			go func() { _, _ = server.Write([]byte("42\r\n")) }()
+			return client.NewHijackedResponse(conn, ""), nil
+		},
+		startFn: func(_ context.Context, id string, _ client.ExecStartOptions) (client.ExecStartResult, error) {
+			if id != "hangup" {
+				t.Fatalf("started %q instead of signalling the disconnected shell", id)
+			}
+			started = true
+			return client.ExecStartResult{}, nil
+		},
+		execInspectFn: func(_ context.Context, id string) (client.ExecInspectResult, error) {
+			if id == "hangup" {
+				helperInspects++
+				return client.ExecInspectResult{Running: helperInspects == 1}, nil
+			}
+			return client.ExecInspectResult{Running: !started}, nil
+		},
+	}
+	if err := execShell(ctx, cli, "cid", []string{"/bin/zsh"}); err != nil {
+		t.Fatal(err)
+	}
+	if !started || helperInspects < 2 {
+		t.Fatal("returned while the disconnected shell or its signal helper was still running")
+	}
+}
+
 func TestExecShell_ExecCreateError(t *testing.T) {
 	wantErr := errors.New("create boom")
 	cli := &attachMock{
@@ -64,7 +127,7 @@ func TestExecShell_ExecCreateError(t *testing.T) {
 			if !opts.AttachStdin || !opts.AttachStdout || !opts.AttachStderr || !opts.TTY {
 				t.Errorf("exec opts missing flags: %+v", opts)
 			}
-			if got, want := opts.Cmd, []string{"/bin/zsh"}; !reflect.DeepEqual(got, want) {
+			if got, want := opts.Cmd, []string{"/bin/sh", "-c", `printf '%s\n' "$$"; exec "$@"`, "toolbox-shell", "/bin/zsh"}; !reflect.DeepEqual(got, want) {
 				t.Errorf("exec Cmd = %v, want %v", got, want)
 			}
 			return client.ExecCreateResult{}, wantErr
@@ -203,13 +266,12 @@ func TestExecShell_NonTTYStdin(t *testing.T) {
 		_ = devNull.Close()
 	})
 
-	// net.Pipe gives us two connected net.Conn ends. Closing the server
-	// side immediately makes the client side return EOF on the first read,
-	// which unblocks the io.Copy(os.Stdout, resp.Reader) in execShell.
+	// The remote wrapper reports the shell PID before ordinary shell output.
 	serverConn, clientConn := net.Pipe()
-	if err := serverConn.Close(); err != nil {
-		t.Fatalf("close server conn: %v", err)
-	}
+	go func() {
+		_, _ = serverConn.Write([]byte("42\r\n"))
+		_ = serverConn.Close()
+	}()
 	t.Cleanup(func() { _ = clientConn.Close() })
 
 	cli := &attachMock{

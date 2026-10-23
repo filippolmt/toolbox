@@ -2,11 +2,15 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -40,56 +44,70 @@ func shellExecEnv() []string {
 // execShell attaches an interactive shell session to the container using the
 // caller-supplied cmd (already resolved upstream by sessionplan.Plan via
 // sessionplan.ResolveShellCmd). Handles TTY raw mode, signal forwarding
-// (SIGINT/SIGTERM), terminal resize (SIGWINCH), and bidirectional I/O.
+// (SIGINT/SIGTERM/SIGHUP), terminal resize (SIGWINCH), and bidirectional I/O.
 func execShell(ctx context.Context, cli client.APIClient, containerID string, cmd []string) error {
-	execResp, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+	signalCtx, stopSignals := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer stopSignals()
+	sessionCtx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+
+	// Docker reports host PIDs, not namespace-local ones. Read the shell's own
+	// PID before exec so a terminal hangup can signal only this session.
+	wrapped := append([]string{"/bin/sh", "-c", `printf '%s\n' "$$"; exec "$@"`, "toolbox-shell"}, cmd...)
+	execResp, err := cli.ExecCreate(sessionCtx, containerID, client.ExecCreateOptions{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		Cmd:          cmd,
+		Cmd:          wrapped,
 		Env:          shellExecEnv(),
 	})
 	if err != nil {
 		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("create exec for container %s: %w", containerID, err))
 	}
 
-	resp, err := cli.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{TTY: true})
+	// A hangup must not truncate the PID handshake after Docker starts the
+	// shell: finish this bounded startup first, then honour cancellation.
+	attachCtx, finishAttach := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	resp, err := cli.ExecAttach(attachCtx, execResp.ID, client.ExecAttachOptions{TTY: true})
+	finishAttach()
 	if err != nil {
 		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("attach exec %s: %w", execResp.ID, err))
 	}
 	defer resp.Close()
 
+	_ = resp.Conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line, err := resp.Reader.ReadString('\n')
+	_ = resp.Conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("read shell PID: %w", err))
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || pid <= 1 {
+		return diagnoseExecFailure(ctx, cli, containerID, fmt.Errorf("invalid shell PID handshake"))
+	}
+
+	if sessionCtx.Err() != nil {
+		return hangupShell(cli, containerID, execResp.ID, pid)
+	}
+
+	streamDone := make(chan struct{})
+	defer close(streamDone)
+	go func() {
+		select {
+		case <-sessionCtx.Done():
+			// Cancellation alone cannot unblock the hijacked output stream.
+			_ = resp.Conn.Close()
+		case <-streamDone:
+		}
+	}()
+
 	fd := int(os.Stdin.Fd())
 	restoreTerm, isTTY, err := ui.RawTerminal(fd)
 	if err != nil {
-		return err
+		return errors.Join(err, hangupShell(cli, containerID, execResp.ID, pid))
 	}
 	defer restoreTerm()
-
-	// Cancellable child context scopes the signal and resize goroutines so
-	// they exit cleanly when execShell returns.
-	sessionCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// External SIGINT/SIGTERM: in raw mode the user's ctrl+c is a byte
-	// delivered via stdin, so this only catches OS-level kills. Restore the
-	// TTY and cancel the session; do NOT os.Exit here — that would skip the
-	// caller's container-teardown defers in Shell().
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	go func() {
-		select {
-		case <-sigCh:
-			restoreTerm()
-			cancel()
-			// Unblock the main io.Copy on resp.Reader; ctx alone doesn't.
-			_ = resp.Conn.Close()
-		case <-sessionCtx.Done():
-		}
-	}()
 
 	// Forward terminal resize (SIGWINCH) to the container exec session.
 	if isTTY {
@@ -111,10 +129,64 @@ func execShell(ctx context.Context, cli client.APIClient, containerID string, cm
 	// *variable* races anything that reassigns it afterwards — which is what
 	// a test restoring its pipe does, and what the race detector reports.
 	stdin := os.Stdin
-	go func() { _, _ = io.Copy(resp.Conn, stdin) }()
-	_, _ = io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
+	go func() {
+		_, _ = io.Copy(resp.Conn, stdin)
+		if isTTY {
+			cancel()
+		}
+	}()
+	_, copyErr := io.Copy(io.MultiWriter(os.Stdout, tail), resp.Reader)
 
+	if sessionCtx.Err() != nil || (isTTY && copyErr != nil) {
+		return hangupShell(cli, containerID, execResp.ID, pid)
+	}
 	return diagnoseSessionExit(ctx, cli, containerID, tail.String())
+}
+
+// hangupShell closes only the lost terminal's shell, then waits until Docker
+// stops counting it as a sibling before the caller's teardown runs.
+func hangupShell(cli client.APIClient, containerID, execID string, pid int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	exec, err := cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
+	if cerrdefs.IsNotFound(err) || (err == nil && !exec.Running) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect disconnected shell: %w", err)
+	}
+	kill, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		Cmd: []string{"/bin/kill", "-HUP", strconv.Itoa(pid)},
+	})
+	if err != nil {
+		return fmt.Errorf("create shell hangup: %w", err)
+	}
+	if _, err := cli.ExecStart(ctx, kill.ID, client.ExecStartOptions{Detach: true}); err != nil {
+		return fmt.Errorf("hang up disconnected shell: %w", err)
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		running := false
+		// The signal helper is itself an exec: do not let teardown mistake
+		// it for an attached sibling after the shell has already stopped.
+		for _, id := range []string{execID, kill.ID} {
+			exec, err = cli.ExecInspect(ctx, id, client.ExecInspectOptions{})
+			if err != nil && !cerrdefs.IsNotFound(err) {
+				return fmt.Errorf("wait for disconnected shell: %w", err)
+			}
+			running = running || (err == nil && exec.Running)
+		}
+		if !running {
+			return nil
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return fmt.Errorf("wait for disconnected shell: %w", ctx.Err())
+		}
+	}
 }
 
 // forwardResize keeps the container exec's terminal size in sync with the local
