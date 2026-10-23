@@ -43,6 +43,7 @@ GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
 GOLANGCI_VERSION := v2.15.0
 GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
 GO_MOD_VOL      := toolbox-gomod
+DOCKERGATE_IMAGE := toolbox-dockergate:local
 # When running inside a toolbox shell we are talking to the host daemon over
 # the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
 # usually /workspace) is not resolvable by that daemon. Fall back to the
@@ -81,11 +82,15 @@ GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-cache
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
 GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
+GO_TEST_TAGS = $(if $(TAGS),-tags "$(TAGS)")
+GO_COVERAGE_FILE := dist/.scratch/coverage.out
+GO_COMPLEXITY_PATCH := dist/.scratch/complexity.patch
+BASE ?= origin/main
 # Keep the workflow as the threshold's single source of truth; an empty answer
 # makes go-coverage fail closed before it runs the suite.
 COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-check go-shell go-clean-cache go-run go-run-clean test-virtiofs check-links check-agent update-skills
+.PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-virtiofs check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
@@ -122,6 +127,10 @@ check-links: ## Validate Markdown links and anchors offline (lychee in Docker)
 	  --exclude-path docs/superpowers \
 	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md CODING_STANDARDS.md docs .claude/rules .claude/skills
 
+check-devtools: ## Test local development targets and coverage preflight
+	node --test .github/scripts/*.test.mjs
+	shellcheck .github/scripts/go-dockergate.sh .github/scripts/format-go.sh
+
 check-agent: ## Test project agent extensions
 	node --test .pi/tests/*.test.ts
 
@@ -130,6 +139,10 @@ check-agent: ## Test project agent extensions
 # the host; no container — these are agent skills, not part of the Go/image build.
 update-skills: ## Update vendored skills (skills-lock.json) to latest upstream
 	npx --yes skills@latest update --project --yes
+
+scratch: ## Create a Git- and Go-ignored scratch directory and print its host path
+	@mkdir -p "dist/.scratch"
+	@printf '%s\n' "$(HOST_SRC)/dist/.scratch"
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -167,27 +180,38 @@ go-build-macos: ## Build the Go CLI binary for macOS explicitly, ignoring the de
 	$(MAKE) go-build HOST_OS=darwin HOST_ARCH=$(MACOS_ARCH)
 
 go-test: ## Run Go tests inside a golang container
-	$(GO_RUN) go test ./... -count=1
+	$(GO_RUN) go test ./... $(GO_TEST_TAGS) -count=1
 
-go-coverage: ## Run Go tests and enforce CI's total coverage floor
+go-coverage: scratch ## Run Go tests and enforce CI's total coverage floor
 	@test -n "$(COVERAGE_MIN)" || { echo 'COVERAGE_MIN not found in .github/workflows/ci.yml' >&2; exit 2; }
-	$(GO_RUN) sh -ec 'go test ./... -count=1 -coverprofile=/tmp/coverage.out -covermode=atomic; \
-		total=$$(go tool cover -func=/tmp/coverage.out | awk '\''/^total:/{print $$3}'\'' | tr -d '\''%'\''); \
+	$(GO_RUN) sh -ec 'go test ./... $(GO_TEST_TAGS) -count=1 -coverprofile=$(GO_COVERAGE_FILE) -covermode=atomic; \
+		total=$$(go tool cover -func=$(GO_COVERAGE_FILE) | awk '\''/^total:/{print $$3}'\'' | tr -d '\''%'\''); \
 		echo "total coverage: $${total}% (floor $(COVERAGE_MIN)%)"; \
 		if awk -v t="$$total" -v m="$(COVERAGE_MIN)" '\''BEGIN{exit !(t+0 < m+0)}'\''; then \
 			echo "total coverage $${total}% is below the $(COVERAGE_MIN)% floor" >&2; exit 1; \
 		fi'
 
-go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName)
+go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName; optional TAGS=...)
 	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
 	@test -n "$(RUN)" || { echo 'RUN is required' >&2; exit 2; }
-	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' -count=1
+	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' $(GO_TEST_TAGS) -count=1
+
+go-dockergate-image: ## Build the local daemon-test runner using the pinned Go and existing runtime images
+	docker image inspect "$(FULL)" >/dev/null
+	docker build -f .github/dockergate.Dockerfile --build-arg GO_IMAGE="$(GO_IMAGE)" \
+	  --build-arg RUNTIME_IMAGE="$(FULL)" -t "$(DOCKERGATE_IMAGE)" .github
+
+go-dockergate: go-dockergate-image ## Run daemon gates against FULL without rebuilding it (optional PKG=... RUN=...)
+	bash .github/scripts/go-dockergate.sh "$(HOST_SRC)" "$(FULL)" "$(DOCKERGATE_IMAGE)" \
+	  '$(if $(RUN),$(RUN),.)' $(if $(PKG),"$(PKG)",./internal/container/ ./internal/imagereclaim/)
 
 go-test-verbose: ## Run Go tests with -v and race detection (requires CGO)
-	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./...
+	docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) $(GO_IMAGE) go test -v -race ./... $(GO_TEST_TAGS)
 
-go-fmt: ## Format Go files inside a golang container
-	$(GO_RUN) sh -ec 'find . -name '\''*.go'\'' -type f -print0 | xargs -0 gofmt -w'
+go-fmt: scratch ## Format surviving Git-selected Go files inside a golang container
+	git -c safe.directory="$(CURDIR)" ls-files -z --cached --others --exclude-standard -- '*.go' > dist/.scratch/go-format-files
+	docker run --rm -i $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) \
+	  bash .github/scripts/format-go.sh < dist/.scratch/go-format-files
 
 # Absolute path, not bare `golangci-lint`: GO_MOUNT binds the shared GOPATH
 # volume over /go, and the image PATH lists /go/bin before /usr/bin, so a stray
@@ -195,6 +219,15 @@ go-fmt: ## Format Go files inside a golang container
 # (and can be a wrong-arch build → `exec: no such file`).
 go-lint: ## Run golangci-lint inside a container
 	docker run --rm $(GO_MOUNT) $(GO_CACHE_ENV) $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run ./...
+
+go-lint-new: scratch ## Check cognitive complexity in changed functions (BASE=ref; default origin/main)
+	python3 .github/scripts/complexity-patch.py --base "$(BASE)" > "$(GO_COMPLEXITY_PATCH)"
+	docker run --rm $(GO_MOUNT) $(GO_CACHE_ENV) \
+	  -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
+	  $(GOLANGCI_IMAGE) /usr/bin/golangci-lint run --enable-only=gocognit --new-from-patch="$(GO_COMPLEXITY_PATCH)" ./...
+
+go-preflight: go-coverage go-lint-new ## Check new-code complexity and estimate delta coverage (BASE=ref)
+	python3 .github/scripts/new-code-coverage.py "$(GO_COVERAGE_FILE)" --base "$(BASE)" --minimum "$(COVERAGE_MIN)" --warn-only
 
 go-check: go-coverage go-lint ## Go gate: run CI's coverage-enforced tests and linter (run `make test` too when the change touches the image)
 
