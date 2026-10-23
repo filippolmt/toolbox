@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Validate branch name
         if: github.event_name == 'pull_request'
@@ -54,8 +56,11 @@ jobs:
       # under $CI, so dropping this step turns the suite red rather than
       # quietly retiring the guard. Mirrored in sonar.yml, which runs the same
       # suite.
-      - name: Install zsh
-        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y zsh shellcheck
+
+      - name: Test development feedback tools
+        run: make check-devtools
 
       - name: Run tests
         run: go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
@@ -75,12 +80,16 @@ jobs:
       - name: Enforce the coverage floor
         env:
           COVERAGE_MIN: '80'
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/{print $3}' | tr -d '%')
           echo "total coverage: ${total}% (floor ${COVERAGE_MIN}%)"
           if awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN{exit !(t+0 < m+0)}'; then
             echo "::error::total coverage ${total}% is below the ${COVERAGE_MIN}% floor"
             exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            python3 .github/scripts/new-code-coverage.py coverage.out --base "$BASE_SHA" --minimum "$COVERAGE_MIN" --warn-only
           fi
 
   lint:
@@ -89,6 +98,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # Keep the required `lint` job present on every PR, but do not compile the
       # unchanged Go tree for Dockerfile/docs-only dependency bumps. Changes to
@@ -107,7 +118,7 @@ jobs:
             exit 0
           fi
           files=$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')
-          if grep -Eq '(\.go$|^go\.|^\.golangci\.yml$|^Makefile$)' <<<"$files" \
+          if grep -Eq '(\.go$|^go\.|^\.golangci\.yml$|^\.gitattributes$|^\.github/scripts/complexity-patch\.py$|^Makefile$)' <<<"$files" \
             || { [ "$ACTOR" != 'renovate[bot]' ] && grep -qx '.github/workflows/ci.yml' <<<"$files"; }; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
           else
@@ -160,6 +171,22 @@ jobs:
         with:
           version: ${{ steps.gola.outputs.version }}
           skip-cache: true
+
+      - name: Select changed Go functions
+        if: steps.go-lint-inputs.outputs.run == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          mkdir -p dist/.scratch
+          python3 .github/scripts/complexity-patch.py --base "$BASE_SHA" > dist/.scratch/complexity.patch
+
+      - name: Check cognitive complexity in changed functions
+        if: steps.go-lint-inputs.outputs.run == 'true'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ steps.gola.outputs.version }}
+          skip-cache: true
+          args: --enable-only=gocognit --new-from-patch=dist/.scratch/complexity.patch
 
       - name: Test project agent extensions
         run: node --test .pi/tests/*.test.ts

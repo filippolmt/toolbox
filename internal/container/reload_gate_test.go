@@ -23,9 +23,11 @@ import (
 // shared anchor would only add a second container to reason about.
 func reloadSessionPlan(t *testing.T, host fsx.Host, from *reload.From) *sessionplan.SessionPlan {
 	t.Helper()
+	// Reload identity does not need the host bridge's read-only virtiofs bind.
+	bridge := false
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Host:       host,
-		Cfg:        &config.Config{Shell: "zsh", Image: os.Getenv("IMAGE_TAG"), Pull: config.PullNever},
+		Cfg:        &config.Config{Shell: "zsh", Image: os.Getenv("IMAGE_TAG"), Pull: config.PullNever, Bridge: &bridge},
 		Workspace:  reloadGateWorkspace,
 		ReloadFrom: from,
 	})

@@ -22,11 +22,21 @@ func runGhInit(t *testing.T, fakeCommands ...string) (home, claudeDir string, ca
 	gh := `#!/bin/sh
 if [ "${1:-}" = skill ] && [ "${2:-}" = install ]; then
     printf '%s\n' "$*" >> "$GH_CALL_LOG"
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = --dir ]; then
+            /bin/mkdir -p "$2/gh"
+            [ -f "$2/gh/SKILL.md" ] || printf '# gh fixture\n' > "$2/gh/SKILL.md"
+            break
+        fi
+        shift
+    done
     exit 1
 fi
 exit 1
 `
 	writeTestExecutable(t, filepath.Join(binDir, "gh"), gh)
+	writeTestExecutable(t, filepath.Join(binDir, "grep"), "#!/bin/sh\nexec /usr/bin/grep \"$@\"\n")
+	writeTestExecutable(t, filepath.Join(binDir, "cat"), "#!/bin/sh\nexec /bin/cat \"$@\"\n")
 	for _, name := range fakeCommands {
 		writeTestExecutable(t, filepath.Join(binDir, name), "#!/bin/sh\nexit 0\n")
 	}
@@ -65,6 +75,31 @@ exit 1
 		t.Fatalf("read gh calls: %v", err)
 	}
 	return home, claudeDir, strings.Split(strings.TrimSpace(string(loggedCalls)), "\n")
+}
+
+func TestGhSkillInstallKeepsCompactMonitoringAcrossRetries(t *testing.T) {
+	home, claudeDir, _ := runGhInit(t, "claude", "pi")
+	dir := filepath.Dir(home)
+	cmd := exec.Command("/bin/bash", filepath.Join(dir, filepath.Base(ghInitScript)))
+	cmd.Env = []string{
+		"HOME=" + home,
+		"PATH=" + filepath.Join(dir, "bin"),
+		"GH_CALL_LOG=" + filepath.Join(dir, "gh-calls"),
+		"CLAUDE_CONFIG_DIR=" + claudeDir,
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("retry gh init: %v\n%s", err, out)
+	}
+	for _, root := range []string{filepath.Join(claudeDir, "skills"), filepath.Join(home, ".agents", "skills")} {
+		body, err := os.ReadFile(filepath.Join(root, "gh", "SKILL.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		if strings.Count(text, "<!-- toolbox-gh-monitoring -->") != 1 || !strings.Contains(text, "--compact --exit-status") || !strings.Contains(text, "headSha") {
+			t.Fatalf("skill at %s lost or duplicated the compact monitoring guidance", root)
+		}
+	}
 }
 
 func TestGhSkillInstallIncludesCodexWithoutPi(t *testing.T) {

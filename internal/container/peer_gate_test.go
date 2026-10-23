@@ -21,6 +21,7 @@ package container
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
 	"os"
 	"strings"
@@ -111,16 +112,13 @@ func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, h
 	return id
 }
 
-// peerProbeSocketPath is where the probe binds, inside the shared socket dir.
-const peerProbeSocketPath = mountplan.PeerSocketDirTarget + "/probe.sock"
-
 // peerSocketProbe replicates Claude Code's uds-messaging startup: bind a UNIX
 // socket in the shared directory, then chmod it to 0600. It leaves the socket
 // in place so the peer container can assert on it, and exits non-zero on
 // either step — the chmod is the one that fails on a virtiofs bind mount.
 const peerSocketProbe = `
-import os, socket
-p = "` + peerProbeSocketPath + `"
+import os, socket, sys
+p = sys.argv[1]
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.bind(p)
 os.chmod(p, 0o600)
@@ -148,6 +146,15 @@ func TestPeerMessagingMechanism(t *testing.T) {
 
 	a := startPeerSession(ctx, t, cli, host)
 	b := startPeerSession(ctx, t, cli, host)
+	// The shared volume survives the gate; only this run owns this socket.
+	socketPath := mountplan.PeerSocketDirTarget + "/probe-" + rand.Text() + ".sock"
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if out, code := dockerExec(cleanupCtx, t, cli, a, "rm", "-f", socketPath); code != 0 {
+			t.Errorf("remove probe socket: %s", out)
+		}
+	})
 
 	// Condition 1 — the inbox-socket directory carries a real peer socket, and
 	// what A drops in it is what B reads. Without the shared mount /tmp is
@@ -159,10 +166,10 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	// over virtiofs, where chmod(2) on a socket inode fails with EINVAL while
 	// touch and chmod on a regular file both succeed. A `touch` probe stays
 	// green while peer messaging is dead, which is how #796 shipped broken.
-	if out, code := dockerExec(ctx, t, cli, a, "python3", "-c", peerSocketProbe); code != 0 {
+	if out, code := dockerExec(ctx, t, cli, a, "python3", "-c", peerSocketProbe, socketPath); code != 0 {
 		t.Fatalf("could not bind and chmod a peer socket in container A (exit %d): %s", code, out)
 	}
-	if _, code := dockerExec(ctx, t, cli, b, "test", "-S", peerProbeSocketPath); code != 0 {
+	if _, code := dockerExec(ctx, t, cli, b, "test", "-S", socketPath); code != 0 {
 		t.Errorf("socket bound by A is not visible in B: %s is not shared", mountplan.PeerSocketDirTarget)
 	}
 

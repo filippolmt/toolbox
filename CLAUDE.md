@@ -10,7 +10,8 @@
 
 - `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. → [image selection](docs/configuration.md#image-selection)
-- Single test: `make go-test-one PKG=./internal/mountplan RUN=TestFoo`.
+- Single test: `make go-test-one PKG=./internal/mountplan RUN=TestFoo` (optional `TAGS=...`).
+- Daemon gates, new-code preflight and scratch: [development feedback loops](docs/agents/development-feedback.md).
 
 **Pre-push gate** — run what CI would run for the paths you touched:
 
@@ -19,15 +20,15 @@
 | Any Go file | `make go-check` | `ci.yml` (coverage-enforced test + lint) |
 | `.pi/**` | `make check-agent` | `ci.yml` (lint) |
 | `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
-| `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` — the extra CI gates have no local equivalent | `docker-ci.yml` (build + smoke + real-daemon gates) |
+| `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` + `make go-dockergate` against the intended runtime image | `docker-ci.yml` (build + smoke + real-daemon gates) |
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
-| `.github/scripts/**` | `shellcheck` | the workflow that calls it, on the next push — `virtiofs-git-rewrite.sh` has none, run `make test-virtiofs` |
+| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `virtiofs-git-rewrite.sh` has none, run `make test-virtiofs` |
 | `internal/build/assets/entrypoint.sh` | `make test-virtiofs` as well, from a Mac running Docker Desktop | none — no runner serves virtiofs |
 | `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
 
-Two of the real-daemon gates `docker-ci.yml` runs for those paths (`go test -tags dockergate` — peer messaging and the session reload) cannot be reproduced from inside a toolbox shell: the test's temporary `HOME` is invisible to the host daemon under DooD, so the sibling containers it starts mount nothing. CI is the only place they run. The third, the image-reclamation refusal (`internal/imagereclaim`), mounts nothing and does run locally with the socket and `IMAGE_TAG` in hand.
+The [daemon runner](docs/agents/development-feedback.md#daemon-gates) makes fixtures host-visible under DooD and preserves caller permissions. Its safety prerequisites apply; CI remains the built-image verification.
 
 Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — it carries the checks `main` requires, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
 
@@ -68,7 +69,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`sdd.md`](.claude/rules/sdd.md) — SDD skill packs, `.gitignore` fence.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
-Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch` — a red publish leaves `:latest` on the previous image with nothing else signalling it. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Code intelligence
 

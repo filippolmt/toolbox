@@ -16,12 +16,20 @@ linters:
     - unused
   exclusions:
     rules:
+      # Match Sonar's test-file exception; table cases are not product complexity.
+      - path: _test\.go
+        linters:
+          - gocognit
       # Test fixtures intentionally use executable files, open permissions, and
       # dynamic subprocesses; they are not part of the shipped attack surface.
       - path: _test\.go
         linters:
           - gosec
   settings:
+    # Enabled separately for the diff by go-lint-new and CI, not retroactively
+    # across untouched functions. SonarQube remains the authoritative gate.
+    gocognit:
+      min-complexity: 15
     nolintlint:
       require-explanation: true
       require-specific: true
