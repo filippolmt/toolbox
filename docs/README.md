@@ -10,7 +10,7 @@ sections.**
 | [configuration.md](configuration.md) | reference | All `.toolbox.yaml` keys, loading order, `TOOLBOX_*` env |
 | [mounts.md](mounts.md) | reference | Credential isolation, mount merge, `mounts_root`, profiles, startup hooks |
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
-| [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding |
+| [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding; Claude in Chrome, which bypasses it |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
@@ -84,6 +84,7 @@ sections.**
 - [Editor shims](bridge.md#editor-shims)
 - [Mount gating](bridge.md#mount-gating)
 - [Uninstall surface](bridge.md#uninstall-surface)
+- [Claude in Chrome](bridge.md#claude-in-chrome)
 - [Troubleshooting](bridge.md#troubleshooting)
 
 ## proximo.md
