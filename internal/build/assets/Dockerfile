@@ -40,7 +40,7 @@
 # consumes them, so a bump lands in that RUN's cache key and not in every one
 # below it.
 ARG GH_VERSION=2.103.3
-ARG GLAB_VERSION=1.124.0
+ARG GLAB_VERSION=1.125.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.24.2
 ARG HERDR_VERSION=0.9.5
@@ -57,7 +57,7 @@ ARG BUN_VERSION=1.4.4
 ARG UV_VERSION=0.13.6
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
-ARG SONARQUBE_CLI_VERSION=1.10.1.16776
+ARG SONARQUBE_CLI_VERSION=1.11.0.16877
 ARG CLAUDE_CODE_VERSION=2.1.311
 ARG CODEX_CLI_VERSION=0.164.0
 ARG PI_CLI_VERSION=1.4.0
@@ -90,7 +90,7 @@ ARG EZA_VERSION=0.23.5
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
-ARG OMZ_COMMIT=d2b7f557cceaddb16ba89bbf8200d8a8df35c4d8
+ARG OMZ_COMMIT=17a2b4c3a5855524ad4772a17ada0dc474e2fdf3
 ARG ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=e6683f20e5c38d3e5447f45845d04ddda75d0f23
 ARG ZSH_COMPLETIONS_COMMIT=989b23277ab33e8d5e82df6aed936e846db9d8b8
