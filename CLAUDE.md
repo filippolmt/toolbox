@@ -11,7 +11,7 @@
 - `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Inspect a build through `toolbox-local:build`, which no pull re-points. → [image selection](docs/configuration.md#image-selection)
 - One package: `make go-test-one PKG=./internal/mountplan` (optional `RUN=TestFoo`, `TAGS=...`).
-- Daemon gates, new-code preflight and scratch: [development feedback loops](docs/agents/development-feedback.md).
+- Ad-hoc `docker run -v`/`--mount` from a toolbox shell, daemon gates, new-code preflight: [development feedback loops](docs/agents/development-feedback.md).
 
 **Pre-push gate** — run what CI would run for the paths you touched:
 
@@ -24,7 +24,7 @@
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
-| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `host-share-git-rewrite.sh` has none, run `make test-host-share` |
+| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `.github/scripts/host-share-git-rewrite.sh` has none, run `make test-host-share` |
 | `internal/build/assets/entrypoint.sh` | `make test-host-share` as well, from a Mac running Docker Desktop | none — no runner serves a Host Share |
 | `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
 
