@@ -1005,8 +1005,10 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # status` in the background, which takes .git/index.lock to write a
       # refreshed index and makes the developer's next index-writing git
       # command fail with `index.lock: File exists` (#1262). GIT_OPTIONAL_LOCKS=0
-      # is git's switch for background readers. Same shape, and the same two
-      # guards, as the claude wrapper in fetch-claude-code. \
+      # is git's switch for background readers. Same shape as the claude
+      # wrapper in fetch-claude-code, with its two guards: the target must
+      # exist, and must not be the wrapper path itself — a real shim there
+      # would have the wrapper exec itself forever. \
       target="$(readlink -f /out/usr/local/bin/codegraph)"; \
       test -f "${target}"; \
       test "${target}" != /out/usr/local/bin/codegraph; \
