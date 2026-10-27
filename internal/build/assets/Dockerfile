@@ -39,7 +39,7 @@
 # (no value) immediately above the RUN — not merely inside the stage — that
 # consumes them, so a bump lands in that RUN's cache key and not in every one
 # below it.
-ARG GH_VERSION=2.103.2
+ARG GH_VERSION=2.103.3
 ARG GLAB_VERSION=1.124.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.24.2
@@ -54,11 +54,11 @@ ARG YQ_VERSION=4.54.1
 ARG STARSHIP_VERSION=1.27.0
 ARG PNPM_VERSION=12.15.0
 ARG BUN_VERSION=1.4.4
-ARG UV_VERSION=0.13.5
+ARG UV_VERSION=0.13.6
 # sonarqube-cli tags carry no `v` prefix and use a 4-segment
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
 ARG SONARQUBE_CLI_VERSION=1.10.1.16776
-ARG CLAUDE_CODE_VERSION=2.1.310
+ARG CLAUDE_CODE_VERSION=2.1.311
 ARG CODEX_CLI_VERSION=0.164.0
 ARG PI_CLI_VERSION=1.4.0
 ARG CODEGRAPH_VERSION=1.6.2
