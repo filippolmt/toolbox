@@ -195,9 +195,8 @@ go-coverage: scratch ## Run Go tests and enforce CI's total coverage floor
 			echo "total coverage $${total}% is below the $(COVERAGE_MIN)% floor" >&2; exit 1; \
 		fi'
 
-go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName; optional TAGS=...)
+go-test-one: ## Run one package's Go tests (PKG=./internal/pkg; optional RUN=TestName, TAGS=...)
 	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
-	@test -n "$(RUN)" || { echo 'RUN is required' >&2; exit 2; }
 	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' $(GO_TEST_TAGS) -count=1
 
 go-dockergate-image: ## Build the local daemon-test runner using the pinned Go and existing runtime images
