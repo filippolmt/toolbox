@@ -222,8 +222,7 @@ check_zsh() {
     # Assert the environ of PID 1 (tini), not $SHELL: this body runs under
     # bash -c and bash fabricates SHELL from /etc/passwd when unset, which would
     # green a dropped ENV. Without it, tools that resolve their shell from
-    # $SHELL alone (herdr panes, tmux) fall back to /bin/sh. No apostrophes or
-    # single quotes here — this body lives inside a single-quoted bash -c.
+    # $SHELL alone (herdr panes, tmux) fall back to /bin/sh.
     _zsh_shell_env_check() {
         # -z: /proc/*/environ is NUL-separated, so -z makes one entry one line
         # and -x anchors the match to the whole entry.
@@ -239,7 +238,6 @@ check_zsh() {
     # assertion passes even with the loader re-enabling expansion, proving
     # nothing beyond "the file was sourced". The unalias then lets the function
     # win at command position, which is what whence -w reads.
-    # No apostrophes or single quotes here — single-quoted bash -c body.
     _zsh_user_rc_check() {
         d=/home/toolbox/.toolbox-state/zshrc.d
         made=0
@@ -261,8 +259,7 @@ check_zsh() {
     # zsh -i -c never draws a prompt, so the hook would not fire on its own.
     # Each state seeds the cache and runs a fresh zsh, which is all the reset
     # the renderer needs: it prints once per distinct result per shell, and
-    # the signature lives in the shell. No apostrophes or single quotes below
-    # — this body lives inside a single-quoted bash -c.
+    # the signature lives in the shell.
     # $2, when given, is exported as TOOLBOX_RELOAD_MARKER: its presence is how
     # the renderer decides between advising the reload and advising the old
     # exit-and-reopen, so both halves have to be drivable from here.
@@ -443,8 +440,7 @@ cli_latest=
 # `$CWD/.claude/skills/playwright-cli/`. The generic *.md weight-prune in the
 # Dockerfile would empty those templates unless it spares them, so this asserts
 # the install lands a non-empty SKILL.md + populated references in a throwaway
-# CWD — guarding both the prune exclusion and the per-repo install path. No
-# single quotes — this body lives inside a single-quoted bash -c.
+# CWD — guarding both the prune exclusion and the per-repo install path.
 _pw_skill_check() {
     local d skill refs n
     d=$(mktemp -d) || return 1
@@ -464,8 +460,7 @@ _pw_skill_check() {
 # not fail the build: it ships a browser that will not start, behind a green
 # pipeline. So ask playwright whether the set is complete. --dry-run exits 0 and
 # says so when it is; anything else means the list has drifted and must be
-# re-derived (the Dockerfile comment records how). No single quotes, apostrophes
-# included — this body lives inside a single-quoted bash -c.
+# re-derived (the Dockerfile comment records how).
 _pw_deps_check() {
     local out first
     out=$(playwright install-deps --dry-run chromium 2>&1)
@@ -484,8 +479,8 @@ _pw_deps_check() {
 # alive while the server can no longer start (the typescript major that dropped
 # tsserver.js did exactly that behind a green build). This sends a real LSP
 # initialize from an empty workspace and fails on an error response, a dead
-# server or no answer within 30s. No single quotes and no dollar signs in the
-# node source — this body lives inside a single-quoted bash -c.
+# server or no answer within 30s. No dollar signs in the node source: the
+# inner bash would expand them.
 _lsp_init_check() {
     local d rc
     d=$(mktemp -d) || return 1
@@ -547,16 +542,7 @@ check_required "npm"        npm --version
 # NODE_OPTIONS=--dns-result-order=ipv4first must make a localhost listen bind
 # IPv4 127.0.0.1 (not ::1), or OAuth CLIs (cf/wrangler/codex) are unreachable
 # through the IPv4-only loopback bridge. See docs/commands.md#loopback-bridge.
-# This whole body runs inside `docker run ... bash -c '...'` (single-quoted), so
-# this line must use only escaped double quotes — a literal single quote would
-# close that block (do not "simplify" the quoting). That applies to the comments
-# too, apostrophes included: two of them a few words apart do not balance out,
-# they hand the words between them to the host shell, which splits them and
-# truncates the body at that point. Nothing warns you — `bash -n` passes, the
-# checks below the break silently never run, and the FAIL gate at the end of the
-# body goes with them, so the whole thing exits 0. Phrase around it: write "the
-# response of github" and never the possessive form. The sentinel check after
-# the body catches it either way.
+# Escaped double quotes only: see the single-quote note after this body.
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
@@ -651,8 +637,7 @@ check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
 # Wrapper strips image-wide DO_NOT_TRACK for claude only (Statsig feature
 # flags / Remote Control) — see the fetch-claude-code stage in the Dockerfile.
-# NB: no nested sh -c and no single quotes — the whole script body lives
-# inside a single-quoted bash -c (see header comment above check_zsh).
+# NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "codex"     codex    codex --version
 check_optional  "pi"        pi       pi --version
@@ -667,7 +652,7 @@ check_optional  "pi env knobs" pi sh -c "test \"\$PI_TELEMETRY\" = 0 && test \"\
 check_optional  "codegraph" codegraph codegraph --version
 # Wrapper sets GIT_OPTIONAL_LOCKS=0 so a background git status run by
 # codegraph never holds index.lock while the developer runs git (#1262) — see
-# fetch-codegraph. No single quotes here (see the claude wrapper check above).
+# fetch-codegraph.
 check_optional  "codegraph optional-locks wrapper" codegraph grep -c "env GIT_OPTIONAL_LOCKS=0" /usr/local/bin/codegraph
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "pyright LSP initialize" pyright-langserver _lsp_init_check pyright-langserver --stdio
@@ -724,11 +709,16 @@ echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 [ "$FAIL" -eq 0 ] || exit 1
 ' | tee "${SMOKE_LOG}"
 
-# The body above is one single-quoted argument, and anything that closes that
-# quoting early truncates it — an apostrophe in a comment is enough (see the
-# note next to the node check). A truncated body still exits 0, taking its own
-# FAIL gate with it, so a broken image would smoke-test green. Assert the body
-# reached its last line instead of trusting its exit code.
+# Every `docker run ... -c '` body in this file is one single-quoted argument.
+# A single quote inside it, an apostrophe in a comment included, closes that
+# quoting; unless it is reopened before any whitespace (as `'%A'` and `'"'"'`
+# are), the host shell splits the words that follow and truncates the body.
+# bash -n cannot see it. Write "the response
+# of github", never the possessive. TestSmokeTestBodiesKeepTheirSingleQuotes
+# (internal/build) names the offending line at go test time. A truncated body
+# still exits 0, taking its own FAIL gate with it, so a broken image would
+# smoke-test green: assert the body reached its last line instead of trusting
+# its exit code.
 grep -q "^=== Results:" "${SMOKE_LOG}" \
   || { echo "FAILED: the check block ended before its own Results line — its single-quoted body was truncated, so an unknown number of checks and the FAIL gate never ran"; exit 1; }
 
@@ -852,11 +842,8 @@ out=$(printf "%s" "$json" | bash "$SL" | strip_ansi)
 # .claude/rules/image-build.md, plus one local to a test: a literal character
 # here is blanked in step with the bug it guards, so the pattern then matches
 # anything. Assert each is non-empty or none of them proves a thing.
-# Built with printf, never with a dollar-quoted string: this whole block is the
-# body of a single-quoted docker run bash -c argument, so one apostrophe ends it
-# early. bash -n checks the outer script, where all of this is just a string, so
-# that breakage is invisible until the assertions run. Keep this block free of
-# apostrophes, comments included.
+# Built with printf, never with a dollar-quoted string, whose quotes would end
+# the single-quoted body (see the note after the first body).
 printf -v reset_icon "\xef\x80\xa1"   # nf-fa-refresh U+F021, precedes every countdown
 printf -v cold_icon  "\xe2\x9d\x84"   # snowflake U+2744, cold prompt cache
 printf -v git_icon   "\xee\x9c\xa5"   # nf-dev-git_branch U+E725, precedes the branch
@@ -1018,8 +1005,7 @@ echo "=== Workspace Install Refresh (30-graphify.sh, real boot) ==="
 # succeeds (the seed already carries the wide values); the stamp and the
 # graphify-owned-pair assertions additionally require it to have succeeded,
 # which is the point — a refresh that cannot install has nothing to stamp, and
-# nothing to duplicate either. No single quotes — this body lives inside a
-# single-quoted bash -c.
+# nothing to duplicate either.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 command -v graphify >/dev/null 2>&1 || { echo "SKIP: graphify not installed"; exit 0; }
@@ -1128,8 +1114,7 @@ echo "=== npm-global shadow heal (15-npm-shadow-dedupe.sh, real roots) ==="
 # — the production path, which no unit test can reach.
 #
 # Four fixtures, one per branch of the decision. The container is throwaway and
-# its npm-global is empty, so nothing else is in scope. No single quotes — this
-# body lives inside a single-quoted bash -c.
+# its npm-global is empty, so nothing else is in scope.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 seed_volume() {
@@ -1171,8 +1156,7 @@ echo "=== Workspace Install Refresh (40-playwright-cli.sh, agents pass, real boo
 #
 # PLAYWRIGHT_BROWSERS_PATH points at an empty dir with the sentinel pre-written
 # so the Chromium sync at the top of the same script is a no-op here: this block
-# is about the skill passes, and the browser cache has its own check above. No
-# single quotes — this body lives inside a single-quoted bash -c.
+# is about the skill passes, and the browser cache has its own check above.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 command -v playwright-cli >/dev/null 2>&1 || { echo "SKIP: playwright-cli not installed"; exit 0; }

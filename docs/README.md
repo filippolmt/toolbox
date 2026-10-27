@@ -2,7 +2,8 @@
 
 Canonical section-level map of every guide. **Renaming a heading breaks inbound
 links — update this map (and run `make check-links`) when adding or renaming
-sections.**
+sections.** Every `##` of a linked guide needs an entry
+(`TestDocsMapListsEveryGuideSection`); `###` entries are an editorial choice.
 
 | Guide | Type | Covers |
 |-------|------|--------|
@@ -36,6 +37,7 @@ sections.**
 - [toolbox sdd](commands.md#toolbox-sdd)
 - [toolbox completion](commands.md#toolbox-completion)
 - [--where targeting](commands.md#--where-targeting)
+- [dry runs](commands.md#dry-runs)
 
 ## configuration.md
 
@@ -82,6 +84,8 @@ sections.**
 - [Install topology](bridge.md#install-topology)
 - [Security boundary](bridge.md#security-boundary)
 - [Editor shims](bridge.md#editor-shims)
+- [Git credentials](bridge.md#git-credentials)
+- [Agent sounds](bridge.md#agent-sounds)
 - [Mount gating](bridge.md#mount-gating)
 - [Uninstall surface](bridge.md#uninstall-surface)
 - [Claude in Chrome](bridge.md#claude-in-chrome)
@@ -135,6 +139,7 @@ sections.**
 - [Config or port edits don't take effect](troubleshooting.md#config-or-port-edits-dont-take-effect)
 - [Port already in use on the host](troubleshooting.md#port-already-in-use-on-the-host)
 - ["unknown mount name" at startup](troubleshooting.md#unknown-mount-name-at-startup)
+- [npx reports `ECOMPROMISED` or `Lock compromised`](troubleshooting.md#npx-reports-ecompromised-or-lock-compromised)
 - [Nerd Font placeholders in the prompt](troubleshooting.md#nerd-font-placeholders-in-the-prompt)
 - [xdg-open, code, or OAuth login does nothing](troubleshooting.md#xdg-open-code-or-oauth-login-does-nothing)
 - [herdr plays no sound when an agent finishes](troubleshooting.md#herdr-plays-no-sound-when-an-agent-finishes)
@@ -163,8 +168,10 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
 - [codegraph optional-locks wrapper](internals/image-build.md#codegraph-optional-locks-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
+- [Go version single source of truth](internals/image-build.md#go-version-single-source-of-truth)
 - [Tools removal](internals/image-build.md#tools-removal)
 - [Node package weight prune](internals/image-build.md#node-package-weight-prune)
+- [Local overlay marker](internals/image-build.md#local-overlay-marker)
 - [Renovate automerge](internals/image-build.md#renovate-automerge)
 
 ### [internals/container-lifecycle.md](internals/container-lifecycle.md)
@@ -183,6 +190,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Prompt module toggles](internals/shell-start.md#prompt-module-toggles)
 - [UTF-8 locale](internals/shell-start.md#utf-8-locale)
 - [SHELL in the image env](internals/shell-start.md#shell-in-the-image-env)
+- [User config in zshrc.d](internals/shell-start.md#user-config-in-zshrcd)
 - [Managed statusline](internals/shell-start.md#managed-statusline)
 - [MCP plugin auto-build](internals/shell-start.md#mcp-plugin-auto-build)
 - [Playwright browser cache sync](internals/shell-start.md#playwright-browser-cache-sync)
@@ -192,6 +200,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Skill discovery paths diverge between Claude and the other agents](internals/shell-start.md#skill-discovery-paths-diverge-between-claude-and-the-other-agents)
 - [herdr session per workspace](internals/shell-start.md#herdr-session-per-workspace)
 - [GitLab git credential helper (glab)](internals/shell-start.md#gitlab-git-credential-helper-glab)
+- [git index stat checks on virtiofs](internals/shell-start.md#git-index-stat-checks-on-virtiofs)
 - [git safe.directory ("dubious ownership")](internals/shell-start.md#git-safedirectory-dubious-ownership)
 
 ### [internals/privacy.md](internals/privacy.md)
@@ -201,6 +210,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 ### [internals/host-cli.md](internals/host-cli.md)
 
 - [Shared fs primitives](internals/host-cli.md#shared-fs-primitives)
+- [The host as a declared input](internals/host-cli.md#the-host-as-a-declared-input)
 
 ### [internals/sonarqube.md](internals/sonarqube.md)
 

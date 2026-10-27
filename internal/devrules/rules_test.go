@@ -4,7 +4,8 @@
 // changes that can silently break them — directory renames under internal/,
 // cmd/, etc. lychee (docs.yml) checks the rules' Markdown links, but never the
 // glob patterns in their `paths:` frontmatter, so a renamed package leaves an
-// orphaned glob that nothing else catches.
+// orphaned glob that nothing else catches. docs_map_test.go holds the
+// docs/README.md map to the guides' sections on the same terms.
 package devrules
 
 import (

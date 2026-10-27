@@ -7,6 +7,10 @@
 IMAGE := ghcr.io/filippolmt/toolbox
 TAG   := latest
 FULL  := $(IMAGE):$(TAG)
+# Second tag on every local build. No registry serves it, so a pull or a
+# background prefetch that re-points FULL leaves it on the image just built:
+# the targets that build and then use the image read this one.
+LOCAL := toolbox-local:build
 # BuildKit registry cache published by CI (docker-publish.yml, mode=max,
 # multi-arch). Seeding from it makes the
 # first local build (or a rebuild after an upstream bump) mostly a layer pull.
@@ -92,29 +96,29 @@ COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}
 
 .PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-virtiofs check-links check-agent update-skills
 
-build: ## Build the toolbox runtime image (tag: ghcr.io/filippolmt/toolbox:latest)
-	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) \
+build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
+	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --cache-from type=registry,ref=$(CACHE_REF) \
 	  --load internal/build/assets
 
 test: build ## Build the image and run the smoke test
-	internal/build/assets/smoke-test.sh $(FULL)
+	internal/build/assets/smoke-test.sh $(LOCAL)
 
 test-graphify-hooks: ## Test graphify git hooks in the existing image (FULL=... overrides it; no build)
 	bash .github/scripts/test-graphify-hooks.sh "$(FULL)"
 
 test-virtiofs: build ## Build the image and rebase on a real virtiofs bind (macOS Docker Desktop only)
-	.github/scripts/virtiofs-git-rewrite.sh $(FULL)
+	.github/scripts/virtiofs-git-rewrite.sh $(LOCAL)
 
 shell: build ## Build the image and open an interactive zsh shell in it
-	docker run --rm -it $(FULL) zsh
+	docker run --rm -it $(LOCAL) zsh
 
 shell-bash: build ## Build the image and open an interactive bash shell (override default zsh)
-	docker run --rm -it $(FULL) bash
+	docker run --rm -it $(LOCAL) bash
 
 clean: ## Remove the toolbox image
-	docker rmi $(FULL) 2>/dev/null || true
+	docker rmi $(FULL) $(LOCAL) 2>/dev/null || true
 
 # Offline = relative links + #fragment anchors only; external URLs are never
 # checked, so the target works air-gapped and can't flake on third-party
@@ -191,9 +195,8 @@ go-coverage: scratch ## Run Go tests and enforce CI's total coverage floor
 			echo "total coverage $${total}% is below the $(COVERAGE_MIN)% floor" >&2; exit 1; \
 		fi'
 
-go-test-one: ## Run one Go test (PKG=./internal/pkg RUN=TestName; optional TAGS=...)
+go-test-one: ## Run one package's Go tests (PKG=./internal/pkg; optional RUN=TestName, TAGS=...)
 	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
-	@test -n "$(RUN)" || { echo 'RUN is required' >&2; exit 2; }
 	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' $(GO_TEST_TAGS) -count=1
 
 go-dockergate-image: ## Build the local daemon-test runner using the pinned Go and existing runtime images
