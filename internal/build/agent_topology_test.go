@@ -115,7 +115,7 @@ func TestAgentTopologyShipsInTheRuntimeImage(t *testing.T) {
 	if !strings.Contains(dockerfile, copyLine) {
 		t.Fatalf("Dockerfile does not ship Agent Topology with %q", copyLine)
 	}
-	smokeBody, err := os.ReadFile("assets/smoke-test.sh")
+	smokeBody, err := os.ReadFile(smokeTestFile)
 	if err != nil {
 		t.Fatalf("read smoke test: %v", err)
 	}
