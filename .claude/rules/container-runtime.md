@@ -211,8 +211,9 @@ them.
   init, idempotently and non-fatally. Only for a workspace on a type the
   [Host Share](../../CONTEXT.md#host-share) is known to report, register
   `core.checkStat=minimal`; a Docker Desktop share of any other type warns.
-  Keep both blocks under the shared gitconfig lock. Pinned by `TestSafeDirectoryRegistration`,
-  `TestVirtiofsCheckStatRegistration` and the image smoke test. → [shell start](../../docs/internals/shell-start.md)
+  Keep both blocks under the shared gitconfig lock. Pinned by
+  `TestSafeDirectoryRegistration`, `TestVirtiofsCheckStatRegistration` and the
+  image smoke test. → [shell start](../../docs/internals/shell-start.md)
 
 - **Proximo gate and projection:** derive `proximo.Resolve` once per
   configuration at each command edge and thread the answer through planning;

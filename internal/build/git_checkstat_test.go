@@ -83,8 +83,12 @@ func TestVirtiofsCheckStatRegistration(t *testing.T) {
 	for _, fsType := range []string{"virtiofs", "fakeowner"} {
 		t.Run("uses minimal system checks on a "+fsType+" workspace", func(t *testing.T) {
 			h := newCheckStatHarness(t)
-			if out, code := h.run(t, fsType, "FINDMNT_SOURCE=/run/host_mark/Users[/u/p]"); code != 0 {
+			out, code := h.run(t, fsType, "FINDMNT_SOURCE=/run/host_mark/Users[/u/p]")
+			if code != 0 {
 				t.Fatalf("block exited %d, want 0 (output %q)", code, out)
+			}
+			if strings.Contains(out, "unknown type") {
+				t.Errorf("output %q warns about a known Host Share type", out)
 			}
 			want := []string{"config --system core.checkStat minimal"}
 			if got := readLines(t, h.gitArgv); !slices.Equal(got, want) {

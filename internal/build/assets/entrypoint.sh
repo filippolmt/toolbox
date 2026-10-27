@@ -77,8 +77,8 @@ sudo flock /tmp/toolbox-gitconfig.lock sh -c '
 # uid and gid) and sub-second timestamps. Apply that trade-off only to a
 # workspace on a type the Host Share is known to report; native Linux
 # filesystems retain git's full stat check. Detection failure also retains the
-# default. A Docker Desktop share under an unknown type warns instead: Docker
-# Desktop has renamed the type before, and a silent miss leaves the fix off.
+# default. A Docker Desktop share under an unknown type warns instead: the type
+# it reports has changed before, and a silent miss leaves the fix off.
 # System scope keeps the host-mounted ~/.gitconfig clean, and the shared lock
 # serializes every writer of the container-local config.
 read -r _share_fstype _share_source <<MOUNT || true
