@@ -1,6 +1,6 @@
 # Bridge
 
-A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, `proximo up|down|status|errors|skill|doctor|update|version` (arguments included) to the host proximo binary, and herdr's agent-state chimes to the host's audio output. Opt-in: nothing runs on the host until `toolbox bridge install`.
+A per-user host daemon that forwards in-container URL opens (`xdg-open`, `$BROWSER`, OAuth redirects) to the host's real browser, editor opens (`code`/`codium`) to the host's VS Code / VSCodium, `proximo up|down|status|errors|skill|doctor|update|version` (arguments included) to the host proximo binary, and herdr's agent-state chimes to the host's audio output. Opt-in: nothing runs on the host until `toolbox bridge install`. Driving the host browser from an agent is a different channel — see [Claude in Chrome](#claude-in-chrome).
 
 ## Quick start
 
@@ -152,16 +152,11 @@ Close the shells and re-run, or `rm -rf ~/.toolbox/toolbox/bridge` once they are
 
 ## Claude in Chrome
 
-Claude Code inside `toolbox shell` can drive the Chrome on the host through the [Claude in Chrome](https://code.claude.com/docs/en/chrome) extension. This does **not** go through the bridge, and the toolbox adds nothing for it: Claude Code and the extension meet on Anthropic's relay at `bridge.claudeusercontent.com`, matched by claude.ai account and organization. The extension's other transport — a native messaging host on a local unix socket — cannot cross the Docker Desktop VM, and is not needed.
+Claude Code inside `toolbox shell` can drive the Chrome on the host through the [Claude in Chrome](https://code.claude.com/docs/en/chrome) extension. This does **not** go through the bridge, and the toolbox adds nothing for it: Claude Code and the extension meet on Anthropic's relay, matched by claude.ai account and organization, so the container only needs outbound access to the relay host the upstream page lists — a proxy or IP allowlist that blocks it leaves "No browsers are connected". The extension's local transport, a native messaging host listening on a unix socket in the host's `/tmp`, is out of reach: the container does not share that directory.
 
-```bash
-claude --chrome    # per session; /chrome → "Enabled by default" makes it sticky
-/chrome            # Status: Enabled, then "Select browser…" if more than one is connected
-```
+Start the session with `claude --chrome`, then run `/chrome` at its prompt to check the connection and pick a browser when more than one is connected. It needs an OAuth login (`/login`) in the container, with the extension signed in to the organization `/status` shows; the upstream page lists the credentials that keep the integration off, and why a project's own settings cannot switch it on.
 
-It works when Claude Code in the container is signed in with `/login` — an API key or a `claude setup-token` token keeps the integration off — and the extension on the host is signed in to the same organization `/status` shows. A project cannot switch it on from `.claude/settings.json`; Claude Code ignores that by design.
-
-Scope it deliberately. Every Claude session in the shell, sub-agents and auto mode included, acts in a browser that holds your logins, so prefer `--chrome` when a task needs them over enabling it by default, and keep the per-site allowlist in the extension. For anything that does not need your sessions — testing a local app, a `.test` route — use the Playwright bundled in the image, which runs in the container against nothing of yours. Other agents (Codex, pi) cannot use the extension; exposing the host Chrome to them over `--remote-debugging-port` would hand the container an unauthenticated port that controls that browser, so they stay on Playwright too.
+Scope it deliberately. A session started with `--chrome` — and, once `/chrome` makes the integration the default, every Claude session in the shell, sub-agents and auto mode included — acts in a browser that holds your logins. Prefer `--chrome` for the task that needs them. The extension's per-site allowlist is not a guard in auto mode: when the auto mode classifier approves a browser call, the extension skips its own site check unless a permission rule denies that site, so a site you never want touched belongs in a deny rule. For anything that does not need your sessions — testing a local app, a `.test` route — use Playwright in the container, whose browsers [persist on the host](internals/shell-start.md#playwright-browser-cache-sync) and hold none of your logins. Other agents (Codex, pi) cannot use the extension; exposing the host Chrome to them over `--remote-debugging-port` would hand the container an unauthenticated port that controls that browser, so they stay on Playwright too.
 
 ## Troubleshooting
 
