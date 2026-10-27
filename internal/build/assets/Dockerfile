@@ -1001,6 +1001,19 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       done; \
       test "${vendored_count}" -gt 0; \
       /out/usr/local/bin/codegraph --version; \
+      # Optional-locks wrapper: codegraph's watcher-driven sync runs `git
+      # status` in the background, which takes .git/index.lock to write a
+      # refreshed index and makes the developer's next index-writing git
+      # command fail with `index.lock: File exists` (#1262). GIT_OPTIONAL_LOCKS=0
+      # is git's switch for background readers. Same shape, and the same two
+      # guards, as the claude wrapper in fetch-claude-code. \
+      target="$(readlink -f /out/usr/local/bin/codegraph)"; \
+      test -f "${target}"; \
+      test "${target}" != /out/usr/local/bin/codegraph; \
+      rm /out/usr/local/bin/codegraph; \
+      printf '#!/bin/sh\n# Wrapper: background git status must not take index.lock (#1262).\nexec env GIT_OPTIONAL_LOCKS=0 "%s" "$@"\n' "${target#/out}" \
+        > /out/usr/local/bin/codegraph; \
+      chmod 0755 /out/usr/local/bin/codegraph; \
       freeze-mtimes
 
 # pi coding agent (npm `@earendil-works/pi-coding-agent`, binary `pi`) in its
