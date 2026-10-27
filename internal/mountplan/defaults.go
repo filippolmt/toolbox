@@ -200,7 +200,7 @@ func defaults() []config.Mount {
 		// cache with it; GOCACHE follows XDG and lands outside, so without this
 		// bind every recreate recompiles the standard library and every
 		// dependency from zero. The most expensive of the Tool Cache binds to
-		// lose, and the one a virtiofs bind serves worst — see ADR 0015 for the
+		// lose, and the one a Host Share bind serves worst — see ADR 0015 for the
 		// measurement and for why it is still a bind and not a volume.
 		{Name: "go-build", Source: "~/.toolbox/go-build", Target: "/home/toolbox/.cache/go-build", ReadOnly: false, CreateIfMissing: true},
 		// golangci-lint's analysis cache. The odd one out: golangci-lint is not

@@ -168,9 +168,9 @@ edit made within the same second can therefore escape the initial stat check
 until git refreshes the index. That window is accepted only on a Host Share,
 where including the unstable identity fields makes ordinary multi-file
 operations fail. The detection and registration policy is held by
-`TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
-by `.github/scripts/virtiofs-git-rewrite.sh`, run through `make test-virtiofs`:
-it builds the image (overwriting the local registry tag, as `make test` does),
+`TestHostShareCheckStatRegistration`. The platform boundary is held separately
+by `.github/scripts/host-share-git-rewrite.sh`, run through
+`make test-host-share`: it builds the image (overwriting the local registry tag, as `make test` does),
 binds a fresh repository through Docker Desktop, checks that the bind reports
 a known Host Share type and the policy is active, and rebases shared-file
 rewrites on the real mount. Without the policy the same rebase fails with the
@@ -188,7 +188,7 @@ release in the image, which arrives only with a new Debian release of the base
 image, since git comes from apt. The last two touch no file the table can key on, so each is worth one
 run of the gate when it lands. The script's exit
 trap owns its container and temporary repository; a killed run leaves the
-repository behind as a gitignored `.toolbox-virtiofs-git.*` directory.
+repository behind as a gitignored `.toolbox-host-share-git.*` directory.
 
 ## git safe.directory ("dubious ownership")
 

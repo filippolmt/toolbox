@@ -94,7 +94,7 @@ BASE ?= origin/main
 # makes go-coverage fail closed before it runs the suite.
 COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-virtiofs check-links check-agent update-skills
+.PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
@@ -108,8 +108,8 @@ test: build ## Build the image and run the smoke test
 test-graphify-hooks: ## Test graphify git hooks in the existing image (FULL=... overrides it; no build)
 	bash .github/scripts/test-graphify-hooks.sh "$(FULL)"
 
-test-virtiofs: build ## Build the image and rebase on a real Host Share bind (macOS Docker Desktop only)
-	.github/scripts/virtiofs-git-rewrite.sh $(LOCAL)
+test-host-share: build ## Build the image and rebase on a real Host Share bind (macOS Docker Desktop only)
+	.github/scripts/host-share-git-rewrite.sh $(LOCAL)
 
 shell: build ## Build the image and open an interactive zsh shell in it
 	docker run --rm -it $(LOCAL) zsh

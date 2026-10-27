@@ -212,7 +212,7 @@ them.
   [Host Share](../../CONTEXT.md#host-share) is known to report, register
   `core.checkStat=minimal`; a Docker Desktop share of any other type warns.
   Keep both blocks under the shared gitconfig lock. Pinned by
-  `TestSafeDirectoryRegistration`, `TestVirtiofsCheckStatRegistration` and the
+  `TestSafeDirectoryRegistration`, `TestHostShareCheckStatRegistration` and the
   image smoke test. → [shell start](../../docs/internals/shell-start.md)
 
 - **Proximo gate and projection:** derive `proximo.Resolve` once per

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end regression gate for Git rewrites on a Docker Desktop Host Share bind
 # (CONTEXT.md), which reports itself as virtiofs or fakeowner.
-# Usage: virtiofs-git-rewrite.sh <image-tag>
+# Usage: host-share-git-rewrite.sh <image-tag>
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then
@@ -14,14 +14,14 @@ image=$1
 # (Docker-outside-of-Docker) it is a host path the daemon can bind, where the
 # scratch temp directory is not. A workspace mounted at /workspace is
 # translated back to its host path, as the Makefile's HOST_SRC does.
-worktree=$(mktemp -d "$PWD/.toolbox-virtiofs-git.XXXXXX")
+worktree=$(mktemp -d "$PWD/.toolbox-host-share-git.XXXXXX")
 source=$worktree
 if [ -n "${TOOLBOX_HOST_WORKSPACE:-}" ]; then
   case $worktree in
     /workspace/*) source=$TOOLBOX_HOST_WORKSPACE${worktree#/workspace} ;;
   esac
 fi
-container="toolbox-virtiofs-git-$$"
+container="toolbox-host-share-git-$$"
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
   rm -rf "$worktree"

@@ -74,7 +74,7 @@ func (h *checkStatHarness) run(t *testing.T, fsType string, extraEnv ...string) 
 	return h.gitConfigBlockHarness.run(t, "core.checkStat", append(env, extraEnv...)...)
 }
 
-func TestVirtiofsCheckStatRegistration(t *testing.T) {
+func TestHostShareCheckStatRegistration(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}

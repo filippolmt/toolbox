@@ -24,8 +24,8 @@
 | `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
 | `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
 | `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
-| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `virtiofs-git-rewrite.sh` has none, run `make test-virtiofs` |
-| `internal/build/assets/entrypoint.sh` | `make test-virtiofs` as well, from a Mac running Docker Desktop | none — no runner serves virtiofs |
+| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `host-share-git-rewrite.sh` has none, run `make test-host-share` |
+| `internal/build/assets/entrypoint.sh` | `make test-host-share` as well, from a Mac running Docker Desktop | none — no runner serves a Host Share |
 | `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
 
 The [daemon runner](docs/agents/development-feedback.md#daemon-gates) makes fixtures host-visible under DooD and preserves caller permissions. Its safety prerequisites apply; CI remains the built-image verification.
