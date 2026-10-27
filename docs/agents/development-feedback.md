@@ -69,8 +69,11 @@ complexity check and coverage report alongside the existing gates.
 ## Scratch and checks
 
 `make scratch` creates `dist/.scratch/` and prints its host path. Put copied
-source, throwaway harnesses and diagnostic artifacts there: Git ignores the
-release directory, while Go package discovery ignores the hidden child.
+source, throwaway harnesses and diagnostic artifacts there, and bind an ad-hoc
+`docker run -v`/`--mount` from a toolbox shell only under that printed path:
+the daemon resolves the source on the host, and a container path translated by
+hand can create a stray host directory instead. Git ignores the release
+directory, while Go package discovery ignores the hidden child.
 Ignoring a directory in Git alone does not exclude it from `go test ./...`.
 `make go-fmt` formats surviving regular Go files selected by Git, so ignored
 scratch/cache trees, symlinks and unstaged deletions are left alone.

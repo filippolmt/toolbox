@@ -5,25 +5,27 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
 
 var (
 	// citedMakeTarget matches a Make target cited as inline code: `make go-check`.
-	citedMakeTarget = regexp.MustCompile("`make ([A-Za-z0-9_-]+)")
+	// The trailing class rejects a variable (`make V=x`) or a glob (`make go-*`).
+	citedMakeTarget = regexp.MustCompile("`make ([A-Za-z][A-Za-z0-9_-]*)(?:[^A-Za-z0-9_*=-]|$)")
 	// fencedMakeTarget matches a command line inside a fenced block: make go-check.
-	fencedMakeTarget = regexp.MustCompile(`^\s*make ([A-Za-z0-9_-]+)`)
-	// citedScript matches a repo-relative path under .github/scripts; the last
-	// character excludes a sentence's closing period.
-	citedScript = regexp.MustCompile(`\.github/scripts/[A-Za-z0-9_.-]+[A-Za-z0-9_-]`)
+	fencedMakeTarget = regexp.MustCompile(`^\s*(?:\$ )?make ([A-Za-z][A-Za-z0-9_-]*)(?:[^A-Za-z0-9_*=-]|$)`)
+	// citedScript matches a repo-relative path under .github/scripts: the last
+	// character drops a sentence's closing period, the trailing class a glob.
+	citedScript = regexp.MustCompile(`(\.github/scripts/[A-Za-z0-9_.-]*[A-Za-z0-9_-])(?:[^A-Za-z0-9_*-]|$)`)
 	// makeTargetRule matches a rule header, never a `name :=` assignment.
 	makeTargetRule = regexp.MustCompile(`(?m)^([A-Za-z0-9_-]+):([^=]|$)`)
 )
 
-// citedDocRoots is the set make check-links reads (the Makefile's check-links
-// target), so both guardrails cover the same prose. docs/adr is skipped: an ADR
-// records the names as of its decision.
+// citedDocRoots mirrors the roots of the Makefile's check-links target, so both
+// guardrails cover the same prose; docs/superpowers mirrors its --exclude-path.
+// docs/adr is skipped as well: an ADR records the names as of its decision.
 var citedDocRoots = []string{
 	"README.md", "CLAUDE.md", "CONTRIBUTING.md", "CONTEXT.md", "CODING_STANDARDS.md",
 	"docs", ".claude/rules", ".claude/skills",
@@ -39,7 +41,7 @@ func citedMakeTargets(body string) []string {
 		fenced  bool
 	)
 	for line := range strings.Lines(body) {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+		if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
 			fenced = !fenced
 			continue
 		}
@@ -114,7 +116,8 @@ func TestCitedMakeTargetsAndScriptsExist(t *testing.T) {
 				t.Errorf("%s cites `make %s`, which the Makefile does not define: cite the current target name", rel, target)
 			}
 		}
-		for _, p := range citedScript.FindAllString(body, -1) {
+		for _, m := range citedScript.FindAllStringSubmatch(body, -1) {
+			p := m[1]
 			scriptCited++
 			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
 				t.Errorf("%s cites %s, which does not exist: cite the current script path", rel, p)
@@ -126,5 +129,26 @@ func TestCitedMakeTargetsAndScriptsExist(t *testing.T) {
 	}
 	if scriptCited == 0 {
 		t.Error("no Markdown file cites a .github/scripts path: the script pattern no longer matches")
+	}
+}
+
+func TestCitedMakeTargets(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       []string
+	}{
+		{"inline", "Run `make go-check` first.", []string{"go-check"}},
+		{"inline with arguments", "`make go-test-one PKG=./x`", []string{"go-test-one"}},
+		{"backtick fence", "```sh\nmake go-dockergate PKG=./x\n$ make scratch\n```", []string{"go-dockergate", "scratch"}},
+		{"tilde fence", "~~~\nmake build\n~~~", []string{"build"}},
+		{"prose outside a fence", "make sure the gate\nruns", nil},
+		{"variable, flag and glob", "`make V=x t` `make -C d t` `make go-*`", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := citedMakeTargets(tc.body); !slices.Equal(got, tc.want) {
+				t.Errorf("citedMakeTargets(%q) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
 	}
 }
