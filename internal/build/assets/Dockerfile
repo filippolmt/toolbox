@@ -1001,14 +1001,12 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       done; \
       test "${vendored_count}" -gt 0; \
       /out/usr/local/bin/codegraph --version; \
-      # Optional-locks wrapper: codegraph's watcher-driven sync runs `git
-      # status` in the background, which takes .git/index.lock to write a
-      # refreshed index and makes the developer's next index-writing git
-      # command fail with `index.lock: File exists` (#1262). GIT_OPTIONAL_LOCKS=0
-      # is git's switch for background readers. Same shape as the claude
-      # wrapper in fetch-claude-code, with its two guards: the target must
-      # exist, and must not be the wrapper path itself — a real shim there
-      # would have the wrapper exec itself forever. \
+      # Optional-locks wrapper: export GIT_OPTIONAL_LOCKS=0 for codegraph only.
+      # Rationale: docs/internals/image-build.md, codegraph optional-locks
+      # wrapper. Same shape as the claude wrapper in fetch-claude-code, with
+      # its two guards: the target must exist, and must not be the wrapper
+      # path itself — a real shim there would have the wrapper exec itself
+      # forever. A change to the guards changes both. \
       target="$(readlink -f /out/usr/local/bin/codegraph)"; \
       test -f "${target}"; \
       test "${target}" != /out/usr/local/bin/codegraph; \
@@ -1371,7 +1369,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # final stage; known cost: runtime-notes. The wrapper has to name the
       # path the file will have in the final image, so the stage's own /out
       # prefix is stripped off the resolved target — and the target is checked
-      # here because the wrapper itself cannot run until the COPY lands. \
+      # here because the wrapper itself cannot run until the COPY lands. The
+      # codegraph wrapper in fetch-codegraph copies these guards: a change
+      # here changes both. \
       target="$(readlink -f /out/usr/local/bin/claude)"; \
       test -f "${target}"; \
       # `readlink -f` on a regular file returns the file itself, so an upstream

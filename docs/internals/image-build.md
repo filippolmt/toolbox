@@ -141,7 +141,7 @@ codegraph's file watcher syncs the index a moment after every worktree change, a
 
 Fix: `fetch-codegraph` replaces the npm `/usr/local/bin/codegraph` symlink with a wrapper that does `exec env GIT_OPTIONAL_LOCKS=0 <real-cli> "$@"` — git's own switch for background readers, scoped to codegraph so interactive `git status` keeps persisting its index refresh. It covers the MCP server and the CLI alike, whatever repo `.mcp.json` launched it, as long as `codegraph` resolves to the bundled one: a user-installed copy earlier on `PATH` (`npm i -g` lands in `~/.npm-global/bin`) bypasses the wrapper. Same shape and guards as the claude wrapper above; the smoke test (`codegraph optional-locks wrapper`) asserts the line is present.
 
-Known cost: every process codegraph spawns inherits the variable. codegraph only spawns git, and only to read, so nothing it runs loses a lock it needs.
+Known cost: every process codegraph spawns inherits the variable, but only git reads it. The fix holds while codegraph's git calls stay read-only: the variable drops only the optional lock a reader takes, so a codegraph that started writing the index would contend for `index.lock` again, wrapper or not.
 
 ## Two Docker version streams
 
