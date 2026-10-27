@@ -84,6 +84,7 @@ sections.**
 - [Editor shims](bridge.md#editor-shims)
 - [Mount gating](bridge.md#mount-gating)
 - [Uninstall surface](bridge.md#uninstall-surface)
+- [Claude in Chrome](bridge.md#claude-in-chrome)
 - [Troubleshooting](bridge.md#troubleshooting)
 
 ## proximo.md

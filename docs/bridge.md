@@ -150,6 +150,19 @@ bridge: daemon removed; state dir left behind
 
 Close the shells and re-run, or `rm -rf ~/.toolbox/toolbox/bridge` once they are gone. A clean run prints `bridge: uninstalled` and nothing on stderr. One case still fails outright: if the `token` file survived the removal — or its absence cannot be established at all — the command exits non-zero, because a later `install` would otherwise pick the old token back up instead of generating a fresh one.
 
+## Claude in Chrome
+
+Claude Code inside `toolbox shell` can drive the Chrome on the host through the [Claude in Chrome](https://code.claude.com/docs/en/chrome) extension. This does **not** go through the bridge, and the toolbox adds nothing for it: Claude Code and the extension meet on Anthropic's relay at `bridge.claudeusercontent.com`, matched by claude.ai account and organization. The extension's other transport — a native messaging host on a local unix socket — cannot cross the Docker Desktop VM, and is not needed.
+
+```bash
+claude --chrome    # per session; /chrome → "Enabled by default" makes it sticky
+/chrome            # Status: Enabled, then "Select browser…" if more than one is connected
+```
+
+It works when Claude Code in the container is signed in with `/login` — an API key or a `claude setup-token` token keeps the integration off — and the extension on the host is signed in to the same organization `/status` shows. A project cannot switch it on from `.claude/settings.json`; Claude Code ignores that by design.
+
+Scope it deliberately. Every Claude session in the shell, sub-agents and auto mode included, acts in a browser that holds your logins, so prefer `--chrome` when a task needs them over enabling it by default, and keep the per-site allowlist in the extension. For anything that does not need your sessions — testing a local app, a `.test` route — use the Playwright bundled in the image, which runs in the container against nothing of yours. Other agents (Codex, pi) cannot use the extension; exposing the host Chrome to them over `--remote-debugging-port` would hand the container an unauthenticated port that controls that browser, so they stay on Playwright too.
+
 ## Troubleshooting
 
 - `toolbox bridge status` prints state-dir path, token presence, port, supervisor install + run state, and the platform-specific detail line (`launchctl print` excerpt on macOS, `systemctl --user status` excerpt on Linux). On Linux it also prints the unix socket path and whether the daemon has bound it (`present=true`).
