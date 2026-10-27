@@ -2286,3 +2286,22 @@ where three earlier glyph problems in this repo actually lived. Naming the
 blanking makes the diagnostic obvious instead — an empty string in the source,
 not a wrong one — and makes the second instance recognisable as the first,
 which is how `starship.toml` was checked at all.
+
+### Host Share
+
+The filesystem through which Docker Desktop serves a host bind to a container,
+whatever type it reports. Docker Desktop has reported it as `virtiofs` and, on
+later releases, as `fakeowner`; both sit in front of the same host share, with
+the same unstable stat identity and the same refusal to `chmod` a socket.
+
+Concretely: `entrypoint.sh` matches every name the Host Share is known to
+report before registering `core.checkStat = minimal`, and warns when the
+workspace sits on a Docker Desktop share under a type it does not know.
+Mechanism: [git index stat checks on a Host
+Share](docs/internals/shell-start.md#git-index-stat-checks-on-a-host-share).
+
+Why the term exists: older prose names the share after its filesystem type,
+and a check written against that name silently stopped matching when Docker
+Desktop renamed the type — the fix for false rebase conflicts stayed inactive
+while the gate that guards it was not re-run. Naming the share, not its type,
+keeps the next rename a list entry instead of a regression.

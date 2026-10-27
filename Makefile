@@ -108,7 +108,7 @@ test: build ## Build the image and run the smoke test
 test-graphify-hooks: ## Test graphify git hooks in the existing image (FULL=... overrides it; no build)
 	bash .github/scripts/test-graphify-hooks.sh "$(FULL)"
 
-test-virtiofs: build ## Build the image and rebase on a real virtiofs bind (macOS Docker Desktop only)
+test-virtiofs: build ## Build the image and rebase on a real Host Share bind (macOS Docker Desktop only)
 	.github/scripts/virtiofs-git-rewrite.sh $(LOCAL)
 
 shell: build ## Build the image and open an interactive zsh shell in it

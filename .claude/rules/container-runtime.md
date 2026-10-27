@@ -207,10 +207,11 @@ them.
   path before `PATH`, matching git itself. `TestCheckHostCredentialHelper` and
   `TestLookHelperIn` pin the composition.
 
-- **Git on virtiofs:** register system-scope `safe.directory=*` before init,
-  idempotently and non-fatally. For a virtiofs workspace only, register
-  `core.checkStat=minimal`. Keep both blocks under the shared gitconfig lock.
-  Pinned by `TestSafeDirectoryRegistration`,
+- **Git on a Host Share:** register system-scope `safe.directory=*` before
+  init, idempotently and non-fatally. Only for a workspace on a type the
+  [Host Share](../../CONTEXT.md#host-share) is known to report, register
+  `core.checkStat=minimal`; a Docker Desktop share of any other type warns.
+  Keep both blocks under the shared gitconfig lock. Pinned by `TestSafeDirectoryRegistration`,
   `TestVirtiofsCheckStatRegistration` and the image smoke test. → [shell start](../../docs/internals/shell-start.md)
 
 - **Proximo gate and projection:** derive `proximo.Resolve` once per

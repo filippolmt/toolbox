@@ -68,20 +68,33 @@ sudo flock /tmp/toolbox-gitconfig.lock sh -c '
 ' _ '*' \
   || echo "toolbox: git safe.directory registration failed (non-fatal — git may report dubious ownership on any bind-mounted repository)"
 
-# git core.checkStat for virtiofs
-# Docker Desktop's virtiofs can make a file's stat identity disagree with the
-# index immediately after git writes it, even though its content is unchanged.
-# During a multi-file rebase or checkout, git's default index check sees that
-# race as local modifications and refuses to overwrite a clean worktree.
-# `minimal` omits the unstable identity fields (inode, device, uid and gid) and
-# sub-second timestamps. Apply that trade-off only to a workspace on virtiofs;
-# native Linux filesystems retain git's full stat check. Detection failure also
-# retains the default. System scope keeps the host-mounted ~/.gitconfig clean,
-# and the shared lock serializes every writer of the container-local config.
-[ "$(findmnt -n -o FSTYPE --target "$PWD" 2>/dev/null)" != "virtiofs" ] \
-  || sudo flock /tmp/toolbox-gitconfig.lock \
-       git config --system core.checkStat minimal \
-  || echo "toolbox: git core.checkStat registration failed (non-fatal — git operations on virtiofs may report false local changes)"
+# git core.checkStat on a Host Share
+# Docker Desktop's Host Share (CONTEXT.md) can make a file's stat identity
+# disagree with the index immediately after git writes it, even though its
+# content is unchanged. During a multi-file rebase or checkout, git's default
+# index check sees that race as local modifications and refuses to overwrite a
+# clean worktree. `minimal` omits the unstable identity fields (inode, device,
+# uid and gid) and sub-second timestamps. Apply that trade-off only to a
+# workspace on a type the Host Share is known to report; native Linux
+# filesystems retain git's full stat check. Detection failure also retains the
+# default. A Docker Desktop share under an unknown type warns instead: Docker
+# Desktop has renamed the type before, and a silent miss leaves the fix off.
+# System scope keeps the host-mounted ~/.gitconfig clean, and the shared lock
+# serializes every writer of the container-local config.
+read -r _share_fstype _share_source <<MOUNT || true
+$(findmnt -n -o FSTYPE,SOURCE --target "$PWD" 2>/dev/null)
+MOUNT
+case $_share_fstype in
+  virtiofs|fakeowner)
+    sudo flock /tmp/toolbox-gitconfig.lock \
+         git config --system core.checkStat minimal \
+      || echo "toolbox: git core.checkStat registration failed (non-fatal — git operations on a Docker Desktop share may report false local changes)" ;;
+  *)
+    case $_share_source in
+      /run/host_mark/*) echo "toolbox: workspace is a Docker Desktop share of unknown type '$_share_fstype'; git core.checkStat left at default (git rebase may report false local changes)" ;;
+    esac ;;
+esac
+unset _share_fstype _share_source
 
 # Init Sequence (CONTEXT.md). Stderr → ~/.toolbox-state/init/<name>.log;
 # on failure, tail-5 inline. The `if !` form neutralises the outer `set -e`

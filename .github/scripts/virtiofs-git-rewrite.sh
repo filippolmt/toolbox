@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end regression gate for Git rewrites on a Docker Desktop virtiofs bind.
+# End-to-end regression gate for Git rewrites on a Docker Desktop Host Share bind
+# (CONTEXT.md), which reports itself as virtiofs or fakeowner.
 # Usage: virtiofs-git-rewrite.sh <image-tag>
 set -euo pipefail
 
@@ -35,12 +36,15 @@ docker run --rm --name "$container" \
   --mount "type=bind,source=$source,destination=/workspace" \
   --workdir /workspace \
   "$image" bash -euc '
-    if [ "$(findmnt -n -o FSTYPE --target "$PWD")" != virtiofs ]; then
-      echo "virtiofs gate requires a Docker Desktop virtiofs workspace bind" >&2
-      exit 1
-    fi
+    fstype=$(findmnt -n -o FSTYPE --target "$PWD")
+    case $fstype in
+      virtiofs|fakeowner) ;;
+      *)
+        echo "gate requires a Docker Desktop Host Share bind (virtiofs or fakeowner), got $fstype" >&2
+        exit 1 ;;
+    esac
     if [ "$(git config --system --get core.checkStat)" != minimal ]; then
-      echo "entrypoint did not activate core.checkStat=minimal on virtiofs" >&2
+      echo "entrypoint did not activate core.checkStat=minimal on $fstype" >&2
       exit 1
     fi
 
@@ -88,7 +92,7 @@ docker run --rm --name "$container" \
     if [ "$status" -ne 0 ]; then
       printf "%s\n" "$output" >&2
       if printf "%s\n" "$output" | grep -q "would be overwritten by merge"; then
-        echo "virtiofs regression: Git rejected a clean worktree as locally modified" >&2
+        echo "Host Share regression: Git rejected a clean worktree as locally modified" >&2
       else
         echo "git rebase failed for an unexpected reason" >&2
       fi
@@ -104,5 +108,5 @@ docker run --rm --name "$container" \
       git status --short >&2
       exit 1
     }
-    echo "virtiofs Git rewrite gate passed"
+    echo "Host Share Git rewrite gate passed on $fstype"
   '
