@@ -11,8 +11,9 @@ make go-dockergate PKG=./internal/container RUN='TestTerminalClose|TestShellProc
 ```
 
 The target uses the existing runtime image selected by `FULL`; it does not
-rebuild that image. Run `make build` first when testing changed image assets,
-or override `FULL` with another locally available image. CI still verifies the
+rebuild that image. When testing changed image assets, run `make build` first
+and pass `FULL=toolbox-local:build`: a pull or prefetch can re-point the
+registry tag before the gate runs, while the local tag stays on your build. CI still verifies the
 complete gate suite against the runtime image built from the PR.
 
 The development-only runner uses `GO_IMAGE` from the Makefile, the runtime's
