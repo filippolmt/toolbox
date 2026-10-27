@@ -23,7 +23,7 @@ import (
 // shared anchor would only add a second container to reason about.
 func reloadSessionPlan(t *testing.T, host fsx.Host, from *reload.From) *sessionplan.SessionPlan {
 	t.Helper()
-	// Reload identity does not need the host bridge's read-only virtiofs bind.
+	// Reload identity does not need the host bridge's read-only Host Share bind.
 	bridge := false
 	plan, err := sessionplan.Plan(sessionplan.PlanInput{
 		Host:       host,

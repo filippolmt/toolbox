@@ -115,7 +115,7 @@ func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, h
 // peerSocketProbe replicates Claude Code's uds-messaging startup: bind a UNIX
 // socket in the shared directory, then chmod it to 0600. It leaves the socket
 // in place so the peer container can assert on it, and exits non-zero on
-// either step — the chmod is the one that fails on a virtiofs bind mount.
+// either step — the chmod is the one that fails on a Host Share bind mount.
 const peerSocketProbe = `
 import os, socket, sys
 p = sys.argv[1]
@@ -163,7 +163,7 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	// The probe binds a UNIX socket and chmods it, which is the sequence Claude
 	// Code's uds-messaging listener actually runs — not `touch`. The two differ
 	// on a bind-mounted host directory: Docker Desktop on macOS serves those
-	// over virtiofs, where chmod(2) on a socket inode fails with EINVAL while
+	// over the Host Share, where chmod(2) on a socket inode fails with EINVAL while
 	// touch and chmod on a regular file both succeed. A `touch` probe stays
 	// green while peer messaging is dead, which is how #796 shipped broken.
 	if out, code := dockerExec(ctx, t, cli, a, "python3", "-c", peerSocketProbe, socketPath); code != 0 {

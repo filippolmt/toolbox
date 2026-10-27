@@ -92,7 +92,7 @@ func Uninstall(host fsx.Host, a Agent) (warning string, err error) {
 // token back. It fails closed: the stat can be defeated by the same EACCES
 // that just defeated the removal, so only a token that is provably gone counts
 // as gone. The remedy line is fixed text — the errno carries no signal
-// (virtiofs answers EACCES where a blocked unlink answers EBUSY) and this
+// (the Host Share answers EACCES where a blocked unlink answers EBUSY) and this
 // package cannot see which shell holds the mount.
 func stateDirOutcome(s HostState, err error) (string, error) {
 	if err == nil {

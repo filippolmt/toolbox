@@ -24,7 +24,7 @@ func findBind(binds []Bind, target string) (Bind, bool) {
 // named volume when opted in.
 //
 // The volume name is load-bearing, not cosmetic: a host path here would be
-// served over virtiofs on Docker Desktop, where the chmod Claude Code runs on
+// served over Docker Desktop's Host Share, where the chmod Claude Code runs on
 // each socket it binds fails with EINVAL and kills the feature silently.
 func TestPlanPeerSocketDir(t *testing.T) {
 	for _, tc := range []struct {

@@ -137,36 +137,42 @@ Because the timeout falls through to an unlocked run, the lock cannot protect a 
 
 The lock file lives inside glab's own config dir, so under `inherit_host_auth: [glab]` (`catalog.go`, `HostAuthMount{HostPath: "~/.config/glab-cli"}`) it is written into the user's real host config directory rather than the toolbox-owned `~/.toolbox/glab`. glab ignores dotfiles it does not own, so this is cosmetic — but it is host-visible, which is why it is named here.
 
-## git index stat checks on virtiofs
+## git index stat checks on a Host Share
 
-On Docker Desktop for macOS, the workspace bind arrives as virtiofs. After git
-rewrites a file, virtiofs can immediately report a stat identity field
-differently from the value git just recorded even though the content is
-unchanged. The failure is confined to fields that `core.checkStat = minimal`
-omits — inode, device, uid or gid — rather than ctime alone. Multi-file
-operations such as rebase, cherry-pick and checkout can then reject a clean
-worktree with `Your local changes … would be overwritten by merge`; `git
-status` remains clean because hashing the file finds no content change.
+On Docker Desktop for macOS, the workspace bind arrives over a
+[Host Share](../../CONTEXT.md#host-share), observed reporting its filesystem
+type as `virtiofs` and as `fakeowner`. After git rewrites a file, the Host
+Share can immediately report a stat identity field differently from the value
+git just recorded even though the content is unchanged. The failure is
+confined to fields that `core.checkStat = minimal` omits — inode, device, uid
+or gid — rather than ctime alone. Multi-file operations such as rebase,
+cherry-pick and checkout can then reject a clean worktree with `Your local
+changes … would be overwritten by merge`; `git status` remains clean because
+hashing the file finds no content change.
 
 At startup, `entrypoint.sh` asks `findmnt` for the filesystem containing the
-working directory. Only when that filesystem is virtiofs, it writes
-`core.checkStat = minimal` to the container's system gitconfig under the shared
-`/tmp/toolbox-gitconfig.lock`. Native Linux filesystems keep git's default stat
-check, and failed filesystem detection changes nothing. System scope is
+working directory. Only when its type is one the Host Share is known to
+report, it writes `core.checkStat = minimal` to the container's system
+gitconfig under the shared `/tmp/toolbox-gitconfig.lock`. Native Linux
+filesystems keep git's default stat check, and failed filesystem detection
+changes nothing. A workspace whose source is a Docker Desktop share
+(`/run/host_mark/…`) under any other type keeps the default too, but prints a
+warning naming the type: the type has changed under the check before, and it
+matched nothing until someone noticed the false conflicts. System scope is
 intentional: the setting describes the running container's workspace mount,
 while `~/.gitconfig` is host-synced and must not be changed.
 
 The trade-off is explicit: `minimal` compares whole-second mtime and ctime plus
 size, but omits inode, device, uid, gid and sub-second timestamps. A same-size
 edit made within the same second can therefore escape the initial stat check
-until git refreshes the index. That window is accepted only on virtiofs, where
-including the unstable identity fields makes ordinary multi-file operations
-fail. The detection and registration policy is held by
-`TestVirtiofsCheckStatRegistration`. The platform boundary is held separately
-by `.github/scripts/virtiofs-git-rewrite.sh`, run through `make test-virtiofs`:
-it builds the image (overwriting the local registry tag, as `make test` does),
-binds a fresh repository through Docker Desktop, checks
-that the bind is virtiofs and the policy active, and rebases shared-file
+until git refreshes the index. That window is accepted only on a Host Share,
+where including the unstable identity fields makes ordinary multi-file
+operations fail. The detection and registration policy is held by
+`TestHostShareCheckStatRegistration`. The platform boundary is held separately
+by `.github/scripts/host-share-git-rewrite.sh`, run through
+`make test-host-share`: it builds the image (overwriting the local registry tag, as `make test` does),
+binds a fresh repository through Docker Desktop, checks that the bind reports
+a known Host Share type and the policy is active, and rebases shared-file
 rewrites on the real mount. Without the policy the same rebase fails with the
 false `would be overwritten by merge` error, so the gate tells the two apart.
 
@@ -176,12 +182,13 @@ its exposure here: the repository is public and owned by a user account, which
 has no runner groups to restrict a runner to one workflow, so any approved fork
 PR could edit a workflow to target it. Three events can break the boundary: a
 change to the entrypoint policy, which the pre-push table in `CLAUDE.md` maps
-to this target; a Docker Desktop upgrade; and a new git release in the image,
-which arrives only with a new Debian release of the base image, since git comes
-from apt. The last two touch no file the table can key on, so each is worth one
+to this target; a Docker Desktop upgrade, whose change of share type the
+entrypoint warning above surfaces at the next container start; and a new git
+release in the image, which arrives only with a new Debian release of the base
+image, since git comes from apt. The last two touch no file the table can key on, so each is worth one
 run of the gate when it lands. The script's exit
 trap owns its container and temporary repository; a killed run leaves the
-repository behind as a gitignored `.toolbox-virtiofs-git.*` directory.
+repository behind as a gitignored `.toolbox-host-share-git.*` directory.
 
 ## git safe.directory ("dubious ownership")
 

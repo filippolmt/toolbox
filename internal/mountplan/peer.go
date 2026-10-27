@@ -5,11 +5,11 @@ package mountplan
 //
 // A named volume rather than a bind under ~/.toolbox: Claude Code chmods each
 // inbox socket right after binding it, and Docker Desktop for macOS serves a
-// host bind over virtiofs, where chmod(2) on a socket inode fails with EINVAL.
-// The listener then never starts, so the session publishes no socket path and
-// no session is reachable — its own included, and with nothing on screen to
-// say so. A volume lives in the daemon's own filesystem on every platform, so
-// the bind-then-chmod sequence behaves the same everywhere.
+// host bind over its Host Share, where chmod(2) on a socket inode fails with
+// EINVAL. The listener then never starts, so the session publishes no socket
+// path and no session is reachable — its own included, and with nothing on
+// screen to say so. A volume lives in the daemon's own filesystem on every
+// platform, so the bind-then-chmod sequence behaves the same everywhere.
 //
 // A bind spec cannot carry ownership, and the session container runs as the
 // unprivileged host UID, so internal/container initialises the volume before

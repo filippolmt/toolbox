@@ -61,8 +61,8 @@ also has a data row, and `mountplan.Defaults()` is the list. The `npm-cache`
 row deliberately persists only the useful content cache in practice: the
 Docker edge overlays npm's `_npx` exec trees with a per-container tmpfs when
 the parent bind is present, because npm treats a changed lock-directory inode
-as compromise and virtiofs does not provide stable inode identity under the
-real install workload. When no bind lands at the parent target there is no
+as compromise and the [Host Share](#host-share) does not provide stable inode
+identity under the real install workload. When no bind lands at the parent target there is no
 overlay; an explicit child bind remains authoritative.
 
 Why the term exists: without it the defaults encoded a rule nobody had decided
@@ -1732,14 +1732,14 @@ rotation, and the removal fails closed there: a token whose absence cannot be
 proven counts as live.
 
 Why the term exists: the failure reads as a permission bug, not as a mount.
-Docker Desktop serves the bind over virtiofs, which answers the unlink with
-`EACCES` — "permission denied" on a directory the user owns. A native-Linux
-host does not fail at all: the bind only exists in the container's mount
-namespace, so the host directory unlinks clean and the open shells keep the
-orphaned inode until they exit. Naming the mount puts the cause in the
-vocabulary, so the next reader of that message looks for an open shell instead
-of for a `chmod`, and does not go hunting on Linux for a warning that host
-cannot produce.
+Docker Desktop serves the bind over its [Host Share](#host-share), which
+answers the unlink with `EACCES` — "permission denied" on a directory the user
+owns. A native-Linux host does not fail at all: the bind only exists in the
+container's mount namespace, so the host directory unlinks clean and the open
+shells keep the orphaned inode until they exit. Naming the mount puts the cause
+in the vocabulary, so the next reader of that message looks for an open shell
+instead of for a `chmod`, and does not go hunting on Linux for a warning that
+host cannot produce.
 
 ### Sound Handoff
 
@@ -2286,3 +2286,24 @@ where three earlier glyph problems in this repo actually lived. Naming the
 blanking makes the diagnostic obvious instead — an empty string in the source,
 not a wrong one — and makes the second instance recognisable as the first,
 which is how `starship.toml` was checked at all.
+
+### Host Share
+
+The filesystem through which Docker Desktop serves a host bind to a container,
+whatever type it reports. It has been observed as `virtiofs` and as
+`fakeowner`; both sit in front of the same host share, with the same unstable
+stat identity and the same refusal to `chmod` a socket.
+
+Concretely: `entrypoint.sh` matches every name the Host Share is known to
+report before registering `core.checkStat = minimal`, and warns when the
+workspace sits on a Docker Desktop share under a type it does not know.
+Mechanism: [git index stat checks on a Host
+Share](docs/internals/shell-start.md#git-index-stat-checks-on-a-host-share).
+Guardrail and test names:
+[`.claude/rules/container-runtime.md`](.claude/rules/container-runtime.md).
+
+Why the term exists: older prose names the share after its filesystem type,
+and a check written against that name silently stopped matching once Docker
+Desktop reported a different type — the fix for false rebase conflicts stayed inactive
+while the gate that guards it was not re-run. Naming the share, not its type,
+keeps the next new type a list entry instead of a regression.
