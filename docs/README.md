@@ -161,6 +161,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Homebrew](internals/image-build.md#homebrew)
 - [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
+- [codegraph optional-locks wrapper](internals/image-build.md#codegraph-optional-locks-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
 - [Tools removal](internals/image-build.md#tools-removal)
 - [Node package weight prune](internals/image-build.md#node-package-weight-prune)

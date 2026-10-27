@@ -135,6 +135,14 @@ Fix: `fetch-claude-code` replaces the npm `/usr/local/bin/claude` symlink with a
 
 Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
 
+## codegraph optional-locks wrapper
+
+codegraph's file watcher syncs the index a moment after every worktree change, and each sync runs `git status`. A plain `git status` takes `.git/index.lock` opportunistically to write back a refreshed index, so the developer's next index-writing command (`git switch`, `git add`, `git commit`) can fail with `Unable to create '.git/index.lock': File exists` and succeed on retry. A `git switch` rewrites the worktree and fires the watcher, which lines the two up. virtiofs widens the window, but an overlay path shows it too — the reproduction is in #1262.
+
+Fix: `fetch-codegraph` replaces the npm `/usr/local/bin/codegraph` symlink with a wrapper that does `exec env GIT_OPTIONAL_LOCKS=0 <real-cli> "$@"` — git's own switch for background readers, scoped to codegraph so interactive `git status` keeps persisting its index refresh. It covers the MCP server and the CLI alike, whatever repo `.mcp.json` launched it, as long as `codegraph` resolves to the bundled one: a user-installed copy earlier on `PATH` (`npm i -g` lands in `~/.npm-global/bin`) bypasses the wrapper. Same shape and guards as the claude wrapper above; the smoke test (`codegraph optional-locks wrapper`) asserts the line is present.
+
+Known cost: every process codegraph spawns inherits the variable, but only git reads it. The fix holds while codegraph's git calls stay read-only: the variable drops only the optional lock a reader takes, so a codegraph that started writing the index would contend for `index.lock` again, wrapper or not.
+
 ## Two Docker version streams
 
 `DOCKER_CLI_VERSION` in the Dockerfile pins the CLI binary inside the container (currently 29.x); the SDK the CLI launcher uses lives in `go.mod` as the moby modules `github.com/moby/moby/client` (own v0.x series) + `github.com/moby/moby/api` (versioned after the Engine API, v1.x) — the deprecated `github.com/docker/docker` module is gone. The client negotiates the API version by default, so version drift between CLI binary, SDK, and daemon is expected and handled. Don't try to "align" them numerically.

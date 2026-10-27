@@ -1001,6 +1001,19 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       done; \
       test "${vendored_count}" -gt 0; \
       /out/usr/local/bin/codegraph --version; \
+      # Optional-locks wrapper: export GIT_OPTIONAL_LOCKS=0 for codegraph only.
+      # Rationale: docs/internals/image-build.md, codegraph optional-locks
+      # wrapper. Same shape as the claude wrapper in fetch-claude-code, with
+      # its two guards: the target must exist, and must not be the wrapper
+      # path itself — a real shim there would have the wrapper exec itself
+      # forever. A change to the guards changes both. \
+      target="$(readlink -f /out/usr/local/bin/codegraph)"; \
+      test -f "${target}"; \
+      test "${target}" != /out/usr/local/bin/codegraph; \
+      rm /out/usr/local/bin/codegraph; \
+      printf '#!/bin/sh\n# Wrapper: background git status must not take index.lock (#1262).\nexec env GIT_OPTIONAL_LOCKS=0 "%s" "$@"\n' "${target#/out}" \
+        > /out/usr/local/bin/codegraph; \
+      chmod 0755 /out/usr/local/bin/codegraph; \
       freeze-mtimes
 
 # pi coding agent (npm `@earendil-works/pi-coding-agent`, binary `pi`) in its
@@ -1356,7 +1369,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # final stage; known cost: runtime-notes. The wrapper has to name the
       # path the file will have in the final image, so the stage's own /out
       # prefix is stripped off the resolved target — and the target is checked
-      # here because the wrapper itself cannot run until the COPY lands. \
+      # here because the wrapper itself cannot run until the COPY lands. The
+      # codegraph wrapper in fetch-codegraph copies these guards: a change
+      # here changes both. \
       target="$(readlink -f /out/usr/local/bin/claude)"; \
       test -f "${target}"; \
       # `readlink -f` on a regular file returns the file itself, so an upstream

@@ -665,6 +665,10 @@ check_optional  "pi"        pi       pi --version
 # refactor drops on the floor. Same shape as the BROWSER env check below.
 check_optional  "pi env knobs" pi sh -c "test \"\$PI_TELEMETRY\" = 0 && test \"\$PI_SKIP_VERSION_CHECK\" = 1 && echo present"
 check_optional  "codegraph" codegraph codegraph --version
+# Wrapper sets GIT_OPTIONAL_LOCKS=0 so a background git status run by
+# codegraph never holds index.lock while the developer runs git (#1262) — see
+# fetch-codegraph. No single quotes here (see the claude wrapper check above).
+check_optional  "codegraph optional-locks wrapper" codegraph grep -c "env GIT_OPTIONAL_LOCKS=0" /usr/local/bin/codegraph
 check_optional  "pyright"   pyright-langserver pyright --version
 check_optional  "pyright LSP initialize" pyright-langserver _lsp_init_check pyright-langserver --stdio
 check_optional  "typescript-language-server" typescript-language-server typescript-language-server --version
