@@ -11,7 +11,7 @@
 - `make go-build` — cross-compiles for the host, preferring `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (injected in every shell by `sessionplan` from the CLI's own `runtime.GOOS`/`GOARCH`) over `uname`, which inside a toolbox shell reports the *container* and would silently yield an unrunnable linux binary. `make go-build-macos` is the explicit override (`MACOS_ARCH=amd64` for an Intel Mac) — still needed in a container created before those vars existed, which needs a `toolbox stop` to pick them up.
 - `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Inspect a build through `toolbox-local:build`, which no pull re-points. → [image selection](docs/configuration.md#image-selection)
 - One package: `make go-test-one PKG=./internal/mountplan` (optional `RUN=TestFoo`, `TAGS=...`).
-- Daemon gates, new-code preflight and scratch: [development feedback loops](docs/agents/development-feedback.md).
+- Any ad-hoc `docker run -v`/`--mount` from inside a toolbox shell binds under the host path `make scratch` prints. Daemon gates and new-code preflight: same guide → [development feedback loops](docs/agents/development-feedback.md).
 
 **Pre-push gate** — run what CI would run for the paths you touched:
 
