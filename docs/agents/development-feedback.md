@@ -78,7 +78,9 @@ scratch/cache trees, symlinks and unstaged deletions are left alone.
 `make check-devtools` runs daemon-free tests of Make target wiring, the daemon
 runner's mount/identity/safety arguments and the delta-coverage parser. It needs
 Node, Python, Git, Make and shellcheck and also runs in CI. Use it after editing
-the development targets or their scripts.
+the development targets or their scripts. A renamed target or script also
+renames its citations: `TestCitedMakeTargetsAndScriptsExist` (`internal/devrules`)
+fails on any `make <target>` or `.github/scripts/` path the docs still cite.
 
 ## GitHub monitoring
 
