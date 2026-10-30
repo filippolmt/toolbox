@@ -1520,20 +1520,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     # fetch-playwright because a `COPY --link` carries files, not dpkg state,
     # and here they ride a layer an Archive Drift rebuilds anyway.
     #
-    # This is the 19 packages playwright asks for, NOT the 109 apt resolves them
-    # to — the transitives are apt's job and pinning them would break on a Debian
+    # These are the packages playwright asks for, NOT what apt resolves them to
+    # — the transitives are apt's job and pinning them would break on a Debian
     # rename. Derived by asking playwright on a bare bookworm
     # (`playwright install-deps --dry-run chromium`) and subtracting everything
     # that is a dependency of something else in the set. Verified identical on
     # amd64 and arm64.
+    #
+    # Minus `xvfb`, on purpose: it only serves a *headed* browser, and its
+    # mesa/LLVM chain is dead weight Chromium never uses (it renders WebGL through
+    # its own SwiftShader). Headless is the only mode supported here. Dropping
+    # it un-subtracts `libxfixes3` and `libxrandr2`, which Chromium links and
+    # which reached the image only through that chain — hence listed below.
+    # → docs/adr/0016-image-size-two-denominators.md, "Amendment: xvfb dropped"
     #
     # The set is version-derived, so it can move under a Renovate bump with no
     # edit here, and a missing lib shows up as a browser that will not start —
     # exit 0, green build. What catches that is `playwright deps` in
     # smoke-test.sh, which runs `install-deps --dry-run chromium` against the
     # finished image and fails unless playwright itself reports the set
-    # complete. **Do not edit this list without re-deriving it**, and do not
-    # drop that check.
+    # complete (`xvfb` the one tolerated absence). **Do not edit this list
+    # without re-deriving it**, and do not drop that check.
     apt-get install -qqy --no-install-recommends \
       fonts-freefont-ttf \
       fonts-ipafont-gothic \
@@ -1551,9 +1558,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       libpango-1.0-0 \
       libxcomposite1 \
       libxdamage1 \
+      libxfixes3 \
       libxkbcommon0 \
-      xfonts-scalable \
-      xvfb; \
+      libxrandr2 \
+      xfonts-scalable; \
     # vim-tiny is sourced as /etc/vim/vimrc.tiny when invoked as `vi`, and that
     # file sets `compatible` — which leaves arrow keys unmapped in insert mode
     # (they emit literal A/B/C/D) and backspace unable to delete past the insert

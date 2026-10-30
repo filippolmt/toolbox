@@ -269,7 +269,7 @@ It stays anyway, because the dependency chain is atomic: purging `libgl1-mesa-dr
 takes `libglx-mesa0`, `libglx0`, `libgl1` and — at the top — **`xvfb`**, which
 `install-deps` installed on purpose and which is the only way to run a *headed*
 browser in this image. Trading `xvfb-run` for 150 MB is removing a capability, not
-shrinking an image. (Also worth knowing before anyone reaches for `--auto-remove`
+shrinking an image. (Since reversed: see *Amendment: xvfb dropped*.) (Also worth knowing before anyone reaches for `--auto-remove`
 here: it additionally takes `libx11-xcb1`, `libxcb-dri3-0`, `libxshmfence1` and
 seven more X libraries that Chromium itself links.)
 
@@ -374,3 +374,22 @@ pull**, together about **−21% of what a developer waits for** on a cold
    megadriver, and the layer tar preserves them**, so it costs one copy, not
    thirty — and ~154 MB of ordinary system libraries with no passenger among
    them. Nothing to take.
+
+## Amendment: xvfb dropped
+
+*Measured and rejected* kept the mesa/LLVM stack because removing it meant removing
+`xvfb`, the only way to run a headed browser. That trade was put to the user and
+taken: the browser surface in use is `playwright-cli`, which is headless unless asked
+for `--headed`, so a headed browser is no longer a supported capability of the image.
+The base apt layer no longer lists `xvfb`, and the stack under it goes with it.
+
+The `--auto-remove` warning above applied in the other direction too: not installing
+`xvfb` drops X libraries that reached the image only through its chain, and two of
+them — `libxfixes3`, `libxrandr2` — are linked by Chromium itself (`ldd` on both
+`chrome` and `chrome-headless-shell` reports them missing). Playwright names both, so
+the re-derived list carries them explicitly. With them in place, headless Chromium
+launches, renders and reports `WebKit WebGL`; a headed launch fails.
+
+`playwright deps` in `smoke-test.sh` still asks playwright for the chromium set, and
+now tolerates exactly one absence: apt's single `E:` line for `xvfb`. Anything else
+missing still fails the smoke test.

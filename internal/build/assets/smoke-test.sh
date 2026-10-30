@@ -461,17 +461,29 @@ _pw_skill_check() {
 # pipeline. So ask playwright whether the set is complete. --dry-run exits 0 and
 # says so when it is; anything else means the list has drifted and must be
 # re-derived (the Dockerfile comment records how).
+#
+# The one tolerated absence is xvfb (headed only, left out on purpose — ADR
+# 0016 amendment). The image bakes no apt lists, so apt reports each missing
+# package as its own "E:" line ("Unable to locate package", or "has no
+# installation candidate" for one dpkg still knows). The only E: line allowed
+# is "Unable to locate package xvfb" — the form xvfb takes because nothing in
+# the image ever installed it. Any other E: line, or output in another shape
+# (apt lists present, a playwright error), still fails.
 _pw_deps_check() {
     local out first
     out=$(playwright install-deps --dry-run chromium 2>&1)
     first=$(printf "%s" "$out" | head -1)
     case "$out" in
         *"All system dependencies are installed"*)
-            echo "install-deps --dry-run: chromium dep set complete" ;;
-        *)
-            echo "install-deps --dry-run reports: ${first}"
-            return 1 ;;
+            echo "install-deps --dry-run: chromium dep set complete"
+            return 0 ;;
     esac
+    if [ "$(printf "%s\n" "$out" | grep "^E: ")" = "E: Unable to locate package xvfb" ]; then
+        echo "install-deps --dry-run: chromium dep set complete (xvfb deliberately absent)"
+        return 0
+    fi
+    echo "install-deps --dry-run reports: ${first}"
+    return 1
 }
 
 # Language servers are consumed over LSP by the Claude Code plugins, not run
