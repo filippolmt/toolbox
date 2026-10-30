@@ -129,11 +129,27 @@ Both pins are held by `TestGitHTTPVersionPinned` (`internal/build/git_http_versi
 
 ## DO_NOT_TRACK + claude wrapper
 
-Image sets `ENV DO_NOT_TRACK=1` ([consoledonottrack.com](https://consoledonottrack.com) convention) — honored by bun, playwright, and most JS toolchains users run inside the container (next, astro, turbo, …). Claude Code honors it too, but as a **telemetry umbrella**: it also shuts down the Statsig channel that doubles as feature-flag delivery, which breaks Remote Control and preview rollouts (`/doctor` reports "Feature-flag evaluation enabled (disabled by DO_NOT_TRACK)"). Same failure mode as `DISABLE_TELEMETRY` — see the "Claude Code env knobs" comment block in the Dockerfile for why that flag is intentionally unset.
+Image sets `ENV DO_NOT_TRACK=1` ([consoledonottrack.com](https://consoledonottrack.com) convention) — honored by bun, playwright, and most JS toolchains users run inside the container (next, astro, turbo, …). Claude Code honors it too, with the [same effect as `DISABLE_TELEMETRY`](https://code.claude.com/docs/en/env-vars): it also turns off [feature-flag fetching](https://code.claude.com/docs/en/env-vars#features-that-need-feature-flag-fetching), which drops the flag-gated features and Remote Control auto-connect, and Remote Control itself once the organization requires Trusted Devices (`/doctor` reports "Feature-flag evaluation enabled (disabled by DO_NOT_TRACK)"). Same failure mode as `DISABLE_TELEMETRY` — see the "Claude Code env knobs" comment block in the Dockerfile for why that flag is intentionally unset.
 
 Fix: `fetch-claude-code` replaces the npm `/usr/local/bin/claude` symlink with a `#!/bin/sh` wrapper that does `exec env -u DO_NOT_TRACK <real-cli> "$@"` — the var is stripped for the claude process only, everything else in the container stays opted out. Don't "simplify" the wrapper back to a plain symlink; the smoke test (`claude DO_NOT_TRACK wrapper`) asserts the `env -u` line is present.
 
 Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
+
+## Claude fork mode off (agent_summary)
+
+In an interactive session Claude Code arms a timer for every running background agent: on each tick it sends that agent's whole transcript to the agent's own model and asks for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). Fork mode is a blunt switch for it; revisit this section once upstream ships a setting for the timer itself. The knob below lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
+
+The image sets `CLAUDE_CODE_FORK_SUBAGENT=0` in the "Claude Code env knobs" block. In an interactive session, fork mode is the gate that arms the timer for an ordinary background agent, so turning it off removes the side query — measured with `--debug-file` by counting `[AgentSummary] Forking` lines for one background agent: a fork on every tick with the default, none with the knob. Costs:
+
+- Claude no longer starts [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own; it can again wait for a foreground subagent.
+- The agents panel shows no live per-agent label.
+- Upstream analysis in anthropics/claude-code#86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
+
+Rejected alternative: a Bun `--preload` that swaps the timer callback for an inert one. It keeps fork mode, but runs third-party code inside the process that holds the OAuth credentials and matches on source-text anchors that an update can rename.
+
+Opt-out per user: `env: {CLAUDE_CODE_FORK_SUBAGENT: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction — a stray `"1"` there silently re-enables the summaries, the likely cause of the "knob does not work" report in [#105981](https://github.com/anthropics/claude-code/issues/105981).
+
+The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure with `--debug-file` when the agents panel starts showing live labels again.
 
 ## codegraph optional-locks wrapper
 
