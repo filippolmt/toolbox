@@ -466,8 +466,9 @@ _pw_skill_check() {
 # 0016 amendment). The image bakes no apt lists, so apt reports each missing
 # package as its own "E:" line ("Unable to locate package", or "has no
 # installation candidate" for one dpkg still knows). The only E: line allowed
-# is the one for xvfb. Any other, or output in another shape (apt lists
-# present, a playwright error), still fails.
+# is "Unable to locate package xvfb" — the form xvfb takes because nothing in
+# the image ever installed it. Any other E: line, or output in another shape
+# (apt lists present, a playwright error), still fails.
 _pw_deps_check() {
     local out first
     out=$(playwright install-deps --dry-run chromium 2>&1)

@@ -269,7 +269,7 @@ It stays anyway, because the dependency chain is atomic: purging `libgl1-mesa-dr
 takes `libglx-mesa0`, `libglx0`, `libgl1` and — at the top — **`xvfb`**, which
 `install-deps` installed on purpose and which is the only way to run a *headed*
 browser in this image. Trading `xvfb-run` for 150 MB is removing a capability, not
-shrinking an image. (Also worth knowing before anyone reaches for `--auto-remove`
+shrinking an image. (Since reversed: see *Amendment: xvfb dropped*.) (Also worth knowing before anyone reaches for `--auto-remove`
 here: it additionally takes `libx11-xcb1`, `libxcb-dri3-0`, `libxshmfence1` and
 seven more X libraries that Chromium itself links.)
 
