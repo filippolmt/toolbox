@@ -1380,7 +1380,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # build, broken image. Refuse that target explicitly. \
       test "${target}" != /out/usr/local/bin/claude; \
       rm /out/usr/local/bin/claude; \
-      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK kills the Statsig feature-flag channel\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "${target#/out}" \
+      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK turns off feature-flag fetching\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "${target#/out}" \
         > /out/usr/local/bin/claude; \
       chmod 0755 /out/usr/local/bin/claude; \
       freeze-mtimes
@@ -1462,9 +1462,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # consoledonottrack.com convention — honored by bun, playwright, and much of
 # the JS toolchain users run in here (next, astro, turbo, …). claude is the
-# one exemption: it treats DO_NOT_TRACK as a telemetry umbrella and shuts
-# down the Statsig feature-flag channel (breaks Remote Control — /doctor
-# flags it). Exemption lives in the fetch-claude-code stage as an `env -u`
+# one exemption: it reads DO_NOT_TRACK like DISABLE_TELEMETRY, which also
+# turns off feature-flag fetching (breaks Remote Control — /doctor flags
+# it). Exemption lives in the fetch-claude-code stage as an `env -u`
 # wrapper around the real binary.
 ENV DO_NOT_TRACK=1
 
@@ -1717,29 +1717,31 @@ RUN set -eux; \
 # Claude Code env knobs — runtime-only (the claude binary reads them at
 # exec; no RUN consumes them), so the block sits after the RUN tail where
 # a knob tweak re-runs zero layers:
-#   DISABLE_AUTOUPDATER: turns off the CLI's automatic background
-#     self-update. The binary lives under root-owned /usr/local/lib, so
-#     self-update would always fail; Renovate drives version bumps instead.
+#   DISABLE_UPDATES: blocks every CLI update — background auto-update and
+#     a manual `claude update`/`claude install`, which then print a clear
+#     refusal instead of failing on the root-owned /usr/local/lib install.
+#     Upstream's switch for a CLI distributed through its own channel:
+#     Renovate drives version bumps instead.
 #   FORCE_AUTOUPDATE_PLUGINS: keeps plugin auto-update on although
-#     DISABLE_AUTOUPDATER would otherwise switch it off too. Plugins live in
-#     the user-writable ~/.claude/plugins bind, so their update path works.
+#     DISABLE_UPDATES would otherwise switch it off too (the CLI checks this
+#     flag first). Plugins live in the user-writable ~/.claude/plugins bind,
+#     so their update path works.
 #   DISABLE_FEEDBACK_COMMAND: removes /feedback (and /bug, /share, which
 #     report through the same path) plus Claude-drafted feedback.
 #   DISABLE_ERROR_REPORTING: opts out of crash/error reporting to Anthropic
 #     (any non-empty value opts out — unset it to turn reporting back on).
-#     These two are granular privacy switches. The
-#     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC umbrella correlates with
-#     intermittent /login prompts on long-lived shells — use granular set
-#     instead. DISABLE_TELEMETRY intentionally NOT set: the Statsig channel
-#     doubles as feature-flag delivery, and blocking it is reported to break
-#     Remote Control entitlements and preview rollouts
-#     (anthropics/claude-code#58383); it is product analytics, not training
-#     data — the model-improvement opt-out lives in the claude.ai account
-#     privacy settings, not in this flag. Same reason the image-wide
-#     DO_NOT_TRACK=1 is stripped for claude via the /usr/local/bin/claude
-#     wrapper (install layer above): claude honors it as a telemetry
-#     umbrella and it kills Statsig exactly like DISABLE_TELEMETRY would
-#     (/doctor flags it).
+#   CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: drops the "How is Claude doing?"
+#     session survey, whose follow-up can upload the session transcript.
+#     These three are granular privacy switches. Deliberately NOT set:
+#     DISABLE_TELEMETRY and the CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+#     umbrella — both also turn off feature-flag fetching, which makes
+#     Remote Control and the other flag-gated features unavailable.
+#     Telemetry is product analytics, not training data — the
+#     model-improvement opt-out lives in the claude.ai account privacy
+#     settings. Same reason the image-wide DO_NOT_TRACK=1 is stripped for
+#     claude via the /usr/local/bin/claude wrapper (install layer above):
+#     claude reads it exactly like DISABLE_TELEMETRY. Full matrix:
+#     docs/internals/privacy.md#claude-code-env-var-matrix
 #   CLAUDE_CONFIG_DIR: the directory claude keeps settings, sessions,
 #     plugins and credentials in. Pointed at the ~/.claude bind so
 #     .credentials.json + .claude.json (which otherwise sits in $HOME) survive
@@ -1748,27 +1750,32 @@ RUN set -eux; \
 #     instead of the copy bundled in the npm package. The image ships apt
 #     ripgrep (base layer), which the pin-everything policy prefers.
 #   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: returns to the project dir
-#     after every Bash call — kills cd-drift across tool invocations.
+#     after every Bash call in the main session — kills cd-drift across tool
+#     invocations.
 #   BASH_DEFAULT_TIMEOUT_MS / BASH_MAX_TIMEOUT_MS: the timeout a foreground
 #     Bash call gets when the model names none, and the most it may ask for.
 #     Both raised above upstream's defaults: image builds and test suites run
 #     inside the container routinely outlast them.
 #   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: opt into agent teams (still
-#     experimental upstream; in-process mode works without tmux). Per-user
-#     opt-out: "env" map in the ~/.claude/settings.json bind overrides this.
-#   CLAUDE_CODE_NEW_INIT: switch `/init` to the interactive multi-phase flow —
-#     picks which artifacts to scaffold (CLAUDE.md, skills, hooks), explores the
-#     repo with a subagent, then proposes before writing. Per-user opt-out:
-#     "env" map in the ~/.claude/settings.json bind overrides this.
+#     experimental upstream; the default in-process mode works without tmux).
+#     Side effect: a subagent Claude names launches as a teammate, so a team
+#     can form unasked. Per-user opt-out: "env" map in the
+#     ~/.claude/settings.json bind overrides this.
+#   CLAUDE_CODE_NEW_INIT: switch `/init` to the interactive flow — it first
+#     asks which files to generate (CLAUDE.md, skills, hooks), then explores
+#     the repo and writes them; without it /init writes a CLAUDE.md unasked.
+#     Per-user opt-out: "env" map in the ~/.claude/settings.json bind
+#     overrides this.
 #   CLAUDE_CODE_FORK_SUBAGENT=0: turns fork mode off (Claude no longer
 #     starts forks of the conversation on its own). Set because it also
 #     stops the agent_summary side query (anthropics/claude-code#86879) —
 #     measured with --debug-file. Why, costs, opt-out:
 #     docs/internals/image-build.md#claude-fork-mode-off-agent_summary
-ENV DISABLE_AUTOUPDATER=1 \
+ENV DISABLE_UPDATES=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
     DISABLE_ERROR_REPORTING=1 \
+    CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 \
     CLAUDE_CONFIG_DIR=/home/toolbox/.claude \
     USE_BUILTIN_RIPGREP=0 \
     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1 \
@@ -1784,7 +1791,7 @@ ENV DISABLE_AUTOUPDATER=1 \
 # tweak re-runs zero layers (same rationale as the claude block above).
 #   PI_SKIP_VERSION_CHECK: the CLI lives under root-owned /usr/local/lib, so
 #     `pi update self` can never succeed — skip the startup release poll and
-#     let Renovate drive the pin, exactly like claude's DISABLE_AUTOUPDATER.
+#     let Renovate drive the pin, exactly like claude's DISABLE_UPDATES.
 #   PI_TELEMETRY=0: pi does not honour the image-wide DO_NOT_TRACK, so the
 #     opt-out has to be spelled in its own namespace.
 ENV PI_SKIP_VERSION_CHECK=1 \

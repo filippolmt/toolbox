@@ -635,8 +635,8 @@ check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
-# Wrapper strips image-wide DO_NOT_TRACK for claude only (Statsig feature
-# flags / Remote Control) — see the fetch-claude-code stage in the Dockerfile.
+# Wrapper strips image-wide DO_NOT_TRACK for claude only (feature-flag
+# fetching / Remote Control) — see the fetch-claude-code stage in the Dockerfile.
 # NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 # Fork mode off stops the agent_summary side query. Asserts the knob, not its
