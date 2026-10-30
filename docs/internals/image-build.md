@@ -149,7 +149,11 @@ Rejected alternative: a Bun `--preload` that swaps the timer callback for an ine
 
 Opt-out per user: `env: {CLAUDE_CODE_FORK_SUBAGENT: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction — a stray `"1"` there silently re-enables the summaries, the likely cause of the "knob does not work" report in [#105981](https://github.com/anthropics/claude-code/issues/105981).
 
-The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure with `--debug-file` when the agents panel starts showing live labels again.
+The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure when the agents panel starts showing live labels again. The timer arms only in an interactive session, so `claude -p` measures nothing:
+
+1. Start one session per setup in a detached tmux pane, from a trusted repo: `tmux new-session -d -s nas-<setup> env <VAR=value…> claude --model haiku --debug-file <log> --allowedTools 'Bash(sleep:*)'`. Compare the image default against `CLAUDE_CODE_FORK_SUBAGENT=1`.
+2. Send the prompt with `tmux send-keys -t nas-<setup> -l '<prompt>'`, then a separate `tmux send-keys -t nas-<setup> Enter` — a prompt passed as the CLI argument sits unsent in the input box. The prompt: launch one background agent on haiku that runs `sleep 20` eight times, then wait for it.
+3. When the agent finishes, count `[AgentSummary] Forking` lines in each log: a fork on every tick means the summaries are back.
 
 ## codegraph optional-locks wrapper
 

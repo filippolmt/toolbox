@@ -49,6 +49,7 @@ paths:
 - **SSH host-key trust** is the baked `10-toolbox.conf`; the ssh mount stays read-only, no boot `ssh-keyscan`. → [ssh-host-key-trust](../../docs/internals/image-build.md#ssh-host-key-trust)
 - **A new top-level embedded asset is 3 synced edits**: `//go:embed` in `internal/build/embed.go`, the Dockerfile `COPY`, and the expected list in `TestTarEmbeddedContext`.
 - **`/usr/local/bin/claude` is the `env -u DO_NOT_TRACK` shim**, not a symlink; the smoke test asserts it. → [do-not-track](../../docs/internals/image-build.md#do_not_track--claude-wrapper)
+- **A Claude Code env knob is 2 synced edits**: the "Claude Code env knobs" ENV block and the [privacy matrix](../../docs/internals/privacy.md#claude-code-env-var-matrix): `TestClaudeEnvKnobsMatchThePrivacyMatrix`.
 - **`CLAUDE_CODE_FORK_SUBAGENT=0` stays in the Claude Code env knobs block**; the smoke test asserts it (`claude fork mode off`). → [fork-mode-off](../../docs/internals/image-build.md#claude-fork-mode-off-agent_summary)
 - **A `smoke-test.sh` body is one single-quoted `-c` argument**: `TestSmokeTestBodiesKeepTheirSingleQuotes` names a line that would truncate it; the why sits beside the Results-line guard in the script.
 - **`/usr/local/bin/codegraph` is the `GIT_OPTIONAL_LOCKS=0` shim**, not a symlink; the smoke test asserts it. → [codegraph-optional-locks](../../docs/internals/image-build.md#codegraph-optional-locks-wrapper)
