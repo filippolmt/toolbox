@@ -523,11 +523,10 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then the host platform
 // (GOOS/GOARCH, for anything cross-compiling for the host from inside a
-// shell), then the host timezone unless the user env sets TZ itself, then the
-// managed-statusline opt-out marker, then any caller-supplied
-// curated extras (Plan passes the proximo gate's Env, which the gate emits
-// only when the host CA it resolved is actually there), then
-// the user-supplied env: map.
+// shell), then the host timezone unless the user env sets TZ itself, then
+// the managed-statusline opt-out marker, then any caller-supplied curated
+// extras (Plan passes the proximo gate's Env, which the gate emits only when
+// the host CA it resolved is actually there), then the user-supplied env: map.
 //
 // The user layer is EffectiveEnv(in.Name), not cfg.Env: the active named
 // shell's `shells.<name>.env` overlays the top-level `env:` here, at the seam,
@@ -539,11 +538,11 @@ func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, 
 	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
 	env = append(env, identityEnv(in.ImageDigest)...)
 	env = append(env, hostPlatformEnv()...)
-	user := in.Cfg.EffectiveEnv(in.Name)
-	env = append(env, hostTimezoneEnv(in.Host.TZ, user)...)
+	userEnvMap := in.Cfg.EffectiveEnv(in.Name)
+	env = append(env, hostTimezoneEnv(in.Host.TZ, userEnvMap)...)
 	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
-	return append(env, userEnv(user)...)
+	return append(env, userEnv(userEnvMap)...)
 }
 
 // ImageDigestEnv names the container's record of the image it was created

@@ -1453,16 +1453,15 @@ waiting for a later slice.
 `fsx.Host` — the ambient host facts a run depends on, resolved once at the
 `cmd` edge by `fsx.CurrentHost()` and passed down as a value: `Home` (the
 directory every `~/.toolbox` path hangs off), `LookPath` (how a host
-binary is found) and `TZ` (the host's zone, which `sessionplan` emits as the
-container's `TZ` unless the config env sets one). Threaded through the seams that already carried the
-session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
+binary is found) and `TZ` (the zone the container inherits). Threaded
+through the seams that already carried the session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
 `bridge.DaemonOptions` — plus the exported functions behind them
 (`mountplan.Merge` / `Classify` / `Names` / `StateDirPath` /
 `OverlayDockerfilePath`, `proximo.CAPath` / `Resolve`,
 `bridge.ResolveHostState` / `NewAgent` / `Install` / `Uninstall` / `Status`,
 `configedit.Doctor`).
 
-Neither field falls back to the process, and that is the whole
+No field falls back to the process, and that is the whole
 discipline. `Home` is a plain string with no default, so a zero-valued
 `Host` is a visible bug rather than a silent read of the real home:
 `Host.Validate` re-states at the seam the strictness `fsx.Home` enforces
@@ -1472,11 +1471,15 @@ no binaries* — not "ask the process PATH". The convenience fallback was
 written first and removed: it reinstated the ambient read in the one
 place nothing would notice, since a caller that declared only a home
 would keep probing the real machine and a test written against it would
-pass for whatever happened to be installed. `Expand` and `Join` are the
-two path shapes the threading actually needed; nothing else lives on the
-type.
+pass for whatever happened to be installed. `TZ` is a plain string the
+same way: empty means *emit none*, never "read the process zone".
+`Expand` and `Join` are the two path shapes the threading actually
+needed; nothing else lives on the type.
 
 Why the term exists: `$HOME` and PATH were inputs no signature mentioned.
+The zone joined them for the same reason: it is a fact about the machine
+the CLI runs on, read from `$TZ` and `/etc`, and a planner that read it
+itself could only be tested by rewriting the process.
 A package read them wherever it happened to need them, which meant a test
 could only choose them by mutating the process — `t.Setenv("HOME", …)`
 before calling a planner, a scrubbed PATH before probing for a binary.

@@ -2,9 +2,8 @@
 // toolbox package needs: strict home-directory resolution, tilde expansion,
 // crash-safe atomic file writes, TTL-gated staleness markers, and the Host
 // value that carries a resolved home, a binary lookup and the host timezone.
-// It imports only
-// the stdlib so every other internal package can depend on it without cycle
-// risk.
+// It imports only the stdlib so every other internal package can depend on
+// it without cycle risk.
 //
 // Semantics are deliberately strict — callers that want best-effort
 // behaviour (tolerating an empty or unresolvable home) keep using
@@ -137,11 +136,10 @@ func TouchMarker(path string) error {
 // caller declares and passes. Its fields are process-wide inputs no
 // signature used to mention: the home directory every ~/.toolbox path hangs
 // off, the PATH lookup that finds host binaries, and the timezone the
-// container inherits. Resolved once at the
-// cmd edge by CurrentHost and threaded through the planning seams, so a
-// package downstream reads the field instead of the process — which is what
-// lets a test construct a Host rather than mutate $HOME for the whole
-// binary.
+// container inherits. Resolved once at the cmd edge by CurrentHost and
+// threaded through the planning seams, so a package downstream reads the
+// field instead of the process — which is what lets a test construct a Host
+// rather than mutate $HOME for the whole binary.
 //
 // No field falls back to the process. Home is a plain string precisely
 // so a zero-valued Host is a visible bug (an empty base path) rather than a
@@ -168,19 +166,24 @@ func CurrentHost() (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	return Host{Home: home, LookPath: exec.LookPath, TZ: hostTimezone(os.Getenv, os.Readlink, os.ReadFile)}, nil
+	return Host{Home: home, LookPath: exec.LookPath, TZ: hostTimezone(os.LookupEnv, os.Readlink, os.ReadFile)}, nil
 }
 
-// hostTimezone resolves the host's zone: $TZ, then the /etc/localtime symlink
-// (macOS and most Linux), then Debian's /etc/timezone. A path-form $TZ
-// (":/etc/localtime", "/usr/share/…") is skipped, because the container would
-// read the path against its own filesystem and fall back to UTC in silence.
-func hostTimezone(getenv func(string) string, readlink func(string) (string, error), readFile func(string) ([]byte, error)) string {
+// hostTimezone resolves the host's zone in the order docs/configuration.md
+// ("Host timezone") documents. A path-form value is skipped because the
+// container would read the path against its own filesystem.
+func hostTimezone(lookupEnv func(string) (string, bool), readlink func(string) (string, error), readFile func(string) ([]byte, error)) string {
 	usable := func(tz string) bool {
 		return tz != "" && !strings.HasPrefix(tz, ":") && !strings.HasPrefix(tz, "/")
 	}
-	if tz := getenv("TZ"); usable(tz) {
-		return tz
+	if tz, set := lookupEnv("TZ"); set {
+		// An empty TZ is UTC to libc, not "unset".
+		if tz == "" {
+			return "UTC"
+		}
+		if usable(tz) {
+			return tz
+		}
 	}
 	// One hop, not EvalSymlinks: on macOS the full resolution lands in
 	// zoneinfo.default/, which the zoneinfo/ cut would miss.
