@@ -1452,8 +1452,9 @@ waiting for a later slice.
 
 `fsx.Host` — the ambient host facts a run depends on, resolved once at the
 `cmd` edge by `fsx.CurrentHost()` and passed down as a value: `Home` (the
-directory every `~/.toolbox` path hangs off) and `LookPath` (how a host
-binary is found). Threaded through the seams that already carried the
+directory every `~/.toolbox` path hangs off), `LookPath` (how a host
+binary is found) and `TZ` (the host's zone, which `sessionplan` emits as the
+container's `TZ` unless the config env sets one). Threaded through the seams that already carried the
 session's inputs — `mountplan.PlanInput`, `sessionplan.PlanInput`,
 `bridge.DaemonOptions` — plus the exported functions behind them
 (`mountplan.Merge` / `Classify` / `Names` / `StateDirPath` /

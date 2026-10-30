@@ -540,11 +540,7 @@ func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, 
 	env = append(env, identityEnv(in.ImageDigest)...)
 	env = append(env, hostPlatformEnv()...)
 	user := in.Cfg.EffectiveEnv(in.Name)
-	// Skipped rather than shadowed when the user sets TZ, so the precedence
-	// never rests on how Docker resolves a duplicated key.
-	if _, set := user["TZ"]; !set && in.Host.TZ != "" {
-		env = append(env, "TZ="+in.Host.TZ)
-	}
+	env = append(env, hostTimezoneEnv(in.Host.TZ, user)...)
 	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
 	return append(env, userEnv(user)...)
@@ -645,6 +641,16 @@ func hostPlatformEnv() []string {
 		"TOOLBOX_HOST_OS=" + runtime.GOOS,
 		"TOOLBOX_HOST_ARCH=" + runtime.GOARCH,
 	}
+}
+
+// hostTimezoneEnv emits the host's zone as TZ. Skipped rather than shadowed
+// when the user env sets TZ, so the precedence never rests on how Docker
+// resolves a duplicated key; an unresolved zone emits nothing.
+func hostTimezoneEnv(hostTZ string, user map[string]string) []string {
+	if _, set := user["TZ"]; set || hostTZ == "" {
+		return nil
+	}
+	return []string{"TZ=" + hostTZ}
 }
 
 // managedStatuslineEnv emits TOOLBOX_MANAGED_STATUSLINE=0 only when the user

@@ -212,10 +212,12 @@ check_zsh() {
     }
 
     # n. a host zone the CLI injects as TZ resolves (tzdata in the Dockerfile);
-    # bookworm-slim strips zoneinfo, under which any IANA name silently reads
-    # as UTC. Europe/Rome is just a sample zone with a non-zero offset.
+    # bookworm-slim strips zoneinfo, under which any IANA name silently runs at
+    # offset +0000. Compare the offset, not %Z: an unknown zone still prints
+    # its own leading name as the abbreviation. Europe/Rome is just a sample
+    # zone that is never at +0000.
     _zsh_tz_check() {
-        [ "$(TZ=Europe/Rome date +%Z 2>/dev/null)" != "UTC" ]
+        [ "$(TZ=Europe/Rome date +%z 2>/dev/null)" != "+0000" ]
     }
 
     # o. SHELL is in the image env (ENV SHELL=/bin/zsh in the Dockerfile).

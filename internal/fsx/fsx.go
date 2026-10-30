@@ -1,7 +1,8 @@
 // Package fsx holds the host-filesystem primitives that more than one
 // toolbox package needs: strict home-directory resolution, tilde expansion,
 // crash-safe atomic file writes, TTL-gated staleness markers, and the Host
-// value that carries a resolved home plus a binary lookup. It imports only
+// value that carries a resolved home, a binary lookup and the host timezone.
+// It imports only
 // the stdlib so every other internal package can depend on it without cycle
 // risk.
 //
@@ -133,22 +134,24 @@ func TouchMarker(path string) error {
 }
 
 // Host is the ambient host state a toolbox run reads, turned into a value a
-// caller declares and passes. Both fields are process-wide inputs no
+// caller declares and passes. Its fields are process-wide inputs no
 // signature used to mention: the home directory every ~/.toolbox path hangs
-// off, and the PATH lookup that finds host binaries. Resolved once at the
+// off, the PATH lookup that finds host binaries, and the timezone the
+// container inherits. Resolved once at the
 // cmd edge by CurrentHost and threaded through the planning seams, so a
 // package downstream reads the field instead of the process — which is what
 // lets a test construct a Host rather than mutate $HOME for the whole
 // binary.
 //
-// Neither field falls back to the process. Home is a plain string precisely
+// No field falls back to the process. Home is a plain string precisely
 // so a zero-valued Host is a visible bug (an empty base path) rather than a
 // silent read of the real home, and a nil LookPath means this host resolves
 // no binaries at all — not "ask the process PATH". A convenience fallback
 // there would reinstate the ambient read the type exists to remove, in the
 // one place nothing would notice: a caller that declared only a home would
 // keep probing the real machine, and a test written against it would pass
-// for whatever happens to be installed.
+// for whatever happens to be installed. An empty TZ likewise means "emit
+// none", never "read the process zone".
 type Host struct {
 	Home     string
 	LookPath func(name string) (string, error)
@@ -173,16 +176,23 @@ func CurrentHost() (Host, error) {
 // (":/etc/localtime", "/usr/share/…") is skipped, because the container would
 // read the path against its own filesystem and fall back to UTC in silence.
 func hostTimezone(getenv func(string) string, readlink func(string) (string, error), readFile func(string) ([]byte, error)) string {
-	if tz := getenv("TZ"); tz != "" && !strings.HasPrefix(tz, ":") && !strings.HasPrefix(tz, "/") {
+	usable := func(tz string) bool {
+		return tz != "" && !strings.HasPrefix(tz, ":") && !strings.HasPrefix(tz, "/")
+	}
+	if tz := getenv("TZ"); usable(tz) {
 		return tz
 	}
+	// One hop, not EvalSymlinks: on macOS the full resolution lands in
+	// zoneinfo.default/, which the zoneinfo/ cut would miss.
 	if target, err := readlink("/etc/localtime"); err == nil {
 		if _, zone, ok := strings.Cut(target, "zoneinfo/"); ok && zone != "" {
 			return zone
 		}
 	}
 	if b, err := readFile("/etc/timezone"); err == nil {
-		return strings.TrimSpace(string(b))
+		if tz := strings.TrimSpace(string(b)); usable(tz) {
+			return tz
+		}
 	}
 	return ""
 }

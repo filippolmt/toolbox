@@ -279,7 +279,9 @@ func TestHostTimezoneResolvesTheHostZoneInPrecedenceOrder(t *testing.T) {
 		{"macOS localtime symlink", env(""), link("/var/db/timezone/zoneinfo/Europe/Rome"), noFile, "Europe/Rome"},
 		{"Linux localtime symlink", env(""), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
 		{"symlink outside zoneinfo falls through", env(""), link("/opt/custom/localtime"), file("Europe/Berlin\n"), "Europe/Berlin"},
+		{"relative localtime symlink", env(""), link("../usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
 		{"etc timezone file", env(""), missing, file("  Europe/Berlin\n"), "Europe/Berlin"},
+		{"path-form etc timezone is skipped", env(""), missing, file("/usr/share/zoneinfo/UTC\n"), ""},
 		{"no source", env(""), missing, noFile, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
