@@ -1717,11 +1717,17 @@ RUN set -eux; \
 # Claude Code env knobs — runtime-only (the claude binary reads them at
 # exec; no RUN consumes them), so the block sits after the RUN tail where
 # a knob tweak re-runs zero layers:
-#   DISABLE_AUTOUPDATER: CLI binary lives under root-owned /usr/local/lib —
-#     self-update would always fail. Renovate drives version bumps instead.
-#   FORCE_AUTOUPDATE_PLUGINS: plugins live in user-writable ~/.claude/plugins
-#     bind — update path works there, keep it on.
-#   DISABLE_FEEDBACK/ERROR_REPORTING: granular privacy switches.
+#   DISABLE_AUTOUPDATER: turns off the CLI's automatic background
+#     self-update. The binary lives under root-owned /usr/local/lib, so
+#     self-update would always fail; Renovate drives version bumps instead.
+#   FORCE_AUTOUPDATE_PLUGINS: keeps plugin auto-update on although
+#     DISABLE_AUTOUPDATER would otherwise switch it off too. Plugins live in
+#     the user-writable ~/.claude/plugins bind, so their update path works.
+#   DISABLE_FEEDBACK_COMMAND: removes /feedback (and /bug, /share, which
+#     report through the same path) plus Claude-drafted feedback.
+#   DISABLE_ERROR_REPORTING: opts out of crash/error reporting to Anthropic
+#     (any non-empty value opts out — unset it to turn reporting back on).
+#     These two are granular privacy switches. The
 #     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC umbrella correlates with
 #     intermittent /login prompts on long-lived shells — use granular set
 #     instead. DISABLE_TELEMETRY intentionally NOT set: the Statsig channel
@@ -1734,14 +1740,19 @@ RUN set -eux; \
 #     wrapper (install layer above): claude honors it as a telemetry
 #     umbrella and it kills Statsig exactly like DISABLE_TELEMETRY would
 #     (/doctor flags it).
-#   CLAUDE_CONFIG_DIR: relocate .credentials.json + .claude.json into the
-#     ~/.claude bind so OAuth survives container recreates.
-#   USE_BUILTIN_RIPGREP=0: image ships apt ripgrep (base layer) — use it
-#     instead of the npm-bundled binary (pin-everything policy).
-#   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: return to the project dir
+#   CLAUDE_CONFIG_DIR: the directory claude keeps settings, sessions,
+#     plugins and credentials in. Pointed at the ~/.claude bind so
+#     .credentials.json + .claude.json (which otherwise sits in $HOME) survive
+#     container recreates, and OAuth with them.
+#   USE_BUILTIN_RIPGREP=0: makes claude's search tools run the system `rg`
+#     instead of the copy bundled in the npm package. The image ships apt
+#     ripgrep (base layer), which the pin-everything policy prefers.
+#   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: returns to the project dir
 #     after every Bash call — kills cd-drift across tool invocations.
-#   BASH_*_TIMEOUT_MS: 5m default / 20m ceiling (upstream 2m/10m) — image
-#     builds and test suites run inside the container routinely exceed 2m.
+#   BASH_DEFAULT_TIMEOUT_MS / BASH_MAX_TIMEOUT_MS: the timeout a foreground
+#     Bash call gets when the model names none, and the most it may ask for.
+#     Both raised above upstream's defaults: image builds and test suites run
+#     inside the container routinely outlast them.
 #   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: opt into agent teams (still
 #     experimental upstream; in-process mode works without tmux). Per-user
 #     opt-out: "env" map in the ~/.claude/settings.json bind overrides this.
@@ -1749,9 +1760,10 @@ RUN set -eux; \
 #     picks which artifacts to scaffold (CLAUDE.md, skills, hooks), explores the
 #     repo with a subagent, then proposes before writing. Per-user opt-out:
 #     "env" map in the ~/.claude/settings.json bind overrides this.
-#   CLAUDE_CODE_FORK_SUBAGENT=0: stops the agent_summary side query
-#     (anthropics/claude-code#86879), at the cost of fork mode — measured
-#     with --debug-file. Why, costs, opt-out:
+#   CLAUDE_CODE_FORK_SUBAGENT=0: turns fork mode off (Claude no longer
+#     starts forks of the conversation on its own). Set because it also
+#     stops the agent_summary side query (anthropics/claude-code#86879) —
+#     measured with --debug-file. Why, costs, opt-out:
 #     docs/internals/image-build.md#claude-fork-mode-off-agent_summary
 ENV DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
