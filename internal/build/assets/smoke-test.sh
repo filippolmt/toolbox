@@ -639,6 +639,11 @@ check_optional  "claude"    claude   claude --version
 # flags / Remote Control) — see the fetch-claude-code stage in the Dockerfile.
 # NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
+# Fork mode off is what stops the agent_summary side query — see the Claude
+# Code env knobs block in the Dockerfile. shortcut: asserts the knob, not its
+# effect; if upstream decouples the summaries from fork mode they return
+# silently — re-measure with `--debug-file` ([AgentSummary] Forking lines).
+check_optional  "claude fork mode off" claude sh -c "test \"\$CLAUDE_CODE_FORK_SUBAGENT\" = 0 && echo present"
 check_optional  "codex"     codex    codex --version
 check_optional  "pi"        pi       pi --version
 # pi honours neither DO_NOT_TRACK nor the image-wide update-check suppression,

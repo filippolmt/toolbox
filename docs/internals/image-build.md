@@ -135,6 +135,22 @@ Fix: `fetch-claude-code` replaces the npm `/usr/local/bin/claude` symlink with a
 
 Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
 
+## Claude fork mode off (agent_summary)
+
+In an interactive session Claude Code arms a timer for every running background agent: about every 30 s it sends that agent's whole transcript to the agent's own model and asks for a 3–5 word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at roughly a fifth of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). There is no setting for the timer itself.
+
+The image sets `CLAUDE_CODE_FORK_SUBAGENT=0` in the "Claude Code env knobs" block. In an interactive session, fork mode is the gate that arms the timer for an ordinary background agent, so turning it off removes the side query — measured with `--debug-file` by counting `[AgentSummary] Forking` lines for one background agent: one fork every ~30 s with the default, none with the knob. Costs:
+
+- Claude no longer starts [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own; it can again wait for a foreground subagent.
+- The agents panel shows no live per-agent label.
+- Upstream analysis in #86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
+
+Rejected alternative: a Bun `--preload` that swaps the timer callback for an inert one. It keeps fork mode, but runs third-party code inside the process that holds the OAuth credentials and matches on source-text anchors that an update can rename.
+
+Opt-out per user: `env: {CLAUDE_CODE_FORK_SUBAGENT: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction.
+
+The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure with `--debug-file` when the agents panel starts showing live labels again.
+
 ## codegraph optional-locks wrapper
 
 codegraph's file watcher syncs the index a moment after every worktree change, and each sync runs `git status`. A plain `git status` takes `.git/index.lock` opportunistically to write back a refreshed index, so the developer's next index-writing command (`git switch`, `git add`, `git commit`) can fail with `Unable to create '.git/index.lock': File exists` and succeed on retry. A `git switch` rewrites the worktree and fires the watcher, which lines the two up. A Host Share widens the window, but an overlay path shows it too — the reproduction is in #1262.
