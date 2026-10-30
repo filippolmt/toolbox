@@ -27,10 +27,11 @@
 | `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `.github/scripts/host-share-git-rewrite.sh` has none, run `make test-host-share` |
 | `internal/build/assets/entrypoint.sh` | `make test-host-share` as well, from a Mac running Docker Desktop | none — no runner serves a Host Share |
 | `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
+| Any `*.md`, `.claude/rules/**`, the Dockerfile | `make go-test-one PKG=./internal/devrules` + `make check-links` — devrules holds the docs map, the rule files and the Claude env-knob matrix to the files they describe | `ci.yml` (test), `docs.yml` |
 
 The [daemon runner](docs/agents/development-feedback.md#daemon-gates) makes fixtures host-visible under DooD and preserves caller permissions. Its safety prerequisites apply; CI remains the built-image verification.
 
-Markdown-only and `docs/**`-only changes add `make check-links` (`docs.yml`) as their own gate. `ci.yml` still runs on them — it carries the checks `main` requires, and a filtered-out workflow leaves them pending forever — but they touch nothing a docs change can break.
+Markdown-only and `docs/**`-only changes still run `ci.yml` — it carries the checks `main` requires, and a filtered-out workflow leaves them pending forever — and its `test` job can fail on them: the `internal/devrules` tests read the docs (row above).
 
 **Coverage must be at least 80%**, and two gates enforce it:
 
