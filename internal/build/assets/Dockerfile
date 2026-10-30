@@ -1380,7 +1380,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       # build, broken image. Refuse that target explicitly. \
       test "${target}" != /out/usr/local/bin/claude; \
       rm /out/usr/local/bin/claude; \
-      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK turns off feature-flag fetching\n# (Remote Control, preview rollouts) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "${target#/out}" \
+      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK turns off feature-flag fetching\n# (flag-gated features, Remote Control auto-connect) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "${target#/out}" \
         > /out/usr/local/bin/claude; \
       chmod 0755 /out/usr/local/bin/claude; \
       freeze-mtimes
@@ -1463,8 +1463,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # consoledonottrack.com convention — honored by bun, playwright, and much of
 # the JS toolchain users run in here (next, astro, turbo, …). claude is the
 # one exemption: it reads DO_NOT_TRACK like DISABLE_TELEMETRY, which also
-# turns off feature-flag fetching (breaks Remote Control — /doctor flags
-# it). Exemption lives in the fetch-claude-code stage as an `env -u`
+# turns off feature-flag fetching (flag-gated features, Remote Control
+# auto-connect — see the Claude Code env knobs block). Exemption lives in the fetch-claude-code stage as an `env -u`
 # wrapper around the real binary.
 ENV DO_NOT_TRACK=1
 
@@ -1734,8 +1734,11 @@ RUN set -eux; \
 #     session survey, whose follow-up can upload the session transcript.
 #     These three are granular privacy switches. Deliberately NOT set:
 #     DISABLE_TELEMETRY and the CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
-#     umbrella — both also turn off feature-flag fetching, which makes
-#     Remote Control and the other flag-gated features unavailable.
+#     umbrella — both also turn off feature-flag fetching, which drops the
+#     flag-gated features (artifact comments, MCP tasks, account skill and
+#     plugin sync, idle compaction, …) and Remote Control auto-connect. The
+#     umbrella also makes Remote Control itself unavailable, and so does
+#     DISABLE_TELEMETRY once the org requires Trusted Devices.
 #     Telemetry is product analytics, not training data — the
 #     model-improvement opt-out lives in the claude.ai account privacy
 #     settings. Same reason the image-wide DO_NOT_TRACK=1 is stripped for
