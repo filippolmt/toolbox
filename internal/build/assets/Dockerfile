@@ -1749,11 +1749,10 @@ RUN set -eux; \
 #     picks which artifacts to scaffold (CLAUDE.md, skills, hooks), explores the
 #     repo with a subagent, then proposes before writing. Per-user opt-out:
 #     "env" map in the ~/.claude/settings.json bind overrides this.
-#   CLAUDE_CODE_FORK_SUBAGENT=0: in an interactive session fork mode gates the
-#     agent_summary side query that periodically re-sends each background
-#     agent's full transcript for a panel label (anthropics/claude-code#86879);
-#     turning it off stops it at the cost of fork mode. Rationale, costs and
-#     opt-out: docs/internals/image-build.md, "Claude fork mode off".
+#   CLAUDE_CODE_FORK_SUBAGENT=0: stops the agent_summary side query
+#     (anthropics/claude-code#86879), at the cost of fork mode — measured
+#     with --debug-file. Why, costs, opt-out:
+#     docs/internals/image-build.md#claude-fork-mode-off-agent_summary
 ENV DISABLE_AUTOUPDATER=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_FEEDBACK_COMMAND=1 \

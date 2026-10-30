@@ -137,13 +137,13 @@ Known cost: children spawned by claude's Bash tool inherit the stripped environm
 
 ## Claude fork mode off (agent_summary)
 
-In an interactive session Claude Code arms a timer for every running background agent: on each tick it sends that agent's whole transcript to the agent's own model and asks for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). No setting for the timer itself is documented or has turned up in the thread. The knob below lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
+In an interactive session Claude Code arms a timer for every running background agent: on each tick it sends that agent's whole transcript to the agent's own model and asks for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). Fork mode is a blunt switch for it; revisit this section once upstream ships a setting for the timer itself. The knob below lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
 
 The image sets `CLAUDE_CODE_FORK_SUBAGENT=0` in the "Claude Code env knobs" block. In an interactive session, fork mode is the gate that arms the timer for an ordinary background agent, so turning it off removes the side query — measured with `--debug-file` by counting `[AgentSummary] Forking` lines for one background agent: a fork on every tick with the default, none with the knob. Costs:
 
 - Claude no longer starts [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own; it can again wait for a foreground subagent.
 - The agents panel shows no live per-agent label.
-- Upstream analysis in #86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
+- Upstream analysis in anthropics/claude-code#86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
 
 Rejected alternative: a Bun `--preload` that swaps the timer callback for an inert one. It keeps fork mode, but runs third-party code inside the process that holds the OAuth credentials and matches on source-text anchors that an update can rename.
 
