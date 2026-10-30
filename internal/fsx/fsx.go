@@ -152,6 +152,9 @@ func TouchMarker(path string) error {
 type Host struct {
 	Home     string
 	LookPath func(name string) (string, error)
+	// TZ is the host's timezone in a form the container's tzdata reads
+	// (an IANA name or a POSIX TZ string), or "" when it cannot be told.
+	TZ string
 }
 
 // CurrentHost resolves the real host: the strict Home above plus the process
@@ -162,7 +165,26 @@ func CurrentHost() (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	return Host{Home: home, LookPath: exec.LookPath}, nil
+	return Host{Home: home, LookPath: exec.LookPath, TZ: hostTimezone(os.Getenv, os.Readlink, os.ReadFile)}, nil
+}
+
+// hostTimezone resolves the host's zone: $TZ, then the /etc/localtime symlink
+// (macOS and most Linux), then Debian's /etc/timezone. A path-form $TZ
+// (":/etc/localtime", "/usr/share/…") is skipped, because the container would
+// read the path against its own filesystem and fall back to UTC in silence.
+func hostTimezone(getenv func(string) string, readlink func(string) (string, error), readFile func(string) ([]byte, error)) string {
+	if tz := getenv("TZ"); tz != "" && !strings.HasPrefix(tz, ":") && !strings.HasPrefix(tz, "/") {
+		return tz
+	}
+	if target, err := readlink("/etc/localtime"); err == nil {
+		if _, zone, ok := strings.Cut(target, "zoneinfo/"); ok && zone != "" {
+			return zone
+		}
+	}
+	if b, err := readFile("/etc/timezone"); err == nil {
+		return strings.TrimSpace(string(b))
+	}
+	return ""
 }
 
 // Validate rejects a Host with no home. The strictness fsx.Home enforces on

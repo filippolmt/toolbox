@@ -344,6 +344,45 @@ func TestPlanInjectsHostPlatform(t *testing.T) {
 	}
 }
 
+// TestPlanPropagatesTheHostTimezone asserts the container gets the host's
+// zone as TZ, that an explicit TZ in the config env (top-level or the named
+// shell's) is the only TZ emitted, and that an unresolved zone emits none.
+func TestPlanPropagatesTheHostTimezone(t *testing.T) {
+	tzEntries := func(env []string) []string {
+		var out []string
+		for _, e := range env {
+			if strings.HasPrefix(e, "TZ=") {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		hostTZ string
+		cfg    *config.Config
+		shell  string
+		want   []string
+	}{
+		{"host zone", "Asia/Tokyo", testConfig(), "", []string{"TZ=Asia/Tokyo"}},
+		{"config env wins", "Asia/Tokyo", &config.Config{Shell: "zsh", Env: map[string]string{"TZ": "UTC"}}, "", []string{"TZ=UTC"}},
+		{"named shell env wins", "Asia/Tokyo", &config.Config{Shell: "zsh", Shells: map[string]config.NamedShell{"infra": {Env: map[string]string{"TZ": "America/New_York"}}}}, "infra", []string{"TZ=America/New_York"}},
+		{"unresolved host zone", "", testConfig(), "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			planHost, workspace := planWorkspace(t)
+			planHost.TZ = tc.hostTZ
+			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: tc.cfg, Workspace: workspace, Name: tc.shell})
+			if err != nil {
+				t.Fatalf("Plan: %v", err)
+			}
+			if got := tzEntries(plan.Env); !slices.Equal(got, tc.want) {
+				t.Fatalf("TZ entries = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestPlanInjectsImageIdentity asserts the self-identity contract the
 // container identity depends on: TOOLBOX_CLI_VERSION is always
 // emitted, and TOOLBOX_IMAGE_DIGEST appears verbatim when a digest is

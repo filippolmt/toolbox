@@ -1804,10 +1804,10 @@ ENV PI_SKIP_VERSION_CHECK=1 \
 # debian-slim defaults to the POSIX locale, under which zsh's line editor
 # cannot decode UTF-8 bytes (history entries, prompt glyphs) and renders each
 # one as `<ffffffff>`. C.UTF-8 is built into glibc — no `locales` package.
-# TZ: bookworm-slim defaults to UTC (zoneinfo stripped, restored via the
-# tzdata apt dep above). Default to Europe/Rome so timestamps (statusline
-# rate-limit resets, `date`, `ls`) render in local time; overridable per
-# session via the `env:` passthrough (e.g. env: { TZ: America/New_York }).
+# TZ is deliberately absent: the CLI injects the host's zone per session
+# (fsx.Host.TZ), and an `env: { TZ: … }` entry overrides it. A bare `docker
+# run` of the image stays on UTC. tzdata (base apt layer) is what lets the
+# injected IANA name resolve.
 # STARSHIP_LOG=error silences starship's warn-level noise on the prompt — the
 # recurring `[WARN] - (starship::modules::kubernetes): Invalid KUBECONFIG` from
 # a dangling current-context, plus residual git bind-mount timeout warnings.
@@ -1825,7 +1825,6 @@ ENV HOME=/home/toolbox \
     STARSHIP_CONFIG=/etc/toolbox/starship.toml \
     STARSHIP_LOG=error \
     LANG=C.UTF-8 \
-    TZ=Europe/Rome \
     SHELL=/bin/zsh
 ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # Per-user global bins for the remaining toolchains, each backed by its own

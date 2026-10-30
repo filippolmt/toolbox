@@ -523,7 +523,8 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then the host platform
 // (GOOS/GOARCH, for anything cross-compiling for the host from inside a
-// shell), then the managed-statusline opt-out marker, then any caller-supplied
+// shell), then the host timezone unless the user env sets TZ itself, then the
+// managed-statusline opt-out marker, then any caller-supplied
 // curated extras (Plan passes the proximo gate's Env, which the gate emits
 // only when the host CA it resolved is actually there), then
 // the user-supplied env: map.
@@ -538,9 +539,15 @@ func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, 
 	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
 	env = append(env, identityEnv(in.ImageDigest)...)
 	env = append(env, hostPlatformEnv()...)
+	user := in.Cfg.EffectiveEnv(in.Name)
+	// Skipped rather than shadowed when the user sets TZ, so the precedence
+	// never rests on how Docker resolves a duplicated key.
+	if _, set := user["TZ"]; !set && in.Host.TZ != "" {
+		env = append(env, "TZ="+in.Host.TZ)
+	}
 	env = append(env, managedStatuslineEnv(in.Cfg.ManagedStatusline)...)
 	env = append(env, extra...)
-	return append(env, userEnv(in.Cfg.EffectiveEnv(in.Name))...)
+	return append(env, userEnv(user)...)
 }
 
 // ImageDigestEnv names the container's record of the image it was created

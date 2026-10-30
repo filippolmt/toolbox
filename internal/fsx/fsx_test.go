@@ -237,3 +237,55 @@ func TestHostValidate(t *testing.T) {
 		t.Errorf("error %q missing the prefix every home failure shares", err)
 	}
 }
+
+func TestHostTimezoneResolvesTheHostZoneInPrecedenceOrder(t *testing.T) {
+	missing := func(string) (string, error) { return "", os.ErrNotExist }
+	noFile := func(string) ([]byte, error) { return nil, os.ErrNotExist }
+	link := func(target string) func(string) (string, error) {
+		return func(p string) (string, error) {
+			if p != "/etc/localtime" {
+				return "", os.ErrNotExist
+			}
+			return target, nil
+		}
+	}
+	file := func(body string) func(string) ([]byte, error) {
+		return func(p string) ([]byte, error) {
+			if p != "/etc/timezone" {
+				return nil, os.ErrNotExist
+			}
+			return []byte(body), nil
+		}
+	}
+	env := func(tz string) func(string) string {
+		return func(k string) string {
+			if k == "TZ" {
+				return tz
+			}
+			return ""
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		getenv   func(string) string
+		readlink func(string) (string, error)
+		readFile func(string) ([]byte, error)
+		want     string
+	}{
+		{"TZ env wins", env("America/New_York"), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "America/New_York"},
+		{"POSIX TZ string passes verbatim", env("CET-1CEST"), missing, noFile, "CET-1CEST"},
+		{"colon path TZ falls through", env(":/etc/localtime"), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
+		{"absolute path TZ falls through", env("/usr/share/zoneinfo/Europe/Rome"), missing, noFile, ""},
+		{"macOS localtime symlink", env(""), link("/var/db/timezone/zoneinfo/Europe/Rome"), noFile, "Europe/Rome"},
+		{"Linux localtime symlink", env(""), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
+		{"symlink outside zoneinfo falls through", env(""), link("/opt/custom/localtime"), file("Europe/Berlin\n"), "Europe/Berlin"},
+		{"etc timezone file", env(""), missing, file("  Europe/Berlin\n"), "Europe/Berlin"},
+		{"no source", env(""), missing, noFile, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hostTimezone(tc.getenv, tc.readlink, tc.readFile); got != tc.want {
+				t.Fatalf("hostTimezone = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
