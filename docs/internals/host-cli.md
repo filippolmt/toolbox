@@ -27,6 +27,8 @@ Which entry points validate, and which tolerate:
 | `mountplan.Plan` (after `Merge`, so a rejected mount list still reports first), `StateDirPath`, `OverlayDockerfilePath` | `mountplan.Merge` — only `inherit_host_auth`'s pre-stat and the `~/.proximo` fallback behind `proximo.Resolve` read the home, and both degrade rather than fail |
 | `bridge.ResolveHostState`, `NewAgent`; `bridge.proximoAgentHomeEnv` on the branch where the caller sent no agent home of its own | `proximo.CAPath` / `Resolve`, `bridge.proximoFallbackCandidates` / `proximoChildPathDirs` — a probe for an optional tool |
 
+`Host.TZ` is resolved inside `CurrentHost` and nowhere else; the resolution order and how `sessionplan` emits it are in [host timezone](../configuration.md#env-passthrough).
+
 `Host.Look` is the PATH half, and a `Host` with no resolver has an **empty** PATH rather than the process's — see the type's doc comment for why the convenience fallback would have undone the change. The two callers that ask about binaries are `proximo.CAPath` (queries `proximo config ca-path` before the `~/.proximo` fallback) and `bridge.resolveProximoBinary`. `bridge/credhelper.go` and `bridge/sound_linux.go` already injected `exec.LookPath` into a pure core and keep doing so; `bridge/editor_{linux,darwin}.go` stay on the direct call — the lookup *is* the whole one-line function, and reaching them would mean plumbing a `Host` through `handlerFns` for an existence check.
 
 The linux/darwin bridge service supervisors share their template-render and mkdir-then-write skeletons via `renderTemplate` / `writeServiceFile` in the non-tagged `bridge/agent.go`; the platform files keep only the genuinely divergent content (systemd unit vs launchd plist, `systemctl` vs `launchctl`).

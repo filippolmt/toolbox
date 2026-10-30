@@ -51,6 +51,11 @@ them.
 - **Host platform env:** every session receives `TOOLBOX_HOST_OS` and
   `TOOLBOX_HOST_ARCH` from the host CLI runtime. `uname` inside the container is
   the wrong machine. `TestPlanInjectsHostPlatform` pins the pair.
+- **Host timezone env:** `TZ` comes from the
+  [Declared Host](../../CONTEXT.md#declared-host), resolved once at the cmd
+  edge; a `TZ` in the effective config env suppresses it instead of
+  duplicating the key. `TestHostTimezoneResolvesTheHostZoneInPrecedenceOrder`,
+  `TestPlanPropagatesTheHostTimezone`. → [configuration](../../docs/configuration.md#env-passthrough)
 
 - **Workspace paths:** validate colon-free absolute host paths but keep symlinks
   unresolved, so mount source and container identity remain the path the user

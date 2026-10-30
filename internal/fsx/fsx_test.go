@@ -237,3 +237,60 @@ func TestHostValidate(t *testing.T) {
 		t.Errorf("error %q missing the prefix every home failure shares", err)
 	}
 }
+
+func TestHostTimezoneResolvesTheHostZoneInPrecedenceOrder(t *testing.T) {
+	missing := func(string) (string, error) { return "", os.ErrNotExist }
+	noFile := func(string) ([]byte, error) { return nil, os.ErrNotExist }
+	link := func(target string) func(string) (string, error) {
+		return func(p string) (string, error) {
+			if p != "/etc/localtime" {
+				return "", os.ErrNotExist
+			}
+			return target, nil
+		}
+	}
+	file := func(body string) func(string) ([]byte, error) {
+		return func(p string) ([]byte, error) {
+			if p != "/etc/timezone" {
+				return nil, os.ErrNotExist
+			}
+			return []byte(body), nil
+		}
+	}
+	unset := func(string) (string, bool) { return "", false }
+	env := func(tz string) func(string) (string, bool) {
+		return func(k string) (string, bool) {
+			if k == "TZ" {
+				return tz, true
+			}
+			return "", false
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		lookupEnv func(string) (string, bool)
+		readlink  func(string) (string, error)
+		readFile  func(string) ([]byte, error)
+		want      string
+	}{
+		{"TZ env wins", env("America/New_York"), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "America/New_York"},
+		{"POSIX TZ string passes verbatim", env("CET-1CEST"), missing, noFile, "CET-1CEST"},
+		{"colon path TZ falls through", env(":/etc/localtime"), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
+		{"absolute path TZ falls through", env("/usr/share/zoneinfo/Europe/Rome"), missing, noFile, ""},
+		{"macOS localtime symlink", unset, link("/var/db/timezone/zoneinfo/Europe/Rome"), noFile, "Europe/Rome"},
+		{"Linux localtime symlink", unset, link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
+		{"symlink outside zoneinfo falls through", unset, link("/opt/custom/localtime"), file("Europe/Berlin\n"), "Europe/Berlin"},
+		{"relative localtime symlink", unset, link("../usr/share/zoneinfo/Asia/Tokyo"), noFile, "Asia/Tokyo"},
+		{"etc timezone file", unset, missing, file("  Europe/Berlin\n"), "Europe/Berlin"},
+		{"path-form etc timezone is skipped", unset, missing, file("/usr/share/zoneinfo/UTC\n"), ""},
+		{"posix subtree passes verbatim", unset, link("/usr/share/zoneinfo/posix/Europe/Rome"), noFile, "posix/Europe/Rome"},
+		{"empty TZ is UTC", env(""), link("/usr/share/zoneinfo/Asia/Tokyo"), noFile, "UTC"},
+		{"no source", unset, missing, noFile, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hostTimezone(tc.lookupEnv, tc.readlink, tc.readFile); got != tc.want {
+				t.Fatalf("hostTimezone = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

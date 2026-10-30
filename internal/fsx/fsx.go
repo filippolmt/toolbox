@@ -1,9 +1,9 @@
 // Package fsx holds the host-filesystem primitives that more than one
 // toolbox package needs: strict home-directory resolution, tilde expansion,
 // crash-safe atomic file writes, TTL-gated staleness markers, and the Host
-// value that carries a resolved home plus a binary lookup. It imports only
-// the stdlib so every other internal package can depend on it without cycle
-// risk.
+// value that carries a resolved home, a binary lookup and the host timezone.
+// It imports only the stdlib so every other internal package can depend on
+// it without cycle risk.
 //
 // Semantics are deliberately strict — callers that want best-effort
 // behaviour (tolerating an empty or unresolvable home) keep using
@@ -133,25 +133,29 @@ func TouchMarker(path string) error {
 }
 
 // Host is the ambient host state a toolbox run reads, turned into a value a
-// caller declares and passes. Both fields are process-wide inputs no
+// caller declares and passes. Its fields are process-wide inputs no
 // signature used to mention: the home directory every ~/.toolbox path hangs
-// off, and the PATH lookup that finds host binaries. Resolved once at the
-// cmd edge by CurrentHost and threaded through the planning seams, so a
-// package downstream reads the field instead of the process — which is what
-// lets a test construct a Host rather than mutate $HOME for the whole
-// binary.
+// off, the PATH lookup that finds host binaries, and the timezone the
+// container inherits. Resolved once at the cmd edge by CurrentHost and
+// threaded through the planning seams, so a package downstream reads the
+// field instead of the process — which is what lets a test construct a Host
+// rather than mutate $HOME for the whole binary.
 //
-// Neither field falls back to the process. Home is a plain string precisely
+// No field falls back to the process. Home is a plain string precisely
 // so a zero-valued Host is a visible bug (an empty base path) rather than a
 // silent read of the real home, and a nil LookPath means this host resolves
 // no binaries at all — not "ask the process PATH". A convenience fallback
 // there would reinstate the ambient read the type exists to remove, in the
 // one place nothing would notice: a caller that declared only a home would
 // keep probing the real machine, and a test written against it would pass
-// for whatever happens to be installed.
+// for whatever happens to be installed. An empty TZ likewise means "emit
+// none", never "read the process zone".
 type Host struct {
 	Home     string
 	LookPath func(name string) (string, error)
+	// TZ is the host's timezone in a form the container's tzdata reads
+	// (an IANA name or a POSIX TZ string), or "" when it cannot be told.
+	TZ string
 }
 
 // CurrentHost resolves the real host: the strict Home above plus the process
@@ -162,7 +166,38 @@ func CurrentHost() (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	return Host{Home: home, LookPath: exec.LookPath}, nil
+	return Host{Home: home, LookPath: exec.LookPath, TZ: hostTimezone(os.LookupEnv, os.Readlink, os.ReadFile)}, nil
+}
+
+// hostTimezone resolves the host's zone in the order docs/configuration.md
+// ("Host timezone") documents. A path-form value is skipped because the
+// container would read the path against its own filesystem.
+func hostTimezone(lookupEnv func(string) (string, bool), readlink func(string) (string, error), readFile func(string) ([]byte, error)) string {
+	usable := func(tz string) bool {
+		return tz != "" && !strings.HasPrefix(tz, ":") && !strings.HasPrefix(tz, "/")
+	}
+	if tz, set := lookupEnv("TZ"); set {
+		// An empty TZ is UTC to libc, not "unset".
+		if tz == "" {
+			return "UTC"
+		}
+		if usable(tz) {
+			return tz
+		}
+	}
+	// One hop, not EvalSymlinks: on macOS the full resolution lands in
+	// zoneinfo.default/, which the zoneinfo/ cut would miss.
+	if target, err := readlink("/etc/localtime"); err == nil {
+		if _, zone, ok := strings.Cut(target, "zoneinfo/"); ok && zone != "" {
+			return zone
+		}
+	}
+	if b, err := readFile("/etc/timezone"); err == nil {
+		if tz := strings.TrimSpace(string(b)); usable(tz) {
+			return tz
+		}
+	}
+	return ""
 }
 
 // Validate rejects a Host with no home. The strictness fsx.Home enforces on

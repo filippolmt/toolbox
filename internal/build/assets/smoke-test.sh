@@ -211,11 +211,17 @@ check_zsh() {
         [ "$(locale charmap 2>/dev/null)" = "UTF-8" ]
     }
 
-    # n. image timezone is Europe/Rome (ENV TZ + tzdata in the Dockerfile).
-    # bookworm-slim defaults to UTC; assert we left it. `!= UTC` is robust to
-    # the CET/CEST DST swing without pinning the abbreviation.
+    # n. a host zone the CLI injects as TZ resolves (tzdata in the Dockerfile);
+    # debian-slim strips zoneinfo, under which any IANA name silently runs at
+    # offset +0000. Match the offset, not %Z: an unknown zone still prints its
+    # own leading name as the abbreviation. Positive match, so a `date` that
+    # fails or prints nothing fails too. Europe/Rome is just a sample zone,
+    # always at +0100 or +0200.
     _zsh_tz_check() {
-        [ -f /usr/share/zoneinfo/Europe/Rome ] && [ "$(date +%Z 2>/dev/null)" != "UTC" ]
+        case "$(TZ=Europe/Rome date +%z 2>/dev/null)" in
+            +0100|+0200) return 0 ;;
+            *) return 1 ;;
+        esac
     }
 
     # o. SHELL is in the image env (ENV SHELL=/bin/zsh in the Dockerfile).
@@ -423,7 +429,7 @@ cli_latest=
     _zsh_assert "atuin local history integration" _zsh_atuin_local_check
     _zsh_assert "vendor-completions floor"     _zsh_vendor_completions_check
     _zsh_assert "locale charmap UTF-8"         _zsh_locale_check
-    _zsh_assert "timezone Europe/Rome"         _zsh_tz_check
+    _zsh_assert "timezone data resolves"       _zsh_tz_check
     _zsh_assert "SHELL=/bin/zsh image env"     _zsh_shell_env_check
     _zsh_assert "zshrc.d user config loader"   _zsh_user_rc_check
     _zsh_assert "update banner silent"         _zsh_banner_none_check
