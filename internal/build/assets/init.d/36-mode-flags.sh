@@ -20,7 +20,7 @@ _settings="$_cfg/settings.json"
 [ -s "$_settings" ] || exit 0
 
 # <plugin-key>:<flag-file> pairs — the behavioral-mode plugins the statusline
-# renders. Keep in sync with emit_mode_badge in statusline-command.sh
+# renders. Keep in sync with the badge table in statusline-command.sh
 # (enforced by TestModePluginListsAgree).
 for _pair in "ponytail@ponytail:.ponytail-active" "caveman@caveman:.caveman-active"; do
     _plugin="${_pair%%:*}"

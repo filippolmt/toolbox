@@ -45,12 +45,8 @@ IFS=$'\x1f' read -r cwd model used effort \
   ] | join("")'
 )
 cwd="${cwd:-$PWD}"
-
-# Effort fallback: read effortLevel from settings.json
-if [ -z "$effort" ]; then
-  effort=$(jq -r '.effortLevel // "high"' "$CFG/settings.json" 2>/dev/null)
-  effort="${effort:-high}"
-fi
+# No effort fallback: Claude Code omits effort exactly when the model does not
+# take the parameter, so a settings.json default would label it with a lie.
 
 # Explicit UTF-8 bytes: a literal PUA glyph loses to any tool that cannot encode
 # it (one emptied every assignment here in place), and a \u escape loses to the
@@ -179,17 +175,25 @@ if [ -n "$out_style" ] && [ "$out_style" != "default" ]; then
 fi
 
 # ── Behavioural mode badge (ponytail/caveman — auto-gated, nothing when inactive) ─
-emit_mode_badge() {  # $1 = glob; runs only the first script found
-  local f out
-  for f in $1; do
-    [ -f "$f" ] || continue
-    out=$(bash "$f" 2>/dev/null)
-    [ -n "$out" ] && seg "$out"
-    return
-  done
-}
-emit_mode_badge "$CFG/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh"
-emit_mode_badge "$CFG/plugins/cache/caveman/caveman/*/src/hooks/caveman-statusline.sh"
+# The script comes from the version installed_plugins.json records, never from a
+# cache glob: the cache keeps superseded versions beside the live one. Of several
+# installs, a project one whose projectPath holds cwd wins over a projectless
+# one. No readable record, no badge. One jq pass for both plugins.
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  out=$(bash "$f" 2>/dev/null)
+  [ -n "$out" ] && seg "$out"
+done < <(jq -r --arg cwd "$cwd" '
+  .plugins as $p
+  | ["ponytail", "hooks/ponytail-statusline.sh"],
+    ["caveman", "src/hooks/caveman-statusline.sh"]
+  | .[0] as $name | .[1] as $rel
+  | [$p | to_entries[] | select(.key | split("@")[0] == $name) | .value[]] as $e
+  | ([$e[] | select(.projectPath as $pp
+                    | $pp != null and ($cwd == $pp or ($cwd | startswith($pp + "/"))))][0]
+     // [$e[] | select(.projectPath == null)][0])
+  | select(. != null and .installPath != null)
+  | "\(.installPath)/\($rel)"' "$CFG/plugins/installed_plugins.json" 2>/dev/null)
 
 # The window every model had before the extended ones; anything else is worth
 # naming beside the bar, because the same percentage is then worth more tokens.
