@@ -998,6 +998,7 @@ esac
 # and the glob takes 5.3.10 over 5.3.9 by spelling alone. The user install
 # below is the one the glob skips; the project install sits second in its array
 # and must still win inside its project, as Claude Code itself resolves it.
+# A namesake from another marketplace, listed first, must never answer.
 cfg=/tmp/sentinel-claude
 for v in 5.3.9 5.3.10; do
   mkdir -p "$cfg/plugins/cache/ponytail/ponytail/$v/hooks"
@@ -1006,7 +1007,8 @@ done
 proj=/tmp/sentinel-proj
 mkdir -p "$proj/sub"
 jq -n --arg c "$cfg/plugins/cache/ponytail/ponytail" --arg proj "$proj" \
-  "{version: 2, plugins: {\"ponytail@ponytail\": [
+  "{version: 2, plugins: {\"ponytail@elsewhere\": [{scope: \"user\", installPath: (\$c + \"/5.3.10\")}],
+    \"ponytail@ponytail\": [
      {scope: \"user\", installPath: (\$c + \"/5.3.9\")},
      {scope: \"project\", projectPath: \$proj, installPath: (\$c + \"/5.3.10\")}]}}" \
   > "$cfg/plugins/installed_plugins.json"

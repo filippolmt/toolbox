@@ -25,8 +25,8 @@ func TestModePluginListsAgree(t *testing.T) {
 		return string(b)
 	}
 
-	// ["<name>", "<path>/<name>-statusline.sh"]
-	badgeSet := matchSet(t, `\["([a-z0-9-]+)", "[^"]*/[a-z0-9-]+-statusline\.sh"\]`, read("statusline-command.sh"))
+	// ["<name>@<marketplace>", "<path>/<name>-statusline.sh"]
+	badgeSet := matchSet(t, `\["([a-z0-9-]+)@[a-z0-9-]+", "[^"]*-statusline\.sh"\]`, read("statusline-command.sh"))
 	// "<name>@<marketplace>:.<flag>-active"
 	flagSet := matchSet(t, `"([a-z0-9-]+)@[a-z0-9-]+:\.[a-z0-9-]+-active"`, read("init.d/36-mode-flags.sh"))
 

@@ -177,18 +177,20 @@ fi
 # ── Behavioural mode badge (ponytail/caveman — auto-gated, nothing when inactive) ─
 # The script comes from the version installed_plugins.json records, never from a
 # cache glob: the cache keeps superseded versions beside the live one. Of several
-# installs, a project one whose projectPath holds cwd wins over a projectless
-# one. No readable record, no badge. One jq pass for both plugins.
+# installs, a project or local one whose projectPath holds cwd wins over a
+# projectless one. Keyed on plugin@marketplace, the same key 36-mode-flags.sh
+# reaps by, so a namesake from another marketplace never answers. No readable
+# record, no badge. One jq pass for both plugins.
 while IFS= read -r f; do
   [ -f "$f" ] || continue
   out=$(bash "$f" 2>/dev/null)
   [ -n "$out" ] && seg "$out"
 done < <(jq -r --arg cwd "$cwd" '
   .plugins as $p
-  | ["ponytail", "hooks/ponytail-statusline.sh"],
-    ["caveman", "src/hooks/caveman-statusline.sh"]
-  | .[0] as $name | .[1] as $rel
-  | [$p | to_entries[] | select(.key | split("@")[0] == $name) | .value[]] as $e
+  | ["ponytail@ponytail", "hooks/ponytail-statusline.sh"],
+    ["caveman@caveman", "src/hooks/caveman-statusline.sh"]
+  | .[0] as $key | .[1] as $rel
+  | ($p[$key] // []) as $e
   | ([$e[] | select(.projectPath as $pp
                     | $pp != null and ($cwd == $pp or ($cwd | startswith($pp + "/"))))][0]
      // [$e[] | select(.projectPath == null)][0])
