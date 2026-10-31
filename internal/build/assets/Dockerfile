@@ -163,7 +163,7 @@ ARG SHFMT_VERSION=3.14.1
 # time, so the agreement is structural here rather than asserted per stage:
 # there is one reference, Renovate bumps it once, and
 # `TestNodeStagesShareOneBaseImage` refuses a stage that names the image again.
-FROM node:24-bookworm-slim AS node-base
+FROM node:26-bookworm-slim AS node-base
 
 # index — and before `freeze-mtimes`, which stamps what it leaves behind.
 FROM debian:bookworm-slim AS fetch-base
