@@ -175,7 +175,7 @@ var Skills = []Skill{
 		// init command unconditionally enables both adapter sets.
 		Key:        "openspec",
 		NpmPackage: "@fission-ai/openspec",
-		Version:    "1.15.0",
+		Version:    "1.16.0",
 		BinName:    "openspec",
 		InstallSteps: [][]string{
 			{"init", "--tools=claude,codex", "--force"},
