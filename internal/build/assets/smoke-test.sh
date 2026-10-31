@@ -843,6 +843,7 @@ bash -n "$SL" || { echo "FAILED: $SL has a syntax error"; exit 1; }
 now=$(date +%s)
 make_json() {  # make_json <cwd> — one fixture shape, pointed wherever the caller needs
   j="{\"cwd\":\"$1\",\"session_id\":\"smoke\",\"model\":{\"display_name\":\"M\"},"
+  j="$j\"effort\":{\"level\":\"xhigh\"},"
   j="$j\"permission_mode\":\"acceptEdits\",\"pr\":{\"number\":4321,\"review_state\":\"pending\"},"
   j="$j\"workspace\":{\"repo\":{\"name\":\"sentinel-reponame\"},\"git_worktree\":\"sentinel-wt\"},"
   j="$j\"context_window\":{\"used_percentage\":37,\"context_window_size\":1000000},"
@@ -928,8 +929,14 @@ case "$out" in
   *) echo "FAILED: model segment missing or its icon blank: $out"; exit 1 ;;
 esac
 case "$out" in
-  *"${eff_icon}"*) ;;
-  *) echo "FAILED: effort icon missing; it falls back to high with no settings.json: $out"; exit 1 ;;
+  *"${eff_icon}xhigh"*) ;;
+  *) echo "FAILED: effort segment missing, its icon blank, or not the level the JSON sent: $out"; exit 1 ;;
+esac
+# Claude Code omits effort on a model that does not take the parameter, so an
+# absent field means no effort to show, never a default from settings.json.
+out_noeff=$(printf "%s" "$json" | jq -c "del(.effort)" | bash "$SL" | strip_ansi)
+case "$out_noeff" in
+  *"$eff_icon"*) echo "FAILED: effort rendered for a model whose JSON carries none: $out_noeff"; exit 1 ;;
 esac
 
 # Four fields the fixture supplies are deliberately unrendered, each because
@@ -984,6 +991,42 @@ esac
 case "$out_git" in
   *"${wt_icon} sentinel-wt"*) ;;
   *) echo "FAILED: the linked-worktree marker or its name is missing: $out_git"; exit 1 ;;
+esac
+
+# Mode badges come from the plugin version Claude Code has installed, never
+# from a cache glob: the cache keeps superseded versions beside the live one,
+# and the glob takes 5.3.10 over 5.3.9 by spelling alone. The user install
+# below is the one the glob skips; the project install sits second in its array
+# and must still win inside its project, as Claude Code itself resolves it.
+# A namesake from another marketplace, listed first, must never answer.
+cfg=/tmp/sentinel-claude
+for v in 5.3.9 5.3.10; do
+  mkdir -p "$cfg/plugins/cache/ponytail/ponytail/$v/hooks"
+  printf "echo badge-%s\n" "$v" > "$cfg/plugins/cache/ponytail/ponytail/$v/hooks/ponytail-statusline.sh"
+done
+proj=/tmp/sentinel-proj
+mkdir -p "$proj/sub"
+jq -n --arg c "$cfg/plugins/cache/ponytail/ponytail" --arg proj "$proj" \
+  "{version: 2, plugins: {\"ponytail@elsewhere\": [{scope: \"user\", installPath: (\$c + \"/5.3.10\")}],
+    \"ponytail@ponytail\": [
+     {scope: \"user\", installPath: (\$c + \"/5.3.9\")},
+     {scope: \"project\", projectPath: \$proj, installPath: (\$c + \"/5.3.10\")}]}}" \
+  > "$cfg/plugins/installed_plugins.json"
+out_badge=$(printf "%s" "$json" | CLAUDE_CONFIG_DIR=$cfg bash "$SL" | strip_ansi)
+case "$out_badge" in
+  *badge-5.3.10*|*"badge-5.3.9"*badge-5.3.9*) echo "FAILED: mode badge not the installed version, or rendered twice: $out_badge"; exit 1 ;;
+  *badge-5.3.9*) ;;
+  *) echo "FAILED: mode badge missing for an installed plugin: $out_badge"; exit 1 ;;
+esac
+out_badge=$(printf "%s" "$(make_json "$proj/sub")" | CLAUDE_CONFIG_DIR=$cfg bash "$SL" | strip_ansi)
+case "$out_badge" in
+  *badge-5.3.10*) ;;
+  *) echo "FAILED: a project install does not win inside its project: $out_badge"; exit 1 ;;
+esac
+rm "$cfg/plugins/installed_plugins.json"
+out_badge=$(printf "%s" "$json" | CLAUDE_CONFIG_DIR=$cfg bash "$SL" | strip_ansi)
+case "$out_badge" in
+  *badge-*) echo "FAILED: a badge rendered with no install record to resolve it: $out_badge"; exit 1 ;;
 esac
 
 echo "OK: managed statusline present, parses and renders"
