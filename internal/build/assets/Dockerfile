@@ -164,6 +164,8 @@ ARG SHFMT_VERSION=3.14.1
 # time, so the agreement is structural here rather than asserted per stage:
 # there is one reference, Renovate bumps it once, and
 # `TestNodeStagesShareOneBaseImage` refuses a stage that names the image again.
+# Its major is held in renovate.json to the one the CodeGraph bundle vendors —
+# `fetch-codegraph` goes red on any other (ADR 0016).
 FROM node:24-bookworm-slim AS node-base
 
 # index — and before `freeze-mtimes`, which stamps what it leaves behind.

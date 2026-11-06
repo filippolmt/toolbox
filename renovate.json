@@ -42,9 +42,8 @@
     {
       "description": "Hold the image's node-base on the Node major the CodeGraph bundle vendors. fetch-codegraph replaces that vendored runtime with a symlink to the base image's node only after asserting the majors match (ADR 0016), so a base major ahead of the bundle is a red build. Move the pattern to the next major once @colbymchenry/codegraph-linux-<arch> vendors it.",
       "matchFileNames": ["internal/build/assets/Dockerfile"],
-      "matchDatasources": ["docker"],
       "matchPackageNames": ["node"],
-      "allowedVersions": "/^24-/"
+      "allowedVersions": "/^24[.-]/"
     }
   ],
   "customDatasources": {
