@@ -69,7 +69,7 @@ The gate is `toolbox_install_refresh` in `bin/install-refresh-lib.sh`; members s
 - `graphify hook install` stays outside the gate;
 - `30-graphify.sh`'s matcher narrowing stays rename-aware, dropping the graphify-owned entries already parked at the narrowed matcher;
 - each agent pass gets its own stamp suffix and its own artefact, and the repo-level opt-in marker stays one per member; pi's agent gate is the `~/.pi` bind mount, as in [container-runtime.md](container-runtime.md);
-- each agent's graphify skill directory is gitignored, one entry per agent root.
+- each agent's graphify skill directory is gitignored, one entry per agent root: `TestEveryGraphifySkillDirIsGitignored`.
 
 A new member joins `TestWorkspaceInstallRefreshGate`, `TestGraphifyHookInstallOutsideGate`, `TestPerRepoInstallersRefreshWhatPiReads` and the `Workspace Install Refresh` block in `smoke-test.sh`. → [Workspace Install Refresh](../../CONTEXT.md#workspace-install-refresh)
 
