@@ -54,6 +54,8 @@ Prefer a verified archive over a piped install script: `curl … | sh` is the la
 
 For GitHub releases, `gh release view --json tagName,assets -R <owner>/<repo>` gives the latest tag without scraping HTML. Verify the asset naming pattern across architectures (`linux_amd64` vs `linux-x86_64` vs `x86_64-unknown-linux-musl`) — the #1 source of layer bugs.
 
+Keep the release's own docs at hand for the rest of the run: extract the tarball's `README`/`CHANGELOG` (or the source archive) into the scratchpad. Every sentence you later write about upstream behaviour — in docs, warnings or comments — is checked against that copy, not against recall; running the downloaded binary may be refused.
+
 **Helper deps cost nothing in a fetch stage.** `fetch-base` provides `curl`, `git`, `tar`, CA certs and coreutils; anything extra a fetch stage apt-installs (`unzip`, `jq`, `python3`) stays out of the final image by construction. Frugality binds **final-stage** layers only: there, reuse what the base apt layer already provides (`python3 -m zipfile -e` over installing `unzip`, `python3 -c` over jq), because final-stage apt installs do land in the image.
 
 ### 2. Edit the Dockerfile
@@ -111,6 +113,8 @@ Two Go tests enforce the catalog↔image bijection, so a missing or misspelled e
 Add a `check_optional "<key>" <binary> <version-command>` line in the same alphabetical-ish block as the other tool checks. `<binary>` is what `command -v` checks; the version command confirms the binary is functional. Skip only if the tool has no version flag at all.
 
 A tool another program drives, rather than one you run by hand, needs a second check through that consumer's path: `--version` stays green when a bump keeps the binary alive but breaks how it is driven. A language server gets `check_optional "<key> LSP initialize" <binary> _lsp_init_check <binary> --stdio`, which sends a real LSP `initialize`; a library another tool resolves at runtime gets a check that does that resolve.
+
+A consumer-path check earns its line only once you have watched it go **red**: run it against a stub of the tool whose integration is broken (empty init output, the binary alone) and confirm it fails, then against a working stub. A check that exits 0 on both is a `--version` check in disguise. Shell integration is the common case: `eval "$(<tool> … init zsh)"` in `zshrc.sh`, checked with `whence -w <tool> | grep -x "<tool>: function"`.
 
 If you also added an `init.d/<NN>-<tool>.sh` script, bump the counts in the smoke-test's init.d bijection block; if the tool ships a zsh completion into `/usr/share/zsh/vendor-completions/`, bump the floor in `_zsh_vendor_completions_check`. Both are covered by `.claude/rules/image-build.md` — the synced edits, and which test names the number for you.
 

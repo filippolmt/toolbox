@@ -94,7 +94,7 @@ BASE ?= origin/main
 # makes go-coverage fail closed before it runs the suite.
 COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
+.PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-vet go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
@@ -198,6 +198,9 @@ go-coverage: scratch ## Run Go tests and enforce CI's total coverage floor
 go-test-one: ## Run one package's Go tests (PKG=./internal/pkg; optional RUN=TestName, TAGS=...)
 	@test -n "$(PKG)" || { echo 'PKG is required' >&2; exit 2; }
 	$(GO_RUN) go test "$(PKG)" -run '$(RUN)' $(GO_TEST_TAGS) -count=1
+
+go-vet: ## Compile every package and its tests and run go vet, without running tests (optional TAGS=...)
+	$(GO_RUN) go vet $(GO_TEST_TAGS) ./...
 
 go-dockergate-image: ## Build the local daemon-test runner using the pinned Go and existing runtime images
 	docker image inspect "$(FULL)" >/dev/null
