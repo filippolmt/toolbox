@@ -10,8 +10,8 @@ import (
 // TestHerdrInitWiresPi; this covers atuin.
 //
 // The failure it exists to catch is silent by construction. pi is a first-class
-// agent — internal/catalog bundles it, config.SupportedAgents and `toolbox
-// worktree --agent pi` declare it one — and none of that makes atuin's history
+// agent — internal/catalog bundles it, config.SupportedAgents declares it
+// one — and none of that makes atuin's history
 // capture see it. Drop this block and pi still launches, still resumes, and
 // quietly runs unwired.
 //

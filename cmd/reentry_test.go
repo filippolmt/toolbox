@@ -99,20 +99,3 @@ func TestShellReentryClassifiesEveryFlag(t *testing.T) {
 			"or add it to reentryNonIdempotent if it belongs to the bootstrap half", f.Name)
 	})
 }
-
-// TestWorktreeReentryPinsTheResolvedAgent covers the other half of the same
-// loss: `worktree open <branch>` without --agent falls back to the config
-// default, so a session started as --agent codex could resume as claude. The
-// agent pinned is the *resolved* one, not the flag as typed, so the form keeps
-// naming this session's agent even if the config default changes underneath.
-func TestWorktreeReentryPinsTheResolvedAgent(t *testing.T) {
-	got := worktreeReentry("fix/thing", "codex")
-	want := []string{"worktree", "open", "fix/thing", "--agent", "codex"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("worktreeReentry = %q, want %q", got, want)
-	}
-
-	if got := worktreeReentry("fix/thing", ""); !reflect.DeepEqual(got, []string{"worktree", "open", "fix/thing"}) {
-		t.Errorf("worktreeReentry with no agent = %q, want the bare open form", got)
-	}
-}

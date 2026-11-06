@@ -58,11 +58,6 @@ type Result struct {
 	StateDir string
 }
 
-// WorktreeGitDirMountName is the Name carried by the bind that PlanInput.GitDir
-// produces. Named like every other mount so warnings and `toolbox mounts`
-// output can tell the reader where the entry came from.
-const WorktreeGitDirMountName = "worktree-gitdir"
-
 // PlanInput is the full set of inputs to Plan. A struct rather than a
 // positional list: the session-shaped inputs (which workspace, whose profile,
 // which extra host path) only grow, and at four arguments the call site stops
@@ -71,13 +66,6 @@ type PlanInput struct {
 	Cfg       *config.Config
 	Workspace string
 	Profile   *Profile
-	// GitDir is the main repository's .git directory for a `toolbox worktree`
-	// session, empty for every other session. A linked worktree's .git is a
-	// pointer file into the main repo, so git only resolves in-container when
-	// that directory is bound at its host path. It joins the merged mount list
-	// and goes through resolveAll like every other mount, so a missing source
-	// is a soft skip with a warning instead of a bind ContainerCreate rejects.
-	GitDir string
 	// Peer opts the session into cross-container Claude Code peer messaging.
 	// The only mount-side consequence is the shared inbox-socket volume
 	// (see peerSocketBind); the PID namespace half, and the volume's
@@ -121,14 +109,6 @@ func Plan(in PlanInput) (Result, error) {
 
 	// Appended post-Merge: session inputs, not configurable mounts — no
 	// `mounts:` patch should be able to retarget or disable them.
-	if in.GitDir != "" {
-		merged = append(merged, config.Mount{
-			Name:   WorktreeGitDirMountName,
-			Source: in.GitDir,
-			Target: in.GitDir,
-		})
-	}
-
 	binds, warnings := resolveAll(merged, in.Host.Home)
 	warnings = append(legacyRTKWarnings(in.Cfg.Mounts, in.Profile), warnings...)
 	warnings = append(profileHostSharedWarnings(merged, in.Profile), warnings...)

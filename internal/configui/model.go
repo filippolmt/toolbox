@@ -51,17 +51,13 @@ var editorSeeds = map[config.Editor]func(config.Key, keyDescriptor, *config.Conf
 		return editor{key: row.Name, kind: config.EditorSet, options: d.optionsOf(), selected: d.selectionOf(cfg)}
 	},
 	config.EditorRows: func(row config.Key, _ keyDescriptor, cfg *config.Config) editor {
-		// Pair editors carry key→value rows; the rest are single-column lists. A
-		// row with neither opens empty rather than panicking, so the sweep names
-		// the key instead of the TUI dying on enter.
-		switch {
-		case row.Pairs != nil:
+		// Pair editors carry key→value rows. A row without Pairs opens empty
+		// rather than panicking, so the sweep names the key instead of the TUI
+		// dying on enter.
+		if row.Pairs != nil {
 			return rowsEditorState(row.Name, true, pairsToRows(row.Pairs(cfg)))
-		case row.List != nil:
-			return rowsEditorState(row.Name, false, valuesToRows(row.List(cfg)))
-		default:
-			return rowsEditorState(row.Name, false, nil)
 		}
+		return rowsEditorState(row.Name, false, nil)
 	},
 }
 
@@ -93,7 +89,7 @@ type editor struct {
 	selected map[string]bool // multi-select toggles
 	input    textinput.Model // string / row-field editor
 
-	// rows editor (env / shells / worktree.seed)
+	// rows editor (env / shells)
 	rows     [][2]string // [key, value]; single-column lists use [0]
 	orig     []string    // per-row original column-0 name at open ("" once added); index-aligned with rows, carries a renamed shell's env
 	rowPair  bool        // true = key→value pairs (env, shells)

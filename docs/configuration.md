@@ -33,7 +33,6 @@ Configuration is loaded from (highest priority first):
 | [`inherit_host_auth`](#inherit-host-auth) | list | `[]` | Opt listed CLIs into the host's real credential path instead of the isolated default. |
 | [`shells`](shells.md) | map | – | Named shell shortcuts: `<name>: {path, env}`. |
 | [`shell`](#shell) | string | `zsh` | Login shell inside the container (only `zsh` is supported). |
-| [`agent`](#agent) | string | `claude` | Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree): `claude`, `codex` or `pi`. |
 | [`image`](#image-selection) | string | `""` | Full image ref override (pull-source concern). |
 | [`registry_mirror`](#image-selection) | string | `""` | Swap only the registry host of the canonical ref. |
 | [`pull`](#image-selection) | string | `auto` | Registry-sync policy for the shell-start refresh *and* the background prefetch: `auto` / `always` / `never`. |
@@ -45,17 +44,10 @@ Configuration is loaded from (highest priority first):
 | [`image_reclaim`](#image_reclaim) | bool | `true` | Remove the runtime images this CLI pulled that a later image update left nameless; `false` keeps every generation. |
 | [`peer_messaging`](#peer_messaging) | bool | `false` | Let Claude Code sessions in different toolbox containers see and message each other. |
 | [`env`](#env-passthrough) | map | – | Arbitrary env vars injected into the in-container shell. |
-| [`worktree`](#worktree) | map | – | Tune `toolbox worktree` sessions; `seed` adds extra gitignored paths to carry into a new worktree. |
 
 ## `shell`
 
 Login shell inside the container. Only `zsh` is supported (the default); `bash` is rejected at config load with an explicit migration hint (`config.ValidateShell`).
-
-## `agent`
-
-Default AI agent auto-launched by [`toolbox worktree`](commands.md#toolbox-worktree) sessions. Accepts `claude`, `codex` or `pi` — the three agents baked into the canonical image (`config.ValidateAgent`). Resolved with precedence `--agent` flag > this key > the default `claude`, so the flag is optional once a default is set. Honouring the standard [loading order](#loading-order), it can be set globally (`~/.toolbox.yaml`) for a per-user default or per-directory (`.toolbox.yaml`) to pin a project to one agent.
-
-Set it via `toolbox config set agent <value>` ([`--where`](commands.md#--where-targeting) selects global vs local). The key has no default written to disk: when unset it resolves to `claude` at launch, and `config show` renders that resolved value (`agent: claude`). A non-canonical `image:` lacking the chosen agent fails at launch, not at validation.
 
 ## `managed_statusline`
 
@@ -243,22 +235,14 @@ Contract:
 - **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`). Keys are injected verbatim: environment-variable names are case-sensitive, so `FOO` and `foo` are distinct vars (both the top-level and per-shell maps preserve the case you write).
 - **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
 
-## worktree
+## Retired keys
 
-Tunes [`toolbox worktree`](commands.md#toolbox-worktree) sessions. A worktree is a checkout of git-tracked files only, so `create`/`open` seed a curated set of gitignored per-repo working state from the main repo into the new worktree (`.claude/settings.local.json`, `.env`/`.env.*`, `openspec/`, gsd's `.planning/`). `worktree.seed` adds extra repo-relative paths to that set:
-
-```yaml
-worktree:
-  seed:
-    - .secrets.local
-    - config/local.yaml
-```
-
-Contract:
-
-- **Gitignore-gated.** Every candidate — built-in defaults and `seed` entries alike — is copied **only if `git check-ignore` reports it ignored** in the main repo. A tracked path already arrives with the checkout; a non-ignored untracked path is left alone. So a `seed` entry that isn't gitignored is a silent no-op, and the built-in defaults self-correct in a repo that tracks one of them.
-- **Additive.** `seed` is unioned with the built-in defaults (not a replacement); directories are copied recursively. Copies never clobber a worktree-local edit (an existing destination is kept).
-- **Validation.** `config.ValidateWorktreeSeed` rejects absolute paths, entries containing `..`, and empty strings — the paths drive filesystem reads under the repo root and writes under the worktree, so traversal must not escape either tree.
+`worktree:` and `agent:` were read only by `toolbox worktree`, which Worktrunk
+replaced ([ADR 0018](adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md)).
+A config that still carries them loads: each is ignored, with a warning at load
+and in `toolbox config doctor` (`config.RetiredKeys`). Where their settings
+went: [migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree).
+The legacy `tools:` block is retired the same way ([tools removal](internals/image-build.md#tools-removal)).
 
 ## `TOOLBOX_*` environment variables
 

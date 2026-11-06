@@ -7,9 +7,7 @@ import (
 // reentryNonIdempotent names the `shell` flags the re-entry form drops. Both
 // belong to the one-shot bootstrap half of the invocation, already performed
 // by the process being replaced: by the time the form is replayed the named
-// shell exists in ~/.toolbox.yaml, so re-entry resolves it from config. This
-// is the same normalisation that turns `worktree create` into
-// `worktree open <branch>`, applied to the other command that has a create half.
+// shell exists in ~/.toolbox.yaml, so re-entry resolves it from config.
 var reentryNonIdempotent = map[string]bool{"create": true, "path": true}
 
 // reentryFlags re-renders the flags the developer actually typed, so the
@@ -57,22 +55,4 @@ func reentryFlags(flags *pflag.FlagSet, skip map[string]bool) []string {
 func shellReentry(flags *pflag.FlagSet, args []string) []string {
 	argv := append([]string{"shell"}, args...)
 	return append(argv, reentryFlags(flags, reentryNonIdempotent)...)
-}
-
-// worktreeReentry renders the re-entry form of a worktree session. The command
-// is normalised to `open`, never replayed as `create`: create would fail on a
-// branch that now exists and would re-send a prompt the agent has already
-// completed, while open is idempotent and promptless by construction.
-//
-// The agent carried is the *resolved* one rather than the flag as typed, so a
-// session started with no --agent still comes back on the agent it actually
-// ran — the resume relaunches `claude --continue`, `codex resume --last` or
-// `pi --continue` against the right lineage even if the config default changes
-// underneath.
-func worktreeReentry(branch, agent string) []string {
-	argv := []string{"worktree", "open", branch}
-	if agent == "" {
-		return argv
-	}
-	return append(argv, "--agent", agent)
 }

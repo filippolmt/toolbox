@@ -157,10 +157,6 @@ func TestCommandsThatNeedAHomeRefuseCleanly(t *testing.T) {
 			withCfg(t, &config.Config{Shell: "zsh"})
 			return runShell(shellCmd, nil)
 		}},
-		{"worktree session", func(t *testing.T) error {
-			withCfg(t, &config.Config{Shell: "zsh"})
-			return openWorktreeSession(t.TempDir(), t.TempDir(), "b", "claude", "")
-		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", "")

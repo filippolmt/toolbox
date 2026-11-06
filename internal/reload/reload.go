@@ -72,19 +72,12 @@ type From struct {
 	ImageDigest string `json:"image_digest,omitempty"`
 	CLIVersion  string `json:"cli_version,omitempty"`
 	// Reentry is the argv the next process runs, **normalised** rather than
-	// replayed: `worktree create` comes back as `worktree open <branch>`,
-	// because replaying the original would re-create the worktree and re-send
-	// a prompt the agent has already completed. Empty falls back to a bare
+	// replayed: create-only arguments are dropped, because replaying them
+	// would repeat an act that has already happened. Empty falls back to a bare
 	// `shell`, and it is also the line printed when a reload fails after the
 	// old container is gone — the shell that would otherwise say how to get
 	// back has already exited.
 	Reentry []string `json:"reentry,omitempty"`
-	// Resume asks the next session to relaunch its agent on the most recent
-	// conversation instead of starting a new one. Set only for a session that
-	// auto-launched one, and honoured only when the carried cwd survived
-	// validation: resuming the wrong lineage silently is worse than not
-	// resuming, and `claude --continue` is keyed on the working directory.
-	Resume bool `json:"resume,omitempty"`
 }
 
 // ReentryCommand renders the payload's re-entry form as the command line a

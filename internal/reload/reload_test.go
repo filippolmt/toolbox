@@ -35,9 +35,9 @@ func TestDecode(t *testing.T) {
 			want: reload.From{Container: "toolbox-p-1234abcd"},
 		},
 		{
-			name: "the two continuity fields",
-			raw:  `{"container":"c","reentry":["worktree","open","fix/x"],"resume":true}`,
-			want: reload.From{Container: "c", Reentry: []string{"worktree", "open", "fix/x"}, Resume: true},
+			name: "the re-entry form",
+			raw:  `{"container":"c","reentry":["shell","infra"]}`,
+			want: reload.From{Container: "c", Reentry: []string{"shell", "infra"}},
 		},
 		{
 			// A field this version does not know must not turn into a refusal:
@@ -83,8 +83,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		Cwd:         `/workspace/dir with spaces/and"quote`,
 		ImageDigest: "sha256:abc",
 		CLIVersion:  "v9.9.9",
-		Reentry:     []string{"worktree", "open", "fix/thing"},
-		Resume:      true,
+		Reentry:     []string{"shell", "infra", "--peer=true"},
 	}
 	raw, err := reload.Encode(want)
 	if err != nil {
@@ -205,13 +204,6 @@ func TestReentryCommand(t *testing.T) {
 			name: "a named shell re-enters by name",
 			from: reload.From{Container: "c", Reentry: []string{"shell", "infra"}},
 			want: "toolbox shell infra",
-		},
-		{
-			// Never `worktree create`: the branch exists now, and the prompt
-			// that came with it has already been answered.
-			name: "a worktree re-enters through open",
-			from: reload.From{Container: "c", Reentry: []string{"worktree", "open", "fix/thing"}},
-			want: "toolbox worktree open fix/thing",
 		},
 	}
 	for _, tc := range cases {

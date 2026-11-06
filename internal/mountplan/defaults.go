@@ -62,6 +62,10 @@ func defaults() []config.Mount {
 		// The image sets GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file so the encryption key lands
 		// in this bind-mount instead of an OS keyring (unavailable inside the container).
 		{Name: "gws", Source: "~/.toolbox/gws", Target: "/home/toolbox/.config/gws", ReadOnly: false, CreateIfMissing: true},
+		// Worktrunk user config (worktree-path template, approved project-hook
+		// commands, `wt config` edits). Without it every approval and setting
+		// wipes on `toolbox stop`. Per-repo state lives in the repo's git config.
+		{Name: "worktrunk", Source: "~/.toolbox/worktrunk", Target: "/home/toolbox/.config/worktrunk", ReadOnly: false, CreateIfMissing: true},
 		// atuin (SQLite-backed shell history). Default DB at ~/.local/share/atuin/history.db
 		// (XDG data dir) is the bind target. The Dockerfile sets ATUIN_CONFIG_DIR=<target>/config
 		// so the config.toml + key (sync-encryption secret) land under the same bind-mount —

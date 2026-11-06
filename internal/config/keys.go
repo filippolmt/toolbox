@@ -170,19 +170,6 @@ var keyRows = []Key{
 		Scalar:    ValidateShell,
 	},
 	{
-		Name:    "agent",
-		Kind:    KindEnum,
-		Editor:  EditorChoice,
-		Summary: "Default AI agent auto-launched by `toolbox worktree` sessions (--agent overrides per run).",
-		Default: DefaultAgent,
-		Example: "# agent — default AI agent auto-launched by `toolbox worktree` sessions.\n" +
-			"# One of: claude (default) | codex | pi. The --agent flag overrides this per run.\n" +
-			"# agent: claude\n",
-		Str:       func(c *Config) string { return c.Agent },
-		Effective: func(c *Config) string { return orElse(c.Agent, DefaultAgent) },
-		Scalar:    ValidateAgent,
-	},
-	{
 		Name:    "image",
 		Kind:    KindScalar,
 		Editor:  EditorText,
@@ -368,23 +355,6 @@ var keyRows = []Key{
 			"#   CLAUDE_CODE_WORKFLOWS: \"1\"\n",
 		Pairs:    func(c *Config) map[string]string { return c.Env },
 		Validate: func(c *Config) error { return ValidateEnv(c.Env) },
-	},
-	{
-		Name:    "worktree",
-		Kind:    KindBlock,
-		Editor:  EditorRows,
-		Summary: "Tune `toolbox worktree`: seed extra repo-relative paths into a new worktree, on top of the built-in defaults.",
-		Default: "(built-in seeds only)",
-		Example: "# worktree — tune `toolbox worktree` sessions.\n" +
-			"# seed: extra repo-relative paths to copy from the main repo into a new\n" +
-			"# worktree, on top of the built-in defaults (.claude/settings.local.json,\n" +
-			"# .env[.*], openspec/, .planning/). Only paths git ignores are copied.\n" +
-			"# worktree:\n" +
-			"#   seed:\n" +
-			"#     - .secrets.local\n" +
-			"#     - config/local.yaml\n",
-		List:     func(c *Config) []string { return c.Worktree.Seed },
-		Validate: func(c *Config) error { return ValidateWorktreeSeed(c.Worktree.Seed) },
 	},
 	{
 		Name:    "inherit_host_auth",

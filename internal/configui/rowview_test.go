@@ -1,7 +1,6 @@
 package configui
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/config"
@@ -12,19 +11,10 @@ import (
 // keys, so a pane can only be asserted on in a state the program can actually
 // reach.
 
-// A pair row renders "key = value"; a single-column row renders the value
-// alone. Getting this backwards is what the rowPair flag exists to prevent.
-func TestRowLineRendersPairAndSingleColumn(t *testing.T) {
+// A pair row renders "key = value".
+func TestRowLineRendersPair(t *testing.T) {
 	pair := rowsEditor(t, "env", &config.Config{Env: map[string]string{"FOO": "bar"}})
 	wantOnScreen(t, pair, "FOO = bar")
-
-	single := rowsEditor(t, "worktree", &config.Config{
-		Worktree: config.WorktreeConfig{Seed: []string{".env.local"}},
-	})
-	wantOnScreen(t, single, ".env.local")
-	if line := rowsPaneLine(t, single, ".env.local"); strings.Contains(line, "=") {
-		t.Errorf("single-column row = %q, want no %q separator", line, "=")
-	}
 }
 
 // The cursor marker tracks the selected row, and disappears while a row is
@@ -53,11 +43,6 @@ func TestRowsFooterSwitchesOnEditState(t *testing.T) {
 	valField := typeText(keyField, "X")
 	valField = press(valField, "enter")
 	wantOnScreen(t, valField, "value:")
-
-	single := rowsEditor(t, "worktree", &config.Config{
-		Worktree: config.WorktreeConfig{Seed: []string{".env.local"}},
-	})
-	wantOnScreen(t, press(single, "enter"), "value:")
 }
 
 // An empty rows editor still has to say so, rather than rendering a bare
@@ -104,17 +89,4 @@ func TestDetailKeybarOffersTheEditorEscapeOnlyWhereItExists(t *testing.T) {
 
 	withoutEscape := browsing(ScopeRepo, &config.Config{}, KeyState{Key: "pull", ScopeSet: true})
 	notOnScreen(t, withoutEscape, "$EDITOR")
-}
-
-// rowsPaneLine returns the rendered line containing want, so an assertion can
-// be made about that line alone rather than the whole screen.
-func rowsPaneLine(t *testing.T, m Model, want string) string {
-	t.Helper()
-	for _, line := range strings.Split(screen(m), "\n") {
-		if strings.Contains(line, want) {
-			return line
-		}
-	}
-	t.Fatalf("no rendered line contains %q:\n%s", want, screen(m))
-	return ""
 }

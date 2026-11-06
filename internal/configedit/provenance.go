@@ -121,7 +121,7 @@ func PerEntryKey(key string) bool { return perEntryDiffKeys[key] }
 // from lower (the layer below). Scalar / slice / map / pointer / struct fields
 // are compared generically by reflecting over Config keyed by the mapstructure
 // tag, so a new field is tracked the moment it is added — no per-field branch
-// to forget (the gap that once dropped agent and managed_statusline). Shells
+// to forget (the gap that once dropped managed_statusline). Shells
 // and mounts keep per-entry attribution.
 func diffLayer(prov Provenance, lower, upper *config.Config, origin Origin) {
 	lv := reflect.ValueOf(*lower)

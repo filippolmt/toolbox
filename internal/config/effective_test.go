@@ -12,8 +12,6 @@ func TestEffectiveValue(t *testing.T) {
 	}{
 		{"shell unset", &Config{}, "shell", "zsh", true},
 		{"shell set", &Config{Shell: "zsh"}, "shell", "zsh", true},
-		{"agent unset", &Config{}, "agent", DefaultAgent, true},
-		{"agent set", &Config{Agent: "codex"}, "agent", "codex", true},
 		{"pull unset", &Config{}, "pull", PullAuto, true},
 		{"pull set", &Config{Pull: PullAlways}, "pull", "always", true},
 		{"image is exempt", &Config{}, "image", "", false},
@@ -21,7 +19,7 @@ func TestEffectiveValue(t *testing.T) {
 		{"bridge tri-state is exempt", &Config{}, "bridge", "", false},
 		{"mounts collection is exempt", &Config{}, "mounts", "", false},
 		{"unknown key", &Config{}, "nope", "", false},
-		{"nil config", nil, "agent", "", false},
+		{"nil config", nil, "pull", "", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

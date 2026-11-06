@@ -59,15 +59,14 @@ func TestComputeLayeredOrigins(t *testing.T) {
 
 // TestDiffLayerCoversSchema is the anti-drift guard for provenance, symmetric
 // to the renderer/example/validation coverage tests: the reflection walk must
-// attribute every config.SchemaKeys() field (agent and managed_statusline were
-// the fields the old hand-written diffLayer silently dropped). shells/mounts
+// attribute every config.SchemaKeys() field (managed_statusline was
+// the field the old hand-written diffLayer silently dropped). shells/mounts
 // are attributed per entry and asserted separately. A new Config field left
 // out of the fully-populated fixture turns this red.
 func TestDiffLayerCoversSchema(t *testing.T) {
 	yes := true
 	full := &config.Config{
 		Shell:             "zsh",
-		Agent:             "codex",
 		Image:             "img",
 		RegistryMirror:    "mirror",
 		Pull:              "always",
@@ -80,7 +79,6 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		PeerMessaging:     true,
 		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:               map[string]string{"FOO": "bar"},
-		Worktree:          config.WorktreeConfig{Seed: []string{".env"}},
 		InheritHostAuth:   []string{"gh"},
 		Shells:            map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}},
 		Mounts:            []config.Mount{{Name: "extra", Source: "/tmp/x"}},

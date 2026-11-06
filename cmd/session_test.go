@@ -17,7 +17,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
-	"github.com/filippolmt/toolbox/internal/worktree"
 )
 
 // stubDaemon is the daemon double startSession's assembly needs: the client is
@@ -150,54 +149,13 @@ func TestStartSessionResolvesTheProximoGate(t *testing.T) {
 	}
 }
 
-// TestStartSessionOpensAWorktreeSession asserts the two things only a worktree
-// intent adds, both of which the assembly owns: the plan launches the agent in
-// the attached exec, and the gitignored per-repo state is carried into the
-// fresh checkout. Before this seam existed the seeding sat in a second
-// composition root, where it was reachable only through `worktree create`.
-func TestStartSessionOpensAWorktreeSession(t *testing.T) {
-	attached := sessionHarness(t)
-	root := sessionWorkspace(t, "repo")
-	wt := sessionWorkspace(t, "repo/.worktrees/tbx-feat")
-
-	// A real repo: the seeding gate is `git check-ignore`, so an ignored file
-	// is the only kind that may be carried.
-	gitInitRepo(t, root, ".claude/\n")
-	writeFile(t, filepath.Join(root, worktree.LocalSettingsRel), `{"permissions":{}}`)
-
-	err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
-		Cfg:       &config.Config{Shell: "zsh"},
-		Workspace: wt,
-		Worktree:  &sessionplan.WorktreeSession{RepoRoot: root, Agent: "claude"},
-	}})
-	if err != nil {
-		t.Fatalf("startSession: %v", err)
-	}
-
-	plan := *attached
-	if plan == nil {
-		t.Fatal("the session never attached")
-	}
-	if !plan.LaunchesAgent() {
-		t.Errorf("ExecCmd = %v; a worktree intent must plan the agent launch", plan.ExecCmd)
-	}
-	seeded := filepath.Join(wt, worktree.LocalSettingsRel)
-	if _, err := os.Stat(seeded); err != nil {
-		t.Errorf("%s was not seeded into the worktree: %v", worktree.LocalSettingsRel, err)
-	}
-}
-
-// TestStartSessionMigratesLegacyStateForEveryIntent locks the first of the two
-// divergences this module closed: the relocation of toolbox-own state into the
-// ~/.toolbox/toolbox namespace used to run on the `shell` path only, so a
-// worktree session left it to whichever `toolbox shell` came next — and until
-// one did, the state mount and the pull cache were resolved against a root the
-// migration had not reached yet.
+// TestStartSessionMigratesLegacyStateForEveryIntent locks the relocation of
+// toolbox-own state into the ~/.toolbox/toolbox namespace inside the
+// composition root, so no entry point can reach the state mount and the pull
+// cache before the migration has run.
 func TestStartSessionMigratesLegacyStateForEveryIntent(t *testing.T) {
 	sessionHarness(t)
-	root := sessionWorkspace(t, "repo")
-	wt := sessionWorkspace(t, "repo/.worktrees/tbx-feat")
-	gitInitRepo(t, root, "")
+	wt := sessionWorkspace(t, "repo")
 
 	home := os.Getenv("HOME")
 	legacy := filepath.Join(home, ".toolbox", "state", "pull-cache", "marker")
@@ -206,7 +164,6 @@ func TestStartSessionMigratesLegacyStateForEveryIntent(t *testing.T) {
 	err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
 		Cfg:       &config.Config{Shell: "zsh"},
 		Workspace: wt,
-		Worktree:  &sessionplan.WorktreeSession{RepoRoot: root, Agent: "claude"},
 	}})
 	if err != nil {
 		t.Fatalf("startSession: %v", err)
@@ -216,10 +173,6 @@ func TestStartSessionMigratesLegacyStateForEveryIntent(t *testing.T) {
 	mustAbsent(t, filepath.Join(home, ".toolbox", "state"))
 }
 
-// TestStartSessionOffersTheBridgeTipForEveryIntent locks the second: the
-// install hint for the host-side bridge used to reach the `shell` path only,
-// so a developer whose every session is a worktree session was never told the
-// forwarding they had enabled in config was not installed.
 func TestStartSessionRemovesLegacyRTKState(t *testing.T) {
 	sessionHarness(t)
 	ws := sessionWorkspace(t, "ws")
@@ -235,18 +188,18 @@ func TestStartSessionRemovesLegacyRTKState(t *testing.T) {
 	mustAbsent(t, filepath.Join(os.Getenv("HOME"), ".toolbox", "rtk"))
 }
 
+// TestStartSessionOffersTheBridgeTipForEveryIntent locks the install hint for
+// the host-side bridge inside the composition root, so a session with
+// forwarding enabled in config is told when the bridge is not installed.
 func TestStartSessionOffersTheBridgeTipForEveryIntent(t *testing.T) {
 	sessionHarness(t)
-	root := sessionWorkspace(t, "repo")
-	wt := sessionWorkspace(t, "repo/.worktrees/tbx-feat")
-	gitInitRepo(t, root, "")
+	wt := sessionWorkspace(t, "repo")
 
 	enabled := true
 	stderr := captureCmdStderr(t, func() {
 		err := startSession(sessionIntent{Plan: sessionplan.PlanInput{
 			Cfg:       &config.Config{Shell: "zsh", Bridge: &enabled},
 			Workspace: wt,
-			Worktree:  &sessionplan.WorktreeSession{RepoRoot: root, Agent: "claude"},
 		}})
 		if err != nil {
 			t.Errorf("startSession: %v", err)
@@ -317,5 +270,33 @@ func TestStartSessionLeavesNoPlanSideEffectsWhenTheClientFails(t *testing.T) {
 	// is nothing to relocate, and the profile notice only stats.
 	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".toolbox")); !os.IsNotExist(err) {
 		t.Errorf("the mount root was materialised before the client was constructed (stat err = %v)", err)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustExist(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected %s: %v", path, err)
+	}
+	if string(got) != want {
+		t.Errorf("%s content = %q, want %q", path, got, want)
+	}
+}
+
+func mustAbsent(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected %s absent, stat err = %v", path, err)
 	}
 }

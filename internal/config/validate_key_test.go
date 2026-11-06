@@ -17,7 +17,6 @@ func TestValidateKeyAgreesWithTheValidationTail(t *testing.T) {
 		{"image", "ghcr.io/acme/box:v1", "http://ghcr.io/acme/box:v1"},
 		{"registry_mirror", "harbor.corp.io/ghcr-proxy", "/harbor.corp.io"},
 		{"pull", "never", "sometimes"},
-		{"agent", SupportedAgents[0], "notanagent"},
 		{"shell", SupportedShells[0], "bash"},
 		{"mounts_root", "~/toolbox-state", "relative/dir"},
 	}

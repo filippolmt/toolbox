@@ -29,8 +29,8 @@ func walkCommands(c *cobra.Command, visit func(*cobra.Command)) {
 // The implication runs one way only, and --where is the antecedent: it is what
 // makes a command a config writer at all, and every edit such a command applies
 // is a Pending Mutation — something that can be rendered instead of written,
-// for free. The converse is not a rule: `toolbox worktree prune --dry-run`
-// previews removals on disk and has no config file to target.
+// for free. The converse is not a rule: a --dry-run that previews a host-side
+// act has no config file to target.
 func TestEveryConfigWriterCommandOffersDryRun(t *testing.T) {
 	writers := 0
 	walkCommands(rootCmd, func(c *cobra.Command) {

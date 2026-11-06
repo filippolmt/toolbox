@@ -49,10 +49,6 @@ type keyDescriptor struct {
 	// detailEntries. Defaults to the row's List; nil for keys with no entries to
 	// name.
 	entries func(*config.Config) []string
-	// scopeEntries names the field, nested inside the key's own node, whose
-	// entries the per-scope count reports. Empty means the key's node itself —
-	// only worktree names one, because the UI presents its seed list alone.
-	scopeEntries string
 	// hint is the parenthesised placeholder a free-text scalar shows when it is
 	// empty and has no default value to echo.
 	hint string
@@ -104,15 +100,11 @@ var keyDescriptors = map[string]keyDescriptor{
 		noun:    "shell",
 		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Shells)) },
 	},
-	// shell / agent / pull carry a fallback, so their effective display comes
+	// shell / pull carry a fallback, so their effective display comes
 	// from the one config.EffectiveValue seam (guarded by TestRendererParity);
 	// the row's Str is the raw value the editor prefills with.
 	"shell": {
 		options: func() []string { return config.SupportedShells },
-		mutator: scalarFromChoice,
-	},
-	"agent": {
-		options: func() []string { return config.SupportedAgents },
 		mutator: scalarFromChoice,
 	},
 	"pull": {
@@ -162,14 +154,6 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		noun:    "var",
 		entries: func(c *config.Config) []string { return slices.Collect(maps.Keys(c.Env)) },
-	},
-	"worktree": {
-		mutator: func(e *editor, _ *config.Config) configedit.Mutator {
-			return configedit.WorktreeSeed(rowsToValues(e.rows))
-		},
-
-		noun:         "seed path",
-		scopeEntries: "seed",
 	},
 }
 
@@ -230,16 +214,7 @@ func (d keyDescriptor) scopeDisplay(vals map[string]configedit.FileValue, key st
 	if d.noun == "" {
 		return vals[key].Scalar
 	}
-	return countLabel(vals[d.scopeEntriesPath(key)].Entries, d.noun)
-}
-
-// scopeEntriesPath is where in the file the key's entries live: the key's own
-// node, unless the row names a field nested inside it.
-func (d keyDescriptor) scopeEntriesPath(key string) string {
-	if d.scopeEntries == "" {
-		return key
-	}
-	return key + "." + d.scopeEntries
+	return countLabel(vals[key].Entries, d.noun)
 }
 
 // countOf is how many entries a collection holds: its own counter when the key

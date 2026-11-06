@@ -11,7 +11,7 @@ import (
 // entries must count them in a scope file too — a countable key whose
 // descriptor points the count at the wrong node in that file would show a bare
 // "0" in the "in <scope>" line. One entry each, so the singular label is
-// exercised, and worktree is the case that proves a nested list is reached.
+// exercised.
 func TestEveryCountedKeyCountsItsScopeEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".toolbox.yaml")
 	writeFile(t, path, `mounts:
@@ -24,8 +24,6 @@ sdd:
   gsd: true
 env:
   REGION: eu
-worktree:
-  seed: [.env.local]
 `)
 	got, err := scopeStates(path)
 	if err != nil {
@@ -43,27 +41,6 @@ worktree:
 	}
 }
 
-// TestNestedCollectionCountsTheFieldItPresents: worktree is the key whose
-// entries do not live on its own node — the UI presents its seed list, and the
-// row says so with scopeEntries. One entry each is not enough to catch a count
-// taken from the wrong node: `worktree: {seed: [x]}` holds one pair *and* one
-// seed, so both readings agree. Two seeds under the one mapping key tell them
-// apart.
-func TestNestedCollectionCountsTheFieldItPresents(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".toolbox.yaml")
-	writeFile(t, path, "worktree:\n  seed: [.env.local, .env.test]\n")
-
-	got, err := scopeStates(path)
-	if err != nil {
-		t.Fatalf("scopeStates: %v", err)
-	}
-	want := countLabel(2, keyDescriptors["worktree"].noun)
-	if got["worktree"].display != want {
-		t.Errorf("per-scope display of worktree = %q, want %q — the count must come "+
-			"from the seed list, not from the worktree mapping", got["worktree"].display, want)
-	}
-}
-
 // TestEveryCollectionKeyListsItsEntries: a key whose list row is a count must
 // name those entries in the detail pane — a count with no names behind it is
 // the row a missing descriptor field produces.
@@ -74,11 +51,10 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 		Shells:          map[string]config.NamedShell{"work": {Path: "/bin/zsh"}},
 		SDD:             map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:             map[string]string{"REGION": "eu"},
-		Worktree:        config.WorktreeConfig{Seed: []string{".env.local"}},
 	}
 	want := map[string]string{
 		"mounts": "ssh", "inherit_host_auth": "claude", "shells": "work",
-		"sdd": "gsd", "env": "REGION", "worktree": ".env.local",
+		"sdd": "gsd", "env": "REGION",
 	}
 	for _, key := range Keys() {
 		if keyDescriptors[key].noun == "" {

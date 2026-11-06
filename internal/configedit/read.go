@@ -22,7 +22,7 @@ type FileValue struct {
 
 // FileValues reports what one config file sets, keyed by the path of the node
 // that sets it: a top-level Config Schema key, or a dotted path into a nested
-// mapping (worktree.seed). Presence in the map answers "does this layer's file
+// mapping (shells.<name>.path). Presence in the map answers "does this layer's file
 // set K" — a structural read of the file, not a comparison against the
 // defaults, so a file that spells out a default value still counts as setting
 // it. A missing file sets nothing and is not an error, so a layer with no file
@@ -85,7 +85,7 @@ func documentMapping(root *yaml.Node) *yaml.Node {
 
 // collectFileValues records every key of a mapping under its dotted path, then
 // descends into the nested mappings so a caller can ask about a field inside a
-// container (worktree.seed) without walking nodes itself.
+// container (shells.<name>.path) without walking nodes itself.
 func collectFileValues(out map[string]FileValue, prefix string, mapping *yaml.Node) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key, value := mapping.Content[i].Value, mapping.Content[i+1]

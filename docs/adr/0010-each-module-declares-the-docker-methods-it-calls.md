@@ -1,6 +1,9 @@
 # Each module declares the Docker methods it calls; the edge keeps the full client
 
-Status: accepted, amended below
+Status: accepted, amended below; superseded in part by
+[ADR 0018](0018-worktrees-belong-to-worktrunk-not-toolbox.md), which removed
+`internal/worktree` and with it `worktree.Git` and the second full-client
+holder this ADR describes.
 Date: 2026-09-04
 
 Figures in this document are measurements taken when the decision was made,

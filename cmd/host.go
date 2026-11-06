@@ -23,7 +23,7 @@ import (
 // fsx.Host{} would resolve no binaries, so `mounts list` on a host with a
 // broken $HOME would silently lose the proximo CA mount it used to show.
 //
-// Every command that must have a home — shell, worktree, bridge — calls
+// Every command that must have a home — shell, bridge — calls
 // fsx.CurrentHost directly and surfaces the error.
 func hostBestEffort() fsx.Host {
 	host, err := fsx.CurrentHost()

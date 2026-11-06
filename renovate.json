@@ -377,6 +377,14 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
+      "matchStrings": ["ARG\\s+WORKTRUNK_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "max-sixty/worktrunk",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^internal/build/assets/Dockerfile$/"],
       "matchStrings": ["ARG\\s+GOPLS_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "go",
       "packageNameTemplate": "golang.org/x/tools/gopls",

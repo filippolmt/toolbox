@@ -96,6 +96,7 @@ ARG ZSH_SYNTAX_HIGHLIGHTING_COMMIT=e6683f20e5c38d3e5447f45845d04ddda75d0f23
 ARG ZSH_COMPLETIONS_COMMIT=989b23277ab33e8d5e82df6aed936e846db9d8b8
 ARG FZF_TAB_COMMIT=24105b15714bfec37989ed5c5b6e60f572253019
 ARG ZOXIDE_VERSION=0.10.0
+ARG WORKTRUNK_VERSION=0.81.0
 ARG SHELLCHECK_VERSION=0.11.0
 # shellcheck: use the .tar.gz asset (slim base has no xz for the .xz build).
 ARG SHFMT_VERSION=3.14.1
@@ -392,6 +393,37 @@ RUN set -eux; \
       chmod +x /out/usr/local/bin/gws; \
       rm "/tmp/${GWS_TARBALL}" /tmp/gws.sha256; \
       /out/usr/local/bin/gws --version; \
+      freeze-mtimes
+
+# worktrunk (`wt`, git worktree manager for parallel agents). MUSL static
+# build, checksum verified against the per-asset .sha256 upstream publishes.
+# Upstream ships only .tar.xz: xz-utils installed here stays out of the final
+# image (fetch-stage convention). Only `wt` is kept — `git-wt` is the same
+# binary under another name, for hosts where `wt` collides (Windows Terminal).
+FROM fetch-base AS fetch-worktrunk
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG WORKTRUNK_VERSION
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-worktrunk \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=fetch-apt-lists-worktrunk \
+    set -eux; \
+      apt-get update -qqy; \
+      apt-get install -qqy --no-install-recommends xz-utils; \
+      case "${TARGETARCH}" in \
+        amd64) WT_ARCH=x86_64-unknown-linux-musl;; \
+        arm64) WT_ARCH=aarch64-unknown-linux-musl;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" && exit 1;; \
+      esac; \
+      WT_TARBALL="worktrunk-${WT_ARCH}.tar.xz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o "/tmp/${WT_TARBALL}" \
+        "https://github.com/max-sixty/worktrunk/releases/download/v${WORKTRUNK_VERSION}/${WT_TARBALL}"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/worktrunk.sha256 \
+        "https://github.com/max-sixty/worktrunk/releases/download/v${WORKTRUNK_VERSION}/${WT_TARBALL}.sha256"; \
+      cd /tmp && sha256sum -c worktrunk.sha256; \
+      tar -xJf "/tmp/${WT_TARBALL}" -C /out/usr/local/bin --strip-components=1 "worktrunk-${WT_ARCH}/wt"; \
+      chmod +x /out/usr/local/bin/wt; \
+      rm "/tmp/${WT_TARBALL}" /tmp/worktrunk.sha256; \
+      /out/usr/local/bin/wt --version; \
       freeze-mtimes
 
 # atuin (SQLite-backed Ctrl-R). MUSL — same GLIBC mismatch as gws.
@@ -2038,6 +2070,7 @@ COPY --link --from=fetch-bun      /out/ /
 COPY --link --from=fetch-uv       /out/ /
 COPY --link --from=fetch-sonar    /out/ /
 COPY --link --from=fetch-zoxide   /out/ /
+COPY --link --from=fetch-worktrunk /out/ /
 COPY --link --from=fetch-herdr    /out/ /
 COPY --link --from=fetch-tini     /out/ /
 COPY --link --from=fetch-go       /out/ /

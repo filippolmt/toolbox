@@ -699,6 +699,10 @@ check_optional  "glab flock shim" glab grep -c "flock -w 10 9" /usr/local/bin/gl
 check_optional  "glab real binary" glab test -x /usr/local/libexec/glab
 check_optional  "gws"       gws      gws --version
 check_optional  "atuin"     atuin    atuin --version
+check_optional  "worktrunk" wt       wt --version
+# wt changes directory only through its shell function; this runs the init the
+# zshrc evals, so a bump that breaks `wt config shell init zsh` fails here.
+check_optional  "worktrunk shell integration" wt zsh -c '"'"'eval "$(wt config shell init zsh)" && whence -w wt | grep -x "wt: function"'"'"'
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version

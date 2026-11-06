@@ -23,13 +23,13 @@ func render(t *testing.T, src string, m Mutator) string {
 }
 
 func TestScalarWritesAndEmptyRemoves(t *testing.T) {
-	got := render(t, "# keep me\npull: always\n", Scalar("agent", "codex"))
-	for _, want := range []string{"# keep me", "pull: always", "agent: codex"} {
+	got := render(t, "# keep me\npull: always\n", Scalar("image", "ghcr.io/x/y:1"))
+	for _, want := range []string{"# keep me", "pull: always", "image: ghcr.io/x/y:1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	if got := render(t, "agent: codex\n", Scalar("agent", "")); strings.Contains(got, "agent") {
+	if got := render(t, "image: ghcr.io/x/y:1\n", Scalar("image", "")); strings.Contains(got, "image") {
 		t.Errorf("an empty value must remove the key:\n%s", got)
 	}
 }
@@ -69,23 +69,6 @@ func TestStringMapIsSortedAndEmptyRemoves(t *testing.T) {
 	}
 	if got := render(t, got, StringMap("env", nil)); strings.Contains(got, "env") {
 		t.Errorf("an empty map must remove the key:\n%s", got)
-	}
-}
-
-// worktree exists only to hold seed today, so emptying seed must not leave an
-// orphan block behind.
-func TestWorktreeSeedNestsAndEmptyDropsTheBlock(t *testing.T) {
-	got := render(t, "", WorktreeSeed([]string{".env", "openspec"}))
-	if !strings.Contains(got, "worktree:") || !strings.Contains(got, "seed:") {
-		t.Errorf("worktree.seed must be nested:\n%s", got)
-	}
-	if got := render(t, got, WorktreeSeed(nil)); strings.Contains(got, "worktree") {
-		t.Errorf("an empty seed must drop the worktree block:\n%s", got)
-	}
-	// A sibling key means the block is still wanted.
-	kept := render(t, "worktree:\n  seed:\n    - .env\n  other: keep\n", WorktreeSeed(nil))
-	if !strings.Contains(kept, "other: keep") {
-		t.Errorf("a worktree block with other keys must survive:\n%s", kept)
 	}
 }
 
@@ -206,7 +189,7 @@ func TestSDDEnabledLeavesCustomStepsAlone(t *testing.T) {
 }
 
 func TestScalarsWritesEveryEditAndEmptyRemoves(t *testing.T) {
-	got := render(t, "# keep me\nagent: codex\n", Scalars([]ScalarEdit{
+	got := render(t, "# keep me\nshell: zsh\n", Scalars([]ScalarEdit{
 		{"image", "ghcr.io/x/y:1"},
 		{"registry_mirror", "harbor.corp.io/ghcr-proxy"},
 		{"pull", "never"},
@@ -388,10 +371,6 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 	mapMut := StringMap("env", pairs)
 	pairs["FOO"] = "mutated"
 
-	seed := []string{".env"}
-	seedMut := WorktreeSeed(seed)
-	seed[0] = "mutated"
-
 	shellEnv := map[string]string{"REGION": "eu"}
 	shellsMut := Shells([]ShellEntry{{Name: "prod", Path: "/p", OrigName: "old", Env: shellEnv}})
 	shellEnv["REGION"] = "mutated"
@@ -424,7 +403,6 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 	}{
 		"StringList":     {listMut, "claude"},
 		"StringMap":      {mapMut, "FOO: bar"},
-		"WorktreeSeed":   {seedMut, ".env"},
 		"Shells":         {shellsMut, "REGION: eu"},
 		"SDDEnabled":     {sddMut, sddKey + ": true"},
 		"MountsDisabled": {mountsMut, "disabled: true"},
@@ -469,11 +447,11 @@ func TestRenderReturnsTheBytesApplyCheckedWrites(t *testing.T) {
 				src = []byte(tc.content)
 			}
 
-			want, err := Render(path, src, !tc.absent, Scalar("agent", "codex"))
+			want, err := Render(path, src, !tc.absent, Scalar("pull", "never"))
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
-			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("pull", "never")); err != nil {
 				t.Fatalf("ApplyChecked: %v", err)
 			}
 			got, err := os.ReadFile(path)

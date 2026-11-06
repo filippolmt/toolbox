@@ -85,8 +85,8 @@ func TestFileValuesReportsOnlyWhatTheFileSets(t *testing.T) {
 	if v, ok := got["pull"]; !ok || v.Scalar != "never" {
 		t.Errorf("file must set pull=never, got %+v (present: %v)", v, ok)
 	}
-	if _, ok := got["agent"]; ok {
-		t.Errorf("a key the file does not mention must be absent, got %+v", got["agent"])
+	if _, ok := got["image"]; ok {
+		t.Errorf("a key the file does not mention must be absent, got %+v", got["image"])
 	}
 }
 
@@ -133,8 +133,9 @@ func TestFileValuesCountsCollectionEntries(t *testing.T) {
   REGION: eu
   TIER: dev
 inherit_host_auth: [claude, gh, git]
-worktree:
-  seed: [.env.local]
+shells:
+  infra:
+    env: {REGION: eu}
 `)
 	got, err := FileValues(path)
 	if err != nil {
@@ -146,8 +147,8 @@ worktree:
 	}{
 		{"env", 2},
 		{"inherit_host_auth", 3},
-		{"worktree", 1},
-		{"worktree.seed", 1},
+		{"shells", 1},
+		{"shells.infra.env", 1},
 	} {
 		if got[tc.key].Entries != tc.want {
 			t.Errorf("%s holds %d entries, want %d", tc.key, got[tc.key].Entries, tc.want)

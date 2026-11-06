@@ -18,15 +18,6 @@ func pairsToRows(m map[string]string) [][2]string {
 	return rows
 }
 
-// valuesToRows wraps a list into single-column rows (value in column 0).
-func valuesToRows(vals []string) [][2]string {
-	rows := make([][2]string, 0, len(vals))
-	for _, v := range vals {
-		rows = append(rows, [2]string{v, ""})
-	}
-	return rows
-}
-
 // columnZero snapshots the column-0 value of each row — the per-row original
 // name used to carry a renamed shell's env overlay.
 func columnZero(rows [][2]string) []string {
@@ -43,7 +34,7 @@ func rowsEditorState(key string, pair bool, rows [][2]string) editor {
 	return editor{key: key, kind: config.EditorRows, rowPair: pair, rows: rows, orig: columnZero(rows)}
 }
 
-// updateRows drives the collection editor for env / shells / worktree.seed. It
+// updateRows drives the collection editor for env / shells. It
 // has two sub-modes: navigating the row list, and typing into a field.
 func (m Model) updateRows(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.ed.rowEdit {
@@ -191,16 +182,6 @@ func rowsToPairs(rows [][2]string) map[string]string {
 	for _, r := range rows {
 		if r[0] != "" {
 			out[r[0]] = r[1]
-		}
-	}
-	return out
-}
-
-func rowsToValues(rows [][2]string) []string {
-	out := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r[0] != "" {
-			out = append(out, r[0])
 		}
 	}
 	return out

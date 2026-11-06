@@ -65,11 +65,11 @@ equals "-B -p 8976:8976"; "--oauth oci" equals "-p 8181:8181" — oci binds
 }
 
 // runShell resolves the `shell` flags into a sessionIntent and hands it to
-// startSession, which owns everything the two interactive entry points do with
-// one. Nothing below this line talks to Docker: what stays here is the flag
-// surface only — pure expansion first, then the one bootstrap that writes
-// config, in that order, so an unknown --oauth tool or a bad --profile fails
-// before a named shell is created on disk.
+// startSession, which owns everything done with it. Nothing below this line
+// talks to Docker: what stays here is the flag surface only — pure expansion
+// first, then the one bootstrap that writes config, in that order, so an
+// unknown --oauth tool or a bad --profile fails before a named shell is created
+// on disk.
 func runShell(cmd *cobra.Command, args []string) error {
 	// Expand --oauth presets first: ExpandOAuth is pure, so an unknown tool
 	// fails fast before any fs side effects or container creation.
