@@ -2,6 +2,9 @@ package build
 
 import (
 	"io/fs"
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -199,4 +202,28 @@ func finalStage(t *testing.T) string {
 		t.Fatal("Dockerfile: cannot locate the final stage — no FROM found")
 	}
 	return body[from+1:]
+}
+
+// TestEveryGraphifySkillDirIsGitignored holds the image-build rule "each
+// agent's graphify skill directory is gitignored, one entry per agent root" to
+// the artefacts 30-graphify.sh actually refreshes. Without it a moved skill
+// root (upstream relocated pi's once) leaves the new copy untracked in every
+// opted-in repo, and nothing else notices.
+func TestEveryGraphifySkillDirIsGitignored(t *testing.T) {
+	ignore, err := os.ReadFile("../../.gitignore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(ignore), "\n")
+	script := readAsset(t, "init.d/30-graphify.sh")
+	artefacts := regexp.MustCompile(`toolbox_install_refresh \S+ "\$PWD/(\S+/)SKILL\.md"`).FindAllStringSubmatch(script, -1)
+	// Every refresh call must be read, or a reshaped one drops out unchecked.
+	if calls := strings.Count(script, "toolbox_install_refresh graphify"); len(artefacts) == 0 || len(artefacts) != calls {
+		t.Fatalf("30-graphify.sh: %d toolbox_install_refresh calls, %d artefact paths read — the pattern no longer matches the script", calls, len(artefacts))
+	}
+	for _, m := range artefacts {
+		if !slices.Contains(lines, m[1]) {
+			t.Errorf(".gitignore has no %q entry for the skill dir 30-graphify.sh refreshes", m[1])
+		}
+	}
 }
