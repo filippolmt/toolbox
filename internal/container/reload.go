@@ -40,11 +40,8 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 		Cwd:         cwd,
 		ImageDigest: sessionplan.EnvValue(plan.Env, sessionplan.ImageDigestEnv),
 		CLIVersion:  sessionplan.EnvValue(plan.Env, sessionplan.CLIVersionEnv),
-		// The launch mode, not the developer's intent: only a session that
-		// auto-launched an agent gets one back, so a plain shell reloads into a
-		// plain shell. The re-entry argv is cmd's half of the payload — it is
-		// the only field this layer has no business constructing.
-		Resume: plan.LaunchesAgent(),
+		// The re-entry argv is cmd's half of the payload — it is the only
+		// field this layer has no business constructing.
 	}
 }
 

@@ -166,7 +166,7 @@ func TestPreviewOnCommentOnlyTargetNamesTheLinesItRemoves(t *testing.T) {
 // cancel it out and hide a change the user is about to get — which is the reason
 // the before side is the file's own bytes.
 func TestPreviewShowsNormalisationTheWritePerforms(t *testing.T) {
-	base := []byte("# global\npull: always\n\nagent: claude\n")
+	base := []byte("# global\npull: always\n\nshell: zsh\n")
 	m := typeText(editorFor(t, "image", &config.Config{}), "ghcr.io/acme/box:v1")
 
 	lines := previewLines(t, m, base)
@@ -215,11 +215,11 @@ func TestPreviewPanelCarriesTheTargetStateFromOpenEditor(t *testing.T) {
 // current effective value, so saving straight away writes nothing — and the
 // panel must say so rather than show an unchanged fragment.
 func TestPreviewPanelReportsNoChangeForAnUntouchedEditor(t *testing.T) {
-	// The fixture sets agent: claude, so the freshly opened cursor sits on it.
-	m, _ := openedEditor(t, previewCase{key: "agent", open: leaveAsOpened}, true)
+	// The fixture sets pull: always, so the freshly opened cursor sits on it.
+	m, _ := openedEditor(t, previewCase{key: "pull", open: leaveAsOpened}, true)
 
 	wantOnScreen(t, m, "pending change", "no change")
-	notOnScreen(t, m, "+ agent:")
+	notOnScreen(t, m, "+ pull:")
 }
 
 // previewCase is one editable key: the editor state a user would reach, and the
@@ -301,11 +301,6 @@ func requireHostAuthPath(t *testing.T, home, key string) {
 func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 	cases := []previewCase{
 		{
-			key:  "agent",
-			open: chooseValue("codex"),
-			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("agent", "codex")) },
-		},
-		{
 			key:  "pull",
 			open: chooseValue("never"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("pull", "never")) },
@@ -382,11 +377,6 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			save: func(m Model) error {
 				return apply(m.target, m.cwd, configedit.StringMap("env", map[string]string{"REGION": "eu"}))
 			},
-		},
-		{
-			key:  "worktree",
-			open: addRow(".env.local"),
-			save: func(m Model) error { return apply(m.target, m.cwd, configedit.WorktreeSeed([]string{".env.local"})) },
 		},
 		{
 			key:   "shells",
@@ -466,7 +456,7 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
 	if targetExists {
-		writeFile(t, target, "# existing config\nagent: claude\n")
+		writeFile(t, target, "# existing config\npull: always\n")
 	}
 
 	cfg, _, err := Snapshot(repo, "")

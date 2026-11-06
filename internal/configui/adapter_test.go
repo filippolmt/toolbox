@@ -135,14 +135,14 @@ func TestSnapshotEnv(t *testing.T) {
 func TestSnapshotEnvIgnoresUnboundKey(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
-	t.Setenv("TOOLBOX_AGENT", "codex") // agent is NOT env-bound
+	t.Setenv("TOOLBOX_MOUNTS_ROOT", "/elsewhere") // mounts_root is NOT env-bound
 
 	_, states, err := Snapshot(repo, "")
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if agent := stateFor(t, states, "agent"); agent.FromEnv {
-		t.Errorf("agent must NOT be FromEnv (not in config.EnvBoundKeys), got %+v", agent)
+	if root := stateFor(t, states, "mounts_root"); root.FromEnv {
+		t.Errorf("mounts_root must NOT be FromEnv (not in config.EnvBoundKeys), got %+v", root)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestApplyRemoveDropsOnlyTheNamedKey(t *testing.T) {
 	isolatedHome(t)
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
-	writeFile(t, target, "pull: always\nagent: codex\n")
+	writeFile(t, target, "pull: always\nimage: img\n")
 
 	if err := apply(target, repo, configedit.Remove("pull")); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -231,7 +231,7 @@ func TestApplyRemoveDropsOnlyTheNamedKey(t *testing.T) {
 	if strings.Contains(got, "pull:") {
 		t.Errorf("pull key must be gone:\n%s", got)
 	}
-	if !strings.Contains(got, "agent: codex") {
+	if !strings.Contains(got, "image: img") {
 		t.Errorf("sibling key must survive:\n%s", got)
 	}
 }
@@ -251,15 +251,11 @@ func TestHostAuthOptions(t *testing.T) {
 	}
 }
 
-// TestRowsRoundTrip: the row helpers are inverse conversions.
+// TestRowsRoundTrip: the pair helpers are inverse conversions.
 func TestRowsRoundTrip(t *testing.T) {
 	pairs := map[string]string{"A": "1", "B": "2"}
 	if got := rowsToPairs(pairsToRows(pairs)); len(got) != 2 || got["A"] != "1" || got["B"] != "2" {
 		t.Errorf("pair round-trip failed: %v", got)
-	}
-	vals := []string{"x", "y"}
-	if got := rowsToValues(valuesToRows(vals)); !slices.Equal(got, vals) {
-		t.Errorf("value round-trip failed: %v", got)
 	}
 }
 
@@ -342,7 +338,7 @@ func TestScopeStatesPerFile(t *testing.T) {
 	globalPath := filepath.Join(repo, "global.yaml")
 	repoPath := filepath.Join(repo, ".toolbox.yaml")
 	writeFile(t, globalPath, "pull: never\n")
-	writeFile(t, repoPath, "agent: codex\n")
+	writeFile(t, repoPath, "image: img\n")
 
 	global, err := scopeStates(globalPath)
 	if err != nil {
@@ -351,16 +347,16 @@ func TestScopeStatesPerFile(t *testing.T) {
 	if !global["pull"].set || global["pull"].display != "never" {
 		t.Errorf("global scope must set pull=never, got %+v", global["pull"])
 	}
-	if global["agent"].set {
-		t.Errorf("global scope must NOT set agent, got %+v", global["agent"])
+	if global["image"].set {
+		t.Errorf("global scope must NOT set image, got %+v", global["image"])
 	}
 
 	rep, err := scopeStates(repoPath)
 	if err != nil {
 		t.Fatalf("scopeStates repo: %v", err)
 	}
-	if !rep["agent"].set || rep["agent"].display != "codex" {
-		t.Errorf("repo scope must set agent=codex, got %+v", rep["agent"])
+	if !rep["image"].set || rep["image"].display != "img" {
+		t.Errorf("repo scope must set image=img, got %+v", rep["image"])
 	}
 	if rep["pull"].set {
 		t.Errorf("repo scope must NOT set pull, got %+v", rep["pull"])
@@ -432,13 +428,10 @@ func TestReadOnlyAndEnumDefault(t *testing.T) {
 	if !ReadOnlyKey("shell") {
 		t.Error("shell has one supported value — want ReadOnlyKey true")
 	}
-	for _, k := range []string{"agent", "pull", "image"} {
+	for _, k := range []string{"pull", "image"} {
 		if ReadOnlyKey(k) {
 			t.Errorf("%s must be editable — want ReadOnlyKey false", k)
 		}
-	}
-	if got := EnumDefault("agent"); got != config.DefaultAgent {
-		t.Errorf("EnumDefault(agent) = %q, want %q", got, config.DefaultAgent)
 	}
 	if got := EnumDefault("pull"); got != config.PullAuto {
 		t.Errorf("EnumDefault(pull) = %q, want %q", got, config.PullAuto)
@@ -463,8 +456,8 @@ func TestSnapshotPopulatesDoc(t *testing.T) {
 	if !shell.ReadOnly {
 		t.Error("shell state must be ReadOnly")
 	}
-	if agent := stateFor(t, states, "agent"); agent.ReadOnly {
-		t.Error("agent state must not be ReadOnly")
+	if pull := stateFor(t, states, "pull"); pull.ReadOnly {
+		t.Error("pull state must not be ReadOnly")
 	}
 }
 

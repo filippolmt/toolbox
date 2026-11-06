@@ -38,7 +38,7 @@ func TestRendererParity(t *testing.T) {
 	fixtures := map[string]*config.Config{
 		"unset":   {},
 		"planned": {Shell: "zsh", Pull: config.PullAuto},
-		"full":    {Shell: "zsh", Agent: "codex", Pull: config.PullAlways},
+		"full":    {Shell: "zsh", Pull: config.PullAlways},
 	}
 	for name, cfg := range fixtures {
 		for _, key := range config.SchemaKeys() {

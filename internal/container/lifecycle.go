@@ -413,7 +413,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	stopReclaim := beginReclaim(ctx, cli, plan, sessionDigest)
 	defer stopReclaim()
 
-	execErr := execShellFn(ctx, cli, containerID, plan.EffectiveCmd())
+	execErr := execShellFn(ctx, cli, containerID, plan.Cmd)
 
 	// The shell writes a marker on its way out and exits; this is the moment
 	// the host already decides between teardown and something else, so it is

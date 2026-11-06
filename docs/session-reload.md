@@ -133,31 +133,20 @@ state of a working shell, so a confirmation would fire on nearly every reload.
 It exists for the one thing you have forgotten — a `Ctrl+Z`-suspended agent, a
 detached job — invisible at the prompt where you typed the command.
 
-### Your agent
+### Your session
 
-A `toolbox worktree` session auto-launches an agent, so a reload relaunches it
-and **resumes** the most recent conversation (`claude --continue`,
-`codex resume --last`). A plain `toolbox shell` reloads into a plain shell: the
-reload reproduces how the session was started, it does not guess what you were
-doing.
+A reload reproduces how the session was started, not what you were doing in
+it: you land back in a plain shell, and an agent you were running is yours to
+relaunch (`claude --continue`, `codex resume --last`).
 
 "How the session was started" includes the flags you typed. A session opened
 with `--profile work -p 7171 --peer` reloads with all three: `--profile`
 and `--peer` decide the container's name, `--profile` also decides which
 credential root is mounted, and `-p` bindings are fixed at creation — so
 dropping any of them would land you in a *different* container from the one
-the reload just destroyed. Two things are deliberately not replayed: `--create`
+the reload just destroyed. Two flags are deliberately not replayed: `--create`
 and `--path`, whose work is already done (the named shell is in your config by
-then), and `worktree create`, which comes back as `worktree open <branch>` so a
-branch that now exists is not re-created and a prompt your agent has already
-completed is not re-sent. The agent is pinned as *resolved*, so the session
-comes back on the agent it actually ran even if you change the default
-meanwhile.
-
-The resume is conditional on your working directory having been carried:
-`claude --continue` is keyed on the directory, and the workspace is mounted
-twice. When the directory falls back, the agent launches bare — resuming the
-wrong conversation in silence is worse than not resuming.
+then).
 
 ### Peer sessions and the anchor
 

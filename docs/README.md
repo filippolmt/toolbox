@@ -15,6 +15,7 @@ sections.** Every `##` of a linked guide needs an entry
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
+| [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
@@ -24,7 +25,6 @@ sections.** Every `##` of a linked guide needs an entry
 
 - [Global flag: `--config`](commands.md#global-flag---config)
 - [toolbox shell](commands.md#toolbox-shell) — [Profiles](commands.md#profiles) · [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
-- [toolbox worktree](commands.md#toolbox-worktree)
 - [toolbox list](commands.md#toolbox-list)
 - [toolbox stop](commands.md#toolbox-stop)
 - [toolbox build](commands.md#toolbox-build)
@@ -45,7 +45,6 @@ sections.** Every `##` of a linked guide needs an entry
 - [Loading order](configuration.md#loading-order)
 - [Key reference](configuration.md#key-reference)
 - [shell](configuration.md#shell)
-- [agent](configuration.md#agent)
 - [managed_statusline](configuration.md#managed_statusline)
 - [peer_messaging](configuration.md#peer_messaging)
 - [image_reclaim](configuration.md#image_reclaim)
@@ -53,7 +52,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Image selection](configuration.md#image-selection)
 - [browser_bridge (deprecated)](configuration.md#browser_bridge-deprecated)
 - [env: passthrough](configuration.md#env-passthrough)
-- [worktree](configuration.md#worktree)
+- [Retired keys](configuration.md#retired-keys)
 - [TOOLBOX_* environment variables](configuration.md#toolbox_-environment-variables)
 
 ## mounts.md
@@ -103,7 +102,7 @@ sections.** Every `##` of a linked guide needs an entry
 ## session-reload.md
 
 - [What you see](session-reload.md#what-you-see)
-- [toolbox-reload](session-reload.md#toolbox-reload) — [What happens, in order](session-reload.md#what-happens-in-order) · [What survives, and what dies](session-reload.md#what-survives-and-what-dies) · [Your agent](session-reload.md#your-agent) · [Peer sessions and the anchor](session-reload.md#peer-sessions-and-the-anchor) · [Version skew](session-reload.md#version-skew)
+- [toolbox-reload](session-reload.md#toolbox-reload) — [What happens, in order](session-reload.md#what-happens-in-order) · [What survives, and what dies](session-reload.md#what-survives-and-what-dies) · [Your session](session-reload.md#your-session) · [Peer sessions and the anchor](session-reload.md#peer-sessions-and-the-anchor) · [Version skew](session-reload.md#version-skew)
 - [How the prefetch works](session-reload.md#how-the-prefetch-works)
 - [Cache and TTL](session-reload.md#cache-and-ttl)
 - [Opt out](session-reload.md#opt-out)
@@ -115,6 +114,16 @@ sections.** Every `##` of a linked guide needs an entry
 - [CLI usage](sdd.md#cli-usage)
 - [SDD install steps](sdd.md#sdd-install-steps)
 - [SDD .gitignore fence](sdd.md#sdd-gitignore-fence)
+
+## worktrunk.md
+
+- [The workflow](worktrunk.md#the-workflow)
+- [Layout](worktrunk.md#layout)
+- [Shell integration](worktrunk.md#shell-integration)
+- [State that persists](worktrunk.md#state-that-persists)
+- [Agent plugins (opt-in)](worktrunk.md#agent-plugins-opt-in)
+- [Sharing one container](worktrunk.md#sharing-one-container)
+- [Migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree)
 
 ## mobile.md
 

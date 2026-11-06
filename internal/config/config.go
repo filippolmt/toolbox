@@ -28,15 +28,6 @@ import (
 // default. Whitelist lives on catalog.Entry.HostAuthMount.
 type Config struct {
 	Shell string `mapstructure:"shell"`
-	// Agent is the default AI agent auto-launched by `toolbox worktree`
-	// sessions. Resolved with precedence --agent flag > this key > the
-	// DefaultAgent ("claude"); the resolution default lives in cmd so this
-	// key stays empty when unset. `config show` renders its resolved effective
-	// value (falling back to DefaultAgent) so the output reflects what will
-	// launch. Honours the standard config layering, so it can be set globally
-	// (~/.toolbox.yaml) or per-directory (.toolbox.yaml). Validated to
-	// claude|codex|pi.
-	Agent string `mapstructure:"agent"`
 	// Image overrides the container image reference verbatim (full host/path:tag
 	// or digest). Empty = the canonical default. Highest-precedence image
 	// selector — wins over RegistryMirror. Opt-in; a full override is a
@@ -144,26 +135,10 @@ type Config struct {
 	// with the TOOLBOX_ prefix plus PWD — are rejected at validation time to
 	// keep the curated env contract authoritative. Motivating use: opt-in
 	// env-gated CLI features like CLAUDE_CODE_WORKFLOWS=1.
-	Env map[string]string `mapstructure:"env"`
-	// Worktree tunes `toolbox worktree` sessions. Currently only Seed: extra
-	// repo-relative paths to carry from the main repo into a freshly created
-	// worktree, on top of the built-in defaults. Only paths git actually
-	// ignores are copied (see cmd.seedWorktreeFiles); a non-ignored entry is a
-	// silent no-op.
-	Worktree        WorktreeConfig        `mapstructure:"worktree"`
+	Env             map[string]string     `mapstructure:"env"`
 	InheritHostAuth []string              `mapstructure:"inherit_host_auth"`
 	Shells          map[string]NamedShell `mapstructure:"shells"`
 	Mounts          []Mount               `mapstructure:"mounts"`
-}
-
-// WorktreeConfig holds the `worktree:` config block.
-type WorktreeConfig struct {
-	// Seed is a list of extra repo-relative paths to seed into a new worktree,
-	// unioned with the built-in defaults. Validated by ValidateWorktreeSeed:
-	// relative, no `..`, non-empty — these paths drive filesystem reads under
-	// the repo root and writes under the worktree, so traversal must not escape
-	// either tree.
-	Seed []string `mapstructure:"seed"`
 }
 
 // NamedShell is a shell workspace entry configured under shells:<name>.
@@ -258,26 +233,10 @@ func ValidateShell(s string) error {
 		s, strings.Join(SupportedShells, ", "))
 }
 
-// SupportedAgents is the canonical list accepted by the `agent` key and the
-// `--agent` flag: the AI agents baked into the canonical image. Empty
-// resolves to DefaultAgent at use time (cmd/worktree.go resolveAgent).
+// SupportedAgents lists the AI agents baked into the canonical image. Every
+// entry must be wired (Atuin and Herdr adapters) — see Agent Wiring in
+// CONTEXT.md, guarded by TestAgentWiringDeclaresEverySupportedAgent.
 var SupportedAgents = []string{"claude", "codex", "pi"}
-
-// DefaultAgent is the agent launched by `toolbox worktree` when neither
-// --agent nor the agent config key is set.
-const DefaultAgent = "claude"
-
-// ValidateAgent returns nil when s is empty (unset — resolved to DefaultAgent
-// later) or one of SupportedAgents, else an error listing the accepted values.
-// Empty is allowed so the validation tail accepts an unset key; the cmd layer
-// applies the default after the flag/config precedence chain.
-func ValidateAgent(s string) error {
-	if s == "" || slices.Contains(SupportedAgents, s) {
-		return nil
-	}
-	return fmt.Errorf("unsupported agent %q: must be one of %s",
-		s, strings.Join(SupportedAgents, ", "))
-}
 
 // ValidateMountsRoot rejects mounts_root values that would silently bind
 // the wrong path. Empty is allowed (no override). The value must be either
@@ -455,26 +414,6 @@ func ValidateEnv(env map[string]string) error {
 			return fmt.Errorf(
 				"env: key %q is reserved (PWD and the %s prefix are owned by toolbox)",
 				k, ReservedEnvPrefix)
-		}
-	}
-	return nil
-}
-
-// ValidateWorktreeSeed rejects worktree.seed entries that would let the
-// seeding step read or write outside the repo root / worktree: empty strings,
-// absolute paths, and any entry containing a `..` component. Entries are
-// repo-relative and joined onto both the source root and the destination
-// worktree, so traversal must be impossible before either join happens.
-func ValidateWorktreeSeed(paths []string) error {
-	for _, p := range paths {
-		if p == "" {
-			return fmt.Errorf("worktree.seed: empty path is not allowed")
-		}
-		if filepath.IsAbs(p) {
-			return fmt.Errorf("worktree.seed: %q must be a relative path", p)
-		}
-		if slices.Contains(strings.Split(filepath.ToSlash(p), "/"), "..") {
-			return fmt.Errorf("worktree.seed: %q must not contain '..'", p)
 		}
 	}
 	return nil

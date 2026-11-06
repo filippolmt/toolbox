@@ -18,7 +18,7 @@ Deliberately **not** routed through `fsx.Home`: the best-effort `home, _ := os.U
 
 What `fsx.Host` is and why it exists: the **Declared Host** entry in [`CONTEXT.md`](../../CONTEXT.md). What follows is only the call-site mechanics.
 
-`fsx.CurrentHost()` is the one place the ambient read still happens — call it at the `cmd` edge and pass the value down. Where a command must have a home (`shell`, `worktree`, every `bridge` subcommand) it surfaces the error; the read-only surfaces that used to degrade on the discarded `os.UserHomeDir()` error still do, through `cmd.hostBestEffort()`.
+`fsx.CurrentHost()` is the one place the ambient read still happens — call it at the `cmd` edge and pass the value down. Where a command must have a home (`shell`, every `bridge` subcommand) it surfaces the error; the read-only surfaces that used to degrade on the discarded `os.UserHomeDir()` error still do, through `cmd.hostBestEffort()`.
 
 Which entry points validate, and which tolerate:
 

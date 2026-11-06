@@ -13,9 +13,9 @@ import (
 // surfaces will show it in.
 func TestSchemaKeys(t *testing.T) {
 	want := []string{
-		"shell", "agent", "image", "registry_mirror", "pull",
+		"shell", "image", "registry_mirror", "pull",
 		"mounts_root", "bridge", "browser_bridge", "proximo", "managed_statusline",
-		"image_reclaim", "peer_messaging", "sdd", "env", "worktree",
+		"image_reclaim", "peer_messaging", "sdd", "env",
 		"inherit_host_auth", "shells", "mounts",
 	}
 	if got := SchemaKeys(); !slices.Equal(got, want) {

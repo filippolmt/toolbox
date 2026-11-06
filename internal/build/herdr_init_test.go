@@ -76,8 +76,8 @@ func TestHerdrInitLocksClaudeSettings(t *testing.T) {
 }
 
 // TestHerdrInitWiresPi pins pi as a first-class agent here, not merely a
-// bundled binary. config.SupportedAgents and `toolbox worktree --agent pi`
-// already declare it one, so a pi shell that herdr cannot drive — or that
+// bundled binary. config.SupportedAgents already declares it
+// one, so a pi shell that herdr cannot drive — or that
 // herdr cannot follow back to its session — is the wiring missing, not the
 // agent.
 //

@@ -51,11 +51,11 @@ func stubExecSelf(t *testing.T, bin string) *capturedExec {
 func TestExecReloadCarriesTheHandover(t *testing.T) {
 	got := stubExecSelf(t, "/opt/homebrew/bin/toolbox")
 
-	// os.Args is deliberately *not* what argv comes from: replaying a
-	// `worktree create` would re-create the worktree and re-send a completed
-	// prompt. Set it to something the assertion below would catch.
+	// os.Args is deliberately *not* what argv comes from: replaying
+	// `--create` would re-run a bootstrap that has already happened. Set it
+	// to something the assertion below would catch.
 	origArgs := os.Args
-	os.Args = []string{"toolbox", "worktree", "create", "fix/thing", "--prompt", "do the work"}
+	os.Args = []string{"toolbox", "shell", "infra", "--create", "--path", "/tmp"}
 	t.Cleanup(func() { os.Args = origArgs })
 
 	from := reload.From{
@@ -63,8 +63,7 @@ func TestExecReloadCarriesTheHandover(t *testing.T) {
 		Cwd:         "/workspace/pkg",
 		ImageDigest: "sha256:old",
 		CLIVersion:  "v0.1.0",
-		Reentry:     []string{"worktree", "open", "fix/thing"},
-		Resume:      true,
+		Reentry:     []string{"shell", "infra"},
 	}
 	if err := execReload(&from); err == nil {
 		t.Fatal("execReload returned nil — the stub says the process was not replaced")
@@ -73,7 +72,7 @@ func TestExecReloadCarriesTheHandover(t *testing.T) {
 	if got.argv0 != "/opt/homebrew/bin/toolbox" {
 		t.Errorf("exec'd %q, want the resolved binary", got.argv0)
 	}
-	wantArgv := []string{"/opt/homebrew/bin/toolbox", "worktree", "open", "fix/thing"}
+	wantArgv := []string{"/opt/homebrew/bin/toolbox", "shell", "infra"}
 	if !slices.Equal(got.argv, wantArgv) {
 		t.Errorf("argv = %q, want %q", got.argv, wantArgv)
 	}
@@ -191,11 +190,11 @@ func TestRunSessionTailCall(t *testing.T) {
 		shellFn = func(context.Context, client.APIClient, *sessionplan.SessionPlan) (*reload.From, error) {
 			return &reload.From{Container: "toolbox-proj-deadbeef"}, nil
 		}
-		err := runSession(context.Background(), nil, plan, []string{"worktree", "open", "fix/thing"})
+		err := runSession(context.Background(), nil, plan, []string{"shell", "infra"})
 		if err == nil {
 			t.Fatal("runSession returned nil — the stub says the process was not replaced")
 		}
-		wantArgv := []string{"/usr/local/bin/toolbox", "worktree", "open", "fix/thing"}
+		wantArgv := []string{"/usr/local/bin/toolbox", "shell", "infra"}
 		if !slices.Equal(got.argv, wantArgv) {
 			t.Errorf("argv = %q, want %q", got.argv, wantArgv)
 		}
@@ -230,13 +229,13 @@ func TestRunSessionNamesTheWayBackAfterAReload(t *testing.T) {
 
 	reloaded := &sessionplan.SessionPlan{ReloadFrom: &reload.From{
 		Container: "toolbox-proj-deadbeef",
-		Reentry:   []string{"worktree", "open", "fix/thing"},
+		Reentry:   []string{"shell", "infra"},
 	}}
 	err := runSession(context.Background(), nil, reloaded, nil)
 	if err == nil {
 		t.Fatal("runSession swallowed the post-teardown failure")
 	}
-	if !strings.Contains(err.Error(), "toolbox worktree open fix/thing") {
+	if !strings.Contains(err.Error(), "toolbox shell infra") {
 		t.Errorf("the error does not name the exact way back: %v", err)
 	}
 	if !strings.Contains(err.Error(), "port is already allocated") {

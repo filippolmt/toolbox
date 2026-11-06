@@ -12,7 +12,7 @@ Exact pinned versions live in [`internal/build/assets/Dockerfile`](internal/buil
 - **Browser automation** — Playwright CLI (+ `playwright-cli` SKILLS build)
 - **Kubernetes / infra** — kubectl, kubectx + kubens, Helm, OpenTofu
 - **Cloud CLIs** — Google Cloud SDK (gcloud), Azure CLI (az), Oracle OCI CLI, Google Workspace CLI (`gws`), Cloudflare CLI (`cf`, Wrangler vNext preview) + Wrangler (`wrangler`)
-- **Git / forge** — GitHub CLI (gh), GitLab CLI (glab), Docker CLI + Docker Compose
+- **Git / forge** — GitHub CLI (gh), GitLab CLI (glab), Worktrunk (`wt`, git worktrees for parallel agents — [guide](docs/worktrunk.md)), Docker CLI + Docker Compose
 - **Code intelligence** — graphify (PyPI `graphifyy`), codegraph (npm `@colbymchenry/codegraph`), SonarQube CLI (`sonar`)
 - **Shell / CLI ergonomics** — Zsh bundle (Oh-My-Zsh + fzf + zoxide), atuin (SQLite shell history, Ctrl-R fuzzy search), tmux, fd, eza, jq, yq, starship, bat, git
 - **Runtime package sources** — Homebrew (Linuxbrew — `brew install` anything else at runtime)
@@ -71,7 +71,6 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | Command | Description |
 |---------|-------------|
 | [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, `--profile` isolates a second account, named shells via [`shells:`](docs/shells.md)) |
-| [`toolbox worktree`](docs/commands.md#toolbox-worktree) | Per-branch git worktrees, each in its own agent-ready container (`create`, `open`, `list`, `rm`, `prune`, `sync`; alias `wt`) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
 | [`toolbox list`](docs/commands.md#toolbox-list) | List toolbox containers running on the host (alias `ls`) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
@@ -98,7 +97,6 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | [`inherit_host_auth`](docs/configuration.md#inherit-host-auth) | Opt listed CLIs (`gh`, `gcloud`, …) into the host's real credential path instead of the isolated default. |
 | [`shells`](docs/shells.md) | Named shell shortcuts: `<name>: {path, env}` → `toolbox shell <name>`. |
 | [`shell`](docs/configuration.md#shell) | Login shell inside the container (only `zsh` is supported). |
-| [`agent`](docs/configuration.md#agent) | Default AI agent for [`toolbox worktree`](docs/commands.md#toolbox-worktree) sessions: `claude` (default) / `codex` / `pi`. |
 | [`image`](docs/configuration.md#image-selection) | Full image ref override (proxy hub / pull-through cache). |
 | [`registry_mirror`](docs/configuration.md#image-selection) | Swap only the registry host of the canonical image ref. |
 | [`pull`](docs/configuration.md#image-selection) | Registry-sync policy: `auto` (default) / `always` / `never`. |
@@ -110,7 +108,6 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | [`image_reclaim`](docs/configuration.md#image_reclaim) | Reclaim runtime images an image update left nameless; default on, set `false` to keep every generation. |
 | [`peer_messaging`](docs/configuration.md#peer_messaging) | Let Claude Code sessions in different toolbox containers see and message each other; default off, set `true` to opt in. |
 | [`env`](docs/configuration.md#env-passthrough) | Arbitrary env vars injected into the in-container shell (global or per-shell). |
-| [`worktree`](docs/configuration.md#worktree) | Extra gitignored paths to seed from the main repo into a new `toolbox worktree`. |
 
 ### Highlights
 

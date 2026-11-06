@@ -180,14 +180,11 @@ func scalarOf(k config.Key, c *config.Config) string {
 	return quoteIfEmpty(k.Str(c))
 }
 
-// writeBlock emits the three keys whose entries carry more than one field, so
-// no generic shape fits: worktree nests its seed list, and shells and mounts
-// annotate every entry individually (they are individually settable keys).
+// writeBlock emits the keys whose entries carry more than one field, so no
+// generic shape fits: shells and mounts annotate every entry individually
+// (they are individually settable keys).
 func writeBlock(e *errWriter, k config.Key, c *config.Config, ann func(string) string) {
 	switch k.Name {
-	case "worktree":
-		e.printf("worktree:%s\n", ann("worktree"))
-		writeYAMLSlice(e, 1, "seed", "", k.List(c))
 	case "shells":
 		writeShells(e, c, ann)
 	case "mounts":

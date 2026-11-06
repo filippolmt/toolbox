@@ -92,14 +92,13 @@ var (
 	configSetImage          string
 	configSetRegistryMirror string
 	configSetPull           string
-	configSetAgent          string
 	configSetWhere          string
 	configSetDryRun         bool
 )
 
 var configSetCmd = &cobra.Command{
 	Use:   "set",
-	Short: "Set scalar keys (image / registry_mirror / pull / agent)",
+	Short: "Set scalar keys (image / registry_mirror / pull)",
 	Long: `Write the supported scalar keys to the --where-resolved config file,
 preserving comments and sibling keys. Only the flags you pass are written;
 passing an empty value resets that key to its default.
@@ -109,7 +108,6 @@ passing an empty value resets that key to its default.
                      image at a proxy hub / pull-through cache (Harbor,
                      Artifactory, Nexus, ECR pull-through)
   --pull             registry-sync policy: auto (default) | always | never
-  --agent            default AI agent for 'toolbox worktree': claude | codex | pi
 
   --where global     ~/.toolbox.yaml (default)
   --where local      the walked-up project .toolbox.yaml, creating
@@ -160,7 +158,6 @@ func init() {
 	configSetCmd.Flags().StringVar(&configSetImage, "image", "", "full image ref override (empty resets to default)")
 	configSetCmd.Flags().StringVar(&configSetRegistryMirror, "registry-mirror", "", "relocate the registry host (proxy hub / pull-through cache)")
 	configSetCmd.Flags().StringVar(&configSetPull, "pull", "", "registry-sync policy: auto|always|never")
-	configSetCmd.Flags().StringVar(&configSetAgent, "agent", "", "default AI agent for 'toolbox worktree': claude|codex|pi (empty resets to default)")
 	registerWriteFlags(configSetCmd, &configSetWhere, &configSetDryRun)
 
 	configCmd.AddCommand(configShowCmd)
@@ -244,7 +241,6 @@ func runConfigSet(cmd *cobra.Command, _ []string) error {
 		{"image", "image", configSetImage},
 		{"registry-mirror", "registry_mirror", configSetRegistryMirror},
 		{"pull", "pull", configSetPull},
-		{"agent", "agent", configSetAgent},
 	}
 	var edits []configedit.ScalarEdit
 	for _, c := range candidates {
@@ -257,7 +253,7 @@ func runConfigSet(cmd *cobra.Command, _ []string) error {
 		edits = append(edits, configedit.ScalarEdit{Key: c.key, Value: c.value})
 	}
 	if len(edits) == 0 {
-		return &usageError{err: fmt.Errorf("set requires at least one of --image, --registry-mirror, --pull, --agent")}
+		return &usageError{err: fmt.Errorf("set requires at least one of --image, --registry-mirror, --pull")}
 	}
 
 	target, cwd, err := resolveWriteTarget(configSetWhere)

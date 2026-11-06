@@ -8,10 +8,9 @@
 // interface it cannot name because that interface is unexported in its own
 // package.
 //
-// Two packages still hold the whole client and keep their own hand-rolled
-// adapter, and both are structural rather than pending: internal/container is
-// the Docker edge, and internal/worktree hands its client to container.Stop.
-// Their functions take client.APIClient, which this Fake deliberately does not
+// internal/container still holds the whole client and keeps its own
+// hand-rolled adapter, structurally rather than pending: it is the Docker
+// edge. Its functions take client.APIClient, which this Fake deliberately does not
 // satisfy, so it could not stand in there even if it grew the methods. The
 // leaf types that were byte-identical across packages (the errdefs "not found"
 // error, the ImagePullResponse adapter, the two result builders) live here

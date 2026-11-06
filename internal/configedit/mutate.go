@@ -270,28 +270,6 @@ func writeShellEntry(root *yaml.Node, spelled []string, e ShellEntry) {
 	}
 }
 
-// WorktreeSeed writes worktree.seed (nested), creating or removing the
-// worktree block as needed; an empty list removes the seed key.
-func WorktreeSeed(seed []string) Mutator {
-	if len(seed) == 0 {
-		return func(doc *yaml.Node) {
-			wt := configio.ChildValue(doc, "worktree")
-			if wt == nil || wt.Kind != yaml.MappingNode {
-				return
-			}
-			configio.RemoveMapKey(wt, "seed")
-			if len(wt.Content) == 0 {
-				configio.RemoveMapKey(doc, "worktree")
-			}
-		}
-	}
-	seed = slices.Clone(seed)
-	return func(doc *yaml.Node) {
-		wt := configio.EnsureChildMap(doc, "worktree")
-		replaceSeq(configio.EnsureChildSeq(wt, "seed"), seed)
-	}
-}
-
 // SDDKeys returns every registered SDD skill key, sorted — the candidate set
 // SDDEnabled reconciles and the option list the config UI offers.
 func SDDKeys() []string {

@@ -68,15 +68,8 @@ type SessionPlan struct {
 	// which is what keeps the two spellings interchangeable. Fixed at
 	// ContainerCreate, so a pre-existing container keeps the ID until
 	// `toolbox stop`.
-	Hostname string
-	Cmd      []string
-	// ExecCmd overrides the command run in the attached interactive exec
-	// session. When nil the exec reuses Cmd (the normal shell). Set by Plan
-	// for a worktree session (PlanInput.Worktree), which keeps the container's
-	// main process an idle shell while the agent runs in the user's attached
-	// session — so the agent does not also run headless in the container's
-	// main PID. Lifecycle.Shell reads it at the exec edge.
-	ExecCmd     []string
+	Hostname    string
+	Cmd         []string
 	SecurityOpt []string
 	// ExtraHosts is the docker --add-host list. Populated when the browser
 	// bridge is enabled so host.docker.internal resolves on native Linux
@@ -113,24 +106,6 @@ type SessionPlan struct {
 	// of the reload summary is. It is deliberately not part of Env: the
 	// variable carrying it never enters a container.
 	ReloadFrom *reload.From
-}
-
-// LaunchesAgent reports whether the session auto-launches an agent in the
-// attached exec rather than dropping the developer at a shell. Only a
-// `toolbox worktree` session does, and that is exactly the launch mode a
-// reload has to reproduce — so the reload asks this rather than inferring
-// intent from what the developer happened to be running.
-func (p *SessionPlan) LaunchesAgent() bool { return p.ExecCmd != nil }
-
-// EffectiveCmd is what this session actually runs: the worktree agent launch
-// when the plan carries one, the configured shell otherwise. Both halves are
-// this plan's own fields, so the choice belongs here rather than being
-// re-made at the attach.
-func (p *SessionPlan) EffectiveCmd() []string {
-	if p.ExecCmd != nil {
-		return p.ExecCmd
-	}
-	return p.Cmd
 }
 
 // ReloadMarkerPath is the **host-side** path of this session's reload marker:
@@ -186,11 +161,6 @@ type PlanInput struct {
 	// ContainerCreate.
 	Profile *mountplan.Profile
 
-	// Worktree, when non-nil, plans a `toolbox worktree` session: the main
-	// repo's .git enters the mount plan and ExecCmd launches the agent in the
-	// user's attached session. Nil for every other session.
-	Worktree *WorktreeSession
-
 	// Peer opts the session into cross-container Claude Code peer messaging:
 	// the shared inbox-socket bind (mountplan) plus the shared PID namespace
 	// (PidMode), and the opt-in folded into the container name. Resolved by
@@ -221,33 +191,6 @@ type PlanInput struct {
 	// re-derives everything, so the only thing it changes here is the working
 	// directory — and only when that directory is still under the workspace.
 	ReloadFrom *reload.From
-}
-
-// WorktreeSession carries the inputs a `toolbox worktree` session adds to a
-// plain one. Both derivations from it stay behind this seam: RepoRoot becomes
-// the .git bind, and Agent + Prompt become the ExecCmd wrapper.
-type WorktreeSession struct {
-	// RepoRoot is the main repository root (not the worktree path, which is
-	// the session's Workspace). A linked worktree's .git points into it.
-	RepoRoot string
-	// Agent is the resolved AI agent binary to auto-launch (claude | codex | pi).
-	Agent string
-	// Prompt is the initial task handed to the agent, empty for a bare launch.
-	Prompt string
-	// Resume relaunches the agent on its most recent conversation instead of
-	// starting one. The third launch mode beside prompt and bare, and the only
-	// one a developer never asks for directly: it is set by a reload, whose
-	// whole promise is conversational continuity across the recreate.
-	Resume bool
-}
-
-// gitDir returns the main repo's .git directory for a worktree session, or ""
-// when this is not one.
-func (in PlanInput) gitDir() string {
-	if in.Worktree == nil {
-		return ""
-	}
-	return filepath.Join(in.Worktree.RepoRoot, ".git")
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -313,7 +256,6 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		Cfg:       in.Cfg,
 		Workspace: workspace,
 		Profile:   in.Profile,
-		GitDir:    in.gitDir(),
 		Peer:      in.Peer,
 		// Handed down, not re-resolved: the mount stage, projection marker and
 		// trust env below read the same gate.
@@ -363,7 +305,6 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ContainerName:     name,
 		Hostname:          name,
 		Cmd:               cmd,
-		ExecCmd:           worktreeExecCmd(cmd, resolveWorktreeLaunch(in.Worktree, in.ReloadFrom, workingDir)),
 		SecurityOpt:       NestedSandboxSecurityOpt(in.Cfg),
 		ExtraHosts:        browserBridgeExtraHosts(in.Cfg),
 		OverlayDockerfile: overlayDockerfile,
@@ -396,28 +337,6 @@ func reloadMarkerEnv(stateDir, containerName string) []string {
 		return nil
 	}
 	return []string{reload.MarkerEnv + "=" + path.Join(mountplan.StateMountTarget, reload.MarkerName(containerName))}
-}
-
-// resolveWorktreeLaunch reproduces a worktree session's launch mode across a
-// reload, which is deliberately not the same as replaying its intent.
-//
-// Two rules, both from the fact that the original invocation has already run.
-// The prompt is **dropped**: the task that opened this worktree was sent once
-// and completed, and re-sending it would start the work again. The agent
-// **resumes** instead — but only when the carried working directory survived
-// validation, because `claude --continue` is keyed on the cwd and the
-// workspace is mounted twice. On the fallback the agent launches bare:
-// resuming the wrong lineage in silence is worse than not resuming.
-//
-// Returns a copy; the caller's WorktreeSession is an input, not a scratchpad.
-func resolveWorktreeLaunch(wt *WorktreeSession, from *reload.From, workingDir string) *WorktreeSession {
-	if wt == nil || from == nil {
-		return wt
-	}
-	out := *wt
-	out.Prompt = ""
-	out.Resume = from.Resume && from.Cwd != "" && workingDir == from.Cwd
-	return &out
 }
 
 // reloadWorkingDir applies the one piece of in-container process state a

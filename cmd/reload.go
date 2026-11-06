@@ -52,8 +52,8 @@ func takeReloadHandover() (*reload.From, error) {
 
 // runSession attaches the planned session and, when the shell asked for a
 // reload on its way out, tail-calls the on-disk CLI in place of this process.
-// Both interactive entry points (`shell`, `worktree`) route through here so
-// neither owns the exec.
+// The interactive entry point routes through here rather than owning the
+// exec.
 //
 // The re-exec is what makes a `brew upgrade` landed meanwhile take effect: the
 // new binary owns the verify, the teardown and the create, so its fixes reach
@@ -100,9 +100,8 @@ func execReload(from *reload.From) error {
 }
 
 // reloadArgv rebuilds argv for the tail call from the **normalised** re-entry
-// form, never from os.Args: replaying the invocation as typed would re-run a
-// `worktree create` against a branch that now exists and re-send a prompt the
-// agent has already completed. argv[0] is the resolved binary rather than the
+// form, never from os.Args: replaying the invocation as typed would re-run
+// create-only flags (`--create`, `--path`) whose act has already happened. argv[0] is the resolved binary rather than the
 // name this process was invoked under, so the re-exec cannot follow a symlink
 // or a shell alias somewhere else.
 func reloadArgv(bin string, from *reload.From) []string {

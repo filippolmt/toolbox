@@ -9,7 +9,6 @@ paths:
   - "internal/imagereclaim/**"
   - "internal/imageref/**"
   - "internal/dockertest/**"
-  - "internal/worktree/**"
   - "internal/reload/**"
   - "internal/teardown/**"
   - "internal/workspace/**"
@@ -32,8 +31,8 @@ them.
 ## Session composition and container creation
 
 - **One composition root:** `cmd.startSession(sessionIntent)` assembles every
-  session. `shell` and `worktree` resolve arguments into an intent; they do not
-  duplicate migration, bridge-tip, image-digest, planning or attach sequences.
+  session. `shell` resolves its arguments into an intent; a new entry point
+  must not duplicate migration, bridge-tip, image-digest, planning or attach sequences.
   Preserve the order handover → client → plan → signal context → attach.
   `TestStartSessionPlansWhatTheIntentDescribes` and
   `TestStartSessionLeavesNoPlanSideEffectsWhenTheClientFails` pin the observable
@@ -148,8 +147,8 @@ them.
   [Image Reclamation](../../CONTEXT.md#image-reclamation)
 
 - **Declared Docker surface:** daemon-using leaf packages declare narrow,
-  unexported interfaces. `internal/container` and `internal/worktree` keep the
-  full client because they hand it onward. Keep container seam vars as wrappers,
+  unexported interfaces. `internal/container` keeps the
+  full client because it hands it onward. Keep container seam vars as wrappers,
   and never make `dockertest.Fake` satisfy the full client accidentally. Pinned
   by `TestFakeIsNotAnAPIClient` and `TestFakeZeroValueRefusesEveryCall`. The
   overlay builder follows [image-build rules](image-build.md).

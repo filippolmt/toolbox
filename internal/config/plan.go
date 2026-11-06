@@ -126,6 +126,7 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 
 	warnLegacyTools(global, project, explicit)
 	warnLegacyBrowserBridge(global, project, explicit)
+	warnRetiredKeys(global, project, explicit)
 
 	if err := mergeFileLayers(vp, global, project, explicit); err != nil {
 		return nil, err
@@ -393,6 +394,42 @@ func warnLegacyTools(buffers ...[]byte) {
 						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal")
 			})
 			return
+		}
+	}
+}
+
+// RetiredKeys maps each top-level key that only `toolbox worktree` read to
+// what replaced it. A config carrying one keeps loading — viper ignores a key
+// with no Config field — and the key is warned about instead of silently
+// dropped; `config doctor` reports the same hint. Removal is a later release.
+func RetiredKeys() map[string]string {
+	return map[string]string{
+		"worktree": "'worktree:' is ignored — `toolbox worktree` was replaced by Worktrunk (`wt`), bundled in the image; " +
+			"copy gitignored files into a worktree with `wt step copy-ignored`, scoped by a .worktreeinclude file. Remove the block",
+		"agent": "'agent:' is ignored — it only chose the agent `toolbox worktree` launched; " +
+			"Worktrunk launches one with `wt switch -c -x <agent> <branch>`. Remove the key",
+	}
+}
+
+// RetiredKeysDoc is the user guide section that explains the replacement.
+const RetiredKeysDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/worktrunk.md"
+
+// retiredKeysWarned dedupes the load-time warning per key, process-wide, for
+// the same reason legacyToolsWarnOnce does.
+var retiredKeysWarned sync.Map
+
+// warnRetiredKeys warns once per process about every RetiredKeys entry found
+// at the top level of any input buffer.
+func warnRetiredKeys(buffers ...[]byte) {
+	retired := RetiredKeys()
+	for _, b := range buffers {
+		for _, key := range slices.Sorted(maps.Keys(retired)) {
+			if len(b) == 0 || !hasTopLevelKey(b, key) {
+				continue
+			}
+			if _, done := retiredKeysWarned.LoadOrStore(key, true); !done {
+				fmt.Fprintf(os.Stderr, "toolbox: warning: %s.\n        See: %s\n", retired[key], RetiredKeysDoc)
+			}
 		}
 	}
 }

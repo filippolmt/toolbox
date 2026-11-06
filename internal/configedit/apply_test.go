@@ -382,7 +382,7 @@ func TestApplyCheckedReportsWhetherTheFileExisted(t *testing.T) {
 	t.Run("creation reports absent", func(t *testing.T) {
 		path := tmpConfigPath(t)
 
-		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("pull", "never"))
 		if err != nil {
 			t.Fatalf("ApplyChecked: %v", err)
 		}
@@ -397,7 +397,7 @@ func TestApplyCheckedReportsWhetherTheFileExisted(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 
-		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("pull", "never"))
 		if err != nil {
 			t.Fatalf("ApplyChecked: %v", err)
 		}
@@ -408,11 +408,11 @@ func TestApplyCheckedReportsWhetherTheFileExisted(t *testing.T) {
 
 	t.Run("unchanged run still reports present", func(t *testing.T) {
 		path := tmpConfigPath(t)
-		if err := os.WriteFile(path, []byte("agent: codex\n"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte("pull: never\n"), 0o600); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 
-		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex"))
+		changed, existed, err := ApplyChecked(path, cwdOf(path), Scalar("pull", "never"))
 		if err != nil {
 			t.Fatalf("ApplyChecked: %v", err)
 		}
@@ -458,7 +458,7 @@ func TestPreviewReturnsTheCandidateWithoutTouchingTheFile(t *testing.T) {
 				}
 			}
 
-			candidate, existed, err := Preview(path, cwdOf(path), Scalar("agent", "codex"))
+			candidate, existed, err := Preview(path, cwdOf(path), Scalar("pull", "never"))
 			if err != nil {
 				t.Fatalf("Preview: %v", err)
 			}
@@ -474,7 +474,7 @@ func TestPreviewReturnsTheCandidateWithoutTouchingTheFile(t *testing.T) {
 
 			// The same edit, actually written: a preview is only worth printing
 			// if it is the write's own rendering and not a look-alike of it.
-			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("agent", "codex")); err != nil {
+			if _, _, err := ApplyChecked(path, cwdOf(path), Scalar("pull", "never")); err != nil {
 				t.Fatalf("ApplyChecked: %v", err)
 			}
 			if got := readFile(t, path); got != string(candidate) {

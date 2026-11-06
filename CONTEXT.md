@@ -15,11 +15,11 @@ typed bind set handed to `ContainerCreate`, plus the shell `WorkingDir`.
 Concretely: `defaults() → applyMountsRoot → mergeMounts → resolveAll →
 append workspace bind → append host-path mirror (when safe)`. Owned by
 `internal/mountplan`. The single seam runtime callers and tests cross is
-`mountplan.Plan(PlanInput{Cfg, Workspace, Profile, GitDir})`; pure merge
+`mountplan.Plan(PlanInput{Cfg, Workspace, Profile, …})`; pure merge
 inspection (no filesystem side-effects) is exposed as `mountplan.Merge(cfg)`.
 Session-shaped extras enter as `PlanInput` fields, never as a bind appended
-to a finished plan — `GitDir` (the worktree's main-repo `.git`) joins the
-merged list and goes through `resolveAll` with everything else. Mount provenance is
+to a finished plan — each joins the merged list and goes through
+`resolveAll` with everything else. Mount provenance is
 part of the same seam: `mountplan.Classify(cfg) []ClassifiedMount` tags each
 merged entry with its `Origin` (default / patched / user / disabled,
 re-including defaults the merge dropped), and `mountplan.Names(cfg)` returns
@@ -129,8 +129,8 @@ their own.
 
 The four surfaces read rows instead of restating them: the validation tail
 runs each row's verdict in table order; `configrender` walks `Keys()`
-and shapes each key by its `Kind` (the three block keys — `worktree`,
-`shells`, `mounts` — carry entries too structured for a generic shape and
+and shapes each key by its `Kind` (the two block keys — `shells`,
+`mounts` — carry entries too structured for a generic shape and
 keep their own writer); `configexample` concatenates each row's `Example`,
 splicing in at `config.ExampleListing` the two live listings config cannot
 compute itself (the catalog's eligible CLIs, the default mounts —
@@ -245,7 +245,7 @@ One config edit, captured as a value before it happens:
 closes over its arguments (`configedit.Scalar`, `Scalars`, `Bool`,
 `StringList`, `StringMap`, `Shell`, `ShellEnv`, `Shells`, `RemoveShell`,
 `Mount`, `MountDisabled`, `MountsDisabled`, `RemoveMount`,
-`WorktreeSeed`, `SDDEnabled`, `Remove`). Owned by `internal/configedit`
+`SDDEnabled`, `Remove`). Owned by `internal/configedit`
 (`mutate.go`).
 
 The point of the term: a caller that must both *show* an edit and
@@ -392,19 +392,17 @@ the Mount Plan + Tool Catalog deepening pattern, and the per-call
 ### Session Intent
 
 The typed description of a session to open — workspace, named shell, published
-ports, loopback bridge, profile, peer opt-in, the optional worktree branch, and
-the re-entry form — handed to `cmd.startSession`, the single composition root
+ports, loopback bridge, profile, peer opt-in, and the re-entry form — handed to `cmd.startSession`, the single composition root
 for "open a session".
 
 Concretely: `cmd.sessionIntent` + `cmd.startSession` (`cmd/session.go`). Cobra
-keeps the flag globals; `runShell` resolves the `shell` flags and
-`openWorktreeSession` its arguments into one intent, and everything either
-command *does* with a session lives past that boundary — consume the
+keeps the flag globals; `runShell` resolves the `shell` flags into one intent,
+and everything the command *does* with a session lives past that boundary — consume the
 [Session Reload](#session-reload) handover, resolve the host once, resolve the
 [Proximo Availability Gate](#proximo-availability-gate), migrate
 legacy toolbox state, offer the bridge install tip, construct the Docker
 client, resolve the running image's repo digest, call
-[Session Plan](#session-plan), seed a [Worktree](#worktree) checkout, install
+[Session Plan](#session-plan), install
 the signal handler and attach. The intent carries `sessionplan.PlanInput`
 itself rather than a parallel copy of its fields — the caller fills its own
 half, the assembly overwrites the fields it resolves — so the seam cannot drift
@@ -422,10 +420,10 @@ migration and the bridge tip ran on the `shell` path only, while `--profile`
 and `--peer` had no worktree flag to resolve at all. Two of those were bugs (a
 worktree session left the state relocation to whichever `toolbox shell` came
 next, and a developer whose every session is a worktree session was never told
-the forwarding they had enabled was not installed); the other two are
-deliberate absences, and the intent is where they are now *declared* — a nil
-`Profile` and a config-only `Peer` — rather than implied by a call site that
-omitted a field. Each root's helpers were pure and directly
+the forwarding they had enabled was not installed). `toolbox worktree` has
+since been retired ([ADR 0018](docs/adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md)),
+leaving `shell` as the one entry point; the seam stays so a second one adds a
+value, not a copy of the assembly. Each root's helpers were pure and directly
 testable while the assembly calling them was reachable only by driving a cobra
 command through its flag globals — which is the shape the name fixes, because
 the bugs lived in *how* those helpers were called, and an ordering invariant
@@ -449,11 +447,8 @@ behind the seam: `SanitizeShellName` for the container suffix, and
 overlay on the top-level `env:`. `cmd` therefore hands the config over
 untouched — it no longer pre-mixes the env layers into `cfg.Env`.
 
-`PlanInput.Worktree` is the other optional branch: non-nil plans a
-[Worktree](#worktree) session, adding the main repo's `.git` to
-`mountplan.PlanInput.GitDir` and the agent launch to `ExecCmd`. Nothing
-downstream of the seam is mutated by the caller — `cmd` no longer patches a
-finished plan.
+Nothing downstream of the seam is mutated by the caller — `cmd` no longer
+patches a finished plan.
 
 Concretely: `parsePublishSpecs → imageref.ResolveImage → mountplan.Plan
 → ContainerNameFor → shellEnv → ResolveShellCmd →
@@ -1090,9 +1085,8 @@ fallback); everything else is **re-derived** by a fresh
 image instead of replaying the old one's `PATH` into it.
 
 The **re-entry form** is the argv the next process runs, and it is
-*normalised, never replayed*: `worktree create` comes back as `worktree
-open <branch>` with the resolved `--agent` pinned, and `shell` drops the
-`--create`/`--path` bootstrap half. Everything else the developer typed
+*normalised, never replayed*: `shell` drops the `--create`/`--path`
+bootstrap half. Everything else the developer typed
 is carried, because the flags are identity: `--profile` and `--peer`
 feed the container name, `--profile` also moves the mount root, and
 `-p` fixes the port bindings at creation — a form that dropped them
@@ -1414,14 +1408,11 @@ wrappers rather than plain assignments: a bare `var x = leaf.F` would
 take the type of an interface no other package can spell, and no test
 there could write a stub for it.
 
-`internal/worktree` keeps `client.APIClient` for the same reason, one
-level removed: it hands its client to `container.Stop`, so its own
-declared surface would have to be a superset of that parameter, which is
-the edge's. Both packages therefore keep a hand-rolled adapter in their
-tests, and will as long as the edge holds the concrete client —
-`dockertest.Fake` cannot stand in where the parameter is
-`client.APIClient`, by the same design that makes it useful everywhere
-else.
+A package that hands its client to a `container` function taking
+`client.APIClient` keeps the full client for the same reason, one level
+removed, and a hand-rolled adapter in its tests — `dockertest.Fake` cannot
+stand in where the parameter is `client.APIClient`, by the same design that
+makes it useful everywhere else.
 
 The shared test double is `dockertest.Fake`: one function field per
 method the narrowed modules call, a nil field panicking with the method's
@@ -1674,8 +1665,7 @@ that makes the *other* bundled tools see it. Bundling gets the binary onto
 integration. Skill installers run in the opposite direction — they make an
 agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
-Concretely: `internal/catalog` + `config.SupportedAgents` + `toolbox worktree
---agent <name>` provide bundling, while `init.d/65-atuin.sh` and
+Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh` and
 `init.d/61-herdr.sh` own their distinct wiring commands. Both consume Agent
 Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
@@ -1958,54 +1948,6 @@ reads it there. The rule that generalises: once a pipeline holds a plan, ask
 the plan, never the function that would rebuild one — and a function that
 would rebuild one should say so by taking the gate, not by quietly resolving
 another.
-
-### Worktree
-
-The per-branch worktree subsystem behind `toolbox worktree` (create / open /
-list / rm / prune / sync): one branch → one git worktree under
-`<repo-root>/.worktrees/tbx-<branch>` → one path-scoped toolbox container.
-
-Concretely: `worktree.Service{git}` (owned by `internal/worktree`) owns the git
-+ filesystem side of every op. Every git invocation crosses one seam,
-`Git{Output, Run, PushDelete}` (production impl `RealGit`, a fake in tests) —
-`Output` reads, `Run` mutates, and `PushDelete` is the one command needing more
-than an arg list (a bounded context and a scrubbed env for the origin
-round-trip), a named domain method so the generic pair stays cheap to fake — and container
-teardown/status use `container.Stop` / `ContainerInspect` through the existing
-`client.APIClient` seam — so `Create` (prepare), `Open` (resolve), `List`,
-`Rm`, `Prune` and `Sync` run in tests with a fake git and a nil client, no real
-repo and no daemon. Pure decisions (sync/prune plans, porcelain parse, seed
-candidate dedup + defaults via `DedupeSeeds`/`DefaultSeeds`, dir/branch naming)
-live in `internal/worktree/plan.go`. Seed *gating* itself — the dir-wholesale
-vs per-file decision and the `git check-ignore` filter — is a filesystem+git
-walk that deliberately stays at the `cmd` edge (it shells out directly rather
-than through the `Git` seam, since it is a filesystem-shaped git query, not the
-orchestration git the seam abstracts). The
-**interactive session launch** for create/open deliberately stays at the `cmd`
-Docker edge — `container.Shell`'s TTY attach is not mockable across packages —
-but it is not a second assembly: `cmd.openWorktreeSession` only builds a
-[Session Intent](#session-intent), and `cmd.startSession` opens it, the same
-entry point the `shell` command routes through. That mirrors how Session Plan /
-Docker Identity keep daemon-edge state out of the pure plan. What a worktree
-session *is*, though, is not a `cmd` decision:
-`PlanInput.Worktree{RepoRoot, Agent, Prompt}` carries it, and Session Plan
-derives both halves — the main repo's `.git` bind (through Mount Plan, so a
-missing source is a soft skip like any other mount) and the `ExecCmd` that
-launches the agent over the resolved shell. `cmd/worktree.go` is then flag
-parsing + dispatch; the gitignored-state seeding (`seedWorktreeFiles`) is
-driven by a non-nil `Worktree` on the intent, which is what keeps both create
-and open re-seeding without either owning the call.
-
-Why the term exists: before this concept was named, the whole subsystem —
-git shell-out (~30 inline sites), container ops, filesystem seeding, and pure
-decisions — interleaved in a single 1334-line `cmd/worktree.go`, the only
-untestable subsystem in a codebase that had otherwise deepened every peer
-(Mount Plan, Session Plan, Run Plan, …). Reading "what does `rm` do?" meant
-bouncing across four concerns in one command file, and the orchestration had no
-seam to fake git, so its edge cases (rm ordering, prune per-base sweep, sync
-resume) were exercised only through real git in temp repos. The "Worktree"
-name turns the git orchestration into one named owner behind the `Git` seam,
-mirroring the Mount Plan / Session Plan deepening pattern.
 
 ### Workspace Install Refresh
 

@@ -52,6 +52,26 @@ func TestDoctorLegacyToolsBlock(t *testing.T) {
 	}
 }
 
+// A retired key is reported with its replacement, not as an unknown key with
+// a did-you-mean that would point the developer at an unrelated live key.
+func TestDoctorRetiredWorktreeKeys(t *testing.T) {
+	host, cwd := writeLayeredFixture(t, "", "agent: codex\nworktree:\n  seed: [.env]\n")
+
+	findings := Doctor(host, cwd, "")
+	for _, key := range []string{"'worktree:' is ignored", "'agent:' is ignored"} {
+		f := findingWith(findings, key)
+		if f == nil {
+			t.Fatalf("expected a retired-key warning for %s, got %v", key, findings)
+		}
+		if f.Severity != SeverityWarning {
+			t.Errorf("%s severity = %v, want warning", key, f.Severity)
+		}
+	}
+	if f := findingWith(findings, "unknown top-level key"); f != nil {
+		t.Errorf("retired key reported as unknown: %v", f)
+	}
+}
+
 func TestDoctorEmptyShellPathIsError(t *testing.T) {
 	host, cwd := writeLayeredFixture(t, "", "shells:\n  infra:\n    path: \"\"\n")
 

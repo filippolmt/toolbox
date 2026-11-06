@@ -20,40 +20,35 @@ import (
 var newDockerClient = container.NewClient
 
 // sessionIntent describes the session a command wants opened, resolved from
-// whatever that command's flags happen to be called. It is what the two
-// interactive entry points — `shell` and `worktree create|open` — differ by:
-// everything they *do* with it lives in startSession, so a third entry point
-// adds a value, not a third copy of the assembly.
+// whatever that command's flags happen to be called. Everything done with it
+// lives in startSession, so a second interactive entry point adds a value,
+// not a second copy of the assembly.
 //
 // Cobra keeps the flag globals. The intent is the seam: `shell` resolves its
 // flag globals into one of these, and a test builds one directly.
 type sessionIntent struct {
 	// Plan is the caller's half of the session plan — workspace, named shell,
-	// ports, loopback bridge, profile, peer opt-in, the optional worktree
-	// branch — carried as sessionplan.PlanInput itself rather than copied
+	// ports, loopback bridge, profile, peer opt-in — carried as sessionplan.PlanInput itself rather than copied
 	// field by field into a parallel struct.
 	//
 	// Host, Proximo, ImageDigest and ReloadFrom are the assembly's half:
 	// startSession overwrites them unconditionally, so setting them here has
 	// no effect.
-	// A `worktree` intent leaves Profile nil and takes Peer from config,
-	// because that command exposes neither --profile/--share nor --peer;
-	// declared here rather than left to a call site that omitted a field.
 	Plan sessionplan.PlanInput
 	// Reentry is the normalised form that gets the developer back after a
-	// reload — `shell` renders the flags as typed, `worktree` normalises
-	// create into open. Rendered by the caller because only the caller knows
+	// reload — `shell` renders the flags as typed, minus the create-only
+	// ones. Rendered by the caller because only the caller knows
 	// its own flag set.
 	Reentry []string
 }
 
 // startSession opens the session an intent describes: it consumes the reload
 // handover, migrates legacy toolbox state, resolves the running image's repo
-// digest, plans, seeds a worktree checkout, and hands the plan to the attach.
+// digest, plans, and hands the plan to the attach.
 //
-// This is the single composition root for "open a session". Both interactive
-// entry points route through it, so the ordering invariants below are stated
-// once instead of being re-honoured — and quietly diverging — per call site:
+// This is the single composition root for "open a session", so the ordering
+// invariants below are stated once instead of being re-honoured — and quietly
+// diverging — per call site:
 //
 //   - the handover is consumed before the assembly does anything else, and so
 //     before anything builds a container env: the host-to-host variable must
@@ -130,14 +125,6 @@ func startSession(in sessionIntent) error {
 	plan, err := sessionplan.Plan(in.Plan)
 	if err != nil {
 		return err
-	}
-
-	// A worktree session carries gitignored per-repo state into the fresh
-	// checkout. Both create and open re-seed, and the seeding is what makes
-	// the agent start with the local specs and permission allowlist a
-	// tracked-files-only checkout would miss.
-	if wt := in.Plan.Worktree; wt != nil {
-		seedWorktreeFiles(wt.RepoRoot, in.Plan.Workspace, in.Plan.Cfg.Worktree.Seed)
 	}
 
 	// Post-attach Ctrl+C reaches the container as a raw-mode byte; this signal

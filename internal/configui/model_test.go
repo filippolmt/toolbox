@@ -121,17 +121,6 @@ func TestAnEmptyKeyAbortsTheRow(t *testing.T) {
 	notOnScreen(t, m, "key:")
 }
 
-// TestAnEmptyValueAbortsASingleColumnRow is its single-column sibling: a seed
-// path editor has only one column, so an empty one is the whole row.
-func TestAnEmptyValueAbortsASingleColumnRow(t *testing.T) {
-	m := rowsEditor(t, "worktree", &config.Config{})
-	m = press(m, "a")
-	wantOnScreen(t, m, "value:")
-	m = press(m, "enter")
-	wantOnScreen(t, m, "(no entries)", "a: add")
-	notOnScreen(t, m, "value:")
-}
-
 // TestEscBacksOutOfAFieldWithoutClosingTheEditor: esc has two meanings in a
 // rows editor — abandon the field being typed, then close the editor — and the
 // row list has to survive the first.

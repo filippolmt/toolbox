@@ -102,6 +102,13 @@ func TestMergeScenarios(t *testing.T) {
 			want:    want{Shell: "zsh"},
 		},
 		{
+			// Retired worktree:/agent: keys keep loading (ADR 0018): no
+			// Config field reads them, so they decode to nothing.
+			name:    "retired_worktree_keys_ignored",
+			project: "agent: codex\nworktree:\n  seed: [.env.local]\n",
+			want:    want{Shell: "zsh"},
+		},
+		{
 			// Bool shorthand decodes to {Enabled} with nil Steps (registry
 			// defaults apply downstream in sessionplan).
 			name:    "sdd_bool_shorthand",

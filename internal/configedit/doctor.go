@@ -86,12 +86,18 @@ func lintLayerKeys(label string, b []byte) []Finding {
 		return nil
 	}
 	known := config.SchemaKeys()
+	retired := config.RetiredKeys()
 	var findings []Finding
 	for _, k := range slices.Sorted(maps.Keys(m)) {
 		if k == "tools" {
 			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
 				"%s: legacy 'tools:' block is ignored — all bundled CLIs install unconditionally; remove it (see %s)",
 				label, toolsRemovalDoc)})
+			continue
+		}
+		if hint, ok := retired[k]; ok {
+			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
+				"%s: %s (see %s)", label, hint, config.RetiredKeysDoc)})
 			continue
 		}
 		if !slices.Contains(known, k) {

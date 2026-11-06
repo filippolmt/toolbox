@@ -161,6 +161,13 @@ if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
 fi
 
+# -- worktrunk -----------------------------------------------------------------
+# `wt switch` changes directory only through this shell function. Baked here
+# because `wt config shell install` would write into the image-owned ~/.zshrc.
+if command -v wt >/dev/null 2>&1; then
+    eval "$(wt config shell init zsh)"
+fi
+
 # -- fzf keybindings ---------------------------------------------------------
 # Debian's fzf package ships shell integration files but does NOT auto-source
 # them — without these lines `fzf` works as a binary but Ctrl-R / Ctrl-T /
