@@ -10,8 +10,8 @@ The question comes from
 own worktree manager, `toolbox worktree`, built on one invariant: one branch →
 one git worktree under `<repo-root>/.worktrees/tbx-<branch>` → one path-scoped
 container running an agent. The invariant had a real cost. A container
-scoped to the worktree cannot see the main repo's `.git`, so the session plan
-carried a dedicated bind for it (`worktree-gitdir`), plus an agent launch
+scoped to the worktree cannot see the main repo's `.git`, so the
+[Session Plan](../../CONTEXT.md#session-plan) carried a dedicated bind for it (`worktree-gitdir`), plus an agent launch
 command, a seed pass for gitignored state and a config key to extend it.
 
 The actual workflow never used it. The toolbox is opened on a **parent
@@ -35,9 +35,12 @@ The decision:
 
 **Toolbox stops managing worktrees.** `toolbox worktree` and everything that
 exists only for it — the per-worktree session shape, the `worktree-gitdir`
-bind, the agent launch command, the seed pass — are removed. The `worktree:`
-config key stays accepted for a while, ignored with a deprecation warning, so
-an existing config keeps loading.
+bind, the agent launch command and the reload path that relaunches it, the
+seed pass — are removed. The `agent:` config key goes too if, as it appears,
+the worktree command is its only reader. The `worktree:` config key stays
+accepted, ignored with a deprecation warning that points to Worktrunk's
+`.worktreeinclude`, so an existing config keeps loading; a later release
+removes it.
 
 **Worktrunk is bundled in the image, with its shell integration baked in.**
 It is one more catalog CLI, pinned and bumped like the others. Its agent
@@ -81,5 +84,6 @@ with `--force-with-lease` and conflict resume, and the batched
 `--delete-remote`.
 
 **Worktrunk's activity markers live in the shared repo's git config.** That is
-what lets a `wt list` in any shell see markers written by an agent in another
-worktree. It was not verified when this was decided.
+what should let a `wt list` in any shell see markers written by an agent in
+another worktree. Whether markers written inside the container actually show
+up in `wt list` was not verified when this was decided.
