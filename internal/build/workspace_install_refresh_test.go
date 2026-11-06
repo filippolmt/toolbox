@@ -215,10 +215,11 @@ func TestEveryGraphifySkillDirIsGitignored(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(string(ignore), "\n")
-	artefacts := regexp.MustCompile(`toolbox_install_refresh \S+ "\$PWD/(\S+/)SKILL\.md"`).
-		FindAllStringSubmatch(readAsset(t, "init.d/30-graphify.sh"), -1)
-	if len(artefacts) == 0 {
-		t.Fatal("30-graphify.sh: no toolbox_install_refresh artefact found — the pattern no longer matches the script")
+	script := readAsset(t, "init.d/30-graphify.sh")
+	artefacts := regexp.MustCompile(`toolbox_install_refresh \S+ "\$PWD/(\S+/)SKILL\.md"`).FindAllStringSubmatch(script, -1)
+	// Every refresh call must be read, or a reshaped one drops out unchecked.
+	if calls := strings.Count(script, "toolbox_install_refresh graphify"); len(artefacts) == 0 || len(artefacts) != calls {
+		t.Fatalf("30-graphify.sh: %d toolbox_install_refresh calls, %d artefact paths read — the pattern no longer matches the script", calls, len(artefacts))
 	}
 	for _, m := range artefacts {
 		if !slices.Contains(lines, m[1]) {
