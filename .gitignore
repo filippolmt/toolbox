@@ -49,10 +49,12 @@ graphify-out/
 # dir (SKILL.md, references/, .graphify_version) on every version bump, so
 # tracking it only adds diff noise. init.d/30-graphify.sh installs it in the
 # container; the version stamp is write-only in project scope. One entry per
-# agent root: graphify writes a separate copy for each platform it is given,
-# and upstream's own advice ("git add .pi/") is the opposite call from the one
-# this repo made for the claude copy.
+# agent root (plus pi's pre-move root): graphify writes a separate copy for
+# each platform it is given, and upstream's own advice ("git add .pi/") is the
+# opposite call from the one this repo made for the claude copy.
 .claude/skills/graphify/
+.pi/skills/graphify/
+# Where graphify wrote pi's copy before upstream moved it to the root pi reads.
 .pi/agent/skills/graphify/
 docs/superpowers/specs/
 docs/superpowers/plans/

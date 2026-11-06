@@ -110,10 +110,11 @@ if toolbox_agent_available claude && toolbox_agent_persistent claude; then
         unset _gfy_settings _gfy_tmp
     fi
 fi
-# pi reads .pi/agent/skills, which the claude install above never writes, so the
-# refresh needs a second pass per agent — same gate, its own stamp, its own
-# artefact. A shared stamp would be the silent bug: the claude pass would leave
-# it at the bundled version and pi's copy would never be written at all.
+# pi reads project skills from .pi/skills, which the claude install above never
+# writes, so the refresh needs a second pass per agent — same gate, its own
+# stamp, its own artefact. A shared stamp would be the silent bug: the claude
+# pass would leave it at the bundled version and pi's copy would never be
+# written at all.
 #
 # The agent gate is the ~/.pi bind mount and NOT ~/.pi/agent, which pi creates on
 # its own first run whether the state is mounted or not — installing behind the
@@ -124,7 +125,7 @@ fi
 # No jq/settings pass here: the hooks and the CLAUDE.md section are claude's,
 # and graphify writes neither for pi.
 if toolbox_agent_available pi && toolbox_agent_persistent pi; then
-    toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver" \
+    toolbox_install_refresh graphify-pi "$PWD/.pi/skills/graphify/SKILL.md" "$_gfy_ver" \
         graphify install --project --platform pi || true
 fi
 unset _gfy_ver

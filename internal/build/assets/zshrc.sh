@@ -127,7 +127,7 @@ alias reload='exec zsh'
 # Per-repo opt-in initialisers. Each `*-init` alias runs the one-time command
 # that opts the CURRENT repo into its tool's agent integration (never global);
 # where the tool writes a separate copy per agent, the alias opts in every agent
-# the image bundles — claude reads .claude/skills, pi reads .pi/agent/skills and
+# the image bundles — claude reads .claude/skills, pi reads .pi/skills and
 # codex+pi share .agents/skills. The matching init.d/ script then refreshes each
 # copy on every shell behind its own stamp, gated on a per-repo marker dir,
 # leaving un-opted-in repos untouched. `codegraph-init`

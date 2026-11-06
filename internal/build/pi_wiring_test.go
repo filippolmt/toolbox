@@ -55,7 +55,7 @@ func TestInitDWiresPiEverywhereItWiresCodex(t *testing.T) {
 // TestPerRepoInstallersRefreshWhatPiReads extends the Workspace Install Refresh
 // family to pi's skill roots. graphify and playwright-cli each install a
 // per-agent copy of their skill — graphify into the repo's
-// .pi/agent/skills/graphify/, playwright-cli into the cross-agent
+// .pi/skills/graphify/, playwright-cli into the cross-agent
 // .agents/skills/playwright-cli/ that codex and pi both read — and neither is
 // written by the claude install the members already refresh. Without a second
 // pass the two agents see a skill frozen at whatever version first installed
@@ -76,7 +76,7 @@ func TestPerRepoInstallersRefreshWhatPiReads(t *testing.T) {
 				// Gate is the ~/.pi bind mount, never ~/.pi/agent — same
 				// reasoning as TestInitDWiresPiEverywhereItWiresCodex.
 				`if toolbox_agent_available pi && toolbox_agent_persistent pi; then`,
-				`toolbox_install_refresh graphify-pi "$PWD/.pi/agent/skills/graphify/SKILL.md" "$_gfy_ver"`,
+				`toolbox_install_refresh graphify-pi "$PWD/.pi/skills/graphify/SKILL.md" "$_gfy_ver"`,
 				`graphify install --project --platform pi`,
 			},
 		},
