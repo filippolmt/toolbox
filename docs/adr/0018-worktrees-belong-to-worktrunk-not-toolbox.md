@@ -90,9 +90,7 @@ up in `wt list` was not verified when this was decided.
 
 ## Amendment: the image wires the activity markers itself
 
-*Added 6 November 2026, [#1388](https://github.com/filippolmt/toolbox/issues/1388).*
-
-The Claude Code plugin turned out not to be installable here: managed settings
+From [#1388](https://github.com/filippolmt/toolbox/issues/1388). The Claude Code plugin turned out not to be installable here: managed settings
 block its marketplace source, and copying the plugin into place by hand would
 work around that policy. Its configuration skill had come from another
 marketplace instead, and that entry was removed.

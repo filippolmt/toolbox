@@ -308,3 +308,42 @@ func TestWorktrunkInitWiresMarkersOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestWorktrunkInitKeepsHookPositionsStable: a marker group is rewritten where
+// it already sits, because Codex ties a hook's trust to its position; a marker
+// hook on an event the current wiring no longer uses is dropped; and the
+// file keeps its mode.
+func TestWorktrunkInitKeepsHookPositionsStable(t *testing.T) {
+	f := newWorktrunkFixture(t)
+	hooksFile := filepath.Join(f.home, ".codex", "hooks.json")
+	writeFile(t, hooksFile, `{"hooks":{
+  "Stop":[
+    {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set old || true"}]},
+    {"hooks":[{"type":"command","command":"herdr stop"}]}
+  ],
+  "SubagentStop":[
+    {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set old || true"}]}
+  ]
+}}`)
+	if err := os.Chmod(hooksFile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f.run(t)
+
+	hooks := readHooks(t, hooksFile)
+	cmds := commands(hooks, "Stop")
+	if len(cmds) != 2 || !strings.Contains(cmds[0], "config state marker set 💬") || cmds[1] != "herdr stop" {
+		t.Errorf("Stop = %q, want the marker rewritten in first position, Herdr's hook after it", cmds)
+	}
+	if n := countMarkers(commands(hooks, "SubagentStop")); n != 0 {
+		t.Errorf("stale SubagentStop marker hook kept (%d)", n)
+	}
+	info, err := os.Stat(hooksFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("hooks.json mode = %o, want 644 kept", info.Mode().Perm())
+	}
+}

@@ -66,7 +66,7 @@ Worktrunk config so every new worktree gets it.
 
 ## Agent integration
 
-Every shell start wires Worktrunk into Claude Code, Codex and pi
+Every container start wires Worktrunk into Claude Code, Codex and pi
 (`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)):
 
 - **The configuration skill** (`worktrunk`). It is extracted from the source
