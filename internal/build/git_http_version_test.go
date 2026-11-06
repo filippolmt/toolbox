@@ -34,7 +34,7 @@ func TestGitHTTPVersionPinned(t *testing.T) {
 
 	// Bracket by stage rather than counting occurrences: two pins in the final
 	// stage and none in fetch-base would satisfy any count.
-	const fetchBase = "FROM debian:bookworm-slim AS fetch-base"
+	const fetchBase = "FROM debian:trixie-slim AS fetch-base"
 	start := strings.Index(body, fetchBase)
 	if start < 0 {
 		t.Fatalf("Dockerfile: cannot find %q — the stage was renamed, and a missing anchor must not pass this test by arithmetic", fetchBase)

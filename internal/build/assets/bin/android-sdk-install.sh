@@ -62,8 +62,8 @@ EOF
 
 # build_runtime downloads Debian's amd64 loader and the libraries Google's
 # binaries link, without root: apt's state is redirected into a scratch
-# directory, and the image's arm64 dpkg database is never touched. Bookworm
-# splits them between lib/ and usr/lib/; both land in $RUNTIME.
+# directory, and the image's arm64 dpkg database is never touched. Debian may
+# split them between lib/ and usr/lib/; both land in $RUNTIME.
 build_runtime() {
 	work="$SDK/.runtime-build"
 	rm -rf "$work"

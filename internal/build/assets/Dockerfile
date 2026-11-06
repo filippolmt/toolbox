@@ -86,7 +86,7 @@ ARG BAT_VERSION=0.26.1
 ARG FD_VERSION=10.5.1
 ARG EZA_VERSION=0.23.5
 # eza: upstream ships aarch64-MUSL only as zip; we fall back to aarch64-GNU on
-# arm64 (built on ubuntu-22.04 GLIBC 2.35, compatible with bookworm 2.36).
+# arm64 (built on ubuntu-22.04, whose GLIBC is older than the base image's).
 # amd64 stays MUSL.
 # OMZ + plugins pinned by full 40-char SHA (abbreviated breaks `git fetch
 # --depth=1`). Renovate keeps each at upstream HEAD.
@@ -166,10 +166,10 @@ ARG SHFMT_VERSION=3.14.1
 # `TestNodeStagesShareOneBaseImage` refuses a stage that names the image again.
 # Its major is held in renovate.json to the one the CodeGraph bundle vendors —
 # `fetch-codegraph` goes red on any other (ADR 0016).
-FROM node:24-bookworm-slim AS node-base
+FROM node:24-trixie-slim AS node-base
 
 # index — and before `freeze-mtimes`, which stamps what it leaves behind.
-FROM debian:bookworm-slim AS fetch-base
+FROM debian:trixie-slim AS fetch-base
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
@@ -373,8 +373,8 @@ RUN set -eux; \
       sh -n /out/usr/local/bin/glab; \
       freeze-mtimes
 
-# gws (Google Workspace CLI). MUSL variant — upstream `-gnu` targets
-# GLIBC 2.39, bookworm ships 2.36. Runtime keyring knob
+# gws (Google Workspace CLI). MUSL variant — static, so it does not depend on
+# the base image's GLIBC keeping up with upstream's `-gnu` target. Runtime keyring knob
 # (GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file) is set in the final stage.
 FROM fetch-base AS fetch-gws
 ARG TARGETARCH
@@ -428,7 +428,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-w
       /out/usr/local/bin/wt --version; \
       freeze-mtimes
 
-# atuin (SQLite-backed Ctrl-R). MUSL — same GLIBC mismatch as gws.
+# atuin (SQLite-backed Ctrl-R). MUSL — same GLIBC independence as gws.
 FROM fetch-base AS fetch-atuin
 ARG TARGETARCH
 ARG ATUIN_VERSION
@@ -674,7 +674,7 @@ RUN set -eux; \
 
 # bun. GLIBC variant (NOT -musl) — bun's musl build is dynamically linked
 # against /lib/ld-musl-x86_64.so.1, which Debian doesn't ship → ENOENT.
-# Bun's GLIBC build targets ≥ 2.27, well below bookworm's 2.36. Opposite
+# Bun's GLIBC build targets a GLIBC far older than the base image's. Opposite
 # rationale vs gws/atuin/zoxide. ~/.bun bound via mountplan defaults.
 # unzip installed here stays out of the final image (fetch-stage convention).
 FROM fetch-base AS fetch-bun
@@ -736,7 +736,7 @@ RUN set -eux; \
 # sonar (SonarQube CLI). Bun-compiled single binary from the SonarSource CDN —
 # the GitHub releases carry no assets. Per-file .sha256 published alongside
 # (bare hex digest, no filename column). glibc-dynamic (min 2.17, libsecret
-# loaded lazily via dlopen), fine on bookworm; no musl build exists.
+# loaded lazily via dlopen), fine on the base image; no musl build exists.
 FROM fetch-base AS fetch-sonar
 ARG TARGETARCH
 ARG SONARQUBE_CLI_VERSION
@@ -1102,9 +1102,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # notice — and that check ran before oci was installed. The venv is created at
 # its final path so the console-script shebangs already read /opt/oci-cli/bin,
 # which is where the copy lands it. `python3` inside the venv is a symlink to the
-# system interpreter: bookworm here and bookworm in the final stage, so 3.11 both
-# sides. PEP 668 no longer applies, so --break-system-packages is gone with it.
-FROM debian:bookworm-slim AS fetch-oci
+# system interpreter: trixie here and trixie in the final stage, so the same
+# minor on both sides — move this FROM with `node-base`'s Debian suite. PEP 668 no longer applies, so --break-system-packages is gone with it.
+FROM debian:trixie-slim AS fetch-oci
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --link --from=fetch-base /usr/local/bin/ /usr/local/bin/
 ARG DEBIAN_FRONTEND=noninteractive
@@ -1157,7 +1157,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
 #
 # What did NOT move, and why: `playwright`. Its tail RUN calls
 # `playwright install-deps chromium`, whose package set is computed from the
-# installed playwright version — 109 packages on a bare bookworm, and a bump
+# installed playwright version — over a hundred on a bare Debian slim, and a bump
 # can change it. Freezing that list into the base apt layer without a guard
 # fails the way this repo has been burned before: exit 0, a browser that will
 # not start. It needs the list extracted in-stage and asserted against the apt
@@ -1167,6 +1167,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
 # that tree plus the three files the deb puts outside it. Telemetry is off here
 # for the build, not for the user: its subprocess races the __pycache__ cleanup
 # on qemu arm64. The runtime knob of the same name lives below the tail.
+# Microsoft publishes no azure-cli suite for this stage's Debian release, so it
+# installs the previous release's build: every Depends of that deb resolves here
+# (`libssl3` through `libssl3t64`'s Provides), and `/opt/az` carries its own
+# interpreter. Switch both `bookworm` literals when a matching suite appears. → ADR 0019
 FROM fetch-base AS fetch-azure
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -1531,8 +1535,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       inetutils-telnet \
       less \
       libnss3-tools \
-      libpython3.11-minimal \
-      libpython3.11-stdlib \
+      libpython3.13-minimal \
+      libpython3.13-stdlib \
       make \
       ncurses-bin \
       openssh-client \
@@ -1556,7 +1560,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     #
     # These are the packages playwright asks for, NOT what apt resolves them to
     # — the transitives are apt's job and pinning them would break on a Debian
-    # rename. Derived by asking playwright on a bare bookworm
+    # rename. Derived by asking playwright on a bare trixie
     # (`playwright install-deps --dry-run chromium`) and subtracting everything
     # that is a dependency of something else in the set. Verified identical on
     # amd64 and arm64.
@@ -1583,10 +1587,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       fonts-tlwg-loma-otf \
       fonts-unifont \
       fonts-wqy-zenhei \
-      libasound2 \
-      libatk-bridge2.0-0 \
+      libasound2t64 \
+      libatk-bridge2.0-0t64 \
       libcairo2 \
-      libcups2 \
+      libcups2t64 \
       libgbm1 \
       libnss3 \
       libpango-1.0-0 \
@@ -1650,7 +1654,7 @@ ENV PATH="/home/toolbox/.bun/bin:${PATH}"
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=apt-lists \
     set -eux; \
-      # node:24-bookworm-slim ships /etc/dpkg/dpkg.cfg.d/docker-clean (or
+      # The node-base image ships /etc/dpkg/dpkg.cfg.d/docker-clean (or
       # similar) with `path-exclude /usr/share/doc/*`, which silently strips
       # fzf's key-bindings.zsh + completion.zsh integration scripts at install
       # time. Without re-including them, our zshrc `source
@@ -1675,8 +1679,8 @@ RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
       corepack prepare pnpm@${PNPM_VERSION} --activate; \
       pnpm --version; \
       pnpm completion zsh > /usr/share/zsh/vendor-completions/_pnpm;
-# xterm-ghostty terminfo. ncurses 6.4 (bookworm) predates the entry added
-# in 6.5. Bundled .src is a fully-resolved infocmp dump of the terminfo
+# xterm-ghostty terminfo. Debian's ncurses can lag the entry Ghostty ships, so
+# the image compiles its own. Bundled .src is a fully-resolved infocmp dump of the terminfo
 # Ghostty itself ships (version in the .src provenance header) — no use=
 # fragments to resolve.
 RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
