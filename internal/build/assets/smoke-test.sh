@@ -1126,7 +1126,9 @@ stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/nu
 # The pi pass: its own artefact, under the root pi reads, and its own stamp.
 # A shared stamp is the silent failure this asserts against — the claude pass
 # would have set it to the bundled version and pi would never be written.
-[ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/skills/graphify/SKILL.md"; exit 1; }
+# Name where graphify did write: an upstream move of the pi root then reads off
+# the CI log instead of looking like a failed install.
+[ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/skills/graphify/SKILL.md (graphify wrote: $(find . -path "*graphify/SKILL.md" ! -path "./.claude/*" | tr "\n" " "))"; exit 1; }
 pi_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify-pi" 2>/dev/null | head -n1)
 [ -n "$pi_stamp" ] || { echo "FAILED: no -graphify-pi stamp — the pi gate would reopen every shell"; exit 1; }
 [ "$pi_stamp" != "$stamp" ] || { echo "FAILED: the pi pass reused the claude stamp"; exit 1; }
