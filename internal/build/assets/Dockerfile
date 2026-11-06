@@ -374,8 +374,9 @@ RUN set -eux; \
       freeze-mtimes
 
 # gws (Google Workspace CLI). MUSL variant — static, so it does not depend on
-# the base image's GLIBC keeping up with upstream's `-gnu` target. Runtime keyring knob
-# (GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file) is set in the final stage.
+# the base image's GLIBC keeping up with upstream's `-gnu` target. Runtime
+# keyring knob (GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file) is set in the final
+# stage.
 FROM fetch-base AS fetch-gws
 ARG TARGETARCH
 ARG GWS_VERSION
@@ -1103,7 +1104,8 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
 # its final path so the console-script shebangs already read /opt/oci-cli/bin,
 # which is where the copy lands it. `python3` inside the venv is a symlink to the
 # system interpreter: trixie here and trixie in the final stage, so the same
-# minor on both sides — move this FROM with `node-base`'s Debian suite. PEP 668 no longer applies, so --break-system-packages is gone with it.
+# minor on both sides — move this FROM with `node-base`'s Debian suite. PEP 668
+# no longer applies, so --break-system-packages is gone with it.
 FROM debian:trixie-slim AS fetch-oci
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --link --from=fetch-base /usr/local/bin/ /usr/local/bin/
@@ -1170,7 +1172,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache \
 # Microsoft publishes no azure-cli suite for this stage's Debian release, so it
 # installs the previous release's build: every Depends of that deb resolves here
 # (`libssl3` through `libssl3t64`'s Provides), and `/opt/az` carries its own
-# interpreter. Switch both `bookworm` literals when a matching suite appears. → ADR 0019
+# interpreter. Switch both `bookworm` literals when a matching suite appears.
+# → ADR 0019
 FROM fetch-base AS fetch-azure
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -1680,9 +1683,9 @@ RUN --mount=type=cache,target=/root/.cache/node/corepack,id=corepack-cache \
       pnpm --version; \
       pnpm completion zsh > /usr/share/zsh/vendor-completions/_pnpm;
 # xterm-ghostty terminfo. Debian's ncurses can lag the entry Ghostty ships, so
-# the image compiles its own. Bundled .src is a fully-resolved infocmp dump of the terminfo
-# Ghostty itself ships (version in the .src provenance header) — no use=
-# fragments to resolve.
+# the image compiles its own. Bundled .src is a fully-resolved infocmp dump of
+# the terminfo Ghostty itself ships (version in the .src provenance header) —
+# no use= fragments to resolve.
 RUN --mount=type=bind,source=xterm-ghostty.src,target=/tmp/xterm-ghostty.src \
     set -eux; \
     tic -x -o /usr/share/terminfo /tmp/xterm-ghostty.src
