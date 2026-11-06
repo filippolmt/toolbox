@@ -705,7 +705,7 @@ check_optional  "worktrunk" wt       wt --version
 check_optional  "worktrunk shell integration" wt zsh -c '"'"'eval "$(wt config shell init zsh)" && whence -w wt | grep -x "wt: function"'"'"'
 # wt refuses every git-backed command below its own git floor, which neither
 # check above reaches; a real `wt list` fails when the git of the base image is too old.
-check_optional  "worktrunk git floor" wt bash -c '"'"'d=$(mktemp -d) && cd "$d" && git init -q && git -c user.name=smoke -c user.email=smoke@localhost commit -q --allow-empty -m init && wt list'"'"'
+check_optional  "worktrunk git floor" wt bash -c '"'"'d=$(mktemp -d) && trap "rm -rf \"$d\"" EXIT && cd "$d" && git init -q && git -c user.name=smoke -c user.email=smoke@localhost commit -q --allow-empty -m init && wt list'"'"'
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
