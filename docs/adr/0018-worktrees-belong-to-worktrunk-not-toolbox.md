@@ -87,3 +87,28 @@ with `--force-with-lease` and conflict resume, and the batched
 what should let a `wt list` in any shell see markers written by an agent in
 another worktree. Whether markers written inside the container actually show
 up in `wt list` was not verified when this was decided.
+
+## Amendment: the image wires the activity markers itself
+
+*Added 6 November 2026, [#1388](https://github.com/filippolmt/toolbox/issues/1388).*
+
+The Claude Code plugin turned out not to be installable here: managed settings
+block its marketplace source, and copying the plugin into place by hand would
+work around that policy. Its configuration skill had come from another
+marketplace instead, and that entry was removed.
+
+So Worktrunk joined Atuin and Herdr as
+[Agent Wiring](../../CONTEXT.md#agent-wiring). On every start,
+`init.d/62-worktrunk.sh` installs the skill shipped with the bundled release and
+registers the activity-marker hooks for Claude Code, Codex and pi. This is
+**on by default**, which does not contradict the decision above. That decision
+kept the plugins opt-in because they change agent behaviour, and the wiring
+leaves out exactly the two hooks that do:
+
+- the `PermissionRequest` auto-approval for entering worktrees;
+- the `WorktreeCreate`/`WorktreeRemove` routing of Claude's worktree isolation
+  through `wt`.
+
+`TestWorktrunkInitWiresMarkersOnly` holds that line. Installing the upstream
+plugin remains possible wherever the marketplace is allowed, and it adds those
+two hooks.

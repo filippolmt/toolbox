@@ -1681,18 +1681,19 @@ tool.
 
 The second half of bundling a coding agent: the per-agent Init Sequence logic
 that makes the *other* bundled tools see it. Bundling gets the binary onto
-`PATH`; wiring registers Atuin's history capture and Herdr's control
-integration. Skill installers run in the opposite direction — they make an
+`PATH`; wiring registers Atuin's history capture, Herdr's control
+integration and Worktrunk's activity markers. Skill installers run in the opposite direction — they make an
 agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
-Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh` and
-`init.d/61-herdr.sh` own their distinct wiring commands. Both consume Agent
+Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh`,
+`init.d/61-herdr.sh` and `init.d/62-worktrunk.sh` own their distinct wiring commands. All consume Agent
 Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
-itself. Only a writer of Claude's shared `settings.json` asks Agent Topology for
-its lock; independent Codex and pi files remain unlocked.
+itself. A writer of a file another wiring script also writes — Claude's
+`settings.json`, Codex's `hooks.json` — asks Agent Topology for that file's
+lock; a file only one writer touches, such as each pi extension, stays unlocked.
 `TestAgentWiringDeclaresEverySupportedAgent` fails when a supported agent lacks
-an explicit Herdr or Atuin adapter, while the Tool Catalog's bijection tests
+an explicit Herdr, Atuin or Worktrunk adapter, while the Tool Catalog's bijection tests
 hold only the bundling half.
 
 Why the term exists: pi was bundled as a first-class agent while the wiring

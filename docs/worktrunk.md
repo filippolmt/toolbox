@@ -64,21 +64,27 @@ paths to keep. Add `--require-include` to make the copy a no-op in a repository
 without that file. Run it by hand, or as a `post-start` hook in the project's
 Worktrunk config so every new worktree gets it.
 
-## Agent plugins (opt-in)
+## Agent integration
 
-Worktrunk ships plugins for Claude Code, Codex and pi: activity markers in
-`wt list`, worktree-lifecycle hooks, and a configuration skill. Toolbox does
-not install them, because they change how the agent behaves — the Claude Code
-plugin, for one, grants the agent permission to enter worktrees without
-asking. Installing one is your call:
+Every shell start wires Worktrunk into Claude Code, Codex and pi
+(`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)):
 
-```sh
-wt config plugins claude install
-```
+- **The configuration skill** (`worktrunk`). It is extracted from the source
+  archive of the release that ships the bundled `wt`, so it always describes the
+  binary you run, and it goes into every agent's skill directory.
+- **Activity markers**: 🤖 while the agent works and 💬 while it waits for you,
+  shown in `wt list`. These are hooks that call the bundled `wt`, registered in
+  Claude's `settings.json`, Codex's `hooks.json` and pi's extensions directory.
+  Codex asks you to trust a new hook once, inside Codex.
 
-It writes into the agent's own config directory, which for Claude Code is the
-`claude` mount (`~/.toolbox/.claude` on the host), so it is installed once and
-persists across containers.
+Upstream's agent plugins add two hooks that are left out on purpose, because
+they change how the agent behaves: an automatic approval for entering
+worktrees, and the routing of Claude Code's worktree isolation through `wt`.
+Why the image wires the markers itself instead of installing the plugin is
+recorded in the
+[ADR 0018 amendment](adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md#amendment-the-image-wires-the-activity-markers-itself).
+Where your Claude Code policy allows the upstream marketplace,
+`wt config plugins claude install` still adds the full plugin on top.
 
 ## Sharing one container
 

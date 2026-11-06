@@ -706,6 +706,9 @@ check_optional  "worktrunk shell integration" wt zsh -c '"'"'eval "$(wt config s
 # wt refuses every git-backed command below its own git floor, which neither
 # check above reaches; a real `wt list` fails when the git of the base image is too old.
 check_optional  "worktrunk git floor" wt bash -c '"'"'d=$(mktemp -d) && trap "rm -rf \"$d\"" EXIT && cd "$d" && git init -q && git -c user.name=smoke -c user.email=smoke@localhost commit -q --allow-empty -m init && wt list'"'"'
+# init.d/62-worktrunk.sh installs this skill into every agent; an archive layout
+# change upstream would otherwise ship an image with nothing to install.
+check_optional  "worktrunk skill shipped" wt test -s /usr/local/share/worktrunk/skills/worktrunk/SKILL.md
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
@@ -823,8 +826,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 18 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 18 (13 catalog InitScripts + 5 system)"
+if [ "$count" -ne 19 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 19 (14 catalog InitScripts + 5 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

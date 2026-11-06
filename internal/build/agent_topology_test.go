@@ -109,6 +109,30 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.claude-settings.lock" ] && echo lock
 	}
 }
 
+// TestAgentTopologyOwnsCodexHooksLock: Codex's hooks.json has three init.d
+// writers running in parallel (Atuin, Herdr, Worktrunk), and each one's
+// read-modify-write takes this lock.
+func TestAgentTopologyOwnsCodexHooksLock(t *testing.T) {
+	home := t.TempDir()
+	got := runAgentTopology(t, `
+write_hooks() { printf written; }
+toolbox_with_codex_hooks_lock write_hooks
+printf '|%s' "$([ -f "$HOME/.toolbox-state/.codex-hooks.lock" ] && echo locked)"
+`, "HOME="+home)
+	if got != "written|locked" {
+		t.Fatalf("locked writer result = %q, want written|locked", got)
+	}
+	for path, want := range map[string]string{
+		"init.d/61-herdr.sh":     "toolbox_with_codex_hooks_lock _herdr_install_integration codex",
+		"init.d/65-atuin.sh":     "toolbox_with_codex_hooks_lock atuin hook install codex",
+		"init.d/62-worktrunk.sh": "toolbox_with_codex_hooks_lock _wt_wire_codex",
+	} {
+		if !strings.Contains(readAsset(t, path), want) {
+			t.Errorf("%s writes Codex hooks.json without the lock (want %q)", path, want)
+		}
+	}
+}
+
 func TestAgentTopologyShipsInTheRuntimeImage(t *testing.T) {
 	dockerfile := readAsset(t, "Dockerfile")
 	const copyLine = "COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh"
@@ -138,6 +162,7 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 		"init.d/50-mcp-plugins.sh",
 		"init.d/60-glab.sh",
 		"init.d/61-herdr.sh",
+		"init.d/62-worktrunk.sh",
 		"init.d/65-atuin.sh",
 		"statusline-command.sh",
 	} {
@@ -168,6 +193,7 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 				`$HOME/.pi`,
 				`$HOME/.agents`,
 				`.claude-settings.lock`,
+				`.codex-hooks.lock`,
 			} {
 				if strings.Contains(line, duplicate) {
 					t.Errorf("%s duplicates Agent Topology fact %q", path, duplicate)
@@ -180,6 +206,7 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	herdr := readAsset(t, "init.d/61-herdr.sh")
 	atuin := readAsset(t, "init.d/65-atuin.sh")
+	worktrunk := readAsset(t, "init.d/62-worktrunk.sh")
 	atuinAdapters := map[string]string{
 		"claude": "claude-code",
 		"codex":  "codex",
@@ -189,6 +216,9 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	for _, agent := range config.SupportedAgents {
 		if !strings.Contains(herdr, `_herdr_install_integration `+agent) {
 			t.Errorf("Herdr wiring is undeclared for supported agent %q", agent)
+		}
+		if !strings.Contains(worktrunk, `_wt_wire_`+agent) {
+			t.Errorf("Worktrunk wiring is undeclared for supported agent %q", agent)
 		}
 		adapter, ok := atuinAdapters[agent]
 		if !ok {
