@@ -38,6 +38,13 @@
       "description": "The typescript nested under typescript-language-server exists only to provide tsserver.js, which the native (Go) majors from 7 on no longer ship. Hold it below 7 until typescript-language-server can drive the native server.",
       "matchDepNames": ["typescript-tsserver"],
       "allowedVersions": "<7"
+    },
+    {
+      "description": "Hold the image's node-base on the Node major the CodeGraph bundle vendors. fetch-codegraph replaces that vendored runtime with a symlink to the base image's node only after asserting the majors match (ADR 0016), so a base major ahead of the bundle is a red build. Move the pattern to the next major once @colbymchenry/codegraph-linux-<arch> vendors it.",
+      "matchFileNames": ["internal/build/assets/Dockerfile"],
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["node"],
+      "allowedVersions": "/^24-/"
     }
   ],
   "customDatasources": {
