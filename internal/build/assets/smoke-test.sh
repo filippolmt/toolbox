@@ -1080,7 +1080,7 @@ set -e
 command -v graphify >/dev/null 2>&1 || { echo "SKIP: graphify not installed"; exit 0; }
 command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
 mkdir -p "$HOME/.claude"
-# pi refreshes into .pi/agent/skills behind a stamp of its own, and its gate is
+# pi refreshes into .pi/skills behind a stamp of its own, and its gate is
 # the ~/.pi bind mount — absent in a throwaway container, so the pass would be
 # skipped and its half of this block would prove nothing. Create it here: that
 # is the one condition a real session always has and this one never does.
@@ -1126,15 +1126,17 @@ stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/nu
 # The pi pass: its own artefact, under the root pi reads, and its own stamp.
 # A shared stamp is the silent failure this asserts against — the claude pass
 # would have set it to the bundled version and pi would never be written.
-[ -f .pi/agent/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/agent/skills/graphify/SKILL.md"; exit 1; }
+# Name where graphify did write: an upstream move of the pi root then reads off
+# the CI log instead of looking like a failed install.
+[ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/skills/graphify/SKILL.md (graphify wrote: $(find . -path "*graphify/SKILL.md" ! -path "./.claude/*" | tr "\n" " "))"; exit 1; }
 pi_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify-pi" 2>/dev/null | head -n1)
 [ -n "$pi_stamp" ] || { echo "FAILED: no -graphify-pi stamp — the pi gate would reopen every shell"; exit 1; }
 [ "$pi_stamp" != "$stamp" ] || { echo "FAILED: the pi pass reused the claude stamp"; exit 1; }
 # Deleting one agent copy must self-heal it without reopening the gate of the
 # other pass: the artefact halves are per pass.
-rm -f .pi/agent/skills/graphify/SKILL.md
+rm -f .pi/skills/graphify/SKILL.md
 /usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the pi self-heal"; exit 1; }
-[ -f .pi/agent/skills/graphify/SKILL.md ] || { echo "FAILED: a deleted pi skill did not self-heal"; exit 1; }
+[ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: a deleted pi skill did not self-heal"; exit 1; }
 # Second refresh, the case the normalisation itself creates: graphify install
 # recognises its own hooks by (wide upstream matcher) AND (entry mentions
 # graphify), so once we have narrowed the matcher it no longer sees its own work
