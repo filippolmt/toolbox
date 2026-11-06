@@ -41,7 +41,7 @@ Pick the install method by matching the closest analog already in the Dockerfile
 | Source | Closest analog | Pattern |
 |--------|----------------|---------|
 | GitHub release, single static binary, sha256sums published | `fetch-gh` stage | `curl tarball` + `curl checksums.txt` + `grep \| sha256sum -c -` |
-| GitHub release, MUSL/GNU split | `fetch-gws`, `fetch-zoxide` stages | Pick MUSL — base image is bookworm GLIBC 2.36; `-gnu` builds targeting GLIBC ≥2.39 fail at runtime |
+| GitHub release, MUSL/GNU split | `fetch-gws`, `fetch-zoxide` stages | Pick MUSL — static, so independent of the base image's GLIBC; `-gnu` builds can target a GLIBC newer than the base image ships and fail at runtime |
 | GitHub release, no checksum file | `fetch-bat`, `fetch-zoxide` stages | Version pin + HTTPS only. Never hand-pin per-arch SHA256 literals: they go stale on every version bump and on an upstream re-tag of the same version, breaking the build for a guarantee that pinning your own hash never provided |
 | npm package | final-stage `pnpm` / `claude` / `codex` layers | `npm install -g <pkg>@${VERSION}`; install runs as root, runtime user can't bump → disable auto-update if upstream supports it |
 | Python package | final-stage `oci` layer | `pip install --break-system-packages <pkg>==${VERSION}` (PEP 668 opt-out is intentional, single-purpose container) |

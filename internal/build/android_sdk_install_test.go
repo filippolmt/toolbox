@@ -51,7 +51,7 @@ fi
 case " $* " in *" download "*)
 	for a in "$@"; do case "$a" in *:amd64) : > "${a%:amd64}_amd64.deb" ;; esac; done ;;
 esac`,
-		// `dpkg-deb -x` lays each package out the way Debian bookworm does: libc6
+		// `dpkg-deb -x` lays each package out split the way older Debian releases ship it: libc6
 		// (the loader, which exits 0 as if Rosetta ran it) under lib/, the rest
 		// under usr/lib/. The installer has to merge both into one directory.
 		"dpkg-deb": `echo "dpkg-deb $*" >> "$CALLS"
@@ -185,8 +185,9 @@ func TestAndroidSdkInstallOnArm64FailsFastNamingRosettaWhenTheLoaderCannotRun(t 
 }
 
 // On arm64 with an empty bind, the installer builds the Foreign-Arch Runtime
-// from Debian's amd64 packages, without root, and merges bookworm's lib/ and
-// usr/lib/ halves into the one directory the image's symlink points at.
+// from Debian's amd64 packages, without root, and merges the lib/ and usr/lib/
+// halves a Debian release may split them into into the one directory the
+// image's symlink points at.
 func TestAndroidSdkInstallOnArm64BuildsTheForeignArchRuntime(t *testing.T) {
 	home := t.TempDir()
 
