@@ -124,7 +124,6 @@ func Merge(global, project, explicit []byte) (*Config, error) {
 
 	seedEnvBoundKeys(vp)
 
-	warnLegacyTools(global, project, explicit)
 	warnLegacyBrowserBridge(global, project, explicit)
 	warnRetiredKeys(global, project, explicit)
 
@@ -257,10 +256,10 @@ func walkUp(start string) string {
 // Legacy `tools:` Warning
 // =============================================================================
 
-// legacyToolsWarnOnce ensures the deprecation warning fires at most once per
-// process — Plan is called by almost every cmd/* subcommand (shell, stop,
+// legacyToolsWarnOnce ensures the TOOLBOX_TOOLS_* warning fires at most once
+// per process — Plan is called by almost every cmd/* subcommand (shell, stop,
 // config, sdd, …) and spamming the warning on every CLI invocation creates
-// scripting noise.
+// scripting noise. The `tools:` key itself is a RetiredKeys entry.
 var legacyToolsWarnOnce sync.Once
 
 // legacyBrowserBridgeWarnOnce mirrors legacyToolsWarnOnce for the deprecated
@@ -360,9 +359,7 @@ func warnLegacyBrowserBridge(buffers ...[]byte) {
 }
 
 // warnLegacyToolsEnv detects `TOOLBOX_TOOLS_<KEY>=...` env vars left over
-// from the legacy opt-out and emits the same deprecation warning. Shares
-// legacyToolsWarnOnce with warnLegacyTools so a user with both a yaml block
-// and env vars sees a single line.
+// from the legacy opt-out and emits a deprecation warning, once per process.
 func warnLegacyToolsEnv() {
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "TOOLBOX_TOOLS_") {
@@ -378,44 +375,40 @@ func warnLegacyToolsEnv() {
 	}
 }
 
-// warnLegacyTools emits the deprecation warning the first time any input
-// buffer carries a top-level `tools:` key. Process-wide one-shot.
-func warnLegacyTools(buffers ...[]byte) {
-	for _, b := range buffers {
-		if len(b) == 0 {
-			continue
-		}
-		if hasTopLevelKey(b, "tools") {
-			legacyToolsWarnOnce.Do(func() {
-				fmt.Fprintln(os.Stderr,
-					"toolbox: warning: 'tools:' is no longer supported and has been removed.\n"+
-						"        All bundled CLIs are now installed unconditionally.\n"+
-						"        Remove the block from your config to silence this warning.\n"+
-						"        See: https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal")
-			})
-			return
-		}
+// RetiredKey is what replaced a top-level config key toolbox no longer reads:
+// the hint the warning and `config doctor` print, and the page explaining it.
+type RetiredKey struct {
+	Hint string
+	Doc  string
+}
+
+const docsBase = "https://github.com/filippolmt/toolbox/blob/main/docs/"
+
+// RetiredKeys lists the Retired Keys (CONTEXT.md): a config carrying one keeps
+// loading — viper ignores a key with no Config field — and the key is warned
+// about instead of silently dropped.
+func RetiredKeys() map[string]RetiredKey {
+	return map[string]RetiredKey{
+		"tools": {
+			Hint: "'tools:' is no longer supported — all bundled CLIs install unconditionally. Remove the block",
+			Doc:  docsBase + "internals/image-build.md#tools-removal",
+		},
+		"worktree": {
+			Hint: "'worktree:' is ignored — `toolbox worktree` was replaced by Worktrunk (`wt`), bundled in the image. " +
+				"`wt step copy-ignored` copies gitignored files into a worktree: every one of them unless a " +
+				".worktreeinclude file lists the paths to keep (the old seed list). Remove the block",
+			Doc: docsBase + "worktrunk.md#migrating-from-toolbox-worktree",
+		},
+		"agent": {
+			Hint: "'agent:' is ignored — it only chose the agent `toolbox worktree` launched; " +
+				"Worktrunk launches one with `wt switch -c -x <agent> <branch>`. Remove the key",
+			Doc: docsBase + "worktrunk.md#migrating-from-toolbox-worktree",
+		},
 	}
 }
 
-// RetiredKeys maps each top-level key that only `toolbox worktree` read to
-// what replaced it. A config carrying one keeps loading — viper ignores a key
-// with no Config field — and the key is warned about instead of silently
-// dropped; `config doctor` reports the same hint. Removal is a later release.
-func RetiredKeys() map[string]string {
-	return map[string]string{
-		"worktree": "'worktree:' is ignored — `toolbox worktree` was replaced by Worktrunk (`wt`), bundled in the image; " +
-			"copy gitignored files into a worktree with `wt step copy-ignored`, scoped by a .worktreeinclude file. Remove the block",
-		"agent": "'agent:' is ignored — it only chose the agent `toolbox worktree` launched; " +
-			"Worktrunk launches one with `wt switch -c -x <agent> <branch>`. Remove the key",
-	}
-}
-
-// RetiredKeysDoc is the user guide section that explains the replacement.
-const RetiredKeysDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/worktrunk.md"
-
-// retiredKeysWarned dedupes the load-time warning per key, process-wide, for
-// the same reason legacyToolsWarnOnce does.
+// retiredKeysWarned dedupes the load-time warning per key, process-wide: Plan
+// runs on almost every subcommand, and a warning per call is scripting noise.
 var retiredKeysWarned sync.Map
 
 // warnRetiredKeys warns once per process about every RetiredKeys entry found
@@ -428,7 +421,7 @@ func warnRetiredKeys(buffers ...[]byte) {
 				continue
 			}
 			if _, done := retiredKeysWarned.LoadOrStore(key, true); !done {
-				fmt.Fprintf(os.Stderr, "toolbox: warning: %s.\n        See: %s\n", retired[key], RetiredKeysDoc)
+				fmt.Fprintf(os.Stderr, "toolbox: warning: %s.\n        See: %s\n", retired[key].Hint, retired[key].Doc)
 			}
 		}
 	}

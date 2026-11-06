@@ -30,16 +30,12 @@ type Finding struct {
 	Message  string
 }
 
-// toolsRemovalDoc is the image-build internals anchor explaining why the
-// legacy tools: block is ignored.
-const toolsRemovalDoc = "https://github.com/filippolmt/toolbox/blob/main/docs/internals/image-build.md#tools-removal"
-
 // Doctor validates the configuration without mutating anything: it surfaces
-// load/merge errors (everything Plan's validation tail already checks),
-// unknown top-level keys per layer (with suggestions), the legacy tools:
-// block, empty / missing shells.<name>.path, mount-merge failures, and
-// duplicate resolved mount targets. Strictly a read-only superset of the
-// load path — it never changes merge behaviour.
+// load/merge errors (everything Plan's validation tail already checks), unknown
+// top-level keys per layer (with suggestions), retired keys
+// (config.RetiredKeys), empty / missing shells.<name>.path, mount-merge
+// failures, and duplicate resolved mount targets. Strictly a read-only superset
+// of the load path — it never changes merge behaviour.
 func Doctor(host fsx.Host, searchFrom, explicitOverride string) []Finding {
 	var findings []Finding
 
@@ -75,7 +71,7 @@ func HasErrors(findings []Finding) bool {
 }
 
 // lintLayerKeys flags unknown top-level keys (with a did-you-mean
-// suggestion) and the legacy tools: block in one layer's raw bytes. Parse
+// suggestion) and retired keys in one layer's raw bytes. Parse
 // failures are skipped here — Merge surfaces them as proper errors.
 func lintLayerKeys(label string, b []byte) []Finding {
 	if len(b) == 0 {
@@ -89,15 +85,9 @@ func lintLayerKeys(label string, b []byte) []Finding {
 	retired := config.RetiredKeys()
 	var findings []Finding
 	for _, k := range slices.Sorted(maps.Keys(m)) {
-		if k == "tools" {
+		if r, ok := retired[k]; ok {
 			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
-				"%s: legacy 'tools:' block is ignored — all bundled CLIs install unconditionally; remove it (see %s)",
-				label, toolsRemovalDoc)})
-			continue
-		}
-		if hint, ok := retired[k]; ok {
-			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
-				"%s: %s (see %s)", label, hint, config.RetiredKeysDoc)})
+				"%s: %s (see %s)", label, r.Hint, r.Doc)})
 			continue
 		}
 		if !slices.Contains(known, k) {

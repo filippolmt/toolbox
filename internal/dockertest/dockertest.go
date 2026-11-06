@@ -8,11 +8,11 @@
 // interface it cannot name because that interface is unexported in its own
 // package.
 //
-// internal/container still holds the whole client and keeps its own
-// hand-rolled adapter, structurally rather than pending: it is the Docker
-// edge. Its functions take client.APIClient, which this Fake deliberately does not
-// satisfy, so it could not stand in there even if it grew the methods. The
-// leaf types that were byte-identical across packages (the errdefs "not found"
+// internal/container still holds the whole client and keeps its own hand-rolled
+// adapter, structurally rather than pending: it is the Docker edge. Its
+// functions take client.APIClient, which this Fake deliberately does not
+// satisfy, so it could not stand in there even if it grew the methods. The leaf
+// types that were byte-identical across packages (the errdefs "not found"
 // error, the ImagePullResponse adapter, the two result builders) live here
 // either way, so there is a single copy to update when the SDK shifts.
 package dockertest

@@ -28,8 +28,9 @@ var newDockerClient = container.NewClient
 // flag globals into one of these, and a test builds one directly.
 type sessionIntent struct {
 	// Plan is the caller's half of the session plan — workspace, named shell,
-	// ports, loopback bridge, profile, peer opt-in — carried as sessionplan.PlanInput itself rather than copied
-	// field by field into a parallel struct.
+	// ports, loopback bridge, profile, peer opt-in — carried as
+	// sessionplan.PlanInput itself rather than copied field by field into a
+	// parallel struct.
 	//
 	// Host, Proximo, ImageDigest and ReloadFrom are the assembly's half:
 	// startSession overwrites them unconditionally, so setting them here has

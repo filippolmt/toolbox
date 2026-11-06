@@ -6,8 +6,9 @@ package config
 // declares an Effective fallback.
 //
 // It is the single seam answering "what does an unset key K resolve to";
-// renderers (config show, the config UI) SHALL derive from it instead of re-hardcoding the fallback, so the two renderers
-// cannot drift on effective values.
+// renderers (config show, the config UI) SHALL derive from it instead of
+// re-hardcoding the fallback, so the two renderers cannot drift on effective
+// values.
 //
 // It returns ("", false) for every key whose row declares no fallback: the
 // collection keys, the tri-state toggles whose effective value is host-derived,

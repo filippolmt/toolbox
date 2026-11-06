@@ -27,12 +27,19 @@ func TestWarnRetiredKeysNamesEachKeyOnce(t *testing.T) {
 	out, _ := io.ReadAll(r)
 
 	got := string(out)
-	for key := range RetiredKeys() {
-		if n := strings.Count(got, "'"+key+":' is ignored"); n != 1 {
+	for _, key := range []string{"worktree", "agent"} {
+		r := RetiredKeys()[key]
+		if n := strings.Count(got, r.Hint); n != 1 {
 			t.Errorf("%q warned %d times, want once:\n%s", key, n, got)
 		}
+		if !strings.Contains(got, r.Doc) {
+			t.Errorf("%q warning must name its guide %s:\n%s", key, r.Doc, got)
+		}
 	}
-	if !strings.Contains(got, ".worktreeinclude") || !strings.Contains(got, RetiredKeysDoc) {
-		t.Errorf("warning must point to .worktreeinclude and the guide:\n%s", got)
+	if !strings.Contains(got, ".worktreeinclude") {
+		t.Errorf("worktree warning must point to .worktreeinclude:\n%s", got)
+	}
+	if strings.Contains(got, "'tools:'") {
+		t.Errorf("no buffer carried tools:, yet it was warned about:\n%s", got)
 	}
 }

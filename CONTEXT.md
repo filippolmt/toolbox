@@ -155,6 +155,26 @@ key" into one row, and collapses those presence guards into
 frees each surface's own tests to assert its output rather than the
 presence of a row.
 
+### Retired Key
+
+A top-level config key toolbox no longer reads but still recognises: a config
+carrying one keeps loading, and the key is named — once per process at load,
+and as a `config doctor` finding — with the hint and the page that say what
+replaced it. It is neither a [Config Schema](#config-schema) key (no `Config`
+field, no [Key Row](#key-row): viper drops a key it has no field for) nor an
+unknown one (`doctor` would offer a did-you-mean pointing at an unrelated live
+key). Distinct from a deprecated alias such as `browser_bridge`, which is still
+read and folds into its live key.
+
+Concretely: `config.RetiredKeys()` → `config.RetiredKey{Hint, Doc}`, read by
+`warnRetiredKeys` on the load path and by `configedit.lintLayerKeys`. Owned
+by `internal/config` (`plan.go`).
+
+Why the term exists: `tools:` was dropped with a hand-written warning and a
+hand-written doctor branch; retiring `worktree:` and `agent:` would have made
+it three warners and three branches. One table keeps a retirement to one
+entry. Removing an entry is the later release that stops recognising the key.
+
 ### Config Scope
 
 Which layer of the config a value is read from or written to: the

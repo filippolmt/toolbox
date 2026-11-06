@@ -58,8 +58,10 @@ config.
 
 A new worktree is a checkout of tracked files only. `wt step copy-ignored`
 copies gitignored files (`.env`, local settings) into it from the main
-worktree; a `.worktreeinclude` file at the repository root limits the copy to
-the paths it lists. Run it by hand, or as a `post-start` hook in the project's
+worktree — **every** gitignored file, build output and dependency trees
+included, unless a `.worktreeinclude` file at the repository root lists the
+paths to keep. Add `--require-include` to make the copy a no-op in a repository
+without that file. Run it by hand, or as a `post-start` hook in the project's
 Worktrunk config so every new worktree gets it.
 
 ## Agent plugins (opt-in)
@@ -96,8 +98,11 @@ removes them.
 Two config keys only that command read, and both are now ignored with a
 warning at load and in `toolbox config doctor`:
 
-- `worktree:` (its `seed` list) — move the paths into `.worktreeinclude` and
-  copy them with `wt step copy-ignored`.
+- `worktree:` (its `seed` list) — list the paths in `.worktreeinclude` and
+  copy them with `wt step copy-ignored`. The old seed list was an allowlist on
+  top of fixed defaults (`.claude/settings.local.json`, `.env*`, `openspec/`,
+  `.planning/`); without a `.worktreeinclude`, `copy-ignored` copies everything
+  gitignored instead.
 - `agent:` — name the agent per worktree with `wt switch -x <agent>`.
 
 Remove them from `.toolbox.yaml` to silence the warning. A later release stops

@@ -101,9 +101,10 @@ func execReload(from *reload.From) error {
 
 // reloadArgv rebuilds argv for the tail call from the **normalised** re-entry
 // form, never from os.Args: replaying the invocation as typed would re-run
-// create-only flags (`--create`, `--path`) whose act has already happened. argv[0] is the resolved binary rather than the
-// name this process was invoked under, so the re-exec cannot follow a symlink
-// or a shell alias somewhere else.
+// create-only flags (`--create`, `--path`) whose act has already happened.
+// argv[0] is the resolved binary rather than the name this process was invoked
+// under, so the re-exec cannot follow a symlink or a shell alias somewhere
+// else.
 func reloadArgv(bin string, from *reload.From) []string {
 	argv := []string{bin}
 	if len(from.Reentry) == 0 {

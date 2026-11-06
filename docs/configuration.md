@@ -242,6 +242,7 @@ replaced ([ADR 0018](adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md)).
 A config that still carries them loads: each is ignored, with a warning at load
 and in `toolbox config doctor` (`config.RetiredKeys`). Where their settings
 went: [migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree).
+The legacy `tools:` block is retired the same way ([tools removal](internals/image-build.md#tools-removal)).
 
 ## `TOOLBOX_*` environment variables
 
