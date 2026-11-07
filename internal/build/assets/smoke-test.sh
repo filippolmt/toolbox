@@ -818,13 +818,16 @@ echo "OK: agent instructions reach Claude Code, Codex and pi"
 echo ""
 echo "=== Codex system hooks (Image Default) ==="
 # Codex runs /etc/codex/hooks.json with no per-user trust step; a hook in
-# ~/.codex/hooks.json waits for the developer to trust it by hand. An event
-# missing here is a Worktrunk, Herdr or Atuin hook Codex never fires.
+# ~/.codex/hooks.json waits for the developer to trust it by hand. The build
+# stage checks the file it writes; this checks the image ships it with every
+# tool's hook, readable by any UID.
 docker run --rm "${IMAGE}" bash -c '
-jq -e ".hooks | (.UserPromptSubmit and .PermissionRequest and .Stop and .SessionEnd and .SessionStart and .PreToolUse and .PostToolUse and .PostToolUseFailure)" /etc/codex/hooks.json >/dev/null \
-    || { echo "FAILED: /etc/codex/hooks.json missing an image hook"; exit 1; }
-grep -qF "/etc/codex/herdr-agent-state.sh" /etc/codex/hooks.json && test -r /etc/codex/herdr-agent-state.sh \
-    || { echo "FAILED: Herdr codex hook does not reach its script"; exit 1; }
+for f in /etc/codex/hooks.json /etc/codex/herdr-agent-state.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh; do
+    test -r "$f" || { echo "FAILED: $f missing or unreadable"; exit 1; }
+done
+for c in "/usr/local/bin/wt config state marker" "/usr/local/bin/atuin hook codex" "/etc/codex/herdr-agent-state.sh"; do
+    grep -qF "$c" /etc/codex/hooks.json || { echo "FAILED: /etc/codex/hooks.json has no hook running $c"; exit 1; }
+done
 echo "OK: codex system hooks baked"
 '
 

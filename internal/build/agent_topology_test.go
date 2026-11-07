@@ -25,7 +25,23 @@ func wireAgentTopologyForTest(t *testing.T, dir string, body []byte) []byte {
 	if err := os.WriteFile(path, lib, 0o644); err != nil {
 		t.Fatalf("write agent topology library: %v", err)
 	}
-	return []byte(strings.ReplaceAll(string(body), agentTopologySource, `. "`+path+`"`))
+	out := strings.ReplaceAll(string(body), agentTopologySource, `. "`+path+`"`)
+	return []byte(wireWorktrunkMarkersForTest(t, dir, out))
+}
+
+// wireWorktrunkMarkersForTest points a script's source line for the Worktrunk
+// markers library at a copy of the embedded one under dir.
+func wireWorktrunkMarkersForTest(t *testing.T, dir, body string) string {
+	t.Helper()
+	lib, err := Assets.ReadFile("assets/bin/worktrunk-markers-lib.sh")
+	if err != nil {
+		t.Fatalf("read worktrunk markers library: %v", err)
+	}
+	path := filepath.Join(dir, "worktrunk-markers-lib.sh")
+	if err := os.WriteFile(path, lib, 0o644); err != nil {
+		t.Fatalf("write worktrunk markers library: %v", err)
+	}
+	return strings.ReplaceAll(body, ". /usr/local/lib/toolbox/worktrunk-markers-lib.sh", `. "`+path+`"`)
 }
 
 func runAgentTopology(t *testing.T, script string, env ...string) string {
@@ -202,50 +218,44 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 	}
 }
 
+// TestAgentWiringDeclaresEverySupportedAgent: each supported agent names where
+// its Atuin, Herdr and Worktrunk adapters live. Codex's are an Image Default:
+// the gen-codex-config stage builds /etc/codex/hooks.json, where Codex runs
+// them with no per-user trust step; the other agents' are init.d members.
 func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	herdr := readAsset(t, "init.d/61-herdr.sh")
 	atuin := readAsset(t, "init.d/65-atuin.sh")
 	worktrunk := readAsset(t, "init.d/62-worktrunk.sh")
-	atuinAdapters := map[string]string{
-		"claude": "claude-code",
-		"codex":  "codex",
-		"pi":     "pi",
-	}
-
-	// Codex's hooks are an Image Default: the gen-codex-config stage builds
-	// /etc/codex/hooks.json, where Codex needs no per-user trust to run them.
 	dockerfile := readAsset(t, "Dockerfile")
-	codexHooks := readAsset(t, "codex-hooks.json")
-	for _, want := range []string{
-		"CODEX_HOME=/etc/codex herdr integration install codex",
-		"CODEX_HOME=/etc/codex atuin hook install codex",
-		"COPY --link codex-hooks.json /tmp/codex-hooks.json",
-	} {
-		if !strings.Contains(dockerfile, want) {
-			t.Errorf("Codex system-layer hooks are missing %q in the Dockerfile", want)
-		}
-	}
-	if !strings.Contains(codexHooks, "/usr/local/bin/wt config state marker ") {
-		t.Error("codex-hooks.json carries no Worktrunk marker hook")
+	type adapter struct{ tool, source, want string }
+	adapters := map[string][]adapter{
+		"claude": {
+			{"Herdr", herdr, "_herdr_install_integration claude"},
+			{"Atuin", atuin, "atuin hook install claude-code"},
+			{"Worktrunk", worktrunk, "_wt_wire_claude"},
+		},
+		"codex": {
+			{"Herdr", dockerfile, "CODEX_HOME=/etc/codex herdr integration install codex"},
+			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
+			{"Worktrunk", dockerfile, `_wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"`},
+		},
+		"pi": {
+			{"Herdr", herdr, "_herdr_install_integration pi"},
+			{"Atuin", atuin, "atuin hook install pi"},
+			{"Worktrunk", worktrunk, "_wt_wire_pi"},
+		},
 	}
 
 	for _, agent := range config.SupportedAgents {
-		if agent == "codex" {
-			continue
-		}
-		if !strings.Contains(herdr, `_herdr_install_integration `+agent) {
-			t.Errorf("Herdr wiring is undeclared for supported agent %q", agent)
-		}
-		if !strings.Contains(worktrunk, `_wt_wire_`+agent) {
-			t.Errorf("Worktrunk wiring is undeclared for supported agent %q", agent)
-		}
-		adapter, ok := atuinAdapters[agent]
+		declared, ok := adapters[agent]
 		if !ok {
-			t.Errorf("Atuin wiring has no declared adapter for supported agent %q", agent)
+			t.Errorf("supported agent %q declares no Atuin, Herdr or Worktrunk adapter", agent)
 			continue
 		}
-		if !strings.Contains(atuin, `atuin hook install `+adapter) {
-			t.Errorf("Atuin wiring is undeclared for supported agent %q", agent)
+		for _, a := range declared {
+			if !strings.Contains(a.source, a.want) {
+				t.Errorf("%s wiring for supported agent %q is missing %q", a.tool, agent, a.want)
+			}
 		}
 	}
 }

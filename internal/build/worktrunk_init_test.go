@@ -273,16 +273,12 @@ func TestWorktrunkInitInstallsSkillIntoBothRoots(t *testing.T) {
 	}
 }
 
-// TestWorktrunkInitTakesTheSharedLocks: settings.json has other init.d
+// TestWorktrunkInitTakesTheClaudeSettingsLock: settings.json has other init.d
 // writers running in parallel.
-func TestWorktrunkInitTakesTheSharedLocks(t *testing.T) {
-	s := readAsset(t, "init.d/62-worktrunk.sh")
-	for _, want := range []string{
-		"toolbox_with_claude_settings_lock _wt_wire_claude",
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("%s is missing %q", worktrunkInitScript, want)
-		}
+func TestWorktrunkInitTakesTheClaudeSettingsLock(t *testing.T) {
+	const want = "toolbox_with_claude_settings_lock _wt_wire_claude"
+	if !strings.Contains(readAsset(t, "init.d/62-worktrunk.sh"), want) {
+		t.Errorf("%s is missing %q", worktrunkInitScript, want)
 	}
 }
 

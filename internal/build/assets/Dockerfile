@@ -1248,8 +1248,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-a
 # Codex runs a system-layer hook as managed, with no per-user trust step, where
 # a hook in ~/.codex/hooks.json is skipped until the developer trusts it by hand
 # (codex-rs/hooks/src/engine/discovery.rs, hook_trust_status). Worktrunk's
-# markers come from codex-hooks.json; Herdr and Atuin add theirs with their own
-# installers, so a version bump carries its hook. The installers also write
+# markers come from bin/worktrunk-markers-lib.sh, the source Claude Code's are
+# built from too; Herdr and Atuin add theirs with their own installers, so a
+# version bump carries its hook. The installers also write
 # trust entries and a feature flag into config.toml: managed hooks need
 # neither, so that file stays behind in the scratch CODEX_HOME.
 FROM fetch-base AS gen-codex-config
@@ -1258,18 +1259,21 @@ COPY --link --from=fetch-jq    /out/ /
 COPY --link --from=fetch-atuin /out/ /
 COPY --link --from=fetch-herdr /out/ /
 COPY --link agent-instructions.md /tmp/agent-instructions.md
-COPY --link codex-hooks.json /tmp/codex-hooks.json
+COPY --link bin/worktrunk-markers-lib.sh /tmp/worktrunk-markers-lib.sh
 RUN set -eux; \
       if grep -qF "'''" /tmp/agent-instructions.md; then exit 1; fi; \
       mkdir -p /out/etc/codex; \
       { printf "developer_instructions = '''\n"; cat /tmp/agent-instructions.md; printf "'''\n"; } \
         > /out/etc/codex/config.toml; \
       mkdir -p /etc/codex /tmp/home; \
-      cp /tmp/codex-hooks.json /etc/codex/hooks.json; \
+      . /tmp/worktrunk-markers-lib.sh; \
+      _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
       HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
-      jq -e '.hooks | (.UserPromptSubmit and .PermissionRequest and .Stop and .SessionEnd \
-        and .SessionStart and .PreToolUse and .PostToolUse and .PostToolUseFailure)' /etc/codex/hooks.json; \
+      jq -e --arg marker_re "$_wt_marker_re" --argjson wt "$_wt_codex_events" \
+        '[.hooks[][].hooks[].command] as $c | ($wt | length) == ([$c[] | select(test($marker_re))] | length) \
+        and ($c | index("/usr/local/bin/atuin hook codex")) and ($c | index("bash \u0027/etc/codex/herdr-agent-state.sh\u0027 session"))' \
+        /etc/codex/hooks.json; \
       install -m 0644 /etc/codex/hooks.json /out/etc/codex/hooks.json; \
       install -m 0755 /etc/codex/herdr-agent-state.sh /out/etc/codex/herdr-agent-state.sh; \
       freeze-mtimes
@@ -2006,6 +2010,7 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 # Agent Topology owns agent roots, persistence gates and shared resources for
 # init.d members and the managed statusline.
 COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
+COPY --link --chmod=0644 bin/worktrunk-markers-lib.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh
 # Workspace Install Refresh gate, sourced by the init.d members that re-run a
 # per-repo installer (one gate, one stamp shape, one failure message).
 COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh

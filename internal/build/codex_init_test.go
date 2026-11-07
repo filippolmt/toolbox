@@ -41,8 +41,10 @@ func runCodexInit(t *testing.T, home string) {
 
 // TestCodexInitDropsEarlierImageHooks: earlier images wrote Atuin, Herdr and
 // Worktrunk hooks into ~/.codex/hooks.json; the image now ships them in
-// /etc/codex/hooks.json, so the old copies would run twice. Only those go:
-// the developer's own hooks stay, in place.
+// /etc/codex/hooks.json, so the old copies would run twice. Only those go, and
+// Herdr's script with them; an event left with nothing is dropped. Herdr's
+// entry is matched by its script's name, so one written under another
+// CODEX_HOME goes too.
 func TestCodexInitDropsEarlierImageHooks(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	codexHome := filepath.Join(home, ".codex")
@@ -51,10 +53,10 @@ func TestCodexInitDropsEarlierImageHooks(t *testing.T) {
 	writeFile(t, herdrScript, "#!/bin/sh\n")
 	writeFile(t, hooksFile, `{"hooks":{
   "PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":"/usr/local/bin/atuin hook codex"}]}],
-  "SessionStart":[{"hooks":[{"type":"command","command":"bash '`+herdrScript+`' session","timeout":10}]}],
+  "SessionStart":[{"hooks":[{"type":"command","command":"bash '/home/other/.codex/herdr-agent-state.sh' session","timeout":10}]}],
   "Stop":[
-    {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set 💬 >/dev/null 2>&1 || true"}]},
-    {"hooks":[{"type":"command","command":"echo mine"}]}
+    {"hooks":[{"type":"command","command":"echo mine"}]},
+    {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set 💬 >/dev/null 2>&1 || true"}]}
   ]
 }}`)
 
@@ -64,11 +66,55 @@ func TestCodexInitDropsEarlierImageHooks(t *testing.T) {
 	if len(hooks) != 1 {
 		t.Errorf("events left = %v, want only Stop", hooks)
 	}
-	if cmds := commands(hooks, "Stop"); len(cmds) != 1 || cmds[0] != "echo mine" {
-		t.Errorf("Stop = %q, want the developer's hook alone", cmds)
+	if groups := hooks["Stop"]; len(groups) != 1 || len(groups[0].Hooks) != 1 || groups[0].Hooks[0].Command != "echo mine" {
+		t.Errorf("Stop = %+v, want the developer's group alone, its trailing emptied group gone", groups)
 	}
 	if _, err := os.Stat(herdrScript); !os.IsNotExist(err) {
 		t.Errorf("Herdr's script survived: %v", err)
+	}
+}
+
+// TestCodexInitKeepsLaterUserHooksInPlace: Codex keys a hook's trust to its
+// group's index in the event, so removing an image group in front of a user
+// group would silently revoke the user hook's trust. The emptied group stays
+// behind as a placeholder; a malformed group is left as it is.
+func TestCodexInitKeepsLaterUserHooksInPlace(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	hooksFile := filepath.Join(home, ".codex", "hooks.json")
+	writeFile(t, hooksFile, `{"hooks":{
+  "PreToolUse":[
+    {"matcher":"^Bash$","hooks":[{"type":"command","command":"/usr/local/bin/atuin hook codex"}]},
+    {"matcher":"x"},
+    {"hooks":[{"type":"command","command":"echo mine"}]}
+  ]
+}}`)
+
+	runCodexInit(t, home)
+
+	groups := readHooks(t, hooksFile)["PreToolUse"]
+	if len(groups) != 3 || len(groups[0].Hooks) != 0 || len(groups[1].Hooks) != 0 ||
+		len(groups[2].Hooks) != 1 || groups[2].Hooks[0].Command != "echo mine" {
+		t.Errorf("PreToolUse = %+v, want [placeholder, malformed group, echo mine]", groups)
+	}
+}
+
+// TestCodexInitKeepsHerdrScriptWhenTheFileCannotBeParsed: a hooks.json jq
+// cannot read is left alone, and so is the script its Herdr entry may call.
+func TestCodexInitKeepsHerdrScriptWhenTheFileCannotBeParsed(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	codexHome := filepath.Join(home, ".codex")
+	herdrScript := filepath.Join(codexHome, "herdr-agent-state.sh")
+	writeFile(t, herdrScript, "#!/bin/sh\n")
+	const broken = `{"hooks": `
+	writeFile(t, filepath.Join(codexHome, "hooks.json"), broken)
+
+	runCodexInit(t, home)
+
+	if b, err := os.ReadFile(filepath.Join(codexHome, "hooks.json")); err != nil || string(b) != broken {
+		t.Errorf("unparseable hooks.json was rewritten: %v\n%s", err, b)
+	}
+	if _, err := os.Stat(herdrScript); err != nil {
+		t.Errorf("Herdr's script removed while its entry may remain: %v", err)
 	}
 }
 

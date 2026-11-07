@@ -51,8 +51,10 @@ toolbox_with_claude_settings_lock() {
     ) 200>"$lock"
 }
 
-# Codex's hooks.json has several init.d writers (Atuin, Herdr, Worktrunk) that
-# entrypoint.sh runs in parallel; each read-modify-write takes this lock.
+# Codex's hooks.json has two init.d writers that entrypoint.sh runs in parallel
+# (10-remove-rtk.sh, 25-codex.sh), and it is one host mount that containers on
+# earlier images, whose Atuin, Herdr and Worktrunk still write it, share; each
+# read-modify-write takes this lock.
 toolbox_with_codex_hooks_lock() {
     local lock="$HOME/.toolbox-state/.codex-hooks.lock"
     mkdir -p "$(dirname "$lock")"
