@@ -1707,7 +1707,9 @@ hand-written lists.
 ### Image Default
 
 A setting the image ships in a tool's **system** config layer, below the
-developer's own config, which overrides it. It configures every developer the
+developer's own config, which overrides it. A tool with no system layer gets
+the nearest image-owned equivalent, such as pi's launch wrapper; never a write
+into the developer's files. It configures every developer the
 same way without writing into a file they own: the baked `ssh_config` drop-in,
 the system gitconfig, the agent instructions (Claude Code's managed `CLAUDE.md`,
 Codex's `/etc/codex/config.toml`, pi's extension behind the `pi` wrapper) and

@@ -1106,8 +1106,10 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       test -s "$pkg/README.md"; \
       test -s "$pkg/docs/providers.md"; \
       test -n "$(ls -A "$pkg/examples")"; \
-      # /usr/local/bin/pi is the bin/pi wrapper, COPYed in the final stage; it
-      # execs this exact path, so an upstream move fails here. \
+      # /usr/local/bin/pi is the bin/pi wrapper, COPYed in the final stage: an
+      # asset rather than a printf here like the claude/codegraph shims, since
+      # it carries a subcommand case. It execs this exact path, so an upstream
+      # move fails here. \
       test "$(readlink -f /out/usr/local/bin/pi)" = "$pkg/dist/bundle/cli.js"; \
       rm /out/usr/local/bin/pi; \
       freeze-mtimes

@@ -807,8 +807,9 @@ if pi --help 2>&1 >/dev/null | grep -q "Failed to load extension"; then
     echo "FAILED: pi cannot load the agent-instructions extension"; exit 1
 fi
 subs=$(pi --help 2>/dev/null | sed -n "s/^  pi \([a-z]*\) .*/\1/p" | sort -u | tr "\n" " ")
-[ "$subs" = "auth config install list mcp remove uninstall update " ] \
-    || { echo "FAILED: pi subcommands are now: ${subs}- update the case in bin/pi"; exit 1; }
+bare=$(sed -n "s/^\([a-z |]*\)) exec .*/\1/p" /usr/local/bin/pi | tr -d " " | tr "|" "\n" | sort -u | tr "\n" " ")
+[ -n "$bare" ] && [ "$subs" = "$bare" ] \
+    || { echo "FAILED: pi --help lists [${subs}], bin/pi runs bare [${bare}]"; exit 1; }
 echo "OK: agent instructions reach Claude Code, Codex and pi"
 '
 

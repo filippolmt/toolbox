@@ -122,6 +122,8 @@ Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.to
 
 Pre-stat check: `inherit_host_auth: [<key>]` requires the host source path to exist at config-load time. If it does not, `toolbox shell` fails with a clear error pointing at the missing path — silent soft-skip would have left the container with no credential mount at all (worse than failing loud).
 
+Codex instructions: the image ships its agent instructions as `developer_instructions` in `/etc/codex/config.toml`. A `developer_instructions` in your own `~/.codex/config.toml` (inherited or not) replaces that text rather than adding to it; copy across the lines you want to keep. → [agent instructions](internals/image-build.md#agent-instructions)
+
 Read-write inheritance: inherited mounts are read-write. Most listed CLIs refresh tokens or update session state during normal use (atuin appends history, claude/codex write session state, gh/docker rotate OAuth refresh tokens) — RO would EROFS those writes. You opt in explicitly: your host credential dir is now writable by container processes.
 
 macOS keychain caveat: `gh` on macOS stores its OAuth token in the system keychain by default — `~/.config/gh/hosts.yml` carries the account but no `oauth_token`, so inheriting that dir mounts a token-less config and `gh auth status` inside the container reports the token invalid. Workaround: re-login on the host with `gh auth login --insecure-storage` (persists the token into `hosts.yml`), or skip inheritance for gh and log in once inside the container (isolated `~/.toolbox/gh` survives recreates). The same class of issue applies to any CLI that delegates secret storage to an OS keychain.
