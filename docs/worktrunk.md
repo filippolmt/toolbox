@@ -62,8 +62,25 @@ copies gitignored files (`.env`, local settings) into it from the main
 worktree — **every** gitignored file, build output and dependency trees
 included, unless a `.worktreeinclude` file at the repository root lists the
 paths to keep. Add `--require-include` to make the copy a no-op in a repository
-without that file. Run it by hand, or as a `post-start` hook in the project's
-Worktrunk config so every new worktree gets it.
+without that file.
+
+Toolbox writes no Worktrunk hooks. One `post-start` hook in your user config
+covers every repository with no file in any of them, and a user hook needs no
+approval:
+
+```toml
+# ~/.config/worktrunk/config.toml
+[post-start]
+local-settings = "f={{ primary_worktree_path }}/.claude/settings.local.json; [ -f \"$f\" ] && [ ! -e .claude/settings.local.json ] && mkdir -p .claude && cp \"$f\" .claude/ || true"
+copy-ignored = "wt step copy-ignored --require-include"
+prune = "wt step prune"
+```
+
+`local-settings` carries a file you want in every worktree of every
+repository; `copy-ignored` adds what a repository lists in its own
+`.worktreeinclude`, if it has one; `prune` removes worktrees whose branch is
+already in the local default branch, skipping any with uncommitted changes or
+younger than a day.
 
 ## Agent integration
 
