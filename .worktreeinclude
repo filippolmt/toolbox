@@ -1,5 +1,5 @@
 # Gitignored files `wt step copy-ignored` carries into a new worktree
-# (.config/wt.toml runs it on post-start). Local config only: build output and
-# the .codegraph index stay per worktree.
-.toolbox.yaml
+# (.config/wt.toml runs it on post-start). Local agent settings only:
+# .toolbox.yaml is read by the host CLI's walk-up, never from inside a
+# worktree, and build output and the .codegraph index stay per worktree.
 .claude/settings.local.json
