@@ -1,10 +1,11 @@
 #!/bin/sh
 # pi has no system config layer, so the image's agent instructions ride an
 # extension passed with -e (#1400). Subcommands reject unknown options and run
-# bare; the smoke test holds this list to `pi --help`. fetch-pi asserts the
-# target path.
+# bare; the smoke test holds bare_subcommands to `pi --help`. fetch-pi asserts
+# the target path.
 pi_cli=/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
-case "${1-}" in
-install | remove | uninstall | update | list | config | auth | mcp) exec "$pi_cli" "$@" ;;
-esac
+bare_subcommands="install remove uninstall update list config auth mcp"
+for sub in $bare_subcommands; do
+	[ "${1-}" = "$sub" ] && exec "$pi_cli" "$@"
+done
 exec "$pi_cli" -e /usr/local/lib/toolbox/pi/agent-instructions.ts "$@"

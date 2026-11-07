@@ -794,22 +794,24 @@ echo "=== Agent instructions (Claude Code, Codex, pi) ==="
 # /etc/codex/config.toml, pi's extension behind the bin/pi wrapper. A dropped
 # COPY or a moved path leaves that agent mounting container-local dirs.
 # pi --help loads extensions and reports a failed one on stderr. The wrapper
-# runs subcommands bare, so a new upstream subcommand must reach its list.
+# runs subcommands bare, so a new upstream subcommand must reach its
+# bare_subcommands.
 docker run --rm "${IMAGE}" bash -c '
 grep -q "TOOLBOX_HOST_WORKSPACE" /etc/claude-code/CLAUDE.md \
     || { echo "FAILED: /etc/claude-code/CLAUDE.md missing the agent instructions"; exit 1; }
 cd /tmp
-codex debug prompt-input 2>/dev/null | grep -q "TOOLBOX_HOST_WORKSPACE" \
-    || { echo "FAILED: codex prompt missing the agent instructions"; exit 1; }
+codex_prompt=$(codex debug prompt-input 2>&1)
+printf "%s\n" "$codex_prompt" | grep -q "TOOLBOX_HOST_WORKSPACE" \
+    || { echo "FAILED: codex prompt missing the agent instructions:"; printf "%s\n" "$codex_prompt" | tail -5; exit 1; }
 grep -qF -- "-e /usr/local/lib/toolbox/pi/agent-instructions.ts" /usr/local/bin/pi \
     || { echo "FAILED: /usr/local/bin/pi is not the agent-instructions wrapper"; exit 1; }
 if pi --help 2>&1 >/dev/null | grep -q "Failed to load extension"; then
     echo "FAILED: pi cannot load the agent-instructions extension"; exit 1
 fi
-subs=$(pi --help 2>/dev/null | sed -n "s/^  pi \([a-z]*\) .*/\1/p" | sort -u | tr "\n" " ")
-bare=$(sed -n "s/^\([a-z |]*\)) exec .*/\1/p" /usr/local/bin/pi | tr -d " " | tr "|" "\n" | sort -u | tr "\n" " ")
-[ -n "$bare" ] && [ "$subs" = "$bare" ] \
-    || { echo "FAILED: pi --help lists [${subs}], bin/pi runs bare [${bare}]"; exit 1; }
+help_subcmds=$(pi --help 2>/dev/null | sed -n "s/^  pi \([a-z]*\) .*/\1/p" | sort -u | tr "\n" " ")
+wrapper_subcmds=$(sed -n "s/^bare_subcommands=\"\(.*\)\"$/\1/p" /usr/local/bin/pi | tr " " "\n" | sort -u | tr "\n" " ")
+[ -n "$wrapper_subcmds" ] && [ "$help_subcmds" = "$wrapper_subcmds" ] \
+    || { echo "FAILED: pi --help lists [${help_subcmds}], bin/pi bare_subcommands is [${wrapper_subcmds}]"; exit 1; }
 echo "OK: agent instructions reach Claude Code, Codex and pi"
 '
 

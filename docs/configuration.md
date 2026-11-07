@@ -122,7 +122,7 @@ Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.to
 
 Pre-stat check: `inherit_host_auth: [<key>]` requires the host source path to exist at config-load time. If it does not, `toolbox shell` fails with a clear error pointing at the missing path — silent soft-skip would have left the container with no credential mount at all (worse than failing loud).
 
-Codex instructions: the image ships its agent instructions as `developer_instructions` in `/etc/codex/config.toml`. A `developer_instructions` in your own `~/.codex/config.toml` (inherited or not) replaces that text rather than adding to it; copy across the lines you want to keep. → [agent instructions](internals/image-build.md#agent-instructions)
+Codex instructions: setting `developer_instructions` in your own `~/.codex/config.toml` (inherited or not) drops the image's agent instructions; copy across the lines you want to keep. → [agent instructions](internals/image-build.md#agent-instructions)
 
 Read-write inheritance: inherited mounts are read-write. Most listed CLIs refresh tokens or update session state during normal use (atuin appends history, claude/codex write session state, gh/docker rotate OAuth refresh tokens) — RO would EROFS those writes. You opt in explicitly: your host credential dir is now writable by container processes.
 
