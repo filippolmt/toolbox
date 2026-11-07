@@ -789,13 +789,27 @@ echo "OK: passwd entry injected for uid $(id -u)"
 '
 
 echo ""
-echo "=== Claude managed instructions (DooD bind-mount sources) ==="
-# Claude Code loads /etc/claude-code/CLAUDE.md in every project on Linux; a
-# dropped COPY or a moved path leaves agents mounting container-local dirs.
+echo "=== Agent instructions (Claude Code, Codex, pi) ==="
+# One source, three delivery paths: Claude Code's managed CLAUDE.md, Codex's
+# /etc/codex/config.toml, pi's extension behind the bin/pi wrapper. A dropped
+# COPY or a moved path leaves that agent mounting container-local dirs.
+# pi --help loads extensions and reports a failed one on stderr. The wrapper
+# runs subcommands bare, so a new upstream subcommand must reach its list.
 docker run --rm "${IMAGE}" bash -c '
 grep -q "TOOLBOX_HOST_WORKSPACE" /etc/claude-code/CLAUDE.md \
-    || { echo "FAILED: /etc/claude-code/CLAUDE.md missing the DooD mount guidance"; exit 1; }
-echo "OK: managed CLAUDE.md baked"
+    || { echo "FAILED: /etc/claude-code/CLAUDE.md missing the agent instructions"; exit 1; }
+cd /tmp
+codex debug prompt-input 2>/dev/null | grep -q "TOOLBOX_HOST_WORKSPACE" \
+    || { echo "FAILED: codex prompt missing the agent instructions"; exit 1; }
+grep -qF -- "-e /usr/local/lib/toolbox/pi/agent-instructions.ts" /usr/local/bin/pi \
+    || { echo "FAILED: /usr/local/bin/pi is not the agent-instructions wrapper"; exit 1; }
+if pi --help 2>&1 >/dev/null | grep -q "Failed to load extension"; then
+    echo "FAILED: pi cannot load the agent-instructions extension"; exit 1
+fi
+subs=$(pi --help 2>/dev/null | sed -n "s/^  pi \([a-z]*\) .*/\1/p" | sort -u | tr "\n" " ")
+[ "$subs" = "auth config install list mcp remove uninstall update " ] \
+    || { echo "FAILED: pi subcommands are now: ${subs}- update the case in bin/pi"; exit 1; }
+echo "OK: agent instructions reach Claude Code, Codex and pi"
 '
 
 echo ""
