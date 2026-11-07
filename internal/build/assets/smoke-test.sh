@@ -789,6 +789,16 @@ echo "OK: passwd entry injected for uid $(id -u)"
 '
 
 echo ""
+echo "=== Claude managed instructions (DooD bind-mount sources) ==="
+# Claude Code loads /etc/claude-code/CLAUDE.md in every project on Linux; a
+# dropped COPY or a moved path leaves agents mounting container-local dirs.
+docker run --rm "${IMAGE}" bash -c '
+grep -q "TOOLBOX_HOST_WORKSPACE" /etc/claude-code/CLAUDE.md \
+    || { echo "FAILED: /etc/claude-code/CLAUDE.md missing the DooD mount guidance"; exit 1; }
+echo "OK: managed CLAUDE.md baked"
+'
+
+echo ""
 echo "=== SSH host-key trust (git-over-ssh, issue #366) ==="
 # The baked /etc/ssh/ssh_config.d/10-toolbox.conf must make `ssh -G` report
 # StrictHostKeyChecking=accept-new (no first-contact prompt, still rejects
