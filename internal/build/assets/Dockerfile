@@ -1942,6 +1942,10 @@ COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
 # project and not excludable): the Docker-outside-of-Docker facts an agent
 # cannot see from inside the container. The smoke test asserts the file.
 COPY --link claude-managed.md /etc/claude-code/CLAUDE.md
+# Worktrunk's system config layer (Image Default): worktree hooks and commit
+# message generation for every developer, below their own user config. The
+# smoke test asserts wt loads it.
+COPY --link worktrunk.toml /etc/xdg/worktrunk/config.toml
 # Guarantee the drop-in is loaded: ssh uses the first-obtained value per
 # keyword, so the Include must sit at the top of /etc/ssh/ssh_config (ahead of
 # any built-in default) for accept-new to win. Debian's base config has it

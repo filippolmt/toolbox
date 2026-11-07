@@ -799,6 +799,19 @@ echo "OK: managed CLAUDE.md baked"
 '
 
 echo ""
+echo "=== Worktrunk system config (Image Default) ==="
+# wt reads /etc/xdg/worktrunk/config.toml below the user config; a moved path
+# leaves every developer without the worktree hooks, silently.
+docker run --rm "${IMAGE}" bash -c '
+shown=$(wt config show 2>&1)
+printf "%s\n" "$shown" | grep -q "SYSTEM CONFIG @ /etc/xdg/worktrunk/config.toml" \
+    || { echo "FAILED: wt does not load the system config"; exit 1; }
+printf "%s\n" "$shown" | grep -q "prune = \"wt step prune\"" \
+    || { echo "FAILED: worktrunk system config missing the post-start hooks"; exit 1; }
+echo "OK: worktrunk system config baked"
+'
+
+echo ""
 echo "=== SSH host-key trust (git-over-ssh, issue #366) ==="
 # The baked /etc/ssh/ssh_config.d/10-toolbox.conf must make `ssh -G` report
 # StrictHostKeyChecking=accept-new (no first-contact prompt, still rejects

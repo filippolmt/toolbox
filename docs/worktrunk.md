@@ -64,23 +64,32 @@ included, unless a `.worktreeinclude` file at the repository root lists the
 paths to keep. Add `--require-include` to make the copy a no-op in a repository
 without that file.
 
-Toolbox writes no Worktrunk hooks. One `post-start` hook in your user config
-covers every repository with no file in any of them, and a user hook needs no
-approval:
+## What the image configures
 
-```toml
-# ~/.config/worktrunk/config.toml
-[post-start]
-local-settings = "f={{ primary_worktree_path }}/.claude/settings.local.json; [ -f \"$f\" ] && [ ! -e .claude/settings.local.json ] && mkdir -p .claude && cp \"$f\" .claude/ || true"
-copy-ignored = "wt step copy-ignored --require-include"
-prune = "wt step prune"
-```
+The image ships Worktrunk's system config, `/etc/xdg/worktrunk/config.toml`
+(source: `internal/build/assets/worktrunk.toml`), so every developer gets the
+same behaviour with nothing to write and no approval prompt:
 
-`local-settings` carries a file you want in every worktree of every
-repository; `copy-ignored` adds what a repository lists in its own
-`.worktreeinclude`, if it has one; `prune` removes worktrees whose branch is
-already in the local default branch, skipping any with uncommitted changes or
-younger than a day.
+- **On every new worktree** (`post-start`): your `.claude/settings.local.json`
+  is copied in from the main worktree; whatever the repository lists in its
+  `.worktreeinclude` is copied too (nothing without one); then `wt step prune`
+  removes the worktrees and branches already in the local default branch,
+  skipping any with uncommitted changes, locked, or younger than a day.
+- **Commit messages** for `wt step commit` and `wt merge` come from the bundled
+  Claude Code. They need a Claude login.
+
+Your own `~/.config/worktrunk/config.toml` ranks above it. A value set there
+replaces the image's; a `post-start` hook there runs alongside the image's,
+and one with the same name replaces it, so `prune = "true"` turns off just the
+prune. Keep your hooks in a `[post-start]` table: a `[[post-start]]` pipeline
+in your config replaces all of the image's hooks. To skip every hook for one
+command, pass `--no-hooks`; to drop the system config for good, set
+`WORKTRUNK_SYSTEM_CONFIG_PATH` to an empty value through the toolbox `env:`
+key ([env passthrough](configuration.md#env-passthrough)), which takes effect
+once the container is recreated (`toolbox stop`). A repository that needs more
+files in every worktree adds a `.worktreeinclude`; a team hook belongs in the
+repository's `.config/wt.toml`, which Worktrunk asks each developer to approve
+once.
 
 ## Agent integration
 

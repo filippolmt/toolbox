@@ -1704,6 +1704,25 @@ Agent Wiring separates "is this agent bundled?" from "is this agent wired?";
 Agent Topology now makes the latter exhaustive instead of relying on parallel
 hand-written lists.
 
+### Image Default
+
+A setting the image ships in a tool's **system** config layer, below the
+developer's own config, which overrides it. It configures every developer the
+same way without writing into a file they own: the baked `ssh_config` drop-in,
+the system gitconfig, Claude Code's managed `CLAUDE.md` and Worktrunk's
+`/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
+the Dockerfile.
+
+Contrast with [Agent Wiring](#agent-wiring), which merges into the agent's own
+user files on every start because those agents offer no system layer to write
+to. Reach for an Image Default first: it survives a wiped machine with nothing
+to restore, needs no lock, and the developer can always undo it from their own
+config.
+
+Why the term exists: toolbox serves many teams, and a default every developer
+has to configure by hand is one each of them forgets
+([ADR 0018](docs/adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md#amendment-the-image-ships-worktrunk-defaults)).
+
 ### Bridge Contract
 
 The daemon↔shim wire contract: the container-side paths and state filenames

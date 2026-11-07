@@ -1,0 +1,15 @@
+# Worktrunk system config, baked to /etc/xdg/worktrunk/config.toml: an Image
+# Default. What each entry does and how a developer overrides or turns it off:
+# docs/worktrunk.md#what-the-image-configures.
+
+# A plain table, not a [[post-start]] pipeline: Worktrunk merges a table with
+# the user's by hook name, so a user hook adds to these and a same-named one
+# replaces only that hook, while any user post-start would replace a whole
+# pipeline. The three run concurrently; prune never touches the new worktree.
+[post-start]
+local-settings = "f={{ primary_worktree_path }}/.claude/settings.local.json; [ -f \"$f\" ] && [ ! -e .claude/settings.local.json ] && mkdir -p .claude && cp \"$f\" .claude/ || true"
+copy-ignored = "wt step copy-ignored --require-include"
+prune = "wt step prune"
+
+[commit.generation]
+command = "MAX_THINKING_TOKENS=0 claude -p --no-session-persistence --model=haiku --tools='' --safe-mode --setting-sources='user' --system-prompt=''"
