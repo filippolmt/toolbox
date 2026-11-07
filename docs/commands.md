@@ -204,7 +204,7 @@ docker compose -p <project> down -v   # ...and its named volumes: only when the 
 docker network prune --filter label=com.docker.compose.project   # Compose networks no container uses any more
 ```
 
-Leave the `proximo` project out: it is the [proximo](proximo.md) stack (its containers carry a `proximo.role` label) and `proximo up` / `proximo down` own it. Toolbox ships no bulk sweep for these on purpose: Compose labels say who created a container, not whether it is a leftover or a dev stack still in use.
+The last line also takes the network of any stack currently down, proximo's included; the next `up` recreates it. Leave the `proximo` project out of `down`: it is the [proximo](proximo.md) stack (its containers carry a `proximo.role` label) and `proximo up` / `proximo down` own it. Toolbox ships no bulk sweep for these on purpose: Compose labels say who created a container, not whether it is a leftover or a dev stack still in use.
 
 A `compose up` failing with *"all predefined address pools have been fully subnetted"* is the usual first sign that leftover project networks have piled up.
 

@@ -1621,7 +1621,8 @@ Concretely: the usual source is a `docker compose up` in a project's test
 suite, which leaves its containers and its `<project>_default` network
 behind — plain Compose has no reaper. An Orphaned Sibling carries no
 `toolbox-` prefix, so `sessionplan.IsToolboxContainerName` does not match it
-and neither [Teardown](#teardown) nor `toolbox stop --all` ever reaches it.
+and `toolbox stop --all` never reaches it; [Teardown](#teardown) only stops
+the shell's own container, by name. No package owns it, by design.
 Nothing marks the session that created it either: the socket is a plain bind,
 and the Compose labels record a working directory, not a shell. Cleanup is
 Compose's own (`docker compose -p <project> down`), documented in
