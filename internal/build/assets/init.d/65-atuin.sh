@@ -107,10 +107,10 @@ if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent
 fi
 
 # Codex: writes to ~/.codex/hooks.json (disjoint from init.d/25-codex.sh's
-# config.toml edits, no lock needed).
+# config.toml edits), which Herdr and Worktrunk also write: Codex hooks lock.
 _codex_marker="$_atuin_hooks_dir/codex-${_atuin_key}"
 if [ ! -f "$_codex_marker" ] && toolbox_agent_available codex && toolbox_agent_persistent codex; then
-    if atuin hook install codex >/dev/null 2>&1; then
+    if toolbox_with_codex_hooks_lock atuin hook install codex >/dev/null 2>&1; then
         : > "$_codex_marker"
     else
         echo "  atuin: hook install codex failed (non-fatal)"

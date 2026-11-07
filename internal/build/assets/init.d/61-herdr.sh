@@ -44,8 +44,10 @@ set -euo pipefail
 # never see a partial SKILL.md. The claude integration install uses Agent
 # Topology's settings lock because it registers its hook in settings.json.
 #
-# Only the claude install takes that lock. codex's hook and pi's are files of
-# their own — pi's is ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from
+# Only the claude install takes that lock. codex's hook lands in hooks.json,
+# shared with Atuin and Worktrunk, so it takes Agent Topology's Codex hooks
+# lock instead. pi's is a file of its own —
+# ~/.pi/agent/extensions/herdr-agent-state.ts, disjoint from
 # the migration and atuin extension 10-remove-rtk.sh and 65-atuin.sh touch in that same
 # directory — so there is no shared writer to serialise against.
 #
@@ -98,7 +100,7 @@ if [ -n "$_herdr_claude" ]; then
 fi
 
 if [ -n "$_herdr_codex" ] && toolbox_agent_persistent codex; then
-    _herdr_install_integration codex
+    toolbox_with_codex_hooks_lock _herdr_install_integration codex
 fi
 
 # pi: writes ~/.pi/agent/extensions/herdr-agent-state.ts, its own file, no lock.

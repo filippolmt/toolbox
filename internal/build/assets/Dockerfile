@@ -403,6 +403,9 @@ RUN set -eux; \
 # Upstream ships only .tar.xz: xz-utils installed here stays out of the final
 # image (fetch-stage convention). Only `wt` is kept — `git-wt` is the same
 # binary under another name, for hosts where `wt` collides (Windows Terminal).
+# The release's checksummed source archive also yields the canonical
+# `skills/worktrunk` skill, so init.d/62-worktrunk.sh installs a skill that
+# always matches this binary. → docs/worktrunk.md
 FROM fetch-base AS fetch-worktrunk
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
@@ -427,6 +430,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-w
       chmod +x /out/usr/local/bin/wt; \
       rm "/tmp/${WT_TARBALL}" /tmp/worktrunk.sha256; \
       /out/usr/local/bin/wt --version; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/source.tar.gz \
+        "https://github.com/max-sixty/worktrunk/releases/download/v${WORKTRUNK_VERSION}/source.tar.gz"; \
+      curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/source.tar.gz.sha256 \
+        "https://github.com/max-sixty/worktrunk/releases/download/v${WORKTRUNK_VERSION}/source.tar.gz.sha256"; \
+      cd /tmp && sha256sum -c source.tar.gz.sha256; \
+      mkdir -p /out/usr/local/share/worktrunk/skills; \
+      tar -xzf /tmp/source.tar.gz -C /out/usr/local/share/worktrunk/skills --strip-components=2 \
+        "worktrunk-${WORKTRUNK_VERSION}/skills/worktrunk"; \
+      test -s /out/usr/local/share/worktrunk/skills/worktrunk/SKILL.md; \
+      chmod -R a+rX /out/usr/local/share/worktrunk; \
+      rm /tmp/source.tar.gz /tmp/source.tar.gz.sha256; \
       freeze-mtimes
 
 # atuin (SQLite-backed Ctrl-R). MUSL — same GLIBC independence as gws.

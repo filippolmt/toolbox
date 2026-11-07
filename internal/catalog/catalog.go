@@ -83,7 +83,7 @@ var Entries = []Entry{
 	{Key: "typescript"},
 	{Key: "typescript_language_server"},
 	{Key: "uv"},
-	{Key: "worktrunk"},
+	{Key: "worktrunk", InitScript: "62-worktrunk.sh"},
 	{Key: "wrangler"},
 	{Key: "yq"},
 	{Key: "zsh"},
