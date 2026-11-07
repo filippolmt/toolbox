@@ -78,14 +78,18 @@ same behaviour with nothing to write and no approval prompt:
 - **Commit messages** for `wt step commit` and `wt merge` come from the bundled
   Claude Code. They need a Claude login.
 
-Your own `~/.config/worktrunk/config.toml` ranks above it: a value set there
-replaces the image's, a hook there runs alongside the image's. To skip the
-hooks for one command, pass `--no-hooks`; to drop the system config for good,
-point `WORKTRUNK_SYSTEM_CONFIG_PATH` at an empty file through the toolbox
-`env:` key ([env passthrough](configuration.md#env-passthrough)). A repository
-that needs more files in every worktree adds a `.worktreeinclude`; a team hook
-belongs in the repository's `.config/wt.toml`, which Worktrunk asks each
-developer to approve once.
+Your own `~/.config/worktrunk/config.toml` ranks above it. A value set there
+replaces the image's; a `post-start` hook there runs alongside the image's,
+and one with the same name replaces it, so `prune = "true"` turns off just the
+prune. Keep your hooks in a `[post-start]` table: a `[[post-start]]` pipeline
+in your config replaces all of the image's hooks. To skip every hook for one
+command, pass `--no-hooks`; to drop the system config for good, set
+`WORKTRUNK_SYSTEM_CONFIG_PATH` to an empty value through the toolbox `env:`
+key ([env passthrough](configuration.md#env-passthrough)), which takes effect
+once the container is recreated (`toolbox stop`). A repository that needs more
+files in every worktree adds a `.worktreeinclude`; a team hook belongs in the
+repository's `.config/wt.toml`, which Worktrunk asks each developer to approve
+once.
 
 ## Agent integration
 

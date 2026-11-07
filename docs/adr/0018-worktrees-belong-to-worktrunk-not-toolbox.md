@@ -137,7 +137,6 @@ their own worktree isolation.
 
 This narrows "toolbox imposes nothing" above without reversing it. The layout
 stays Worktrunk's default; the defaults sit in the system layer, below each
-developer's config, which overrides or adds to them; and `--no-hooks` or an
-empty `WORKTRUNK_SYSTEM_CONFIG_PATH` turns them off. The two upstream plugin
+developer's config, which overrides or adds to them hook by hook; and
+`--no-hooks` or an empty `WORKTRUNK_SYSTEM_CONFIG_PATH` turns them off. The two upstream plugin
 hooks the earlier amendment left out stay out.
-

@@ -1710,13 +1710,12 @@ A setting the image ships in a tool's **system** config layer, below the
 developer's own config, which overrides it. It configures every developer the
 same way without writing into a file they own: the baked `ssh_config` drop-in,
 the system gitconfig, Claude Code's managed `CLAUDE.md` and Worktrunk's
-`/etc/xdg/worktrunk/config.toml` are Image Defaults.
+`/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
+the Dockerfile.
 
 Contrast with [Agent Wiring](#agent-wiring), which merges into the agent's own
 user files on every start because those agents offer no system layer to write
-to. An Image Default is organisation-neutral: it holds what serves every
-company and team, never one organisation's marketplaces, hosts or policies.
-Reach for an Image Default first: it survives a wiped machine with nothing
+to. Reach for an Image Default first: it survives a wiped machine with nothing
 to restore, needs no lock, and the developer can always undo it from their own
 config.
 
