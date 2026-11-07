@@ -73,6 +73,8 @@ Code questions go to `codegraph_explore` (CLI: `codegraph explore`, bounded with
 
 Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`; if a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
 
+Parallel worktrees come from `wt switch -c <branch> --no-cd` rather than Claude Code's worktree isolation, which strands them under `.claude/worktrees/`; `wt step prune` removes them once merged. → [worktrunk](docs/worktrunk.md)
+
 ### Issue tracker
 
 Filing or reading an issue or spec (GitHub Issues) → [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).

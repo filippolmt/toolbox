@@ -54,7 +54,8 @@ you have approved, anything `wt config` writes — lives in
 `~/.toolbox/worktrunk` on the host, so it survives `toolbox stop` like every
 other tool's state ([mounts](mounts.md)). Per-repository state, including the
 agent activity markers `wt list` shows, lives in the repository's own git
-config.
+config, which every worktree of that repository shares: a `wt list` in any
+of them shows the markers set from the others.
 
 A new worktree is a checkout of tracked files only. `wt step copy-ignored`
 copies gitignored files (`.env`, local settings) into it from the main

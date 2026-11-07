@@ -110,3 +110,16 @@ leaves out exactly the two hooks that do:
 `TestWorktrunkInitWiresMarkersOnly` holds that line. Installing the upstream
 plugin remains possible wherever the marketplace is allowed, and it adds those
 two hooks.
+
+## Amendment: the activity markers cross worktrees
+
+From [#1375](https://github.com/filippolmt/toolbox/issues/1375), checked on
+7 November 2026 inside one toolbox opened on a parent folder. A marker set
+with `wt config state marker set` from a linked worktree shows in a `wt list`
+run from the main worktree, and a live Claude Code session's hook kept 🤖 on
+its branch while it worked. Markers are stored as
+`worktrunk.state.<branch>.marker` in the repository's git config on the host
+share; that they outlive the container is inferred from where they are
+stored, not observed across a `toolbox stop`. The rest of #1375 stays open:
+Codex's `PermissionRequest` and `SessionEnd` hooks and its trust prompt, and
+pi's extension, have not been seen firing in a live session.
