@@ -110,3 +110,13 @@ leaves out exactly the two hooks that do:
 `TestWorktrunkInitWiresMarkersOnly` holds that line. Installing the upstream
 plugin remains possible wherever the marketplace is allowed, and it adds those
 two hooks.
+
+## Amendment: the activity markers verified
+
+From [#1375](https://github.com/filippolmt/toolbox/issues/1375), checked on
+7 November 2026 inside a toolbox opened on a parent folder. A marker set from
+a linked worktree shows in a `wt list` run from the main worktree, and it is
+stored as `worktrunk.state.<branch>.marker` in the repository's git config on
+the host share, so it outlives the container. The consequence above marked
+unverified holds. Codex and pi carry the same marker commands; a live Codex or
+pi session firing them was not observed.

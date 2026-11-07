@@ -1,0 +1,8 @@
+# Worktrunk project config: https://worktrunk.dev/hook/
+# Runs only after each developer approves it (`wt config approvals add`).
+
+# A new worktree is a checkout of tracked files only. Copy the gitignored
+# local config listed in .worktreeinclude; without that file, copy nothing
+# rather than every build artefact and index database.
+[post-start]
+copy-ignored = "wt step copy-ignored --require-include"
