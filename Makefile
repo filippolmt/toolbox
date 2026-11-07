@@ -70,6 +70,22 @@ DOCKERGATE_IMAGE := toolbox-dockergate:local
 #     i.e. `-v "":/src`).
 # Neither holding, CURDIR is the honest answer.
 HOST_SRC        := $(if $(and $(TOOLBOX_HOST_WORKSPACE),$(filter /workspace%,$(CURDIR))),$(TOOLBOX_HOST_WORKSPACE)$(patsubst /workspace%,%,$(CURDIR)),$(CURDIR))
+# No translation reaches a CURDIR on the container's own root filesystem (an
+# agent scratchpad, /tmp): the host has no such path, so the daemon binds an
+# empty directory and Go fails with a misleading "does not contain main
+# module". findmnt names "/" as the mount holding such a path, a host bind its
+# own target. HOST_SRC turns into an error only when a recipe expands it, so
+# targets that mount nothing (help, build) keep working; scratch refuses too,
+# since the host path it prints would not exist. That laziness holds only while
+# every variable built on HOST_SRC (GO_MOUNT, GO_RUN) stays recursive (`=`): a
+# `:=` one expands the error at parse time and breaks every target.
+#
+# Coverage: the root filesystem only (a tmpfs or named volume still passes),
+# and off where findmnt is missing.
+CURDIR_MOUNT    := $(if $(TOOLBOX_HOST_WORKSPACE),$(shell findmnt -n -o TARGET -T "$(CURDIR)" 2>/dev/null))
+ifeq ($(CURDIR_MOUNT),/)
+HOST_SRC         = $(error $(CURDIR) lives on the container filesystem, which the host Docker daemon cannot see: a bind mount of it would be silently empty. Run make from a checkout under $(TOOLBOX_HOST_WORKSPACE))
+endif
 
 # Shared docker-run fragments. Every Go-side target reuses GO_MOUNT and
 # GO_CACHE_ENV; the toolchain targets add GO_BUILD_ENV on top (the linter runs
@@ -82,10 +98,10 @@ HOST_SRC        := $(if $(and $(TOOLBOX_HOST_WORKSPACE),$(filter /workspace%,$(C
 # the moment the container exits. GOCACHE covers `go build`/`go test` and the
 # type-checking golangci-lint does; GOLANGCI_LINT_CACHE covers the linter's own
 # analysis cache, which is the larger half of a repeat `make go-lint`.
-GO_MOUNT     := -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
+GO_MOUNT     = -v "$(HOST_SRC)":/src -v $(GO_MOD_VOL):/go -w /src
 GO_CACHE_ENV := -e GOCACHE=/go/build-cache -e GOLANGCI_LINT_CACHE=/go/golangci-cache
 GO_BUILD_ENV := -e GOFLAGS="-mod=mod -buildvcs=false" $(GO_CACHE_ENV)
-GO_RUN       := docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
+GO_RUN       = docker run --rm $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE)
 GO_TEST_TAGS = $(if $(TAGS),-tags "$(TAGS)")
 GO_COVERAGE_FILE := dist/.scratch/coverage.out
 GO_COMPLEXITY_PATCH := dist/.scratch/complexity.patch

@@ -169,6 +169,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Build layout: parallel fetch stages + an empty tail](internals/image-build.md#build-layout-parallel-fetch-stages--an-empty-tail)
 - [Host UID mapping](internals/image-build.md#host-uid-mapping)
 - [SSH host-key trust](internals/image-build.md#ssh-host-key-trust)
+- [Claude managed instructions](internals/image-build.md#claude-managed-instructions)
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)

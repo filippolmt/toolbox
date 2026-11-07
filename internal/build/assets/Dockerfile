@@ -1938,6 +1938,10 @@ COPY --link --chmod=0755 statusline-command.sh /etc/toolbox/statusline-command.s
 # mount fixes it without making the RO ssh mount writable. The smoke test
 # asserts the policy is effective via `ssh -G`.
 COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
+# Image-wide Claude Code instructions (managed-policy CLAUDE.md, loaded in every
+# project and not excludable): the Docker-outside-of-Docker facts an agent
+# cannot see from inside the container. The smoke test asserts the file.
+COPY --link claude-managed.md /etc/claude-code/CLAUDE.md
 # Guarantee the drop-in is loaded: ssh uses the first-obtained value per
 # keyword, so the Include must sit at the top of /etc/ssh/ssh_config (ahead of
 # any built-in default) for accept-new to win. Debian's base config has it

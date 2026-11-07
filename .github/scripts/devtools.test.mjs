@@ -7,9 +7,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+// Outside the DooD-guard test, run make as from a native terminal: a checkout
+// on a toolbox's root filesystem would otherwise trip the guard in every test.
+const makeEnv = { ...process.env, TOOLBOX_HOST_WORKSPACE: "" };
 
 test("preflight limits complexity to the diff and reuses the coverage floor", () => {
-  const result = spawnSync("make", ["-n", "go-preflight", "BASE=HEAD"], { cwd: root, encoding: "utf8" });
+  const result = spawnSync("make", ["-n", "go-preflight", "BASE=HEAD"], { cwd: root, env: makeEnv, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--enable-only=gocognit/);
   assert.match(result.stdout, /complexity-patch.py --base "HEAD"/);
@@ -19,7 +22,7 @@ test("preflight limits complexity to the diff and reuses the coverage floor", ()
 });
 
 test("formatting excludes ignored scratch and downloaded modules", () => {
-  const result = spawnSync("make", ["-n", "go-fmt"], { cwd: root, encoding: "utf8" });
+  const result = spawnSync("make", ["-n", "go-fmt"], { cwd: root, env: makeEnv, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git .*ls-files.*--exclude-standard/);
   assert.match(result.stdout, /docker run --rm -i/);
@@ -28,7 +31,7 @@ test("formatting excludes ignored scratch and downloaded modules", () => {
 });
 
 test("scratch and persistent coverage live in a Go-ignored directory", () => {
-  const result = spawnSync("make", ["-n", "scratch", "go-coverage"], { cwd: root, encoding: "utf8" });
+  const result = spawnSync("make", ["-n", "scratch", "go-coverage"], { cwd: root, env: makeEnv, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /mkdir -p "dist\/\.scratch"/);
   assert.match(result.stdout, /-coverprofile=dist\/\.scratch\/coverage.out/);
@@ -88,7 +91,7 @@ test("formatting selects linked-worktree sources before entering Docker", () => 
     mkdirSync(bin);
     const log = join(directory, "selection");
     writeFileSync(join(bin, "docker"), "#!/usr/bin/env node\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FORMAT_LOG, fs.readFileSync(0));\n", { mode: 0o755 });
-    const result = spawnSync("make", ["-f", join(root, "Makefile"), "go-fmt"], { cwd: linked, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FORMAT_LOG: log }, encoding: "utf8" });
+    const result = spawnSync("make", ["-f", join(root, "Makefile"), "go-fmt"], { cwd: linked, env: { ...makeEnv, PATH: `${bin}:${process.env.PATH}`, FORMAT_LOG: log }, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(log, "utf8"), "main.go\0");
   });
@@ -215,7 +218,29 @@ if (args.includes('stat')) console.log('43212');
 });
 
 test("Go test targets forward explicit build tags", () => {
-  const result = spawnSync("make", ["-n", "go-test-one", "PKG=./internal/container", "RUN=TestExecShell", "TAGS=dockergate"], { cwd: root, encoding: "utf8" });
+  const result = spawnSync("make", ["-n", "go-test-one", "PKG=./internal/container", "RUN=TestExecShell", "TAGS=dockergate"], { cwd: root, env: makeEnv, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /go test .* -tags "dockergate"/);
+});
+
+test("mounting targets refuse a directory the host daemon cannot see", () => {
+  const directory = mkdtempSync(join(tmpdir(), "toolbox-local-"));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "findmnt"), "#!/bin/sh\necho \"$FAKE_MOUNT\"\n", { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TOOLBOX_HOST_WORKSPACE: "/Users/dev/projects", FAKE_MOUNT: "/" };
+  const make = (target, overrides = {}) =>
+    spawnSync("make", ["-n", "-f", join(root, "Makefile"), "-C", directory, target], { env: { ...env, ...overrides }, encoding: "utf8" });
+  try {
+    for (const target of ["go-test", "check-links", "scratch"]) {
+      const blocked = make(target);
+      assert.notEqual(blocked.status, 0, `${target} mounted a container-local directory`);
+      assert.match(blocked.stderr, /host Docker daemon cannot see/);
+    }
+    assert.equal(make("help").status, 0, "a target that mounts nothing was blocked");
+    assert.equal(make("go-test", { FAKE_MOUNT: "/Users/dev/projects" }).status, 0, "a host bind was blocked");
+    assert.equal(make("go-test", { TOOLBOX_HOST_WORKSPACE: "" }).status, 0, "a native host terminal was blocked");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

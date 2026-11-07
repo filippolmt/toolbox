@@ -72,8 +72,12 @@ complexity check and coverage report alongside the existing gates.
 source, throwaway harnesses and diagnostic artifacts there, and bind an ad-hoc
 `docker run -v`/`--mount` from a toolbox shell only under that printed path:
 the daemon resolves the source on the host, and a container path translated by
-hand can create a stray host directory instead. Git ignores the release
-directory, while Go package discovery ignores the hidden child.
+hand can create a stray host directory instead. An agent scratchpad and `/tmp`
+live on the container's own filesystem: a mount from them comes up empty with
+no error, so keep worktrees and fixtures under the workspace too. The mounting
+Make targets refuse to run from the container's root filesystem, though not
+from a tmpfs or named volume. Git ignores the release directory, while Go
+package discovery ignores the hidden child.
 Ignoring a directory in Git alone does not exclude it from `go test ./...`.
 `make go-fmt` formats surviving regular Go files selected by Git, so ignored
 scratch/cache trees, symlinks and unstaged deletions are left alone.
