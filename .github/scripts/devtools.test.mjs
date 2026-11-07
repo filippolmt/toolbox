@@ -88,7 +88,7 @@ test("formatting selects linked-worktree sources before entering Docker", () => 
     mkdirSync(bin);
     const log = join(directory, "selection");
     writeFileSync(join(bin, "docker"), "#!/usr/bin/env node\nconst fs = require('node:fs'); fs.writeFileSync(process.env.FORMAT_LOG, fs.readFileSync(0));\n", { mode: 0o755 });
-    const result = spawnSync("make", ["-f", join(root, "Makefile"), "go-fmt"], { cwd: linked, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FORMAT_LOG: log }, encoding: "utf8" });
+    const result = spawnSync("make", ["-f", join(root, "Makefile"), "go-fmt"], { cwd: linked, env: { ...process.env, TOOLBOX_HOST_WORKSPACE: "", PATH: `${bin}:${process.env.PATH}`, FORMAT_LOG: log }, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(log, "utf8"), "main.go\0");
   });
@@ -218,4 +218,26 @@ test("Go test targets forward explicit build tags", () => {
   const result = spawnSync("make", ["-n", "go-test-one", "PKG=./internal/container", "RUN=TestExecShell", "TAGS=dockergate"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /go test .* -tags "dockergate"/);
+});
+
+test("mounting targets refuse a directory the host daemon cannot see", () => {
+  const directory = mkdtempSync(join(tmpdir(), "toolbox-local-"));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "findmnt"), "#!/bin/sh\necho \"$FAKE_MOUNT\"\n", { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TOOLBOX_HOST_WORKSPACE: "/Users/dev/projects", FAKE_MOUNT: "/" };
+  const make = (target, overrides = {}) =>
+    spawnSync("make", ["-n", "-f", join(root, "Makefile"), "-C", directory, target], { env: { ...env, ...overrides }, encoding: "utf8" });
+  try {
+    for (const target of ["go-test", "check-links", "scratch"]) {
+      const blocked = make(target);
+      assert.notEqual(blocked.status, 0, `${target} mounted a container-local directory`);
+      assert.match(blocked.stderr, /host Docker daemon cannot see/);
+    }
+    assert.equal(make("help").status, 0, "a target that mounts nothing was blocked");
+    assert.equal(make("go-test", { FAKE_MOUNT: "/Users/dev/projects" }).status, 0, "a host bind was blocked");
+    assert.equal(make("go-test", { TOOLBOX_HOST_WORKSPACE: "" }).status, 0, "a native host terminal was blocked");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
