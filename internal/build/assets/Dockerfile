@@ -1106,6 +1106,12 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       test -s "$pkg/README.md"; \
       test -s "$pkg/docs/providers.md"; \
       test -n "$(ls -A "$pkg/examples")"; \
+      # /usr/local/bin/pi is the bin/pi wrapper, COPYed in the final stage: an
+      # asset rather than a printf here like the claude/codegraph shims, since
+      # it carries a subcommand list. It execs this exact path, so an upstream
+      # move fails here. \
+      test "$(readlink -f /out/usr/local/bin/pi)" = "$pkg/dist/bundle/cli.js"; \
+      rm /out/usr/local/bin/pi; \
       freeze-mtimes
 
 # OCI CLI. No upstream binary release, so it stays a pip install — but into its
@@ -1229,6 +1235,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-a
       cp -a /opt/az /out/opt/az; \
       cp -a /usr/bin/az /out/usr/bin/az; \
       cp -a /etc/bash_completion.d/azure-cli /out/etc/bash_completion.d/azure-cli; \
+      freeze-mtimes
+
+# Codex system config (/etc/codex/config.toml), an Image Default: the image's
+# agent instructions as `developer_instructions`, generated from the one source
+# file. Inline text is the only form that adds to the base prompt
+# (`model_instructions_file` replaces it). A TOML literal string cannot hold
+# three single quotes, so the build fails on them instead of shipping a config
+# Codex rejects.
+FROM fetch-base AS gen-codex-config
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link agent-instructions.md /tmp/agent-instructions.md
+RUN set -eux; \
+      if grep -qF "'''" /tmp/agent-instructions.md; then exit 1; fi; \
+      mkdir -p /out/etc/codex; \
+      { printf "developer_instructions = '''\n"; cat /tmp/agent-instructions.md; printf "'''\n"; } \
+        > /out/etc/codex/config.toml; \
       freeze-mtimes
 
 # OpenAI Codex CLI. `bubblewrap`, which its in-tool sandbox needs, is a dpkg
@@ -1938,10 +1960,14 @@ COPY --link --chmod=0755 statusline-command.sh /etc/toolbox/statusline-command.s
 # mount fixes it without making the RO ssh mount writable. The smoke test
 # asserts the policy is effective via `ssh -G`.
 COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
-# Image-wide Claude Code instructions (managed-policy CLAUDE.md, loaded in every
-# project and not excludable): the Docker-outside-of-Docker facts an agent
-# cannot see from inside the container. The smoke test asserts the file.
-COPY --link claude-managed.md /etc/claude-code/CLAUDE.md
+# Image-wide agent instructions, one source for the three agents: Claude Code's
+# managed-policy CLAUDE.md (loaded in every project, not excludable), the file
+# the pi extension reads, and gen-codex-config's developer_instructions. The
+# smoke test asserts each agent gets them.
+COPY --link agent-instructions.md /etc/claude-code/CLAUDE.md
+COPY --link agent-instructions.md /etc/toolbox/agent-instructions.md
+COPY --link pi-agent-instructions.ts /usr/local/lib/toolbox/pi/agent-instructions.ts
+COPY --link --chmod=0755 bin/pi /usr/local/bin/pi
 # Worktrunk's system config layer (Image Default): worktree hooks and commit
 # message generation for every developer, below their own user config. The
 # smoke test asserts wt loads it.
@@ -2113,6 +2139,7 @@ COPY --link --from=fetch-pi       /out/ /
 COPY --link --from=fetch-oci      /out/ /
 COPY --link --from=fetch-azure    /out/ /
 COPY --link --from=fetch-codex    /out/ /
+COPY --link --from=gen-codex-config /out/ /
 COPY --link --from=fetch-playwright /out/ /
 COPY --link --from=fetch-wrangler /out/ /
 COPY --link --from=fetch-typescript /out/ /

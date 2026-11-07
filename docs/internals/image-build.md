@@ -55,9 +55,15 @@ The image bakes `/etc/ssh/ssh_config.d/10-toolbox.conf` (embedded asset `ssh_con
 
 The drop-in is loaded via `Include /etc/ssh/ssh_config.d/*.conf` in `/etc/ssh/ssh_config`. ssh uses the *first-obtained* value per keyword, so the Include must sit at the top of the base config (ahead of any built-in default) for `accept-new` to win — Debian's default already places it first, but a final-stage `RUN` re-asserts it idempotently rather than silently depending on upstream not moving it. Rejected alternatives: making the `ssh` mount writable (breaks the symlink host-sync design); boot-time `ssh-keyscan` seeding of common forges (adds a network dependency at boot plus a new `init.d` script → bijection/smoke churn, and `accept-new` already removes the prompt). The smoke test asserts the policy is effective via `ssh -G` rather than trusting the COPY landed.
 
-## Claude managed instructions
+## Agent instructions
 
-The image bakes `/etc/claude-code/CLAUDE.md` (embedded asset `claude-managed.md`), the path Claude Code reads on Linux as managed-policy memory: loaded in every project, not excludable by `claudeMdExcludes`. It carries what an agent cannot infer from inside the container: Docker talks to the host daemon, so a bind source must be a host path under the workspace, and the scratchpad, `/tmp` and `$HOME` mount empty or fail. Codex and pi are not covered; this repo's own Make targets refuse a container-local `CURDIR` ([development feedback](../agents/development-feedback.md#scratch-and-checks)).
+One embedded asset, `agent-instructions.md`, carries what an agent cannot infer from inside the container: Docker talks to the host daemon, so a bind source must be a host path under the workspace, and the scratchpad, `/tmp` and `$HOME` mount empty or fail. It also says to create worktrees with Worktrunk and to show the final draft of an issue before creating it. Each bundled agent receives it as an [Image Default](../../CONTEXT.md#image-default), with no write into the developer's files:
+
+- **Claude Code** reads `/etc/claude-code/CLAUDE.md`, its managed-policy memory on Linux: loaded in every project, not excludable by `claudeMdExcludes`.
+- **Codex** reads `/etc/codex/config.toml`, its system config layer. The `gen-codex-config` stage writes the file as `developer_instructions` in a TOML literal string. Only inline text adds to the base prompt: `model_instructions_file` replaces it. A `developer_instructions` in the developer's `~/.codex/config.toml` replaces the image's whole text rather than adding to it, so whoever sets their own must copy across the lines they want to keep.
+- **pi** has no system layer. `/usr/local/bin/pi` is a wrapper (`bin/pi`) that passes `-e /usr/local/lib/toolbox/pi/agent-instructions.ts`. That extension reads `/etc/toolbox/agent-instructions.md` and sets it as the `toolbox` section of the system prompt on `before_agent_start`; pi patches a changed section in place, so the cached prefix survives. pi's subcommands reject unknown options, so the wrapper runs the ones in its `bare_subcommands` without `-e`; the smoke test fails when `pi --help` lists a subcommand that variable does not.
+
+The smoke test asserts all three: the file, `codex debug prompt-input`, and the wrapper plus an extension that loads. This repo's own Make targets also refuse a container-local `CURDIR` ([development feedback](../agents/development-feedback.md#scratch-and-checks)).
 
 ## Passwordless sudo
 
