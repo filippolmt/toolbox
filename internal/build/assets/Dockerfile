@@ -83,7 +83,7 @@ ARG GOPLS_VERSION=0.24.0
 ARG GOIMPORTS_VERSION=0.52.0
 ARG TINI_VERSION=0.19.0
 ARG BAT_VERSION=0.26.1
-ARG FD_VERSION=10.5.1
+ARG FD_VERSION=10.5.2
 ARG EZA_VERSION=0.23.5
 # eza: upstream ships aarch64-MUSL only as zip; we fall back to aarch64-GNU on
 # arm64 (built on ubuntu-22.04, whose GLIBC is older than the base image's).
