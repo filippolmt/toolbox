@@ -26,7 +26,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Global flag: `--config`](commands.md#global-flag---config)
 - [toolbox shell](commands.md#toolbox-shell) — [Profiles](commands.md#profiles) · [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
 - [toolbox list](commands.md#toolbox-list)
-- [toolbox stop](commands.md#toolbox-stop)
+- [toolbox stop](commands.md#toolbox-stop) — [Containers started from inside a shell](commands.md#containers-started-from-inside-a-shell)
 - [toolbox build](commands.md#toolbox-build)
 - [toolbox version](commands.md#toolbox-version)
 - [toolbox init](commands.md#toolbox-init)

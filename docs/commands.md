@@ -193,6 +193,21 @@ An argument that is already a full container name — as printed by [`toolbox li
 |------|-------------|
 | `--all` | Stop every toolbox container on the host, the [peer-messaging anchor](#peer-messaging) included (cannot be combined with a positional argument). |
 
+### Containers started from inside a shell
+
+`toolbox stop` and `--all` only ever reach containers toolbox created. A `docker compose up` run inside a shell — a test suite's stack, typically — goes through the host's Docker socket and lands on the host daemon as an [Orphaned Sibling](../CONTEXT.md#orphaned-sibling): it outlives the shell, and so does its `<project>_default` network. Clean them up with Compose itself, which finds a project by its labels without the compose file:
+
+```bash
+docker compose ls -a                  # every Compose project on the host, stopped ones included
+docker compose -p <project> down      # its containers and networks
+docker compose -p <project> down -v   # ...and its named volumes: only when the data is disposable
+docker network prune --filter label=com.docker.compose.project   # Compose networks no container uses any more
+```
+
+The last line also takes the network of any stack currently down, proximo's included; the next `up` recreates it. Leave the `proximo` project out of `down`: it is the [proximo](proximo.md) stack (its containers carry a `proximo.role` label) and `proximo up` / `proximo down` own it. Toolbox ships no bulk sweep for these on purpose: Compose labels say who created a container, not whether it is a leftover or a dev stack still in use.
+
+A `compose up` failing with *"all predefined address pools have been fully subnetted"* is the usual first sign that leftover project networks have piled up.
+
 ## toolbox build
 
 Build the toolbox Docker image from the embedded context (Dockerfile + assets are compiled into the binary, so it runs anywhere). The build overwrites the local cache of the canonical tag, so the next `toolbox shell` picks it up — see [image selection](configuration.md#image-selection) for how it interacts with `image` / `registry_mirror` / `pull` and how to restore the upstream copy.

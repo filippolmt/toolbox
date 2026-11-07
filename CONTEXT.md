@@ -1610,6 +1610,33 @@ required editing inside the defer block. The "Teardown" name flattens
 the defer to one call and gives `toolbox stop` and the shell-exit path
 one named owner.
 
+### Orphaned Sibling
+
+A container created from *inside* a [Shell](#shell) through the host's
+bind-mounted Docker socket. It is born on the host daemon as a *sibling* of
+the shell, never as a child, so nothing ties its lifetime to the session
+that created it: when the shell exits, it stays.
+
+Concretely: the usual source is a `docker compose up` in a project's test
+suite, which leaves its containers and its `<project>_default` network
+behind — plain Compose has no reaper. An Orphaned Sibling carries no
+`toolbox-` prefix, so `sessionplan.IsToolboxContainerName` does not match it
+and `toolbox stop --all` never reaches it; [Teardown](#teardown) only stops
+the shell's own container, by name. No package owns it, by design.
+Nothing marks the session that created it either: the socket is a plain bind,
+and the Compose labels record a working directory, not a shell. Cleanup is
+Compose's own (`docker compose -p <project> down`), documented in
+[commands](docs/commands.md#containers-started-from-inside-a-shell).
+
+Why the term exists: called "the containers my tests leave behind", this
+reads as housekeeping, and the obvious fix is to widen `toolbox stop --all` —
+which would make it act on containers toolbox did not create, the one
+property that makes that command safe to run blind. A bulk sweep keyed on
+Compose labels fails the same way: a test leftover and a dev stack the
+developer is still using carry identical labels. The word *sibling* carries
+the mechanism instead: Docker-outside-of-Docker gives no parent/child
+relation, so the leak is structural, not a forgotten cleanup step.
+
 ### Init Sequence
 
 The boot-time per-tool init manifest: a catalog-declared list of small
