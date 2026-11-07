@@ -94,8 +94,8 @@ rm -f "$_claude_home/RTK.md" \
       "$_claude_home/hooks/.rtk-hook.sha256"
 _drop_rtk_reference "$_claude_home/CLAUDE.md"
 
-# Codex hooks.json is shared with Atuin, Herdr and Worktrunk.
-toolbox_with_codex_hooks_lock _clean_hooks_json "$_codex_home/hooks.json"
+# Codex's hooks.json: 25-codex.sh drops RTK's entries with the image's own,
+# keeping the group positions Codex keys a user hook's trust to.
 rm -f "$_codex_home/RTK.md"
 _drop_rtk_reference "$_codex_home/AGENTS.md"
 

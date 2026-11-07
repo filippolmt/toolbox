@@ -1243,14 +1243,37 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-a
 # (`model_instructions_file` replaces it). A TOML literal string cannot hold
 # three single quotes, so the build fails on them instead of shipping a config
 # Codex rejects.
+#
+# Also the image's Codex hooks (/etc/codex/hooks.json), an Image Default too:
+# Codex runs a system-layer hook as managed, with no per-user trust step, where
+# a hook in ~/.codex/hooks.json is skipped until the developer trusts it by hand
+# (codex-rs/hooks/src/engine/discovery.rs, hook_trust_status). Worktrunk's
+# markers come from bin/worktrunk-markers-lib.sh, the source Claude Code's are
+# built from too; Herdr and Atuin add theirs with their own installers, so a
+# version bump carries its hook. The installers also write
+# trust entries and a feature flag into config.toml: managed hooks need
+# neither, so that file stays behind in the scratch CODEX_HOME.
 FROM fetch-base AS gen-codex-config
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-jq    /out/ /
+COPY --link --from=fetch-atuin /out/ /
+COPY --link --from=fetch-herdr /out/ /
 COPY --link agent-instructions.md /tmp/agent-instructions.md
+COPY --link bin/agent-topology-lib.sh bin/worktrunk-markers-lib.sh bin/codex-hooks-check.sh /tmp/lib/
 RUN set -eux; \
       if grep -qF "'''" /tmp/agent-instructions.md; then exit 1; fi; \
       mkdir -p /out/etc/codex; \
       { printf "developer_instructions = '''\n"; cat /tmp/agent-instructions.md; printf "'''\n"; } \
         > /out/etc/codex/config.toml; \
+      mkdir -p /etc/codex /tmp/home; \
+      . /tmp/lib/agent-topology-lib.sh; \
+      . /tmp/lib/worktrunk-markers-lib.sh; \
+      _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
+      HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
+      HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
+      bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \
+      install -m 0644 /etc/codex/hooks.json /out/etc/codex/hooks.json; \
+      install -m 0755 /etc/codex/herdr-agent-state.sh /out/etc/codex/herdr-agent-state.sh; \
       freeze-mtimes
 
 # OpenAI Codex CLI. `bubblewrap`, which its in-tool sandbox needs, is a dpkg
@@ -1985,6 +2008,8 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 # Agent Topology owns agent roots, persistence gates and shared resources for
 # init.d members and the managed statusline.
 COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
+COPY --link --chmod=0644 bin/worktrunk-markers-lib.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh
+COPY --link --chmod=0755 bin/codex-hooks-check.sh /usr/local/lib/toolbox/codex-hooks-check.sh
 # Workspace Install Refresh gate, sourced by the init.d members that re-run a
 # per-repo installer (one gate, one stamp shape, one failure message).
 COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh

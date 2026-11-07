@@ -25,7 +25,23 @@ func wireAgentTopologyForTest(t *testing.T, dir string, body []byte) []byte {
 	if err := os.WriteFile(path, lib, 0o644); err != nil {
 		t.Fatalf("write agent topology library: %v", err)
 	}
-	return []byte(strings.ReplaceAll(string(body), agentTopologySource, `. "`+path+`"`))
+	out := strings.ReplaceAll(string(body), agentTopologySource, `. "`+path+`"`)
+	return []byte(wireWorktrunkMarkersForTest(t, dir, out))
+}
+
+// wireWorktrunkMarkersForTest points a script's source line for the Worktrunk
+// markers library at a copy of the embedded one under dir.
+func wireWorktrunkMarkersForTest(t *testing.T, dir, body string) string {
+	t.Helper()
+	lib, err := Assets.ReadFile("assets/bin/worktrunk-markers-lib.sh")
+	if err != nil {
+		t.Fatalf("read worktrunk markers library: %v", err)
+	}
+	path := filepath.Join(dir, "worktrunk-markers-lib.sh")
+	if err := os.WriteFile(path, lib, 0o644); err != nil {
+		t.Fatalf("write worktrunk markers library: %v", err)
+	}
+	return strings.ReplaceAll(body, ". /usr/local/lib/toolbox/worktrunk-markers-lib.sh", `. "`+path+`"`)
 }
 
 func runAgentTopology(t *testing.T, script string, env ...string) string {
@@ -109,9 +125,10 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.claude-settings.lock" ] && echo lock
 	}
 }
 
-// TestAgentTopologyOwnsCodexHooksLock: Codex's hooks.json has three init.d
-// writers running in parallel (Atuin, Herdr, Worktrunk), and each one's
-// read-modify-write takes this lock.
+// TestAgentTopologyOwnsCodexHooksLock: ~/.codex/hooks.json is one host mount
+// every container shares, and a container on an earlier image still has
+// Atuin, Herdr and Worktrunk writing it; the cleanup that drops their entries
+// takes the same lock.
 func TestAgentTopologyOwnsCodexHooksLock(t *testing.T) {
 	home := t.TempDir()
 	got := runAgentTopology(t, `
@@ -123,13 +140,34 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.codex-hooks.lock" ] && echo locked)"
 		t.Fatalf("locked writer result = %q, want written|locked", got)
 	}
 	for path, want := range map[string]string{
-		"init.d/61-herdr.sh":     "toolbox_with_codex_hooks_lock _herdr_install_integration codex",
-		"init.d/65-atuin.sh":     "toolbox_with_codex_hooks_lock atuin hook install codex",
-		"init.d/62-worktrunk.sh": "toolbox_with_codex_hooks_lock _wt_wire_codex",
+		"init.d/25-codex.sh": "toolbox_with_codex_hooks_lock _codex_drop_image_hooks",
+		"init.d/65-atuin.sh": `toolbox_with_codex_hooks_lock rm -f "$_atuin_hooks_dir"/codex-*`,
 	} {
 		if !strings.Contains(readAsset(t, path), want) {
 			t.Errorf("%s writes Codex hooks.json without the lock (want %q)", path, want)
 		}
+	}
+}
+
+// TestAgentTopologyRewritesJSONAtomically: one rewrite for every agent JSON
+// file. An absent file is read as {}, empty output leaves the file alone, an
+// unparseable file is kept and the call fails, and a rewrite keeps the mode.
+func TestAgentTopologyRewritesJSONAtomically(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not on PATH: the runtime image and CI ship it")
+	}
+	dir := t.TempDir()
+	got := runAgentTopology(t, `
+f="$HOME/a/hooks.json"
+toolbox_rewrite_json "$f" '.x = 1' && printf '%s|' "$(jq -c . "$f")"
+chmod 600 "$f"
+toolbox_rewrite_json "$f" '.y = 2' && printf '%s|' "$(stat -c %a "$f")"
+toolbox_rewrite_json "$f" 'empty' && printf '%s|' "$(jq -c . "$f")"
+printf '{' > "$f"
+toolbox_rewrite_json "$f" '.z = 3' || printf 'kept:%s' "$(cat "$f")"
+`, "HOME="+dir)
+	if want := `{"x":1}|600|{"x":1,"y":2}|kept:{`; got != want {
+		t.Errorf("rewrite sequence = %q, want %q", got, want)
 	}
 }
 
@@ -203,30 +241,45 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 	}
 }
 
+// TestAgentWiringDeclaresEverySupportedAgent: each supported agent names where
+// its Atuin, Herdr and Worktrunk adapters live. Codex's are an Image Default:
+// the gen-codex-config stage builds /etc/codex/hooks.json, where Codex runs
+// them with no per-user trust step; the other agents' are init.d members.
 func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	herdr := readAsset(t, "init.d/61-herdr.sh")
 	atuin := readAsset(t, "init.d/65-atuin.sh")
 	worktrunk := readAsset(t, "init.d/62-worktrunk.sh")
-	atuinAdapters := map[string]string{
-		"claude": "claude-code",
-		"codex":  "codex",
-		"pi":     "pi",
+	dockerfile := readAsset(t, "Dockerfile")
+	type adapter struct{ tool, source, want string }
+	adapters := map[string][]adapter{
+		"claude": {
+			{"Herdr", herdr, "_herdr_install_integration claude"},
+			{"Atuin", atuin, "atuin hook install claude-code"},
+			{"Worktrunk", worktrunk, "_wt_wire_claude"},
+		},
+		"codex": {
+			{"Herdr", dockerfile, "CODEX_HOME=/etc/codex herdr integration install codex"},
+			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
+			{"Worktrunk", dockerfile, `"$_wt_codex_events"`},
+			{"the hooks check", dockerfile, "codex-hooks-check.sh /etc/codex/hooks.json"},
+		},
+		"pi": {
+			{"Herdr", herdr, "_herdr_install_integration pi"},
+			{"Atuin", atuin, "atuin hook install pi"},
+			{"Worktrunk", worktrunk, "_wt_wire_pi"},
+		},
 	}
 
 	for _, agent := range config.SupportedAgents {
-		if !strings.Contains(herdr, `_herdr_install_integration `+agent) {
-			t.Errorf("Herdr wiring is undeclared for supported agent %q", agent)
-		}
-		if !strings.Contains(worktrunk, `_wt_wire_`+agent) {
-			t.Errorf("Worktrunk wiring is undeclared for supported agent %q", agent)
-		}
-		adapter, ok := atuinAdapters[agent]
+		declared, ok := adapters[agent]
 		if !ok {
-			t.Errorf("Atuin wiring has no declared adapter for supported agent %q", agent)
+			t.Errorf("supported agent %q declares no Atuin, Herdr or Worktrunk adapter", agent)
 			continue
 		}
-		if !strings.Contains(atuin, `atuin hook install `+adapter) {
-			t.Errorf("Atuin wiring is undeclared for supported agent %q", agent)
+		for _, a := range declared {
+			if !strings.Contains(a.source, a.want) {
+				t.Errorf("%s wiring for supported agent %q is missing %q", a.tool, agent, a.want)
+			}
 		}
 	}
 }

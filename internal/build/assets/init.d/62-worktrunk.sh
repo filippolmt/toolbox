@@ -3,13 +3,17 @@ set -euo pipefail
 
 # shellcheck source=bin/agent-topology-lib.sh
 . /usr/local/lib/toolbox/agent-topology-lib.sh
+# shellcheck source=bin/worktrunk-markers-lib.sh
+. /usr/local/lib/toolbox/worktrunk-markers-lib.sh
 
 # Worktrunk's Agent Wiring, on every container start:
 #
 #   1. its configuration skill, extracted at build time from the release that
 #      ships this `wt`, so the skill never describes another version;
-#   2. the activity-marker hooks behind `wt list`'s 🤖/💬 column, for every
-#      supported agent.
+#   2. the activity-marker hooks behind `wt list`'s 🤖/💬 column, for Claude
+#      Code and pi. Codex gets the same markers from the image's system
+#      layer (/etc/codex/hooks.json, built from bin/worktrunk-markers-lib.sh),
+#      which needs no per-user trust.
 #
 # Upstream delivers (2) as agent plugins. The Claude Code one cannot be used
 # here: its marketplace source is blocked by managed settings, and copying the
@@ -70,62 +74,6 @@ _wt_install_skill() {
     fi
 }
 
-# Each current marker group takes the place of the first earlier one for its
-# event, so the file keeps its order from one start to the next (Codex keys a
-# hook's trust to its position). Every other earlier marker hook is dropped,
-# with any group that held nothing else — including events a newer wt no
-# longer hooks. Other tools' hooks are untouched.
-# shellcheck disable=SC2016 # jq program, not shell
-_wt_merge_jq='
-def ours: ((.command? // "") | test("^/usr/local/bin/wt .*config state marker "));
-def mine: any(.hooks[]?; ours);
-def strip: if mine then (.hooks |= map(select(ours | not)) | select((.hooks | length) > 0)) else . end;
-def place($g):
-  (first(range(length) as $k | select(.[$k] | mine) | $k) // null) as $i
-  | if $i == null then map(strip) + [$g]
-    else (.[:$i] | map(strip)) + [.[$i] | strip] + [$g] + (.[$i + 1:] | map(strip)) end;
-($add | map(.event)) as $events
-| .hooks = ((.hooks // {}) | with_entries(
-    if (.key as $k | $events | index($k)) then . else .value |= map(strip) end))
-| reduce $add[] as $e (.; .hooks[$e.event] = ((.hooks[$e.event] // []) | place($e.group)))'
-
-# A file jq cannot parse is left alone: replacing it would throw away
-# whatever the user had in it. Absent or empty starts from {}.
-_wt_merge_hooks() {
-    local file="$1" add="$2" tmp
-    mkdir -p "$(dirname "$file")" || return 1
-    tmp=$(mktemp "$file.XXXXXX") || return 1
-    if [ -s "$file" ]; then
-        jq --argjson add "$add" "$_wt_merge_jq" "$file" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
-    else
-        printf '{}' | jq --argjson add "$add" "$_wt_merge_jq" >"$tmp" || { rm -f "$tmp"; return 1; }
-    fi
-    [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
-    [ -e "$file" ] && chmod --reference="$file" "$tmp" 2>/dev/null
-    mv -f "$tmp" "$file"
-}
-
-# $1 is the command prefix (Claude passes the session's project dir with -C;
-# Codex runs hooks in the session cwd). Output quieted: a session outside a git
-# repository has no marker to set, and that is not an error worth showing.
-_wt_marker_cmd() {
-    printf '%s config state marker %s >/dev/null 2>&1 || true' "$1" "$2"
-}
-
-# $2 lists the agent's events as {event, matcher?, marker, timeout?}, marker
-# being working, waiting or clear; prints the group list the merge appends.
-_wt_marker_groups() {
-    jq -n --argjson spec "$2" \
-        --arg working "$(_wt_marker_cmd "$1" 'set 🤖')" \
-        --arg waiting "$(_wt_marker_cmd "$1" 'set 💬')" \
-        --arg clear "$(_wt_marker_cmd "$1" clear)" '
-        {working: $working, waiting: $waiting, clear: $clear} as $cmd
-        | $spec | map({event,
-            group: ((if has("matcher") then {matcher} else {} end)
-                + {hooks: [{type: "command", command: $cmd[.marker]}
-                    + (if has("timeout") then {timeout} else {} end)]})})'
-}
-
 # Events and matchers mirror upstream's Claude Code plugin, minus the two
 # behaviour-changing hooks named at the top.
 _wt_wire_claude() {
@@ -138,18 +86,6 @@ _wt_wire_claude() {
         {"event": "Stop", "marker": "waiting"},
         {"event": "SessionEnd", "matcher": "", "marker": "clear"}]') || return 1
     _wt_merge_hooks "$(toolbox_agent_home claude)/settings.json" "$add"
-}
-
-# Mirrors upstream's Codex plugin. Codex asks the user to trust a new or
-# changed hook once, in Codex itself.
-_wt_wire_codex() {
-    local add
-    add=$(_wt_marker_groups "$_wt_bin" '[
-        {"event": "UserPromptSubmit", "marker": "working"},
-        {"event": "PermissionRequest", "matcher": "", "marker": "waiting"},
-        {"event": "Stop", "marker": "waiting"},
-        {"event": "SessionEnd", "marker": "clear", "timeout": 3}]') || return 1
-    _wt_merge_hooks "$(toolbox_agent_home codex)/hooks.json" "$add"
 }
 
 # pi: wt writes the extension itself. It skips an existing file, so it renders
@@ -180,11 +116,6 @@ toolbox_for_each_active_skill_root _wt_install_skill
 if [ -n "$_wt_claude" ]; then
     toolbox_with_claude_settings_lock _wt_wire_claude || \
         echo "toolbox: worktrunk marker hooks for claude not wired (non-fatal — settings.json unreadable or not writable)"
-fi
-
-if [ -n "$_wt_codex" ] && toolbox_agent_persistent codex; then
-    toolbox_with_codex_hooks_lock _wt_wire_codex || \
-        echo "toolbox: worktrunk marker hooks for codex not wired (non-fatal — hooks.json unreadable or not writable)"
 fi
 
 # Gate on the ~/.pi bind mount, not ~/.pi/agent, which pi creates on its own

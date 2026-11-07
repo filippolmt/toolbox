@@ -1689,9 +1689,17 @@ Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, whil
 `init.d/61-herdr.sh` and `init.d/62-worktrunk.sh` own their distinct wiring commands. All consume Agent
 Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
-itself. A writer of a file another wiring script also writes — Claude's
-`settings.json`, Codex's `hooks.json` — asks Agent Topology for that file's
-lock; a file only one writer touches, such as each pi extension, stays unlocked.
+itself. A writer of a file another writer also touches — Claude's
+`settings.json`, and Codex's `hooks.json`, which containers on earlier images
+still write — asks Agent Topology for that file's lock; a file only one
+writer touches, such as each pi extension, stays unlocked. Codex is the
+exception: its three adapters ship as an [Image Default](#image-default) in
+`/etc/codex/hooks.json`, because Codex skips a hook in the user's own
+`hooks.json` until the developer trusts it by hand. What earlier images wrote
+there, `init.d/25-codex.sh` removes without moving any hook it keeps: Codex
+records that trust against a hook's position (event, group, handler), so a
+group it empties in front of another stays behind as `{"hooks": []}` — removing
+it would shift the later hook and silently revoke its trust.
 `TestAgentWiringDeclaresEverySupportedAgent` fails when a supported agent lacks
 an explicit Herdr, Atuin or Worktrunk adapter, while the Tool Catalog's bijection tests
 hold only the bundling half.
@@ -1712,15 +1720,18 @@ the nearest image-owned equivalent, such as pi's launch wrapper; never a write
 into the developer's files. It configures every developer the
 same way without writing into a file they own: the baked `ssh_config` drop-in,
 the system gitconfig, the agent instructions (Claude Code's managed `CLAUDE.md`,
-Codex's `/etc/codex/config.toml`, pi's extension behind the `pi` wrapper) and
-Worktrunk's `/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
+Codex's `/etc/codex/config.toml`, pi's extension behind the `pi` wrapper),
+Codex's hooks in `/etc/codex/hooks.json` and Worktrunk's
+`/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
 the Dockerfile.
 
 Contrast with [Agent Wiring](#agent-wiring), which merges into the agent's own
 user files on every start because those agents offer no system layer to write
 to. Reach for an Image Default first: it survives a wiped machine with nothing
-to restore, needs no lock, and the developer can always undo it from their own
-config.
+to restore, needs no lock, and the developer can undo it from their own config
+— except where the tool will not let the user layer override the system one:
+Codex runs a system-layer hook as managed, which the developer can only switch
+off together with every other hook.
 
 Why the term exists: toolbox serves many teams, and a default every developer
 has to configure by hand is one each of them forgets

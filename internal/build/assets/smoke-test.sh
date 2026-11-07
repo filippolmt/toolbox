@@ -816,6 +816,18 @@ echo "OK: agent instructions reach Claude Code, Codex and pi"
 '
 
 echo ""
+echo "=== Codex system hooks (Image Default) ==="
+# Codex runs /etc/codex/hooks.json with no per-user trust step; a hook in
+# ~/.codex/hooks.json waits for the developer to trust it by hand. The same
+# check the build stage runs on the file it writes, here on the one the image
+# ships, as a non-root UID: each image hook on its own event.
+docker run --rm "${IMAGE}" bash -c '
+/usr/local/lib/toolbox/codex-hooks-check.sh /etc/codex/hooks.json \
+    || { echo "FAILED: /etc/codex/hooks.json does not carry the image hooks"; exit 1; }
+echo "OK: codex system hooks baked"
+'
+
+echo ""
 echo "=== Worktrunk system config (Image Default) ==="
 # wt reads /etc/xdg/worktrunk/config.toml below the user config; a moved path
 # leaves every developer without the worktree hooks, silently.

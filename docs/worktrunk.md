@@ -94,15 +94,20 @@ once.
 ## Agent integration
 
 Every container start wires Worktrunk into Claude Code, Codex and pi
-(`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)):
+(`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)), with
+one exception: Codex's markers ship in the image rather than being written at
+start.
 
 - **The configuration skill** (`worktrunk`). It is extracted from the source
   archive of the release that ships the bundled `wt`, so it always describes the
   binary you run, and it goes into every agent's skill directory.
 - **Activity markers**: 🤖 while the agent works and 💬 while it waits for you,
   shown in `wt list`. These are hooks that call the bundled `wt`, registered in
-  Claude's `settings.json`, Codex's `hooks.json` and pi's extensions directory.
-  Codex asks you to trust a new hook once, inside Codex.
+  Claude's `settings.json`, pi's extensions directory and Codex's system layer,
+  `/etc/codex/hooks.json` ([Image Default](../CONTEXT.md#image-default)). Codex
+  runs a system-layer hook with no trust prompt, where one in
+  `~/.codex/hooks.json` waits until you trust it by hand; it also cannot be
+  switched off one by one, only with all hooks (`[features] hooks = false`).
 
 Upstream's agent plugins add two hooks that are left out on purpose, because
 they change how the agent behaves: an automatic approval for entering
