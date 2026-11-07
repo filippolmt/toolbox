@@ -1,0 +1,19 @@
+# Worktrunk system config, baked to /etc/xdg/worktrunk/config.toml: the
+# Image Default every developer gets with no file in any repository and no
+# approval prompt. A user's ~/.config/worktrunk/config.toml ranks above it:
+# scalars there replace these, hooks there run alongside them.
+
+# Every new worktree: the developer's local Claude settings, whatever the
+# repository lists in .worktreeinclude (nothing without one), then remove the
+# worktrees and branches already in the default branch. prune skips worktrees
+# with uncommitted changes, locked ones and anything younger than a day.
+[post-start]
+local-settings = "f={{ primary_worktree_path }}/.claude/settings.local.json; [ -f \"$f\" ] && [ ! -e .claude/settings.local.json ] && mkdir -p .claude && cp \"$f\" .claude/ || true"
+copy-ignored = "wt step copy-ignored --require-include"
+prune = "wt step prune"
+
+# Commit messages from the bundled Claude Code, cheapest model, no tools and no
+# session left behind. Needs a Claude login; only `wt step commit` and
+# `wt merge` call it.
+[commit.generation]
+command = "MAX_THINKING_TOKENS=0 claude -p --no-session-persistence --model=haiku --tools='' --safe-mode --setting-sources='user' --system-prompt=''"

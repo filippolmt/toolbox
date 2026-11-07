@@ -121,6 +121,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Layout](worktrunk.md#layout)
 - [Shell integration](worktrunk.md#shell-integration)
 - [State that persists](worktrunk.md#state-that-persists)
+- [What the image configures](worktrunk.md#what-the-image-configures)
 - [Agent integration](worktrunk.md#agent-integration)
 - [Sharing one container](worktrunk.md#sharing-one-container)
 - [Migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree)

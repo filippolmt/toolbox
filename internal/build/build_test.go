@@ -63,7 +63,7 @@ func TestTarEmbeddedContext(t *testing.T) {
 		got[h.Name] = true
 	}
 
-	for _, want := range []string{"Dockerfile", "entrypoint.sh", "zshrc.sh", "statusline-command.sh", "ssh_config.toolbox", "claude-managed.md"} {
+	for _, want := range []string{"Dockerfile", "entrypoint.sh", "zshrc.sh", "statusline-command.sh", "ssh_config.toolbox", "claude-managed.md", "worktrunk.toml"} {
 		if !got[want] {
 			t.Errorf("tar missing entry %q (got %v)", want, got)
 		}
