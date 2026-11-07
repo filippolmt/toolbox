@@ -75,7 +75,10 @@ HOST_SRC        := $(if $(and $(TOOLBOX_HOST_WORKSPACE),$(filter /workspace%,$(C
 # empty directory and Go fails with a misleading "does not contain main
 # module". findmnt names "/" as the mount holding such a path, a host bind its
 # own target. HOST_SRC turns into an error only when a recipe expands it, so
-# targets that mount nothing (help, build) keep working.
+# targets that mount nothing (help, build) keep working; scratch refuses too,
+# since the host path it prints would not exist. The check covers the root
+# filesystem only (a tmpfs or named volume still passes) and stays off where
+# findmnt is missing.
 CURDIR_MOUNT    := $(if $(TOOLBOX_HOST_WORKSPACE),$(shell findmnt -n -o TARGET -T "$(CURDIR)" 2>/dev/null))
 ifeq ($(CURDIR_MOUNT),/)
 HOST_SRC         = $(error $(CURDIR) lives on the container filesystem, which the host Docker daemon cannot see: a bind mount of it would be silently empty. Run make from a checkout under $(TOOLBOX_HOST_WORKSPACE))
