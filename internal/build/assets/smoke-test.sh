@@ -816,6 +816,19 @@ echo "OK: agent instructions reach Claude Code, Codex and pi"
 '
 
 echo ""
+echo "=== Codex system hooks (Image Default) ==="
+# Codex runs /etc/codex/hooks.json with no per-user trust step; a hook in
+# ~/.codex/hooks.json waits for the developer to trust it by hand. An event
+# missing here is a Worktrunk, Herdr or Atuin hook Codex never fires.
+docker run --rm "${IMAGE}" bash -c '
+jq -e ".hooks | (.UserPromptSubmit and .PermissionRequest and .Stop and .SessionEnd and .SessionStart and .PreToolUse and .PostToolUse and .PostToolUseFailure)" /etc/codex/hooks.json >/dev/null \
+    || { echo "FAILED: /etc/codex/hooks.json missing an image hook"; exit 1; }
+grep -qF "/etc/codex/herdr-agent-state.sh" /etc/codex/hooks.json && test -r /etc/codex/herdr-agent-state.sh \
+    || { echo "FAILED: Herdr codex hook does not reach its script"; exit 1; }
+echo "OK: codex system hooks baked"
+'
+
+echo ""
 echo "=== Worktrunk system config (Image Default) ==="
 # wt reads /etc/xdg/worktrunk/config.toml below the user config; a moved path
 # leaves every developer without the worktree hooks, silently.

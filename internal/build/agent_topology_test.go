@@ -109,9 +109,10 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.claude-settings.lock" ] && echo lock
 	}
 }
 
-// TestAgentTopologyOwnsCodexHooksLock: Codex's hooks.json has three init.d
-// writers running in parallel (Atuin, Herdr, Worktrunk), and each one's
-// read-modify-write takes this lock.
+// TestAgentTopologyOwnsCodexHooksLock: ~/.codex/hooks.json is one host mount
+// every container shares, and a container on an earlier image still has
+// Atuin, Herdr and Worktrunk writing it; the cleanup that drops their entries
+// takes the same lock.
 func TestAgentTopologyOwnsCodexHooksLock(t *testing.T) {
 	home := t.TempDir()
 	got := runAgentTopology(t, `
@@ -123,9 +124,7 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.codex-hooks.lock" ] && echo locked)"
 		t.Fatalf("locked writer result = %q, want written|locked", got)
 	}
 	for path, want := range map[string]string{
-		"init.d/61-herdr.sh":     "toolbox_with_codex_hooks_lock _herdr_install_integration codex",
-		"init.d/65-atuin.sh":     "toolbox_with_codex_hooks_lock atuin hook install codex",
-		"init.d/62-worktrunk.sh": "toolbox_with_codex_hooks_lock _wt_wire_codex",
+		"init.d/25-codex.sh": "toolbox_with_codex_hooks_lock _codex_drop_image_hooks",
 	} {
 		if !strings.Contains(readAsset(t, path), want) {
 			t.Errorf("%s writes Codex hooks.json without the lock (want %q)", path, want)
@@ -213,7 +212,27 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 		"pi":     "pi",
 	}
 
+	// Codex's hooks are an Image Default: the gen-codex-config stage builds
+	// /etc/codex/hooks.json, where Codex needs no per-user trust to run them.
+	dockerfile := readAsset(t, "Dockerfile")
+	codexHooks := readAsset(t, "codex-hooks.json")
+	for _, want := range []string{
+		"CODEX_HOME=/etc/codex herdr integration install codex",
+		"CODEX_HOME=/etc/codex atuin hook install codex",
+		"COPY --link codex-hooks.json /tmp/codex-hooks.json",
+	} {
+		if !strings.Contains(dockerfile, want) {
+			t.Errorf("Codex system-layer hooks are missing %q in the Dockerfile", want)
+		}
+	}
+	if !strings.Contains(codexHooks, "/usr/local/bin/wt config state marker ") {
+		t.Error("codex-hooks.json carries no Worktrunk marker hook")
+	}
+
 	for _, agent := range config.SupportedAgents {
+		if agent == "codex" {
+			continue
+		}
 		if !strings.Contains(herdr, `_herdr_install_integration `+agent) {
 			t.Errorf("Herdr wiring is undeclared for supported agent %q", agent)
 		}

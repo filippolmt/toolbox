@@ -8,8 +8,10 @@ set -euo pipefail
 #
 #   1. its configuration skill, extracted at build time from the release that
 #      ships this `wt`, so the skill never describes another version;
-#   2. the activity-marker hooks behind `wt list`'s 🤖/💬 column, for every
-#      supported agent.
+#   2. the activity-marker hooks behind `wt list`'s 🤖/💬 column, for Claude
+#      Code and pi. Codex gets its markers from the image's system layer
+#      (/etc/codex/hooks.json, built from codex-hooks.json), which needs no
+#      per-user trust.
 #
 # Upstream delivers (2) as agent plugins. The Claude Code one cannot be used
 # here: its marketplace source is blocked by managed settings, and copying the
@@ -71,8 +73,7 @@ _wt_install_skill() {
 }
 
 # Each current marker group takes the place of the first earlier one for its
-# event, so the file keeps its order from one start to the next (Codex keys a
-# hook's trust to its position). Every other earlier marker hook is dropped,
+# event, so the file keeps its order from one start to the next. Every other earlier marker hook is dropped,
 # with any group that held nothing else — including events a newer wt no
 # longer hooks. Other tools' hooks are untouched.
 # shellcheck disable=SC2016 # jq program, not shell
@@ -105,8 +106,8 @@ _wt_merge_hooks() {
     mv -f "$tmp" "$file"
 }
 
-# $1 is the command prefix (Claude passes the session's project dir with -C;
-# Codex runs hooks in the session cwd). Output quieted: a session outside a git
+# $1 is the command prefix (Claude passes the session's project dir with -C).
+# Output quieted: a session outside a git
 # repository has no marker to set, and that is not an error worth showing.
 _wt_marker_cmd() {
     printf '%s config state marker %s >/dev/null 2>&1 || true' "$1" "$2"
@@ -140,18 +141,6 @@ _wt_wire_claude() {
     _wt_merge_hooks "$(toolbox_agent_home claude)/settings.json" "$add"
 }
 
-# Mirrors upstream's Codex plugin. Codex asks the user to trust a new or
-# changed hook once, in Codex itself.
-_wt_wire_codex() {
-    local add
-    add=$(_wt_marker_groups "$_wt_bin" '[
-        {"event": "UserPromptSubmit", "marker": "working"},
-        {"event": "PermissionRequest", "matcher": "", "marker": "waiting"},
-        {"event": "Stop", "marker": "waiting"},
-        {"event": "SessionEnd", "marker": "clear", "timeout": 3}]') || return 1
-    _wt_merge_hooks "$(toolbox_agent_home codex)/hooks.json" "$add"
-}
-
 # pi: wt writes the extension itself. It skips an existing file, so it renders
 # into a scratch agent dir and the result replaces the live one atomically —
 # which is how a wt bump reaches pi.
@@ -180,11 +169,6 @@ toolbox_for_each_active_skill_root _wt_install_skill
 if [ -n "$_wt_claude" ]; then
     toolbox_with_claude_settings_lock _wt_wire_claude || \
         echo "toolbox: worktrunk marker hooks for claude not wired (non-fatal — settings.json unreadable or not writable)"
-fi
-
-if [ -n "$_wt_codex" ] && toolbox_agent_persistent codex; then
-    toolbox_with_codex_hooks_lock _wt_wire_codex || \
-        echo "toolbox: worktrunk marker hooks for codex not wired (non-fatal — hooks.json unreadable or not writable)"
 fi
 
 # Gate on the ~/.pi bind mount, not ~/.pi/agent, which pi creates on its own

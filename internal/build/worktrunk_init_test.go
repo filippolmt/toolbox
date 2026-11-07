@@ -225,22 +225,18 @@ func TestWorktrunkInitLeavesUnparseableSettingsAlone(t *testing.T) {
 	}
 }
 
-func TestWorktrunkInitWiresCodexHooks(t *testing.T) {
+// TestWorktrunkInitLeavesCodexHooksAlone: Codex's markers ship in the image's
+// system layer, so the script writes nothing into ~/.codex/hooks.json.
+func TestWorktrunkInitLeavesCodexHooksAlone(t *testing.T) {
 	f := newWorktrunkFixture(t)
 	hooksFile := filepath.Join(f.home, ".codex", "hooks.json")
-	writeFile(t, hooksFile, `{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":"/usr/local/bin/atuin hook codex"}]}]}}`)
+	const body = `{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":"echo mine"}]}]}}`
+	writeFile(t, hooksFile, body)
 
 	f.run(t)
-	f.run(t)
 
-	hooks := readHooks(t, hooksFile)
-	for _, event := range []string{"UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd"} {
-		if n := countMarkers(commands(hooks, event)); n != 1 {
-			t.Errorf("%s: %d marker hooks, want 1", event, n)
-		}
-	}
-	if cmds := commands(hooks, "PreToolUse"); len(cmds) != 1 || cmds[0] != "/usr/local/bin/atuin hook codex" {
-		t.Errorf("PreToolUse = %q, want Atuin's hook untouched", cmds)
+	if b, err := os.ReadFile(hooksFile); err != nil || string(b) != body {
+		t.Errorf("hooks.json changed: %v\n%s", err, b)
 	}
 }
 
@@ -277,13 +273,12 @@ func TestWorktrunkInitInstallsSkillIntoBothRoots(t *testing.T) {
 	}
 }
 
-// TestWorktrunkInitTakesTheSharedLocks: settings.json and Codex's hooks.json
-// each have other init.d writers running in parallel.
+// TestWorktrunkInitTakesTheSharedLocks: settings.json has other init.d
+// writers running in parallel.
 func TestWorktrunkInitTakesTheSharedLocks(t *testing.T) {
 	s := readAsset(t, "init.d/62-worktrunk.sh")
 	for _, want := range []string{
 		"toolbox_with_claude_settings_lock _wt_wire_claude",
-		"toolbox_with_codex_hooks_lock _wt_wire_codex",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("%s is missing %q", worktrunkInitScript, want)
@@ -310,12 +305,12 @@ func TestWorktrunkInitWiresMarkersOnly(t *testing.T) {
 }
 
 // TestWorktrunkInitKeepsHookPositionsStable: a marker group is rewritten where
-// it already sits, because Codex ties a hook's trust to its position; a marker
-// hook on an event the current wiring no longer uses is dropped; and the
-// file keeps its mode.
+// it already sits, so a restart does not reorder the file; a marker hook on an
+// event the current wiring no longer uses is dropped; and the file keeps its
+// mode.
 func TestWorktrunkInitKeepsHookPositionsStable(t *testing.T) {
 	f := newWorktrunkFixture(t)
-	hooksFile := filepath.Join(f.home, ".codex", "hooks.json")
+	hooksFile := filepath.Join(f.home, ".claude", "settings.json")
 	writeFile(t, hooksFile, `{"hooks":{
   "Stop":[
     {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set old || true"}]},

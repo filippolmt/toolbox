@@ -106,16 +106,9 @@ if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent
     fi
 fi
 
-# Codex: writes to ~/.codex/hooks.json (disjoint from init.d/25-codex.sh's
-# config.toml edits), which Herdr and Worktrunk also write: Codex hooks lock.
-_codex_marker="$_atuin_hooks_dir/codex-${_atuin_key}"
-if [ ! -f "$_codex_marker" ] && toolbox_agent_available codex && toolbox_agent_persistent codex; then
-    if toolbox_with_codex_hooks_lock atuin hook install codex >/dev/null 2>&1; then
-        : > "$_codex_marker"
-    else
-        echo "  atuin: hook install codex failed (non-fatal)"
-    fi
-fi
+# Codex: its hook ships in the image's system layer (/etc/codex/hooks.json), so
+# nothing is installed here; the marker of an earlier image's install goes.
+rm -f "$_atuin_hooks_dir"/codex-*
 
 # pi: writes ~/.pi/agent/extensions/atuin.ts, a file of its own, no lock needed.
 # Gated on the ~/.pi bind mount and not ~/.pi/agent — init.d/61-herdr.sh carries

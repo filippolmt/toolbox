@@ -1243,14 +1243,35 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-a
 # (`model_instructions_file` replaces it). A TOML literal string cannot hold
 # three single quotes, so the build fails on them instead of shipping a config
 # Codex rejects.
+#
+# Also the image's Codex hooks (/etc/codex/hooks.json), an Image Default too:
+# Codex runs a system-layer hook as managed, with no per-user trust step, where
+# a hook in ~/.codex/hooks.json is skipped until the developer trusts it by hand
+# (codex-rs/hooks/src/engine/discovery.rs, hook_trust_status). Worktrunk's
+# markers come from codex-hooks.json; Herdr and Atuin add theirs with their own
+# installers, so a version bump carries its hook. The installers also write
+# trust entries and a feature flag into config.toml: managed hooks need
+# neither, so that file stays behind in the scratch CODEX_HOME.
 FROM fetch-base AS gen-codex-config
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --link --from=fetch-jq    /out/ /
+COPY --link --from=fetch-atuin /out/ /
+COPY --link --from=fetch-herdr /out/ /
 COPY --link agent-instructions.md /tmp/agent-instructions.md
+COPY --link codex-hooks.json /tmp/codex-hooks.json
 RUN set -eux; \
       if grep -qF "'''" /tmp/agent-instructions.md; then exit 1; fi; \
       mkdir -p /out/etc/codex; \
       { printf "developer_instructions = '''\n"; cat /tmp/agent-instructions.md; printf "'''\n"; } \
         > /out/etc/codex/config.toml; \
+      mkdir -p /etc/codex /tmp/home; \
+      cp /tmp/codex-hooks.json /etc/codex/hooks.json; \
+      HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
+      HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
+      jq -e '.hooks | (.UserPromptSubmit and .PermissionRequest and .Stop and .SessionEnd \
+        and .SessionStart and .PreToolUse and .PostToolUse and .PostToolUseFailure)' /etc/codex/hooks.json; \
+      install -m 0644 /etc/codex/hooks.json /out/etc/codex/hooks.json; \
+      install -m 0755 /etc/codex/herdr-agent-state.sh /out/etc/codex/herdr-agent-state.sh; \
       freeze-mtimes
 
 # OpenAI Codex CLI. `bubblewrap`, which its in-tool sandbox needs, is a dpkg
