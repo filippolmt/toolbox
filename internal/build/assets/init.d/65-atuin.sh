@@ -107,8 +107,9 @@ if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent
 fi
 
 # Codex: its hook ships in the image's system layer (/etc/codex/hooks.json), so
-# nothing is installed here; the marker of an earlier image's install goes.
-rm -f "$_atuin_hooks_dir"/codex-*
+# nothing is installed here. The marker of an earlier image's install goes,
+# under the lock 25-codex.sh's cleanup of that install's entries takes.
+toolbox_with_codex_hooks_lock rm -f "$_atuin_hooks_dir"/codex-*
 
 # pi: writes ~/.pi/agent/extensions/atuin.ts, a file of its own, no lock needed.
 # Gated on the ~/.pi bind mount and not ~/.pi/agent — init.d/61-herdr.sh carries

@@ -1689,12 +1689,17 @@ Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, whil
 `init.d/61-herdr.sh` and `init.d/62-worktrunk.sh` own their distinct wiring commands. All consume Agent
 Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
-itself. A writer of a file another wiring script also writes — Claude's
-`settings.json` — asks Agent Topology for that file's lock; a file only one
+itself. A writer of a file another writer also touches — Claude's
+`settings.json`, and Codex's `hooks.json`, which containers on earlier images
+still write — asks Agent Topology for that file's lock; a file only one
 writer touches, such as each pi extension, stays unlocked. Codex is the
 exception: its three adapters ship as an [Image Default](#image-default) in
 `/etc/codex/hooks.json`, because Codex skips a hook in the user's own
-`hooks.json` until the developer trusts it by hand.
+`hooks.json` until the developer trusts it by hand. What earlier images wrote
+there, `init.d/25-codex.sh` removes without moving any hook it keeps: Codex
+records that trust against a hook's position (event, group, handler), so a
+group it empties in front of another stays behind as `{"hooks": []}` — removing
+it would shift the later hook and silently revoke its trust.
 `TestAgentWiringDeclaresEverySupportedAgent` fails when a supported agent lacks
 an explicit Herdr, Atuin or Worktrunk adapter, while the Tool Catalog's bijection tests
 hold only the bundling half.

@@ -1,6 +1,8 @@
 package build
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,9 +43,9 @@ func runCodexInit(t *testing.T, home string) {
 
 // TestCodexInitDropsEarlierImageHooks: earlier images wrote Atuin, Herdr and
 // Worktrunk hooks into ~/.codex/hooks.json; the image now ships them in
-// /etc/codex/hooks.json, so the old copies would run twice. Only those go, and
-// Herdr's script with them; an event left with nothing is dropped. Herdr's
-// entry is matched by its script's name, so one written under another
+// /etc/codex/hooks.json, so the old copies would run twice. Only those go, with
+// RTK's, and Herdr's script with them; an event left with nothing is dropped.
+// Herdr's entry is matched by its script's name, so one written under another
 // CODEX_HOME goes too.
 func TestCodexInitDropsEarlierImageHooks(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
@@ -54,6 +56,7 @@ func TestCodexInitDropsEarlierImageHooks(t *testing.T) {
 	writeFile(t, hooksFile, `{"hooks":{
   "PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":"/usr/local/bin/atuin hook codex"}]}],
   "SessionStart":[{"hooks":[{"type":"command","command":"bash '/home/other/.codex/herdr-agent-state.sh' session","timeout":10}]}],
+  "PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtk hook codex"}]}],
   "Stop":[
     {"hooks":[{"type":"command","command":"echo mine"}]},
     {"hooks":[{"type":"command","command":"/usr/local/bin/wt config state marker set 💬 >/dev/null 2>&1 || true"}]}
@@ -96,6 +99,65 @@ func TestCodexInitKeepsLaterUserHooksInPlace(t *testing.T) {
 		len(groups[2].Hooks) != 1 || groups[2].Hooks[0].Command != "echo mine" {
 		t.Errorf("PreToolUse = %+v, want [placeholder, malformed group, echo mine]", groups)
 	}
+}
+
+// TestCodexInitToleratesOddShapes: a group that is not an object, an event
+// that is not a list and an empty group the developer wrote are kept as they
+// are, and the image hook beside them still goes.
+func TestCodexInitToleratesOddShapes(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	hooksFile := filepath.Join(home, ".codex", "hooks.json")
+	writeFile(t, hooksFile, `{"hooks":{
+  "Stop":["odd",{"hooks":[]},{"hooks":[{"type":"command","command":"/usr/local/bin/atuin hook codex"}]},{"hooks":[{"type":"command","command":"echo mine"}]}],
+  "Notes":"not a list"
+}}`)
+
+	runCodexInit(t, home)
+
+	b, err := os.ReadFile(hooksFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hooks map[string]json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("hooks.json is not JSON: %v\n%s", err, b)
+	}
+	if got := compactJSON(t, doc.Hooks["Stop"]); got != `["odd",{"hooks":[]},{"hooks":[]},{"hooks":[{"type":"command","command":"echo mine"}]}]` {
+		t.Errorf("Stop = %s", got)
+	}
+	if got := string(doc.Hooks["Notes"]); got != `"not a list"` {
+		t.Errorf("Notes = %s, want it kept", got)
+	}
+}
+
+// TestCodexInitDropsAnImageHandlerSharingAGroup: a developer who added a hook
+// to an image group keeps it while the image's goes. Codex then sees that hook
+// one handler earlier, so it asks for its trust again: no placeholder handler
+// avoids that, since an untrusted one prompts too and an invalid one makes
+// Codex drop the whole file.
+func TestCodexInitDropsAnImageHandlerSharingAGroup(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	hooksFile := filepath.Join(home, ".codex", "hooks.json")
+	writeFile(t, hooksFile, `{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[
+  {"type":"command","command":"/usr/local/bin/atuin hook codex"},
+  {"type":"command","command":"echo mine"}]}]}}`)
+
+	runCodexInit(t, home)
+
+	if cmds := commands(readHooks(t, hooksFile), "PreToolUse"); len(cmds) != 1 || cmds[0] != "echo mine" {
+		t.Errorf("PreToolUse = %q, want the developer's handler alone", cmds)
+	}
+}
+
+func compactJSON(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		t.Fatalf("compact %s: %v", raw, err)
+	}
+	return buf.String()
 }
 
 // TestCodexInitKeepsHerdrScriptWhenTheFileCannotBeParsed: a hooks.json jq

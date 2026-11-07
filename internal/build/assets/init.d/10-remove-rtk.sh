@@ -7,15 +7,10 @@ set -euo pipefail
 # Permanent migration for installations that once bundled RTK. Keep this
 # idempotent: users may skip any number of image releases before reopening a
 # persisted agent home.
-#
-# A second argument, keep-positions, is for Codex, which keys a hook's trust to
-# its group's index in the event: a group the cleanup empties stays behind as
-# {"hooks": []} while a later group still holds a hook, so removing it does not
-# shift that hook and silently revoke its trust. Only trailing emptied groups go.
 _clean_hooks_json() {
-    local file=$1 positions=${2:-}
+    local file=$1
     [ -f "$file" ] || return 0
-    if ! python3 - "$file" "$positions" <<'PY'
+    if ! python3 - "$file" <<'PY'
 import json
 import os
 import re
@@ -23,7 +18,6 @@ import sys
 import tempfile
 
 path = sys.argv[1]
-keep_positions = sys.argv[2] == "keep-positions"
 pattern = re.compile(r"(^|[ /])rtk hook (claude|codex)$|rtk-rewrite\.(sh|json)$")
 
 
@@ -38,14 +32,9 @@ def clean(value):
                 continue
             if child_removed and isinstance(item, dict) and "hooks" in item and not item["hooks"]:
                 removed = True
-                if keep_positions:
-                    out.append(item)
                 continue
             out.append(item)
             removed = removed or child_removed
-        if keep_positions:
-            while out and isinstance(out[-1], dict) and out[-1].get("hooks") == []:
-                out.pop()
         return out, removed
     if isinstance(value, dict):
         out = {}
@@ -105,8 +94,8 @@ rm -f "$_claude_home/RTK.md" \
       "$_claude_home/hooks/.rtk-hook.sha256"
 _drop_rtk_reference "$_claude_home/CLAUDE.md"
 
-# Codex hooks.json is shared with 25-codex.sh and with earlier images.
-toolbox_with_codex_hooks_lock _clean_hooks_json "$_codex_home/hooks.json" keep-positions
+# Codex's hooks.json: 25-codex.sh drops RTK's entries with the image's own,
+# keeping the group positions Codex keys a user hook's trust to.
 rm -f "$_codex_home/RTK.md"
 _drop_rtk_reference "$_codex_home/AGENTS.md"
 

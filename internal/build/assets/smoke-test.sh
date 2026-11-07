@@ -818,16 +818,12 @@ echo "OK: agent instructions reach Claude Code, Codex and pi"
 echo ""
 echo "=== Codex system hooks (Image Default) ==="
 # Codex runs /etc/codex/hooks.json with no per-user trust step; a hook in
-# ~/.codex/hooks.json waits for the developer to trust it by hand. The build
-# stage checks the file it writes; this checks the image ships it with every
-# tool's hook, readable by any UID.
+# ~/.codex/hooks.json waits for the developer to trust it by hand. The same
+# check the build stage runs on the file it writes, here on the one the image
+# ships, as a non-root UID: each image hook on its own event.
 docker run --rm "${IMAGE}" bash -c '
-for f in /etc/codex/hooks.json /etc/codex/herdr-agent-state.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh; do
-    test -r "$f" || { echo "FAILED: $f missing or unreadable"; exit 1; }
-done
-for c in "/usr/local/bin/wt config state marker" "/usr/local/bin/atuin hook codex" "/etc/codex/herdr-agent-state.sh"; do
-    grep -qF "$c" /etc/codex/hooks.json || { echo "FAILED: /etc/codex/hooks.json has no hook running $c"; exit 1; }
-done
+/usr/local/lib/toolbox/codex-hooks-check.sh /etc/codex/hooks.json \
+    || { echo "FAILED: /etc/codex/hooks.json does not carry the image hooks"; exit 1; }
 echo "OK: codex system hooks baked"
 '
 

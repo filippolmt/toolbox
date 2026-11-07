@@ -51,10 +51,10 @@ toolbox_with_claude_settings_lock() {
     ) 200>"$lock"
 }
 
-# Codex's hooks.json has two init.d writers that entrypoint.sh runs in parallel
-# (10-remove-rtk.sh, 25-codex.sh), and it is one host mount that containers on
-# earlier images, whose Atuin, Herdr and Worktrunk still write it, share; each
-# read-modify-write takes this lock.
+# Codex's hooks.json has one init.d writer here (25-codex.sh), but it is one
+# host mount shared with containers on earlier images, whose Atuin, Herdr,
+# Worktrunk and RTK migration still write it; each read-modify-write takes this
+# lock.
 toolbox_with_codex_hooks_lock() {
     local lock="$HOME/.toolbox-state/.codex-hooks.lock"
     mkdir -p "$(dirname "$lock")"
@@ -62,4 +62,28 @@ toolbox_with_codex_hooks_lock() {
         flock 201
         "$@"
     ) 201>"$lock"
+}
+
+# Rewrites an agent's JSON file in place: `toolbox_rewrite_json FILE PROGRAM
+# [jq args...]` runs the jq PROGRAM over FILE, or over {} when FILE is absent or
+# empty. A file jq cannot parse is left alone and the call fails: replacing it
+# would throw away whatever the user had in it. Empty output means nothing to
+# change, and the file is not touched. Otherwise the result replaces FILE
+# atomically, keeping its mode. Callers that share FILE hold its lock.
+toolbox_rewrite_json() {
+    local file="$1" program="$2" tmp
+    shift 2
+    mkdir -p "$(dirname "$file")" || return 1
+    tmp=$(mktemp "$file.XXXXXX") || return 1
+    if [ -s "$file" ]; then
+        jq "$@" "$program" "$file" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    else
+        printf '{}' | jq "$@" "$program" >"$tmp" || { rm -f "$tmp"; return 1; }
+    fi
+    if [ ! -s "$tmp" ]; then
+        rm -f "$tmp"
+        return 0
+    fi
+    [ -e "$file" ] && chmod --reference="$file" "$tmp" 2>/dev/null
+    mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
 }

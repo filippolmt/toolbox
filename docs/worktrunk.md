@@ -93,9 +93,10 @@ once.
 
 ## Agent integration
 
-Every container start wires Worktrunk into Claude Code and pi
-(`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)); Codex
-gets its markers from the image instead:
+Every container start wires Worktrunk into Claude Code, Codex and pi
+(`init.d/62-worktrunk.sh`, [Agent Wiring](../CONTEXT.md#agent-wiring)), with
+one exception: Codex's markers ship in the image rather than being written at
+start.
 
 - **The configuration skill** (`worktrunk`). It is extracted from the source
   archive of the release that ships the bundled `wt`, so it always describes the

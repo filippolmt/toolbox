@@ -4,7 +4,8 @@
 # agent's hooks file. Sourced by init.d/62-worktrunk.sh (Claude Code) and
 # init.d/25-codex.sh, and by the Dockerfile's gen-codex-config stage, which
 # builds Codex's markers into /etc/codex/hooks.json — one source, so the
-# Codex copy cannot drift from Claude's. Needs jq.
+# Codex copy cannot drift from Claude's. Needs jq and Agent Topology
+# (bin/agent-topology-lib.sh), sourced first.
 
 # Matches every marker command any image has registered, whatever its prefix
 # (Claude's carries -C) or marker; 25-codex.sh drops earlier images' Codex
@@ -39,20 +40,10 @@ def place($g):
     if (.key as $k | $events | index($k)) then . else .value |= map(strip) end))
 | reduce $add[] as $e (.; .hooks[$e.event] = ((.hooks[$e.event] // []) | place($e.group)))'
 
-# A file jq cannot parse is left alone: replacing it would throw away
-# whatever the user had in it. Absent or empty starts from {}.
+# Registers the marker groups $2 (from _wt_marker_groups) in the hooks file
+# $1, through Agent Topology's toolbox_rewrite_json.
 _wt_merge_hooks() {
-    local file="$1" add="$2" tmp
-    mkdir -p "$(dirname "$file")" || return 1
-    tmp=$(mktemp "$file.XXXXXX") || return 1
-    if [ -s "$file" ]; then
-        jq --argjson add "$add" --arg marker_re "$_wt_marker_re" "$_wt_merge_jq" "$file" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
-    else
-        printf '{}' | jq --argjson add "$add" --arg marker_re "$_wt_marker_re" "$_wt_merge_jq" >"$tmp" || { rm -f "$tmp"; return 1; }
-    fi
-    [ -s "$tmp" ] || { rm -f "$tmp"; return 1; }
-    [ -e "$file" ] && chmod --reference="$file" "$tmp" 2>/dev/null
-    mv -f "$tmp" "$file"
+    toolbox_rewrite_json "$1" "$_wt_merge_jq" --argjson add "$2" --arg marker_re "$_wt_marker_re"
 }
 
 # $1 is the command prefix (Claude passes the session's project dir with -C;

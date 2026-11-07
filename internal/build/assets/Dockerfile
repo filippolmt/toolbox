@@ -1259,21 +1259,19 @@ COPY --link --from=fetch-jq    /out/ /
 COPY --link --from=fetch-atuin /out/ /
 COPY --link --from=fetch-herdr /out/ /
 COPY --link agent-instructions.md /tmp/agent-instructions.md
-COPY --link bin/worktrunk-markers-lib.sh /tmp/worktrunk-markers-lib.sh
+COPY --link bin/agent-topology-lib.sh bin/worktrunk-markers-lib.sh bin/codex-hooks-check.sh /tmp/lib/
 RUN set -eux; \
       if grep -qF "'''" /tmp/agent-instructions.md; then exit 1; fi; \
       mkdir -p /out/etc/codex; \
       { printf "developer_instructions = '''\n"; cat /tmp/agent-instructions.md; printf "'''\n"; } \
         > /out/etc/codex/config.toml; \
       mkdir -p /etc/codex /tmp/home; \
-      . /tmp/worktrunk-markers-lib.sh; \
+      . /tmp/lib/agent-topology-lib.sh; \
+      . /tmp/lib/worktrunk-markers-lib.sh; \
       _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
       HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
-      jq -e --arg marker_re "$_wt_marker_re" --argjson wt "$_wt_codex_events" \
-        '[.hooks[][].hooks[].command] as $c | ($wt | length) == ([$c[] | select(test($marker_re))] | length) \
-        and ($c | index("/usr/local/bin/atuin hook codex")) and ($c | index("bash \u0027/etc/codex/herdr-agent-state.sh\u0027 session"))' \
-        /etc/codex/hooks.json; \
+      bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \
       install -m 0644 /etc/codex/hooks.json /out/etc/codex/hooks.json; \
       install -m 0755 /etc/codex/herdr-agent-state.sh /out/etc/codex/herdr-agent-state.sh; \
       freeze-mtimes
@@ -2011,6 +2009,7 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 # init.d members and the managed statusline.
 COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
 COPY --link --chmod=0644 bin/worktrunk-markers-lib.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh
+COPY --link --chmod=0755 bin/codex-hooks-check.sh /usr/local/lib/toolbox/codex-hooks-check.sh
 # Workspace Install Refresh gate, sourced by the init.d members that re-run a
 # per-repo installer (one gate, one stamp shape, one failure message).
 COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh

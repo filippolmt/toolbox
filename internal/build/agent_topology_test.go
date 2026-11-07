@@ -141,10 +141,33 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.codex-hooks.lock" ] && echo locked)"
 	}
 	for path, want := range map[string]string{
 		"init.d/25-codex.sh": "toolbox_with_codex_hooks_lock _codex_drop_image_hooks",
+		"init.d/65-atuin.sh": `toolbox_with_codex_hooks_lock rm -f "$_atuin_hooks_dir"/codex-*`,
 	} {
 		if !strings.Contains(readAsset(t, path), want) {
 			t.Errorf("%s writes Codex hooks.json without the lock (want %q)", path, want)
 		}
+	}
+}
+
+// TestAgentTopologyRewritesJSONAtomically: one rewrite for every agent JSON
+// file. An absent file is read as {}, empty output leaves the file alone, an
+// unparseable file is kept and the call fails, and a rewrite keeps the mode.
+func TestAgentTopologyRewritesJSONAtomically(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not on PATH: the runtime image and CI ship it")
+	}
+	dir := t.TempDir()
+	got := runAgentTopology(t, `
+f="$HOME/a/hooks.json"
+toolbox_rewrite_json "$f" '.x = 1' && printf '%s|' "$(jq -c . "$f")"
+chmod 600 "$f"
+toolbox_rewrite_json "$f" '.y = 2' && printf '%s|' "$(stat -c %a "$f")"
+toolbox_rewrite_json "$f" 'empty' && printf '%s|' "$(jq -c . "$f")"
+printf '{' > "$f"
+toolbox_rewrite_json "$f" '.z = 3' || printf 'kept:%s' "$(cat "$f")"
+`, "HOME="+dir)
+	if want := `{"x":1}|600|{"x":1,"y":2}|kept:{`; got != want {
+		t.Errorf("rewrite sequence = %q, want %q", got, want)
 	}
 }
 
@@ -237,7 +260,8 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 		"codex": {
 			{"Herdr", dockerfile, "CODEX_HOME=/etc/codex herdr integration install codex"},
 			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
-			{"Worktrunk", dockerfile, `_wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"`},
+			{"Worktrunk", dockerfile, `"$_wt_codex_events"`},
+			{"the hooks check", dockerfile, "codex-hooks-check.sh /etc/codex/hooks.json"},
 		},
 		"pi": {
 			{"Herdr", herdr, "_herdr_install_integration pi"},

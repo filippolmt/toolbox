@@ -32,47 +32,41 @@ fi
 
 # The image's Codex hooks (Worktrunk markers, Herdr, Atuin) ship in the system
 # layer, /etc/codex/hooks.json, where Codex runs them with no per-user trust.
-# Earlier images wrote the same hooks into ~/.codex/hooks.json, so they would
-# now run twice: drop exactly those entries, then Herdr's script they called.
-# Every other hook, the developer's own, stays.
-#
-# Codex keys a hook's trust to its group's position in the event, so a group
-# this empties stays behind as {"hooks": []} while a later group still holds a
-# hook: removing it would shift that hook and silently revoke its trust. Only
-# trailing emptied groups go. The file is rewritten only when it holds an image
-# hook, and one jq cannot parse is left alone, Herdr's script with it.
+# Earlier images wrote the same hooks, and RTK's, into ~/.codex/hooks.json:
+# drop exactly those, then Herdr's script they called. Every other hook, the
+# developer's own, stays at its position, which Codex keys its trust to: a
+# group this empties in front of another stays as {"hooks": []} (Agent Wiring
+# in CONTEXT.md). An event the cleanup empties goes; a file with no image hook
+# is not rewritten; one jq cannot parse is left alone, Herdr's script with it.
+# One case still moves a hook: a developer's handler after an image handler in
+# the same group. No placeholder handler helps — an untrusted one prompts for
+# trust too, and one Codex cannot parse makes it drop the whole file.
 # shellcheck disable=SC2016 # jq program, not shell
 _codex_drop_jq='
-def image: (.command? // "") as $c
-  | $c == "/usr/local/bin/atuin hook codex"
-    or ($c | test("^bash \u0027.*/herdr-agent-state\\.sh\u0027 session$"))
-    or ($c | test($marker_re));
-def handlers: (.hooks | type) == "array";
-def emptied: handlers and (.hooks | length) == 0;
+def image: (.command? // "") as $c | ($c | type) == "string" and (
+  $c == "/usr/local/bin/atuin hook codex"
+  or ($c | test("^bash \u0027.*/herdr-agent-state\\.sh\u0027 session$"))
+  or ($c | test("(^|[ /])rtk hook codex$|rtk-rewrite\\.(sh|json)$"))
+  or ($c | test($marker_re)));
+def group: type == "object" and (.hooks | type) == "array";
+def holds_image: group and any(.hooks[]; image);
+def drop: if holds_image
+  then .hooks |= map(select(image | not)) | if .hooks == [] then .toolbox_emptied = true else . end
+  else . end;
+def emptied: type == "object" and .toolbox_emptied == true;
 def trim: ([range(length) as $i | select(.[$i] | emptied | not) | $i] | last) as $l
-  | if $l == null then [] else .[:$l + 1] end;
-if [.hooks[]?[]? | select(handlers) | .hooks[] | select(image)] == [] then empty
-else .hooks |= (map_values(if type == "array"
-      then map(if handlers then .hooks |= map(select(image | not)) else . end) | trim
-      else . end)
-    | with_entries(select((.value | type) != "array" or (.value | length) > 0)))
+  | (if $l == null then [] else .[:$l + 1] end)
+  | map(if type == "object" then del(.toolbox_emptied) else . end);
+if [.hooks? | objects | .[] | arrays | .[] | select(holds_image)] == [] then empty
+else .hooks |= with_entries(
+  if (.value | type) == "array" and any(.value[]; holds_image)
+  then (.value |= (map(drop) | trim)) | select(.value != [])
+  else . end)
 end'
 
 _codex_drop_image_hooks() {
-    local file="$_codex_home/hooks.json" tmp
-    if [ -s "$file" ]; then
-        tmp=$(mktemp "$file.XXXXXX") || return 1
-        if ! jq --arg marker_re "$_wt_marker_re" "$_codex_drop_jq" "$file" >"$tmp" 2>/dev/null; then
-            rm -f "$tmp"
-            return 1
-        fi
-        if [ -s "$tmp" ]; then
-            chmod --reference="$file" "$tmp" 2>/dev/null
-            mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
-        else
-            rm -f "$tmp"
-        fi
-    fi
+    toolbox_rewrite_json "$_codex_home/hooks.json" "$_codex_drop_jq" \
+        --arg marker_re "$_wt_marker_re" || return 1
     rm -f "$_codex_home/herdr-agent-state.sh"
 }
 

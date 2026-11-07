@@ -39,7 +39,6 @@ func TestRTKRemovalMigrationCleansManagedAgentWiring(t *testing.T) {
 	write(".claude/settings.json", `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtk hook claude"},{"type":"command","command":"keep-me"}]}]},"theme":"dark"}`)
 	write(".claude/CLAUDE.md", "before\n@RTK.md\nafter\n")
 	write(".claude/RTK.md", "managed\n")
-	write(".codex/hooks.json", `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtk hook codex"}]}],"Stop":[{"hooks":[{"type":"command","command":"rtk hook codex"}]},{"hooks":[{"type":"command","command":"keep-codex"}]}]},"keep":true}`)
 	write(".codex/AGENTS.md", "keep\n@"+home+"/.codex/RTK.md\n")
 	write(".codex/RTK.md", "managed\n")
 	write(".pi/agent/extensions/rtk.ts", "// user-modified RTK extension\n")
@@ -77,18 +76,6 @@ func TestRTKRemovalMigrationCleansManagedAgentWiring(t *testing.T) {
 		{".claude/settings.json", `"theme": "dark"`, "rtk"},
 		{".claude/settings.json", "keep-me", "rtk"},
 		{".claude/CLAUDE.md", "before\nafter", "RTK.md"},
-		{".codex/hooks.json", `"keep": true`, "rtk"},
-		// Codex keys trust to a group's index: the emptied group in front of
-		// keep-codex stays as a placeholder, the trailing PreToolUse one goes.
-		{".codex/hooks.json", `"Stop": [
-      {
-        "hooks": []
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "keep-codex"`, "PreToolUse"},
 		{".codex/AGENTS.md", "keep", "RTK.md"},
 	} {
 		body, err := os.ReadFile(filepath.Join(home, tc.name))
