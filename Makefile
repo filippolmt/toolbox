@@ -113,14 +113,11 @@ COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}
 
 .PHONY: go-dockergate go-dockergate-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-vet go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
 
-# shortcut: the bare $(CACHE_REF) below is the pre-split shared cache; drop that
-# --cache-from once main has published both per-arch refs.
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --cache-from type=registry,ref=$(CACHE_REF)-amd64 \
 	  --cache-from type=registry,ref=$(CACHE_REF)-arm64 \
-	  --cache-from type=registry,ref=$(CACHE_REF) \
 	  --load internal/build/assets
 
 test: build ## Build the image and run the smoke test

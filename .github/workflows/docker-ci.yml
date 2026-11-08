@@ -153,11 +153,7 @@ jobs:
           # registry cache is mode=max and already serves every stage, so the
           # loss is the final-image layer warm on PR builds.
           # Per-arch ref: see `cache_ref` in docker-publish-reusable.yml.
-          # shortcut: the bare ref is the pre-split shared cache; drop it once
-          # main has published both per-arch refs.
-          cache-from: |
-            type=registry,ref=${{ env.CACHE_REF }}-${{ matrix.variant }}
-            type=registry,ref=${{ env.CACHE_REF }}
+          cache-from: type=registry,ref=${{ env.CACHE_REF }}-${{ matrix.variant }}
 
       - name: Smoke test
         env:
