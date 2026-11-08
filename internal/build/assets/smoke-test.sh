@@ -564,6 +564,8 @@ check_required "npm"        npm --version
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
+# Debian ships ensurepip in python3.13-venv (pulled by python3-venv); without it `python3 -m venv` fails.
+check_required "python3 ensurepip + venv" sh -c "python3 -m ensurepip --version && d=\$(mktemp -d) && python3 -m venv \"\$d/v\" && \"\$d/v/bin/pip\" --version; rc=\$?; rm -rf \"\$d\"; exit \$rc"
 check_required "git"        git --version
 check_required "rg"         rg --version
 check_required "make"       make --version

@@ -1577,6 +1577,8 @@ ENV DO_NOT_TRACK=1
 # dpkg state. `bubblewrap` is here for that reason — `fetch-codex` builds the
 # CLI but codex's in-tool sandbox needs the binary in the final rootfs, and
 # adding it to a layer that is rebuilt on every drift anyway costs nothing.
+# `python3-venv` likewise: Debian keeps `ensurepip` out of `python3`, so
+# without it `python3 -m venv` and `python3 -m ensurepip` fail in the shell.
 # Anything moved here must be a package whose set is *static*; a dynamic,
 # version-derived dependency set (playwright's, notably) needs a guard before
 # it can follow. → ADR 0002 follow-up 2, CONTEXT.md "Archive Drift"
@@ -1606,6 +1608,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
       python-is-python3 \
       python3 \
       python3-pip \
+      python3-venv \
       ripgrep \
       socat \
       sudo \
