@@ -34,7 +34,7 @@ on:
 
 # Static group (not per-ref): releases now also push `latest`, so two
 # different tags in close succession must not run in parallel — they'd
-# race `latest` and the shared buildcache-release ref. Queue instead of
+# race `latest` and the buildcache-release-<arch> refs. Queue instead of
 # cancel: cancelling the older run would silently drop its semver tags.
 # Serialisation also covers the repushed-same-tag case the old per-ref
 # group handled (the duplicate runs sequentially instead of racing).

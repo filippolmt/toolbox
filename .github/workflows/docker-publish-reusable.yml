@@ -22,7 +22,10 @@ on:
       cache_ref:
         description: >-
           Dedicated BuildKit registry cache ref (separate from the image tags),
-          e.g. ghcr.io/<repo>:buildcache-main.
+          e.g. ghcr.io/<repo>:buildcache-main. Each leg reads and writes
+          `<cache_ref>-<variant>` (…-amd64, …-arm64): a registry cache export
+          replaces the tag's manifest, so one shared ref kept only the leg that
+          finished last and the other arch rebuilt every fetch stage.
         required: true
         type: string
       tags:
@@ -109,7 +112,12 @@ jobs:
           # Registry cache only — see docker-ci.yml for why `type=gha` is gone.
           # This build's output is thrown away after the smoke test, so it needs
           # to read a cache, never write one.
-          cache-from: type=registry,ref=${{ inputs.cache_ref }}
+          # shortcut: the bare ref is the pre-split shared cache, read only so the
+          # first publish after the split is not cold; drop it once both
+          # per-arch refs exist.
+          cache-from: |
+            type=registry,ref=${{ inputs.cache_ref }}-${{ matrix.variant }}
+            type=registry,ref=${{ inputs.cache_ref }}
 
       - name: Smoke test
         env:
@@ -156,8 +164,11 @@ jobs:
           # tax: leave the cache on gzip and every restored layer is re-encoded
           # again on the way out, every single run. Same encoding on both sides
           # and a restored layer is already in its published form.
-          cache-from: type=registry,ref=${{ inputs.cache_ref }}
-          cache-to: type=registry,ref=${{ inputs.cache_ref }},mode=max,compression=zstd,compression-level=19,force-compression=true
+          # shortcut: bare ref as in the test build above; drop both together.
+          cache-from: |
+            type=registry,ref=${{ inputs.cache_ref }}-${{ matrix.variant }}
+            type=registry,ref=${{ inputs.cache_ref }}
+          cache-to: type=registry,ref=${{ inputs.cache_ref }}-${{ matrix.variant }},mode=max,compression=zstd,compression-level=19,force-compression=true
 
       # Fan-in via digest artifacts (Docker's documented multi-runner pattern):
       # matrix job outputs are last-writer-wins across legs and would clobber

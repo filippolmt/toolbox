@@ -20,6 +20,8 @@ env:
   # (docker-publish.yml, cache-to mode=max), and the only build cache this repo
   # uses: PR builds seed every stage from main instead of rebuilding it. The
   # bare `:buildcache` tag previously referenced here is written by nothing.
+  # Each leg reads `${CACHE_REF}-<variant>`: the publish legs write one ref per
+  # arch (docker-publish-reusable.yml, `cache_ref`).
   CACHE_REF: ghcr.io/${{ github.repository }}:buildcache-main
 
 # Cancel superseded builds on the same ref to free runner minutes during
@@ -142,8 +144,6 @@ jobs:
           load: true
           platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
-          # Cache scope per matrix variant so concurrent variants don't
-          # overwrite each other's GHA cache layers.
           # Registry cache only, no `type=gha`. Exporting to the GitHub Actions
           # Cache hung indefinitely mid-export ("exporting to GitHub Actions
           # Cache", one layer, no further output) and burned the whole 30-minute
@@ -152,7 +152,12 @@ jobs:
           # was the service and not the change. Evidence in issue #765. The
           # registry cache is mode=max and already serves every stage, so the
           # loss is the final-image layer warm on PR builds.
-          cache-from: type=registry,ref=${{ env.CACHE_REF }}
+          # Per-arch ref: see `cache_ref` in docker-publish-reusable.yml.
+          # shortcut: the bare ref is the pre-split shared cache; drop it once
+          # main has published both per-arch refs.
+          cache-from: |
+            type=registry,ref=${{ env.CACHE_REF }}-${{ matrix.variant }}
+            type=registry,ref=${{ env.CACHE_REF }}
 
       - name: Smoke test
         env:
