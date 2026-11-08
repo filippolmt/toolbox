@@ -11,11 +11,14 @@ FULL  := $(IMAGE):$(TAG)
 # background prefetch that re-points FULL leaves it on the image just built:
 # the targets that build and then use the image read this one.
 LOCAL := toolbox-local:build
-# BuildKit registry cache published by CI (docker-publish.yml, mode=max,
-# multi-arch). Seeding from it makes the
+# BuildKit registry cache published by CI (docker-publish.yml, mode=max), one
+# ref per arch (`$(CACHE_REF)-amd64`, `-arm64`); BuildKit uses whichever matches
+# the daemon's platform. Seeding from it makes the
 # first local build (or a rebuild after an upstream bump) mostly a layer pull.
 # Cache-import failures are non-fatal warnings, so offline builds still work.
 # Override: `make build CACHE_REF=...`.
+# shortcut: the bare $(CACHE_REF) is the pre-split shared cache; drop that
+# --cache-from once main has published both per-arch refs.
 CACHE_REF := $(IMAGE):buildcache-main
 
 # Go toolchain runs inside a container so Go is not required on the host.
@@ -115,6 +118,8 @@ COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
+	  --cache-from type=registry,ref=$(CACHE_REF)-amd64 \
+	  --cache-from type=registry,ref=$(CACHE_REF)-arm64 \
 	  --cache-from type=registry,ref=$(CACHE_REF) \
 	  --load internal/build/assets
 

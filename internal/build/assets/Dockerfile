@@ -26,7 +26,7 @@
 #      and a RUN that reads a copied file, which drags that COPY back above the
 #      whole tail. → ADR 0002 follow-up 2, ADR 0016
 #   3. `make build` seeds BuildKit from the CI registry cache
-#      (ghcr.io/filippolmt/toolbox:buildcache-main).
+#      (ghcr.io/filippolmt/toolbox:buildcache-main-<arch>).
 #
 # Fetch-stage convention: artefacts land under /out mirroring the final
 # filesystem; the final stage does `COPY --link --from=fetch-<tool> /out/ /`.
