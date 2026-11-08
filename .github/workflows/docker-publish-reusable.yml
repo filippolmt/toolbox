@@ -114,7 +114,7 @@ jobs:
           # to read a cache, never write one.
           # shortcut: the bare ref is the pre-split shared cache, read only so the
           # first publish after the split is not cold; drop it once both
-          # per-arch refs exist.
+          # buildcache-release-* refs exist (first v* tag after the split).
           cache-from: |
             type=registry,ref=${{ inputs.cache_ref }}-${{ matrix.variant }}
             type=registry,ref=${{ inputs.cache_ref }}
