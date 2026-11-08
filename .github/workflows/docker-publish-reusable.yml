@@ -164,6 +164,7 @@ jobs:
           # tax: leave the cache on gzip and every restored layer is re-encoded
           # again on the way out, every single run. Same encoding on both sides
           # and a restored layer is already in its published form.
+          # shortcut: bare ref as in the test build above; drop both together.
           cache-from: |
             type=registry,ref=${{ inputs.cache_ref }}-${{ matrix.variant }}
             type=registry,ref=${{ inputs.cache_ref }}

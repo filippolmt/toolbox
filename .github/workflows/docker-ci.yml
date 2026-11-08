@@ -144,8 +144,6 @@ jobs:
           load: true
           platforms: ${{ matrix.platforms }}
           tags: ${{ matrix.tag }}
-          # Cache scope per matrix variant so concurrent variants don't
-          # overwrite each other's GHA cache layers.
           # Registry cache only, no `type=gha`. Exporting to the GitHub Actions
           # Cache hung indefinitely mid-export ("exporting to GitHub Actions
           # Cache", one layer, no further output) and burned the whole 30-minute
@@ -154,6 +152,7 @@ jobs:
           # was the service and not the change. Evidence in issue #765. The
           # registry cache is mode=max and already serves every stage, so the
           # loss is the final-image layer warm on PR builds.
+          # Per-arch ref: see `cache_ref` in docker-publish-reusable.yml.
           # shortcut: the bare ref is the pre-split shared cache; drop it once
           # main has published both per-arch refs.
           cache-from: |
