@@ -1,13 +1,13 @@
 module github.com/filippolmt/toolbox
 
-go 1.26.2
+go 1.26.7
 
 toolchain go1.27.3
 
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.1
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.0
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-connections v0.8.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -19,8 +19,8 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/spf13/viper v1.21.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
