@@ -7,14 +7,37 @@ set -euo pipefail
 # ssh — abort with "No user exists for uid NNN" otherwise, breaking git over
 # ssh://. /etc/passwd and /etc/group are chmod 0666 in the Dockerfile so this
 # append works without root.
+#
+# The baked `toolbox` entry is re-pointed at the runtime IDs rather than a second
+# one appended: lookups by name return the first match, so an appended entry left
+# `chown toolbox` resolving to the baked UID 1000 while `id` reported toolbox.
+# Rewritten through `>` because /etc itself is not writable (no sed -i temp
+# file); the content is computed first and never written empty. The group is
+# re-pointed even when its GID already has a name (macOS GID 20 is dialout), so
+# `chown toolbox:toolbox` matches the runtime GID too — except GID 0, which
+# would make `toolbox` an alias of root.
+_toolbox_repoint() { # <file> <field> <value>
+    local out
+    out=$(awk -F: -v OFS=: -v f="$2" -v v="$3" '$1 == "toolbox" { $f = v } { print }' "$1") \
+        && [ -n "${out}" ] && [ "${out}" != "$(cat "$1")" ] && printf '%s\n' "${out}" > "$1"
+    return 0
+}
 _uid=$(id -u)
 _gid=$(id -g)
 if ! getent passwd "${_uid}" >/dev/null 2>&1; then
-    echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/zsh" >> /etc/passwd
+    if grep -q '^toolbox:' /etc/passwd; then
+        _toolbox_repoint /etc/passwd 3 "${_uid}"
+        _toolbox_repoint /etc/passwd 4 "${_gid}"
+    else
+        echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/zsh" >> /etc/passwd
+    fi
 fi
-if ! getent group "${_gid}" >/dev/null 2>&1; then
+if [ "${_gid}" -ne 0 ] && grep -q '^toolbox:' /etc/group; then
+    _toolbox_repoint /etc/group 3 "${_gid}"
+elif ! getent group "${_gid}" >/dev/null 2>&1; then
     echo "toolbox:x:${_gid}:" >> /etc/group
 fi
+unset -f _toolbox_repoint
 unset _uid _gid
 
 # git safe.directory
