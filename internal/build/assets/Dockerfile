@@ -951,9 +951,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
 #
 # Pattern: `git init + remote add + fetch --depth=1 <sha> + checkout FETCH_HEAD`.
 # `git clone --depth=1 --branch <sha>` FAILS — --branch accepts named refs only.
-# The OMZ tree checks out as branch `master` (`checkout -B master`), not a
-# detached HEAD: `omz update` checks out master and ends by returning to the
-# HEAD it started on, so from a detached HEAD it fails or drops the update.
+# The OMZ tree checks out as branch `master`, for `omz update`
+# (docs/internals/image-build.md#updatable-checkouts).
 # GitHub enables `uploadpack.allowReachableSHA1InWant=true`, so full-SHA fetches
 # work. Abbreviated SHAs do NOT work — always use the full 40-char form.
 FROM fetch-base AS fetch-omz
@@ -998,24 +997,22 @@ RUN set -eux; \
 # be edited). brew refuses to RUN as root → presence check only;
 # smoke-test.sh runs `brew --version` as the runtime user.
 # NO_ANALYTICS/NO_AUTO_UPDATE env set in the final stage next to the PATH ENV.
-# The clone fetches branches and has origin/HEAD -> origin/main, as the
-# installer leaves it: a `--branch <tag>` clone fetches that tag alone, and
-# `brew update` then runs `git remote set-head origin --auto`, which errors
-# with "Not a valid ref: refs/remotes/origin/main".
+# The clone fetches branches with origin/HEAD set, for `brew update`
+# (docs/internals/image-build.md#updatable-checkouts).
 # The clone goes through `freeze-git` before the chmod: `brew --version` reads
 # the checkout with `git describe`, so the repository has to stay a repository,
 # and it is the pack this stage keeps that has to stop moving instead.
 FROM fetch-base AS fetch-brew
 ARG HOMEBREW_VERSION
 RUN set -eux; \
-      git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
-        https://github.com/Homebrew/brew /out/home/linuxbrew/.linuxbrew/Homebrew; \
-      git -C /out/home/linuxbrew/.linuxbrew/Homebrew config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'; \
-      git -C /out/home/linuxbrew/.linuxbrew/Homebrew symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; \
-      freeze-git /out/home/linuxbrew/.linuxbrew/Homebrew; \
+      repo=/out/home/linuxbrew/.linuxbrew/Homebrew; \
+      git clone --depth 1 --branch "${HOMEBREW_VERSION}" https://github.com/Homebrew/brew "$repo"; \
+      git -C "$repo" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'; \
+      git -C "$repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; \
+      freeze-git "$repo"; \
       mkdir -p /out/home/linuxbrew/.linuxbrew/bin; \
       ln -s ../Homebrew/bin/brew /out/home/linuxbrew/.linuxbrew/bin/brew; \
-      cp /out/home/linuxbrew/.linuxbrew/Homebrew/completions/zsh/_brew \
+      cp "$repo/completions/zsh/_brew" \
         /out/usr/share/zsh/vendor-completions/_brew; \
       chmod -R a+rwX /out/home/linuxbrew; \
       test -x /out/home/linuxbrew/.linuxbrew/bin/brew; \
