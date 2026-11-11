@@ -779,7 +779,8 @@ CLEANUP_CID=""
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
 # Simulates macOS host UID (501) to verify the entrypoint gives it a passwd
-# entry and hands the Homebrew bin/ to the runtime UID. Without the entry,
+# entry and hands the Homebrew bin/ to the runtime UID, and that the omz and
+# Homebrew checkouts stay updatable by it. Without the entry,
 # ssh aborts with "No user exists for uid 501" and every
 # git-over-ssh operation fails.
 docker run --rm --user 501:20 "${IMAGE}" bash -c '
@@ -800,6 +801,17 @@ brew_bin=/home/linuxbrew/.linuxbrew/bin
 chmod "$(stat -c %a "$brew_bin")" "$brew_bin" \
     || { echo "FAILED: runtime uid cannot chmod the Homebrew bin/"; exit 1; }
 echo "OK: uid $(id -u) can chmod the Homebrew bin/"
+# The checkouts keep the layout omz update and brew update expect
+# (docs/internals/image-build.md: Homebrew, and the freeze-git bullet).
+omz_branch=$(git -C /home/toolbox/.oh-my-zsh symbolic-ref --short HEAD 2>&1) && [ "$omz_branch" = master ] \
+    || { echo "FAILED: oh-my-zsh HEAD is not on master: $omz_branch"; exit 1; }
+brew_repo=/home/linuxbrew/.linuxbrew/Homebrew
+brew_fetch=$(git -C "$brew_repo" config remote.origin.fetch)
+[ "$brew_fetch" = "+refs/heads/*:refs/remotes/origin/*" ] \
+    || { echo "FAILED: Homebrew clone does not fetch branches: $brew_fetch"; exit 1; }
+[ "$(git -C "$brew_repo" symbolic-ref refs/remotes/origin/HEAD 2>&1)" = refs/remotes/origin/main ] \
+    || { echo "FAILED: Homebrew clone has no origin/HEAD -> origin/main"; exit 1; }
+echo "OK: oh-my-zsh on master, Homebrew origin/HEAD set"
 '
 
 echo ""

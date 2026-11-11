@@ -951,6 +951,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
 #
 # Pattern: `git init + remote add + fetch --depth=1 <sha> + checkout FETCH_HEAD`.
 # `git clone --depth=1 --branch <sha>` FAILS — --branch accepts named refs only.
+# The OMZ tree checks out as branch `master` (`checkout -B master`), not a
+# detached HEAD: `omz update` checks out master and ends by returning to the
+# HEAD it started on, so from a detached HEAD it fails or drops the update.
 # GitHub enables `uploadpack.allowReachableSHA1InWant=true`, so full-SHA fetches
 # work. Abbreviated SHAs do NOT work — always use the full 40-char form.
 FROM fetch-base AS fetch-omz
@@ -963,7 +966,7 @@ RUN set -eux; \
       git -c init.defaultBranch=master init /out/home/toolbox/.oh-my-zsh; \
       git -C /out/home/toolbox/.oh-my-zsh remote add origin https://github.com/ohmyzsh/ohmyzsh.git; \
       git -C /out/home/toolbox/.oh-my-zsh fetch --depth=1 origin "${OMZ_COMMIT}"; \
-      git -C /out/home/toolbox/.oh-my-zsh checkout FETCH_HEAD; \
+      git -C /out/home/toolbox/.oh-my-zsh checkout -B master FETCH_HEAD; \
       freeze-git /out/home/toolbox/.oh-my-zsh; \
       for triplet in \
         "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|${ZSH_AUTOSUGGESTIONS_COMMIT}" \
@@ -995,6 +998,10 @@ RUN set -eux; \
 # be edited). brew refuses to RUN as root → presence check only;
 # smoke-test.sh runs `brew --version` as the runtime user.
 # NO_ANALYTICS/NO_AUTO_UPDATE env set in the final stage next to the PATH ENV.
+# The clone fetches branches and has origin/HEAD -> origin/main, as the
+# installer leaves it: a `--branch <tag>` clone fetches that tag alone, and
+# `brew update` then runs `git remote set-head origin --auto`, which errors
+# with "Not a valid ref: refs/remotes/origin/main".
 # The clone goes through `freeze-git` before the chmod: `brew --version` reads
 # the checkout with `git describe`, so the repository has to stay a repository,
 # and it is the pack this stage keeps that has to stop moving instead.
@@ -1003,6 +1010,8 @@ ARG HOMEBREW_VERSION
 RUN set -eux; \
       git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
         https://github.com/Homebrew/brew /out/home/linuxbrew/.linuxbrew/Homebrew; \
+      git -C /out/home/linuxbrew/.linuxbrew/Homebrew config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'; \
+      git -C /out/home/linuxbrew/.linuxbrew/Homebrew symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; \
       freeze-git /out/home/linuxbrew/.linuxbrew/Homebrew; \
       mkdir -p /out/home/linuxbrew/.linuxbrew/bin; \
       ln -s ../Homebrew/bin/brew /out/home/linuxbrew/.linuxbrew/bin/brew; \
