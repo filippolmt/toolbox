@@ -778,7 +778,8 @@ CLEANUP_CID=""
 
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
-# Simulates macOS host UID (501) to verify the entrypoint injects /etc/passwd.
+# Simulates macOS host UID (501) to verify the entrypoint injects /etc/passwd
+# and hands the Homebrew bin/ to the runtime UID.
 # Without the injection, ssh aborts with "No user exists for uid 501" and every
 # git-over-ssh operation fails.
 docker run --rm --user 501:20 "${IMAGE}" bash -c '
@@ -788,6 +789,11 @@ ssh -V 2>&1 | grep -q OpenSSH || { echo "FAILED: ssh missing"; exit 1; }
 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=1 nonexistent.invalid true 2>&1 \
     | grep -q "No user exists for uid" && { echo "FAILED: ssh still reports missing uid"; exit 1; }
 echo "OK: passwd entry injected for uid $(id -u)"
+# brew post-installs chmod the prefix bin/, which only its owner can do.
+brew_bin=/home/linuxbrew/.linuxbrew/bin
+chmod "$(stat -c %a "$brew_bin")" "$brew_bin" \
+    || { echo "FAILED: runtime uid cannot chmod the Homebrew bin/"; exit 1; }
+echo "OK: uid $(id -u) can chmod the Homebrew bin/"
 '
 
 echo ""
