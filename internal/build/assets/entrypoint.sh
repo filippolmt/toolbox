@@ -17,6 +17,22 @@ if ! getent group "${_gid}" >/dev/null 2>&1; then
 fi
 unset _uid _gid
 
+# Homebrew bin/ ownership (docs/internals/image-build.md#homebrew).
+# Every `brew postinstall` (and cask artifact) ends in
+# Sandbox.with_preserved_brew_file, which chmods $HOMEBREW_PREFIX/bin back to its
+# saved mode — sandbox or not, since Linux never reports full write isolation.
+# chmod needs ownership, and world-writable is not enough, so the root-owned bin/
+# fails every post-install with EPERM. The runtime UID is the host's, unknown at
+# build time, so the chown happens here: the directory alone, which copies up
+# metadata only, not the Homebrew clone. Idempotent across ActionStart re-runs.
+# Non-fatal: brew itself still runs, only post-installs fail.
+_brew_bin=/home/linuxbrew/.linuxbrew/bin
+if [ -d "${_brew_bin}" ] && [ ! -O "${_brew_bin}" ]; then
+    sudo chown "$(id -u):$(id -g)" "${_brew_bin}" \
+        || echo "toolbox: Homebrew bin/ ownership failed (non-fatal — every brew post-install will fail with EPERM)"
+fi
+unset _brew_bin
+
 # git safe.directory
 # (docs/internals/shell-start.md#git-safedirectory-dubious-ownership).
 # A bind-mounted directory transiently reports uid 0 while its own contents keep
