@@ -49,7 +49,7 @@ Both Dockerfile write paths run under `set -eux`, so a broken generator fails th
 
 The CLI runs the container with `--user $(id -u):$(id -g)`. Because the runtime UID rarely matches the baked `toolbox` user (UID 1000), `/home/toolbox` is made world-writable in the image. Don't revert to a fixed UID without understanding why — host file ownership would invert and writes inside `~/.toolbox/` would fail for anyone whose host UID isn't 1000.
 
-The entrypoint re-points the baked `toolbox` passwd and group entries at the runtime UID and GID, rather than appending a second `toolbox` entry. Lookups by name return the first match, so an appended entry left `chown toolbox` resolving to 1000 while `id` reported `toolbox`: a path chowned that way stayed foreign to the session user. The group follows the runtime GID even when that GID already has a name (macOS hosts run as GID 20, `dialout`), except GID 0, which would make `toolbox` an alias of root. The UID-501 block of `smoke-test.sh` asserts the name resolves to the runtime IDs.
+When the runtime UID has no passwd entry, the entrypoint re-points the baked `toolbox` passwd and group entries at the runtime UID and GID, rather than appending a second `toolbox` entry; a UID that already has a name (33, 1000) leaves both untouched. Lookups by name return the first match, so an appended entry left `chown toolbox` resolving to 1000 while `id` reported `toolbox`: a path chowned that way stayed foreign to the session user. The group follows the runtime GID even when that GID already has a name (macOS hosts run as GID 20, `dialout`), except GID 0, which would make `toolbox` an alias of root. The UID-501 block of `smoke-test.sh` asserts the name resolves to the runtime IDs.
 
 ## SSH host-key trust
 
