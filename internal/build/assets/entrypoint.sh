@@ -1,40 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Inject a passwd/group entry for the runtime UID/GID when missing.
+# Give the runtime UID/GID the baked `toolbox` name when they have none.
 # The container runs with --user <host-uid>:<host-gid>, which rarely matches
 # the baked "toolbox" user (uid 1000). Tools that call getpwuid() — notably
 # ssh — abort with "No user exists for uid NNN" otherwise, breaking git over
 # ssh://. /etc/passwd and /etc/group are chmod 0666 in the Dockerfile so this
-# append works without root.
+# works without root.
 #
-# The baked `toolbox` entry is re-pointed at the runtime IDs rather than a second
-# one appended: lookups by name return the first match, so an appended entry left
-# `chown toolbox` resolving to the baked UID 1000 while `id` reported toolbox.
-# Rewritten through `>` because /etc itself is not writable (no sed -i temp
-# file); the content is computed first and never written empty. The group is
-# re-pointed even when its GID already has a name (macOS GID 20 is dialout), so
-# `chown toolbox:toolbox` matches the runtime GID too — except GID 0, which
-# would make `toolbox` an alias of root.
-_toolbox_repoint() { # <file> <field> <value>
+# The baked entry is re-pointed rather than a second `toolbox` appended: lookups
+# by name return the first match, so an appended entry left `chown toolbox`
+# resolving to 1000 while `id` reported toolbox. The baked line keeps its home
+# and shell. The group follows only when the user did, and never to GID 0, which
+# would make `toolbox` an alias of root; it is re-pointed even when its GID
+# already has a name (macOS GID 20 is dialout). Rewritten through `>` because
+# /etc itself is not writable: the content is computed first and never empty,
+# but the write truncates in place, so it is not atomic. Runs once — a restart
+# finds the UID named and skips. Non-fatal: a failure leaves toolbox on 1000.
+_toolbox_repoint() { # <file> <awk assignments; u, g = runtime IDs>
     local out
-    out=$(awk -F: -v OFS=: -v f="$2" -v v="$3" '$1 == "toolbox" { $f = v } { print }' "$1") \
-        && [ -n "${out}" ] && [ "${out}" != "$(cat "$1")" ] && printf '%s\n' "${out}" > "$1"
-    return 0
+    out=$(awk -F: -v OFS=: -v u="${_uid}" -v g="${_gid}" "\$1 == \"toolbox\" { $2 } { print }" "$1") \
+        && [ -n "${out}" ] \
+        && printf '%s\n' "${out}" > "$1" \
+        || echo "toolbox: re-pointing toolbox in $1 failed (non-fatal — the name stays on the baked UID 1000)"
 }
 _uid=$(id -u)
 _gid=$(id -g)
 if ! getent passwd "${_uid}" >/dev/null 2>&1; then
     if grep -q '^toolbox:' /etc/passwd; then
-        _toolbox_repoint /etc/passwd 3 "${_uid}"
-        _toolbox_repoint /etc/passwd 4 "${_gid}"
+        _toolbox_repoint /etc/passwd '$3 = u; $4 = g'
+        if [ "${_gid}" -ne 0 ]; then
+            _toolbox_repoint /etc/group '$3 = g'
+        fi
     else
         echo "toolbox:x:${_uid}:${_gid}:toolbox:/home/toolbox:/bin/zsh" >> /etc/passwd
     fi
 fi
-if [ "${_gid}" -ne 0 ] && grep -q '^toolbox:' /etc/group; then
-    _toolbox_repoint /etc/group 3 "${_gid}"
-elif ! getent group "${_gid}" >/dev/null 2>&1; then
+if ! getent group "${_gid}" >/dev/null 2>&1; then
     echo "toolbox:x:${_gid}:" >> /etc/group
 fi
 unset -f _toolbox_repoint
