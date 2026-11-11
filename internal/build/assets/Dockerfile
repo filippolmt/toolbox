@@ -1788,8 +1788,9 @@ RUN set -eux; \
 # it would force the fetch-omz COPY back above the whole RUN tail (ADR 0002).
 # `usermod -s /bin/zsh`: the inherited node image entry pointed at /bin/bash,
 # which bash then fabricates as $SHELL from getpwuid() when the variable is
-# unset. zsh is the only supported interactive shell — keep the baked UID-1000
-# entry agreeing with the runtime entry entrypoint.sh writes and with ENV SHELL.
+# unset. zsh is the only supported interactive shell — keep this entry, which
+# entrypoint.sh re-points at the runtime UID and its fallback line, agreeing
+# with ENV SHELL.
 RUN set -eux; \
     usermod -l toolbox node; \
     groupmod -n toolbox node; \
@@ -1809,7 +1810,7 @@ RUN set -eux; \
     rm -rf /tmp/node-compile-cache /tmp/v8-compile-cache-*
 
 # Passwordless root for the disposable container. Runtime UID is the host's
-# (--user <host-uid>) and gets a /etc/passwd entry injected by the entrypoint;
+# (--user <host-uid>) and takes the toolbox /etc/passwd entry at boot;
 # the blanket `ALL` rule matches whatever UID lands, so `sudo apt-get update &&
 # sudo apt install …` works without knowing it at build time (apt lists aren't
 # baked — the `update` is required first). Safe-by-ephemerality: the container

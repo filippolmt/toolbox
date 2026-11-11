@@ -778,9 +778,9 @@ CLEANUP_CID=""
 
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
-# Simulates macOS host UID (501) to verify the entrypoint injects /etc/passwd
-# and hands the Homebrew bin/ to the runtime UID.
-# Without the injection, ssh aborts with "No user exists for uid 501" and every
+# Simulates macOS host UID (501) to verify the entrypoint gives it a passwd
+# entry and hands the Homebrew bin/ to the runtime UID. Without the entry,
+# ssh aborts with "No user exists for uid 501" and every
 # git-over-ssh operation fails.
 docker run --rm --user 501:20 "${IMAGE}" bash -c '
 set -e
@@ -788,7 +788,13 @@ getent passwd "$(id -u)" >/dev/null || { echo "FAILED: no passwd entry for uid $
 ssh -V 2>&1 | grep -q OpenSSH || { echo "FAILED: ssh missing"; exit 1; }
 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=1 nonexistent.invalid true 2>&1 \
     | grep -q "No user exists for uid" && { echo "FAILED: ssh still reports missing uid"; exit 1; }
-echo "OK: passwd entry injected for uid $(id -u)"
+echo "OK: passwd entry present for uid $(id -u)"
+# The name resolves to the runtime IDs, not the baked 1000: `chown toolbox` gives
+# a path to the session user.
+[ "$(id -u toolbox)" = "$(id -u)" ] || { echo "FAILED: toolbox resolves to uid $(id -u toolbox), not $(id -u)"; exit 1; }
+[ "$(getent group toolbox | cut -d: -f3)" = "$(id -g)" ] || { echo "FAILED: group toolbox is not gid $(id -g)"; exit 1; }
+[ "$(grep -c "^toolbox:" /etc/passwd)" -eq 1 ] || { echo "FAILED: more than one toolbox passwd entry"; exit 1; }
+echo "OK: toolbox resolves to $(id -u):$(id -g)"
 # brew post-installs chmod the prefix bin/, which only its owner can do.
 brew_bin=/home/linuxbrew/.linuxbrew/bin
 chmod "$(stat -c %a "$brew_bin")" "$brew_bin" \

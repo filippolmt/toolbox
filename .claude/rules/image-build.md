@@ -78,7 +78,7 @@ A new member joins `TestWorkspaceInstallRefreshGate`, `TestGraphifyHookInstallOu
 ## Shell and agent assets
 
 - **Starship symbols are width-deterministic**: PUA, ASCII or unambiguous-narrow. → [prompt-glyph-width](../../docs/internals/shell-start.md#prompt-glyph-width)
-- **`ENV SHELL=/bin/zsh` is load-bearing** and tracks the passwd shell `entrypoint.sh` writes. → [shell-env](../../docs/internals/shell-start.md#shell-in-the-image-env)
+- **`ENV SHELL=/bin/zsh` is load-bearing** and tracks the baked `toolbox` passwd shell, which `entrypoint.sh` re-points at the runtime UID. → [shell-env](../../docs/internals/shell-start.md#shell-in-the-image-env)
 - **`ENV LANG=C.UTF-8`** in the final stage — `LANG` only, never `LC_ALL`. → [utf-8-locale](../../docs/internals/shell-start.md#utf-8-locale)
 - **User config is `~/.toolbox-state/zshrc.d/*.zsh`**, sourced last with alias expansion off (`_zsh_user_rc_check`). → [user-config](../../docs/internals/shell-start.md#user-config-in-zshrcd)
 - **Never write a Private Use Area glyph as a literal character in an image asset**, nor in an assertion about one — escape it. Held by the `managed statusline` and `baked starship symbols` blocks of `smoke-test.sh`. → [Blanked Glyph](../../CONTEXT.md#blanked-glyph), [glyph-escapes](../../docs/internals/shell-start.md#glyph-escapes-in-image-assets)
