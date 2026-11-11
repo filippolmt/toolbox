@@ -790,9 +790,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=1 nonexistent
     | grep -q "No user exists for uid" && { echo "FAILED: ssh still reports missing uid"; exit 1; }
 echo "OK: passwd entry injected for uid $(id -u)"
 # brew post-installs chmod the prefix bin/, which only its owner can do.
-chmod "$(stat -c %a /home/linuxbrew/.linuxbrew/bin)" /home/linuxbrew/.linuxbrew/bin \
+brew_bin=/home/linuxbrew/.linuxbrew/bin
+chmod "$(stat -c %a "$brew_bin")" "$brew_bin" \
     || { echo "FAILED: runtime uid cannot chmod the Homebrew bin/"; exit 1; }
-echo "OK: Homebrew bin/ owned by uid $(id -u)"
+echo "OK: uid $(id -u) can chmod the Homebrew bin/"
 '
 
 echo ""
