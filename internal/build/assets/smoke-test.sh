@@ -779,7 +779,8 @@ CLEANUP_CID=""
 echo ""
 echo "=== UID mapping check (runtime UID not baked in image) ==="
 # Simulates macOS host UID (501) to verify the entrypoint gives it a passwd
-# entry. Without one, ssh aborts with "No user exists for uid 501" and every
+# entry and hands the Homebrew bin/ to the runtime UID. Without the entry,
+# ssh aborts with "No user exists for uid 501" and every
 # git-over-ssh operation fails.
 docker run --rm --user 501:20 "${IMAGE}" bash -c '
 set -e
@@ -794,6 +795,11 @@ echo "OK: passwd entry present for uid $(id -u)"
 [ "$(getent group toolbox | cut -d: -f3)" = "$(id -g)" ] || { echo "FAILED: group toolbox is not gid $(id -g)"; exit 1; }
 [ "$(grep -c "^toolbox:" /etc/passwd)" -eq 1 ] || { echo "FAILED: more than one toolbox passwd entry"; exit 1; }
 echo "OK: toolbox resolves to $(id -u):$(id -g)"
+# brew post-installs chmod the prefix bin/, which only its owner can do.
+brew_bin=/home/linuxbrew/.linuxbrew/bin
+chmod "$(stat -c %a "$brew_bin")" "$brew_bin" \
+    || { echo "FAILED: runtime uid cannot chmod the Homebrew bin/"; exit 1; }
+echo "OK: uid $(id -u) can chmod the Homebrew bin/"
 '
 
 echo ""

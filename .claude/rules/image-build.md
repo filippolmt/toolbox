@@ -43,7 +43,7 @@ paths:
 ## System setup
 
 - **Passwordless sudo** via `/etc/sudoers.d/toolbox`, UID-agnostic; the smoke test asserts setuid `sudo`. → [sudo](../../docs/internals/image-build.md#passwordless-sudo)
-- **Homebrew stays at `/home/linuxbrew/.linuxbrew`**, world-writable, with a system `safe.directory`, analytics and auto-update off. → [homebrew](../../docs/internals/image-build.md#homebrew)
+- **Homebrew stays at `/home/linuxbrew/.linuxbrew`**, world-writable, with a system `safe.directory`, analytics and auto-update off. `entrypoint.sh` chowns `bin/` alone to the runtime UID at boot — never at build, never recursive; held by the UID-501 block of `smoke-test.sh`. → [homebrew](../../docs/internals/image-build.md#homebrew)
 - **System gitconfig, never `--global`**, written by the Dockerfile and by `entrypoint.sh`. `http.version = HTTP/1.1` stays global and pinned in both `fetch-base` and the final stage: `TestGitHTTPVersionPinned`. → [system-git-settings](../../docs/internals/image-build.md#system-git-settings)
 - **`/usr/local/bin/glab` is a flock shim** over `/usr/local/libexec/glab`; it never fails closed and never runs glab twice (no `flock -E` sentinel) — `internal/build/glab_flock_shim_test.go`. Everything calls the shim, never `libexec`. → [glab-flock-shim](../../docs/internals/shell-start.md#gitlab-git-credential-helper-glab)
 - **SSH host-key trust** is the baked `10-toolbox.conf`; the ssh mount stays read-only, no boot `ssh-keyscan`. → [ssh-host-key-trust](../../docs/internals/image-build.md#ssh-host-key-trust)

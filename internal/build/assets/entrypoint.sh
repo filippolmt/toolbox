@@ -42,6 +42,16 @@ fi
 unset -f _toolbox_repoint
 unset _uid _gid
 
+# Homebrew bin/ ownership (docs/internals/image-build.md#homebrew): brew chmods
+# bin/ after every post-install, which only its owner can do, and the runtime UID
+# is unknown at build time. The directory alone, idempotent, non-fatal.
+_brew_bin=/home/linuxbrew/.linuxbrew/bin
+if [ -d "${_brew_bin}" ] && [ ! -O "${_brew_bin}" ]; then
+    sudo chown "$(id -u):$(id -g)" "${_brew_bin}" \
+        || echo "toolbox: Homebrew bin/ ownership failed (non-fatal — every brew post-install will fail with EPERM)"
+fi
+unset _brew_bin
+
 # git safe.directory
 # (docs/internals/shell-start.md#git-safedirectory-dubious-ownership).
 # A bind-mounted directory transiently reports uid 0 while its own contents keep
