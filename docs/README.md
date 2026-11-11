@@ -175,6 +175,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)
 - [Homebrew](internals/image-build.md#homebrew)
+- [Updatable checkouts](internals/image-build.md#updatable-checkouts)
 - [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
 - [Claude fork mode off (agent_summary)](internals/image-build.md#claude-fork-mode-off-agent_summary)
