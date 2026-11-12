@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 # Toolbox image. BuildKit required.
 #
 # Build-time strategy (wall-clock first):
@@ -59,7 +59,7 @@ ARG UV_VERSION=0.13.7
 # MAJOR.MINOR.PATCH.BUILD scheme (Renovate: loose versioning).
 ARG SONARQUBE_CLI_VERSION=1.12.0.17622
 ARG CLAUDE_CODE_VERSION=2.1.322
-ARG CODEX_CLI_VERSION=0.167.1
+ARG CODEX_CLI_VERSION=0.167.2
 ARG PI_CLI_VERSION=1.5.2
 ARG CODEGRAPH_VERSION=1.6.2
 ARG CF_CLI_VERSION=0.15.0
