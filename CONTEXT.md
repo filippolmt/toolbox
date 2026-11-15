@@ -2334,3 +2334,22 @@ and a check written against that name silently stopped matching once Docker
 Desktop reported a different type — the fix for false rebase conflicts stayed inactive
 while the gate that guards it was not re-run. Naming the share, not its type,
 keeps the next new type a list entry instead of a regression.
+
+### Containment Boundary
+
+What code running inside a Shell must not reach, whoever runs it — a
+prompt-injected agent or a hostile dependency. It must not become root on the
+host, run code as the developer on the host, touch host files outside the
+workspace and `~/.toolbox`, or control other containers and other Shells.
+Credentials mounted into the Shell sit inside the boundary: code in the Shell
+is meant to use them. Files in the workspace are a declared hole, since the
+developer later runs them on the host (git hooks, build scripts) and host git
+and editors read repository config the Shell can write. So are the
+tools and caches every Shell shares under `~/.toolbox`: "other Shells" means
+their processes, not what they share by design. Docker access from the Shell
+crosses the boundary outright, so it is off unless a developer or a team turns
+it on knowingly.
+
+Why the term exists: "escalation" was used for every one of these at once,
+and a mount, a bridge route or a daemon setting can only be judged against a
+boundary that says which of them it may cross.
