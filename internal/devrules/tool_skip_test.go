@@ -64,7 +64,9 @@ func TestAMissingToolNeverSkipsUnderCI(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules") {
+		// dist/ is gitignored build and scratch output: make go-dockergate
+		// keeps a whole Go module cache under dist/.scratch.
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules" || path == filepath.Join(root, "dist")) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || !strings.HasSuffix(path, "_test.go") || path == filepath.Join(root, "internal/devrules/tool_skip_test.go") {

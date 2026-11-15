@@ -93,7 +93,7 @@ func markdownDocs(t *testing.T, root string) map[string]string {
 
 // TestCitedMakeTargetsAndScriptsExist holds prose to the Makefile and to
 // .github/scripts: a renamed target or script breaks no Markdown link, so make
-// check-links passes over a stale `make old-name` in the pre-push table.
+// check-links passes over a stale `make old-name` in CLAUDE.md.
 func TestCitedMakeTargetsAndScriptsExist(t *testing.T) {
 	root := repoRoot(t)
 	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))

@@ -244,3 +244,118 @@ test("mounting targets refuse a directory the host daemon cannot see", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+function gatesFor(paths) {
+  const result = spawnSync("python3", [".github/scripts/pre-push-gates.py", "--files", "-"], {
+    cwd: root, input: paths.join("\n"), encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+test("gates map a sessionplan edit to go-check and the real-daemon gate", () => {
+  const out = gatesFor(["internal/sessionplan/plan.go", "README.md"]);
+  for (const gate of ["make go-check", "make go-dockergate", "make go-test-one PKG=./internal/devrules", "make check-links"]) {
+    assert.ok(out.includes(gate), `missing ${gate}:\n${out}`);
+  }
+  assert.doesNotMatch(out, /^make test$/m);
+});
+
+test("gates list a command once however many rows name it", () => {
+  const out = gatesFor(["internal/build/assets/entrypoint.sh", ".github/scripts/host-share-git-rewrite.sh"]);
+  assert.equal(out.match(/^make test-host-share$/gm).length, 1, out);
+  assert.match(out, /^make test$/m);
+  assert.match(out, /shellcheck -S error/);
+});
+
+test("gates cite only make targets and scripts that exist", () => {
+  const makefile = readFileSync(join(root, "Makefile"), "utf8");
+  const src = readFileSync(join(root, ".github/scripts/pre-push-gates.py"), "utf8");
+  const targets = [...src.matchAll(/\bmake ([a-z][\w-]*)/g)].map((m) => m[1]);
+  assert.ok(targets.length > 0, "no make target found in pre-push-gates.py");
+  for (const target of targets) {
+    assert.match(makefile, new RegExp(`^${target}:(?!=)`, "m"), `make ${target} is not a Makefile target`);
+  }
+  const scripts = [...src.matchAll(/\.github\/scripts\/[\w.-]+\.\w+/g)].map((m) => m[0]);
+  assert.ok(scripts.length > 0, "no .github/scripts path found in pre-push-gates.py");
+  for (const script of scripts) {
+    assert.ok(existsSync(join(root, script)), `${script} does not exist`);
+  }
+});
+
+test("a changed .github/scripts shell script gets shellcheck as a command", () => {
+  assert.match(gatesFor([".github/scripts/check-branch-name.sh"]), /^shellcheck \.github\/scripts\/\*\.sh$/m);
+  assert.doesNotMatch(gatesFor([".github/scripts/complexity-patch.py"]), /^shellcheck/m);
+});
+
+test("a non-Go file in a daemon-gated package still needs go-check", () => {
+  const out = gatesFor(["internal/container/testdata/x.json"]);
+  assert.match(out, /^make go-check$/m, out);
+  assert.match(out, /^make go-dockergate$/m, out);
+});
+
+test("gates fail loudly on a base git cannot resolve", () => {
+  const result = spawnSync("python3", [".github/scripts/pre-push-gates.py", "--base", "no-such-ref"], { cwd: root, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no-such-ref/);
+  assert.doesNotMatch(result.stdout, /no gate/);
+});
+
+test("make gates diffs against BASE", () => {
+  const result = spawnSync("make", ["-n", "gates", "BASE=HEAD"], { cwd: root, env: makeEnv, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /pre-push-gates.py --base "HEAD"/);
+});
+
+test("gates pin the renovate validator to ci.yml's RENOVATE_VERSION", () => {
+  const pin = /renovate@(\S+) /.exec(gatesFor(["renovate.json"]))[1];
+  const ciLine = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8").split("\n").find((l) => l.includes("RENOVATE_VERSION:"));
+  assert.ok(ciLine, "ci.yml has no RENOVATE_VERSION line");
+  assert.ok(ciLine.includes(pin) && /^\d+\.\d+\.\d+$/.test(pin), `pin ${pin} is not ci.yml's (${ciLine.trim()})`);
+});
+
+test("gates follow docker-ci's image filter: daemon packages get the gate, the rest the build", () => {
+  const daemon = gatesFor(["internal/sessionplan/x.go"]);
+  assert.match(daemon, /^make go-dockergate$/m, daemon);
+  assert.doesNotMatch(daemon, /^make test$/m, daemon);
+  for (const path of ["internal/build/assets/Dockerfile", ".github/fixtures/android-e2e/x"]) {
+    const out = gatesFor([path]);
+    assert.match(out, /^make test$/m, `${path}: ${out}`);
+    assert.doesNotMatch(out, /^make go-dockergate$/m, `${path}: ${out}`);
+  }
+  const outside = gatesFor(["internal/config/x.go"]);
+  assert.doesNotMatch(outside, /^make (test|go-dockergate)$/m, outside);
+});
+
+test("gates read renames, non-ASCII paths and untracked files from git", () => {
+  const repo = mkdtempSync(join(tmpdir(), "gates-"));
+  try {
+    const git = (...args) => {
+      const r = spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+    };
+    git("init", "-q", "-b", "main");
+    mkdirSync(join(repo, "internal/container"), { recursive: true });
+    writeFileSync(join(repo, "internal/container/data.json"), "{}\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    git("switch", "-q", "-c", "feat/x");
+    mkdirSync(join(repo, "assets"));
+    git("mv", "internal/container/data.json", "assets/data.json");
+    git("commit", "-q", "-m", "move");
+    mkdirSync(join(repo, "docs"));
+    writeFileSync(join(repo, "docs/caffè.md"), "x\n");
+    const result = spawnSync("python3", [".github/scripts/pre-push-gates.py", "--repo", repo, "--base", "main"], { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^make go-dockergate$/m, `the move out of internal/container must keep its gate:\n${result.stdout}`);
+    assert.match(result.stdout, /^make check-links$/m, `the untracked non-ASCII Markdown file must match:\n${result.stdout}`);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("gates refuse to guess a base", () => {
+  const result = spawnSync("python3", [".github/scripts/pre-push-gates.py"], { cwd: root, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--base is required/);
+});

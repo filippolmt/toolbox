@@ -168,7 +168,10 @@ read and folds into its live key.
 
 Concretely: `config.RetiredKeys()` → `config.RetiredKey{Hint, Doc}`, read by
 `warnRetiredKeys` on the load path and by `configedit.lintLayerKeys`. Owned
-by `internal/config` (`plan.go`).
+by `internal/config` (`plan.go`). Retiring a key keeps its name where the
+warning needs it — the `RetiredKeys` entry, its test and
+[`configuration.md#retired-keys`](docs/configuration.md#retired-keys) — so a
+"no mention left" check over a removed feature carves those out.
 
 Why the term exists: `tools:` was dropped with a hand-written warning and a
 hand-written doctor branch; retiring `worktree:` and `agent:` would have made
