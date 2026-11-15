@@ -131,7 +131,7 @@ alias reload='exec zsh'
 # codex+pi share .agents/skills. Nothing refreshes them at shell start:
 # `toolbox-refresh` re-runs the installers in a repo that carries the opt-in
 # marker, and never creates one. `codegraph-init` and `pwcli-init` create that
-# marker (`.codegraph/` resp. `.claude/skills/playwright-cli/`); `graphify-init`
+# marker (`.codegraph/` resp. the playwright-cli skill dirs); `graphify-init`
 # installs the project-scoped `/graphify` skill (`.claude/skills/graphify/`) plus
 # the CLAUDE.md section + hooks, and `graphify-out/` (its marker) appears once
 # the graph is first built (by the hooks on first use, or `graphify update .`).

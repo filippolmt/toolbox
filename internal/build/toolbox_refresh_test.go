@@ -167,12 +167,16 @@ func TestToolboxRefreshNamedToolsOnly(t *testing.T) {
 	}
 }
 
+// TestToolboxRefreshRejectsAnUnknownTool: a name that is no tool — including
+// two names quoted into one argument — is a usage error, never a silent no-op.
 func TestToolboxRefreshRejectsAnUnknownTool(t *testing.T) {
 	f := newRefreshFixture(t)
-	_, out, err := f.run(t, f.dir, "nope")
-	var exit *exec.ExitError
-	if err == nil || !errors.As(err, &exit) || exit.ExitCode() != 2 {
-		t.Fatalf("toolbox-refresh nope: err = %v, want exit 2\n%s", err, out)
+	for _, arg := range []string{"nope", "codegraph playwright-cli"} {
+		_, out, err := f.run(t, f.dir, arg)
+		var exit *exec.ExitError
+		if err == nil || !errors.As(err, &exit) || exit.ExitCode() != 2 {
+			t.Errorf("toolbox-refresh %q: err = %v, want exit 2\n%s", arg, err, out)
+		}
 	}
 }
 
@@ -215,5 +219,24 @@ func TestEveryGraphifySkillDirIsGitignored(t *testing.T) {
 		if dir := "." + m[1] + "/skills/graphify/"; !slices.Contains(lines, dir) {
 			t.Errorf(".gitignore has no %q entry for the %s graphify skill", dir, m[1])
 		}
+	}
+}
+
+// TestToolboxRefreshTakesEitherPlaywrightCopyAsTheOptIn: a repo that carries
+// only the cross-agent copy (opted in for Codex or pi) is still opted in, and
+// the refresh gives it every agent the image bundles, as pwcli-init would.
+func TestToolboxRefreshTakesEitherPlaywrightCopyAsTheOptIn(t *testing.T) {
+	f := newRefreshFixture(t)
+	root := f.repo(t, ".agents/skills/playwright-cli")
+	calls, out, err := f.run(t, root, "playwright-cli")
+	if err != nil {
+		t.Fatalf("toolbox-refresh playwright-cli: %v\n%s", err, out)
+	}
+	want := []string{
+		root + "|playwright-cli install --skills claude",
+		root + "|playwright-cli install --skills agents",
+	}
+	if !slices.Equal(calls, want) {
+		t.Errorf("calls = %q, want %q", calls, want)
 	}
 }

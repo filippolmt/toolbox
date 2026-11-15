@@ -177,3 +177,27 @@ func TestSyncSkillReportsAFailedRootAndSyncsTheRest(t *testing.T) {
 	}
 	readSkill(t, filepath.Join(f.home, ".agents", "skills", "demo", "SKILL.md"))
 }
+
+// TestSyncSkillLeavesNothingButSkillsInTheRoot: an agent scans its skill root,
+// and a Claude root is one host mount every container shares. The lock lives
+// outside it, and a staging copy a killed sync left behind is swept by the next
+// one — even when the skill itself is already current.
+func TestSyncSkillLeavesNothingButSkillsInTheRoot(t *testing.T) {
+	f := newSkillSyncFixture(t, "claude")
+	root := filepath.Join(f.home, ".claude", "skills")
+	f.run(t, "demo")
+	writeFile(t, filepath.Join(root, ".demo.Ab12Cd", "SKILL.md"), "half a swap\n")
+	writeFile(t, filepath.Join(root, ".demo.Ef34Gh.old", "SKILL.md"), "old copy\n")
+	f.run(t, "demo")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 1 || names[0] != "demo" {
+		t.Errorf("skill root holds %q, want only the skill", names)
+	}
+}

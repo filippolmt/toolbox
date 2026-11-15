@@ -87,6 +87,8 @@ RUN set -eux; \
 
 Always end the stage or layer with `<tool> --version` (or equivalent) — it's the only thing that catches a successful install with a broken binary (wrong arch, mismatched GLIBC) before the smoke test.
 
+**A tool that publishes an agent skill ships it as a [Global Skill](../../../CONTEXT.md#global-skill).** Extract the skill in the tool's own fetch stage, from the pinned release (a `SKILL.md` in the release archive, or the tool's own command that prints or installs it), into `/out/usr/local/share/toolbox/skills/<tool>/`; end with `test -s` on its `SKILL.md` and `chmod -R a+rX /out/usr/local/share/toolbox`, before `freeze-mtimes`. The tool then needs an `init.d/<NN>-<tool>.sh` member that calls `toolbox_sync_skill <tool> || true`. That member must never fetch or regenerate the skill at container start. Add a `check_optional "<tool> skill shipped" <binary> test -s /usr/local/share/toolbox/skills/<tool>/SKILL.md` line in step 4. `toolbox-refresh` reads the baked directory, so it needs no edit. The guardrails are in `.claude/rules/image-build.md`, under "Global skills and Repo Install Refresh".
+
 Spell the tool consistently: the catalog `Key` must appear as a whole-word token somewhere in the Dockerfile (the install layer / ARG naturally provides it). That's what `TestCatalogDockerfilePresence` checks — the underscore key `playwright_cli` is allowed to match the token `playwright-cli`, but a typo'd or missing token fails the build.
 
 ### 3. `internal/catalog/catalog.go`

@@ -165,7 +165,9 @@ opted_in() {
     case "$1" in
         graphify) [ -d "$root/graphify-out" ] ;;
         codegraph) [ -d "$root/.codegraph" ] ;;
-        playwright-cli) [ -d "$root/.claude/skills/playwright-cli" ] ;;
+        # Either copy: a repo opted in for Codex or pi alone carries only the
+        # cross-agent one.
+        playwright-cli) [ -d "$root/.claude/skills/playwright-cli" ] || [ -d "$root/.agents/skills/playwright-cli" ] ;;
     esac
 }
 
@@ -186,11 +188,18 @@ refresh_repo_tool() {
     "refresh_${tool//-/_}"
 }
 
+# in_list WORD ITEM… — exact match, so "a b" never passes as two tools.
+in_list() {
+    local word="$1" item
+    shift
+    for item in "$@"; do
+        [ "$item" = "$word" ] && return 0
+    done
+    return 1
+}
+
 for arg in "$@"; do
-    case " ${global_skills[*]} ${repo_tools[*]} " in
-        *" $arg "*) ;;
-        *) usage ;;
-    esac
+    in_list "$arg" "${global_skills[@]}" "${repo_tools[@]}" || usage
 done
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
@@ -200,9 +209,10 @@ else
     tools=("${global_skills[@]}" "${repo_tools[@]}") named=""
 fi
 for tool in "${tools[@]}"; do
-    case " ${global_skills[*]} " in
-        *" $tool "*) refresh_skill "$tool" ;;
-        *) refresh_repo_tool "$tool" "$named" ;;
-    esac
+    if in_list "$tool" "${global_skills[@]}"; then
+        refresh_skill "$tool"
+    else
+        refresh_repo_tool "$tool" "$named"
+    fi
 done
 exit "$rc"

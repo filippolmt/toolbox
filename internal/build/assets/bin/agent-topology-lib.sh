@@ -63,20 +63,24 @@ toolbox_sync_skill() {
 
 # Replaced whole, so a file upstream dropped does not linger. A Claude skill
 # root is one host mount shared by every toolbox container, so the swap runs
-# under a per-root lock.
+# under a lock — kept in the state mount, every container shares it, and not in
+# the skill root, which an agent scans. The staging copy must sit in the root
+# (a rename does not cross mounts), so one a killed sync left there is swept
+# under the same lock, where no other sync can be mid-swap.
 _toolbox_sync_skill_into() {
     local root="$2" name="$_toolbox_skill_name"
-    local src="$toolbox_baked_skills/$name"
-    if ! mkdir -p "$root" || ! (
+    local src="$toolbox_baked_skills/$name" lock="$HOME/.toolbox-state/.skill-$name.lock"
+    if ! mkdir -p "$root" "${lock%/*}" || ! (
         flock 9
+        rm -rf "$root/.$name".?????? "$root/.$name".??????.old
         if [ -d "$root/$name" ] && diff -r "$src" "$root/$name" >/dev/null 2>&1; then
             exit 0
         fi
         # `set -e` does not apply inside an `if !` condition, so every step
-        # checks its own status: a half-removed old copy must stop the swap,
-        # or `mv` would nest the new tree inside it.
-        # Two renames, so a reader on another container never finds the
-        # skill half-written and misses it only for that instant.
+        # checks its own status: a half-moved old copy must stop the swap, or
+        # `mv` would nest the new tree inside it. Two renames, so a reader on
+        # another container never finds the skill half-written and misses it
+        # only for that instant.
         tmp=$(mktemp -d "$root/.$name.XXXXXX") || exit 1
         if cp -R "$src/." "$tmp/" && chmod 0755 "$tmp" \
             && { [ ! -e "$root/$name" ] || mv "$root/$name" "$tmp.old"; } \
@@ -86,7 +90,7 @@ _toolbox_sync_skill_into() {
         fi
         rm -rf "$tmp"
         exit 1
-    ) 9>"$root/.$name-skill.lock"; then
+    ) 9>"$lock"; then
         echo "toolbox: $name skill install into $root failed (non-fatal)"
         _toolbox_skill_failed=1
     fi

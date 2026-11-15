@@ -2045,8 +2045,10 @@ Concretely: the fetch stage of each tool writes the skill to
 tool's own mechanism (for gh, `gh skill install --pin`), and fails the build when it comes out empty. At start the
 tool's init.d member calls `toolbox_sync_skill <tool>` (`bin/agent-topology-lib.sh`),
 which copies the baked tree into every active skill root only where the copy
-there differs, under a per-root lock: a current copy is never rewritten, a
-deleted one comes back, a hand edit is replaced. `toolbox-refresh` runs the same
+there differs, under a per-skill lock in the state mount (never in the skill
+root an agent scans): a current copy is never rewritten, a deleted one comes
+back, a hand edit is replaced, and a staging copy a killed sync left in the root
+is swept by the next one. `toolbox-refresh` runs the same
 sync on demand. Held by `TestSyncSkill*`, `TestGlobalSkillInitsInstallTheBakedCopy`
 and the `Global skills` block in `smoke-test.sh`.
 
@@ -2061,9 +2063,10 @@ fifth tool with a skill bakes it instead of fetching it.
 
 Re-running a tool's *per-repo* installer in a repo that already opted in to
 it, on demand: `toolbox-refresh` (`bin/toolbox-refresh`, on the image's PATH).
-Members are graphify, codegraph and playwright-cli; the opt-in is the marker
+Members are the `repo_tools` the script lists; the opt-in is the marker
 each `*-init` alias leaves (`graphify-out/`, `.codegraph/`,
-`.claude/skills/playwright-cli/`), and a refresh never creates one.
+either playwright-cli skill copy, `.claude/skills/` or `.agents/skills/`), and a
+refresh never creates one.
 
 Concretely: the repo is `git rev-parse --show-toplevel`, so any subdirectory
 works and outside a repo nothing per-repo runs. Each installer runs from the
