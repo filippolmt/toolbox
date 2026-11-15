@@ -288,15 +288,22 @@ test("gates cite only make targets and scripts that exist", () => {
   }
 });
 
-test("gates cover every path docker-ci builds the image for", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/docker-ci.yml"), "utf8");
-  const block = /^\s*docker:\n((?:\s+- '.*'\n)+)/m.exec(workflow)[1];
-  const patterns = [...block.matchAll(/- '([^']+)'/g)].map((m) => m[1]);
-  assert.ok(patterns.length > 0, "docker-ci.yml: no docker path filter found");
-  for (const pattern of patterns) {
-    const sample = pattern.replace("**", "testdata/x.json");
-    assert.match(gatesFor([sample]), /^make (test|go-dockergate)$/m, `${sample} (from ${pattern}) maps to no image gate`);
+test("gates read docker-ci's image filter: daemon packages get the gate, the rest the build", () => {
+  for (const pkg of ["container", "mountplan", "sessionplan", "reload", "imagereclaim"]) {
+    const out = gatesFor([`internal/${pkg}/x.go`]);
+    assert.match(out, /^make go-dockergate$/m, `internal/${pkg}: ${out}`);
+    assert.doesNotMatch(out, /^make test$/m, `internal/${pkg}: ${out}`);
   }
+  for (const path of ["internal/build/assets/Dockerfile", "go.mod", ".github/fixtures/android-e2e/x", ".github/workflows/docker-ci.yml"]) {
+    const out = gatesFor([path]);
+    assert.match(out, /^make test$/m, `${path}: ${out}`);
+    assert.doesNotMatch(out, /^make go-dockergate$/m, `${path}: ${out}`);
+  }
+});
+
+test("a changed .github/scripts shell script gets shellcheck as a command", () => {
+  assert.match(gatesFor([".github/scripts/check-branch-name.sh"]), /^shellcheck \.github\/scripts\/\*\.sh$/m);
+  assert.doesNotMatch(gatesFor([".github/scripts/complexity-patch.py"]), /^shellcheck/m);
 });
 
 test("a non-Go file in a daemon-gated package still needs go-check", () => {

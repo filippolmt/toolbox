@@ -17,13 +17,30 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# Held to docker-ci.yml's `docker` path filter by devtools.test.mjs.
-DOCKERGATE_PKGS = ("container", "mountplan", "sessionplan", "reload", "imagereclaim")
-IMAGE_PATHS = (".github/scripts/test-graphify-hooks.sh", ".github/fixtures/android-e2e/", ".github/workflows/docker-ci.yml")
+
+
+def docker_filter():
+    """The `docker` path filter docker-ci.yml builds the image for, read from
+    the workflow so the two cannot drift: `dir/**` patterns as prefixes, the
+    rest as exact paths."""
+    m = re.search(r"^\s*docker:\n((?:\s+- '.*'\n)+)", (ROOT / ".github/workflows/docker-ci.yml").read_text(), re.M)
+    if not m:
+        sys.exit("pre-push-gates: docker-ci.yml has no `docker:` path filter; update docker_filter()")
+    return [pat.removesuffix("**") for pat in re.findall(r"- '([^']+)'", m.group(1))]
+
+
+DOCKER_PATHS = docker_filter()
+# The Go packages in that filter beyond the image assets: docker-ci runs the
+# real-daemon gates for them.
+DAEMON_PATHS = [p for p in DOCKER_PATHS if p.startswith("internal/") and not p.startswith("internal/build/")]
+
+
+def matches(path, patterns):
+    return any(path.startswith(pat) if pat.endswith("/") else path == pat for pat in patterns)
 
 
 def dockergate_pkg(p):
-    return any(p.startswith(f"internal/{d}/") for d in DOCKERGATE_PKGS)
+    return matches(p, DAEMON_PATHS)
 
 
 def renovate_pin():
@@ -38,7 +55,7 @@ ROWS = [
      "make go-check", "ci.yml (coverage-enforced test + lint)", ""),
     (lambda p: p.startswith(".pi/"),
      "make check-agent", "ci.yml (lint)", ""),
-    (lambda p: p.startswith("internal/build/assets/") or p == "go.mod" or p.startswith(IMAGE_PATHS),
+    (lambda p: matches(p, DOCKER_PATHS) and not dockergate_pkg(p),
      "make test", "docker-ci.yml (build + smoke)", ""),
     (dockergate_pkg,
      "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
@@ -52,8 +69,10 @@ ROWS = [
     (lambda p: p.startswith(".github/workflows/"),
      "actionlint", "the workflow itself, on the next push", ""),
     (lambda p: p.startswith(".github/scripts/"),
-     "make check-devtools", "the workflow that calls the script, on the next push",
-     "plus `shellcheck` on any changed shell script"),
+     "make check-devtools", "the workflow that calls the script, on the next push", ""),
+    (lambda p: p.startswith(".github/scripts/") and p.endswith(".sh"),
+     "shellcheck .github/scripts/*.sh", "the workflow that calls the script, on the next push",
+     "make check-devtools shellchecks only two of them"),
     (lambda p: p in (".github/scripts/host-share-git-rewrite.sh", "internal/build/assets/entrypoint.sh"),
      "make test-host-share", "none: no runner serves a Host Share", "from a Mac running Docker Desktop"),
     (lambda p: p.startswith("internal/build/assets/") and p.endswith(".sh"),
@@ -62,6 +81,8 @@ ROWS = [
     (lambda p: p.endswith(".md") or p.startswith(".claude/rules/") or p == "internal/build/assets/Dockerfile",
      "make go-test-one PKG=./internal/devrules", "ci.yml (test)",
      "devrules holds the docs map, the rule files and the Claude env-knob matrix to the files they describe"),
+    # The Dockerfile is held by devrules, not by check-links: lychee reads
+    # Markdown only.
     (lambda p: p.endswith(".md") or p.startswith(".claude/rules/"),
      "make check-links", "docs.yml", ""),
 ]

@@ -97,27 +97,37 @@ BRANCH_RENAME = {'-m', '-M', '--move', '-c', '-C', '--copy'}
 PUSH_VALUE = {'-o', '--push-option', '--repo', '--receive-pack', '--exec'}
 PUSH_NOT_A_BRANCH = {'-d', '--delete', '--tags', '--all', '--branches', '--mirror', '--prune'}
 # `git tag` creates a tag only with these flags; any other (-d, -l,
-# --contains, -n, --sort, …) lists, verifies or deletes, so it records nothing.
-TAG_VALUE = {'-m', '-F', '-u', '--message', '--file', '--local-user', '--cleanup', '--trailer'}
-TAG_CREATE = {'-a', '--annotate', '-s', '--sign', '--no-sign', '-f', '--force', '-e', '--edit', '--no-edit'}
-# Tags a `git tag <name>` earlier in the same command creates: they do not
-# exist yet when the hook runs, so show-ref alone would read their push as a
-# branch push.
-new_tags = set()
+# --contains, -n, --sort, …) lists, verifies or deletes. Short flags cluster
+# (`-am msg`), and a valued one takes the rest of its cluster or the next word.
+TAG_VALUE_LONG = {'--message', '--file', '--local-user', '--cleanup', '--trailer'}
+TAG_CREATE_LONG = {'--annotate', '--sign', '--no-sign', '--force', '--edit', '--no-edit'}
+TAG_VALUE_SHORT, TAG_CREATE_SHORT = 'mFu', 'asfe'
 
-def tag_args(rest):
+def tag_created(rest):
+    """The name a `git tag` creates, or None when it does not create one."""
     j = 0
     while j < len(rest):
         a = rest[j]
-        if a in TAG_VALUE:
-            j += 2
-            continue
         if not a.startswith('-'):
-            new_tags.add(a)
-            return
-        if a.split('=')[0] not in TAG_VALUE | TAG_CREATE and not a.startswith(('-m', '-F', '-u')):
-            return
-        j += 1
+            return a
+        if a.startswith('--'):
+            key = a.split('=')[0]
+            if key in TAG_VALUE_LONG:
+                j += 1 if '=' in a else 2
+            elif key in TAG_CREATE_LONG:
+                j += 1
+            else:
+                return None
+            continue
+        for k, c in enumerate(a[1:]):
+            if c in TAG_VALUE_SHORT:
+                j += 1 if a[k + 2:] else 2
+                break
+            if c not in TAG_CREATE_SHORT:
+                return None
+        else:
+            j += 1
+    return None
 
 def branch_args(rest):
     flags = {a.split('=')[0] for a in rest if a.startswith('-')}
@@ -126,7 +136,7 @@ def branch_args(rest):
         return []
     return names[-1:] if flags & BRANCH_RENAME else names[:1]
 
-def push_args(rest, d):
+def push_args(rest, d, new_tags):
     names, j = [], 0
     while j < len(rest):
         a = rest[j]
@@ -152,12 +162,15 @@ def push_args(rest, d):
             dst = git(d, 'branch', '--show-current').stdout.strip()
         if dst.startswith('refs/heads/'):
             dst = dst[len('refs/heads/'):]
-        elif not dst or dst.startswith('refs/') or (not colon and dst in new_tags) or git(d, 'show-ref', '--verify', '-q', 'refs/tags/' + dst).returncode == 0:
+        elif not dst or dst.startswith('refs/') or ((d, dst) in new_tags and src == dst) or git(d, 'show-ref', '--verify', '-q', 'refs/tags/' + dst).returncode == 0:
             continue
         out.append(dst)
     return out
 
-def branches(seg, cwd):
+# new_tags holds (repo dir, name) for every tag a `git tag` earlier in the same
+# command creates: it does not exist yet when the hook runs, so show-ref alone
+# would read its push as a branch push.
+def branches(seg, cwd, new_tags):
     while seg and (re.match(r'^[A-Za-z_]\w*=', seg[0]) or seg[0] in ('env', 'command', 'exec', 'time')):
         seg = seg[1:]
     if not seg or os.path.basename(seg[0]) != 'git':
@@ -182,15 +195,16 @@ def branches(seg, cwd):
     if sub == 'branch':
         return branch_args(rest)
     if sub == 'push':
-        return push_args(rest, d)
-    if sub == 'tag':
-        tag_args(rest)
+        return push_args(rest, d, new_tags)
+    if sub == 'tag' and (name := tag_created(rest)):
+        new_tags.add((d, name))
     return []
 
 try:
     data = json.load(sys.stdin)
     cmd, cwd = data['tool_input']['command'], data.get('cwd') or '.'
-    names = [n for seg in simple_commands(cmd) for n in branches(seg, cwd)]
+    new_tags = set()
+    names = [n for seg in simple_commands(cmd) for n in branches(seg, cwd, new_tags)]
 except (ValueError, KeyError, TypeError):
     sys.exit(0)
 print('\n'.join(names))
@@ -269,6 +283,9 @@ self_test() {
         'git tag --contains x5 && git push origin x5'    'x5'
         'git tag -n5 x6; git push origin x6'             'x6'
         'git tag v7 && git push origin HEAD:v7'          'v7'
+        'git tag -am rel v8 && git push origin v8'       ''
+        'git tag -sm rel v9 && git push origin v9:v9'    ''
+        'git -C ../other tag v10 && git push origin v10' 'v10'
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
