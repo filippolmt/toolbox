@@ -96,8 +96,10 @@ BRANCH_QUERY = {'-d', '-D', '--delete', '-l', '--list', '-a', '--all', '-r', '--
 BRANCH_RENAME = {'-m', '-M', '--move', '-c', '-C', '--copy'}
 PUSH_VALUE = {'-o', '--push-option', '--repo', '--receive-pack', '--exec'}
 PUSH_NOT_A_BRANCH = {'-d', '--delete', '--tags', '--all', '--branches', '--mirror', '--prune'}
+# `git tag` creates a tag only with these flags; any other (-d, -l,
+# --contains, -n, --sort, …) lists, verifies or deletes, so it records nothing.
 TAG_VALUE = {'-m', '-F', '-u', '--message', '--file', '--local-user', '--cleanup', '--trailer'}
-TAG_NOT_CREATE = {'-d', '--delete', '-l', '--list', '-v', '--verify'}
+TAG_CREATE = {'-a', '--annotate', '-s', '--sign', '--no-sign', '-f', '--force', '-e', '--edit', '--no-edit'}
 # Tags a `git tag <name>` earlier in the same command creates: they do not
 # exist yet when the hook runs, so show-ref alone would read their push as a
 # branch push.
@@ -107,13 +109,13 @@ def tag_args(rest):
     j = 0
     while j < len(rest):
         a = rest[j]
-        if a.split('=')[0] in TAG_NOT_CREATE:
-            return
         if a in TAG_VALUE:
             j += 2
             continue
         if not a.startswith('-'):
             new_tags.add(a)
+            return
+        if a.split('=')[0] not in TAG_VALUE | TAG_CREATE and not a.startswith(('-m', '-F', '-u')):
             return
         j += 1
 
@@ -150,7 +152,7 @@ def push_args(rest, d):
             dst = git(d, 'branch', '--show-current').stdout.strip()
         if dst.startswith('refs/heads/'):
             dst = dst[len('refs/heads/'):]
-        elif not dst or dst.startswith('refs/') or dst in new_tags or git(d, 'show-ref', '--verify', '-q', 'refs/tags/' + dst).returncode == 0:
+        elif not dst or dst.startswith('refs/') or (not colon and dst in new_tags) or git(d, 'show-ref', '--verify', '-q', 'refs/tags/' + dst).returncode == 0:
             continue
         out.append(dst)
     return out
@@ -263,6 +265,10 @@ self_test() {
         'git tag v2 && git push origin v2'               ''
         'git tag -a v3 -m "rel v3" && git push origin v3' ''
         'git tag -d v4; git push origin v4'              'v4'
+        'git tag -mrel -f v5 && git push origin v5'      ''
+        'git tag --contains x5 && git push origin x5'    'x5'
+        'git tag -n5 x6; git push origin x6'             'x6'
+        'git tag v7 && git push origin HEAD:v7'          'v7'
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''

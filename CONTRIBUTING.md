@@ -19,7 +19,7 @@ Go is **not** installed on the host — every Go command runs inside a `golang` 
 | `make build` / `make test` | Build the runtime image / build + smoke-test it. |
 | `make test-host-share` | Build the image and rebase on a real Host Share bind — Mac with Docker Desktop only, no CI equivalent. |
 
-Before pushing, mirror the PR CI: `make go-check` runs the same `go test` + `golangci-lint` checks as `.github/workflows/ci.yml`, and `make test` covers the Docker smoke-test that runs separately in `.github/workflows/docker-ci.yml`. The full gate table and architecture notes live in [`CLAUDE.md`](CLAUDE.md).
+Before pushing, mirror the PR CI: `make go-check` runs the same `go test` + `golangci-lint` checks as `.github/workflows/ci.yml`, and `make test` covers the Docker smoke-test that runs separately in `.github/workflows/docker-ci.yml`. `make gates` lists every gate the paths you touched need; architecture notes live in [`CLAUDE.md`](CLAUDE.md).
 
 ## Release flow
 

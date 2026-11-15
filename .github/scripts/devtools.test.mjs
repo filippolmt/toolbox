@@ -273,14 +273,43 @@ test("gates pin the renovate validator to ci.yml", () => {
   assert.ok(gatesFor(["renovate.json"]).includes(`renovate@${pin} `));
 });
 
-test("gates name only make targets the Makefile defines", () => {
+test("gates cite only make targets and scripts that exist", () => {
   const makefile = readFileSync(join(root, "Makefile"), "utf8");
   const src = readFileSync(join(root, ".github/scripts/pre-push-gates.py"), "utf8");
-  const cited = [...src.matchAll(/"make ([a-z][\w-]*)/g)].map((m) => m[1]);
-  assert.ok(cited.length > 0, "no make target found in pre-push-gates.py");
-  for (const target of cited) {
-    assert.match(makefile, new RegExp(`^${target}:`, "m"), `make ${target} is not a Makefile target`);
+  const targets = [...src.matchAll(/\bmake ([a-z][\w-]*)/g)].map((m) => m[1]);
+  assert.ok(targets.length > 0, "no make target found in pre-push-gates.py");
+  for (const target of targets) {
+    assert.match(makefile, new RegExp(`^${target}:(?!=)`, "m"), `make ${target} is not a Makefile target`);
   }
+  const scripts = [...src.matchAll(/\.github\/scripts\/[\w.-]+\.\w+/g)].map((m) => m[0]);
+  assert.ok(scripts.length > 0, "no .github/scripts path found in pre-push-gates.py");
+  for (const script of scripts) {
+    assert.ok(existsSync(join(root, script)), `${script} does not exist`);
+  }
+});
+
+test("gates cover every path docker-ci builds the image for", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/docker-ci.yml"), "utf8");
+  const block = /^\s*docker:\n((?:\s+- '.*'\n)+)/m.exec(workflow)[1];
+  const patterns = [...block.matchAll(/- '([^']+)'/g)].map((m) => m[1]);
+  assert.ok(patterns.length > 0, "docker-ci.yml: no docker path filter found");
+  for (const pattern of patterns) {
+    const sample = pattern.replace("**", "testdata/x.json");
+    assert.match(gatesFor([sample]), /^make (test|go-dockergate)$/m, `${sample} (from ${pattern}) maps to no image gate`);
+  }
+});
+
+test("a non-Go file in a daemon-gated package still needs go-check", () => {
+  const out = gatesFor(["internal/container/testdata/x.json"]);
+  assert.match(out, /^make go-check$/m, out);
+  assert.match(out, /^make go-dockergate$/m, out);
+});
+
+test("gates fail loudly on a base git cannot resolve", () => {
+  const result = spawnSync("python3", [".github/scripts/pre-push-gates.py", "--base", "no-such-ref"], { cwd: root, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no-such-ref/);
+  assert.doesNotMatch(result.stdout, /no gate/);
 });
 
 test("make gates diffs against BASE", () => {

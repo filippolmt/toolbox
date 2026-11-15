@@ -17,7 +17,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# Held to docker-ci.yml's `docker` path filter by devtools.test.mjs.
 DOCKERGATE_PKGS = ("container", "mountplan", "sessionplan", "reload", "imagereclaim")
+IMAGE_PATHS = (".github/scripts/test-graphify-hooks.sh", ".github/fixtures/android-e2e/", ".github/workflows/docker-ci.yml")
+
+
+def dockergate_pkg(p):
+    return any(p.startswith(f"internal/{d}/") for d in DOCKERGATE_PKGS)
 
 
 def renovate_pin():
@@ -28,14 +34,14 @@ def renovate_pin():
 # (matches, command, CI job, note). Every row is checked against every path; a
 # command two rows name prints once.
 ROWS = [
-    (lambda p: p.endswith(".go"),
+    (lambda p: p.endswith(".go") or dockergate_pkg(p),
      "make go-check", "ci.yml (coverage-enforced test + lint)", ""),
     (lambda p: p.startswith(".pi/"),
      "make check-agent", "ci.yml (lint)", ""),
-    (lambda p: p.startswith("internal/build/assets/") or p == "go.mod",
+    (lambda p: p.startswith("internal/build/assets/") or p == "go.mod" or p.startswith(IMAGE_PATHS),
      "make test", "docker-ci.yml (build + smoke)", ""),
-    (lambda p: any(p.startswith(f"internal/{d}/") for d in DOCKERGATE_PKGS),
-     "make go-dockergate", "docker-ci.yml (real-daemon gates)",
+    (dockergate_pkg,
+     "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
      "against the intended runtime image: after `make build`, pass FULL=toolbox-local:build"),
     (lambda p: p == "renovate.json",
      f"npx --yes --package renovate@{renovate_pin()} renovate-config-validator renovate.json",
@@ -61,15 +67,20 @@ ROWS = [
 ]
 
 
-def git_lines(*args):
-    out = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=True).stdout
-    return [line for line in out.splitlines() if line]
+def git_paths(*args):
+    # -z: no C-quoting of non-ASCII paths, which would hide their suffix.
+    r = subprocess.run(["git", "-C", str(ROOT), *args, "-z"], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"pre-push-gates: git {' '.join(args)}: {r.stderr.strip()}")
+    return [p for p in r.stdout.split("\0") if p]
 
 
 def touched(base):
-    paths = git_lines("diff", "--name-only", f"{base}...HEAD")
-    paths += git_lines("diff", "--name-only", "HEAD")
-    paths += git_lines("ls-files", "--others", "--exclude-standard")
+    # --no-renames: a move lists both paths, so a file moved out of a gated
+    # package still triggers that package's gate.
+    paths = git_paths("diff", "--name-only", "--no-renames", f"{base}...HEAD")
+    paths += git_paths("diff", "--name-only", "--no-renames", "HEAD")
+    paths += git_paths("ls-files", "--others", "--exclude-standard")
     return sorted(set(paths))
 
 
@@ -91,7 +102,7 @@ def main():
     paths = sorted({l.strip() for l in sys.stdin if l.strip()}) if args.files == "-" else touched(args.base)
     found = gates(paths)
     if not found:
-        print("no gate: nothing a CI job checks was touched")
+        print("no gate in the table matches the touched paths")
         return
     for cmd, e in found.items():
         more = f" (+{len(e['paths']) - 1} more)" if len(e["paths"]) > 1 else ""
