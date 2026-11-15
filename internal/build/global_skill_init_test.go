@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -68,7 +69,7 @@ func TestGlobalSkillInitsInstallTheBakedCopy(t *testing.T) {
 				}
 			}
 			for _, c := range calls {
-				if strings.Fields(c + " x")[0] == tc.forbidden || strings.Contains(c, " "+tc.forbidden) {
+				if slices.Contains(strings.Fields(c), tc.forbidden) {
 					t.Errorf("%s still regenerates its skill at start: %s %s", tc.script, tc.tool, c)
 				}
 			}

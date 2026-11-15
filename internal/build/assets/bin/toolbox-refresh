@@ -2,7 +2,7 @@
 # toolbox-refresh [tool…] — refresh agent skills and per-repo tool installs on
 # demand. Nothing does this at container start any more (ADR 0020):
 #
-#   - Global skills (gh, glab, herdr, worktrunk): copy the skill the image baked
+#   - Global skills (every one the image baked: gh, glab, herdr, worktrunk): copy the skill
 #     from each tool's release into every active skill root, where it differs.
 #     init.d does the same at every start; this is the manual retry.
 #   - Per-repo installers (graphify, codegraph, playwright-cli): re-run each
@@ -18,7 +18,11 @@ set -uo pipefail
 # shellcheck source=bin/agent-topology-lib.sh
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
-global_skills=(gh glab herdr worktrunk)
+# Every skill the image baked is a global skill; nothing else names them.
+global_skills=()
+for d in "$toolbox_baked_skills"/*/; do
+    [ -d "$d" ] && global_skills+=("$(basename "$d")")
+done
 repo_tools=(graphify codegraph playwright-cli)
 
 usage() {
@@ -38,13 +42,17 @@ run() {
     fi
 }
 
+claude_ready() {
+    toolbox_agent_available claude && toolbox_agent_persistent claude
+}
+
 refresh_skill() {
     local out
     out=$(toolbox_sync_skill "$1")
     if [ -n "$out" ]; then
         echo "$out" >&2
         rc=1
-    elif [ -s "$toolbox_baked_skills/$1/SKILL.md" ]; then
+    else
         echo "toolbox-refresh: $1 skill current"
     fi
 }
@@ -59,7 +67,7 @@ refresh_graphify() {
     find "$root/graphify-out" -maxdepth 1 -type d -name '20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' -printf '%T@ %p\n' 2>/dev/null \
         | sort -n | head -n -10 | cut -d' ' -f2- | while IFS= read -r old; do rm -rf "$old"; done || true
 
-    if toolbox_agent_available claude && toolbox_agent_persistent claude; then
+    if claude_ready; then
         run "graphify (claude)" graphify install --project --platform claude
         # graphify install writes a backup beside the settings it patched; it is
         # never read back.
@@ -134,7 +142,7 @@ graphify_git_hooks() {
 # codegraph: `install --refresh` is upstream's "rewrite what previous installs
 # configured" mode — it never adds a new agent.
 refresh_codegraph() {
-    if toolbox_agent_available claude && toolbox_agent_persistent claude; then
+    if claude_ready; then
         run codegraph codegraph install --refresh
     fi
 }
@@ -142,7 +150,7 @@ refresh_codegraph() {
 # playwright-cli: the claude skill, and the cross-agent .agents/skills copy that
 # codex and pi read.
 refresh_playwright_cli() {
-    if toolbox_agent_available claude && toolbox_agent_persistent claude; then
+    if claude_ready; then
         run "playwright-cli (claude)" playwright-cli install --skills claude
     fi
     if toolbox_agent_available codex || toolbox_agent_available pi; then

@@ -82,6 +82,11 @@ Rejected.
   the cost of never writing into a repo the developer did not ask about.
 - Two starts on the same image write no global `SKILL.md`; the shared Claude
   skill mount sees no churn.
+- The version stamps ADR 0001 wrote under `~/.toolbox-state/install-refresh/`
+  stay on the host, read by nothing; deleting the directory is safe.
+- `toolbox-refresh` takes its list of global skills from the baked directory,
+  so a tool that bakes a skill needs no edit there. The cf skill, written by
+  `20-cf.sh` from a text in the script, is not one of them.
 - `gh skill install` now runs during the image build and talks to the GitHub
   API without a token, so a build runner that has exhausted the anonymous rate
   limit fails that stage. The build retries nothing; a rerun is the remedy.

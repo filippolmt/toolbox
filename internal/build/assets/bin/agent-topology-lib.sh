@@ -73,9 +73,13 @@ _toolbox_sync_skill_into() {
         # `set -e` does not apply inside an `if !` condition, so every step
         # checks its own status: a half-removed old copy must stop the swap,
         # or `mv` would nest the new tree inside it.
+        # Two renames, so a reader on another container never finds the
+        # skill half-written and misses it only for that instant.
         tmp=$(mktemp -d "$root/.$name.XXXXXX") || exit 1
         if cp -R "$src/." "$tmp/" && chmod 0755 "$tmp" \
-            && rm -rf "${root:?}/$name" && mv "$tmp" "$root/$name"; then
+            && { [ ! -e "$root/$name" ] || mv "$root/$name" "$tmp.old"; } \
+            && mv "$tmp" "$root/$name"; then
+            rm -rf "$tmp.old"
             exit 0
         fi
         rm -rf "$tmp"
