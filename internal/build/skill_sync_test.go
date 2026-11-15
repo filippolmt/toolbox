@@ -39,9 +39,7 @@ type skillSyncFixture struct {
 
 func newSkillSyncFixture(t *testing.T, agents ...string) skillSyncFixture {
 	t.Helper()
-	if _, err := exec.LookPath("flock"); err != nil {
-		t.Skip("flock not on PATH")
-	}
+	requireTools(t, "flock")
 	dir := t.TempDir()
 	f := skillSyncFixture{dir: dir, home: filepath.Join(dir, "home"), baked: filepath.Join(dir, "baked")}
 	if err := os.MkdirAll(filepath.Join(f.home, ".claude"), 0o755); err != nil {
