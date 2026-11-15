@@ -10,7 +10,6 @@ require (
 	charm.land/lipgloss/v2 v2.1.1
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-connections v0.8.2
-	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
 	github.com/muesli/cancelreader v0.2.2
@@ -44,6 +43,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect

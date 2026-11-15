@@ -14,13 +14,11 @@ import (
 // ApplyChecked is the one write path in this package: it renders the candidate
 // document in memory, validates it in the config layer the target file
 // occupies, and writes only once the validation passes. Every writer — each
-// named Pending Mutation a cmd surface applies, EnableSDD, and the config ui's
+// named Pending Mutation a cmd surface applies and the config ui's
 // pending edit — goes through it, so no surface can put a configuration the
 // doctor rejects on disk. The guarantee is structural rather than
 // conventional: the only other exported write that touches a *config file* is
 // EnsureFileWithHeader, whose comment-only output cannot introduce a finding.
-// (The exported SDD writers in sdd.go write .gitignore, which the doctor has no
-// opinion about.)
 //
 // Render-then-validate, not write-then-doctor-then-rollback: the candidate
 // never reaches disk before it is known good, so a concurrent `toolbox shell`

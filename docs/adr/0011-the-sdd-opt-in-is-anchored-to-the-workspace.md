@@ -1,6 +1,9 @@
 # The SDD opt-in is anchored to the workspace, and only the project layer may write it
 
-Status: accepted
+Status: superseded by
+[ADR 0021](0021-spec-driven-development-packs-are-removed.md): toolbox no
+longer reads `sdd:`, so there is no opt-in left to anchor, and the
+workspace-only guard went with it.
 
 `toolbox config ui` presents a uniform Config Scope axis: every key can be
 edited in the Global layer or the Repo layer, and the tab toggles between them.

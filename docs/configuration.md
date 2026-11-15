@@ -36,7 +36,6 @@ Configuration is loaded from (highest priority first):
 | [`image`](#image-selection) | string | `""` | Full image ref override (pull-source concern). |
 | [`registry_mirror`](#image-selection) | string | `""` | Swap only the registry host of the canonical ref. |
 | [`pull`](#image-selection) | string | `auto` | Registry-sync policy for the shell-start refresh *and* the background prefetch: `auto` / `always` / `never`. |
-| [`sdd`](sdd.md) | map | – | Per-workspace Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`); the editor writes it to the project layer only. |
 | [`bridge`](bridge.md) | bool | `true` | Mount the host bridge state dir (browser / editor / proximo forwarding). |
 | [`browser_bridge`](#browser_bridge-deprecated) | bool | – | **Deprecated** alias of `bridge`. |
 | [`proximo`](proximo.md) | bool | auto | `.test` reachability + CA trust; omitted = auto-detect (on iff proximo's CA exists on the host). |
@@ -232,10 +231,10 @@ The `kubernetes` and `gcloud` prompt segments are opt-out via `PROMPT_HIDE_KUBE`
 Contract:
 
 - **Scope.** Resolved by the normal config load order (`--config` → walked-up `.toolbox.yaml` → `~/.toolbox.yaml` → `TOOLBOX_*` env → defaults), so the top-level `env:` is set globally (`~/.toolbox.yaml`) or per-project (`.toolbox.yaml`). The per-shell `shells.<name>.env` overlays it for that named shell only — per-shell keys win on collision (`config.Config.EffectiveEnv`, resolved inside `sessionplan.Plan` from the name you typed, matched case-insensitively and space-trimmed).
-- **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD`/SDD entries first, then the loopback-bridge markers, then the self-identity pair (`TOOLBOX_CLI_VERSION`, `TOOLBOX_IMAGE_DIGEST`), then the host platform (`TOOLBOX_HOST_OS`, `TOOLBOX_HOST_ARCH`), then the host timezone (`TZ`, below), then the managed-statusline opt-out marker, then the proximo entries, then the [reload marker](../CONTEXT.md#reload-marker) path (`TOOLBOX_RELOAD_MARKER`, omitted when the session mounts no state directory), and last the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
+- **Emission order.** `sessionplan` emits the curated `TOOLBOX_*`/`PWD` entries first, then the loopback-bridge markers, then the self-identity pair (`TOOLBOX_CLI_VERSION`, `TOOLBOX_IMAGE_DIGEST`), then the host platform (`TOOLBOX_HOST_OS`, `TOOLBOX_HOST_ARCH`), then the host timezone (`TZ`, below), then the managed-statusline opt-out marker, then the proximo entries, then the [reload marker](../CONTEXT.md#reload-marker) path (`TOOLBOX_RELOAD_MARKER`, omitted when the session mounts no state directory), and last the user env sorted by key (`sessionplan.userEnv`, deterministic for tests).
 - **Host timezone.** The container runs in the host's zone: `sessionplan` emits `TZ` from `fsx.Host.TZ`, which `CurrentHost` resolves from the host's `$TZ` (set but empty means `UTC`, as libc reads it), else the `/etc/localtime` symlink (the part after `zoneinfo/` — macOS and most Linux), else `/etc/timezone`. A path-form `$TZ` (`:/etc/localtime`, `/usr/share/…`) is skipped: the container would read that path against its own filesystem and silently fall back to UTC. An `env: { TZ: … }` entry — top-level or per-shell — replaces it, and the host value is then not emitted at all. Nothing resolved means no `TZ`, and the image's UTC. Like every env entry it is fixed at container create: `toolbox stop` an existing container to pick it up.
 - **Reserved keys.** `config.ValidateEnv` rejects empty keys, keys containing `=`, and any key with the `TOOLBOX_` prefix or the literal `PWD` — those are owned by the curated contract. Same rules apply per-entry under `shells.<name>.env` (errors namespaced as `shells.<name>.env: …`). Empty *values* are allowed (`export VAR=`). Keys are injected verbatim: environment-variable names are case-sensitive, so `FOO` and `foo` are distinct vars (both the top-level and per-shell maps preserve the case you write).
-- **Hash-neutral.** Lives outside the removed `tools:` block, like `sdd:` / `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
+- **Hash-neutral.** Lives outside the removed `tools:` block, like `bridge:` — flipping a key never invalidates the image hash. Takes effect on the next container create (`toolbox stop` first to refresh an existing one).
 
 ## Retired keys
 
@@ -245,6 +244,10 @@ A config that still carries them loads: each is ignored, with a warning at load
 and in `toolbox config doctor` (`config.RetiredKeys`). Where their settings
 went: [migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree).
 The legacy `tools:` block is retired the same way ([tools removal](internals/image-build.md#tools-removal)).
+So is `sdd:`: toolbox no longer installs Spec-Driven-Development skill packs
+([ADR 0021](adr/0021-spec-driven-development-packs-are-removed.md)).
+Files a pack already installed in a repository are left in place; remove them,
+and the `sdd-managed` `.gitignore` fences, by hand if you no longer want them.
 
 ## `TOOLBOX_*` environment variables
 

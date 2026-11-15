@@ -1,4 +1,4 @@
-# GSD planning artifacts (internal workflow, not for public repo)
+# Local planning artifacts (internal workflow, not for public repo)
 .planning/
 
 # Go binary
@@ -59,21 +59,9 @@ graphify-out/
 docs/superpowers/specs/
 docs/superpowers/plans/
 
-# Local design proposal (not ready for upstream)
-openspec/changes/add-loopback-bridge/
-
-# OpenSpec working tree (local-only, not shared)
-openspec/
-
 # Per-repo toolbox runtime dir (binary + startup.d/*)
 .toolbox/
 
-# >>> sdd-managed/openspec (toolbox)
-.claude/skills/openspec-*/
-.claude/commands/opsx/
-.codex/skills/openspec-*/
-openspec/config.yaml
-# <<< sdd-managed/openspec (toolbox)
 .claude/skills/write-docs-workspace/
 
 # codegraph skips every directory named build by default; this negation is its

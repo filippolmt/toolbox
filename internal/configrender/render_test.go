@@ -40,7 +40,6 @@ func fullFixture() *config.Config {
 		Bridge:            &yes,
 		Proximo:           &yes,
 		ManagedStatusline: &yes,
-		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:               map[string]string{"FOO": "bar"},
 		InheritHostAuth:   []string{"gh"},
 		Shells:            map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}},
@@ -69,7 +68,7 @@ func TestConfigShowDefaultOutputUnchanged(t *testing.T) {
 	if plain.String() != viaOrigin.String() {
 		t.Errorf("nil-prov origin renderer must match plain renderer:\n%q\nvs\n%q", plain.String(), viaOrigin.String())
 	}
-	want := "shell: zsh\nimage: \"\"\nregistry_mirror: \"\"\npull: auto\nmounts_root: \"\"\nbridge: auto\nproximo: auto\nmanaged_statusline: auto\nimage_reclaim: auto\npeer_messaging: false\nsdd: {}\nenv: {}\ninherit_host_auth:\n  - gh\nshells: {}\nmounts:\n  - name: extra\n    source: /tmp/x\n    target: /mnt/x\n    readonly: true\n"
+	want := "shell: zsh\nimage: \"\"\nregistry_mirror: \"\"\npull: auto\nmounts_root: \"\"\nbridge: auto\nproximo: auto\nmanaged_statusline: auto\nimage_reclaim: auto\npeer_messaging: false\nenv: {}\ninherit_host_auth:\n  - gh\nshells: {}\nmounts:\n  - name: extra\n    source: /tmp/x\n    target: /mnt/x\n    readonly: true\n"
 	if plain.String() != want {
 		t.Errorf("default output drifted:\n%q\nwant\n%q", plain.String(), want)
 	}

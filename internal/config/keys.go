@@ -309,40 +309,6 @@ var keyRows = []Key{
 		Tri: func(c *Config) *bool { return &c.PeerMessaging },
 	},
 	{
-		Name:    "sdd",
-		Kind:    KindMap,
-		Editor:  EditorSet,
-		Summary: "Repo-local Spec-Driven-Development skill packs (gsd, bmad, openspec). Each key flips one integration on.",
-		Default: "(none enabled)",
-		Example: "# sdd — repo-local Spec-Driven-Development skill packs.\n" +
-			"# Each key flips one integration on; default is false (no install).\n" +
-			"# On the next `toolbox shell` the entrypoint installs the pinned npm\n" +
-			"# package and runs the upstream initialiser inside /workspace.\n" +
-			"# Use `toolbox sdd init <name>` to flip a key on AND patch .gitignore.\n" +
-			"# Supported keys come from internal/sdd.Skills (Renovate-bumped).\n" +
-			"# sdd:\n" +
-			"#   gsd: true        # gsd-core skill-form into ./.claude + --codex --local\n" +
-			"#   bmad: true       # bmad-method install --yes (ONLY when _bmad/ exists)\n" +
-			"#   openspec: true   # openspec init --tools=claude,codex --force, then openspec update\n" +
-			"# A key also accepts an object form to override the registry's install\n" +
-			"# steps (each inner list is one installer invocation's argv):\n" +
-			"#   gsd:\n" +
-			"#     steps:\n" +
-			"#       - [\"--claude\", \"--global\", \"--config-dir\", \"./.claude\"]\n" +
-			"#       - [\"--codex\", \"--local\"]\n" +
-			"# bmad bootstrap requires a one-time manual `npx bmad-method install`\n" +
-			"# (interactive). After committing _bmad/, the entrypoint auto-upgrades on\n" +
-			"# every shell. Missing _bmad/ logs a skip message instead of aborting.\n",
-		Pairs: func(c *Config) map[string]string {
-			out := make(map[string]string, len(c.SDD))
-			for name, s := range c.SDD {
-				out[name] = fmt.Sprintf("%t", s.Enabled)
-			}
-			return out
-		},
-		Validate: func(c *Config) error { return ValidateSDD(c.SDD) },
-	},
-	{
 		Name:    "env",
 		Kind:    KindMap,
 		Editor:  EditorRows,

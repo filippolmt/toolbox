@@ -29,7 +29,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
 	"github.com/filippolmt/toolbox/internal/reload"
-	"github.com/filippolmt/toolbox/internal/sdd"
 	"github.com/filippolmt/toolbox/internal/version"
 )
 
@@ -438,7 +437,7 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 }
 
 // composeEnv assembles the full ordered env slice for a session: the curated
-// workspace + SDD entries first, then the loopback-bridge markers, then the
+// workspace entries first, then the loopback-bridge markers, then the
 // self-identity entries (CLI version + image digest) the in-container update
 // poller compares against published releases, then the host platform
 // (GOOS/GOARCH, for anything cross-compiling for the host from inside a
@@ -454,7 +453,7 @@ func loopbackBridgeEnv(bridgeLoopback bool, uniqContainerPorts []string) []strin
 // Reserved-key collisions are already rejected by config.ValidateEnv, so
 // userEnv can append unconditionally.
 func composeEnv(in PlanInput, workspace, workingDir string, uniqContainerPorts, extra []string) []string {
-	env := append(shellEnv(workspace, workingDir, in.Cfg.SDD), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
+	env := append(shellEnv(workspace, workingDir), loopbackBridgeEnv(in.BridgeLoopback, uniqContainerPorts)...)
 	env = append(env, identityEnv(in.ImageDigest)...)
 	env = append(env, hostPlatformEnv()...)
 	userEnvMap := in.Cfg.EffectiveEnv(in.Name)
@@ -709,15 +708,15 @@ var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
 // mountplan.ContainerDiscriminator) is folded into the hash seed (not the
 // visible basename), so a profile shell gets a distinct name from the default
 // shell for the same workspace while the format and length budget are
-// unchanged. The plain workspace hash (sddEnv sentinel) stays discriminator-free
-// — only the container identity varies by profile.
+// unchanged.
 func ContainerNameFor(workspace, discriminator string) string {
 	abs := normalizeWorkspace(workspace)
 	seed := abs
 	if discriminator != "" {
 		seed = abs + "\x00profile=" + discriminator
 	}
-	hash := hashWorkspace(seed)
+	sum := sha256.Sum256([]byte(seed))
+	hash := hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 
 	base := workspaceSlug(abs)
 
@@ -896,112 +895,18 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // therefore reopen whatever another project saved last — a path this container
 // does not mount, which herdr answers by silently falling back to $HOME, so the
 // shell lands on /home/toolbox. ContainerNameFor with an empty discriminator is
-// the plain workspace identity (slug + path hash, the sddEnv sentinel form):
+// the plain workspace identity (slug + path hash):
 // derived from the workspace alone, so a --peer or --profile change, which forks
 // the container name over the same mounted workspace, keeps the session.
 //
 // The workspace target itself and the host-path mirror logic live in
 // internal/mountplan; sessionplan.Plan consults mountplan.Plan to learn
 // workingDir and forwards it here.
-func shellEnv(workspace, workingDir string, sddCfg map[string]config.SDDSkill) []string {
-	env := []string{
+func shellEnv(workspace, workingDir string) []string {
+	return []string{
 		"TOOLBOX_HOST_WORKSPACE=" + workspace,
 		"PWD=" + workingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
 		"HERDR_SESSION=" + ContainerNameFor(workspace, ""),
 	}
-	env = append(env, sddEnv(workspace, sddCfg)...)
-	return env
-}
-
-// sddEnv translates the cfg.SDD opt-in map into the env contract consumed
-// by internal/build/assets/entrypoint.sh. Unknown keys are silently dropped
-// so a typo in .toolbox.yaml (e.g. `sdd.gds: true`) never aborts the shell
-// — the bash bootstrap runs before any user-facing diagnostic surface.
-// (Entries with an explicit steps: override are the exception: config's
-// ValidateSDD rejects unknown keys there at load time, so they never reach
-// this point.)
-//
-// Field-per-env-var encoding (vs a single pipe-packed value) keeps the
-// host/container boundary typed: bash decodes by reading one variable per
-// field with no fragile splitting.
-func sddEnv(workspace string, sddCfg map[string]config.SDDSkill) []string {
-	if len(sddCfg) == 0 {
-		return nil
-	}
-	enabled := resolveEnabledSkills(sddCfg)
-	if len(enabled) == 0 {
-		return nil
-	}
-
-	keys := make([]string, 0, len(enabled))
-	for k := range enabled {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	emitted := make([]string, 0, len(keys))
-	body := make([]string, 0, len(keys)*5)
-	for _, k := range keys {
-		s := enabled[k]
-		stepArgs := s.InstallSteps
-		steps := make([]string, len(stepArgs))
-		for i, args := range stepArgs {
-			steps[i] = strings.Join(args, " ")
-		}
-		emitted = append(emitted, k)
-		body = append(body,
-			sdd.SkillEnvKey(k, sdd.EnvFieldPkg)+"="+s.NpmPackage,
-			sdd.SkillEnvKey(k, sdd.EnvFieldVersion)+"="+s.Version,
-			sdd.SkillEnvKey(k, sdd.EnvFieldBin)+"="+s.BinName,
-			sdd.SkillEnvKey(k, sdd.EnvFieldSteps)+"="+strings.Join(steps, sdd.StepSeparator),
-			sdd.SkillEnvKey(k, sdd.EnvFieldMarker)+"="+s.RequiresMarker,
-		)
-	}
-	if len(emitted) == 0 {
-		return nil
-	}
-
-	out := make([]string, 0, 2+len(body))
-	out = append(out,
-		sdd.EnvEnabled+"="+strings.Join(emitted, ","),
-		sdd.EnvWorkspaceHash+"="+hashWorkspace(workspace),
-	)
-	out = append(out, body...)
-	return out
-}
-
-// resolveEnabledSkills returns the map of known skill keys to their
-// registry entries, after filtering sddCfg through the registry to drop
-// unknown keys and disabled entries. A per-skill steps: override from
-// .toolbox.yaml replaces the registry's InstallSteps wholesale (#317):
-// partial merge semantics would leave the user unable to drop a default
-// step, which is exactly the gsd --claude --local case the override
-// exists for.
-func resolveEnabledSkills(sddCfg map[string]config.SDDSkill) map[string]sdd.Skill {
-	out := make(map[string]sdd.Skill, len(sddCfg))
-	for k, v := range sddCfg {
-		if !v.Enabled {
-			continue
-		}
-		s, ok := sdd.Lookup(k)
-		if !ok {
-			continue
-		}
-		if v.Steps != nil {
-			s.InstallSteps = v.Steps
-		}
-		out[k] = s
-	}
-	return out
-}
-
-// hashWorkspace is the single source of the WorkspaceHashLen-byte hash
-// derived from a workspace path. Shared by ContainerNameFor (container
-// name suffix) and sddEnv (sentinel filename suffix the entrypoint reads
-// to decide whether a skill is up to date). Computing it twice would
-// drift if the slicing rule changed.
-func hashWorkspace(workspace string) string {
-	sum := sha256.Sum256([]byte(workspace))
-	return hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 }

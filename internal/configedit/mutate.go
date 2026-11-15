@@ -9,7 +9,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // =============================================================================
@@ -267,34 +266,6 @@ func writeShellEntry(root *yaml.Node, spelled []string, e ShellEntry) {
 	env.Content = env.Content[:0]
 	for _, k := range slices.Sorted(maps.Keys(e.Env)) {
 		configio.SetMapValue(env, k, e.Env[k])
-	}
-}
-
-// SDDKeys returns every registered SDD skill key, sorted — the candidate set
-// SDDEnabled reconciles and the option list the config UI offers.
-func SDDKeys() []string {
-	out := make([]string, 0, len(sdd.Skills))
-	for _, s := range sdd.Skills {
-		out = append(out, s.Key)
-	}
-	slices.Sort(out)
-	return out
-}
-
-// SDDEnabled reconciles the whole sdd: block to enabled — every registered
-// skill's flag written or removed in one pass, so the yaml half of an SDD edit
-// stays a single transactional mutation (a key carrying a custom steps override
-// is left alone while it stays enabled; an emptied sdd block is dropped).
-//
-// The .gitignore fences are deliberately not part of it: they sit outside
-// Doctor's contract and belong after the yaml commit survives validation — see
-// ReconcileSDDGitignore.
-func SDDEnabled(enabled map[string]bool) Mutator {
-	enabled = maps.Clone(enabled)
-	return func(doc *yaml.Node) {
-		for _, key := range SDDKeys() {
-			SetSDDEnabled(doc, key, enabled[key])
-		}
 	}
 }
 

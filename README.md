@@ -1,6 +1,6 @@
 # Toolbox
 
-A containerized development environment (Debian slim) bundling all the tools you need for daily development — Claude Code with GSD/skills/plugins, Git, cloud CLIs, Node.js and Python runtimes, Playwright, Docker. Controlled by a Go CLI (`toolbox`) that manages the container lifecycle with a single command.
+A containerized development environment (Debian slim) bundling all the tools you need for daily development — Claude Code with skills/plugins, Git, cloud CLIs, Node.js and Python runtimes, Playwright, Docker. Controlled by a Go CLI (`toolbox`) that manages the container lifecycle with a single command.
 
 ## What's inside
 
@@ -80,7 +80,6 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox mounts`](docs/mounts.md#mounts-cli) | Manage bind-mount entries (`list`, `add`, `disable`, `remove`, `root`) |
 | [`toolbox shells`](docs/shells.md) | Manage named shell shortcuts (`list`, `get`, `add`, `set`, `remove`) |
 | [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo/sound calls (`install`, `uninstall`, `status`) |
-| [`toolbox sdd`](docs/sdd.md) | Manage repo-local Spec-Driven-Development skill packs (`list`, `init`) |
 | [`toolbox completion [bash\|zsh\|fish]`](docs/commands.md#toolbox-completion) | Generate shell completions |
 | [`--config <file>`](docs/commands.md#global-flag---config) | Global flag on every command: load exactly this config file |
 
@@ -100,7 +99,6 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | [`image`](docs/configuration.md#image-selection) | Full image ref override (proxy hub / pull-through cache). |
 | [`registry_mirror`](docs/configuration.md#image-selection) | Swap only the registry host of the canonical image ref. |
 | [`pull`](docs/configuration.md#image-selection) | Registry-sync policy: `auto` (default) / `always` / `never`. |
-| [`sdd`](docs/sdd.md) | Per-repo Spec-Driven-Development skill packs (`gsd`, `bmad`, `openspec`). |
 | [`bridge`](docs/bridge.md) | Toggle the host bridge mounts (browser / editor / proximo forwarding); default on. |
 | [`browser_bridge`](docs/configuration.md#browser_bridge-deprecated) | **Deprecated** alias of `bridge`. |
 | [`proximo`](docs/proximo.md) | `.test` apps + CA trust inside the container; omitted = auto-detect. |
@@ -123,7 +121,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 ## Documentation
 
-Section-level index of every guide (commands, configuration, mounts, shells, bridge, proximo, SDD, troubleshooting, maintainer internals): **[docs/README.md](docs/README.md)**. Something broke? Start from [troubleshooting](docs/troubleshooting.md). Link integrity is CI-enforced (`make check-links` locally).
+Section-level index of every guide (commands, configuration, mounts, shells, bridge, proximo, troubleshooting, maintainer internals): **[docs/README.md](docs/README.md)**. Something broke? Start from [troubleshooting](docs/troubleshooting.md). Link integrity is CI-enforced (`make check-links` locally).
 
 ## Updating
 

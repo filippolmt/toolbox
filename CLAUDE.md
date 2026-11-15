@@ -59,7 +59,6 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`container-runtime.md`](.claude/rules/container-runtime.md) — lifecycle, session planning, `cmd/`, bridge + proximo assets.
 - [`config.md`](.claude/rules/config.md) — config packages, `config|shells|mounts` CLI surfaces.
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
-- [`sdd.md`](.claude/rules/sdd.md) — SDD skill packs, `.gitignore` fence.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
 Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. See [`CONTRIBUTING.md`](CONTRIBUTING.md).

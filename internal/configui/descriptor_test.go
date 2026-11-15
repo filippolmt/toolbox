@@ -20,8 +20,6 @@ func TestEveryCountedKeyCountsItsScopeEntries(t *testing.T) {
 inherit_host_auth: [claude]
 shells:
   work: /bin/zsh
-sdd:
-  gsd: true
 env:
   REGION: eu
 `)
@@ -49,12 +47,11 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 		Mounts:          []config.Mount{{Name: "ssh", Disabled: true}},
 		InheritHostAuth: []string{"claude"},
 		Shells:          map[string]config.NamedShell{"work": {Path: "/bin/zsh"}},
-		SDD:             map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:             map[string]string{"REGION": "eu"},
 	}
 	want := map[string]string{
 		"mounts": "ssh", "inherit_host_auth": "claude", "shells": "work",
-		"sdd": "gsd", "env": "REGION",
+		"env": "REGION",
 	}
 	for _, key := range Keys() {
 		if keyDescriptors[key].noun == "" {
@@ -70,9 +67,7 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 // TestEveryEditableKeyOpensAnEditor: enter on any key but the read-only one
 // must open a seeded editor. The old key-switch answered a key it did not list
 // with a status message ("no interactive editor yet") at runtime; that hole is
-// this test now. The sweep runs in the repo scope — the one scope every key is
-// writable in; the global layer's per-key refusal is
-// TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope's to cover.
+// this test now.
 func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 	for _, key := range Keys() {
 		m := press(browsing(ScopeRepo, &config.Config{},
@@ -120,7 +115,7 @@ func TestEveryEditorKindIsSeededDrawnAndDriven(t *testing.T) {
 		config.EditorChoice: {"pull", "down", "> always"},
 		config.EditorText:   {"image", "x", "x"},
 		config.EditorTri:    {"bridge", "down", "> true"},
-		config.EditorSet:    {"sdd", "space", "[x]"},
+		config.EditorSet:    {"mounts", "space", "[x]"},
 		config.EditorRows:   {"env", "a", "key:"},
 	}
 	if len(drivers) != len(editorSeeds) {
