@@ -83,9 +83,9 @@ unset _brew_bin
 # uid), and a container running as a single uid with passwordless sudo is not a
 # boundary anything in it would have to cross.
 #
-# Runs before the init sequence, because 30-graphify.sh asks git whether the
-# workspace is a work tree with output suppressed, so an ownership fatal there
-# skips the hook install in silence. System scope only, same discipline as the git
+# Runs before the init sequence, so no init script that asks git about a
+# workspace with output suppressed meets an ownership fatal it would swallow in
+# silence. System scope only, same discipline as the git
 # credential helper further down and init.d/60-glab.sh: the host ~/.gitconfig is a
 # RW mount and must not be polluted, /etc/gitconfig dies with the AutoRemove
 # container. --global, which git's own message suggests, could not work here

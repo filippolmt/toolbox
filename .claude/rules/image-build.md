@@ -64,17 +64,14 @@ paths:
 - **`init.d/<NN>-<tool>.sh` is 3 synced edits**: the script, `InitScript` on its `internal/catalog/catalog.go` row, the `count -ne N` gate and message in `smoke-test.sh`. `TestCatalogInitDBijection`; `TestSmokeTestInitDCountLiteral` derives the numbers — don't count by hand.
 - **Shell completion is 2 synced edits**: write `_<tool>` to `/out/usr/share/zsh/vendor-completions/` in the tool's own fetch stage, before `freeze-mtimes`, path literal; bump the `-ge N` floor in `_zsh_vendor_completions_check`. `TestSmokeTestVendorCompletionsFloor` names N; loop-written or apt-shipped ones go in `vendorCompletionsUnparseable`. → [shell-completions](../../docs/internals/image-build.md#shell-completions)
 
-## Workspace Install Refresh
+## Global skills and Repo Install Refresh
 
-The gate is `toolbox_install_refresh` in `bin/install-refresh-lib.sh`; members source it and never re-spell the stamp path, `-n` guard or failure message (`TestWorkspaceInstallRefreshGateLivesInOneplace`). Every member (`30-graphify.sh`, `31-codegraph.sh`, `40-playwright-cli.sh`, …) holds:
+- **A tool's agent skill is baked by its fetch stage** into `/usr/local/share/toolbox/skills/<tool>`, from the pinned release, ending in a `test -s` on its `SKILL.md`; its init.d member installs it with `toolbox_sync_skill <tool>` and never fetches or regenerates it at start: `TestGlobalSkillInitsInstallTheBakedCopy`, `TestSyncSkill*`, the `Global skills` block of `smoke-test.sh`. → [Global Skill](../../CONTEXT.md#global-skill)
+- **No init.d member reads `$PWD`**: per-repo installs run only from `bin/toolbox-refresh`, from the git root, in a repo already opted in (`TestNoInitScriptReadsTheWorkspace`, `TestToolboxRefresh*`).
+- `toolbox-refresh`'s graphify matcher narrowing stays rename-aware, dropping the graphify-owned entries already parked at the narrowed matcher (the `toolbox-refresh graphify` block of `smoke-test.sh`); `graphify hook install` keeps tracked hooks clean (`.github/scripts/test-graphify-hooks.sh`).
+- Each agent's graphify skill directory is gitignored, one entry per agent root: `TestEveryGraphifySkillDirIsGitignored`. pi's agent gate is the `~/.pi` bind mount, as in [container-runtime.md](container-runtime.md).
 
-- the emptiness guard scopes to the version half alone;
-- `graphify hook install` stays outside the gate;
-- `30-graphify.sh`'s matcher narrowing stays rename-aware, dropping the graphify-owned entries already parked at the narrowed matcher;
-- each agent pass gets its own stamp suffix and its own artefact, and the repo-level opt-in marker stays one per member; pi's agent gate is the `~/.pi` bind mount, as in [container-runtime.md](container-runtime.md);
-- each agent's graphify skill directory is gitignored, one entry per agent root: `TestEveryGraphifySkillDirIsGitignored`.
-
-A new member joins `TestWorkspaceInstallRefreshGate`, `TestGraphifyHookInstallOutsideGate`, `TestPerRepoInstallersRefreshWhatPiReads` and the `Workspace Install Refresh` block in `smoke-test.sh`. → [Workspace Install Refresh](../../CONTEXT.md#workspace-install-refresh)
+A new per-repo tool joins `opted_in` and the default tool list in `bin/toolbox-refresh`, `TestToolboxRefreshRunsTheRepoInstallersFromTheRepoRoot` and a `toolbox-refresh` block in `smoke-test.sh`. → [Repo Install Refresh](../../CONTEXT.md#repo-install-refresh)
 
 ## Shell and agent assets
 

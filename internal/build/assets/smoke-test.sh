@@ -578,7 +578,7 @@ check_required "xterm-ghostty terminfo" sh -c "infocmp xterm-ghostty >/dev/null 
 # The shared transport every bridge shim sources; the state-dir constant
 # lives here (not in the shims), so this is where the marker is asserted.
 check_required "agent-topology-lib" sh -c "test -r /usr/local/lib/toolbox/agent-topology-lib.sh && grep -q toolbox_agent_names /usr/local/lib/toolbox/agent-topology-lib.sh && echo present"
-check_required "install-refresh-lib" sh -c "test -r /usr/local/lib/toolbox/install-refresh-lib.sh && grep -q toolbox_install_refresh /usr/local/lib/toolbox/install-refresh-lib.sh && echo present"
+check_required "toolbox-refresh" sh -c "test -x /usr/local/bin/toolbox-refresh && grep -q toolbox_sync_skill /usr/local/bin/toolbox-refresh && echo present"
 check_required "bridge-lib" sh -c "test -r /usr/local/lib/toolbox/bridge-lib.sh && grep -q /home/toolbox/.toolbox/browser /usr/local/lib/toolbox/bridge-lib.sh && grep -q unix-socket /usr/local/lib/toolbox/bridge-lib.sh && echo present"
 check_required "xdg-open wrapper" sh -c "test -x /usr/local/bin/xdg-open && head -n1 /usr/local/bin/xdg-open | grep -q '"'"'^#!/bin/sh'"'"' && grep -q bridge-lib.sh /usr/local/bin/xdg-open && echo present"
 check_required "xdg-open symlinks" sh -c "test -L /usr/local/bin/open && test -L /usr/local/bin/x-www-browser && test -L /usr/local/bin/sensible-browser && test -L /usr/local/bin/gnome-open && test -L /usr/local/bin/www-browser && echo present"
@@ -708,9 +708,13 @@ check_optional  "worktrunk shell integration" wt zsh -c '"'"'eval "$(wt config s
 # wt refuses every git-backed command below its own git floor, which neither
 # check above reaches; a real `wt list` fails when the git of the base image is too old.
 check_optional  "worktrunk git floor" wt bash -c '"'"'d=$(mktemp -d) && trap "rm -rf \"$d\"" EXIT && cd "$d" && git init -q && git -c user.name=smoke -c user.email=smoke@localhost commit -q --allow-empty -m init && wt list'"'"'
-# init.d/62-worktrunk.sh installs this skill into every agent; an archive layout
-# change upstream would otherwise ship an image with nothing to install.
-check_optional  "worktrunk skill shipped" wt test -s /usr/local/share/worktrunk/skills/worktrunk/SKILL.md
+# Global skills baked from the release of each tool; init.d syncs them into every
+# agent. The build already fails on an empty one (`test -s`); this catches a
+# COPY that dropped the tree.
+check_optional  "worktrunk skill shipped" wt test -s /usr/local/share/toolbox/skills/worktrunk/SKILL.md
+check_optional  "gh skill shipped" gh sh -c "test -s /usr/local/share/toolbox/skills/gh/SKILL.md && grep -q toolbox-gh-monitoring /usr/local/share/toolbox/skills/gh/SKILL.md && echo present"
+check_optional  "glab skill shipped" glab test -s /usr/local/share/toolbox/skills/glab/SKILL.md
+check_optional  "herdr skill shipped" herdr test -s /usr/local/share/toolbox/skills/herdr/SKILL.md
 check_optional  "docker"    docker   docker --version
 check_optional  "compose"   docker   docker compose version
 check_optional  "gcloud"    gcloud   gcloud --version
@@ -903,8 +907,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 19 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 19 (14 catalog InitScripts + 5 system)"
+if [ "$count" -ne 17 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 17 (12 catalog InitScripts + 5 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then
@@ -1139,38 +1143,36 @@ print("OK: starship symbols survive as glyphs")
 '
 
 echo ""
-echo "=== Workspace Install Refresh (30-graphify.sh, real boot) ==="
-# Runtime half of TestWorkspaceInstallRefreshGate, which pins only the static
-# invariants. Boot 30-graphify.sh in a throwaway workspace that has opted in
-# (graphify-out/ present) and read the result back out of the files it actually
-# wrote: the PreToolUse matchers must be the narrowed values, no wide upstream
-# matcher may survive `graphify install`, the .graphify-bak must be gone, and a
-# version stamp must exist — without the stamp the gate reopens on every shell
-# and the churn this whole change removes comes straight back.
+echo "=== toolbox-refresh graphify (real installer) ==="
+# Runtime half of TestToolboxRefreshRunsTheRepoInstallersFromTheRepoRoot, which
+# drives fake installers. Run `toolbox-refresh graphify` from a subdirectory of
+# a throwaway repo that has opted in (graphify-out/ present) and read the result
+# back out of the files it actually wrote: the PreToolUse matchers must be the
+# narrowed values, no wide upstream matcher may survive `graphify install`, and
+# the .graphify-bak must be gone.
 #
 # The seed carries the wide upstream matchers plus one hand-edited matcher the
 # normalisation must NOT touch — that "only the known upstream values" clause is
 # what stops the refresh from stomping a user's own hook, and a jq expression
 # widened by accident would still pass every other assertion here.
 #
-# The wide/narrow/kept assertions hold whether or not `graphify install` itself
-# succeeds (the seed already carries the wide values); the stamp and the
-# graphify-owned-pair assertions additionally require it to have succeeded,
-# which is the point — a refresh that cannot install has nothing to stamp, and
-# nothing to duplicate either.
+# The graphify-owned-pair assertions require `graphify install` to have
+# succeeded, which is the point — a refresh that cannot install has nothing to
+# duplicate either.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 command -v graphify >/dev/null 2>&1 || { echo "SKIP: graphify not installed"; exit 0; }
 command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
 mkdir -p "$HOME/.claude"
-# pi refreshes into .pi/skills behind a stamp of its own, and its gate is
-# the ~/.pi bind mount — absent in a throwaway container, so the pass would be
-# skipped and its half of this block would prove nothing. Create it here: that
+# pi refreshes into .pi/skills, and its gate is the ~/.pi bind mount — absent
+# in a throwaway container, so the pass would be skipped and its half of this
+# block would prove nothing. Create it here: that
 # is the one condition a real session always has and this one never does.
 mkdir -p "$HOME/.pi"
 d=$(mktemp -d)
 cd "$d"
-mkdir -p graphify-out .claude
+git init -q
+mkdir -p graphify-out .claude sub
 printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]},{\"matcher\":\"Read|Glob\",\"hooks\":[]},{\"matcher\":\"Write|Edit\",\"hooks\":[]}]}}" > .claude/settings.json
 # Snapshot retention: 12 dated dirs in, 10 out, oldest dropped. Seed distinct
 # mtimes because the prune orders by mtime — graphify appends _2, _3 … to
@@ -1178,7 +1180,7 @@ printf "%s" "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash|Grep\",\"hooks\":[]
 # for the pattern being anchored: an undated sibling must never be swept.
 for i in 01 02 03 04 05 06 07 08 09 10 11 12; do mkdir -p "graphify-out/2026-03-$i"; touch -d "2026-03-$i" "graphify-out/2026-03-$i"; done
 mkdir -p graphify-out/keeper
-/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero"; exit 1; }
+(cd sub && toolbox-refresh graphify >/dev/null 2>&1) || { echo "FAILED: toolbox-refresh graphify exited non-zero"; exit 1; }
 # Exactly one graphify-owned hook per narrowed matcher, whatever else the file
 # carries. Counting matchers alone cannot say this: the seed entries end up at
 # Grep and Glob too, and they are supposed to. Ownership is the same test
@@ -1204,41 +1206,22 @@ snaps=$(find graphify-out -maxdepth 1 -type d -name "20*" | wc -l)
 [ -d graphify-out/2026-03-12 ] || { echo "FAILED: the prune removed the newest snapshot"; exit 1; }
 [ -d graphify-out/keeper ] || { echo "FAILED: the prune swept an undated graphify-out directory"; exit 1; }
 [ ! -e .claude/settings.json.graphify-bak ] || { echo "FAILED: settings.json.graphify-bak left in the workspace"; exit 1; }
-stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify" 2>/dev/null | head -n1)
-[ -n "$stamp" ] || { echo "FAILED: no version stamp under ~/.toolbox-state/install-refresh — the gate would reopen every shell"; exit 1; }
-# The pi pass: its own artefact, under the root pi reads, and its own stamp.
-# A shared stamp is the silent failure this asserts against — the claude pass
-# would have set it to the bundled version and pi would never be written.
-# Name where graphify did write: an upstream move of the pi root then reads off
+# The pi pass, under the root pi reads. Name where graphify did write: an upstream move of the pi root then reads off
 # the CI log instead of looking like a failed install.
 [ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: the pi pass did not install .pi/skills/graphify/SKILL.md (graphify wrote: $(find . -path "*graphify/SKILL.md" ! -path "./.claude/*" | tr "\n" " "))"; exit 1; }
-pi_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-graphify-pi" 2>/dev/null | head -n1)
-[ -n "$pi_stamp" ] || { echo "FAILED: no -graphify-pi stamp — the pi gate would reopen every shell"; exit 1; }
-[ "$pi_stamp" != "$stamp" ] || { echo "FAILED: the pi pass reused the claude stamp"; exit 1; }
-# Deleting one agent copy must self-heal it without reopening the gate of the
-# other pass: the artefact halves are per pass.
-rm -f .pi/skills/graphify/SKILL.md
-/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the pi self-heal"; exit 1; }
-[ -f .pi/skills/graphify/SKILL.md ] || { echo "FAILED: a deleted pi skill did not self-heal"; exit 1; }
 # Second refresh, the case the normalisation itself creates: graphify install
 # recognises its own hooks by (wide upstream matcher) AND (entry mentions
 # graphify), so once we have narrowed the matcher it no longer sees its own work
-# and appends a fresh pair on every reopened gate. Deleting the skill reopens the
-# gate through the artefact half, which is the real-world trigger too (an image
-# upgrade bumps the version).
+# and appends a fresh pair on every refresh.
 rm -f .claude/skills/graphify/SKILL.md
-/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the second refresh"; exit 1; }
-# The refresh must have actually re-installed. 30-graphify.sh only warns when
-# graphify install fails and this smoke test swallows its output, so without
-# this line the whole re-refresh block would pass by installing nothing at all:
-# nothing appended, no duplicate possible, assertions vacuous. The stamp cannot
-# stand in — a failed install does not rewrite it, so it still holds the value
-# the first refresh wrote.
+toolbox-refresh graphify >/dev/null 2>&1 || { echo "FAILED: toolbox-refresh graphify exited non-zero on the second refresh"; exit 1; }
+# The refresh must have actually re-installed, or the assertions below would
+# pass by installing nothing at all: nothing appended, no duplicate possible.
 [ -f .claude/skills/graphify/SKILL.md ] || { echo "FAILED: the second refresh did not re-install the graphify skill — the assertions below would prove nothing"; exit 1; }
 assert_narrowed "second refresh"
 # Compare whole entries, not their serialisations: object key order is not
 # significant in JSON, and a tostring-based check would call two equivalent
-# entries distinct — weaker than the jq in 30-graphify.sh, which is the thing
+# entries distinct — weaker than the jq in toolbox-refresh, which is the thing
 # under test here.
 dupe_count=$(jq "(.hooks.PreToolUse | length) - (.hooks.PreToolUse | unique | length)" .claude/settings.json)
 [ "$dupe_count" = "0" ] || { echo "FAILED: ${dupe_count} duplicate PreToolUse entr(ies) after a second refresh"; exit 1; }
@@ -1250,15 +1233,15 @@ dupe_count=$(jq "(.hooks.PreToolUse | length) - (.hooks.PreToolUse | unique | le
 jq "(.hooks.PreToolUse[] | select(.matcher == \"Grep\") | .hooks[]?.command) |= . + \" --stale-payload\"" .claude/settings.json > settings.next
 mv settings.next .claude/settings.json
 rm -f .claude/skills/graphify/SKILL.md
-/usr/local/lib/toolbox/init.d/30-graphify.sh >/dev/null 2>&1 || { echo "FAILED: 30-graphify.sh exited non-zero on the third refresh"; exit 1; }
+toolbox-refresh graphify >/dev/null 2>&1 || { echo "FAILED: toolbox-refresh graphify exited non-zero on the third refresh"; exit 1; }
 [ -f .claude/skills/graphify/SKILL.md ] || { echo "FAILED: the third refresh did not re-install the graphify skill"; exit 1; }
 assert_narrowed "third refresh, changed payload"
 stale=$(jq "[.hooks.PreToolUse[] | select(tostring | contains(\"--stale-payload\"))] | length" .claude/settings.json)
 [ "$stale" = "0" ] || { echo "FAILED: ${stale} stale-payload PreToolUse entr(ies) survived the refresh that replaced them"; exit 1; }
-echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, pi copy stamped separately, stamped $(cat "$stamp")"
+echo "OK: matchers narrowed, hand-edited matcher kept, no .graphify-bak, one graphify pair across re-refresh and payload change, pi copy installed"
 '
 
-echo "=== graphify tracked git hooks (30-graphify.sh, real installer) ==="
+echo "=== graphify tracked git hooks (toolbox-refresh, real installer) ==="
 bash "$(dirname "${BASH_SOURCE[0]}")/../../../.github/scripts/test-graphify-hooks.sh" "${IMAGE}"
 
 echo "=== npm-global shadow heal (15-npm-shadow-dedupe.sh, real roots) ==="
@@ -1302,15 +1285,10 @@ seed_hoisted smoke-dep 1.0.0;         seed_baked smoke-dep 9.0.0
 echo "OK: stale shadow and its bin link removed, prerelease ranked below its release, self-update and hoisted dependency untouched"
 '
 
-echo "=== Workspace Install Refresh (40-playwright-cli.sh, agents pass, real boot) ==="
-# Runtime half of the playwright-cli side of TestPerRepoInstallersRefreshWhatPiReads.
+echo "=== toolbox-refresh playwright-cli (agents pass, real installer) ==="
 # codex and pi read .agents/skills, which the claude install never writes, so
-# the second pass is the only thing that puts the skill where they look. Boot
-# the real script in a throwaway workspace opted in the way a user opts in.
-#
-# PLAYWRIGHT_BROWSERS_PATH points at an empty dir with the sentinel pre-written
-# so the Chromium sync at the top of the same script is a no-op here: this block
-# is about the skill passes, and the browser cache has its own check above.
+# the agents pass is the only thing that puts the skill where they look. Run the
+# real command in a throwaway repo opted in the way a user opts in.
 docker run --rm "${IMAGE}" bash -c '
 set -e
 command -v playwright-cli >/dev/null 2>&1 || { echo "SKIP: playwright-cli not installed"; exit 0; }
@@ -1318,20 +1296,39 @@ command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0
 mkdir -p "$HOME/.claude"
 d=$(mktemp -d)
 cd "$d"
-export PLAYWRIGHT_BROWSERS_PATH="$d/pw-cache"
-mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
-node -p "require(process.argv[1]).version" /usr/local/lib/node_modules/playwright/package.json | tr -d "\n" > "$PLAYWRIGHT_BROWSERS_PATH/.toolbox-chromium-version"
+git init -q
 mkdir -p .claude/skills/playwright-cli
-/usr/local/lib/toolbox/init.d/40-playwright-cli.sh >/dev/null 2>&1 || { echo "FAILED: 40-playwright-cli.sh exited non-zero"; exit 1; }
+toolbox-refresh playwright-cli >/dev/null 2>&1 || { echo "FAILED: toolbox-refresh playwright-cli exited non-zero"; exit 1; }
 [ -f .claude/skills/playwright-cli/SKILL.md ] || { echo "FAILED: the claude pass did not install .claude/skills/playwright-cli/SKILL.md"; exit 1; }
 [ -f .agents/skills/playwright-cli/SKILL.md ] || { echo "FAILED: the agents pass did not install .agents/skills/playwright-cli/SKILL.md — codex and pi read nothing else"; exit 1; }
-claude_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-playwright-cli" 2>/dev/null | head -n1)
-agents_stamp=$(find "$HOME/.toolbox-state/install-refresh" -name "*-playwright-cli-agents" 2>/dev/null | head -n1)
-[ -n "$claude_stamp" ] || { echo "FAILED: no -playwright-cli stamp — the gate would reopen every shell"; exit 1; }
-[ -n "$agents_stamp" ] || { echo "FAILED: no -playwright-cli-agents stamp — the agents gate would reopen every shell"; exit 1; }
-[ "$claude_stamp" != "$agents_stamp" ] || { echo "FAILED: the agents pass reused the claude stamp"; exit 1; }
-rm -f .agents/skills/playwright-cli/SKILL.md
-/usr/local/lib/toolbox/init.d/40-playwright-cli.sh >/dev/null 2>&1 || { echo "FAILED: 40-playwright-cli.sh exited non-zero on the agents self-heal"; exit 1; }
-[ -f .agents/skills/playwright-cli/SKILL.md ] || { echo "FAILED: a deleted agents skill did not self-heal"; exit 1; }
-echo "OK: both playwright-cli skill roots installed and stamped separately, agents copy self-heals"
+echo "OK: both playwright-cli skill roots installed"
+'
+
+echo "=== Global skills (real boot: no rewrite, self-heal) ==="
+# Runtime half of TestSyncSkill*: the init.d members that install the baked
+# global skills, run twice. The second start must write no SKILL.md, and a
+# deleted skill must come back at the next one.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
+mkdir -p "$HOME/.claude"
+# Every init.d member that syncs a skill, and every skill the image baked.
+members=$(grep -l toolbox_sync_skill /usr/local/lib/toolbox/init.d/*.sh)
+skills=$(ls /usr/local/share/toolbox/skills)
+[ -n "$members" ] && [ -n "$skills" ] || { echo "FAILED: no skill-syncing init.d member or no baked skill"; exit 1; }
+boot() { for s in $members; do "$s" >/dev/null 2>&1 || { echo "FAILED: $s exited non-zero"; exit 1; }; done; }
+boot
+for root in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
+    for skill in $skills; do
+        cmp -s "/usr/local/share/toolbox/skills/$skill/SKILL.md" "$root/$skill/SKILL.md" || { echo "FAILED: $root/$skill/SKILL.md is not the baked copy"; exit 1; }
+    done
+done
+find "$HOME/.claude/skills" "$HOME/.agents/skills" -name SKILL.md -exec touch -d @1 {} +
+boot
+changed=$(find "$HOME/.claude/skills" "$HOME/.agents/skills" -name SKILL.md -newermt @1 | tr "\n" " ")
+[ -z "$changed" ] || { echo "FAILED: a second start rewrote $changed"; exit 1; }
+rm -rf "$HOME/.claude/skills/gh" "$HOME/.agents/skills/herdr"
+boot
+[ -s "$HOME/.claude/skills/gh/SKILL.md" ] && [ -s "$HOME/.agents/skills/herdr/SKILL.md" ] || { echo "FAILED: a deleted global skill did not come back at the next start"; exit 1; }
+echo "OK: global skills installed from the baked copies, untouched on a second start, restored after a delete"
 '

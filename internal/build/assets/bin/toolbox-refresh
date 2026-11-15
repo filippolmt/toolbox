@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# toolbox-refresh [tool…] — refresh agent skills and per-repo tool installs on
+# demand (ADR 0020):
+#
+#   - Global skills (every skill the image baked under $toolbox_baked_skills):
+#     copy each into every active skill root, where it differs. init.d does the
+#     same at every start; this is the manual retry.
+#   - Per-repo installers (the repo_tools below): re-run each
+#     installer in the current repo when the repo already opted in through
+#     graphify-init / codegraph-init / pwcli-init. The repo is resolved with
+#     `git rev-parse --show-toplevel`, so any subdirectory works; outside a repo
+#     only global skills are touched. A refresh never opts a repo in.
+#
+# No arguments: every global skill, then every tool the current repo opted in
+# to. With arguments: only the named tools.
+set -uo pipefail
+
+# shellcheck source=bin/agent-topology-lib.sh
+. /usr/local/lib/toolbox/agent-topology-lib.sh
+
+# Every skill the image baked is a global skill; nothing else names them.
+global_skills=()
+for d in "$toolbox_baked_skills"/*/; do
+    [ -d "$d" ] && global_skills+=("$(basename "$d")")
+done
+repo_tools=(graphify codegraph playwright-cli)
+
+usage() {
+    echo "usage: toolbox-refresh [${global_skills[*]} ${repo_tools[*]}]…" >&2
+    exit 2
+}
+
+rc=0
+# run_in_repo LABEL CMD… runs one installer from the repo root, quiet unless
+# it fails.
+run_in_repo() {
+    local label="$1"; shift
+    if (cd "$root" && "$@" >/dev/null); then
+        echo "toolbox-refresh: $label refreshed"
+    else
+        echo "toolbox-refresh: $label failed — retry: (cd $root && $*)" >&2
+        rc=1
+    fi
+}
+
+# An agent whose state is mounted: a per-repo install for it survives.
+claude_ready() {
+    toolbox_agent_available claude && toolbox_agent_persistent claude
+}
+pi_ready() {
+    toolbox_agent_available pi && toolbox_agent_persistent pi
+}
+
+refresh_skill() {
+    if toolbox_sync_skill "$1"; then
+        echo "toolbox-refresh: $1 skill in sync"
+    else
+        rc=1
+    fi
+}
+
+# graphify: skill + PreToolUse hook + CLAUDE.md section per agent, then the git
+# hooks that rebuild graph.json on commit.
+refresh_graphify() {
+    # Snapshot retention. Every graphify run drops a dated directory beside the
+    # live graph and never removes one; nothing reads a snapshot back. Keep the
+    # ten most recent by mtime — graphify's same-day `_2`, `_3` … suffixes do
+    # not sort lexically past `_10`.
+    find "$root/graphify-out" -maxdepth 1 -type d -name '20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -n | head -n -10 | cut -d' ' -f2- | while IFS= read -r old; do rm -rf "$old"; done || true
+
+    if claude_ready; then
+        run_in_repo "graphify (claude)" graphify install --project --platform claude
+        # graphify install writes a backup beside the settings it patched; it is
+        # never read back.
+        rm -f "$root/.claude/settings.json.graphify-bak"
+        narrow_graphify_matchers "$root/.claude/settings.json"
+    fi
+    # pi reads project skills from .pi/skills, which the claude install never
+    # writes. Its gate is the ~/.pi bind mount, not ~/.pi/agent, which pi
+    # creates on its own first run whether the state is mounted or not.
+    if pi_ready; then
+        run_in_repo "graphify (pi)" graphify install --project --platform pi
+    fi
+    graphify_git_hooks
+}
+
+# Narrow the PreToolUse matchers graphify install writes: its hook-guard should
+# fire on blind search only, never on Read or Bash. graphify re-installs its
+# hook payload on every run, so a manual edit would not survive. Only the known
+# upstream values are rewritten, so a hand-tuned matcher is left alone.
+#
+# Dropping the previous run's entry is the other half of that narrowing.
+# `graphify install` re-installs by removing what it wrote last time, which it
+# recognises by (matcher is a known WIDE literal) AND (the entry mentions
+# "graphify") — install.py:1768. The rename breaks the first half, so upstream
+# stops seeing its own hooks and appends a second pair on every refresh. Before
+# renaming, drop the graphify-owned entries already at the narrowed matcher —
+# last run's — while the pair just appended is still wide. Ownership is checked
+# only where an entry is deleted, and `any(... and gfy)` means a failed install
+# (nothing appended) drops nothing, so a workspace is never left hookless.
+narrow_graphify_matchers() {
+    command -v jq >/dev/null 2>&1 && [ -s "$1" ] || return 0
+    toolbox_rewrite_json "$1" 'def gfy: tostring | contains("graphify");
+        def narrow($wide; $new):
+          (if any(.hooks.PreToolUse[]?; .matcher == $wide and gfy)
+           then .hooks.PreToolUse |= map(select((.matcher == $new and gfy) | not))
+           else . end)
+          | (.hooks.PreToolUse[]? | select(.matcher == $wide) | .matcher) = $new;
+        narrow("Bash|Grep"; "Grep") | narrow("Read|Glob"; "Glob")' \
+        || echo "toolbox-refresh: graphify matcher narrowing skipped — $1 unreadable" >&2
+}
+
+# `graphify hook install` follows core.hooksPath, which may be tracked:
+# normalise machine-local output without suppressing payload upgrades.
+graphify_git_hooks() {
+    local attrs="$root/.gitattributes" drop_attrs=false hooks h
+    # Existing or tracked attributes belong to the user, even when the graph is ignored.
+    if [ ! -e "$attrs" ] && [ ! -L "$attrs" ] \
+        && ! git -C "$root" ls-files --error-unmatch -- .gitattributes >/dev/null 2>&1 \
+        && git -C "$root" check-ignore -q graphify-out/graph.json; then
+        drop_attrs=true
+    fi
+
+    run_in_repo "graphify (git hooks)" graphify hook install
+
+    hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)
+    # graphify installs beside Husky's generated wrappers, in the user-editable parent.
+    if [ "${hooks##*/}" = _ ]; then hooks=${hooks%/*}; fi
+    for h in post-commit post-checkout post-merge post-rewrite; do
+        if [ -f "$hooks/$h" ] \
+            && git -C "$root" ls-files --error-unmatch -- "$hooks/$h" >/dev/null 2>&1; then
+            # Only graphify's block owns this pin; a user's identically named variable stays.
+            sed --follow-symlinks -i -E "/^# graphify(-(checkout|merge|rewrite))?-hook-start\$/,/^# graphify(-(checkout|merge|rewrite))?-hook-end\$/s|^_PINNED='[^']*'\$|_PINNED=''|" "$hooks/$h"
+        fi
+    done
+    # The merge driver cannot apply to an ignored graph; remove only its newly created file.
+    if [ "$drop_attrs" = true ] \
+        && printf '%s\n' 'graphify-out/graph.json merge=graphify' | cmp -s - "$attrs"; then
+        rm -f "$attrs"
+    fi
+}
+
+# codegraph: `install --refresh` is upstream's "rewrite what previous installs
+# configured" mode — it never adds a new agent.
+refresh_codegraph() {
+    if claude_ready; then
+        run_in_repo codegraph codegraph install --refresh
+    fi
+}
+
+# playwright-cli: the claude skill, and the cross-agent .agents/skills copy that
+# codex and pi read.
+refresh_playwright_cli() {
+    if claude_ready; then
+        run_in_repo "playwright-cli (claude)" playwright-cli install --skills claude
+    fi
+    if toolbox_agent_available codex || toolbox_agent_available pi; then
+        run_in_repo "playwright-cli (agents)" playwright-cli install --skills agents
+    fi
+}
+
+# opted_in TOOL: the marker each *-init alias leaves in the repo.
+opted_in() {
+    case "$1" in
+        graphify) [ -d "$root/graphify-out" ] ;;
+        codegraph) [ -d "$root/.codegraph" ] ;;
+        # Either copy: a repo opted in for Codex or pi alone carries only the
+        # cross-agent one.
+        playwright-cli) [ -d "$root/.claude/skills/playwright-cli" ] || [ -d "$root/.agents/skills/playwright-cli" ] ;;
+    esac
+}
+
+refresh_repo_tool() {
+    local tool="$1" named="$2"
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        [ -z "$named" ] || echo "toolbox-refresh: $tool not installed" >&2
+        return
+    fi
+    if [ -z "$root" ]; then
+        [ -z "$named" ] || echo "toolbox-refresh: $tool skipped — not inside a git repository"
+        return
+    fi
+    if ! opted_in "$tool"; then
+        [ -z "$named" ] || echo "toolbox-refresh: $tool skipped — $root has not opted in"
+        return
+    fi
+    "refresh_${tool//-/_}"
+}
+
+# in_list WORD ITEM… — exact match, so "a b" never passes as two tools.
+in_list() {
+    local word="$1" item
+    shift
+    for item in "$@"; do
+        [ "$item" = "$word" ] && return 0
+    done
+    return 1
+}
+
+for arg in "$@"; do
+    in_list "$arg" "${global_skills[@]}" "${repo_tools[@]}" || usage
+done
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
+if [ "$#" -gt 0 ]; then
+    tools=("$@") named=1
+else
+    tools=("${global_skills[@]}" "${repo_tools[@]}") named=""
+fi
+for tool in "${tools[@]}"; do
+    if in_list "$tool" "${global_skills[@]}"; then
+        refresh_skill "$tool"
+    else
+        refresh_repo_tool "$tool" "$named"
+    fi
+done
+exit "$rc"

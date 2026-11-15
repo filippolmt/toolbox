@@ -18,7 +18,7 @@ import (
 // fatals in non-interactive callers.
 //
 // 60-glab.sh is a static shell asset no Go code reads, so only a test over the
-// embedded bytes can hold this — same technique as TestWorkspaceInstallRefreshGate.
+// embedded bytes can hold this — same technique as TestShimPathsMatchGoConstants.
 func TestGlabCredentialHelperProbesPerHost(t *testing.T) {
 	body := readAsset(t, "init.d/60-glab.sh")
 

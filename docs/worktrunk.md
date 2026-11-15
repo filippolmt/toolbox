@@ -100,7 +100,8 @@ start.
 
 - **The configuration skill** (`worktrunk`). It is extracted from the source
   archive of the release that ships the bundled `wt`, so it always describes the
-  binary you run, and it goes into every agent's skill directory.
+  binary you run, and it goes into every agent's skill directory, rewritten
+  only when the copy there differs ([Global Skill](../CONTEXT.md#global-skill)).
 - **Activity markers**: 🤖 while the agent works and 💬 while it waits for you,
   shown in `wt list`. These are hooks that call the bundled `wt`, registered in
   Claude's `settings.json`, pi's extensions directory and Codex's system layer,

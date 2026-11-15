@@ -100,6 +100,14 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 Deletes use `git branch -D` (force), since a squash-merged branch never reads as merged locally. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
 
+## A repo's graphify, codegraph or playwright-cli setup is out of date
+
+**Symptom:** after an image update, the `/graphify` or playwright-cli skill, the graphify hooks or codegraph's MCP config in a repo still match the version you opted in with.
+
+**Cause:** these installs live in the repo, and nothing refreshes them at container start: a toolbox is usually opened on a parent folder, and an image update must not rewrite tracked files on its own ([Repo Install Refresh](../CONTEXT.md#repo-install-refresh)).
+
+**Fix:** run `toolbox-refresh` from anywhere inside the repo (`toolbox-refresh graphify` for one tool). It re-runs the installers of the tools the repo opted in to and re-syncs the global agent skills; a repo that never ran `graphify-init`, `codegraph-init` or `pwcli-init` is left alone.
+
 ## A new `.test` app is unreachable from the container
 
 **Symptom:** `https://<name>.test` works in the host browser but fails to resolve/connect inside a shell that was already open.

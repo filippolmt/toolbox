@@ -42,13 +42,13 @@ dist/
 # every branch switch / `/graphify` invocation. Not team-shared.
 graphify-out/
 # `graphify install` drops this backup beside the settings it patched. Nothing
-# reads it back; init.d/30-graphify.sh removes it, this is the belt-and-braces
+# reads it back; toolbox-refresh removes it, this is the belt-and-braces
 # half for anyone running graphify install by hand.
 .claude/settings.json.graphify-bak
 # `graphify install --project --platform <agent>` regenerates this whole skill
 # dir (SKILL.md, references/, .graphify_version) on every version bump, so
-# tracking it only adds diff noise. init.d/30-graphify.sh installs it in the
-# container; the version stamp is write-only in project scope. One entry per
+# tracking it only adds diff noise. graphify-init and toolbox-refresh install
+# it in the container. One entry per
 # agent root (plus pi's pre-move root): graphify writes a separate copy for
 # each platform it is given, and upstream's own advice ("git add .pi/") is the
 # opposite call from the one this repo made for the claude copy.

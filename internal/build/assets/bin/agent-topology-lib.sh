@@ -42,6 +42,60 @@ toolbox_for_each_active_skill_root() {
     fi
 }
 
+# Global skills the image bakes at build, each extracted from the release that
+# ships its tool (Dockerfile fetch stages), so a skill never describes another
+# version and installing one needs no network.
+toolbox_baked_skills=/usr/local/share/toolbox/skills
+
+# toolbox_sync_skill NAME copies the baked skill NAME into every active skill
+# root, only where the copy there differs: a current copy is never rewritten, a
+# missing one self-heals (~/.agents is container-local and starts empty on every
+# recreate) and a hand edit is replaced. Nothing baked, nothing to do. A root
+# that fails is reported and the others still run; the return status is 1 when
+# any root failed, so a caller under `set -e` that must go on adds `|| true`.
+toolbox_sync_skill() {
+    [ -s "$toolbox_baked_skills/$1/SKILL.md" ] || return 0
+    # Read and set by the callback through bash's dynamic scoping.
+    local _toolbox_skill_name="$1" _toolbox_skill_failed=0
+    toolbox_for_each_active_skill_root _toolbox_sync_skill_into
+    return "$_toolbox_skill_failed"
+}
+
+# Replaced whole, so a file upstream dropped does not linger. A Claude skill
+# root is one host mount shared by every toolbox container, so the swap runs
+# under a lock — kept in the state mount, every container shares it, and not in
+# the skill root, which an agent scans. The staging copy must sit in the root
+# (a rename does not cross mounts), so one a killed sync left there is swept
+# under the same lock, where no other sync can be mid-swap.
+_toolbox_sync_skill_into() {
+    local root="$2" name="$_toolbox_skill_name"
+    local src="$toolbox_baked_skills/$name" lock="$HOME/.toolbox-state/.skill-$name.lock"
+    if ! mkdir -p "$root" "${lock%/*}" || ! (
+        flock 9
+        rm -rf "$root/.$name".?????? "$root/.$name".??????.old
+        if [ -d "$root/$name" ] && diff -r "$src" "$root/$name" >/dev/null 2>&1; then
+            exit 0
+        fi
+        # `set -e` does not apply inside an `if !` condition, so every step
+        # checks its own status: a half-moved old copy must stop the swap, or
+        # `mv` would nest the new tree inside it. Two renames, so a reader on
+        # another container never finds the skill half-written and misses it
+        # only for that instant.
+        tmp=$(mktemp -d "$root/.$name.XXXXXX") || exit 1
+        if cp -R "$src/." "$tmp/" && chmod 0755 "$tmp" \
+            && { [ ! -e "$root/$name" ] || mv "$root/$name" "$tmp.old"; } \
+            && mv "$tmp" "$root/$name"; then
+            rm -rf "$tmp.old"
+            exit 0
+        fi
+        rm -rf "$tmp"
+        exit 1
+    ) 9>"$lock"; then
+        echo "toolbox: $name skill install into $root failed (non-fatal)"
+        _toolbox_skill_failed=1
+    fi
+}
+
 toolbox_with_claude_settings_lock() {
     local lock="$HOME/.toolbox-state/.claude-settings.lock"
     mkdir -p "$(dirname "$lock")"

@@ -6,8 +6,9 @@ set -euo pipefail
 
 # gh startup integration, gated on `command -v gh` so an INSTALL_GH=false
 # image exits silently. Reports credential state and installs gh's official
-# agent skill non-fatally. Claude gets its own config root; Codex and pi share
-# the portable ~/.agents/skills root.
+# agent skill: the copy the Dockerfile baked from the cli/cli tag of the bundled
+# gh (toolbox monitoring guidance appended), synced into every active skill
+# root only where it differs — no network, no rewrite on every start.
 #
 # Credential outcomes (decision D-08-creds-tristate):
 #   configured        — `gh auth status` exits 0.
@@ -28,35 +29,4 @@ else
     echo "  gh: not configured"
 fi
 
-_install_skill() {
-    local label="$1" dir="$2"
-    gh skill install cli/cli gh --dir "$dir" --force >/dev/null 2>&1 || \
-        echo "toolbox: gh skill install ($label) failed (non-fatal — retry: \`gh skill install cli/cli gh --dir $dir --force\`)"
-
-    # The upstream install refreshes container-local skills on every shell.
-    local skill="$dir/gh/SKILL.md"
-    if [[ -f "$skill" ]] && ! grep -q '^<!-- toolbox-gh-monitoring -->$' "$skill"; then
-        if ! cat >> "$skill" <<'MONITORING'
-
-<!-- toolbox-gh-monitoring -->
-## Watching checks (Toolbox)
-
-Use compact output and propagate the run's exit status:
-
-```bash
-gh run watch "$run_id" --repo "$repo" --compact --exit-status
-```
-
-For a long watch, redirect output to a private log (`umask 077`) and report only
-state transitions or the final result, rather than streaming every refresh into
-the agent context. On failure, use `gh run view "$run_id" --repo "$repo" --log-failed`
-and quote only the relevant, redacted failure lines. Verify that the checked
-run's `headSha` matches the pushed commit before declaring CI green.
-MONITORING
-        then
-            echo "toolbox: gh monitoring guidance ($label) could not be written (non-fatal)" >&2
-        fi
-    fi
-}
-
-toolbox_for_each_active_skill_root _install_skill
+toolbox_sync_skill gh || true

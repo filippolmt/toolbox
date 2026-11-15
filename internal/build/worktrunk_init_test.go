@@ -9,10 +9,7 @@ import (
 	"testing"
 )
 
-const (
-	worktrunkInitScript = "assets/init.d/62-worktrunk.sh"
-	worktrunkSkillSrc   = "/usr/local/share/worktrunk/skills/worktrunk"
-)
+const worktrunkInitScript = "assets/init.d/62-worktrunk.sh"
 
 // worktrunkFixture is one container start's worth of state: a home with every
 // agent's state root mounted, and the skill the image ships.
@@ -29,7 +26,7 @@ func newWorktrunkFixture(t *testing.T) worktrunkFixture {
 		t.Skip("flock not on PATH")
 	}
 	dir := t.TempDir()
-	f := worktrunkFixture{dir: dir, home: filepath.Join(dir, "home"), skillSrc: filepath.Join(dir, "skill-src")}
+	f := worktrunkFixture{dir: dir, home: filepath.Join(dir, "home"), skillSrc: filepath.Join(dir, "baked", "worktrunk")}
 	for _, d := range []string{".claude", ".codex", ".pi"} {
 		if err := os.MkdirAll(filepath.Join(f.home, d), 0o755); err != nil {
 			t.Fatal(err)
@@ -80,11 +77,11 @@ exit 1
 	}
 
 	body := readAsset(t, "init.d/62-worktrunk.sh")
-	body = strings.ReplaceAll(body, worktrunkSkillSrc, f.skillSrc)
 	script := filepath.Join(f.dir, "62-worktrunk.sh")
 	if err := os.WriteFile(script, wireAgentTopologyForTest(t, f.dir, []byte(body)), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	wireBakedSkillsForTest(t, f.dir, filepath.Dir(f.skillSrc))
 	cmd := exec.Command("/bin/bash", script)
 	cmd.Env = []string{"HOME=" + f.home, "PATH=" + binDir + ":/usr/bin:/bin"}
 	out, err := cmd.CombinedOutput()

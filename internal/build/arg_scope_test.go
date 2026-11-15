@@ -21,7 +21,7 @@ import (
 // follow-up, which also records what they can and cannot be attributed to.
 //
 // The Dockerfile is a static asset no Go code reads, so only a test over the
-// embedded bytes can hold this — same technique as TestWorkspaceInstallRefreshGate.
+// embedded bytes can hold this — same technique as TestShimPathsMatchGoConstants.
 // stageWideARGs are the final-stage ARGs that legitimately apply to the whole
 // stage rather than to one RUN: neither carries a version, so neither moves on a
 // Renovate bump, and both are read by many RUNs.
