@@ -1658,7 +1658,11 @@ so plugin upgrades naturally invalidate stale logs. Set-equality between
 `Entry.InitScript` values and `init.d/*.sh` files is enforced by
 `TestCatalogInitDBijection` Go-side and by the `init.d bijection +
 executability` block in `smoke-test.sh` shell-side (mode 0755 verified
-inside the built image).
+inside the built image). No member reads `$PWD`: a toolbox is usually opened
+on a parent folder, so the start-time directory names no repo, and a start
+never writes into one (`TestNoInitScriptReadsTheWorkspace`). Per-repo
+installs belong to the [Repo Install Refresh](#repo-install-refresh); global
+skills arrive as [Global Skills](#global-skill).
 
 Why the term exists: before this concept was named, per-tool boot logic
 (the former RTK hook wiring, cf skill seed, graphify install, playwright-cli skills,
@@ -2030,74 +2034,63 @@ the plan, never the function that would rebuild one — and a function that
 would rebuild one should say so by taking the gate, not by quietly resolving
 another.
 
-### Workspace Install Refresh
+### Global Skill
 
-The rule every Init Sequence script follows when it re-runs a tool's *per-repo*
-installer: refresh only when the bundled tool version differs from a
-toolbox-owned stamp, **or** the artefact that installer should have written is
-missing. Members today are `30-graphify.sh`, `31-codegraph.sh` and
-`40-playwright-cli.sh`. The rule itself is one function,
-`toolbox_install_refresh` in `bin/install-refresh-lib.sh` (sourced from
-`/usr/local/lib/toolbox/`, like `bridge-lib.sh`): a member supplies the stamp
-key, the artefact, the version and the install command, and nothing else. It
-used to be twenty lines copied into each member, which is one wording drift
-away from two gates that no longer agree.
+An agent skill the image bakes at build from the release of the tool it
+describes, and copies into the agents at start. Members are gh, glab, herdr and
+worktrunk.
 
-Concretely: the stamp lives outside the workspace at
-`$HOME/.toolbox-state/install-refresh/<sha256($PWD)[0:16]>-<tool>[-<agent>]`
-(host `~/.toolbox/state/`, so it survives `toolbox stop` and is per-host), and
-its content is the version last installed from. The agent suffix is what makes
-a second pass possible: a tool that writes a separate copy per agent refreshes
-once per agent, and each pass needs its own stamp. Share one and the bug is
-silent — the first pass moves the stamp to the bundled version, the second
-reads it as current and its agent's copy is never written, freezing at whatever
-first installed it. The emptiness guard scopes to the
-version half alone — `{ [ -n "$ver" ] && [ "$stamped" != "$ver" ]; } || [ ! -f
-"$artefact" ]` — because an unreadable version must not read as "differs" (the
-gate would reopen every shell) and must not suppress the artefact half either (a
-deleted install would stop self-healing). The function returns 0 when the gate
-opened, whatever the install then did, so a caller can hang its own
-post-install work off the same decision — which is how `30-graphify.sh` keeps
-its matcher narrowing tied to the refresh. One artefact per pass is watched, on
-purpose: `SKILL.md` for graphify and playwright-cli — under the root the pass's
-own agent reads, so deleting one agent's skill self-heals without touching the
-other's — `.mcp.json` for codegraph, and never the PreToolUse hook block or the
-`## graphify` section in `CLAUDE.md`, which a user may remove deliberately. The
-repo-level opt-in marker stays one per member (`graphify-out/`, the claude
-skill dir, `.codegraph/`): a pass adds an agent to a repo already opted in,
-never a repo. `30-graphify.sh` additionally narrows the
-matchers `graphify install` writes (`Bash|Grep` → `Grep`, `Read|Glob` → `Glob`)
-only while they are still the known upstream values, so a hand-edited hook
-survives — and, because that rename is exactly what blinds upstream's own
-"drop what I wrote last time" filter (it keys on the wide literal **and** the
-entry mentioning `graphify`), the same jq first drops the graphify-owned entries
-already parked at the narrowed matcher, which are the previous run's. Ownership
-is checked only on the drop, and the drop only fires when a wide graphify entry
-is actually present, so neither a hand-written `Grep` hook nor a failed install
-loses anything. `graphify hook install` stays outside the gate so fresh clones
-get local git hooks even with a current stamp. It follows `core.hooksPath`, so
-tracked hooks retain an empty interpreter pin in graphify's block while their
-payload still refreshes. A newly created `.gitattributes` containing only the
-default merge rule is removed when the graph is ignored; existing or tracked
-attributes are preserved. Held by
-`TestWorkspaceInstallRefreshGate`, `TestWorkspaceInstallRefreshGateLivesInOneplace`
-(no member may hand-roll a stamp path again),
-`TestGraphifyHookInstallOutsideGate`
-(`internal/build/workspace_install_refresh_test.go`) and
-`TestPerRepoInstallersRefreshWhatPiReads` over the embedded scripts,
-and by the `Workspace Install Refresh` block in `smoke-test.sh`, which boots
-`30-graphify.sh` in a throwaway workspace and reads the result back out.
-Rationale and rejected options: `docs/adr/0001-workspace-install-refresh.md`.
+Concretely: the fetch stage of each tool writes the skill to
+`/usr/local/share/toolbox/skills/<tool>` from the pinned release (`gh skill
+install --pin`, `glab skills install --path`, `herdr --skill`, worktrunk's
+source archive) and fails the build when it comes out empty. At start the
+tool's init.d member calls `toolbox_sync_skill <tool>` (`bin/agent-topology-lib.sh`),
+which copies the baked tree into every active skill root only where the copy
+there differs, under a per-root lock: a current copy is never rewritten, a
+deleted one comes back, a hand edit is replaced. `toolbox-refresh` runs the same
+sync on demand. Held by `TestSyncSkill*`, `TestGlobalSkillInitsInstallTheBakedCopy`
+and the `Global skills` block in `smoke-test.sh`.
 
-Why the term exists: before this concept was named, the three scripts re-ran
-their installer on *every* shell, gated only on the opt-in artefact existing.
-Those installers write into the workspace, so every image upgrade that moved a
-bundled tool version rewrote tracked files — `CLAUDE.md`,
-`.claude/settings.json`, `.claude/skills/` — and handed the user a dirty tree
-they never asked for. The scripts already referenced each other in comments
-("mirrors graphify/codegraph") without a written rule, the same unnamed fan-out
-this repo collapsed before under Tool Catalog and Config Schema: unnamed, the
-fourth member would have copied the old pattern.
+Why the term exists: gh and glab used to reinstall their skill on every start
+with `--force`, gh from the network and from the latest `cli/cli` release rather
+than the bundled one, while herdr rewrote its skill and worktrunk alone copied a
+baked skill when it differed. One name makes the worktrunk shape the rule, so a
+fifth tool with a skill bakes it instead of fetching it.
+[ADR 0020](docs/adr/0020-global-skills-baked-repo-installs-refreshed-on-demand.md).
+
+### Repo Install Refresh
+
+Re-running a tool's *per-repo* installer in a repo that already opted in to
+it, on demand: `toolbox-refresh` (`bin/toolbox-refresh`, on the image's PATH).
+Members are graphify, codegraph and playwright-cli; the opt-in is the marker
+each `*-init` alias leaves (`graphify-out/`, `.codegraph/`,
+`.claude/skills/playwright-cli/`), and a refresh never creates one.
+
+Concretely: the repo is `git rev-parse --show-toplevel`, so any subdirectory
+works and outside a repo nothing per-repo runs. Each installer runs from the
+repo root, once per agent root it serves — graphify for Claude and for pi,
+playwright-cli for Claude and for the cross-agent root — behind the same agent
+gates as Agent Topology (pi's is the `~/.pi` bind mount). With no arguments the
+command also re-syncs every Global Skill; with arguments it refreshes only the
+named tools. graphify keeps three extras: snapshot retention in `graphify-out/`
+(ten newest by mtime), the narrowing of the PreToolUse matchers `graphify
+install` writes (`Bash|Grep` → `Grep`, `Read|Glob` → `Glob`, only while they
+hold the known upstream values, and dropping last run's graphify-owned entries
+first, because the rename blinds upstream's own "drop what I wrote last time"
+filter), and `graphify hook install`, whose machine-local interpreter pin is
+blanked in tracked hooks while the payload still refreshes; a newly created
+`.gitattributes` holding only the default merge rule is removed when the graph
+is ignored. Held by `TestToolboxRefresh*`, `TestEveryGraphifySkillDirIsGitignored`,
+the `toolbox-refresh` blocks in `smoke-test.sh` and
+`.github/scripts/test-graphify-hooks.sh`.
+
+Why the term exists: it replaces the **Workspace Install Refresh**, which ran
+these installers from the Init Sequence, gated on a marker under `$PWD` and a
+version stamp ([ADR 0001](docs/adr/0001-workspace-install-refresh.md)). With a
+toolbox opened on a parent folder that gate never saw a repo, and when it did,
+an image upgrade rewrote tracked files the developer had not asked about.
+[ADR 0020](docs/adr/0020-global-skills-baked-repo-installs-refreshed-on-demand.md)
+moves the work behind an explicit command.
 
 ### Shell
 

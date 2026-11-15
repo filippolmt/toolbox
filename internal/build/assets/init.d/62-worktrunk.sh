@@ -9,7 +9,8 @@ set -euo pipefail
 # Worktrunk's Agent Wiring, on every container start:
 #
 #   1. its configuration skill, extracted at build time from the release that
-#      ships this `wt`, so the skill never describes another version;
+#      ships this `wt`, so the skill never describes another version, and
+#      synced by toolbox_sync_skill only where an agent's copy differs;
 #   2. the activity-marker hooks behind `wt list`'s 🤖/💬 column, for Claude
 #      Code and pi. Codex gets the same markers from the image's system
 #      layer (/etc/codex/hooks.json, built from bin/worktrunk-markers-lib.sh),
@@ -23,15 +24,15 @@ set -euo pipefail
 # entering worktrees and the routing of Claude's worktree isolation through wt
 # both change how the agent behaves (ADR 0018 and its amendment).
 #
-# Rewritten on every container start rather than stamped, like 61-herdr.sh: the bundled
-# binary is the authority, so nothing may outlive the wt it came from. The hook
+# The hooks are rewritten on every container start rather than stamped, like
+# 61-herdr.sh's: the bundled binary is the authority, so nothing may outlive the
+# wt it came from. The hook
 # merge drops every earlier marker hook before adding the current ones, which
 # is what makes a rewrite idempotent and a changed command replace, not stack.
 #
 # Non-fatal throughout, and each agent independent of the others.
 command -v wt >/dev/null 2>&1 || exit 0
 
-_wt_skill_src=/usr/local/share/worktrunk/skills/worktrunk
 _wt_bin=/usr/local/bin/wt
 
 _wt_claude=""
@@ -47,32 +48,6 @@ if toolbox_agent_available pi; then
     _wt_pi=1
 fi
 [ -n "${_wt_claude}${_wt_codex}${_wt_pi}" ] || exit 0
-
-# Skill: replaced whole, so a reference file upstream dropped does not linger.
-# A Claude skill root is one host mount shared by every toolbox container, so
-# the swap runs under a per-root lock and is skipped when the copy is current.
-_wt_install_skill() {
-    local root="$2"
-    [ -s "$_wt_skill_src/SKILL.md" ] || return 0
-    if ! mkdir -p "$root" || ! (
-        flock 9
-        if [ -d "$root/worktrunk" ] && diff -r "$_wt_skill_src" "$root/worktrunk" >/dev/null 2>&1; then
-            exit 0
-        fi
-        # `set -e` does not apply inside an `if !` condition, so every step
-        # checks its own status: a half-removed old copy must stop the swap,
-        # or `mv` would nest the new tree inside it.
-        tmp=$(mktemp -d "$root/.worktrunk.XXXXXX") || exit 1
-        if cp -R "$_wt_skill_src/." "$tmp/" && chmod 0755 "$tmp" \
-            && rm -rf "$root/worktrunk" && mv "$tmp" "$root/worktrunk"; then
-            exit 0
-        fi
-        rm -rf "$tmp"
-        exit 1
-    ) 9>"$root/.worktrunk-skill.lock"; then
-        echo "toolbox: worktrunk skill install into $root failed (non-fatal)"
-    fi
-}
 
 # Events and matchers mirror upstream's Claude Code plugin, minus the two
 # behaviour-changing hooks named at the top.
@@ -111,7 +86,7 @@ _wt_wire_pi() {
     return "$rc"
 }
 
-toolbox_for_each_active_skill_root _wt_install_skill
+toolbox_sync_skill worktrunk
 
 if [ -n "$_wt_claude" ]; then
     toolbox_with_claude_settings_lock _wt_wire_claude || \

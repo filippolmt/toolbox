@@ -42,6 +42,49 @@ toolbox_for_each_active_skill_root() {
     fi
 }
 
+# Global skills the image bakes at build, each extracted from the release that
+# ships its tool (Dockerfile fetch stages), so a skill never describes another
+# version and installing one needs no network.
+toolbox_baked_skills=/usr/local/share/toolbox/skills
+
+# toolbox_sync_skill NAME copies the baked skill NAME into every active skill
+# root, only where the copy there differs: a current copy is never rewritten, a
+# missing one self-heals (~/.agents is container-local and starts empty on every
+# recreate) and a hand edit is replaced. Nothing baked, nothing to do. Failures
+# are reported per root and never fatal.
+toolbox_sync_skill() {
+    [ -s "$toolbox_baked_skills/$1/SKILL.md" ] || return 0
+    # Read by the callback through bash's dynamic scoping.
+    local _toolbox_skill_name="$1"
+    toolbox_for_each_active_skill_root _toolbox_sync_skill_into
+}
+
+# Replaced whole, so a file upstream dropped does not linger. A Claude skill
+# root is one host mount shared by every toolbox container, so the swap runs
+# under a per-root lock.
+_toolbox_sync_skill_into() {
+    local root="$2" name="$_toolbox_skill_name"
+    local src="$toolbox_baked_skills/$name"
+    if ! mkdir -p "$root" || ! (
+        flock 9
+        if [ -d "$root/$name" ] && diff -r "$src" "$root/$name" >/dev/null 2>&1; then
+            exit 0
+        fi
+        # `set -e` does not apply inside an `if !` condition, so every step
+        # checks its own status: a half-removed old copy must stop the swap,
+        # or `mv` would nest the new tree inside it.
+        tmp=$(mktemp -d "$root/.$name.XXXXXX") || exit 1
+        if cp -R "$src/." "$tmp/" && chmod 0755 "$tmp" \
+            && rm -rf "${root:?}/$name" && mv "$tmp" "$root/$name"; then
+            exit 0
+        fi
+        rm -rf "$tmp"
+        exit 1
+    ) 9>"$root/.$name-skill.lock"; then
+        echo "toolbox: $name skill install into $root failed (non-fatal)"
+    fi
+}
+
 toolbox_with_claude_settings_lock() {
     local lock="$HOME/.toolbox-state/.claude-settings.lock"
     mkdir -p "$(dirname "$lock")"

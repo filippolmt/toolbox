@@ -305,6 +305,13 @@ RUN set -eux; \
       freeze-mtimes
 
 # gh
+#
+# Global Skills: each tool's agent skill is baked into
+# /usr/local/share/toolbox/skills/<tool> by the stage that fetches the tool,
+# from the same release (here the cli/cli tag of the bundled gh, plus the
+# toolbox monitoring guidance), so Renovate moves skill and binary together.
+# init.d copies it into the agents' skill roots only where it differs
+# (toolbox_sync_skill); `test -s` fails the build when one comes out empty.
 FROM fetch-base AS fetch-gh
 ARG TARGETARCH
 ARG GH_VERSION
@@ -319,6 +326,26 @@ RUN set -eux; \
       rm /tmp/gh.tar.gz /tmp/gh_checksums.txt; \
       /out/usr/local/bin/gh --version; \
       /out/usr/local/bin/gh completion -s zsh > /out/usr/share/zsh/vendor-completions/_gh; \
+      /out/usr/local/bin/gh skill install cli/cli gh --pin "v${GH_VERSION}" --dir /out/usr/local/share/toolbox/skills; \
+      printf '%s\n' \
+        '' \
+        '<!-- toolbox-gh-monitoring -->' \
+        '## Watching checks (Toolbox)' \
+        '' \
+        'Use compact output and propagate the run'"'"'s exit status:' \
+        '' \
+        '```bash' \
+        'gh run watch "$run_id" --repo "$repo" --compact --exit-status' \
+        '```' \
+        '' \
+        'For a long watch, redirect output to a private log (`umask 077`) and report only' \
+        'state transitions or the final result, rather than streaming every refresh into' \
+        'the agent context. On failure, use `gh run view "$run_id" --repo "$repo" --log-failed`' \
+        'and quote only the relevant, redacted failure lines. Verify that the checked' \
+        'run'"'"'s `headSha` matches the pushed commit before declaring CI green.' \
+        >> /out/usr/local/share/toolbox/skills/gh/SKILL.md; \
+      test -s /out/usr/local/share/toolbox/skills/gh/SKILL.md; \
+      chmod -R a+rX /out/usr/local/share/toolbox; \
       freeze-mtimes
 
 # glab
@@ -337,6 +364,9 @@ RUN set -eux; \
       rm "/tmp/${GLAB_TARBALL}" /tmp/glab_checksums.txt; \
       /out/usr/local/libexec/glab version; \
       /out/usr/local/libexec/glab completion -s zsh > /out/usr/share/zsh/vendor-completions/_glab; \
+      /out/usr/local/libexec/glab skills install --path /out/usr/local/share/toolbox/skills; \
+      test -s /out/usr/local/share/toolbox/skills/glab/SKILL.md; \
+      chmod -R a+rX /out/usr/local/share/toolbox; \
       printf '%s\n' \
         '#!/bin/sh' \
         '# toolbox shim over /usr/local/libexec/glab — serializes glab across containers,' \
@@ -404,8 +434,8 @@ RUN set -eux; \
 # image (fetch-stage convention). Only `wt` is kept — `git-wt` is the same
 # binary under another name, for hosts where `wt` collides (Windows Terminal).
 # The release's checksummed source archive also yields the canonical
-# `skills/worktrunk` skill, so init.d/62-worktrunk.sh installs a skill that
-# always matches this binary. → docs/worktrunk.md
+# `skills/worktrunk` skill, baked as a Global Skill (see the gh stage).
+# → docs/worktrunk.md
 FROM fetch-base AS fetch-worktrunk
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
@@ -435,11 +465,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-w
       curl -fsSL --retry 10 --retry-delay 5 --retry-all-errors --retry-max-time 120 -o /tmp/source.tar.gz.sha256 \
         "https://github.com/max-sixty/worktrunk/releases/download/v${WORKTRUNK_VERSION}/source.tar.gz.sha256"; \
       cd /tmp && sha256sum -c source.tar.gz.sha256; \
-      mkdir -p /out/usr/local/share/worktrunk/skills; \
-      tar -xzf /tmp/source.tar.gz -C /out/usr/local/share/worktrunk/skills --strip-components=2 \
+      mkdir -p /out/usr/local/share/toolbox/skills; \
+      tar -xzf /tmp/source.tar.gz -C /out/usr/local/share/toolbox/skills --strip-components=2 \
         "worktrunk-${WORKTRUNK_VERSION}/skills/worktrunk"; \
-      test -s /out/usr/local/share/worktrunk/skills/worktrunk/SKILL.md; \
-      chmod -R a+rX /out/usr/local/share/worktrunk; \
+      test -s /out/usr/local/share/toolbox/skills/worktrunk/SKILL.md; \
+      chmod -R a+rX /out/usr/local/share/toolbox; \
       rm /tmp/source.tar.gz /tmp/source.tar.gz.sha256; \
       freeze-mtimes
 
@@ -811,6 +841,10 @@ RUN set -eux; \
       chmod +x /out/usr/local/bin/herdr; \
       /out/usr/local/bin/herdr --version; \
       /out/usr/local/bin/herdr completion zsh > /out/usr/share/zsh/vendor-completions/_herdr; \
+      mkdir -p /out/usr/local/share/toolbox/skills/herdr; \
+      /out/usr/local/bin/herdr --skill > /out/usr/local/share/toolbox/skills/herdr/SKILL.md; \
+      test -s /out/usr/local/share/toolbox/skills/herdr/SKILL.md; \
+      chmod -R a+rX /out/usr/local/share/toolbox; \
       freeze-mtimes
 
 # tini PID-1. CMD is `sleep infinity` (not a shell) — interactive shells
@@ -1430,7 +1464,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       freeze-mtimes
 
 # playwright-cli (agent companion). Binary name has `-cli` suffix. The skill is
-# installed per-repo at runtime on opt-in (see init.d/40-playwright-cli.sh) by
+# installed per-repo on opt-in (`pwcli-init`, refreshed by `toolbox-refresh`) by
 # copying the templates bundled in the package. Those template trees are
 # .md-only, so `prune-node-weight` has to spare them — it does, by directory
 # name, for every stage; without that the prune empties the skill source and
@@ -2020,9 +2054,9 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
 COPY --link --chmod=0644 bin/worktrunk-markers-lib.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh
 COPY --link --chmod=0755 bin/codex-hooks-check.sh /usr/local/lib/toolbox/codex-hooks-check.sh
-# Workspace Install Refresh gate, sourced by the init.d members that re-run a
-# per-repo installer (one gate, one stamp shape, one failure message).
-COPY --link --chmod=0644 bin/install-refresh-lib.sh /usr/local/lib/toolbox/install-refresh-lib.sh
+# Explicit refresh of global skills and of the current repo's opted-in
+# per-repo installers; nothing runs them at container start.
+COPY --link --chmod=0755 bin/toolbox-refresh /usr/local/bin/toolbox-refresh
 # Bridge shim transport, sourced by the xdg-open/code/proximo/paplay shims
 # below (state-dir location + readiness checks + curl POST in one place).
 COPY --link --chmod=0644 bin/bridge-lib.sh /usr/local/lib/toolbox/bridge-lib.sh

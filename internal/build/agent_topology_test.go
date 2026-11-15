@@ -192,17 +192,15 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 		"init.d/10-remove-rtk.sh",
 		"init.d/20-cf.sh",
 		"init.d/25-codex.sh",
-		"init.d/30-graphify.sh",
-		"init.d/31-codegraph.sh",
 		"init.d/35-statusline.sh",
 		"init.d/36-mode-flags.sh",
-		"init.d/40-playwright-cli.sh",
 		"init.d/50-mcp-plugins.sh",
 		"init.d/60-glab.sh",
 		"init.d/61-herdr.sh",
 		"init.d/62-worktrunk.sh",
 		"init.d/65-atuin.sh",
 		"statusline-command.sh",
+		"bin/toolbox-refresh",
 	} {
 		body := readAsset(t, path)
 		if !strings.Contains(body, agentTopologySource) {

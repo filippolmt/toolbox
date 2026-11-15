@@ -21,9 +21,10 @@ set -euo pipefail
 #      polluted, so writes go to the container-local SYSTEM gitconfig).
 #      Covers private GitLab HTTPS clones, e.g. `brew tap` of a private tap.
 #      Non-fatal: on failure SSH remotes keep working via the RO ~/.ssh mount.
-#   3. `glab skills install` (EXPERIMENTAL upstream) — non-fatal on failure.
-#      Two passes: Claude Code reads only ~/.claude/skills; Codex and pi read
-#      ~/.agents/skills (cross-agent USER scope per agentskills.io).
+#   3. glab's agent skill: the copy the Dockerfile baked with
+#      `glab skills install` from the bundled glab, synced into every active
+#      skill root only where it differs (Claude Code reads ~/.claude/skills;
+#      Codex and pi read the cross-agent ~/.agents/skills).
 command -v glab >/dev/null 2>&1 || exit 0
 
 _glab_config="${HOME}/.config/glab-cli/config.yml"
@@ -97,18 +98,4 @@ for _glab_host in ${_glab_authed}; do
         echo "toolbox: glab credential helper for ${_glab_host} failed (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
 done
 
-_install() {
-    local label="$1"; shift
-    glab skills install "$@" --force >/dev/null 2>&1 || \
-        echo "toolbox: glab skills install ($label) failed (non-fatal — retry: \`glab skills install $* --force\`)"
-}
-
-_install_skill_root() {
-    if [ "$1" = claude ]; then
-        _install claude --path "$2"
-    else
-        _install cross-agent --global
-    fi
-}
-
-toolbox_for_each_active_skill_root _install_skill_root
+toolbox_sync_skill glab

@@ -1,6 +1,9 @@
 # Workspace Install Refresh: gate the per-repo installers instead of re-running them every shell
 
-Status: accepted
+Status: superseded by
+[ADR 0020](0020-global-skills-baked-repo-installs-refreshed-on-demand.md):
+the per-repo installers no longer run at container start, so there is no gate
+left to hold; `toolbox-refresh` runs them on demand.
 
 Every figure below is **as measured when this decision was taken** — evidence for the choice, not a description of the repo today. Nothing here is kept in sync; current values live in the files that set them.
 

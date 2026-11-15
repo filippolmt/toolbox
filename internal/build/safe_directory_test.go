@@ -190,9 +190,9 @@ func TestSafeDirectoryRegistration(t *testing.T) {
 		}
 	})
 
-	// 30-graphify.sh asks git whether the workspace is a work tree with output
-	// suppressed, so an ownership fatal there skips the hook install in silence.
-	// The registration has to be in place before any init script runs.
+	// An init script that asks git about a workspace with output suppressed
+	// would swallow an ownership fatal in silence. The registration has to be
+	// in place before any init script runs.
 	t.Run("runs before the init sequence", func(t *testing.T) {
 		body := readAsset(t, "entrypoint.sh")
 		block := strings.Index(body, safeDirBlockStart)
