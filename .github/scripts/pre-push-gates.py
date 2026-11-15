@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,79 +49,93 @@ def renovate_pin():
     return m.group(1) if m else "<RENOVATE_VERSION from ci.yml>"
 
 
-# (matches, command, CI job, note). Every row is checked against every path; a
-# command two rows name prints once.
+class Gate(NamedTuple):
+    matches: Callable[[str], bool]
+    command: str
+    ci: str
+    note: str = ""
+
+
+# Every row is checked against every path; a command two rows name prints once.
+CALLER_WORKFLOW = "the workflow that calls the script, on the next push"
 ROWS = [
-    (lambda p: p.endswith(".go") or dockergate_pkg(p),
-     "make go-check", "ci.yml (coverage-enforced test + lint)", ""),
-    (lambda p: p.startswith(".pi/"),
-     "make check-agent", "ci.yml (lint)", ""),
-    (lambda p: matches(p, DOCKER_PATHS) and not dockergate_pkg(p),
-     "make test", "docker-ci.yml (build + smoke)", ""),
-    (dockergate_pkg,
+    Gate(lambda p: p.endswith(".go") or dockergate_pkg(p),
+     "make go-check", "ci.yml (coverage-enforced test + lint)"),
+    Gate(lambda p: p.startswith(".pi/"),
+     "make check-agent", "ci.yml (lint)"),
+    Gate(lambda p: matches(p, DOCKER_PATHS) and not dockergate_pkg(p),
+     "make test", "docker-ci.yml (build + smoke)"),
+    Gate(dockergate_pkg,
      "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
      "against the intended runtime image: after `make build`, pass FULL=toolbox-local:build"),
-    (lambda p: p == "renovate.json",
+    Gate(lambda p: p == "renovate.json",
      f"npx --yes --package renovate@{renovate_pin()} renovate-config-validator renovate.json",
      "ci.yml (renovate-validate)", "pinned: unpinned `latest` has shipped an unfetchable tarball before"),
-    (lambda p: p == ".goreleaser.yaml",
+    Gate(lambda p: p == ".goreleaser.yaml",
      "goreleaser release --snapshot --clean --skip=publish,validate", "ci.yml (cask)",
      "then read dist/homebrew/Casks/toolbox.rb: `goreleaser check` renders no template"),
-    (lambda p: p.startswith(".github/workflows/"),
-     "actionlint", "the workflow itself, on the next push", ""),
-    (lambda p: p.startswith(".github/scripts/"),
-     "make check-devtools", "the workflow that calls the script, on the next push", ""),
-    (lambda p: p.startswith(".github/scripts/") and p.endswith(".sh"),
-     "shellcheck .github/scripts/*.sh", "the workflow that calls the script, on the next push",
-     "make check-devtools shellchecks only two of them"),
-    (lambda p: p in (".github/scripts/host-share-git-rewrite.sh", "internal/build/assets/entrypoint.sh"),
+    Gate(lambda p: p.startswith(".github/workflows/"),
+     "actionlint", "the workflow itself, on the next push"),
+    Gate(lambda p: p.startswith(".github/scripts/"),
+     "make check-devtools", CALLER_WORKFLOW),
+    Gate(lambda p: p.startswith(".github/scripts/") and p.endswith(".sh"),
+     "shellcheck .github/scripts/*.sh", CALLER_WORKFLOW,
+     "make check-devtools shellchecks only the scripts it lists"),
+    Gate(lambda p: p in (".github/scripts/host-share-git-rewrite.sh", "internal/build/assets/entrypoint.sh"),
      "make test-host-share", "none: no runner serves a Host Share", "from a Mac running Docker Desktop"),
-    (lambda p: p.startswith("internal/build/assets/") and p.endswith(".sh"),
+    Gate(lambda p: p.startswith("internal/build/assets/") and p.endswith(".sh"),
      "find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 | xargs -0 shellcheck -S error",
      "ci.yml (shellcheck)", "zshrc.sh is zsh, which shellcheck cannot parse"),
-    (lambda p: p.endswith(".md") or p.startswith(".claude/rules/") or p == "internal/build/assets/Dockerfile",
+    Gate(lambda p: p.endswith(".md") or p.startswith(".claude/rules/") or p == "internal/build/assets/Dockerfile",
      "make go-test-one PKG=./internal/devrules", "ci.yml (test)",
      "devrules holds the docs map, the rule files and the Claude env-knob matrix to the files they describe"),
     # The Dockerfile is held by devrules, not by check-links: lychee reads
     # Markdown only.
-    (lambda p: p.endswith(".md") or p.startswith(".claude/rules/"),
-     "make check-links", "docs.yml", ""),
+    Gate(lambda p: p.endswith(".md") or p.startswith(".claude/rules/"),
+     "make check-links", "docs.yml"),
 ]
 
 
-def git_paths(*args):
+def git_paths(repo, *args):
     # -z: no C-quoting of non-ASCII paths, which would hide their suffix.
-    r = subprocess.run(["git", "-C", str(ROOT), *args, "-z"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(repo), *args, "-z"], capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit(f"pre-push-gates: git {' '.join(args)}: {r.stderr.strip()}")
     return [p for p in r.stdout.split("\0") if p]
 
 
-def touched(base):
+def touched(repo, base):
     # --no-renames: a move lists both paths, so a file moved out of a gated
     # package still triggers that package's gate.
-    paths = git_paths("diff", "--name-only", "--no-renames", f"{base}...HEAD")
-    paths += git_paths("diff", "--name-only", "--no-renames", "HEAD")
-    paths += git_paths("ls-files", "--others", "--exclude-standard")
+    paths = git_paths(repo, "diff", "--name-only", "--no-renames", f"{base}...HEAD")
+    paths += git_paths(repo, "diff", "--name-only", "--no-renames", "HEAD")
+    paths += git_paths(repo, "ls-files", "--others", "--exclude-standard")
     return sorted(set(paths))
 
 
 def gates(paths):
     found = {}
-    for match, cmd, ci, note in ROWS:
-        hits = [p for p in paths if match(p)]
+    for row in ROWS:
+        hits = [p for p in paths if row.matches(p)]
         if hits:
-            entry = found.setdefault(cmd, {"ci": ci, "note": note, "paths": []})
+            entry = found.setdefault(row.command, {"ci": row.ci, "note": row.note, "paths": []})
             entry["paths"] += [p for p in hits if p not in entry["paths"]]
     return found
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--base", default="origin/main")
+    # No --base default: the Makefile's BASE is the one place it is set.
+    ap.add_argument("--base", help="ref the change is diffed against (merge-base, like CI)")
+    ap.add_argument("--repo", default=str(ROOT), help="repository whose changes are read (tests)")
     ap.add_argument("--files", help="'-' reads touched paths from stdin instead of git")
     args = ap.parse_args()
-    paths = sorted({l.strip() for l in sys.stdin if l.strip()}) if args.files == "-" else touched(args.base)
+    if args.files == "-":
+        paths = sorted({line.strip() for line in sys.stdin if line.strip()})
+    elif args.base:
+        paths = touched(args.repo, args.base)
+    else:
+        ap.error("--base is required unless --files - is given")
     found = gates(paths)
     if not found:
         print("no gate in the table matches the touched paths")

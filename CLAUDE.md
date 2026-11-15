@@ -13,7 +13,7 @@
 - One package: `make go-test-one PKG=./internal/mountplan` (optional `RUN=TestFoo`, `TAGS=...`).
 - Ad-hoc `docker run -v`/`--mount` from a toolbox shell, daemon gates, new-code preflight: [development feedback loops](docs/agents/development-feedback.md).
 
-**Pre-push gate** — `make gates` lists what CI would run for the paths you touched since `BASE` (default `origin/main`), uncommitted work included. Run every command it prints; the path → gate table lives in `.github/scripts/pre-push-gates.py`.
+**Pre-push gate** — `make gates` lists what CI would run for the paths you touched since `BASE`, uncommitted work included. Run every command it prints; the path → gate table lives in `.github/scripts/pre-push-gates.py`.
 
 **Coverage: 80%, two denominators.** `ci.yml` gates **total** coverage (`COVERAGE_MIN`; `make go-coverage`, part of `make go-check`); `sonar.yml` gates **new code** on the server — and passes unchecked while the SonarQube server is off. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-denominators)
 
@@ -47,7 +47,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
-Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. A `v*` tag cancels any in-flight main publish (`cancel-main-publish`) and `docker-release.yml` republishes `:latest` itself: follow that run instead. Check `git ls-remote --tags origin` before tagging. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. After a `v*` tag, follow `docker-release.yml` instead: it cancels the main publish on purpose. Check `git ls-remote --tags origin` before tagging. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Code intelligence
 

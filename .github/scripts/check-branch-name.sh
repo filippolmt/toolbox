@@ -100,7 +100,7 @@ PUSH_NOT_A_BRANCH = {'-d', '--delete', '--tags', '--all', '--branches', '--mirro
 # --contains, -n, --sort, …) lists, verifies or deletes. Short flags cluster
 # (`-am msg`), and a valued one takes the rest of its cluster or the next word.
 TAG_VALUE_LONG = {'--message', '--file', '--local-user', '--cleanup', '--trailer'}
-TAG_CREATE_LONG = {'--annotate', '--sign', '--no-sign', '--force', '--edit', '--no-edit'}
+TAG_CREATE_LONG = {'--annotate', '--sign', '--no-sign', '--force', '--edit', '--no-edit', '--create-reflog'}
 TAG_VALUE_SHORT, TAG_CREATE_SHORT = 'mFu', 'asfe'
 
 def tag_created(rest):
@@ -167,14 +167,13 @@ def push_args(rest, d, new_tags):
         out.append(dst)
     return out
 
-# new_tags holds (repo dir, name) for every tag a `git tag` earlier in the same
-# command creates: it does not exist yet when the hook runs, so show-ref alone
-# would read its push as a branch push.
-def branches(seg, cwd, new_tags):
+def git_call(seg, cwd):
+    """(repo dir, subcommand, its args) for a git command, else None. The dir
+    is resolved, so `-C .` and the cwd name the same repo."""
     while seg and (re.match(r'^[A-Za-z_]\w*=', seg[0]) or seg[0] in ('env', 'command', 'exec', 'time')):
         seg = seg[1:]
     if not seg or os.path.basename(seg[0]) != 'git':
-        return []
+        return None
     args, d, i = seg[1:], cwd, 0
     while i < len(args) and args[i].startswith('-'):
         if args[i] in ('-C', '-c', '--git-dir', '--work-tree', '--namespace') and i + 1 < len(args):
@@ -184,8 +183,10 @@ def branches(seg, cwd, new_tags):
         else:
             i += 1
     if i >= len(args):
-        return []
-    sub, rest = args[i], args[i + 1:]
+        return None
+    return os.path.realpath(d), args[i], args[i + 1:]
+
+def branches(d, sub, rest, new_tags):
     if sub == 'switch':
         return value_after(rest, ['-c', '-C', '--create', '--force-create', '--orphan'])
     if sub == 'checkout':
@@ -196,15 +197,23 @@ def branches(seg, cwd, new_tags):
         return branch_args(rest)
     if sub == 'push':
         return push_args(rest, d, new_tags)
-    if sub == 'tag' and (name := tag_created(rest)):
-        new_tags.add((d, name))
     return []
 
 try:
     data = json.load(sys.stdin)
     cmd, cwd = data['tool_input']['command'], data.get('cwd') or '.'
-    new_tags = set()
-    names = [n for seg in simple_commands(cmd) for n in branches(seg, cwd, new_tags)]
+    # (repo dir, name) of every tag a `git tag` earlier in the command creates:
+    # it does not exist yet when the hook runs, so show-ref alone would read
+    # its push as a branch push.
+    names, new_tags = [], set()
+    for seg in simple_commands(cmd):
+        call = git_call(seg, cwd)
+        if not call:
+            continue
+        d, sub, rest = call
+        if sub == 'tag' and (name := tag_created(rest)):
+            new_tags.add((d, name))
+        names += branches(d, sub, rest, new_tags)
 except (ValueError, KeyError, TypeError):
     sys.exit(0)
 print('\n'.join(names))
@@ -286,6 +295,9 @@ self_test() {
         'git tag -am rel v8 && git push origin v8'       ''
         'git tag -sm rel v9 && git push origin v9:v9'    ''
         'git -C ../other tag v10 && git push origin v10' 'v10'
+        'git -C . tag v11 && git push origin v11'        ''
+        'git tag v12 && git -C ./ push origin v12'       ''
+        'git tag --create-reflog v13 && git push origin v13' ''
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
