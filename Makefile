@@ -115,7 +115,7 @@ BASE ?= origin/main
 # makes go-coverage fail closed before it runs the suite.
 COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}' .github/workflows/ci.yml)
 
-.PHONY: go-dockergate go-dockergate-image go-test-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-vet go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
+.PHONY: go-dockergate go-dockergate-image go-test-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-vet go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check gates check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
 
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
 	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
@@ -152,6 +152,9 @@ check-links: ## Validate Markdown links and anchors offline (lychee in Docker)
 	  --offline --include-fragments --no-progress \
 	  --exclude-path docs/superpowers \
 	  README.md CLAUDE.md CONTRIBUTING.md CONTEXT.md CODING_STANDARDS.md docs .claude/rules .claude/skills
+
+gates: ## List the pre-push gates CI would run for what changed since BASE (default origin/main), uncommitted work included
+	python3 .github/scripts/pre-push-gates.py --base "$(BASE)"
 
 check-devtools: ## Test local development targets and coverage preflight
 	node --test .github/scripts/*.test.mjs

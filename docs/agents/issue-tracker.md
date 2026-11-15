@@ -13,6 +13,10 @@ Issues and specs for this repository live as GitHub issues. Use the `gh` CLI for
 
 Use structured output and `jq` when filtering issue data.
 
+## Acceptance criteria
+
+A "nothing left" criterion (`git grep` over a removed feature) names its exceptions — a retired config key keeps its name in the places [Retired Key](../../CONTEXT.md#retired-key) lists — and greps with `-i` and no `\b`: `_` is a word character, so `\bsdd\b` misses `TOOLBOX_SDD_*`.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.**

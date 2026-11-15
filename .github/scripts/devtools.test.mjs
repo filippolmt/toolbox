@@ -244,3 +244,47 @@ test("mounting targets refuse a directory the host daemon cannot see", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+function gatesFor(paths) {
+  const result = spawnSync("python3", [".github/scripts/pre-push-gates.py", "--files", "-"], {
+    cwd: root, input: paths.join("\n"), encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+
+test("gates map a sessionplan edit to go-check and the real-daemon gate", () => {
+  const out = gatesFor(["internal/sessionplan/plan.go", "README.md"]);
+  for (const gate of ["make go-check", "make go-dockergate", "make go-test-one PKG=./internal/devrules", "make check-links"]) {
+    assert.ok(out.includes(gate), `missing ${gate}:\n${out}`);
+  }
+  assert.doesNotMatch(out, /^make test$/m);
+});
+
+test("gates list a command once however many rows name it", () => {
+  const out = gatesFor(["internal/build/assets/entrypoint.sh", ".github/scripts/host-share-git-rewrite.sh"]);
+  assert.equal(out.match(/^make test-host-share$/gm).length, 1, out);
+  assert.match(out, /^make test$/m);
+  assert.match(out, /shellcheck -S error/);
+});
+
+test("gates pin the renovate validator to ci.yml", () => {
+  const pin = /RENOVATE_VERSION:\s*['"]?([^'"\s]+)/.exec(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))[1];
+  assert.ok(gatesFor(["renovate.json"]).includes(`renovate@${pin} `));
+});
+
+test("gates name only make targets the Makefile defines", () => {
+  const makefile = readFileSync(join(root, "Makefile"), "utf8");
+  const src = readFileSync(join(root, ".github/scripts/pre-push-gates.py"), "utf8");
+  const cited = [...src.matchAll(/"make ([a-z][\w-]*)/g)].map((m) => m[1]);
+  assert.ok(cited.length > 0, "no make target found in pre-push-gates.py");
+  for (const target of cited) {
+    assert.match(makefile, new RegExp(`^${target}:`, "m"), `make ${target} is not a Makefile target`);
+  }
+});
+
+test("make gates diffs against BASE", () => {
+  const result = spawnSync("make", ["-n", "gates", "BASE=HEAD"], { cwd: root, env: makeEnv, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /pre-push-gates.py --base "HEAD"/);
+});

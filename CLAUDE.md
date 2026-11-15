@@ -13,21 +13,7 @@
 - One package: `make go-test-one PKG=./internal/mountplan` (optional `RUN=TestFoo`, `TAGS=...`).
 - Ad-hoc `docker run -v`/`--mount` from a toolbox shell, daemon gates, new-code preflight: [development feedback loops](docs/agents/development-feedback.md).
 
-**Pre-push gate** — run what CI would run for the paths you touched:
-
-| Touched | Run | CI job |
-|---|---|---|
-| Any Go file | `make go-check` | `ci.yml` (coverage-enforced test + lint) |
-| `.pi/**` | `make check-agent` | `ci.yml` (lint) |
-| `internal/build/assets/**` or `go.mod` | `make test` as well | `docker-ci.yml` (build + smoke) |
-| `internal/{container,mountplan,sessionplan,reload,imagereclaim}/**` | `make go-check` + `make go-dockergate` against the intended runtime image | `docker-ci.yml` (build + smoke + real-daemon gates) |
-| `renovate.json` | `npx --yes --package renovate@<pin> renovate-config-validator renovate.json` — take `<pin>` from `RENOVATE_VERSION` in `ci.yml`; unpinned `latest` has shipped an unfetchable tarball before | `ci.yml` (renovate-validate) |
-| `.goreleaser.yaml` | `goreleaser release --snapshot --clean --skip=publish,validate`, then read `dist/homebrew/Casks/toolbox.rb` — `goreleaser check` only validates the schema and renders no template | `ci.yml` (cask) |
-| `.github/workflows/**` | `actionlint` | the workflow itself, on the next push |
-| `.github/scripts/**` | `shellcheck` for shell scripts + `make check-devtools` | the workflow that calls it, on the next push — `.github/scripts/host-share-git-rewrite.sh` has none, run `make test-host-share` |
-| `internal/build/assets/entrypoint.sh` | `make test-host-share` as well, from a Mac running Docker Desktop | none — no runner serves a Host Share |
-| `internal/build/assets/**/*.sh` | `find internal/build/assets -name '*.sh' ! -name 'zshrc.sh' -print0 \| xargs -0 shellcheck -S error` — `zshrc.sh` is zsh, which shellcheck cannot parse | `ci.yml` (shellcheck) |
-| Any `*.md`, `.claude/rules/**`, the Dockerfile | `make go-test-one PKG=./internal/devrules` + `make check-links` — devrules holds the docs map, the rule files and the Claude env-knob matrix to the files they describe | `ci.yml` (test), `docs.yml` |
+**Pre-push gate** — `make gates` lists what CI would run for the paths you touched since `BASE` (default `origin/main`), uncommitted work included. Run every command it prints; the path → gate table lives in `.github/scripts/pre-push-gates.py`.
 
 **Coverage: 80%, two denominators.** `ci.yml` gates **total** coverage (`COVERAGE_MIN`; `make go-coverage`, part of `make go-check`); `sonar.yml` gates **new code** on the server — and passes unchecked while the SonarQube server is off. → [sonarqube](docs/internals/sonarqube.md#the-two-coverage-denominators)
 
@@ -61,7 +47,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
-Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. A `v*` tag cancels any in-flight main publish (`cancel-main-publish`) and `docker-release.yml` republishes `:latest` itself: follow that run instead. Check `git ls-remote --tags origin` before tagging. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Code intelligence
 

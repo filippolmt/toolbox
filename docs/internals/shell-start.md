@@ -179,11 +179,11 @@ macOS runners cannot run Docker Desktop, and a self-hosted runner is not worth
 its exposure here: the repository is public and owned by a user account, which
 has no runner groups to restrict a runner to one workflow, so any approved fork
 PR could edit a workflow to target it. Three events can break the boundary: a
-change to the entrypoint policy, which the pre-push table in `CLAUDE.md` maps
+change to the entrypoint policy, which `make gates` maps
 to this target; a Docker Desktop upgrade, whose change of share type the
 entrypoint warning above surfaces at the next container start; and a new git
 release in the image, which arrives only with a new Debian release of the base
-image, since git comes from apt. The last two touch no file the table can key on, so each is worth one
+image, since git comes from apt. The last two touch no file the gate table can key on, so each is worth one
 run of the gate when it lands. The script's exit
 trap owns its container and temporary repository; a killed run leaves the
 repository behind as a gitignored `.toolbox-host-share-git.*` directory.
