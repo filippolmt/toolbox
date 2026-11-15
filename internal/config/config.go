@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-
-	"github.com/filippolmt/toolbox/internal/sdd"
 )
 
 // Config is the top-level toolbox configuration.
@@ -113,21 +111,6 @@ type Config struct {
 	// See docs/adr/0003-cross-container-peer-messaging.md and
 	// docs/adr/0013-peer-messaging-ships-off-by-default.md.
 	PeerMessaging bool `mapstructure:"peer_messaging"`
-	// SDD opts the workspace into one or more Spec-Driven-Development skill
-	// packs (gsd, bmad, openspec, ...) installed repo-locally on every
-	// `toolbox shell`. Each `sdd.<key>: true` flag toggles the matching
-	// internal/sdd.Skill entry: sessionplan emits TOOLBOX_SDD_ENABLED plus
-	// a per-skill spec env var; entrypoint.sh loops them and runs the
-	// pinned installer in /workspace.
-	//
-	// Two YAML shapes per key (sddDecodeHook normalises the bool shorthand):
-	//
-	//	sdd:
-	//	  gsd: true            # registry-default install steps
-	//	  gsd:                 # explicit steps override (#317)
-	//	    steps:
-	//	      - ["--claude", "--global", "--config-dir", "./.claude"]
-	SDD map[string]SDDSkill `mapstructure:"sdd"`
 	// Env injects arbitrary K=V pairs into every shell spawned by the
 	// container, emitted after the curated TOOLBOX_* / PWD entries by
 	// sessionplan. Hash-neutral (lives outside the removed tools: block) so
@@ -148,22 +131,6 @@ type NamedShell struct {
 	// keys win on collision; see Config.EffectiveEnv. Same reserved-key
 	// rules as the top-level map (validated per entry).
 	Env map[string]string `mapstructure:"env"`
-}
-
-// SDDSkill is the per-skill value of the sdd: map. The YAML shorthand
-// `sdd.<key>: true|false` decodes to {Enabled: <bool>} via sddDecodeHook;
-// the object form implies Enabled=true and may override the registry's
-// default install steps.
-//
-// Steps mirrors internal/sdd.Skill.InstallSteps: each inner slice is one
-// installer invocation's argv tail. The same token rules apply (validated
-// by ValidateSDDSteps): the host→container encoding joins args with spaces
-// and steps with the sdd.StepSeparator, and the bash bootstrap re-splits
-// on exactly those — a token containing either would silently change the
-// arg boundaries inside the container.
-type SDDSkill struct {
-	Enabled bool       `mapstructure:"enabled"`
-	Steps   [][]string `mapstructure:"steps"`
 }
 
 // Mount represents a host -> container volume bind.
@@ -331,69 +298,8 @@ func validateBareRef(key, s, shape string) error {
 	return nil
 }
 
-// ValidateSDD checks the steps-override entries of the sdd: map. Bool
-// shorthand entries (Steps == nil) are deliberately NOT validated: unknown
-// keys there are silently dropped by sessionplan so a typo never aborts the
-// shell. An explicit steps: override is different — the user is hand-wiring
-// installer argv, so failing loud beats a bootstrap that silently runs the
-// wrong layout.
-//
-// Token rules mirror the internal/sdd.Skill.InstallSteps contract: the
-// host→container encoding joins args with spaces and steps with
-// sdd.StepSeparator, and entrypoint.sh re-splits on exactly those, so a
-// token containing whitespace or the separator would shift arg boundaries
-// inside the container instead of erroring anywhere.
-func ValidateSDD(m map[string]SDDSkill) error {
-	for _, k := range slices.Sorted(maps.Keys(m)) { // deterministic first-error across runs
-		if err := validateSDDSteps(k, m[k]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateSDDSteps checks one sdd.<key> entry. A bool-shorthand entry
-// (Steps == nil) passes untouched, per the rules in ValidateSDD's doc.
-func validateSDDSteps(k string, v SDDSkill) error {
-	if v.Steps == nil {
-		return nil
-	}
-	if _, ok := sdd.Lookup(k); !ok {
-		return fmt.Errorf(
-			"sdd.%s: unknown integration for steps override; supported: %s",
-			k, strings.Join(sdd.Keys(), ", "))
-	}
-	if len(v.Steps) == 0 {
-		return fmt.Errorf(
-			"sdd.%s.steps: must list at least one step (or use `sdd.%s: true` for the registry default)",
-			k, k)
-	}
-	for i, step := range v.Steps {
-		if len(step) == 0 {
-			return fmt.Errorf("sdd.%s.steps[%d]: step must list at least one argument", k, i)
-		}
-		for _, tok := range step {
-			if !validStepToken(tok) {
-				return fmt.Errorf(
-					"sdd.%s.steps[%d]: invalid token %q: tokens must be non-empty, whitespace-free, and must not contain %q",
-					k, i, tok, sdd.StepSeparator)
-			}
-		}
-	}
-	return nil
-}
-
-// validStepToken reports whether tok survives the host→container encoding
-// intact: whitespace or a step separator inside a token would shift argument
-// boundaries when entrypoint.sh re-splits, instead of erroring anywhere.
-func validStepToken(tok string) bool {
-	return tok != "" &&
-		!strings.Contains(tok, sdd.StepSeparator) &&
-		!strings.ContainsFunc(tok, unicode.IsSpace)
-}
-
 // ReservedEnvPrefix is the namespace owned by the curated session env
-// contract (TOOLBOX_HOST_WORKSPACE, TOOLBOX_SDD_*, TOOLBOX_LOOPBACK_BRIDGE_*,
+// contract (TOOLBOX_HOST_WORKSPACE, TOOLBOX_LOOPBACK_BRIDGE_*,
 // …). User-supplied env: keys may not collide with it.
 const ReservedEnvPrefix = "TOOLBOX_"
 

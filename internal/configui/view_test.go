@@ -293,7 +293,7 @@ func requireHostAuthPath(t *testing.T, home, key string) {
 // model's own save path must land on the same bytes. The preview and the writers
 // used to be independent models of the same mutation, indexed on different axes
 // (editor kind vs key), and they diverged wherever those axes failed to
-// coincide — mounts inverted the edit, sdd showed a list where a map is written,
+// coincide — mounts inverted the edit,
 // shells under-reported the env block the writer preserves.
 //
 // The read-only `shell` key is excluded: openEditor refuses it, so it has no
@@ -358,11 +358,6 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 				return apply(m.target, m.cwd, configedit.StringList("inherit_host_auth", []string{HostAuthOptions()[0]}))
 			},
 			prepare: func(t *testing.T, home string) { requireHostAuthPath(t, home, HostAuthOptions()[0]) },
-		},
-		{
-			key:  "sdd",
-			open: checkFirstOption,
-			save: func(m Model) error { return SaveSDD(m.target, m.cwd, map[string]bool{SDDOptions()[0]: true}) },
 		},
 		{
 			key:  "mounts",

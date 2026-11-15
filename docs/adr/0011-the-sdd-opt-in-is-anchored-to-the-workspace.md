@@ -1,6 +1,8 @@
 # The SDD opt-in is anchored to the workspace, and only the project layer may write it
 
-Status: accepted
+Status: superseded by the removal of the SDD skill packs (issue #1463): toolbox
+no longer reads `sdd:` — it is a retired key, warned about at load — so there is
+no opt-in left to anchor, and the workspace-only guard went with it.
 
 `toolbox config ui` presents a uniform Config Scope axis: every key can be
 edited in the Global layer or the Repo layer, and the tab toggles between them.

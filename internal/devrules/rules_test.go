@@ -392,7 +392,7 @@ func ruleBlockPointsAtOwner(block, pkg, self string, globs map[string][]string) 
 // rule whose frontmatter does.
 //
 // TestRulePathsResolve checks the opposite direction — that each glob still
-// points at something on disk — and cannot catch this: config-mounts-sdd.md
+// points at something on disk — and cannot catch this: a former config rule file
 // documented `configedit.ApplyChecked` as the only validated config write lane
 // while listing neither internal/configui, internal/configrender nor the cmd/
 // files that write through it, so editing cmd/config.go loaded a different rule

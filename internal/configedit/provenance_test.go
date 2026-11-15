@@ -77,7 +77,6 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		ManagedStatusline: &yes,
 		ImageReclaim:      &yes,
 		PeerMessaging:     true,
-		SDD:               map[string]config.SDDSkill{"gsd": {Enabled: true}},
 		Env:               map[string]string{"FOO": "bar"},
 		InheritHostAuth:   []string{"gh"},
 		Shells:            map[string]config.NamedShell{"infra": {Path: "/tmp/infra"}},

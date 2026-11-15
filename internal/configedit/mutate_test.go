@@ -167,27 +167,6 @@ func TestMountsDisabledKeepsRicherUserEntry(t *testing.T) {
 	}
 }
 
-func TestSDDEnabledWritesShorthandAndDropsEmptiedBlock(t *testing.T) {
-	key := SDDKeys()[0]
-	got := render(t, "", SDDEnabled(map[string]bool{key: true}))
-	if !strings.Contains(got, key+": true") {
-		t.Errorf("want the %s bool shorthand:\n%s", key, got)
-	}
-	if got := render(t, got, SDDEnabled(nil)); strings.Contains(got, "sdd") {
-		t.Errorf("disabling every skill must drop the sdd block:\n%s", got)
-	}
-}
-
-// An object-form entry already means enabled and carries the user's steps
-// override, so the shorthand must not clobber it.
-func TestSDDEnabledLeavesCustomStepsAlone(t *testing.T) {
-	key := SDDKeys()[0]
-	src := "sdd:\n  " + key + ":\n    steps:\n      - [echo, hi]\n"
-	if got := render(t, src, SDDEnabled(map[string]bool{key: true})); !strings.Contains(got, "steps:") {
-		t.Errorf("a custom steps override must survive staying enabled:\n%s", got)
-	}
-}
-
 func TestScalarsWritesEveryEditAndEmptyRemoves(t *testing.T) {
 	got := render(t, "# keep me\nshell: zsh\n", Scalars([]ScalarEdit{
 		{"image", "ghcr.io/x/y:1"},
@@ -375,11 +354,6 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 	shellsMut := Shells([]ShellEntry{{Name: "prod", Path: "/p", OrigName: "old", Env: shellEnv}})
 	shellEnv["REGION"] = "mutated"
 
-	sddKey := SDDKeys()[0]
-	enabled := map[string]bool{sddKey: true}
-	sddMut := SDDEnabled(enabled)
-	enabled[sddKey] = false
-
 	mountName := DefaultMountNames()[0]
 	disabled := map[string]bool{mountName: true}
 	mountsMut := MountsDisabled(disabled)
@@ -404,7 +378,6 @@ func TestMutatorsSnapshotWhatTheyCapture(t *testing.T) {
 		"StringList":     {listMut, "claude"},
 		"StringMap":      {mapMut, "FOO: bar"},
 		"Shells":         {shellsMut, "REGION: eu"},
-		"SDDEnabled":     {sddMut, sddKey + ": true"},
 		"MountsDisabled": {mountsMut, "disabled: true"},
 		"Shell":          {shellMut, "REGION: eu"},
 		"ShellEnv":       {shellEnvMut, "REGION: eu"},

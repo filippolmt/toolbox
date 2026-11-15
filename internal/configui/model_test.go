@@ -1,7 +1,6 @@
 package configui
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,18 +194,18 @@ func TestRenamingAShellAfterADeleteKeepsItsEnv(t *testing.T) {
 }
 
 // TestMultiSelectSpaceTogglesSelection guards the checkbox toggle shared by
-// every multi-select editor (sdd / mounts / inherit_host_auth). Under
+// every multi-select editor (mounts / inherit_host_auth). Under
 // bubbletea v2 a spacebar press stringifies to "space", not " ", so matching
-// only " " left the toggle dead — no SDD skill could be selected. Driving the
+// only " " left the toggle dead — no option could be selected. Driving the
 // real space key through Update keeps the binding honest across future
 // bubbletea bumps.
 func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
 	if got := (tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}).String(); got != "space" {
 		t.Fatalf("bubbletea space key stringifies to %q; test premise stale", got)
 	}
-	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "sdd"}), "enter")
+	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "mounts"}), "enter")
 	if !m.editing || m.ed.kind != config.EditorSet {
-		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
+		t.Fatalf("mounts did not open a multi-select (status %q)", m.status)
 	}
 	first := m.ed.options[0]
 	wantOnScreen(t, m, "[ ] "+first)
@@ -214,114 +213,6 @@ func TestMultiSelectSpaceTogglesSelection(t *testing.T) {
 	wantOnScreen(t, m, "[x] "+first)
 	m = press(m, "space")
 	wantOnScreen(t, m, "[ ] "+first)
-}
-
-// TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope: sdd's effect is anchored
-// to the workspace, so the structured editor must not write it into the global
-// layer. The row still displays (a hand-written global flag stays legal and
-// visible, and the $EDITOR escape still reaches it) — enter refuses, and the
-// status names both the reason and the way out. Asserted on the status, because
-// the keybar names `tab` and the detail pane names the scope on every frame.
-func TestOpenEditorRefusesWorkspaceOnlyKeyInGlobalScope(t *testing.T) {
-	m := press(browsing(ScopeGlobal, &config.Config{}, KeyState{Key: "sdd"}), "enter")
-	if m.editing {
-		t.Error("sdd must not open an editor in the global scope")
-	}
-	wantInStatus(t, m, "per-workspace", ScopeGlobal.String(), "press tab")
-}
-
-// TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope is the other half: the guard
-// is per-scope, not a blanket read-only marking of the key.
-func TestOpenEditorAllowsWorkspaceOnlyKeyInRepoScope(t *testing.T) {
-	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: "sdd", ScopeSet: true}), "enter")
-	if !m.editing {
-		t.Errorf("sdd must stay editable in the repo scope, status = %q", m.status)
-	}
-	notInStatus(t, m, "per-workspace")
-}
-
-// enabledSDDRepo builds a workspace with gsd enabled through the real save
-// path, and returns its cwd and project-config path.
-func enabledSDDRepo(t *testing.T) (cwd, target string) {
-	t.Helper()
-	cwd = t.TempDir()
-	target = filepath.Join(cwd, ".toolbox.yaml")
-	if err := SaveSDD(target, cwd, map[string]bool{"gsd": true}); err != nil {
-		t.Fatalf("SaveSDD: %v", err)
-	}
-	return cwd, target
-}
-
-// TestResetWorkspaceOnlyKeyClearsFencesInRepoScope: dropping the flag without
-// its .gitignore blocks would leave a fence nothing owns any more — the CLI has
-// no uninstall, so an orphan is cleaned by hand or not at all.
-func TestResetWorkspaceOnlyKeyClearsFencesInRepoScope(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	cwd, target := enabledSDDRepo(t)
-	if !strings.Contains(readFile(t, filepath.Join(cwd, ".gitignore")), configedit.GitignoreFenceStart("gsd")) {
-		t.Fatal("fixture wrote no fence to reset")
-	}
-
-	m := Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m = press(m, "r")
-
-	wantInStatus(t, m, "reset sdd")
-	if got := readFile(t, target); strings.Contains(got, "sdd") {
-		t.Errorf("reset left the sdd flag behind:\n%s", got)
-	}
-	if got := readFile(t, filepath.Join(cwd, ".gitignore")); strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
-		t.Errorf("reset orphaned the gsd fence:\n%s", got)
-	}
-}
-
-// TestResetWorkspaceOnlyKeyKeepsFencesInGlobalScope: resetting a hand-written
-// global flag is allowed (the guard is about creating one, not clearing it),
-// but the fences belong to whichever workspaces wrote them — removing the
-// current one's on behalf of a file that applies everywhere is the same
-// asymmetry, reversed.
-func TestResetWorkspaceOnlyKeyKeepsFencesInGlobalScope(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cwd, _ := enabledSDDRepo(t)
-	global := filepath.Join(home, ".toolbox.yaml")
-	if err := os.WriteFile(global, []byte("sdd:\n  gsd: true\n"), 0o600); err != nil {
-		t.Fatalf("write global config: %v", err)
-	}
-
-	m := Model{cwd: cwd, target: global, scope: ScopeGlobal, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	m = press(m, "r")
-
-	if got := readFile(t, global); strings.Contains(got, "sdd") {
-		t.Errorf("reset left the global sdd flag behind:\n%s", got)
-	}
-	if got := readFile(t, filepath.Join(cwd, ".gitignore")); !strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
-		t.Errorf("a global reset must not touch the workspace fence:\n%s", got)
-	}
-	wantInStatus(t, m, "fences left untouched")
-}
-
-// TestResetInRepoScopeKeepsFencesAKeptGlobalFlagStillNeeds: reset removes the
-// key from the selected layer only, so a hand-written global flag keeps the
-// skill enabled — and a skill that still runs still needs its fence. Reset
-// therefore reconciles against what the layers now resolve to, not against the
-// empty set, or it produces the mirror of the orphan it exists to prevent.
-func TestResetInRepoScopeKeepsFencesAKeptGlobalFlagStillNeeds(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cwd, target := enabledSDDRepo(t)
-	if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte("sdd:\n  gsd: true\n"), 0o600); err != nil {
-		t.Fatalf("write global config: %v", err)
-	}
-
-	m := Model{cwd: cwd, target: target, scope: ScopeRepo, states: []KeyState{{Key: "sdd", ScopeSet: true}}}
-	press(m, "r")
-
-	if got := readFile(t, target); strings.Contains(got, "sdd") {
-		t.Errorf("reset left the repo sdd flag behind:\n%s", got)
-	}
-	if got := readFile(t, filepath.Join(cwd, ".gitignore")); !strings.Contains(got, configedit.GitignoreFenceStart("gsd")) {
-		t.Errorf("gsd is still enabled by the global layer, so its fence must survive:\n%s", got)
-	}
 }
 
 // TestQuitStopsTheProgram: q is the documented way out, and it has to return

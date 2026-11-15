@@ -14,7 +14,6 @@ sections.** Every `##` of a linked guide needs an entry
 | [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding; Claude in Chrome, which bypasses it |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
-| [sdd.md](sdd.md) | how-to | Spec-Driven-Development skill packs |
 | [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
@@ -34,7 +33,6 @@ sections.** Every `##` of a linked guide needs an entry
 - [toolbox mounts](commands.md#toolbox-mounts)
 - [toolbox shells](commands.md#toolbox-shells)
 - [toolbox bridge](commands.md#toolbox-bridge)
-- [toolbox sdd](commands.md#toolbox-sdd)
 - [toolbox completion](commands.md#toolbox-completion)
 - [--where targeting](commands.md#--where-targeting)
 - [dry runs](commands.md#dry-runs)
@@ -107,13 +105,6 @@ sections.** Every `##` of a linked guide needs an entry
 - [Cache and TTL](session-reload.md#cache-and-ttl)
 - [Opt out](session-reload.md#opt-out)
 - [What the prefetch changes about metered connections](session-reload.md#what-the-prefetch-changes-about-metered-connections)
-
-## sdd.md
-
-- [Supported integrations](sdd.md#supported-integrations)
-- [CLI usage](sdd.md#cli-usage)
-- [SDD install steps](sdd.md#sdd-install-steps)
-- [SDD .gitignore fence](sdd.md#sdd-gitignore-fence)
 
 ## worktrunk.md
 

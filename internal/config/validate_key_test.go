@@ -49,7 +49,7 @@ func TestValidateKeyAgreesWithTheValidationTail(t *testing.T) {
 // validates over the resolved Config — must return nil rather than invent a
 // verdict. The write gate is what catches those.
 func TestValidateKeyIsSilentWhereTheTailNeedsAWholeConfig(t *testing.T) {
-	for _, key := range []string{"bridge", "proximo", "mounts", "shells", "env", "sdd", "worktree", "inherit_host_auth"} {
+	for _, key := range []string{"bridge", "proximo", "mounts", "shells", "env", "worktree", "inherit_host_auth"} {
 		if err := ValidateKey(key, "anything"); err != nil {
 			t.Errorf("ValidateKey(%q, …) = %v, want nil", key, err)
 		}

@@ -69,14 +69,14 @@ func TestRenderOptionsMarksCursorAndTags(t *testing.T) {
 // The checkbox state is per option and independent of the cursor: the box
 // reflects the selection, the marker reflects where you are.
 func TestRenderCheckboxesTracksSelectionNotCursor(t *testing.T) {
-	opts := SDDOptions()
+	opts := DefaultMountNames()
 	if len(opts) < 2 {
-		t.Skipf("need two SDD packs to separate cursor from selection, have %v", opts)
+		t.Skipf("need two default mounts to separate cursor from selection, have %v", opts)
 	}
-	cfg := &config.Config{SDD: map[string]config.SDDSkill{opts[1]: {Enabled: true}}}
-	m := press(browsing(ScopeRepo, cfg, KeyState{Key: "sdd", ScopeSet: true}), "enter")
+	cfg := &config.Config{Mounts: []config.Mount{{Name: opts[1], Disabled: true}}}
+	m := press(browsing(ScopeRepo, cfg, KeyState{Key: "mounts", ScopeSet: true}), "enter")
 	if !m.editing || m.ed.kind != config.EditorSet {
-		t.Fatalf("sdd did not open a multi-select (status %q)", m.status)
+		t.Fatalf("mounts did not open a multi-select (status %q)", m.status)
 	}
 	wantOnScreen(t, m, "> [ ] "+opts[0], "  [x] "+opts[1])
 }

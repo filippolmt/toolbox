@@ -2,7 +2,6 @@ package configui
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -271,35 +270,6 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// SDDOptions returns the known SDD skill keys, sorted — the option set for the
-// structured sdd editor. It is the same set configedit.SDDEnabled reconciles,
-// so the checkboxes offered and the keys written cannot drift.
-func SDDOptions() []string { return configedit.SDDKeys() }
-
-// EnabledSDD reports which SDD skills are currently enabled.
-func EnabledSDD(cfg *config.Config) map[string]bool {
-	out := map[string]bool{}
-	for key, s := range cfg.SDD {
-		if s.Enabled {
-			out[key] = true
-		}
-	}
-	return out
-}
-
-// SaveSDD reconciles the SDD skill set through the configedit seam so the TUI
-// produces the same .toolbox.yaml + .gitignore state as `toolbox sdd init`. The
-// yaml reconcile stays transactional and Doctor-gated; only after that commit
-// succeeds does it write the .gitignore fence for each enabled skill and remove
-// it for each disabled one — fences are outside Doctor's contract, so a
-// rejected yaml reconcile leaves every fence untouched.
-func SaveSDD(target, cwd string, enabled map[string]bool) error {
-	if _, _, err := configedit.ApplyChecked(target, cwd, configedit.SDDEnabled(enabled)); err != nil {
-		return err
-	}
-	return configedit.ReconcileSDDGitignore(filepath.Join(cwd, ".gitignore"), enabled)
 }
 
 // DefaultMountNames returns the names of the built-in default mounts — the

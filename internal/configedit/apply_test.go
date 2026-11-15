@@ -139,7 +139,7 @@ func TestApplyCheckedBootstrapsDocument(t *testing.T) {
 				}
 			}
 			changed, _, err := ApplyChecked(path, cwdOf(path), func(doc *yaml.Node) {
-				configio.SetMapBool(configio.EnsureChildMap(doc, "sdd"), "openspec", true)
+				configio.SetMapValue(configio.EnsureChildMap(doc, "env"), "FOO", "bar")
 			})
 			if err != nil {
 				t.Fatalf("ApplyChecked: %v", err)
@@ -154,7 +154,7 @@ func TestApplyCheckedBootstrapsDocument(t *testing.T) {
 			if info.Mode().Perm() != 0o600 {
 				t.Fatalf("mode = %v, want 0600", info.Mode().Perm())
 			}
-			if got := readFile(t, path); !strings.Contains(got, "openspec: true") {
+			if got := readFile(t, path); !strings.Contains(got, "FOO: bar") {
 				t.Fatalf("output missing mutation:\n%s", got)
 			}
 		})
@@ -168,7 +168,7 @@ func TestApplyCheckedBootstrapsDocument(t *testing.T) {
 func TestApplyCheckedIdempotentRunDoesNotRewrite(t *testing.T) {
 	path := tmpConfigPath(t)
 	mutate := func(doc *yaml.Node) {
-		configio.SetMapBool(configio.EnsureChildMap(doc, "sdd"), "openspec", true)
+		configio.SetMapValue(configio.EnsureChildMap(doc, "env"), "FOO", "bar")
 	}
 	if _, _, err := ApplyChecked(path, cwdOf(path), mutate); err != nil {
 		t.Fatalf("first ApplyChecked: %v", err)

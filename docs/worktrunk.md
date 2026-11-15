@@ -139,8 +139,8 @@ warning at load and in `toolbox config doctor`:
 
 - `worktree:` (its `seed` list) — list the paths in `.worktreeinclude` and
   copy them with `wt step copy-ignored`. The old seed list was an allowlist on
-  top of fixed defaults (`.claude/settings.local.json`, `.env*`, `openspec/`,
-  `.planning/`); without a `.worktreeinclude`, `copy-ignored` copies everything
+  top of fixed defaults (`.claude/settings.local.json`, `.env*`,
+  `.planning/`, …); without a `.worktreeinclude`, `copy-ignored` copies everything
   gitignored instead.
 - `agent:` — name the agent per worktree with `wt switch -x <agent>`.
 

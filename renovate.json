@@ -459,36 +459,6 @@
       "extractVersionTemplate": "^v(?<version>.*)$"
     },
     {
-      "customType": "regex",
-      "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
-      "matchStrings": [
-        "NpmPackage:\\s*\"@opengsd/gsd-core\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
-      ],
-      "datasourceTemplate": "npm",
-      "depNameTemplate": "@opengsd/gsd-core",
-      "packageNameTemplate": "@opengsd/gsd-core"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
-      "matchStrings": [
-        "NpmPackage:\\s*\"bmad-method\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
-      ],
-      "datasourceTemplate": "npm",
-      "depNameTemplate": "bmad-method",
-      "packageNameTemplate": "bmad-method"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^internal/sdd/registry\\.go$/"],
-      "matchStrings": [
-        "NpmPackage:\\s*\"@fission-ai/openspec\"[^}]*?Version:\\s*\"(?<currentValue>[^\"]+)\""
-      ],
-      "datasourceTemplate": "npm",
-      "depNameTemplate": "@fission-ai/openspec",
-      "packageNameTemplate": "@fission-ai/openspec"
-    },
-    {
       "description": "The golang image tag for the containerised Go test/lint/build targets. Kept on the docker datasource, NOT derived from go.mod's toolchain directive: Docker Hub publishes golang:<patch> days after the Go release reaches the index, so a derived tag lets an automergeable gomod bump land a tag that does not exist yet.",
       "customType": "regex",
       "managerFilePatterns": ["/^Makefile$/"],

@@ -197,25 +197,14 @@ layer, or the mount's merge set.
 Concretely: every writer command targets a Where; the config editor's
 tab moves a Scope, and every save, reset and preview it performs is
 resolved through the matching Where, never through a path of its own.
-Not every key admits both sides of the axis: a key whose effect is
-anchored to the workspace the container mounts has no coherent global
-expression, and `configedit.WorkspaceOnlyKey` is the authority on which
-ones those are — asked by the config editor before it opens a key for
-editing and before its reset touches the artefacts a key owns, never
-restated at either site. Rationale and rejected options:
-[ADR 0011](docs/adr/0011-the-sdd-opt-in-is-anchored-to-the-workspace.md).
 
 Why the term exists: the three faces were named independently and two
 of them disagree on the word for the same side (`WhereLocal` vs
-`ScopeRepo`), so nothing in the vocabulary said they were one axis —
-and a key whose write surface must be narrower than the axis had
-nowhere to say so. The gap that named it: `toolbox sdd init` joined its
-own path from the current directory while the editor resolved one
-through the Scope, so the two "identical" write paths targeted
-different files, and a Global-scope enable wrote a flag applying
-everywhere next to a fence applying to one repo. Naming the axis is
-what makes "which face is this, and does this key admit both sides?" a
-question with an owner. The identifiers keep their three names: a
+`ScopeRepo`), so nothing in the vocabulary said they were one axis.
+The gap that named it: a CLI writer joined its own path from the
+current directory while the editor resolved one through the Scope, so
+two "identical" write paths targeted different files. Naming the axis
+is what makes "which face is this?" a question with an owner. The identifiers keep their three names: a
 rename is its own refactor, not a passenger on a behaviour fix.
 
 ### Tool Catalog
@@ -265,7 +254,7 @@ One config edit, captured as a value before it happens:
 closes over its arguments (`configedit.Scalar`, `Scalars`, `Bool`,
 `StringList`, `StringMap`, `Shell`, `ShellEnv`, `Shells`, `RemoveShell`,
 `Mount`, `MountDisabled`, `MountsDisabled`, `RemoveMount`,
-`SDDEnabled`, `Remove`). Owned by `internal/configedit`
+`Remove`). Owned by `internal/configedit`
 (`mutate.go`).
 
 The point of the term: a caller that must both *show* an edit and
@@ -303,7 +292,7 @@ Why the term exists: `config ui` used to hold two independent models of
 the same edit. `previewDoc` built a `map[string]any` keyed on the
 *editor kind* while the writers mutated a `yaml.Node` keyed on the
 *config key*, and they disagreed wherever those axes failed to coincide:
-`sdd` previewed a list where a map is written, `shells` under-reported
+`shells` under-reported
 the `env:` block the writer preserves, and `mounts` — whose checkboxes
 select what to *disable* — rendered the exact inverse of the pending
 edit. Naming the pending mutation, and making it a value the two sides

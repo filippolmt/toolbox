@@ -129,8 +129,7 @@ func EnsureChildMap(parent *yaml.Node, key string) *yaml.Node {
 // ChildValue returns the value node paired with key on parent, or nil when
 // parent is not a mapping or the key is absent. Read-only sibling of
 // EnsureChildMap for callers that must inspect a value's shape before
-// deciding whether to mutate it (e.g. cmd/sdd refusing to clobber an
-// object-form sdd.<key> entry with the bool shorthand).
+// deciding whether to mutate it.
 func ChildValue(parent *yaml.Node, key string) *yaml.Node {
 	if i := mapPairIndex(parent, key); i >= 0 {
 		return parent.Content[i+1]

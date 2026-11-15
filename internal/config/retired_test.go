@@ -21,13 +21,13 @@ func TestWarnRetiredKeysNamesEachKeyOnce(t *testing.T) {
 	orig := os.Stderr
 	os.Stderr = w
 	warnRetiredKeys([]byte("worktree:\n  seed: [.env]\n"), nil, []byte("agent: codex\nworktree: {}\n"))
-	warnRetiredKeys([]byte("agent: pi\n"))
+	warnRetiredKeys([]byte("agent: pi\nsdd:\n  gsd: true\n"))
 	os.Stderr = orig
 	_ = w.Close()
 	out, _ := io.ReadAll(r)
 
 	got := string(out)
-	for _, key := range []string{"worktree", "agent"} {
+	for _, key := range []string{"worktree", "agent", "sdd"} {
 		r := RetiredKeys()[key]
 		if n := strings.Count(got, r.Hint); n != 1 {
 			t.Errorf("%q warned %d times, want once:\n%s", key, n, got)

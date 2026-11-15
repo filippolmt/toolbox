@@ -1995,7 +1995,7 @@ ENV PATH="/home/toolbox/.npm-global/bin:${PATH}"
 # npm-global entry sits here. Why: docs/adr/0002-layer-ordering-by-invalidation-floor.md
 # Like npm-global, these sit ahead of /usr/local/bin so a deliberate runtime
 # install wins over the baked pin — see the shadow gotcha in
-# .claude/rules/config-mounts-sdd.md.
+# .claude/rules/mounts.md.
 ENV PNPM_HOME="/home/toolbox/.local/share/pnpm" \
     UV_TOOL_BIN_DIR="/home/toolbox/.local/share/uv/bin"
 ENV PATH="/home/toolbox/go/bin:/home/toolbox/.local/share/pnpm/bin:/home/toolbox/.local/share/uv/bin:${PATH}"
