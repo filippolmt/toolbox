@@ -86,7 +86,7 @@ _wt_wire_pi() {
     return "$rc"
 }
 
-toolbox_sync_skill worktrunk
+toolbox_sync_skill worktrunk || true
 
 if [ -n "$_wt_claude" ]; then
     toolbox_with_claude_settings_lock _wt_wire_claude || \

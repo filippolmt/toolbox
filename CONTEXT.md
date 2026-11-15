@@ -2037,13 +2037,12 @@ another.
 ### Global Skill
 
 An agent skill the image bakes at build from the release of the tool it
-describes, and copies into the agents at start. Members are gh, glab, herdr and
-worktrunk.
+describes, and copies into the agents at start. Members are whatever the fetch
+stages bake; `/usr/local/share/toolbox/skills` is the list.
 
 Concretely: the fetch stage of each tool writes the skill to
-`/usr/local/share/toolbox/skills/<tool>` from the pinned release (`gh skill
-install --pin`, `glab skills install --path`, `herdr --skill`, worktrunk's
-source archive) and fails the build when it comes out empty. At start the
+`/usr/local/share/toolbox/skills/<tool>` from the pinned release, with the
+tool's own mechanism (for gh, `gh skill install --pin`), and fails the build when it comes out empty. At start the
 tool's init.d member calls `toolbox_sync_skill <tool>` (`bin/agent-topology-lib.sh`),
 which copies the baked tree into every active skill root only where the copy
 there differs, under a per-root lock: a current copy is never rewritten, a

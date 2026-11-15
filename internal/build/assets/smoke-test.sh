@@ -1312,10 +1312,14 @@ docker run --rm "${IMAGE}" bash -c '
 set -e
 command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
 mkdir -p "$HOME/.claude"
-boot() { for s in 02-gh.sh 60-glab.sh 61-herdr.sh 62-worktrunk.sh; do /usr/local/lib/toolbox/init.d/$s >/dev/null 2>&1 || { echo "FAILED: $s exited non-zero"; exit 1; }; done; }
+# Every init.d member that syncs a skill, and every skill the image baked.
+members=$(grep -l toolbox_sync_skill /usr/local/lib/toolbox/init.d/*.sh)
+skills=$(ls /usr/local/share/toolbox/skills)
+[ -n "$members" ] && [ -n "$skills" ] || { echo "FAILED: no skill-syncing init.d member or no baked skill"; exit 1; }
+boot() { for s in $members; do "$s" >/dev/null 2>&1 || { echo "FAILED: $s exited non-zero"; exit 1; }; done; }
 boot
 for root in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
-    for skill in gh glab herdr worktrunk; do
+    for skill in $skills; do
         cmp -s "/usr/local/share/toolbox/skills/$skill/SKILL.md" "$root/$skill/SKILL.md" || { echo "FAILED: $root/$skill/SKILL.md is not the baked copy"; exit 1; }
     done
 done

@@ -50,13 +50,15 @@ toolbox_baked_skills=/usr/local/share/toolbox/skills
 # toolbox_sync_skill NAME copies the baked skill NAME into every active skill
 # root, only where the copy there differs: a current copy is never rewritten, a
 # missing one self-heals (~/.agents is container-local and starts empty on every
-# recreate) and a hand edit is replaced. Nothing baked, nothing to do. Failures
-# are reported per root and never fatal.
+# recreate) and a hand edit is replaced. Nothing baked, nothing to do. A root
+# that fails is reported and the others still run; the return status is 1 when
+# any root failed, so a caller under `set -e` that must go on adds `|| true`.
 toolbox_sync_skill() {
     [ -s "$toolbox_baked_skills/$1/SKILL.md" ] || return 0
-    # Read by the callback through bash's dynamic scoping.
-    local _toolbox_skill_name="$1"
+    # Read and set by the callback through bash's dynamic scoping.
+    local _toolbox_skill_name="$1" _toolbox_skill_failed=0
     toolbox_for_each_active_skill_root _toolbox_sync_skill_into
+    return "$_toolbox_skill_failed"
 }
 
 # Replaced whole, so a file upstream dropped does not linger. A Claude skill
@@ -86,6 +88,7 @@ _toolbox_sync_skill_into() {
         exit 1
     ) 9>"$root/.$name-skill.lock"; then
         echo "toolbox: $name skill install into $root failed (non-fatal)"
+        _toolbox_skill_failed=1
     fi
 }
 

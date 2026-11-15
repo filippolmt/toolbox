@@ -158,3 +158,22 @@ func TestSyncSkillSkipsWhatTheImageDidNotBake(t *testing.T) {
 		t.Error("a skill the image did not bake was created")
 	}
 }
+
+// TestSyncSkillReportsAFailedRootAndSyncsTheRest: a root that cannot take the
+// skill fails the call — toolbox-refresh exits non-zero on it — while the
+// other roots are still synced.
+func TestSyncSkillReportsAFailedRootAndSyncsTheRest(t *testing.T) {
+	f := newSkillSyncFixture(t, "claude", "pi")
+	// A file where the Claude skill root should be: mkdir -p cannot get past it.
+	writeFile(t, filepath.Join(f.home, ".claude", "skills"), "not a directory\n")
+	cmd := exec.Command("/bin/bash", f.script, "demo")
+	cmd.Env = f.env
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("toolbox_sync_skill succeeded with an unwritable root\n%s", out)
+	}
+	if !strings.Contains(string(out), "demo skill install into") {
+		t.Errorf("failed root not reported: %q", out)
+	}
+	readSkill(t, filepath.Join(f.home, ".agents", "skills", "demo", "SKILL.md"))
+}

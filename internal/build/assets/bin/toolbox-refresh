@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # toolbox-refresh [tool…] — refresh agent skills and per-repo tool installs on
-# demand. Nothing does this at container start any more (ADR 0020):
+# demand (ADR 0020):
 #
-#   - Global skills (every one the image baked: gh, glab, herdr, worktrunk): copy the skill
-#     from each tool's release into every active skill root, where it differs.
-#     init.d does the same at every start; this is the manual retry.
-#   - Per-repo installers (graphify, codegraph, playwright-cli): re-run each
+#   - Global skills (every skill the image baked under $toolbox_baked_skills):
+#     copy each into every active skill root, where it differs. init.d does the
+#     same at every start; this is the manual retry.
+#   - Per-repo installers (the repo_tools below): re-run each
 #     installer in the current repo when the repo already opted in through
 #     graphify-init / codegraph-init / pwcli-init. The repo is resolved with
 #     `git rev-parse --show-toplevel`, so any subdirectory works; outside a repo
@@ -31,8 +31,9 @@ usage() {
 }
 
 rc=0
-# run LABEL CMD… runs one installer from the repo root, quiet unless it fails.
-run() {
+# run_in_repo LABEL CMD… runs one installer from the repo root, quiet unless
+# it fails.
+run_in_repo() {
     local label="$1"; shift
     if (cd "$root" && "$@" >/dev/null); then
         echo "toolbox-refresh: $label refreshed"
@@ -42,18 +43,19 @@ run() {
     fi
 }
 
+# An agent whose state is mounted: a per-repo install for it survives.
 claude_ready() {
     toolbox_agent_available claude && toolbox_agent_persistent claude
 }
+pi_ready() {
+    toolbox_agent_available pi && toolbox_agent_persistent pi
+}
 
 refresh_skill() {
-    local out
-    out=$(toolbox_sync_skill "$1")
-    if [ -n "$out" ]; then
-        echo "$out" >&2
-        rc=1
+    if toolbox_sync_skill "$1"; then
+        echo "toolbox-refresh: $1 skill in sync"
     else
-        echo "toolbox-refresh: $1 skill current"
+        rc=1
     fi
 }
 
@@ -68,7 +70,7 @@ refresh_graphify() {
         | sort -n | head -n -10 | cut -d' ' -f2- | while IFS= read -r old; do rm -rf "$old"; done || true
 
     if claude_ready; then
-        run "graphify (claude)" graphify install --project --platform claude
+        run_in_repo "graphify (claude)" graphify install --project --platform claude
         # graphify install writes a backup beside the settings it patched; it is
         # never read back.
         rm -f "$root/.claude/settings.json.graphify-bak"
@@ -77,8 +79,8 @@ refresh_graphify() {
     # pi reads project skills from .pi/skills, which the claude install never
     # writes. Its gate is the ~/.pi bind mount, not ~/.pi/agent, which pi
     # creates on its own first run whether the state is mounted or not.
-    if toolbox_agent_available pi && toolbox_agent_persistent pi; then
-        run "graphify (pi)" graphify install --project --platform pi
+    if pi_ready; then
+        run_in_repo "graphify (pi)" graphify install --project --platform pi
     fi
     graphify_git_hooks
 }
@@ -120,7 +122,7 @@ graphify_git_hooks() {
         drop_attrs=true
     fi
 
-    run "graphify (git hooks)" graphify hook install
+    run_in_repo "graphify (git hooks)" graphify hook install
 
     hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)
     # graphify installs beside Husky's generated wrappers, in the user-editable parent.
@@ -143,7 +145,7 @@ graphify_git_hooks() {
 # configured" mode — it never adds a new agent.
 refresh_codegraph() {
     if claude_ready; then
-        run codegraph codegraph install --refresh
+        run_in_repo codegraph codegraph install --refresh
     fi
 }
 
@@ -151,10 +153,10 @@ refresh_codegraph() {
 # codex and pi read.
 refresh_playwright_cli() {
     if claude_ready; then
-        run "playwright-cli (claude)" playwright-cli install --skills claude
+        run_in_repo "playwright-cli (claude)" playwright-cli install --skills claude
     fi
     if toolbox_agent_available codex || toolbox_agent_available pi; then
-        run "playwright-cli (agents)" playwright-cli install --skills agents
+        run_in_repo "playwright-cli (agents)" playwright-cli install --skills agents
     fi
 }
 

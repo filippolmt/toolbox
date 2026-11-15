@@ -51,10 +51,11 @@ func globalSkillInit(t *testing.T, script, tool, skill string, agents ...string)
 	return home, calls
 }
 
-// TestGlobalSkillInitsInstallTheBakedCopy: gh, glab and herdr no longer fetch
-// or regenerate their skill at start. Each copies the one baked from its own
-// release into every active root — no network, no `--force` rewrite, so a
-// second start writes nothing (TestSyncSkillLeavesACurrentCopyUntouched).
+// TestGlobalSkillInitsInstallTheBakedCopy: the init.d member of a tool with a
+// Global Skill neither fetches nor regenerates it at start. It copies the one
+// baked from the tool's release into every active root — no network, no
+// `--force` rewrite, so a second start writes nothing
+// (TestSyncSkillLeavesACurrentCopyUntouched).
 func TestGlobalSkillInitsInstallTheBakedCopy(t *testing.T) {
 	for _, tc := range []struct{ script, tool, skill, forbidden string }{
 		{"init.d/02-gh.sh", "gh", "gh", "skill"},

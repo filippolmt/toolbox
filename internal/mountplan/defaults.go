@@ -126,7 +126,7 @@ func defaults() []config.Mount {
 		// Playwright-cli global config — `playwright-cli` reads
 		// `~/.playwright/cli.config.json` (browser channel + launchOptions)
 		// below a repo's own `.playwright/cli.config.json`. Nothing in the
-		// image writes it any more; the bind-mount keeps a developer's edits,
+		// image writes it; the bind-mount keeps a developer's edits,
 		// which `toolbox stop` (auto-remove-on-exit) would otherwise wipe.
 		{Name: "playwright-config", Source: "~/.toolbox/playwright-config", Target: "/home/toolbox/.playwright", ReadOnly: false, CreateIfMissing: true},
 		// User-defined startup hooks. Any *.sh file here is executed by the

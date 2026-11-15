@@ -98,4 +98,4 @@ for _glab_host in ${_glab_authed}; do
         echo "toolbox: glab credential helper for ${_glab_host} failed (non-fatal — SSH remotes via the RO ~/.ssh mount still work)"
 done
 
-toolbox_sync_skill glab
+toolbox_sync_skill glab || true

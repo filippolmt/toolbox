@@ -91,8 +91,8 @@ fails on any `make <target>` or `.github/scripts/` path the docs still cite.
 
 ## GitHub monitoring
 
-The image's [gh initializer](../../internal/build/assets/init.d/02-gh.sh) adds
-compact run-monitoring guidance after refreshing the official gh skill in each
-active agent root. The addition is idempotent and also applies to an existing
-skill when the upstream install fails. Keep this guidance in the initializer,
-not just in the container-local skill that the next shell refresh replaces.
+The image bakes the official gh skill in the `fetch-gh` stage of the
+[Dockerfile](../../internal/build/assets/Dockerfile) and appends compact
+run-monitoring guidance there, so every agent root gets it through the
+[Global Skill](../../CONTEXT.md#global-skill) sync. Change the guidance in that
+stage: a hand edit to an installed copy is replaced at the next start.

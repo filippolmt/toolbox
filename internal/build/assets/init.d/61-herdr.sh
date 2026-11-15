@@ -67,7 +67,7 @@ _herdr_install_integration() {
         echo "toolbox: herdr integration install $1 failed (non-fatal — retry: \`herdr integration install $1\`)"
 }
 
-toolbox_sync_skill herdr
+toolbox_sync_skill herdr || true
 
 if [ -n "$_herdr_claude" ]; then
     toolbox_with_claude_settings_lock _herdr_install_integration claude

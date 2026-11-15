@@ -29,4 +29,4 @@ else
     echo "  gh: not configured"
 fi
 
-toolbox_sync_skill gh
+toolbox_sync_skill gh || true
