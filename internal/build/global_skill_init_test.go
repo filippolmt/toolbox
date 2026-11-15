@@ -14,9 +14,7 @@ import (
 // baked skill as a fixture. It returns the home and the logged tool calls.
 func globalSkillInit(t *testing.T, script, tool, skill string, agents ...string) (home string, calls []string) {
 	t.Helper()
-	if _, err := exec.LookPath("flock"); err != nil {
-		t.Skip("flock not on PATH")
-	}
+	requireTools(t, "flock")
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	if err := os.Mkdir(binDir, 0o755); err != nil {

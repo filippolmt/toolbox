@@ -153,9 +153,7 @@ printf '|%s' "$([ -f "$HOME/.toolbox-state/.codex-hooks.lock" ] && echo locked)"
 // file. An absent file is read as {}, empty output leaves the file alone, an
 // unparseable file is kept and the call fails, and a rewrite keeps the mode.
 func TestAgentTopologyRewritesJSONAtomically(t *testing.T) {
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq not on PATH: the runtime image and CI ship it")
-	}
+	requireTools(t, "jq")
 	dir := t.TempDir()
 	got := runAgentTopology(t, `
 f="$HOME/a/hooks.json"

@@ -21,11 +21,7 @@ type refreshFixture struct {
 
 func newRefreshFixture(t *testing.T) refreshFixture {
 	t.Helper()
-	for _, tool := range []string{"git", "jq", "flock"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not on PATH", tool)
-		}
-	}
+	requireTools(t, "git", "jq", "flock")
 	dir := t.TempDir()
 	f := refreshFixture{dir: dir, home: filepath.Join(dir, "home"), log: filepath.Join(dir, "calls")}
 	for _, d := range []string{".claude", ".pi"} {

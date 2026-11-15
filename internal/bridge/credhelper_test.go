@@ -201,6 +201,9 @@ func TestParseHelperList(t *testing.T) {
 // on any failure — the value an absent or erroring git hands the caller.
 func TestGitOutput(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("git not on PATH: CI must provide it, never skip the test")
+		}
 		t.Skip("git not on PATH")
 	}
 	got := gitOutput("--exec-path")

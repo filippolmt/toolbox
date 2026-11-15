@@ -13,11 +13,7 @@ import (
 // on PATH.
 func runCodexInit(t *testing.T, home string) {
 	t.Helper()
-	for _, tool := range []string{"jq", "flock"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not on PATH: the runtime image and CI ship it", tool)
-		}
-	}
+	requireTools(t, "jq", "flock")
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {

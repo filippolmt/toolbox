@@ -19,12 +19,8 @@ type worktrunkFixture struct {
 
 func newWorktrunkFixture(t *testing.T) worktrunkFixture {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq not on PATH: the script merges agent hooks with jq, which the runtime image and CI ship")
-	}
-	if _, err := exec.LookPath("flock"); err != nil {
-		t.Skip("flock not on PATH")
-	}
+	// jq merges the agent hooks; flock serialises the skill swap.
+	requireTools(t, "jq", "flock")
 	dir := t.TempDir()
 	f := worktrunkFixture{dir: dir, home: filepath.Join(dir, "home"), skillSrc: filepath.Join(dir, "baked", "worktrunk")}
 	for _, d := range []string{".claude", ".codex", ".pi"} {
