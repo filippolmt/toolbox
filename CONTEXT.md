@@ -2346,9 +2346,24 @@ is meant to use them. Files in the workspace are a declared hole, since the
 developer later runs them on the host (git hooks, build scripts) and host git
 and editors read repository config the Shell can write. So are the
 tools and caches every Shell shares under `~/.toolbox`: "other Shells" means
-their processes, not what they share by design. Docker access from the Shell
-crosses the boundary outright, so it is off unless a developer or a team turns
-it on knowingly.
+their processes, not what they share by design. So is peer messaging: a
+session that opts in ([ADR 0013](docs/adr/0013-peer-messaging-ships-off-by-default.md))
+joins the shared PID namespace of the [Peer Anchor](#peer-anchor), and every
+other participating Shell with it. Docker access from the Shell crosses the
+boundary outright, so the intent is that it stays off unless a developer or a
+team turns it on knowingly.
+
+Concretely: today the boundary is a target, not a property of the code. The
+default mount set still binds `/var/run/docker.sock` read-write
+(`docker-sock` in `mountplan.Defaults`), and several other default channels
+cross it; closing them together is tracked in
+[#1440](https://github.com/filippolmt/toolbox/issues/1440). No one package owns
+the concept: each edge is held where its channel lives — host paths reaching
+the Shell in `mountplan.Defaults` (workspace, `~/.toolbox`, credential dirs,
+`docker-sock`), the container's user and security options in `sessionplan`
+(`--user` host UID, `NestedSandboxSecurityOpt`), the host-side routes and
+their allowlists in `internal/bridge` (→ [docs/bridge.md](docs/bridge.md#security-boundary)),
+and the peer namespace in `container.ensureAnchor`.
 
 Why the term exists: "escalation" was used for every one of these at once,
 and a mount, a bridge route or a daemon setting can only be judged against a
