@@ -11,9 +11,9 @@
 #
 # Fails open: a payload it cannot read, or a command it cannot parse, is let
 # through. The guards catch the common slip; they are not a sandbox.
-# shortcut: a command inside `bash -c '…'`, eval or a script file, and the body
-# of an unquoted heredoc, are not parsed as commands; upgrade to a real shell
-# parser if agents start reaching those.
+# shortcut: a command inside `bash -c '…'`, eval or a script file is not
+# parsed, and a heredoc body is skipped unread; upgrade to a real shell parser
+# if agents start reaching those.
 # The quoted $VAR, ~ and backslash patterns below match the command's text,
 # which is the point: nothing in it is meant to expand here.
 # shellcheck disable=SC1003,SC2016,SC2088
@@ -128,11 +128,11 @@ check_git() {
 # resolves to a container-local path. Relative sources resolve against the
 # call's cwd, as the CLI does. A source this cannot resolve passes.
 bind_source() {
-    local raw=$1 src=$1 ws=${TOOLBOX_HOST_WORKSPACE:-} root
+    local raw=$1 src=$1 ws=${TOOLBOX_HOST_WORKSPACE:-} home=${HOME:-} root
     case $src in
-        '~' | '~/'*) src=$HOME${src#\~} ;;
-        '$HOME'*) src=$HOME${src#'$HOME'} ;;
-        '${HOME}'*) src=$HOME${src#'${HOME}'} ;;
+        '~' | '~/'*) src=$home${src#\~} ;;
+        '$HOME'*) src=$home${src#'$HOME'} ;;
+        '${HOME}'*) src=$home${src#'${HOME}'} ;;
         '$PWD'*) src=$cwd${src#'$PWD'} ;;
         '${PWD}'*) src=$cwd${src#'${PWD}'} ;;
         '$TOOLBOX_HOST_WORKSPACE'* | '${TOOLBOX_HOST_WORKSPACE}'*) return 0 ;;
@@ -148,7 +148,7 @@ bind_source() {
     if [[ $src == /workspace || $src == /workspace/* ]]; then
         block "the host daemon resolves docker bind sources (Docker-outside-of-Docker), and $raw is the container's /workspace mount point; use \$TOOLBOX_HOST_WORKSPACE${src#/workspace} instead"
     fi
-    for root in "$HOME" /tmp /var/tmp; do
+    for root in "$home" /tmp /var/tmp; do
         [ -n "$root" ] && [ "$root" != / ] || continue
         if [[ $src == "$root" || $src == "$root"/* ]]; then
             block "the host daemon resolves docker bind sources (Docker-outside-of-Docker), and $raw exists only in this container; mount a path under \$TOOLBOX_HOST_WORKSPACE instead"
@@ -235,9 +235,18 @@ check() {
     while [ $# -gt 0 ]; do
         case $1 in
             [A-Za-z_]*=*) shift ;;
-            sudo | command | exec | time | nohup | env)
+            # Reserved words that open a compound command.
+            if | then | do | else | elif | while | until | '!' | '{') shift ;;
+            sudo | command | exec | time | nohup | env | timeout)
+                local wrapper=$1
                 shift
-                while [ $# -gt 0 ] && [[ $1 == -* ]]; do shift; done
+                while [ $# -gt 0 ] && [[ $1 == -* ]]; do
+                    # sudo -u USER, env -u NAME
+                    [ "$1" = -u ] && shift
+                    shift
+                done
+                # timeout DURATION
+                [ "$wrapper" = timeout ] && shift
                 ;;
             *) break ;;
         esac
@@ -259,9 +268,19 @@ words=()
 word=""
 inword=0
 redir=0
+heredoc=0 # the redirection being read is << or <<-
+delim=""  # a heredoc body waits at the next newline
+tabs=0    # it is <<-, so its lines may be tab-indented
 flush() {
     if ((inword)); then
-        if ((redir)); then redir=0; else words+=("$word"); fi
+        if ((redir)); then
+            redir=0
+            # A heredoc's target is its delimiter: the body starts at the
+            # next newline.
+            ((heredoc)) && { delim=$word; heredoc=0; }
+        else
+            words+=("$word")
+        fi
     fi
     word=""
     inword=0
@@ -309,7 +328,13 @@ while ((i < n)); do
             '>' | '<')
                 # An fd number before the operator belongs to it.
                 if [[ $word =~ ^[0-9]+$ ]]; then word=""; inword=0; else flush; fi
-                while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [\<\>\|] ]]; do i=$((i + 1)); done
+                op=$c
+                while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [\<\>\|] ]]; do i=$((i + 1)); op+=${cmd:i:1}; done
+                if [ "$op" = '<<' ]; then
+                    heredoc=1
+                    tabs=0
+                    if ((i + 1 < n)) && [ "${cmd:i+1:1}" = - ]; then i=$((i + 1)); tabs=1; fi
+                fi
                 if ((i + 1 < n)) && [ "${cmd:i+1:1}" = '&' ]; then
                     i=$((i + 1))
                     while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [0-9-] ]]; do i=$((i + 1)); done
@@ -326,7 +351,21 @@ while ((i < n)); do
                     end_command
                 fi
                 ;;
-            ';' | '|' | '(' | ')' | '`' | $'\n') end_command ;;
+            $'\n')
+                end_command
+                if [ -n "$delim" ]; then
+                    # Skip the body, through the delimiter line.
+                    while ((i + 1 < n)); do
+                        rest=${cmd:i+1}
+                        line=${rest%%$'\n'*}
+                        i=$((i + ${#line} + 1))
+                        ((tabs)) && line=${line#"${line%%[!$'\t']*}"}
+                        [ "$line" = "$delim" ] && break
+                    done
+                    delim=""
+                fi
+                ;;
+            ';' | '|' | '(' | ')' | '`') end_command ;;
             '#')
                 if ((inword)); then
                     word+=$c

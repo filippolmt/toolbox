@@ -1334,7 +1334,7 @@ echo "OK: global skills installed from the baked copies, untouched on a second s
 '
 
 echo "=== Claude guardrail hooks (real boot) ==="
-# Runtime half of TestClaudeGuardrail*: 45-claude-guardrails.sh wires the three
+# Runtime half of TestClaudeGuardrail*: 45-claude-guardrails.sh wires the
 # PreToolUse guards into settings.json, a second start changes no byte, and
 # the wired command blocks and passes on a real payload.
 docker run --rm "${IMAGE}" bash -c '

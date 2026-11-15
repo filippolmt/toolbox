@@ -4,15 +4,10 @@ set -euo pipefail
 # shellcheck source=bin/agent-topology-lib.sh
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
-# Claude Code guardrails, on every container start: three PreToolUse hooks on
-# Bash, all run by the image's /usr/local/lib/toolbox/claude-guardrail, which
-# block a command that would reach past the agent's own work:
-#
-#   docker-mount    a docker bind source that exists only in this container,
-#                   which the host daemon (Docker-outside-of-Docker) resolves
-#                   on the host instead;
-#   git-commit-all  git commit -a / --all;
-#   git-stash       a git stash with no pathspec.
+# Claude Code guardrails, on every container start: PreToolUse hooks on Bash,
+# one per guard the image's /usr/local/lib/toolbox/claude-guardrail runs (its
+# header lists them), which block a command that would reach past the agent's
+# own work.
 #
 # They go into the developer's settings.json, not a managed-settings file:
 # under Claude Code's default managedSourcesBehavior ("first-wins") an

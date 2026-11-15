@@ -121,6 +121,13 @@ func TestClaudeGuardrailBlocksImplicitStash(t *testing.T) {
 		{command: `git stash pop`, block: false},
 		{command: `git stash show -p stash@{0}`, block: false},
 		{command: `git status # then git stash`, block: false},
+		{command: "if true; then git stash; fi", block: true},
+		{command: "{ git stash; }", block: true},
+		{command: "timeout 30 git stash", block: true},
+		{command: "env -u FOO git stash", block: true},
+		{command: "sudo -u dev git stash", block: true},
+		{command: "cat > notes.txt <<EOF\ngit stash\nEOF\ngit status", block: false},
+		{command: "cat <<-'EOF' > x\n\tgit stash\n\tEOF\ngit stash", block: true},
 	})
 }
 
@@ -160,7 +167,14 @@ func TestClaudeGuardrailBlocksContainerLocalDockerMounts(t *testing.T) {
 		{command: `docker volume ls`, block: false},
 		{command: `docker exec -it box ls /tmp`, block: false},
 		{command: `echo docker run -v /tmp/x:/x`, block: false},
+		{command: "for d in a b; do docker run -v /tmp/$d:/x alpine; done", block: false},
+		{command: "for d in a b; do docker run -v /tmp/x:/x alpine; done", block: true},
 	}, "HOME=/home/toolbox", "TOOLBOX_HOST_WORKSPACE="+ws)
+	// No HOME in the hook's environment: still a clean verdict, never a crash.
+	checkGuardrail(t, "docker-mount", []guardrailCase{
+		{command: `docker run -v "$HOME/x:/x" alpine`, block: false},
+		{command: `docker run -v /tmp/x:/x alpine`, block: true},
+	})
 }
 
 // TestClaudeGuardrailDockerReasonNamesTheHostWorkspace: the block says where
@@ -199,7 +213,7 @@ func runGuardrailsInit(t *testing.T, dir, home string) string {
 }
 
 // TestClaudeGuardrailsInitWiresHooksIdempotently: every start merges the
-// three guards as one PreToolUse group on Bash. A second start changes no
+// guards as one PreToolUse group on Bash. A second start changes no
 // byte, an earlier image's guard is replaced rather than stacked, and the
 // developer's own hooks keep their place.
 func TestClaudeGuardrailsInitWiresHooksIdempotently(t *testing.T) {

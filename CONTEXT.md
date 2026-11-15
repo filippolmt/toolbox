@@ -1773,8 +1773,8 @@ merges them into `settings.json` under Agent Topology's lock and
 `toolbox_merge_hooks`, identified by the script's path.
 
 Not [Agent Wiring](#agent-wiring), which makes another tool see an agent, nor an
-[Image Default](#image-default): Claude Code has no system layer the image can
-own, since a baked managed-settings file loses to an organisation's
+[Image Default](#image-default): Claude Code has no settings layer the image
+can own, since a baked managed-settings file loses to an organisation's
 server-managed settings under the default `first-wins`. Guardrails stay
 organisation-neutral; a team's own hooks reach it through its own channel.
 
