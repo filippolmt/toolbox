@@ -204,8 +204,9 @@ of them disagree on the word for the same side (`WhereLocal` vs
 The gap that named it: a CLI writer joined its own path from the
 current directory while the editor resolved one through the Scope, so
 two "identical" write paths targeted different files. Naming the axis
-is what makes "which face is this?" a question with an owner. The identifiers keep their three names: a
-rename is its own refactor, not a passenger on a behaviour fix.
+is what makes "which face is this?" a question with an owner. The
+identifiers keep their three names: a rename is its own refactor, not
+a passenger on a behaviour fix.
 
 ### Tool Catalog
 

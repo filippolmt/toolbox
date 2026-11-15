@@ -221,7 +221,7 @@ func internalPackages(t *testing.T, root string) []string {
 	if len(pkgs) == 0 {
 		t.Fatal("no packages found under internal/")
 	}
-	// Longest first, so `configio.RemoveFence` matches configio and not config.
+	// Longest first, so `configio.RemoveMapKey` matches configio and not config.
 	slices.SortFunc(pkgs, func(a, b string) int {
 		if n := cmp.Compare(len(b), len(a)); n != 0 {
 			return n
@@ -250,8 +250,8 @@ func qualifierPattern(pkgs []string) *regexp.Regexp {
 // `image-build.md`, `worktree.seed` and a hostname all have the `<word>.<word>`
 // shape of a qualifier, and the left half of some of them really is a package
 // name, so the decision has to be made on the right half. Asking the package
-// what it declares answers it exactly: `configio.RemoveFence` is a mention
-// because configio declares RemoveFence, and `worktree.seed` is not because
+// what it declares answers it exactly: `configio.RemoveMapKey` is a mention
+// because configio declares RemoveMapKey, and `worktree.seed` is not because
 // worktree declares no seed.
 //
 // The alternative was a capitalisation heuristic, which read `Ensure` as a
@@ -454,7 +454,7 @@ func TestAMentionIsAQualifierNotItsLookalikes(t *testing.T) {
 	members := map[string]map[string]bool{
 		"localimage":  {"Ensure": true},
 		"sessionplan": {"composeEnv": true},
-		"configio":    {"RemoveFence": true},
+		"configio":    {"RemoveMapKey": true},
 		"config":      {"Merge": true, "lock": true},
 		"worktree":    {"Prune": true},
 		"build":       {"Assets": true},
@@ -467,7 +467,7 @@ func TestAMentionIsAQualifierNotItsLookalikes(t *testing.T) {
 	}{
 		{"exported qualifier", "`localimage.Ensure` builds the overlay", []string{"internal/localimage"}},
 		{"unexported camelCase qualifier", "applied by `sessionplan.composeEnv`", []string{"internal/sessionplan"}},
-		{"the longest package wins", "`configio.RemoveFence`", []string{"internal/configio"}},
+		{"the longest package wins", "`configio.RemoveMapKey`", []string{"internal/configio"}},
 		{"path spelling still read", "the primitives in internal/config", []string{"internal/config"}},
 		{"cmd file spelling still read", "`cmd/worktree.go` resolves the agent", []string{"cmd/worktree.go"}},
 		{"a link to a sibling rule", "governed by [image-build.md](image-build.md)", nil},
