@@ -3,6 +3,17 @@
 The Makefile owns toolchain/image pins and executable commands. These notes
 cover the environment constraints that its target descriptions cannot show.
 
+## Test runner
+
+`make go-test`, `go-test-one`, `go-coverage` and `go-test-verbose` run in
+`toolbox-gotest:local`, built from `.github/gotest.Dockerfile`: the pinned
+`GO_IMAGE` plus the interpreters the shell-driven tests execute (`jq`, `zsh`),
+which `ci.yml`'s runner also has. A test that executes a tool calls
+`requireTools` (`internal/build`) or an inline `os.Getenv("CI")` check: it
+skips locally when the tool is missing and fails under `$CI`, held by
+`TestAMissingToolNeverSkipsUnderCI` (`internal/devrules`). A suspiciously fast
+`ok` from a plain `go test` outside the runner is a skip, not a pass.
+
 ## Daemon gates
 
 ```bash

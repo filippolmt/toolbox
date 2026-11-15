@@ -152,3 +152,48 @@ func TestCitedMakeTargets(t *testing.T) {
 		})
 	}
 }
+
+var (
+	// citedInitScript matches an Init Sequence member: init.d/30-graphify.sh.
+	citedInitScript = regexp.MustCompile(`init\.d/([0-9]{2}-[A-Za-z0-9_.-]*\.sh)`)
+	// citedAssetBin matches an image asset under bin/, written as inline code
+	// (`bin/toolbox-refresh`) or as its repo path. A bare /usr/local/bin/x is
+	// the installed path, and bin/x/y a directory, so both are left alone.
+	citedAssetBin = regexp.MustCompile("(?:`|internal/build/assets/)bin/([A-Za-z0-9_.-]*[A-Za-z0-9_-])(?:[^/A-Za-z0-9_.-]|$)")
+)
+
+// citedBinNotAnAsset names the bin/ files prose cites that are not image
+// assets, each with the reason; anything else cited must exist.
+var citedBinNotAnAsset = map[string]string{
+	"brew":                 "Homebrew's own bin/brew, in its prefix",
+	"toolbox-update-check": "the retired helper CONTEXT.md names in a term's history",
+}
+
+// TestCitedImageAssetsExist holds prose to the image assets it names: a removed
+// or renamed init.d member or bin/ asset breaks no Markdown link, so the docs
+// describing it go stale with every check green.
+func TestCitedImageAssetsExist(t *testing.T) {
+	root := repoRoot(t)
+	assets := filepath.Join(root, "internal", "build", "assets")
+	var initCited, binCited int
+	for rel, body := range markdownDocs(t, root) {
+		for _, m := range citedInitScript.FindAllStringSubmatch(body, -1) {
+			initCited++
+			if _, err := os.Stat(filepath.Join(assets, "init.d", m[1])); err != nil {
+				t.Errorf("%s cites init.d/%s, which does not exist: describe what replaced it", rel, m[1])
+			}
+		}
+		for _, m := range citedAssetBin.FindAllStringSubmatch(body, -1) {
+			if _, ok := citedBinNotAnAsset[m[1]]; ok {
+				continue
+			}
+			binCited++
+			if _, err := os.Stat(filepath.Join(assets, "bin", m[1])); err != nil {
+				t.Errorf("%s cites bin/%s, which does not exist: describe what replaced it", rel, m[1])
+			}
+		}
+	}
+	if initCited == 0 || binCited == 0 {
+		t.Errorf("init.d citations %d, bin/ citations %d: a pattern no longer matches the docs", initCited, binCited)
+	}
+}
