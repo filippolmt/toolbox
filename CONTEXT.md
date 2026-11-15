@@ -1691,7 +1691,8 @@ bind-mount gate. It visits the Claude and cross-agent skill roots once each,
 even though Codex and pi share the latter, and exposes the container-local
 cross-agent root without treating it as persistent state. Its
 resource-specific lock helper serializes only callers that mutate Claude's
-shared settings file. `TestAgentTopologyDeclaresEverySupportedAgent` holds its
+shared settings file, and `toolbox_merge_hooks` registers a tool's hook groups
+in an agent's hooks file without moving anyone else's. `TestAgentTopologyDeclaresEverySupportedAgent` holds its
 agent list equal to `config.SupportedAgents`; root, skill-sharing, image-copy
 and consumer tests hold the rest of the interface.
 
@@ -1761,6 +1762,26 @@ off together with every other hook.
 Why the term exists: toolbox serves many teams, and a default every developer
 has to configure by hand is one each of them forgets
 ([ADR 0018](docs/adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md#amendment-the-image-ships-worktrunk-defaults)).
+
+### Claude Guardrail
+
+An image-owned Claude Code `PreToolUse` hook that blocks a Bash command reaching
+past the agent's own work: a docker bind source that exists only in the
+container, `git commit -a`, a `git stash` with no pathspec. One script,
+`/usr/local/lib/toolbox/claude-guardrail`, runs every guard; `init.d/45-claude-guardrails.sh`
+merges them into `settings.json` under Agent Topology's lock and
+`toolbox_merge_hooks`, identified by the script's path.
+
+Not [Agent Wiring](#agent-wiring), which makes another tool see an agent, nor an
+[Image Default](#image-default): Claude Code has no system layer the image can
+own, since a baked managed-settings file loses to an organisation's
+server-managed settings under the default `first-wins`. Guardrails stay
+organisation-neutral; a team's own hooks reach it through its own channel.
+
+Why the term exists: the agent instructions say not to mount `/tmp` or sweep
+up a colleague's changes, but an instruction can be missed and a hook cannot.
+Naming the guardrail separates "told" from "stopped", and gives later guards one script and one
+merge to join. [Guide](docs/internals/image-build.md#claude-guardrail-hooks).
 
 ### Bridge Contract
 

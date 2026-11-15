@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# Claude Code PreToolUse guardrails on Bash, wired into settings.json by
+# init.d/45-claude-guardrails.sh. `claude-guardrail GUARD` reads the hook
+# payload on stdin and exits 2, Claude Code's blocking status, with a one-line
+# reason on stderr when the command trips GUARD:
+#
+#   docker-mount    a docker bind source that is container-local: the host
+#                   daemon resolves it (Docker-outside-of-Docker)
+#   git-commit-all  git commit -a / --all, which commits other people's work
+#   git-stash       a git stash with no pathspec, which sweeps it up
+#
+# Fails open: a payload it cannot read, or a command it cannot parse, is let
+# through. The guards catch the common slip; they are not a sandbox.
+# shortcut: a command inside `bash -c '…'`, eval or a script file, and the body
+# of an unquoted heredoc, are not parsed as commands; upgrade to a real shell
+# parser if agents start reaching those.
+# The quoted $VAR, ~ and backslash patterns below match the command's text,
+# which is the point: nothing in it is meant to expand here.
+# shellcheck disable=SC1003,SC2016,SC2088
+set -u
+export LC_ALL=C
+
+guard=${1:-}
+payload=$(cat) || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+cmd=$(jq -r '.tool_input.command // empty' <<<"$payload" 2>/dev/null) || exit 0
+cwd=$(jq -r '.cwd // empty' <<<"$payload" 2>/dev/null) || cwd=""
+[ -n "$cwd" ] || cwd=$PWD
+
+case $guard in
+    docker-mount) [[ $cmd == *docker* ]] || exit 0 ;;
+    git-commit-all | git-stash) [[ $cmd == *git* ]] || exit 0 ;;
+    *) exit 0 ;;
+esac
+
+block() {
+    printf 'toolbox: %s\n' "$1" >&2
+    exit 2
+}
+
+# --- git -------------------------------------------------------------------
+
+# commit_all ARGS: true when git commit's ARGS select --all.
+commit_all() {
+    local a rest skip=0
+    for a in "$@"; do
+        if ((skip)); then skip=0; continue; fi
+        case $a in
+            --) return 1 ;;
+            --all) return 0 ;;
+            --message | --file | --author | --date | --template | --reuse-message | \
+                --reedit-message | --fixup | --squash | --trailer | --cleanup) skip=1 ;;
+            --*) ;;
+            -?*)
+                rest=${a#-}
+                while [ -n "$rest" ]; do
+                    case ${rest:0:1} in
+                        a) return 0 ;;
+                        # Take a value: attached, or the next word.
+                        m | F | c | C | t) [ ${#rest} -eq 1 ] && skip=1; break ;;
+                        # Optional attached value.
+                        S | u) break ;;
+                    esac
+                    rest=${rest:1}
+                done
+                ;;
+        esac
+    done
+    return 1
+}
+
+# stash_sweeps ARGS: true when git stash's ARGS stash without a pathspec.
+stash_sweeps() {
+    local explicit=0 a rest skip=0
+    case ${1:-} in
+        "" | save) return 0 ;;
+        push) explicit=1; shift ;;
+        -*) ;;
+        *) return 1 ;; # list, show, pop, apply, drop, …
+    esac
+    while [ $# -gt 0 ]; do
+        a=$1; shift
+        if ((skip)); then skip=0; continue; fi
+        case $a in
+            --) [ $# -gt 0 ] && return 1; return 0 ;;
+            --pathspec-from-file | --pathspec-from-file=*) return 1 ;;
+            --message) skip=1 ;;
+            --*) ;;
+            -?*)
+                # -m takes the message attached, or as the next word.
+                rest=${a#-}
+                [[ $rest == *m* && -z ${rest#*m} ]] && skip=1
+                ;;
+            *) ((explicit)) && return 1 ;;
+        esac
+    done
+    return 0
+}
+
+# check_git WORDS: $1 is git; global options are skipped to the subcommand.
+check_git() {
+    local i=2
+    while [ "$i" -le $# ]; do
+        case ${!i} in
+            -C | -c | --git-dir | --work-tree | --namespace | --config-env | --super-prefix) i=$((i + 1)) ;;
+            -*) ;;
+            *) break ;;
+        esac
+        i=$((i + 1))
+    done
+    [ "$i" -le $# ] || return 0
+    local sub=${!i}
+    shift "$i"
+    case $guard/$sub in
+        git-commit-all/commit)
+            commit_all "$@" && block "git commit -a/--all commits every tracked change, other people's work included; stage your own paths with git add <path> and commit without -a"
+            ;;
+        git-stash/stash)
+            stash_sweeps "$@" && block "git stash without a pathspec sweeps up work that is not yours; name your paths: git stash push -- <path>"
+            ;;
+    esac
+    return 0
+}
+
+# --- docker ----------------------------------------------------------------
+
+# bind_source SRC: blocks when SRC, a bind source as the docker CLI sees it,
+# resolves to a container-local path. Relative sources resolve against the
+# call's cwd, as the CLI does. A source this cannot resolve passes.
+bind_source() {
+    local raw=$1 src=$1 ws=${TOOLBOX_HOST_WORKSPACE:-} root
+    case $src in
+        '~' | '~/'*) src=$HOME${src#\~} ;;
+        '$HOME'*) src=$HOME${src#'$HOME'} ;;
+        '${HOME}'*) src=$HOME${src#'${HOME}'} ;;
+        '$PWD'*) src=$cwd${src#'$PWD'} ;;
+        '${PWD}'*) src=$cwd${src#'${PWD}'} ;;
+        '$TOOLBOX_HOST_WORKSPACE'* | '${TOOLBOX_HOST_WORKSPACE}'*) return 0 ;;
+        .*) src=$cwd/$src ;;
+        /*) ;;
+        *) return 0 ;; # a named volume
+    esac
+    [[ $src == *[\$\`]* ]] && return 0
+    src=$(realpath -ms -- "$src" 2>/dev/null) || return 0
+    if [ -n "$ws" ] && [[ $src == "$ws" || $src == "$ws"/* ]]; then
+        return 0
+    fi
+    if [[ $src == /workspace || $src == /workspace/* ]]; then
+        block "the host daemon resolves docker bind sources (Docker-outside-of-Docker), and $raw is the container's /workspace mount point; use \$TOOLBOX_HOST_WORKSPACE${src#/workspace} instead"
+    fi
+    for root in "$HOME" /tmp /var/tmp; do
+        [ -n "$root" ] && [ "$root" != / ] || continue
+        if [[ $src == "$root" || $src == "$root"/* ]]; then
+            block "the host daemon resolves docker bind sources (Docker-outside-of-Docker), and $raw exists only in this container; mount a path under \$TOOLBOX_HOST_WORKSPACE instead"
+        fi
+    done
+    return 0
+}
+
+# mount_source SPEC: the source of a --mount bind spec, when it has one.
+mount_source() {
+    local field bind=0 src=""
+    local IFS=,
+    for field in $1; do
+        case $field in
+            type=bind) bind=1 ;;
+            source=* | src=*) src=${field#*=} ;;
+        esac
+    done
+    ((bind)) && [ -n "$src" ] && bind_source "$src"
+    return 0
+}
+
+# check_run_opts ARGS: the bind sources of docker run/create options.
+# shortcut: every later word is scanned, the container's own command included
+# (a -v there with a container-local spec is a false block); upgrade to a full
+# option table if that bites.
+check_run_opts() {
+    local a spec
+    while [ $# -gt 0 ]; do
+        a=$1; shift
+        spec=""
+        case $a in
+            -v | --volume) spec=${1:-} ;;
+            --volume=*) spec=${a#*=} ;;
+            -v?*) spec=${a#-v} ;;
+            --mount) mount_source "${1:-}" ;;
+            --mount=*) mount_source "${a#*=}" ;;
+        esac
+        # Only SRC:DST binds; a lone path is an anonymous volume.
+        [[ $spec == *:* ]] && bind_source "${spec%%:*}"
+    done
+    return 0
+}
+
+# check_compose ARGS: docker compose's global options, then `run`.
+check_compose() {
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -f | --file | -p | --project-name | --project-directory | --profile | --env-file | \
+                --ansi | --progress | --parallel) shift ;;
+            -*) ;;
+            run) shift; check_run_opts "$@"; return 0 ;;
+            *) return 0 ;;
+        esac
+        shift
+    done
+    return 0
+}
+
+# check_docker WORDS: $1 is docker; global options are skipped to the
+# subcommand.
+check_docker() {
+    shift
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -H | --host | -c | --context | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) shift ;;
+            -*) ;;
+            *) break ;;
+        esac
+        shift
+    done
+    case ${1:-}/${2:-} in
+        run/* | create/*) shift; check_run_opts "$@" ;;
+        container/run | container/create) shift 2; check_run_opts "$@" ;;
+        compose/*) shift; check_compose "$@" ;;
+    esac
+    return 0
+}
+
+# --- dispatch --------------------------------------------------------------
+
+# check WORDS: one simple command, wrappers and env assignments stripped.
+check() {
+    while [ $# -gt 0 ]; do
+        case $1 in
+            [A-Za-z_]*=*) shift ;;
+            sudo | command | exec | time | nohup | env)
+                shift
+                while [ $# -gt 0 ] && [[ $1 == -* ]]; do shift; done
+                ;;
+            *) break ;;
+        esac
+    done
+    [ $# -gt 0 ] || return 0
+    case ${1##*/}/$guard in
+        git/git-*) check_git "$@" ;;
+        docker/docker-mount) check_docker "$@" ;;
+        docker-compose/docker-mount) shift; check_compose "$@" ;;
+    esac
+}
+
+# --- tokenizer -------------------------------------------------------------
+
+# Splits $cmd into simple commands on ; & | ( ) newlines and backquotes, and
+# each into words with quotes removed; a redirection and its target are
+# dropped. Calls check once per simple command.
+words=()
+word=""
+inword=0
+redir=0
+flush() {
+    if ((inword)); then
+        if ((redir)); then redir=0; else words+=("$word"); fi
+    fi
+    word=""
+    inword=0
+}
+end_command() {
+    flush
+    redir=0
+    ((${#words[@]})) && check "${words[@]}"
+    words=()
+}
+
+# The CLI resolves a relative source against its cwd; so does bind_source.
+cmd=${cmd//'$(pwd)'/'$PWD'}
+n=${#cmd}
+i=0
+quote=""
+while ((i < n)); do
+    c=${cmd:i:1}
+    if [ "$quote" = "'" ]; then
+        if [ "$c" = "'" ]; then quote=""; else word+=$c; fi
+    elif [ "$quote" = '"' ]; then
+        if [ "$c" = '"' ]; then
+            quote=""
+        elif [ "$c" = '\' ] && ((i + 1 < n)); then
+            next=${cmd:i+1:1}
+            case $next in
+                '"' | '\' | '$' | '`') word+=$next; i=$((i + 1)) ;;
+                $'\n') i=$((i + 1)) ;;
+                *) word+=$c ;;
+            esac
+        else
+            word+=$c
+        fi
+    else
+        case $c in
+            "'" | '"') quote=$c; inword=1 ;;
+            '\')
+                if ((i + 1 < n)); then
+                    i=$((i + 1))
+                    next=${cmd:i:1}
+                    [ "$next" = $'\n' ] || { word+=$next; inword=1; }
+                fi
+                ;;
+            ' ' | $'\t') flush ;;
+            '>' | '<')
+                # An fd number before the operator belongs to it.
+                if [[ $word =~ ^[0-9]+$ ]]; then word=""; inword=0; else flush; fi
+                while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [\<\>\|] ]]; do i=$((i + 1)); done
+                if ((i + 1 < n)) && [ "${cmd:i+1:1}" = '&' ]; then
+                    i=$((i + 1))
+                    while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [0-9-] ]]; do i=$((i + 1)); done
+                else
+                    redir=1
+                fi
+                ;;
+            '&')
+                if ((i + 1 < n)) && [ "${cmd:i+1:1}" = '>' ]; then
+                    flush
+                    while ((i + 1 < n)) && [[ ${cmd:i+1:1} == [\>\|] ]]; do i=$((i + 1)); done
+                    redir=1
+                else
+                    end_command
+                fi
+                ;;
+            ';' | '|' | '(' | ')' | '`' | $'\n') end_command ;;
+            '#')
+                if ((inword)); then
+                    word+=$c
+                else
+                    while ((i + 1 < n)) && [ "${cmd:i+1:1}" != $'\n' ]; do i=$((i + 1)); done
+                fi
+                ;;
+            *) word+=$c; inword=1 ;;
+        esac
+    fi
+    i=$((i + 1))
+done
+end_command
+exit 0

@@ -907,8 +907,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 17 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 17 (12 catalog InitScripts + 5 system)"
+if [ "$count" -ne 18 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 18 (12 catalog InitScripts + 6 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then
@@ -1331,4 +1331,32 @@ rm -rf "$HOME/.claude/skills/gh" "$HOME/.agents/skills/herdr"
 boot
 [ -s "$HOME/.claude/skills/gh/SKILL.md" ] && [ -s "$HOME/.agents/skills/herdr/SKILL.md" ] || { echo "FAILED: a deleted global skill did not come back at the next start"; exit 1; }
 echo "OK: global skills installed from the baked copies, untouched on a second start, restored after a delete"
+'
+
+echo "=== Claude guardrail hooks (real boot) ==="
+# Runtime half of TestClaudeGuardrail*: 45-claude-guardrails.sh wires the three
+# PreToolUse guards into settings.json, a second start changes no byte, and
+# the wired command blocks and passes on a real payload.
+docker run --rm "${IMAGE}" bash -c '
+set -e
+command -v claude >/dev/null 2>&1 || { echo "SKIP: claude not installed"; exit 0; }
+mkdir -p "$HOME/.claude"
+init=/usr/local/lib/toolbox/init.d/45-claude-guardrails.sh
+s="$HOME/.claude/settings.json"
+"$init" || { echo "FAILED: $init exited non-zero"; exit 1; }
+first=$(cat "$s")
+"$init" || { echo "FAILED: $init exited non-zero on the second start"; exit 1; }
+[ "$first" = "$(cat "$s")" ] || { echo "FAILED: a second start rewrote settings.json"; exit 1; }
+wired=$(jq -r "[.hooks.PreToolUse[] | select(.matcher == \"Bash\") | .hooks[].command] | join(\" \")" "$s")
+for guard in docker-mount git-commit-all git-stash; do
+    case " $wired " in
+        *" /usr/local/lib/toolbox/claude-guardrail $guard "*) ;;
+        *) echo "FAILED: guard $guard not wired as a PreToolUse Bash hook: $wired"; exit 1 ;;
+    esac
+done
+payload() { jq -cn --arg c "$1" "{tool_name: \"Bash\", cwd: \"/tmp\", tool_input: {command: \$c}}"; }
+rc=0; payload "git commit -am wip" | /usr/local/lib/toolbox/claude-guardrail git-commit-all 2>/dev/null || rc=$?
+[ "$rc" -eq 2 ] || { echo "FAILED: git commit -am exited $rc, want 2 (blocked)"; exit 1; }
+payload "git commit -m wip" | /usr/local/lib/toolbox/claude-guardrail git-commit-all || { echo "FAILED: git commit -m was blocked"; exit 1; }
+echo "OK: guardrail hooks wired, idempotent, blocking"
 '

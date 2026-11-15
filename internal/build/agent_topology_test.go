@@ -192,6 +192,7 @@ func TestAgentTopologyHasOneOwnerAcrossImageScripts(t *testing.T) {
 		"init.d/25-codex.sh",
 		"init.d/35-statusline.sh",
 		"init.d/36-mode-flags.sh",
+		"init.d/45-claude-guardrails.sh",
 		"init.d/50-mcp-plugins.sh",
 		"init.d/60-glab.sh",
 		"init.d/61-herdr.sh",

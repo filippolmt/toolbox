@@ -2054,6 +2054,8 @@ COPY --link --chmod=0755 init.d/ /usr/local/lib/toolbox/init.d/
 COPY --link --chmod=0644 bin/agent-topology-lib.sh /usr/local/lib/toolbox/agent-topology-lib.sh
 COPY --link --chmod=0644 bin/worktrunk-markers-lib.sh /usr/local/lib/toolbox/worktrunk-markers-lib.sh
 COPY --link --chmod=0755 bin/codex-hooks-check.sh /usr/local/lib/toolbox/codex-hooks-check.sh
+# Claude Code's PreToolUse guardrails, wired by init.d/45-claude-guardrails.sh.
+COPY --link --chmod=0755 bin/claude-guardrail /usr/local/lib/toolbox/claude-guardrail
 # Explicit refresh of global skills and of the current repo's opted-in
 # per-repo installers; nothing runs them at container start.
 COPY --link --chmod=0755 bin/toolbox-refresh /usr/local/bin/toolbox-refresh

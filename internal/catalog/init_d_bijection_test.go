@@ -33,6 +33,8 @@ var systemInitScripts = map[string]struct{}{
 	"35-statusline.sh": {},
 	// Reconcile ponytail/caveman mode flags with enabledPlugins — image policy.
 	"36-mode-flags.sh": {},
+	// Claude Code guardrail hooks — image-owned policy, not a tool toggle.
+	"45-claude-guardrails.sh": {},
 }
 
 // TestCatalogInitDBijection enforces strict set-equality between

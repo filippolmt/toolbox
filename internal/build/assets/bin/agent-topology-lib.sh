@@ -141,3 +141,31 @@ toolbox_rewrite_json() {
     [ -e "$file" ] && chmod --reference="$file" "$tmp" 2>/dev/null
     mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
 }
+
+# toolbox_merge_hooks FILE OWNED_RE GROUPS registers a tool's hook groups in an
+# agent's hooks file (Claude's settings.json, Codex's hooks.json), through
+# toolbox_rewrite_json; the caller holds the file's lock. GROUPS is a JSON list
+# of {event, group}; OWNED_RE matches the command of every hook the tool has
+# ever registered, which is what makes its entries identifiable. Each new
+# group takes the place of the first earlier owned one for its event, so the
+# file keeps its order from one start to the next and a rerun is
+# byte-identical. Every other owned hook is dropped, with any group that held
+# nothing else — including events the tool no longer hooks. Other hooks are
+# untouched.
+# shellcheck disable=SC2016 # jq program, not shell
+_toolbox_merge_hooks_jq='
+def ours: ((.command? // "") | test($owned_re));
+def mine: any(.hooks[]?; ours);
+def strip: if mine then (.hooks |= map(select(ours | not)) | select((.hooks | length) > 0)) else . end;
+def place($g):
+  (first(range(length) as $k | select(.[$k] | mine) | $k) // null) as $i
+  | if $i == null then map(strip) + [$g]
+    else (.[:$i] | map(strip)) + [.[$i] | strip] + [$g] + (.[$i + 1:] | map(strip)) end;
+($add | map(.event)) as $events
+| .hooks = ((.hooks // {}) | with_entries(
+    if (.key as $k | $events | index($k)) then . else .value |= map(strip) end))
+| reduce $add[] as $e (.; .hooks[$e.event] = ((.hooks[$e.event] // []) | place($e.group)))'
+
+toolbox_merge_hooks() {
+    toolbox_rewrite_json "$1" "$_toolbox_merge_hooks_jq" --arg owned_re "$2" --argjson add "$3"
+}

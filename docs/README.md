@@ -164,6 +164,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Host UID mapping](internals/image-build.md#host-uid-mapping)
 - [SSH host-key trust](internals/image-build.md#ssh-host-key-trust)
 - [Agent instructions](internals/image-build.md#agent-instructions)
+- [Claude guardrail hooks](internals/image-build.md#claude-guardrail-hooks)
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)
