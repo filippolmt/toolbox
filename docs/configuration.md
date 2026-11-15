@@ -245,7 +245,7 @@ and in `toolbox config doctor` (`config.RetiredKeys`). Where their settings
 went: [migrating from toolbox worktree](worktrunk.md#migrating-from-toolbox-worktree).
 The legacy `tools:` block is retired the same way ([tools removal](internals/image-build.md#tools-removal)).
 So is `sdd:`: toolbox no longer installs Spec-Driven-Development skill packs
-([ADR 0011](adr/0011-the-sdd-opt-in-is-anchored-to-the-workspace.md), superseded).
+([ADR 0021](adr/0021-spec-driven-development-packs-are-removed.md)).
 Files a pack already installed in a repository are left in place; remove them,
 and the `sdd-managed` `.gitignore` fences, by hand if you no longer want them.
 

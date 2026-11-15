@@ -715,7 +715,8 @@ func ContainerNameFor(workspace, discriminator string) string {
 	if discriminator != "" {
 		seed = abs + "\x00profile=" + discriminator
 	}
-	hash := hashWorkspace(seed)
+	sum := sha256.Sum256([]byte(seed))
+	hash := hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 
 	base := workspaceSlug(abs)
 
@@ -908,11 +909,4 @@ func shellEnv(workspace, workingDir string) []string {
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
 		"HERDR_SESSION=" + ContainerNameFor(workspace, ""),
 	}
-}
-
-// hashWorkspace is the single source of the WorkspaceHashLen-byte hash
-// derived from a workspace path (the ContainerNameFor suffix).
-func hashWorkspace(workspace string) string {
-	sum := sha256.Sum256([]byte(workspace))
-	return hex.EncodeToString(sum[:])[:WorkspaceHashLen]
 }

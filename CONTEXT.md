@@ -201,9 +201,10 @@ resolved through the matching Where, never through a path of its own.
 Why the term exists: the three faces were named independently and two
 of them disagree on the word for the same side (`WhereLocal` vs
 `ScopeRepo`), so nothing in the vocabulary said they were one axis.
-The gap that named it: a CLI writer joined its own path from the
-current directory while the editor resolved one through the Scope, so
-two "identical" write paths targeted different files. Naming the axis
+The gap that named it: the since-removed `toolbox sdd init` joined its
+own path from the current directory while the editor resolved one
+through the Scope, so two "identical" write paths targeted different
+files. Naming the axis
 is what makes "which face is this?" a question with an owner. The
 identifiers keep their three names: a rename is its own refactor, not
 a passenger on a behaviour fix.
