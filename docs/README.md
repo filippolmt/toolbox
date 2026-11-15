@@ -146,6 +146,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [herdr plays no sound when an agent finishes](troubleshooting.md#herdr-plays-no-sound-when-an-agent-finishes)
 - [herdr opens in /home/toolbox instead of the workspace](troubleshooting.md#herdr-opens-in-hometoolbox-instead-of-the-workspace)
 - [Stale local branches pile up after merges](troubleshooting.md#stale-local-branches-pile-up-after-merges)
+- [`git push` is refused for a change under `.github/workflows/`](troubleshooting.md#git-push-is-refused-for-a-change-under-githubworkflows)
 - [A repo's graphify, codegraph or playwright-cli setup is out of date](troubleshooting.md#a-repos-graphify-codegraph-or-playwright-cli-setup-is-out-of-date)
 - [A new .test app is unreachable from the container](troubleshooting.md#a-new-test-app-is-unreachable-from-the-container)
 - ["manifest unknown" with a registry mirror](troubleshooting.md#manifest-unknown-with-a-registry-mirror)

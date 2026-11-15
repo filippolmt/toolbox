@@ -100,6 +100,22 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 Deletes use `git branch -D` (force), since a squash-merged branch never reads as merged locally. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
 
+## `git push` is refused for a change under `.github/workflows/`
+
+**Symptom:** pushing a branch that touches a workflow fails with `refusing to allow an OAuth App to create or update workflow … without 'workflow' scope`, and `gh auth refresh -s workflow` in the container changes nothing.
+
+**Cause:** git in the container does not use `gh`'s token. Its HTTPS credentials come from the [git credential bridge](bridge.md#git-credentials), which asks the **host** keychain — and the GitHub credential stored there is an older OAuth App token without the `workflow` scope. Refreshing `gh` upgrades a token git never reads.
+
+**Fix, once, in the container:** give `gh` the scope (`gh auth refresh -h github.com -s workflow`), then push through it for this one command:
+
+```sh
+git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -u origin <branch>
+```
+
+The empty `credential.helper=` clears the bridge for this invocation only.
+
+**Fix, durable, on the host:** replace the stored credential with one that carries the scope. On the host, `gh auth refresh -h github.com -s workflow`, then drop the stale keychain entry (`printf 'protocol=https\nhost=github.com\n\n' | git credential reject`, or delete it in Keychain Access). The next push prompts in the container: answer with your GitHub username and, as password, the output of `gh auth token` on the host; the bridge stores it in the keychain for every later push. Prefer this over `gh auth setup-git` on the host: that writes a `github.com`-specific helper into `~/.gitconfig`, which the container mounts too, and its empty reset line takes the bridge out of the container's lookup for `github.com`.
+
 ## A repo's graphify, codegraph or playwright-cli setup is out of date
 
 **Symptom:** after an image update, the `/graphify` or playwright-cli skill, the graphify hooks or codegraph's MCP config in a repo still match the version you opted in with.
