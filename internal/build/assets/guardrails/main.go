@@ -192,22 +192,33 @@ func checkCommit(argv []string) string {
 		case commitLongValue[a]:
 			i++
 		case strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--"):
-			for j, ch := range a[1:] {
-				if ch == 'a' {
-					return commitAll
-				}
-				if strings.ContainsRune(commitShortValue+commitShortOptionalValue, ch) {
-					// The rest of the cluster is the value; a value flag ending
-					// the cluster takes the next word.
-					if strings.ContainsRune(commitShortValue, ch) && j == len(a)-2 {
-						i++
-					}
-					break
-				}
+			all, takesNext := readCommitCluster(a[1:])
+			if all {
+				return commitAll
+			}
+			if takesNext {
+				i++
 			}
 		}
 	}
 	return ""
+}
+
+// readCommitCluster reads a cluster of git commit short options: whether it
+// holds -a, and whether its last option takes the next word as its value.
+// A value option ends the cluster: the rest of it is the value.
+func readCommitCluster(cluster string) (all, takesNext bool) {
+	for j, ch := range cluster {
+		switch {
+		case ch == 'a':
+			return true, false
+		case strings.ContainsRune(commitShortValue, ch):
+			return false, j == len(cluster)-1
+		case strings.ContainsRune(commitShortOptionalValue, ch):
+			return false, false
+		}
+	}
+	return false, false
 }
 
 func checkStash(argv []string) string {

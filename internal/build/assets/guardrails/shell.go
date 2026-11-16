@@ -30,88 +30,152 @@ type word []segment
 
 var errUnterminated = errors.New("unterminated quote or substitution")
 
+// tokenizer holds the state of one tokenize pass.
+type tokenizer struct {
+	line     string
+	commands [][]word
+	current  []word
+	w        word
+	buf      strings.Builder
+	quote    quoting
+	inWord   bool
+}
+
 // tokenize splits a command line into simple commands at ; & | && || ( ) and
 // newlines.
 func tokenize(line string) ([][]word, error) {
-	var (
-		commands [][]word
-		current  []word
-		w        word
-		buf      strings.Builder
-		quote    = unquoted
-		inWord   bool
-	)
-	flushSeg := func() {
-		if buf.Len() > 0 || quote != unquoted {
-			w = append(w, segment{buf.String(), quote})
-		}
-		buf.Reset()
-	}
-	endWord := func() {
-		flushSeg()
-		if inWord {
-			current = append(current, w)
-		}
-		w, inWord = nil, false
-	}
-	endCommand := func() {
-		endWord()
-		if len(current) > 0 {
-			commands = append(commands, current)
-		}
-		current = nil
-	}
+	t := &tokenizer{line: line}
 	for i := 0; i < len(line); i++ {
-		c := line[i]
-		switch {
-		case quote == singleQuoted:
-			if c == '\'' {
-				flushSeg()
-				quote = unquoted
-			} else {
-				buf.WriteByte(c)
-			}
-		case c == '\\' && i+1 < len(line):
-			i++
-			buf.WriteByte(line[i])
-			inWord = true
-		case quote == doubleQuoted && c == '"':
-			flushSeg()
-			quote = unquoted
-		case c == '$' && i+1 < len(line) && line[i+1] == '(' || c == '`':
-			end := substitutionEnd(line, i)
-			if end < 0 {
-				return nil, errUnterminated
-			}
-			buf.WriteString(line[i : end+1])
-			i, inWord = end, true
-		case quote == doubleQuoted:
-			buf.WriteByte(c)
-		case c == '\'' || c == '"':
-			flushSeg()
-			quote = singleQuoted
-			if c == '"' {
-				quote = doubleQuoted
-			}
-			inWord = true
-		case c == '#' && !inWord:
-			for i+1 < len(line) && line[i+1] != '\n' {
-				i++
-			}
-		case c == ' ' || c == '\t':
-			endWord()
-		case strings.IndexByte(";&|()\n", c) >= 0:
-			endCommand()
-		default:
-			buf.WriteByte(c)
-			inWord = true
+		last, err := t.step(i)
+		if err != nil {
+			return nil, err
 		}
+		i = last
 	}
-	if quote != unquoted {
+	if t.quote != unquoted {
 		return nil, errUnterminated
 	}
-	endCommand()
-	return commands, nil
+	t.endCommand()
+	return t.commands, nil
+}
+
+// step consumes the character at i, and whatever belongs with it, and
+// returns the index of the last character it consumed.
+func (t *tokenizer) step(i int) (int, error) {
+	switch t.quote {
+	case singleQuoted:
+		t.inSingle(t.line[i])
+		return i, nil
+	case doubleQuoted:
+		return t.inDouble(i)
+	default:
+		return t.inUnquoted(i)
+	}
+}
+
+func (t *tokenizer) inSingle(c byte) {
+	if c == '\'' {
+		t.flushSeg()
+		t.quote = unquoted
+		return
+	}
+	t.buf.WriteByte(c)
+}
+
+func (t *tokenizer) inDouble(i int) (int, error) {
+	c := t.line[i]
+	switch {
+	case c == '\\' && i+1 < len(t.line):
+		return t.escape(i), nil
+	case c == '"':
+		t.flushSeg()
+		t.quote = unquoted
+	case t.substitutionStart(i):
+		return t.substitution(i)
+	default:
+		t.buf.WriteByte(c)
+	}
+	return i, nil
+}
+
+func (t *tokenizer) inUnquoted(i int) (int, error) {
+	c := t.line[i]
+	switch {
+	case c == '\\' && i+1 < len(t.line):
+		return t.escape(i), nil
+	case t.substitutionStart(i):
+		return t.substitution(i)
+	case c == '\'' || c == '"':
+		t.flushSeg()
+		t.quote = singleQuoted
+		if c == '"' {
+			t.quote = doubleQuoted
+		}
+		t.inWord = true
+	case c == '#' && !t.inWord:
+		return t.commentEnd(i), nil
+	case c == ' ' || c == '\t':
+		t.endWord()
+	case strings.IndexByte(";&|()\n", c) >= 0:
+		t.endCommand()
+	default:
+		t.buf.WriteByte(c)
+		t.inWord = true
+	}
+	return i, nil
+}
+
+func (t *tokenizer) escape(i int) int {
+	t.buf.WriteByte(t.line[i+1])
+	t.inWord = true
+	return i + 1
+}
+
+func (t *tokenizer) substitutionStart(i int) bool {
+	c := t.line[i]
+	return c == '`' || c == '$' && i+1 < len(t.line) && t.line[i+1] == '('
+}
+
+// substitution keeps a $(…) or `…` span verbatim in the current word.
+func (t *tokenizer) substitution(i int) (int, error) {
+	end := substitutionEnd(t.line, i)
+	if end < 0 {
+		return 0, errUnterminated
+	}
+	t.buf.WriteString(t.line[i : end+1])
+	t.inWord = true
+	return end, nil
+}
+
+// commentEnd skips a comment up to, not including, the newline that ends it.
+func (t *tokenizer) commentEnd(i int) int {
+	for i+1 < len(t.line) && t.line[i+1] != '\n' {
+		i++
+	}
+	return i
+}
+
+func (t *tokenizer) flushSeg() {
+	if t.buf.Len() > 0 || t.quote != unquoted {
+		t.w = append(t.w, segment{t.buf.String(), t.quote})
+	}
+	t.buf.Reset()
+}
+
+func (t *tokenizer) endWord() {
+	t.flushSeg()
+	if t.inWord {
+		t.current = append(t.current, t.w)
+	}
+	t.w, t.inWord = nil, false
+}
+
+func (t *tokenizer) endCommand() {
+	t.endWord()
+	if len(t.current) > 0 {
+		t.commands = append(t.commands, t.current)
+	}
+	t.current = nil
 }
 
 // substitutionEnd returns the index closing the $(…) or `…` opened at i, or -1.
