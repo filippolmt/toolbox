@@ -585,8 +585,9 @@ check_required "node localhost binds IPv4" node -e "const s=require(\"net\").cre
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
 # Agent guardrails hook: blocks `git commit -a` with exit 2, lets `git commit -m`
-# through. The Codex wiring is held by codex-hooks-check.sh below.
-check_required "agent guardrails hook" sh -c '"'"'. /usr/local/lib/toolbox/agent-topology-lib.sh; g=$toolbox_guardrails_bin; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
+# through. bash, not sh: Agent Topology is bash. The Codex wiring is held by
+# codex-hooks-check.sh below.
+check_required "agent guardrails hook" bash -c '"'"'. /usr/local/lib/toolbox/agent-topology-lib.sh; g=$toolbox_guardrails_bin; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
 check_required "agent guardrails wired for claude" _guardrails_wiring_check
 check_required "agent guardrails pi extension" _pi_guardrails_check
 # Debian ships ensurepip in python3.13-venv (pulled by python3-venv); without it `python3 -m venv` fails.
