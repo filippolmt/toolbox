@@ -116,6 +116,9 @@ func (t *tokenizer) inUnquoted(i int) (int, error) {
 		return t.commentEnd(i), nil
 	case c == ' ' || c == '\t':
 		t.endWord()
+	case c == '&' && t.redirectionAmpersand(i):
+		t.buf.WriteByte(c)
+		t.inWord = true
 	case strings.IndexByte(";&|()\n", c) >= 0:
 		t.endCommand()
 	default:
@@ -125,8 +128,20 @@ func (t *tokenizer) inUnquoted(i int) (int, error) {
 	return i, nil
 }
 
+// redirectionAmpersand reports whether the & at i belongs to a redirection
+// (2>&1, >&2, &>file) rather than ending a command.
+func (t *tokenizer) redirectionAmpersand(i int) bool {
+	prev := t.buf.String()
+	return strings.HasSuffix(prev, ">") || strings.HasSuffix(prev, "<") || i+1 < len(t.line) && t.line[i+1] == '>'
+}
+
+// escape keeps the character after a backslash literal: its own segment,
+// marked like single-quoted text so expansion leaves it alone.
 func (t *tokenizer) escape(i int) int {
-	t.buf.WriteByte(t.line[i+1])
+	quote := t.quote
+	t.flushSeg()
+	t.w = append(t.w, segment{t.line[i+1 : i+2], singleQuoted})
+	t.quote = quote
 	t.inWord = true
 	return i + 1
 }
@@ -229,6 +244,12 @@ func (w word) expand(vars map[string]string) string {
 		}))
 	}
 	return b.String()
+}
+
+// unquotedStart reports whether the word begins outside quotes, as a shell
+// operator such as a redirection must.
+func (w word) unquotedStart() bool {
+	return len(w) > 0 && w[0].quote == unquoted
 }
 
 // assignment reports whether the word is a NAME=value assignment.

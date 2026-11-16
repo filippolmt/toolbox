@@ -1,8 +1,8 @@
 #!/bin/sh
 # pi has no system config layer, so the image's agent instructions (#1400) and
-# agent guardrails (#1401) ride extensions passed with -e. Subcommands reject unknown options and run
-# bare; the smoke test holds bare_subcommands to `pi --help`. fetch-pi asserts
-# the target path.
+# agent guardrails (#1401) ride extensions passed with -e. Subcommands reject
+# unknown options and run bare; the smoke test holds bare_subcommands to
+# `pi --help`. fetch-pi asserts the target path.
 pi_cli=/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
 bare_subcommands="install remove uninstall update list config auth mcp"
 for sub in $bare_subcommands; do

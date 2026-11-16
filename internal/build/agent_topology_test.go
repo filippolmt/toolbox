@@ -262,8 +262,8 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
 			{"Worktrunk", dockerfile, `"$_wt_codex_events"`},
 			{"the hooks check", dockerfile, "codex-hooks-check.sh /etc/codex/hooks.json"},
-			{"Guardrails", dockerfile, "_codex_guardrails_group"},
-			{"Guardrails check", codexCheck, "/usr/local/lib/toolbox/agent-guardrails"},
+			{"Guardrails", dockerfile, "toolbox_merge_guardrails /etc/codex/hooks.json"},
+			{"Guardrails check", codexCheck, `index($guardrails)`},
 		},
 		"pi": {
 			{"Herdr", herdr, "_herdr_install_integration pi"},

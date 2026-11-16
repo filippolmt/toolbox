@@ -7,6 +7,8 @@
 # one the image ships. Needs jq.
 set -euo pipefail
 
+# shellcheck source=bin/agent-topology-lib.sh
+. "$(dirname "$0")/agent-topology-lib.sh"
 # shellcheck source=bin/worktrunk-markers-lib.sh
 . "$(dirname "$0")/worktrunk-markers-lib.sh"
 
@@ -18,13 +20,14 @@ if [ ! -r "$dir/herdr-agent-state.sh" ]; then
 fi
 # shellcheck disable=SC2016 # jq program, not shell
 if ! jq -e --arg marker_re "$_wt_marker_re" --argjson wt "$_wt_codex_events" \
+    --arg guardrails "$toolbox_guardrails_bin" \
     --arg herdr "bash '$dir/herdr-agent-state.sh' session" '
     . as $doc
     | def on($e): [$doc.hooks[$e][]?.hooks[]?.command | strings];
       all($wt[].event; any(on(.)[]; test($marker_re)))
       and all("PreToolUse", "PostToolUse", "PostToolUseFailure";
           on(.) | index("/usr/local/bin/atuin hook codex") != null)
-      and (on("PreToolUse") | index("/usr/local/lib/toolbox/agent-guardrails") != null)
+      and (on("PreToolUse") | index($guardrails) != null)
       and (on("SessionStart") | index($herdr) != null)' "$file" >/dev/null; then
     echo "codex hooks: $file is missing an image hook on its event" >&2
     exit 1

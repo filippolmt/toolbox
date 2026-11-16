@@ -119,6 +119,8 @@ Mount semantics: when a key is listed in `inherit_host_auth`, the default `~/.to
 
 `mounts_root` interaction: if both `mounts_root: /custom` and `inherit_host_auth: [<key>]` are set, the `mounts_root` retargeting is bypassed for that key — host inheritance pulls from the host's canonical path (e.g. `~/.config/gh`), not from `/custom/gh`. `mounts_root` still applies to every other default mount. If you need the credential dir on an encrypted volume, choose one approach or the other.
 
+Image hooks: with `inherit_host_auth: [claude]` the container's `~/.claude` is the host's, so the hooks the image wires into `settings.json` on every start — Atuin's history capture, Worktrunk's activity markers, the [agent guardrails](internals/image-build.md#agent-guardrails) — land in the host's file too and point at paths only the image has. Claude Code run on the host reports such a hook as failed and carries on; it does not block the tool call.
+
 Pre-stat check: `inherit_host_auth: [<key>]` requires the host source path to exist at config-load time. If it does not, `toolbox shell` fails with a clear error pointing at the missing path — silent soft-skip would have left the container with no credential mount at all (worse than failing loud).
 
 Codex instructions: setting `developer_instructions` in your own `~/.codex/config.toml` (inherited or not) drops the image's agent instructions; copy across the lines you want to keep. → [agent instructions](internals/image-build.md#agent-instructions)

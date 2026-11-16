@@ -1715,8 +1715,7 @@ agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
 Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh`,
 `init.d/61-herdr.sh`, `init.d/62-worktrunk.sh` and `init.d/37-agent-guardrails.sh` own their distinct
-wiring commands. All consume Agent
-Topology for availability, native roots and persistence. A persistent hook is
+wiring commands. All consume Agent Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
 itself. A writer of a file another writer also touches — Claude's
 `settings.json`, and Codex's `hooks.json`, which containers on earlier images

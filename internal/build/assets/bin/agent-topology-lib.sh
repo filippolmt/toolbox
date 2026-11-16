@@ -166,3 +166,18 @@ def place($g):
 toolbox_merge_hook_groups() {
     toolbox_rewrite_json "$1" "$_toolbox_merge_hooks_jq" --argjson add "$2" --arg marker_re "$3"
 }
+
+# The agent guardrails hook, built by the Dockerfile's fetch-guardrails stage.
+# The build's output path and pi's extension name the same path
+# (TestGuardrailsBinaryPathHasOneValue).
+toolbox_guardrails_bin=/usr/local/lib/toolbox/agent-guardrails
+
+# Registers the guardrails as a PreToolUse hook on the shell tool in an agent's
+# hooks file, Claude Code's settings.json or Codex's hooks.json: both run it
+# with the same protocol and match the tool as Bash. Callers hold FILE's lock.
+toolbox_merge_guardrails() {
+    toolbox_merge_hook_groups "$1" \
+        "$(jq -n --arg cmd "$toolbox_guardrails_bin" \
+            '[{event: "PreToolUse", group: {matcher: "^Bash$", hooks: [{type: "command", command: $cmd}]}}]')" \
+        "^$toolbox_guardrails_bin( |\$)"
+}

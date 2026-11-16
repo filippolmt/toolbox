@@ -928,18 +928,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
 # guardrails.sh), Codex (gen-codex-config) and pi (guardrails/agent-guardrails.ts)
 # run. Built from guardrails/ with the toolchain fetch-go ships, so it moves with
 # go.mod's toolchain directive. Standard library only, hence GOPROXY=off: the
-# build never downloads. The stage starts from fetch-go's /out and replaces it
-# with the binary alone.
-FROM fetch-go AS fetch-guardrails
+# build never downloads.
+FROM fetch-base AS fetch-guardrails
+COPY --link --from=fetch-go /out/usr/local/go /usr/local/go
 COPY --link guardrails/ /src/guardrails/
 RUN set -eux; \
       cd /src/guardrails; \
       export HOME=/tmp/go-build GOCACHE=/tmp/go-build/cache GOPROXY=off GOTOOLCHAIN=local GOFLAGS=-buildvcs=false CGO_ENABLED=0; \
-      /out/usr/local/go/bin/go mod init toolbox-guardrails; \
-      mkdir -p /guardrails/usr/local/lib/toolbox; \
-      /out/usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o /guardrails/usr/local/lib/toolbox/agent-guardrails .; \
-      rm -rf /tmp/go-build /out; \
-      mv /guardrails /out; \
+      /usr/local/go/bin/go mod init toolbox-guardrails; \
+      mkdir -p /out/usr/local/lib/toolbox; \
+      /usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o /out/usr/local/lib/toolbox/agent-guardrails .; \
+      rm -rf /tmp/go-build; \
       freeze-mtimes
 
 # gcloud. No per-version SHA256 file upstream — T-01-08 accepted risk.
@@ -1327,8 +1326,7 @@ RUN set -eux; \
       . /tmp/lib/agent-topology-lib.sh; \
       . /tmp/lib/worktrunk-markers-lib.sh; \
       _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
-      _codex_guardrails_group='[{"event": "PreToolUse", "group": {"matcher": "^Bash$", "hooks": [{"type": "command", "command": "/usr/local/lib/toolbox/agent-guardrails"}]}}]'; \
-      toolbox_merge_hook_groups /etc/codex/hooks.json "$_codex_guardrails_group" '^/usr/local/lib/toolbox/agent-guardrails( |$)'; \
+      toolbox_merge_guardrails /etc/codex/hooks.json; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
       HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
       bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \

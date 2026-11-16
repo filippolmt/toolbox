@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -42,12 +43,20 @@ func (f guardrailsFixture) run(t *testing.T) {
 		}
 	}
 	body := readAsset(t, agentGuardrailsInit)
-	if !strings.Contains(body, bakedGuardrailsBin) {
-		t.Fatalf("%s no longer names %s", agentGuardrailsInit, bakedGuardrailsBin)
-	}
-	body = strings.ReplaceAll(body, bakedGuardrailsBin, f.bin)
 	script := filepath.Join(f.dir, "37-agent-guardrails.sh")
 	if err := os.WriteFile(script, wireAgentTopologyForTest(t, f.dir, []byte(body)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Repoint Agent Topology's copy at the stand-in binary.
+	lib := filepath.Join(f.dir, "agent-topology-lib.sh")
+	libBody, err := os.ReadFile(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(libBody), bakedGuardrailsBin) {
+		t.Fatalf("%s does not name %s", agentTopologyLib, bakedGuardrailsBin)
+	}
+	if err := os.WriteFile(lib, []byte(strings.ReplaceAll(string(libBody), bakedGuardrailsBin, f.bin)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("/bin/bash", script)
@@ -130,5 +139,23 @@ func TestAgentGuardrailsInitKeepsItsPlace(t *testing.T) {
 	want := []string{f.bin, "added-later"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("PreToolUse commands = %q, want %q", got, want)
+	}
+}
+
+// TestGuardrailsBinaryPathHasOneValue: Agent Topology names the hook's path
+// for every shell writer; the build's output and pi's extension, which cannot
+// source it, must name the same path.
+func TestGuardrailsBinaryPathHasOneValue(t *testing.T) {
+	m := regexp.MustCompile(`(?m)^toolbox_guardrails_bin=(\S+)$`).FindStringSubmatch(readAsset(t, "bin/agent-topology-lib.sh"))
+	if m == nil {
+		t.Fatal("agent-topology-lib.sh no longer sets toolbox_guardrails_bin")
+	}
+	for file, want := range map[string]string{
+		"Dockerfile":                     "-o /out" + m[1] + " .",
+		"guardrails/agent-guardrails.ts": `"` + m[1] + `"`,
+	} {
+		if !strings.Contains(readAsset(t, file), want) {
+			t.Errorf("%s does not name the guardrails binary as %q", file, want)
+		}
 	}
 }

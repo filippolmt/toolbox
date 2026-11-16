@@ -9,7 +9,7 @@ set -euo pipefail
 # developer can override, and an image managed-settings file is ignored
 # wherever an organisation sends server-managed settings (first-wins).
 #
-# The hook (/usr/local/lib/toolbox/agent-guardrails, built from guardrails/)
+# The hook ($toolbox_guardrails_bin, built from guardrails/)
 # blocks `git commit -a`, an implicit `git stash` and, while a Docker daemon is
 # reachable, a bind mount whose source is container-local. Codex and pi get the
 # same binary as Image Defaults (/etc/codex/hooks.json, the bin/pi wrapper).
@@ -19,14 +19,10 @@ set -euo pipefail
 command -v jq >/dev/null 2>&1 || exit 0
 toolbox_agent_available claude && toolbox_agent_persistent claude || exit 0
 
-_guardrails_bin=/usr/local/lib/toolbox/agent-guardrails
-[ -x "$_guardrails_bin" ] || exit 0
+[ -x "$toolbox_guardrails_bin" ] || exit 0
 
 _guardrails_wire() {
-    toolbox_merge_hook_groups "$(toolbox_agent_home claude)/settings.json" \
-        "$(jq -n --arg cmd "$_guardrails_bin" \
-            '[{event: "PreToolUse", group: {matcher: "Bash", hooks: [{type: "command", command: $cmd}]}}]')" \
-        "^$_guardrails_bin( |\$)"
+    toolbox_merge_guardrails "$(toolbox_agent_home claude)/settings.json"
 }
 
 toolbox_with_claude_settings_lock _guardrails_wire || \
