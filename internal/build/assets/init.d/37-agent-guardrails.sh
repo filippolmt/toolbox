@@ -14,30 +14,19 @@ set -euo pipefail
 # reachable, a bind mount whose source is container-local. Codex and pi get the
 # same binary as Image Defaults (/etc/codex/hooks.json, the bin/pi wrapper).
 #
-# The merge drops every earlier guardrails entry before appending the current
-# one, so a rewrite is idempotent and a changed command replaces, not stacks.
-# shortcut: the entry is re-appended at the end of PreToolUse, so it moves
-# behind hooks added after it; keep its place like 62-worktrunk.sh does if the
-# order ever matters.
+# toolbox_merge_hook_groups keeps the entry where it is from one start to the
+# next and replaces an earlier image's, so a rewrite is idempotent.
 command -v jq >/dev/null 2>&1 || exit 0
 toolbox_agent_available claude && toolbox_agent_persistent claude || exit 0
 
 _guardrails_bin=/usr/local/lib/toolbox/agent-guardrails
 [ -x "$_guardrails_bin" ] || exit 0
 
-# shellcheck disable=SC2016 # jq program, not shell
-_guardrails_jq='
-def ours: ((.command? // "") | startswith($bin));
-.hooks.PreToolUse = (
-  ((.hooks.PreToolUse // [])
-    | map(if any(.hooks[]?; ours)
-          then (.hooks |= map(select(ours | not))) | select((.hooks | length) > 0)
-          else . end))
-  + [{matcher: "Bash", hooks: [{type: "command", command: $cmd}]}])'
-
 _guardrails_wire() {
-    toolbox_rewrite_json "$(toolbox_agent_home claude)/settings.json" "$_guardrails_jq" \
-        --arg bin "$_guardrails_bin" --arg cmd "$_guardrails_bin"
+    toolbox_merge_hook_groups "$(toolbox_agent_home claude)/settings.json" \
+        "$(jq -n --arg cmd "$_guardrails_bin" \
+            '[{event: "PreToolUse", group: {matcher: "Bash", hooks: [{type: "command", command: $cmd}]}}]')" \
+        "^$_guardrails_bin( |\$)"
 }
 
 toolbox_with_claude_settings_lock _guardrails_wire || \

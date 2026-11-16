@@ -119,3 +119,16 @@ func TestAgentGuardrailsInitSkipsAnUnmountedClaudeState(t *testing.T) {
 		t.Fatalf("settings.json written without Claude's state mounted (stat err %v)", err)
 	}
 }
+
+// TestAgentGuardrailsInitKeepsItsPlace: a hook the developer adds after the
+// guardrails stays after them on the next start; nothing is reordered.
+func TestAgentGuardrailsInitKeepsItsPlace(t *testing.T) {
+	f := newGuardrailsFixture(t)
+	writeFile(t, f.settings(), `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"`+f.bin+`"}]},{"matcher":"Bash","hooks":[{"type":"command","command":"added-later"}]}]}}`)
+	f.run(t)
+	got := commands(readHooks(t, f.settings()), "PreToolUse")
+	want := []string{f.bin, "added-later"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("PreToolUse commands = %q, want %q", got, want)
+	}
+}

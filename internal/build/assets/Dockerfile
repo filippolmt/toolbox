@@ -924,11 +924,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
       /out/usr/local/go/bin/go version; \
       freeze-mtimes
 
-# Agent guardrails, the Claude Code PreToolUse hook init.d/37-agent-guardrails.sh
-# wires: built from guardrails/ with the toolchain fetch-go ships, so it moves
-# with GO_VERSION. Standard library only, hence GOPROXY=off: the build never
-# downloads. The stage starts from fetch-go's /out and replaces it with the
-# binary alone.
+# Agent guardrails: the PreToolUse hook that Claude Code (init.d/37-agent-
+# guardrails.sh), Codex (gen-codex-config) and pi (guardrails/agent-guardrails.ts)
+# run. Built from guardrails/ with the toolchain fetch-go ships, so it moves with
+# go.mod's toolchain directive. Standard library only, hence GOPROXY=off: the
+# build never downloads. The stage starts from fetch-go's /out and replaces it
+# with the binary alone.
 FROM fetch-go AS fetch-guardrails
 COPY --link guardrails/ /src/guardrails/
 RUN set -eux; \
@@ -1326,6 +1327,8 @@ RUN set -eux; \
       . /tmp/lib/agent-topology-lib.sh; \
       . /tmp/lib/worktrunk-markers-lib.sh; \
       _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
+      _codex_guardrails_group='[{"event": "PreToolUse", "group": {"matcher": "^Bash$", "hooks": [{"type": "command", "command": "/usr/local/lib/toolbox/agent-guardrails"}]}}]'; \
+      toolbox_merge_hook_groups /etc/codex/hooks.json "$_codex_guardrails_group" '^/usr/local/lib/toolbox/agent-guardrails( |$)'; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
       HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
       bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \
@@ -2051,6 +2054,7 @@ COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
 COPY --link agent-instructions.md /etc/claude-code/CLAUDE.md
 COPY --link agent-instructions.md /etc/toolbox/agent-instructions.md
 COPY --link pi-agent-instructions.ts /usr/local/lib/toolbox/pi/agent-instructions.ts
+COPY --link guardrails/agent-guardrails.ts /usr/local/lib/toolbox/pi/agent-guardrails.ts
 COPY --link --chmod=0755 bin/pi /usr/local/bin/pi
 # Worktrunk's system config layer (Image Default): worktree hooks and commit
 # message generation for every developer, below their own user config. The

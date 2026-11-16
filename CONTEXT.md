@@ -1715,7 +1715,7 @@ agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
 Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh`,
 `init.d/61-herdr.sh`, `init.d/62-worktrunk.sh` and `init.d/37-agent-guardrails.sh` own their distinct
-wiring commands; the guardrails are wired for Claude Code only so far. All consume Agent
+wiring commands. All consume Agent
 Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
 itself. A writer of a file another writer also touches — Claude's
@@ -1750,7 +1750,8 @@ into the developer's files. It configures every developer the
 same way without writing into a file they own: the baked `ssh_config` drop-in,
 the system gitconfig, the agent instructions (Claude Code's managed `CLAUDE.md`,
 Codex's `/etc/codex/config.toml`, pi's extension behind the `pi` wrapper),
-Codex's hooks in `/etc/codex/hooks.json` and Worktrunk's
+Codex's hooks in `/etc/codex/hooks.json` (the agent guardrails among them), pi's
+guardrails extension behind the same wrapper and Worktrunk's
 `/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
 the Dockerfile.
 

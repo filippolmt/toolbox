@@ -460,6 +460,26 @@ _pw_skill_check() {
     echo "install --skills populated SKILL.md + ${n} references in CWD"
 }
 
+# init.d/37-agent-guardrails.sh against a throwaway Claude state: the hook must
+# land in PreToolUse. Double quotes only (single-quoted body).
+_guardrails_wiring_check() {
+    local h rc
+    h=$(mktemp -d) || return 1
+    mkdir -p "$h/.claude"
+    HOME="$h" CLAUDE_CONFIG_DIR="$h/.claude" bash /usr/local/lib/toolbox/init.d/37-agent-guardrails.sh >/dev/null 2>&1
+    jq -e --arg g /usr/local/lib/toolbox/agent-guardrails "[.hooks.PreToolUse[]?.hooks[]?.command] | index(\$g) != null" "$h/.claude/settings.json" >/dev/null 2>&1
+    rc=$?
+    rm -rf "$h"
+    [ "$rc" -eq 0 ] && echo "wired into PreToolUse"
+}
+
+# The pi guardrails extension, loaded by node with a stand-in pi: it must block
+# `git commit -a` through the real hook and let `git status` through.
+_pi_guardrails_check() {
+    node -e "import(\"/usr/local/lib/toolbox/pi/agent-guardrails.ts\").then(m=>{let h;m.default({on:(e,f)=>{h=f}});const b=h({toolName:\"bash\",input:{command:\"git commit -a\"}},{cwd:\"/\"});const p=h({toolName:\"bash\",input:{command:\"git status\"}},{cwd:\"/\"});process.exit(b&&b.block&&!p?0:1)})" 2>/dev/null \
+        && echo "blocks git commit -a, passes git status"
+}
+
 # The chromium apt deps are frozen as a literal list in the base apt layer of
 # the Dockerfile, but the set playwright needs is derived from the playwright
 # version — a Renovate bump can move it with no edit there. A missing lib does
@@ -565,9 +585,11 @@ check_required "node localhost binds IPv4" node -e "const s=require(\"net\").cre
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
 # Agent guardrails hook (fetch-guardrails): blocks `git commit -a` with exit 2,
-# lets `git commit -m` through. init.d/37-agent-guardrails.sh wires it into a
-# mounted Claude state, which this container has none of.
+# lets `git commit -m` through; Claude Code gets it from init.d, pi from its
+# extension. The Codex copy is held by codex-hooks-check.sh below.
 check_required "agent guardrails hook" sh -c '"'"'g=/usr/local/lib/toolbox/agent-guardrails; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
+check_required "agent guardrails wired for claude" _guardrails_wiring_check
+check_required "agent guardrails pi extension" _pi_guardrails_check
 # Debian ships ensurepip in python3.13-venv (pulled by python3-venv); without it `python3 -m venv` fails.
 check_required "python3 ensurepip + venv" sh -c "python3 -m ensurepip --version && d=\$(mktemp -d) && python3 -m venv \"\$d/v\" && \"\$d/v/bin/pip\" --version; rc=\$?; rm -rf \"\$d\"; exit \$rc"
 check_required "git"        git --version

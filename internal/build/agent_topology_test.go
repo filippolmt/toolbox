@@ -245,6 +245,9 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	herdr := readAsset(t, "init.d/61-herdr.sh")
 	atuin := readAsset(t, "init.d/65-atuin.sh")
 	worktrunk := readAsset(t, "init.d/62-worktrunk.sh")
+	guardrails := readAsset(t, "init.d/37-agent-guardrails.sh")
+	codexCheck := readAsset(t, "bin/codex-hooks-check.sh")
+	piWrapper := readAsset(t, "bin/pi")
 	dockerfile := readAsset(t, "Dockerfile")
 	type adapter struct{ tool, source, want string }
 	adapters := map[string][]adapter{
@@ -252,24 +255,28 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 			{"Herdr", herdr, "_herdr_install_integration claude"},
 			{"Atuin", atuin, "atuin hook install claude-code"},
 			{"Worktrunk", worktrunk, "_wt_wire_claude"},
+			{"Guardrails", guardrails, "toolbox_with_claude_settings_lock _guardrails_wire"},
 		},
 		"codex": {
 			{"Herdr", dockerfile, "CODEX_HOME=/etc/codex herdr integration install codex"},
 			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
 			{"Worktrunk", dockerfile, `"$_wt_codex_events"`},
 			{"the hooks check", dockerfile, "codex-hooks-check.sh /etc/codex/hooks.json"},
+			{"Guardrails", dockerfile, "_codex_guardrails_group"},
+			{"Guardrails check", codexCheck, "/usr/local/lib/toolbox/agent-guardrails"},
 		},
 		"pi": {
 			{"Herdr", herdr, "_herdr_install_integration pi"},
 			{"Atuin", atuin, "atuin hook install pi"},
 			{"Worktrunk", worktrunk, "_wt_wire_pi"},
+			{"Guardrails", piWrapper, "-e /usr/local/lib/toolbox/pi/agent-guardrails.ts"},
 		},
 	}
 
 	for _, agent := range config.SupportedAgents {
 		declared, ok := adapters[agent]
 		if !ok {
-			t.Errorf("supported agent %q declares no Atuin, Herdr or Worktrunk adapter", agent)
+			t.Errorf("supported agent %q declares no Atuin, Herdr, Worktrunk or guardrails adapter", agent)
 			continue
 		}
 		for _, a := range declared {

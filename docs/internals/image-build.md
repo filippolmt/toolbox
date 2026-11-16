@@ -69,15 +69,21 @@ The smoke test asserts all three: the file, `codex debug prompt-input`, and the 
 
 ## Agent guardrails
 
-The instructions above ask; the guardrails enforce. `/usr/local/lib/toolbox/agent-guardrails` is a Claude Code `PreToolUse` hook on Bash that exits 2, with a reason naming the way out, for:
+The instructions above ask; the guardrails enforce. `/usr/local/lib/toolbox/agent-guardrails` is a `PreToolUse` hook on the shell tool that exits 2, with a reason naming the way out, for:
 
-- **a container-local Docker bind source** — under `/tmp`, the container's `$HOME` or `/workspace` (the container's second mount of the workspace) and not under `$TOOLBOX_HOST_WORKSPACE`. Relative sources and `$(pwd)` resolve against the session's `cwd`. A bare `/home/` prefix is not the test: on a Linux host the workspace itself lives under `/home/<user>`.
+- **a container-local Docker bind source** — under `/tmp`, the container's `$HOME` or `/workspace` (the container's second mount of the workspace) and not under `$TOOLBOX_HOST_WORKSPACE`. Relative sources and `$(pwd)` resolve against the session's `cwd`. A bare `/home/` prefix is not the test: on a Linux host the workspace itself lives under `/home/<user>`. The check runs only while a daemon is reachable — the docker-sock mount is present or `DOCKER_HOST` is set — since Docker access crosses the [Containment Boundary](../../CONTEXT.md#containment-boundary).
 - **`git commit -a` / `--all`**, which stages work that is not the agent's.
-- **a `git stash` with no pathspec**, which sweeps up the same.
+- **a `git stash` with no pathspec** (`--staged` aside), which sweeps up the same.
 
-It is Go from `guardrails/`, built by the `fetch-guardrails` stage with fetch-go's toolchain, so it follows `GO_VERSION`; standard library only, so the stage builds with `GOPROXY=off`. Its word splitter is not a shell parser (the `shortcut:` note in `shell.go`), and input it cannot read is let through: it catches mistakes, it is not a sandbox.
+`sudo`, `env`, `command` and `exec` in front of a command do not hide it. It is Go from `guardrails/`, built by the `fetch-guardrails` stage with fetch-go's toolchain, so it follows go.mod's `toolchain` directive; standard library only, so the stage builds with `GOPROXY=off`. Its word splitter is not a shell parser (the `shortcut:` note in `shell.go`), and input it cannot read is let through: it catches mistakes, it is not a sandbox.
 
-`init.d/37-agent-guardrails.sh` wires it as [Agent Wiring](../../CONTEXT.md#agent-wiring), under the Claude settings lock, on every start. It cannot be an [Image Default](../../CONTEXT.md#image-default): Claude Code's only system layer is managed settings, which the developer cannot override, and an image `managed-settings.json` is ignored wherever an organisation sends server-managed settings (`managedSourcesBehavior` defaults to `first-wins`). The docker check (`--docker`) is wired only while `/var/run/docker.sock` is mounted, since Docker access crosses the [Containment Boundary](../../CONTEXT.md#containment-boundary). There is no opt-out key; a false positive is run by the developer with `!`. Codex and pi are not wired yet.
+Each agent gets it in its own protocol, which is the same for Claude Code and Codex (stdin JSON with `tool_input.command` and `cwd`, exit 2 plus stderr):
+
+- **Claude Code**: `init.d/37-agent-guardrails.sh`, as [Agent Wiring](../../CONTEXT.md#agent-wiring), merges it into `~/.claude/settings.json` under the settings lock on every start, keeping its place among the developer's hooks. It cannot be an [Image Default](../../CONTEXT.md#image-default): Claude Code's only system layer is managed settings, which the developer cannot override, and an image `managed-settings.json` is ignored wherever an organisation sends server-managed settings (`managedSourcesBehavior` defaults to `first-wins`).
+- **Codex**: an Image Default in `/etc/codex/hooks.json`, written by the `gen-codex-config` stage and held there and in the smoke test by `bin/codex-hooks-check.sh`.
+- **pi**: `guardrails/agent-guardrails.ts`, an extension the `bin/pi` wrapper loads with `-e`, hands each `bash` call to the same binary and blocks on exit 2.
+
+There is no opt-out key; a false positive is run by the developer with `!`.
 
 ## Passwordless sudo
 
