@@ -467,7 +467,7 @@ _guardrails_wiring_check() {
     h=$(mktemp -d) || return 1
     mkdir -p "$h/.claude"
     HOME="$h" CLAUDE_CONFIG_DIR="$h/.claude" bash /usr/local/lib/toolbox/init.d/37-agent-guardrails.sh >/dev/null 2>&1
-    jq -e --arg g /usr/local/lib/toolbox/agent-guardrails "[.hooks.PreToolUse[]?.hooks[]?.command] | index(\$g) != null" "$h/.claude/settings.json" >/dev/null 2>&1
+    jq -e --arg g "$(. /usr/local/lib/toolbox/agent-topology-lib.sh && printf %s "$toolbox_guardrails_bin")" "[.hooks.PreToolUse[]?.hooks[]?.command] | index(\$g) != null" "$h/.claude/settings.json" >/dev/null 2>&1
     rc=$?
     rm -rf "$h"
     [ "$rc" -eq 0 ] && echo "wired into PreToolUse"
@@ -584,10 +584,9 @@ check_required "npm"        npm --version
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
-# Agent guardrails hook (fetch-guardrails): blocks `git commit -a` with exit 2,
-# lets `git commit -m` through; Claude Code gets it from init.d, pi from its
-# extension. The Codex copy is held by codex-hooks-check.sh below.
-check_required "agent guardrails hook" sh -c '"'"'g=/usr/local/lib/toolbox/agent-guardrails; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
+# Agent guardrails hook: blocks `git commit -a` with exit 2, lets `git commit -m`
+# through. The Codex wiring is held by codex-hooks-check.sh below.
+check_required "agent guardrails hook" sh -c '"'"'. /usr/local/lib/toolbox/agent-topology-lib.sh; g=$toolbox_guardrails_bin; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
 check_required "agent guardrails wired for claude" _guardrails_wiring_check
 check_required "agent guardrails pi extension" _pi_guardrails_check
 # Debian ships ensurepip in python3.13-venv (pulled by python3-venv); without it `python3 -m venv` fails.

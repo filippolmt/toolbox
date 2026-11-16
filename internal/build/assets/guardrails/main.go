@@ -1,7 +1,6 @@
 // Command agent-guardrails is the image's PreToolUse hook for the agents'
-// shell tool, baked at /usr/local/lib/toolbox/agent-guardrails. Claude Code
-// gets it from init.d/37-agent-guardrails.sh, Codex from /etc/codex/hooks.json,
-// pi from the guardrails/agent-guardrails.ts extension behind bin/pi.
+// shell tool. What it blocks, and how each agent runs it:
+// docs/internals/image-build.md#agent-guardrails.
 //
 // It reads the hook JSON on stdin. Exit 2 blocks the tool call and hands
 // stderr back to the agent; exit 0 lets it run. Input it cannot read is let
@@ -25,6 +24,9 @@ import (
 const (
 	commitAll = "Blocked: git commit -a/--all stages every tracked change, including work that is not yours. " +
 		"Run `git add <path>` for the files of this commit, then `git commit` without -a."
+	containerLocalMount = "Blocked: bind mount source %s is container-local. The Docker daemon is the host's " +
+		"and resolves the source on the host, so the mount would come up empty with no error. Put the files " +
+		"under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it."
 	implicitStash = "Blocked: a git stash without a pathspec sweeps up every change in the tree, including work " +
 		"that is not yours. Name what to stash: `git stash push -- <path>`."
 )
@@ -88,10 +90,17 @@ const maxNesting = 3
 // line checks every simple command of a command line, following the scripts
 // of bash -c, sh -c and eval, and returns the first block reason. A line it
 // cannot split blocks nothing.
-func (c checker) line(line string, depth int) string {
-	commands, err := tokenize(line)
+func (c checker) line(cmdline string, depth int) string {
+	commands, subs, err := tokenize(cmdline)
 	if err != nil {
 		return ""
+	}
+	if depth < maxNesting {
+		for _, sub := range subs {
+			if reason := c.line(sub, depth+1); reason != "" {
+				return reason
+			}
+		}
 	}
 	for _, words := range commands {
 		if reason := c.simple(words, depth); reason != "" {
@@ -104,7 +113,7 @@ func (c checker) line(line string, depth int) string {
 // simple checks one simple command, or the script it hands to a shell.
 func (c checker) simple(words []word, depth int) string {
 	argv := stripWrappers(expandCommand(words, c.vars))
-	if recordAssignments(argv, c.vars) {
+	if recordAssignments(argv, c.vars) || c.changeDirectory(argv) {
 		return ""
 	}
 	if script, ok := nestedScript(argv); ok {
@@ -114,6 +123,26 @@ func (c checker) simple(words []word, depth int) string {
 		return c.line(script, depth+1)
 	}
 	return c.command(argv)
+}
+
+// changeDirectory follows cd and pushd into vars["PWD"], which relative bind
+// sources resolve against, and reports whether argv was one of them.
+func (c checker) changeDirectory(argv []string) bool {
+	if len(argv) == 0 || argv[0] != "cd" && argv[0] != "pushd" {
+		return false
+	}
+	args := argv[1+skipOptions(argv[1:], func(string) bool { return false }):]
+	switch {
+	case len(args) == 0:
+		c.vars["PWD"] = c.vars["HOME"]
+	case args[0] == "-":
+		// The previous directory is not tracked; keep the current one.
+	case path.IsAbs(args[0]):
+		c.vars["PWD"] = path.Clean(args[0])
+	default:
+		c.vars["PWD"] = path.Join(c.vars["PWD"], args[0])
+	}
+	return true
 }
 
 func (c checker) command(argv []string) string {
@@ -143,15 +172,42 @@ func nestedScript(argv []string) (string, bool) {
 	if !shells[argv[0]] {
 		return "", false
 	}
-	for k, a := range argv[1:] {
-		if !strings.HasPrefix(a, "-") || a == "--" {
-			return "", false
-		}
-		if !strings.HasPrefix(a, "--") && strings.Contains(a, "c") && k+2 < len(argv) {
-			return argv[k+2], true
+	return shellCommandString(argv[1:])
+}
+
+// shellCommandString returns the script a shell's arguments carry: with -c in
+// any option cluster (-c, -lc, -ec), the first operand after the options.
+// A cluster ending in o or O (-o pipefail, -euo pipefail, -O extglob) takes
+// the next word.
+func shellCommandString(args []string) (string, bool) {
+	k, sawC := shellOptions(args)
+	if !sawC || k >= len(args) {
+		return "", false
+	}
+	return args[k], true
+}
+
+// shellOptions scans a shell's leading options and returns the index of its
+// first operand and whether any option cluster held -c.
+func shellOptions(args []string) (int, bool) {
+	sawC := false
+	for k := 0; k < len(args); k++ {
+		a := args[k]
+		switch {
+		case a == "--":
+			return k + 1, sawC
+		case !strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "+"):
+			return k, sawC
+		case strings.HasPrefix(a, "--"):
+			// a long option, such as --login
+		default:
+			sawC = sawC || strings.ContainsRune(a[1:], 'c')
+			if strings.HasSuffix(a, "o") || strings.HasSuffix(a, "O") {
+				k++
+			}
 		}
 	}
-	return "", false
+	return len(args), sawC
 }
 
 // redirection matches a redirection word, capturing what follows the operator:
@@ -184,22 +240,25 @@ func expandCommand(words []word, vars map[string]string) []string {
 }
 
 // Options of the command wrappers that take the next word as their value.
-var wrapperValueOptions = map[string]map[string]bool{
-	"sudo":    set("-u", "-g", "-p", "-C", "-h", "-r", "-t", "-U", "-D", "-R", "-T"),
-	"env":     set("-u", "-C", "-S"),
-	"command": {},
-	"exec":    set("-a"),
-	"timeout": set("-s", "--signal", "-k", "--kill-after"),
-	"nice":    set("-n", "--adjustment"),
-	"nohup":   {},
-	"time":    {},
-	"ionice":  set("-c", "--class", "-n", "--classdata"),
-	"stdbuf":  set("-i", "-o", "-e"),
+// wrapper describes a command that runs another: the options that take the
+// next word, and the operands it reads before the command (timeout's duration).
+type wrapper struct {
+	valueOptions map[string]bool
+	operands     int
 }
 
-// wrapperOperands counts the operands a wrapper takes before the command:
-// timeout's duration.
-var wrapperOperands = map[string]int{"timeout": 1}
+var wrappers = map[string]wrapper{
+	"sudo":    {valueOptions: set("-u", "-g", "-p", "-C", "-h", "-r", "-t", "-U", "-D", "-R", "-T")},
+	"env":     {valueOptions: set("-u", "-C", "-S")},
+	"command": {},
+	"exec":    {valueOptions: set("-a")},
+	"timeout": {valueOptions: set("-s", "--signal", "-k", "--kill-after"), operands: 1},
+	"nice":    {valueOptions: set("-n", "--adjustment")},
+	"nohup":   {},
+	"time":    {},
+	"ionice":  {valueOptions: set("-c", "--class", "-n", "--classdata")},
+	"stdbuf":  {valueOptions: set("-i", "-o", "-e")},
+}
 
 // stripWrappers drops leading command wrappers (sudo, env, timeout, …) with
 // their options and operands, so the checks see the command they run, named
@@ -208,21 +267,54 @@ var wrapperOperands = map[string]int{"timeout": 1}
 func stripWrappers(argv []string) []string {
 	for len(argv) > 0 {
 		argv[0] = path.Base(argv[0]) // /usr/bin/git runs git
-		values, ok := wrapperValueOptions[argv[0]]
+		if controlKeywords[argv[0]] {
+			argv = argv[1:]
+			continue
+		}
+		if split, ok := envSplitString(argv); ok {
+			argv = split
+			continue
+		}
+		w, ok := wrappers[argv[0]]
 		if !ok {
 			return argv
 		}
-		wrapper := argv[0]
-		k := 1 + skipOptions(argv[1:], func(a string) bool { return values[a] })
-		for wrapper == "env" && k < len(argv) && assignmentPrefix.MatchString(argv[k]) {
+		k := 1 + skipOptions(argv[1:], func(a string) bool { return w.valueOptions[a] })
+		for argv[0] == "env" && k < len(argv) && assignmentPrefix.MatchString(argv[k]) {
 			k++
 		}
 		if k < len(argv) && argv[k] == "--" {
 			k++
 		}
-		argv = argv[min(k+wrapperOperands[wrapper], len(argv)):]
+		argv = argv[min(k+w.operands, len(argv)):]
 	}
 	return argv
+}
+
+// controlKeywords open a compound command or a branch of one; the command they
+// lead with is the one that runs.
+var controlKeywords = set("if", "then", "else", "elif", "while", "until", "do", "!", "{")
+
+// envSplitString rewrites `env [opts] -S 'cmd args' rest…` as the command
+// env runs: the split string's words, then the rest.
+func envSplitString(argv []string) ([]string, bool) {
+	if argv[0] != "env" {
+		return nil, false
+	}
+	for k := 1; k < len(argv) && strings.HasPrefix(argv[k], "-"); k++ {
+		a := argv[k]
+		switch {
+		case (a == "-S" || a == "--split-string") && k+1 < len(argv):
+			return append(strings.Fields(argv[k+1]), argv[k+2:]...), true
+		case strings.HasPrefix(a, "--split-string="):
+			return append(strings.Fields(strings.TrimPrefix(a, "--split-string=")), argv[k+1:]...), true
+		case strings.HasPrefix(a, "-S") && len(a) > 2:
+			return append(strings.Fields(a[2:]), argv[k+1:]...), true
+		case wrappers["env"].valueOptions[a]:
+			k++
+		}
+	}
+	return nil, false
 }
 
 // assignmentBuiltins set shell variables from their NAME=value operands.
@@ -268,11 +360,8 @@ const commitShortValue = "mFCct"
 // so the rest of the cluster is theirs and the next word never is.
 const commitShortOptionalValue = "uS"
 
-var commitLongValue = map[string]bool{
-	"--message": true, "--file": true, "--reuse-message": true, "--reedit-message": true, "--fixup": true,
-	"--squash": true, "--author": true, "--date": true, "--cleanup": true, "--template": true,
-	"--trailer": true, "--pathspec-from-file": true,
-}
+var commitLongValue = set("--message", "--file", "--reuse-message", "--reedit-message", "--fixup",
+	"--squash", "--author", "--date", "--cleanup", "--template", "--trailer", "--pathspec-from-file")
 
 func checkCommit(argv []string) string {
 	sub, args := gitSubcommand(argv)
@@ -333,18 +422,50 @@ func checkStash(argv []string) string {
 			return "" // list, show, pop, apply, drop, branch, …
 		}
 	}
+	if stashSelects(args) {
+		return ""
+	}
+	return implicitStash
+}
+
+// stashSelects reports whether git stash push arguments name what to stash:
+// a pathspec, or --staged.
+func stashSelects(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "-m" || a == "--message" || a == "--pathspec-from-file":
 			i++
 		case a == "-S" || a == "--staged":
-			return "" // only what is already staged, which the agent chose
+			return true // only what is already staged, which the agent chose
 		case a == "--" || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--pathspec-from-file="):
-			return "" // a pathspec follows or is here
+			return true // a pathspec follows or is here
+		case !strings.HasPrefix(a, "--"):
+			staged, takesNext := readStashCluster(a[1:])
+			if staged {
+				return true
+			}
+			if takesNext {
+				i++
+			}
 		}
 	}
-	return implicitStash
+	return false
+}
+
+// readStashCluster reads a cluster of git stash short options: whether it
+// holds -S, and whether it ends in -m, whose value is then the next word.
+// -m ends the cluster: the rest of it is the message.
+func readStashCluster(cluster string) (staged, takesNext bool) {
+	for j, ch := range cluster {
+		switch ch {
+		case 'S':
+			return true, false
+		case 'm':
+			return false, j == len(cluster)-1
+		}
+	}
+	return false, false
 }
 
 var (
@@ -418,7 +539,12 @@ var mountSource = regexp.MustCompile(`(?:^|,)(?:src|source)=([^,]+)`)
 // any spelling.
 func mountSources(args []string) []string {
 	var out []string
-	volume := func(spec string) { out = append(out, strings.SplitN(spec, ":", 2)[0]) }
+	volume := func(spec string) {
+		// A spec with no colon is an anonymous volume at that container path.
+		if src, _, bind := strings.Cut(spec, ":"); bind {
+			out = append(out, src)
+		}
+	}
 	mount := func(spec string) {
 		if m := mountSource.FindStringSubmatch(spec); m != nil {
 			out = append(out, m[1])
@@ -452,29 +578,39 @@ func pathWithin(p, root string) bool {
 }
 
 func checkDocker(argv []string, vars map[string]string) string {
+	if len(argv) > 0 && argv[0] == "docker-compose" {
+		argv = append([]string{"docker", "compose"}, argv[1:]...)
+	}
 	if len(argv) == 0 || argv[0] != "docker" {
 		return ""
 	}
 	for _, src := range mountSources(dockerRunOptions(argv[1:])) {
-		if !strings.HasPrefix(src, "/") && !strings.HasPrefix(src, ".") {
-			continue // a named volume, or a variable left unexpanded
-		}
-		if !strings.HasPrefix(src, "/") {
-			src = path.Join(vars["PWD"], src)
-		}
-		src = path.Clean(src)
-		if pathWithin(src, vars["TOOLBOX_HOST_WORKSPACE"]) {
-			continue
-		}
-		// /workspace is the container's second mount of the workspace; the
-		// host has none.
-		for _, root := range []string{"/tmp", "/workspace", vars["HOME"]} {
-			if pathWithin(src, root) {
-				return fmt.Sprintf("Blocked: bind mount source %s is container-local. The Docker daemon is the host's "+
-					"and resolves the source on the host, so the mount would come up empty with no error. Put the "+
-					"files under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it.", src)
-			}
+		if p, ok := containerLocalSource(src, vars); ok {
+			return fmt.Sprintf(containerLocalMount, p)
 		}
 	}
 	return ""
+}
+
+// containerLocalSource resolves a bind source the way the docker CLI does,
+// against the shell's working directory, and reports it when the host daemon
+// cannot see it: under /tmp, $HOME or /workspace (the container's second
+// mount of the workspace; the host has none), not under the host workspace.
+func containerLocalSource(src string, vars map[string]string) (string, bool) {
+	if !strings.HasPrefix(src, "/") && !strings.HasPrefix(src, ".") {
+		return "", false // a named volume, or a variable left unexpanded
+	}
+	if !strings.HasPrefix(src, "/") {
+		src = path.Join(vars["PWD"], src)
+	}
+	src = path.Clean(src)
+	if pathWithin(src, vars["TOOLBOX_HOST_WORKSPACE"]) {
+		return "", false
+	}
+	for _, root := range []string{"/tmp", "/workspace", vars["HOME"]} {
+		if pathWithin(src, root) {
+			return src, true
+		}
+	}
+	return "", false
 }

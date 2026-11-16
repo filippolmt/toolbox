@@ -7,9 +7,11 @@ import (
 )
 
 // shortcut: a small POSIX-ish word splitter, not a shell parser. It knows
-// quotes, escapes, $(…)/`…` spans and the list operators, which is what the
-// checks read; here-docs, functions and control flow fall through as plain
-// words. Upgrade to mvdan.cc/sh if a check ever needs real syntax.
+// quotes, escapes and line continuations, $(…)/`…` spans (whose contents are
+// checked as commands of their own), here-document bodies (dropped as text)
+// and the list operators; the checker strips control-flow keywords. Functions,
+// case patterns and arithmetic fall through as plain words. Upgrade to
+// mvdan.cc/sh if a check ever needs real syntax.
 
 type quoting int
 
@@ -34,6 +36,7 @@ var errUnterminated = errors.New("unterminated quote or substitution")
 type tokenizer struct {
 	line     string
 	commands [][]word
+	subs     []string // inner text of every $(…) and `…`
 	current  []word
 	w        word
 	buf      strings.Builder
@@ -42,21 +45,73 @@ type tokenizer struct {
 }
 
 // tokenize splits a command line into simple commands at ; & | && || ( ) and
-// newlines.
-func tokenize(line string) ([][]word, error) {
+// newlines, and returns the inner text of its command substitutions.
+func tokenize(line string) ([][]word, []string, error) {
+	line = stripHeredocBodies(line)
 	t := &tokenizer{line: line}
 	for i := 0; i < len(line); i++ {
 		last, err := t.step(i)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		i = last
 	}
 	if t.quote != unquoted {
-		return nil, errUnterminated
+		return nil, nil, errUnterminated
 	}
 	t.endCommand()
-	return t.commands, nil
+	return t.commands, t.subs, nil
+}
+
+var heredocStart = regexp.MustCompile(`<<(-?)[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// stripHeredocBodies drops every here-document body, from the line after its
+// << operator through its delimiter line: the body is text the command reads,
+// not commands, and may hold anything — unbalanced parentheses included.
+func stripHeredocBodies(line string) string {
+	from := 0
+	for {
+		loc := heredocStart.FindStringSubmatchIndex(line[from:])
+		if loc == nil {
+			return line
+		}
+		end := from + loc[1]
+		if start := from + loc[0]; start > 0 && line[start-1] == '<' {
+			from = end // <<<word is a here-string: no body
+			continue
+		}
+		nl := strings.IndexByte(line[end:], '\n')
+		if nl < 0 {
+			return line
+		}
+		bodyStart := end + nl + 1
+		word := line[from+loc[6] : from+loc[7]]
+		stripTabs := loc[3] > loc[2]
+		bodyEnd := heredocEnd(line, bodyStart, word, stripTabs)
+		line = line[:bodyStart] + line[bodyEnd:]
+		from = bodyStart
+	}
+}
+
+// heredocEnd returns the index just past the delimiter line that closes a
+// here-document body starting at start, or len(line) when none does.
+func heredocEnd(line string, start int, word string, stripTabs bool) int {
+	for k := start; k < len(line); {
+		nl := strings.IndexByte(line[k:], '\n')
+		next := len(line)
+		if nl >= 0 {
+			next = k + nl + 1
+		}
+		text := strings.TrimSuffix(line[k:next], "\n")
+		if stripTabs {
+			text = strings.TrimLeft(text, "\t")
+		}
+		if text == word {
+			return next
+		}
+		k = next
+	}
+	return len(line)
 }
 
 // step consumes the character at i, and whatever belongs with it, and
@@ -136,8 +191,12 @@ func (t *tokenizer) redirectionAmpersand(i int) bool {
 }
 
 // escape keeps the character after a backslash literal: its own segment,
-// marked like single-quoted text so expansion leaves it alone.
+// marked like single-quoted text so expansion leaves it alone. A backslash
+// before a newline is a line continuation: both go.
 func (t *tokenizer) escape(i int) int {
+	if t.line[i+1] == '\n' {
+		return i + 1
+	}
 	quote := t.quote
 	t.flushSeg()
 	t.w = append(t.w, segment{t.line[i+1 : i+2], singleQuoted})
@@ -159,6 +218,11 @@ func (t *tokenizer) substitution(i int) (int, error) {
 	}
 	t.buf.WriteString(t.line[i : end+1])
 	t.inWord = true
+	inner := t.line[i+1 : end] // `…`
+	if t.line[i] == '$' {
+		inner = t.line[i+2 : end] // $(…)
+	}
+	t.subs = append(t.subs, inner)
 	return end, nil
 }
 
@@ -204,13 +268,32 @@ func substitutionEnd(line string, i int) int {
 	depth := 0
 	for j := i + 1; j < len(line); j++ {
 		switch line[j] {
+		case '\\':
+			j++
+		case '\'', '"':
+			// A quoted ( or ) does not count.
+			if j = quotedEnd(line, j); j < 0 {
+				return -1
+			}
 		case '(':
 			depth++
 		case ')':
-			depth--
-			if depth == 0 {
+			if depth--; depth == 0 {
 				return j
 			}
+		}
+	}
+	return -1
+}
+
+// quotedEnd returns the index of the quote closing the one at i, or -1.
+func quotedEnd(line string, i int) int {
+	for j := i + 1; j < len(line); j++ {
+		switch {
+		case line[j] == line[i]:
+			return j
+		case line[j] == '\\' && line[i] == '"':
+			j++
 		}
 	}
 	return -1

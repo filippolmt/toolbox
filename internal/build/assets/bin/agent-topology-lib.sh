@@ -179,5 +179,5 @@ toolbox_merge_guardrails() {
     toolbox_merge_hook_groups "$1" \
         "$(jq -n --arg cmd "$toolbox_guardrails_bin" \
             '[{event: "PreToolUse", group: {matcher: "^Bash$", hooks: [{type: "command", command: $cmd}]}}]')" \
-        "^$toolbox_guardrails_bin( |\$)"
+        "^${toolbox_guardrails_bin//./\\.}( |\$)"
 }

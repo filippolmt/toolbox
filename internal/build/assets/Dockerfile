@@ -924,11 +924,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
       /out/usr/local/go/bin/go version; \
       freeze-mtimes
 
-# Agent guardrails: the PreToolUse hook that Claude Code (init.d/37-agent-
-# guardrails.sh), Codex (gen-codex-config) and pi (guardrails/agent-guardrails.ts)
-# run. Built from guardrails/ with the toolchain fetch-go ships, so it moves with
+# Agent guardrails hook (→ docs/internals/image-build.md#agent-guardrails),
+# built from guardrails/ with the toolchain fetch-go ships, so it moves with
 # go.mod's toolchain directive. Standard library only, hence GOPROXY=off: the
-# build never downloads.
+# build never downloads. The last two lines run it: exit 2 on `git commit -a`.
 FROM fetch-base AS fetch-guardrails
 COPY --link --from=fetch-go /out/usr/local/go /usr/local/go
 COPY --link guardrails/ /src/guardrails/
@@ -939,6 +938,8 @@ RUN set -eux; \
       mkdir -p /out/usr/local/lib/toolbox; \
       /usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o /out/usr/local/lib/toolbox/agent-guardrails .; \
       rm -rf /tmp/go-build; \
+      rc=0; printf '{"tool_input":{"command":"git commit -a"}}' | /out/usr/local/lib/toolbox/agent-guardrails 2>/dev/null || rc=$?; \
+      test "$rc" -eq 2; \
       freeze-mtimes
 
 # gcloud. No per-version SHA256 file upstream — T-01-08 accepted risk.

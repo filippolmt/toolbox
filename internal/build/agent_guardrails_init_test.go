@@ -53,10 +53,8 @@ func (f guardrailsFixture) run(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(libBody), bakedGuardrailsBin) {
-		t.Fatalf("%s does not name %s", agentTopologyLib, bakedGuardrailsBin)
-	}
-	if err := os.WriteFile(lib, []byte(strings.ReplaceAll(string(libBody), bakedGuardrailsBin, f.bin)), 0o644); err != nil {
+	baked := guardrailsBinFromLib(t)
+	if err := os.WriteFile(lib, []byte(strings.ReplaceAll(string(libBody), baked, f.bin)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("/bin/bash", script)
@@ -69,8 +67,6 @@ func (f guardrailsFixture) run(t *testing.T) {
 func (f guardrailsFixture) settings() string {
 	return filepath.Join(f.home, ".claude", "settings.json")
 }
-
-const bakedGuardrailsBin = "/usr/local/lib/toolbox/agent-guardrails"
 
 // TestAgentGuardrailsInitWiresTheHookIdempotently: the hook lands as a
 // PreToolUse Bash hook beside the developer's own, and a second start writes
@@ -146,16 +142,24 @@ func TestAgentGuardrailsInitKeepsItsPlace(t *testing.T) {
 // for every shell writer; the build's output and pi's extension, which cannot
 // source it, must name the same path.
 func TestGuardrailsBinaryPathHasOneValue(t *testing.T) {
-	m := regexp.MustCompile(`(?m)^toolbox_guardrails_bin=(\S+)$`).FindStringSubmatch(readAsset(t, "bin/agent-topology-lib.sh"))
-	if m == nil {
-		t.Fatal("agent-topology-lib.sh no longer sets toolbox_guardrails_bin")
-	}
+	bin := guardrailsBinFromLib(t)
 	for file, want := range map[string]string{
-		"Dockerfile":                     "-o /out" + m[1] + " .",
-		"guardrails/agent-guardrails.ts": `"` + m[1] + `"`,
+		"Dockerfile":                     "-o /out" + bin + " .",
+		"guardrails/agent-guardrails.ts": `"` + bin + `"`,
 	} {
 		if !strings.Contains(readAsset(t, file), want) {
 			t.Errorf("%s does not name the guardrails binary as %q", file, want)
 		}
 	}
+}
+
+// guardrailsBinFromLib returns the hook path Agent Topology names, the one
+// value every other reference must match.
+func guardrailsBinFromLib(t *testing.T) string {
+	t.Helper()
+	m := regexp.MustCompile(`(?m)^toolbox_guardrails_bin=(\S+)$`).FindStringSubmatch(readAsset(t, "bin/agent-topology-lib.sh"))
+	if m == nil {
+		t.Fatal("agent-topology-lib.sh no longer sets toolbox_guardrails_bin")
+	}
+	return m[1]
 }
