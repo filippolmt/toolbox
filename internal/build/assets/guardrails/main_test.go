@@ -185,6 +185,7 @@ func TestBlocksCommitAll(t *testing.T) {
 		{name: "inside a loop", command: "for f in a b; do git commit --all; done", blocked: true},
 		{name: "inside a group", command: "{ git commit -a; }", blocked: true},
 		{name: "negated", command: "! git commit -a", blocked: true},
+		{name: "inside a function defined with the keyword", command: "function f { git stash; }; f", blocked: true},
 		{name: "env split string", command: `env -S 'git commit -a'`, blocked: true},
 		{name: "behind env assignment", command: "env GIT_EDITOR=true git commit --all", blocked: true},
 	})

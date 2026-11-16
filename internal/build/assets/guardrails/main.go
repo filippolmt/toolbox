@@ -271,6 +271,10 @@ func stripWrappers(argv []string) []string {
 			argv = argv[1:]
 			continue
 		}
+		if argv[0] == "function" {
+			argv = argv[min(2, len(argv)):] // function NAME { … : the body runs
+			continue
+		}
 		if split, ok := envSplitString(argv); ok {
 			argv = split
 			continue
