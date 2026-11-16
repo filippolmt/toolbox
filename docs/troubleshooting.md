@@ -116,6 +116,18 @@ The empty `credential.helper=` clears the bridge for this invocation only.
 
 **Fix, durable, on the host:** replace the stored credential with one that carries the scope. On the host, `gh auth refresh -h github.com -s workflow`, then drop the stale keychain entry (`printf 'protocol=https\nhost=github.com\n\n' | git credential reject`, or delete it in Keychain Access). The next push prompts in the container: answer with your GitHub username and, as password, the output of `gh auth token` on the host; the bridge stores it in the keychain for every later push. Prefer this over `gh auth setup-git` on the host: that writes a `github.com`-specific helper into `~/.gitconfig`, which the container mounts too, and its empty reset line takes the bridge out of the container's lookup for `github.com`.
 
+## An agent command is blocked by the agent guardrails
+
+**Symptom:** Claude Code, Codex or pi reports a Bash command `Blocked:` before it runs.
+
+**Cause:** the image's [agent guardrails](internals/image-build.md#agent-guardrails) refuse three commands by design:
+
+- a `docker` bind mount whose source is under `/tmp`, `$HOME` or `/workspace` and not under `$TOOLBOX_HOST_WORKSPACE` — the daemon is the host's and would mount an empty directory;
+- `git commit -a` / `--all`;
+- `git stash` with no pathspec (`--staged` is fine).
+
+**Fix:** do what the reason says: mount `$TOOLBOX_HOST_WORKSPACE` followed by the path below it, `git add <path>` before committing, `git stash push -- <path>`. For a command you mean as written, run it yourself from the agent's prompt with `!`; there is no switch to turn the guardrails off.
+
 ## A repo's graphify, codegraph or playwright-cli setup is out of date
 
 **Symptom:** after an image update, the `/graphify` or playwright-cli skill, the graphify hooks or codegraph's MCP config in a repo still match the version you opted in with.

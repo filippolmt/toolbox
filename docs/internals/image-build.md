@@ -67,6 +67,26 @@ One embedded asset, `agent-instructions.md`, carries what an agent cannot infer 
 
 The smoke test asserts all three: the file, `codex debug prompt-input`, and the wrapper plus an extension that loads. This repo's own Make targets also refuse a container-local `CURDIR` ([development feedback](../agents/development-feedback.md#scratch-and-checks)).
 
+## Agent guardrails
+
+The instructions above ask; the guardrails enforce. `/usr/local/lib/toolbox/agent-guardrails` is a `PreToolUse` hook on the shell tool that exits 2, with a reason naming the way out, for:
+
+- **a container-local Docker bind source** in `docker run`/`create`, `docker container run`/`create` or `docker compose run` — under `/tmp`, the container's `$HOME` or `/workspace` (the container's second mount of the workspace) and not under `$TOOLBOX_HOST_WORKSPACE`. Relative sources and `$(pwd)` resolve against the session's `cwd`; only the options before the image or service count, so the container's own command keeps its `-v`. A bare `/home/` prefix is not the test: on a Linux host the workspace itself lives under `/home/<user>`. The check runs only while a daemon is reachable — the docker-sock mount is present or `DOCKER_HOST` is set — since Docker access crosses the [Containment Boundary](../../CONTEXT.md#containment-boundary).
+- **`git commit -a` / `--all`**, which stages work that is not the agent's.
+- **a `git stash` with no pathspec** (`--staged` aside), which sweeps up the same.
+
+What it sees through: command wrappers (`sudo`, `env` including `env -S`, `timeout`, `nice`, `nohup`, …), a command named by its path, git's and docker's global options, `docker-compose`, redirections, line continuations, here-document bodies (text, not commands), control-flow keywords (`if … then`, `do`, `{`, `!`), variables set earlier in the line (`D=…;`, `export D=…`), `cd` before a relative bind source, the contents of `$(…)` and backticks, and the script of `bash -c`, `sh -c` or `eval`. What it does not: volumes declared in a Compose file (reading them would take a YAML parser, or running `docker compose config` from the hook — before the developer approves the command, with options the agent chose), a script file the shell runs, a function defined outside the command line (the hook sees only the line's text; one defined in it, `f() { … }` or `function f { … }`, has its body checked), and other syntax its word splitter does not model (the `shortcut:` note in `shell.go`). Input it cannot read is let through: it catches mistakes, it is not a sandbox.
+
+It is Go from `guardrails/`, built by the `fetch-guardrails` stage with fetch-go's toolchain, so it follows go.mod's `toolchain` directive; standard library only, so the stage builds with `GOPROXY=off`. Agent Topology names its path (`toolbox_guardrails_bin`) and registers it (`toolbox_merge_guardrails`, over `toolbox_merge_hook_groups`, which keeps its place among the developer's hooks).
+
+Claude Code and Codex share a protocol — stdin JSON with `tool_input.command` and `cwd`, the tool matched as `Bash`, exit 2 plus stderr — so each agent gets the same binary:
+
+- **Claude Code**: `init.d/37-agent-guardrails.sh`, as [Agent Wiring](../../CONTEXT.md#agent-wiring), merges it into `~/.claude/settings.json` under the settings lock on every start. It cannot be an [Image Default](../../CONTEXT.md#image-default): Claude Code's only system layer is managed settings, which the developer cannot override, and an image `managed-settings.json` is ignored wherever an organisation sends server-managed settings (`managedSourcesBehavior` defaults to `first-wins`).
+- **Codex**: an Image Default in `/etc/codex/hooks.json`, written by the `gen-codex-config` stage and held there and in the smoke test by `bin/codex-hooks-check.sh`.
+- **pi**: `guardrails/agent-guardrails.ts`, an extension the `bin/pi` wrapper loads with `-e`, hands each `bash` call to the same binary and blocks on exit 2. It sits beside the Go source it calls rather than beside `pi-agent-instructions.ts`: one directory per feature.
+
+There is no opt-out key; a false positive is run by the developer with `!`.
+
 ## Passwordless sudo
 
 The base apt layer installs `sudo`, and the user-setup layer drops `/etc/sudoers.d/toolbox` with `ALL ALL=(ALL:ALL) NOPASSWD: ALL` (`!requiretty`, `!fqdn`). The runtime UID is the host's and rarely matches the baked `toolbox` user, so the rule is deliberately UID-agnostic — it matches whatever UID the entrypoint names `toolbox` in `/etc/passwd`. This lets `sudo apt-get update && sudo apt install …` (or any root op) work inside a running container without baking the tool into the image (apt lists aren't baked, so `update` runs first). Safe because the container is `AutoRemove` (see [Container teardown](container-lifecycle.md#container-teardown)): everything installed at runtime vanishes on exit. **Caveat:** sudo writing into bind-mounted host paths (`/workspace`, `~/.toolbox/*`) produces `root:root` files on the host — escalate for in-container/system state, not for editing mounted project files. `visudo -cf` validates the drop-in at build; the smoke test asserts the `sudo` binary is present and setuid root.

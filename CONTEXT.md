@@ -1704,15 +1704,18 @@ tool.
 
 ### Agent Wiring
 
-The second half of bundling a coding agent: the per-agent Init Sequence logic
-that makes the *other* bundled tools see it. Bundling gets the binary onto
-`PATH`; wiring registers Atuin's history capture, Herdr's control
-integration and Worktrunk's activity markers. Skill installers run in the opposite direction — they make an
+The second half of bundling a coding agent: what the Init Sequence merges into
+an agent's own user files on every start, because the agent offers no system
+layer a developer can override. Bundling gets the binary onto `PATH`; wiring
+makes the *other* bundled tools see the agent — Atuin's history capture,
+Herdr's control integration, Worktrunk's activity markers — and registers the
+image's guardrails for the container's own mechanics, such as the hook that
+blocks a container-local Docker bind mount. Skill installers run in the opposite direction — they make an
 agent see a tool — and consume Agent Topology without becoming Agent Wiring.
 
 Concretely: `internal/catalog` + `config.SupportedAgents` provide bundling, while `init.d/65-atuin.sh`,
-`init.d/61-herdr.sh` and `init.d/62-worktrunk.sh` own their distinct wiring commands. All consume Agent
-Topology for availability, native roots and persistence. A persistent hook is
+`init.d/61-herdr.sh`, `init.d/62-worktrunk.sh` and `init.d/37-agent-guardrails.sh` own their distinct
+wiring commands. All consume Agent Topology for availability, native roots and persistence. A persistent hook is
 gated on the mounted state root, never on a directory the agent creates for
 itself. A writer of a file another writer also touches — Claude's
 `settings.json`, and Codex's `hooks.json`, which containers on earlier images
@@ -1746,7 +1749,8 @@ into the developer's files. It configures every developer the
 same way without writing into a file they own: the baked `ssh_config` drop-in,
 the system gitconfig, the agent instructions (Claude Code's managed `CLAUDE.md`,
 Codex's `/etc/codex/config.toml`, pi's extension behind the `pi` wrapper),
-Codex's hooks in `/etc/codex/hooks.json` and Worktrunk's
+Codex's hooks in `/etc/codex/hooks.json` (the agent guardrails among them), pi's
+guardrails extension behind the same wrapper and Worktrunk's
 `/etc/xdg/worktrunk/config.toml` are Image Defaults. The image build owns them: `internal/build/assets/` and
 the Dockerfile.
 

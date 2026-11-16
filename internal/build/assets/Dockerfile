@@ -924,6 +924,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
       /out/usr/local/go/bin/go version; \
       freeze-mtimes
 
+# Agent guardrails hook (→ docs/internals/image-build.md#agent-guardrails),
+# built from guardrails/ with the toolchain fetch-go ships, so it moves with
+# go.mod's toolchain directive. Standard library only, hence GOPROXY=off: the
+# build never downloads. The last two lines run it: exit 2 on `git commit -a`.
+FROM fetch-base AS fetch-guardrails
+COPY --link --from=fetch-go /out/usr/local/go /usr/local/go
+COPY --link guardrails/ /src/guardrails/
+RUN set -eux; \
+      cd /src/guardrails; \
+      export HOME=/tmp/go-build GOCACHE=/tmp/go-build/cache GOPROXY=off GOTOOLCHAIN=local GOFLAGS=-buildvcs=false CGO_ENABLED=0; \
+      /usr/local/go/bin/go mod init toolbox-guardrails; \
+      mkdir -p /out/usr/local/lib/toolbox; \
+      /usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o /out/usr/local/lib/toolbox/agent-guardrails .; \
+      rm -rf /tmp/go-build; \
+      rc=0; printf '{"tool_input":{"command":"git commit -a"}}' | /out/usr/local/lib/toolbox/agent-guardrails 2>/dev/null || rc=$?; \
+      test "$rc" -eq 2; \
+      freeze-mtimes
+
 # gcloud. No per-version SHA256 file upstream — T-01-08 accepted risk.
 # The SDK is relocatable: extracted into /out/opt and driven from there
 # (components install included). python3 installed in-stage; the final image
@@ -1309,6 +1327,7 @@ RUN set -eux; \
       . /tmp/lib/agent-topology-lib.sh; \
       . /tmp/lib/worktrunk-markers-lib.sh; \
       _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
+      toolbox_merge_guardrails /etc/codex/hooks.json; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
       HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
       bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \
@@ -2034,6 +2053,7 @@ COPY --link ssh_config.toolbox /etc/ssh/ssh_config.d/10-toolbox.conf
 COPY --link agent-instructions.md /etc/claude-code/CLAUDE.md
 COPY --link agent-instructions.md /etc/toolbox/agent-instructions.md
 COPY --link pi-agent-instructions.ts /usr/local/lib/toolbox/pi/agent-instructions.ts
+COPY --link guardrails/agent-guardrails.ts /usr/local/lib/toolbox/pi/agent-guardrails.ts
 COPY --link --chmod=0755 bin/pi /usr/local/bin/pi
 # Worktrunk's system config layer (Image Default): worktree hooks and commit
 # message generation for every developer, below their own user config. The
@@ -2200,6 +2220,7 @@ COPY --link --from=fetch-worktrunk /out/ /
 COPY --link --from=fetch-herdr    /out/ /
 COPY --link --from=fetch-tini     /out/ /
 COPY --link --from=fetch-go       /out/ /
+COPY --link --from=fetch-guardrails /out/ /
 COPY --link --from=fetch-gcloud   /out/ /
 COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /

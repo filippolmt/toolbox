@@ -117,6 +117,8 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Agent skills.** Bundled tools that publish an agent skill (gh, glab, herdr, Worktrunk, …) have it installed for Claude Code, Codex and pi at every container start, from the copy matching the bundled version. graphify, codegraph and playwright-cli are per-repo instead: opt a repo in once with `graphify-init`, `codegraph-init` or `pwcli-init` from inside it, and run `toolbox-refresh` there after an image update to bring those installs up to date — nothing writes into a repo on its own. → [shell-start internals](docs/internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 
+**Agent guardrails.** Claude Code, Codex and pi run a hook before every shell command that blocks three mistakes: a Docker bind mount from a container-local path (it would reach the host daemon empty), `git commit -a`, and a `git stash` without a pathspec — the last two sweep up work that is not the agent's. The agent gets the reason and the way out. → [troubleshooting](docs/troubleshooting.md#an-agent-command-is-blocked-by-the-agent-guardrails)
+
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 
 ## Documentation
