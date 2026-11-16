@@ -71,7 +71,7 @@ func run(args []string, env map[string]string, stdin io.Reader, stderr io.Writer
 			reason = checkDocker(argv, vars)
 		}
 		if reason != "" {
-			fmt.Fprintln(stderr, reason)
+			_, _ = fmt.Fprintln(stderr, reason)
 			return 2
 		}
 	}

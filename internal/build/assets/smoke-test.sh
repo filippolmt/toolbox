@@ -564,6 +564,10 @@ check_required "npm"        npm --version
 check_required "node localhost binds IPv4" node -e "const s=require(\"net\").createServer();s.listen(0,\"localhost\",()=>{const a=s.address();s.close();console.log(a.address);process.exit(a.family===\"IPv4\"?0:1)})"
 check_required "socat"      sh -c "socat -V 2>&1 | head -n1"
 check_required "python3"    python3 --version
+# Agent guardrails hook (fetch-guardrails): blocks `git commit -a` with exit 2,
+# lets `git commit -m` through. init.d/37-agent-guardrails.sh wires it into a
+# mounted Claude state, which this container has none of.
+check_required "agent guardrails hook" sh -c '"'"'g=/usr/local/lib/toolbox/agent-guardrails; printf "%s" "{\"tool_input\":{\"command\":\"git commit -m x\"}}" | "$g" && { printf "%s" "{\"tool_input\":{\"command\":\"git commit -a\"}}" | "$g" 2>/dev/null; test $? -eq 2; }'"'"'
 # Debian ships ensurepip in python3.13-venv (pulled by python3-venv); without it `python3 -m venv` fails.
 check_required "python3 ensurepip + venv" sh -c "python3 -m ensurepip --version && d=\$(mktemp -d) && python3 -m venv \"\$d/v\" && \"\$d/v/bin/pip\" --version; rc=\$?; rm -rf \"\$d\"; exit \$rc"
 check_required "git"        git --version
@@ -907,8 +911,8 @@ for f in "$INIT_D"/*.sh; do
     fi
     count=$((count+1))
 done
-if [ "$count" -ne 17 ]; then
-    echo "FAILED: $count init.d/*.sh found, expected exactly 17 (12 catalog InitScripts + 5 system)"
+if [ "$count" -ne 18 ]; then
+    echo "FAILED: $count init.d/*.sh found, expected exactly 18 (12 catalog InitScripts + 6 system)"
     fail=1
 fi
 if [ "$fail" -eq 0 ]; then

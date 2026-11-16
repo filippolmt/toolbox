@@ -924,6 +924,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=fetch-apt-cache-g
       /out/usr/local/go/bin/go version; \
       freeze-mtimes
 
+# Agent guardrails, the Claude Code PreToolUse hook init.d/37-agent-guardrails.sh
+# wires: built from guardrails/ with the toolchain fetch-go ships, so it moves
+# with GO_VERSION. Standard library only, hence GOPROXY=off: the build never
+# downloads. The stage starts from fetch-go's /out and replaces it with the
+# binary alone.
+FROM fetch-go AS fetch-guardrails
+COPY --link guardrails/ /src/guardrails/
+RUN set -eux; \
+      cd /src/guardrails; \
+      export HOME=/tmp/go-build GOCACHE=/tmp/go-build/cache GOPROXY=off GOTOOLCHAIN=local GOFLAGS=-buildvcs=false CGO_ENABLED=0; \
+      /out/usr/local/go/bin/go mod init toolbox-guardrails; \
+      mkdir -p /guardrails/usr/local/lib/toolbox; \
+      /out/usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o /guardrails/usr/local/lib/toolbox/agent-guardrails .; \
+      rm -rf /tmp/go-build /out; \
+      mv /guardrails /out; \
+      freeze-mtimes
+
 # gcloud. No per-version SHA256 file upstream — T-01-08 accepted risk.
 # The SDK is relocatable: extracted into /out/opt and driven from there
 # (components install included). python3 installed in-stage; the final image
@@ -2200,6 +2217,7 @@ COPY --link --from=fetch-worktrunk /out/ /
 COPY --link --from=fetch-herdr    /out/ /
 COPY --link --from=fetch-tini     /out/ /
 COPY --link --from=fetch-go       /out/ /
+COPY --link --from=fetch-guardrails /out/ /
 COPY --link --from=fetch-gcloud   /out/ /
 COPY --link --from=fetch-omz      /out/ /
 COPY --link --from=fetch-brew     /out/ /

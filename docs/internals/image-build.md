@@ -67,6 +67,18 @@ One embedded asset, `agent-instructions.md`, carries what an agent cannot infer 
 
 The smoke test asserts all three: the file, `codex debug prompt-input`, and the wrapper plus an extension that loads. This repo's own Make targets also refuse a container-local `CURDIR` ([development feedback](../agents/development-feedback.md#scratch-and-checks)).
 
+## Agent guardrails
+
+The instructions above ask; the guardrails enforce. `/usr/local/lib/toolbox/agent-guardrails` is a Claude Code `PreToolUse` hook on Bash that exits 2, with a reason naming the way out, for:
+
+- **a container-local Docker bind source** — under `/tmp`, the container's `$HOME` or `/workspace` (the container's second mount of the workspace) and not under `$TOOLBOX_HOST_WORKSPACE`. Relative sources and `$(pwd)` resolve against the session's `cwd`. A bare `/home/` prefix is not the test: on a Linux host the workspace itself lives under `/home/<user>`.
+- **`git commit -a` / `--all`**, which stages work that is not the agent's.
+- **a `git stash` with no pathspec**, which sweeps up the same.
+
+It is Go from `guardrails/`, built by the `fetch-guardrails` stage with fetch-go's toolchain, so it follows `GO_VERSION`; standard library only, so the stage builds with `GOPROXY=off`. Its word splitter is not a shell parser (the `shortcut:` note in `shell.go`), and input it cannot read is let through: it catches mistakes, it is not a sandbox.
+
+`init.d/37-agent-guardrails.sh` wires it as [Agent Wiring](../../CONTEXT.md#agent-wiring), under the Claude settings lock, on every start. It cannot be an [Image Default](../../CONTEXT.md#image-default): Claude Code's only system layer is managed settings, which the developer cannot override, and an image `managed-settings.json` is ignored wherever an organisation sends server-managed settings (`managedSourcesBehavior` defaults to `first-wins`). The docker check (`--docker`) is wired only while `/var/run/docker.sock` is mounted, since Docker access crosses the [Containment Boundary](../../CONTEXT.md#containment-boundary). There is no opt-out key; a false positive is run by the developer with `!`. Codex and pi are not wired yet.
+
 ## Passwordless sudo
 
 The base apt layer installs `sudo`, and the user-setup layer drops `/etc/sudoers.d/toolbox` with `ALL ALL=(ALL:ALL) NOPASSWD: ALL` (`!requiretty`, `!fqdn`). The runtime UID is the host's and rarely matches the baked `toolbox` user, so the rule is deliberately UID-agnostic — it matches whatever UID the entrypoint names `toolbox` in `/etc/passwd`. This lets `sudo apt-get update && sudo apt install …` (or any root op) work inside a running container without baking the tool into the image (apt lists aren't baked, so `update` runs first). Safe because the container is `AutoRemove` (see [Container teardown](container-lifecycle.md#container-teardown)): everything installed at runtime vanishes on exit. **Caveat:** sudo writing into bind-mounted host paths (`/workspace`, `~/.toolbox/*`) produces `root:root` files on the host — escalate for in-container/system state, not for editing mounted project files. `visudo -cf` validates the drop-in at build; the smoke test asserts the `sudo` binary is present and setuid root.

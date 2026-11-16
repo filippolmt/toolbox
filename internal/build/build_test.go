@@ -57,13 +57,13 @@ func TestTarEmbeddedContext(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tar read: %v", err)
 		}
-		if strings.Contains(h.Name, "/") && !strings.HasPrefix(h.Name, "init.d/") && !strings.HasPrefix(h.Name, "bin/") {
-			t.Errorf("unexpected nested path in tar: %q — only init.d/* and bin/* may be nested", h.Name)
+		if strings.Contains(h.Name, "/") && !strings.HasPrefix(h.Name, "init.d/") && !strings.HasPrefix(h.Name, "bin/") && !strings.HasPrefix(h.Name, "guardrails/") {
+			t.Errorf("unexpected nested path in tar: %q — only init.d/*, bin/* and guardrails/* may be nested", h.Name)
 		}
 		got[h.Name] = true
 	}
 
-	for _, want := range []string{"Dockerfile", "entrypoint.sh", "zshrc.sh", "statusline-command.sh", "ssh_config.toolbox", "agent-instructions.md", "pi-agent-instructions.ts", "worktrunk.toml"} {
+	for _, want := range []string{"Dockerfile", "entrypoint.sh", "zshrc.sh", "statusline-command.sh", "ssh_config.toolbox", "agent-instructions.md", "pi-agent-instructions.ts", "worktrunk.toml", "guardrails/main.go", "guardrails/shell.go"} {
 		if !got[want] {
 			t.Errorf("tar missing entry %q (got %v)", want, got)
 		}
