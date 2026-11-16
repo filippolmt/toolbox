@@ -21,29 +21,10 @@ _wt_codex_events='[
     {"event": "Stop", "marker": "waiting"},
     {"event": "SessionEnd", "marker": "clear", "timeout": 3}]'
 
-# Each current marker group takes the place of the first earlier one for its
-# event, so the file keeps its order from one start to the next. Every other
-# earlier marker hook is dropped, with any group that held nothing else —
-# including events a newer wt no longer hooks. Other tools' hooks are
-# untouched.
-# shellcheck disable=SC2016 # jq program, not shell
-_wt_merge_jq='
-def ours: ((.command? // "") | test($marker_re));
-def mine: any(.hooks[]?; ours);
-def strip: if mine then (.hooks |= map(select(ours | not)) | select((.hooks | length) > 0)) else . end;
-def place($g):
-  (first(range(length) as $k | select(.[$k] | mine) | $k) // null) as $i
-  | if $i == null then map(strip) + [$g]
-    else (.[:$i] | map(strip)) + [.[$i] | strip] + [$g] + (.[$i + 1:] | map(strip)) end;
-($add | map(.event)) as $events
-| .hooks = ((.hooks // {}) | with_entries(
-    if (.key as $k | $events | index($k)) then . else .value |= map(strip) end))
-| reduce $add[] as $e (.; .hooks[$e.event] = ((.hooks[$e.event] // []) | place($e.group)))'
-
 # Registers the marker groups $2 (from _wt_marker_groups) in the hooks file
-# $1, through Agent Topology's toolbox_rewrite_json.
+# $1, through Agent Topology's toolbox_merge_hook_groups.
 _wt_merge_hooks() {
-    toolbox_rewrite_json "$1" "$_wt_merge_jq" --argjson add "$2" --arg marker_re "$_wt_marker_re"
+    toolbox_merge_hook_groups "$1" "$2" "$_wt_marker_re"
 }
 
 # $1 is the command prefix (Claude passes the session's project dir with -C;

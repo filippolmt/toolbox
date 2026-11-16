@@ -141,3 +141,28 @@ toolbox_rewrite_json() {
     [ -e "$file" ] && chmod --reference="$file" "$tmp" 2>/dev/null
     mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
 }
+
+# Registers image-owned hook groups in an agent's hooks file:
+# `toolbox_merge_hook_groups FILE ADD MARKER_RE`, ADD a JSON list of
+# {event, group}, MARKER_RE matching the command of every hook the image owns
+# in this family, earlier images' included. Each new group takes the place of
+# the first earlier one for its event, so the file keeps its order from one
+# start to the next and a rewrite is idempotent. Every other earlier hook of
+# the family is dropped, with any group that held nothing else — including
+# events no longer hooked. Other hooks are untouched. Callers hold FILE's lock.
+# shellcheck disable=SC2016 # jq program, not shell
+_toolbox_merge_hooks_jq='
+def ours: ((.command? // "") | test($marker_re));
+def mine: any(.hooks[]?; ours);
+def strip: if mine then (.hooks |= map(select(ours | not)) | select((.hooks | length) > 0)) else . end;
+def place($g):
+  (first(range(length) as $k | select(.[$k] | mine) | $k) // null) as $i
+  | if $i == null then map(strip) + [$g]
+    else (.[:$i] | map(strip)) + [.[$i] | strip] + [$g] + (.[$i + 1:] | map(strip)) end;
+($add | map(.event)) as $events
+| .hooks = ((.hooks // {}) | with_entries(
+    if (.key as $k | $events | index($k)) then . else .value |= map(strip) end))
+| reduce $add[] as $e (.; .hooks[$e.event] = ((.hooks[$e.event] // []) | place($e.group)))'
+toolbox_merge_hook_groups() {
+    toolbox_rewrite_json "$1" "$_toolbox_merge_hooks_jq" --argjson add "$2" --arg marker_re "$3"
+}
