@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,7 +22,23 @@ type guardrailCase struct {
 // prefix would be the wrong test.
 var testEnv = map[string]string{"HOME": "/home/toolbox", "TOOLBOX_HOST_WORKSPACE": "/home/dev/projects"}
 
-func runCase(t *testing.T, c guardrailCase, args ...string) (int, string) {
+// withDockerSocket points the docker check at a socket path that exists, as
+// it does in a Shell with the docker-sock mount, or (present false) at one
+// that does not.
+func withDockerSocket(t *testing.T, present bool) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "docker.sock")
+	if present {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := dockerSocket
+	dockerSocket = p
+	t.Cleanup(func() { dockerSocket = old })
+}
+
+func runCase(t *testing.T, c guardrailCase) (int, string) {
 	t.Helper()
 	cwd := c.cwd
 	if cwd == "" {
@@ -36,15 +54,15 @@ func runCase(t *testing.T, c guardrailCase, args ...string) (int, string) {
 		t.Fatal(err)
 	}
 	var stderr strings.Builder
-	code := run(args, testEnv, strings.NewReader(string(in)), &stderr)
+	code := run(testEnv, strings.NewReader(string(in)), &stderr)
 	return code, stderr.String()
 }
 
-func checkCases(t *testing.T, cases []guardrailCase, args ...string) {
+func checkCases(t *testing.T, cases []guardrailCase) {
 	t.Helper()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			code, stderr := runCase(t, c, args...)
+			code, stderr := runCase(t, c)
 			want := 0
 			if c.blocked {
 				want = 2
@@ -63,6 +81,7 @@ func checkCases(t *testing.T, cases []guardrailCase, args ...string) {
 // resolves a bind source on the host. A container-local source arrives empty
 // with no error; a host-workspace source is the correct mount.
 func TestBlocksContainerLocalDockerMounts(t *testing.T) {
+	withDockerSocket(t, true)
 	checkCases(t, []guardrailCase{
 		{name: "tmp source", command: "docker run --rm -v /tmp/fixture:/data alpine ls /data", blocked: true},
 		{name: "container home source", command: "docker run -v /home/toolbox/.cache/x:/x alpine", blocked: true},
@@ -88,7 +107,26 @@ func TestBlocksContainerLocalDockerMounts(t *testing.T) {
 		{name: "compose run after another command", command: "cd /tmp && docker compose run -v /tmp/fx:/data app", blocked: true},
 		{name: "compose down removing volumes", command: "docker compose down -v --remove-orphans"},
 		{name: "unparsable command", command: `docker run -v "/tmp/unterminated`},
-	}, "--docker")
+		{name: "behind sudo", command: "sudo -E docker run -v /tmp/fx:/data alpine", blocked: true},
+		{name: "behind env", command: "env -u DOCKER_CONTEXT FOO=1 docker run -v /tmp/fx:/data alpine", blocked: true},
+		{name: "behind command and exec", command: "exec command docker run -v /tmp/fx:/data alpine", blocked: true},
+	})
+}
+
+// TestDockerCheckFollowsDockerAccess: Docker access crosses the Containment
+// Boundary and is off unless the Shell mounts the socket or names a daemon, so
+// the check runs only while the agent can reach one.
+func TestDockerCheckFollowsDockerAccess(t *testing.T) {
+	mount := guardrailCase{command: "docker run -v /tmp/fx:/data alpine"}
+	withDockerSocket(t, false)
+	if code, _ := runCase(t, mount); code != 0 {
+		t.Errorf("no socket, no DOCKER_HOST: exit %d, want 0", code)
+	}
+	testEnv["DOCKER_HOST"] = "tcp://127.0.0.1:2375"
+	t.Cleanup(func() { delete(testEnv, "DOCKER_HOST") })
+	if code, _ := runCase(t, mount); code != 2 {
+		t.Errorf("DOCKER_HOST set: exit %d, want 2", code)
+	}
 }
 
 // TestBlocksCommitAll: -a stages every tracked change, the agent's and
@@ -106,7 +144,8 @@ func TestBlocksCommitAll(t *testing.T) {
 		{name: "message value that looks like the flag", command: "git commit -m -a"},
 		{name: "amend", command: "git commit --amend --no-edit"},
 		{name: "explicit staging", command: "git add -A && git commit -m fix"},
-		{name: "docker check off without --docker", command: "docker run -v /tmp/fx:/data alpine"},
+		{name: "behind sudo with a user", command: "sudo -u dev git commit -a", blocked: true},
+		{name: "behind env assignment", command: "env GIT_EDITOR=true git commit --all", blocked: true},
 	})
 }
 
@@ -123,18 +162,21 @@ func TestBlocksImplicitStash(t *testing.T) {
 		{name: "push with pathspec", command: "git stash push a.go b.go"},
 		{name: "list", command: "git stash list"},
 		{name: "pop", command: "git stash pop stash@{1}"},
+		{name: "only what is staged", command: "git stash push --staged"},
+		{name: "only what is staged, short", command: "git stash -S"},
 	})
 }
 
 // TestReasonsSayWhatToDoInstead: the reason is all the agent sees, so it names
 // the way out, not only the rule.
 func TestReasonsSayWhatToDoInstead(t *testing.T) {
+	withDockerSocket(t, true)
 	for _, c := range []struct{ command, want string }{
 		{"docker run -v /tmp/fx:/data alpine", "$TOOLBOX_HOST_WORKSPACE"},
 		{"git commit -am fix", "git add <path>"},
 		{"git stash", "git stash push -- <path>"},
 	} {
-		_, stderr := runCase(t, guardrailCase{command: c.command}, "--docker")
+		_, stderr := runCase(t, guardrailCase{command: c.command})
 		if !strings.Contains(stderr, c.want) {
 			t.Errorf("%q: reason %q does not name %q", c.command, stderr, c.want)
 		}
@@ -145,7 +187,7 @@ func TestReasonsSayWhatToDoInstead(t *testing.T) {
 // sandbox, so input it cannot read never blocks a tool call.
 func TestLetsThroughWhatItCannotRead(t *testing.T) {
 	var stderr strings.Builder
-	if code := run(nil, testEnv, strings.NewReader("not json"), &stderr); code != 0 {
+	if code := run(testEnv, strings.NewReader("not json"), &stderr); code != 0 {
 		t.Fatalf("exit %d on unreadable input, want 0 (stderr %q)", code, stderr.String())
 	}
 }

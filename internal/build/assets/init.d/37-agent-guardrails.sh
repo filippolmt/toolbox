@@ -10,9 +10,9 @@ set -euo pipefail
 # wherever an organisation sends server-managed settings (first-wins).
 #
 # The hook (/usr/local/lib/toolbox/agent-guardrails, built from guardrails/)
-# blocks `git commit -a` and an implicit `git stash`, and with --docker a bind
-# mount whose source is container-local. --docker is passed only while the
-# Docker socket is mounted: Docker access crosses the Containment Boundary.
+# blocks `git commit -a`, an implicit `git stash` and, while a Docker daemon is
+# reachable, a bind mount whose source is container-local. Codex and pi get the
+# same binary as Image Defaults (/etc/codex/hooks.json, the bin/pi wrapper).
 #
 # The merge drops every earlier guardrails entry before appending the current
 # one, so a rewrite is idempotent and a changed command replaces, not stacks.
@@ -23,8 +23,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 toolbox_agent_available claude && toolbox_agent_persistent claude || exit 0
 
 _guardrails_bin=/usr/local/lib/toolbox/agent-guardrails
-_guardrails_cmd=$_guardrails_bin
-[ -S /var/run/docker.sock ] && _guardrails_cmd="$_guardrails_bin --docker"
+[ -x "$_guardrails_bin" ] || exit 0
 
 # shellcheck disable=SC2016 # jq program, not shell
 _guardrails_jq='
@@ -38,7 +37,7 @@ def ours: ((.command? // "") | startswith($bin));
 
 _guardrails_wire() {
     toolbox_rewrite_json "$(toolbox_agent_home claude)/settings.json" "$_guardrails_jq" \
-        --arg bin "$_guardrails_bin" --arg cmd "$_guardrails_cmd"
+        --arg bin "$_guardrails_bin" --arg cmd "$_guardrails_bin"
 }
 
 toolbox_with_claude_settings_lock _guardrails_wire || \

@@ -6,8 +6,8 @@
 // stderr back to the agent; exit 0 lets it run. Input it cannot read is let
 // through: the hook catches mistakes, it is not a sandbox.
 //
-// --docker adds the bind-mount check, wired only when the Docker socket is
-// mounted.
+// The bind-mount check runs only while the agent can reach a Docker daemon:
+// the docker-sock mount is present or DOCKER_HOST names one.
 package main
 
 import (
@@ -35,10 +35,21 @@ func main() {
 			env[k] = v
 		}
 	}
-	os.Exit(run(os.Args[1:], env, os.Stdin, os.Stderr))
+	os.Exit(run(env, os.Stdin, os.Stderr))
 }
 
-func run(args []string, env map[string]string, stdin io.Reader, stderr io.Writer) int {
+// dockerSocket is the docker-sock mount's target in the Shell.
+var dockerSocket = "/var/run/docker.sock"
+
+func dockerReachable(env map[string]string) bool {
+	if env["DOCKER_HOST"] != "" {
+		return true
+	}
+	_, err := os.Stat(dockerSocket)
+	return err == nil
+}
+
+func run(env map[string]string, stdin io.Reader, stderr io.Writer) int {
 	var event struct {
 		Cwd       string `json:"cwd"`
 		ToolInput struct {
@@ -52,7 +63,7 @@ func run(args []string, env map[string]string, stdin io.Reader, stderr io.Writer
 	if err != nil {
 		return 0
 	}
-	docker := len(args) > 0 && args[0] == "--docker"
+	docker := dockerReachable(env)
 
 	vars := maps.Clone(env)
 	if vars == nil {
@@ -62,7 +73,7 @@ func run(args []string, env map[string]string, stdin io.Reader, stderr io.Writer
 		vars["PWD"] = event.Cwd
 	}
 	for _, words := range commands {
-		argv := expandCommand(words, vars)
+		argv := stripWrappers(expandCommand(words, vars))
 		reason := checkCommit(argv)
 		if reason == "" {
 			reason = checkStash(argv)
@@ -78,8 +89,9 @@ func run(args []string, env map[string]string, stdin io.Reader, stderr io.Writer
 	return 0
 }
 
-// expandCommand expands a simple command's words, dropping its leading
-// NAME=value words after recording them: they reach every later word.
+// expandCommand expands a simple command's words. Its leading NAME=value words
+// are dropped from the result and written into vars, on purpose: the shell
+// expands every later command's words with them.
 func expandCommand(words []word, vars map[string]string) []string {
 	var argv []string
 	for _, w := range words {
@@ -90,6 +102,44 @@ func expandCommand(words []word, vars map[string]string) []string {
 			continue
 		}
 		argv = append(argv, s)
+	}
+	return argv
+}
+
+// Options of the command wrappers that take the next word as their value.
+var wrapperValueOptions = map[string]map[string]bool{
+	"sudo":    {"-u": true, "-g": true, "-p": true, "-C": true, "-h": true, "-r": true, "-t": true, "-U": true, "-D": true, "-R": true, "-T": true},
+	"env":     {"-u": true, "-C": true, "-S": true},
+	"command": {},
+	"exec":    {"-a": true},
+}
+
+// stripWrappers drops leading sudo/env/command/exec and their options, so the
+// checks see the command they run. env's NAME=value words go with it: they
+// reach the child's environment, not the words the shell already expanded.
+func stripWrappers(argv []string) []string {
+	for len(argv) > 0 {
+		values, ok := wrapperValueOptions[argv[0]]
+		if !ok {
+			return argv
+		}
+		wrapper := argv[0]
+		k := 1
+		for k < len(argv) {
+			a := argv[k]
+			switch {
+			case a == "--":
+				k++
+			case values[a]:
+				k += 2
+				continue
+			case strings.HasPrefix(a, "-"), wrapper == "env" && assignmentPrefix.MatchString(a):
+				k++
+				continue
+			}
+			break
+		}
+		argv = argv[min(k, len(argv)):]
 	}
 	return argv
 }
@@ -113,8 +163,13 @@ func gitSubcommand(argv []string) (string, []string) {
 	return argv[k], argv[k+1:]
 }
 
-// git commit options whose value may be the next word.
+// git commit short options whose value is the rest of the cluster or, ending
+// it, the next word.
 const commitShortValue = "mFCct"
+
+// git commit short options with an optional value: it can only be attached,
+// so the rest of the cluster is theirs and the next word never is.
+const commitShortOptionalValue = "uS"
 
 var commitLongValue = map[string]bool{
 	"--message": true, "--file": true, "--reuse-message": true, "--reedit-message": true, "--fixup": true,
@@ -141,7 +196,7 @@ func checkCommit(argv []string) string {
 				if ch == 'a' {
 					return commitAll
 				}
-				if strings.ContainsRune(commitShortValue+"uS", ch) {
+				if strings.ContainsRune(commitShortValue+commitShortOptionalValue, ch) {
 					// The rest of the cluster is the value; a value flag ending
 					// the cluster takes the next word.
 					if strings.ContainsRune(commitShortValue, ch) && j == len(a)-2 {
@@ -175,6 +230,8 @@ func checkStash(argv []string) string {
 		switch {
 		case a == "-m" || a == "--message" || a == "--pathspec-from-file":
 			i++
+		case a == "-S" || a == "--staged":
+			return "" // only what is already staged, which the agent chose
 		case a == "--" || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--pathspec-from-file="):
 			return "" // a pathspec follows or is here
 		}
@@ -215,7 +272,8 @@ func mountSources(args []string) []string {
 	return out
 }
 
-func under(p, root string) bool {
+// pathWithin reports whether the clean path p is root or lies below it.
+func pathWithin(p, root string) bool {
 	root = strings.TrimSuffix(root, "/")
 	return root != "" && (p == root || strings.HasPrefix(p, root+"/"))
 }
@@ -232,13 +290,13 @@ func checkDocker(argv []string, vars map[string]string) string {
 			src = path.Join(vars["PWD"], src)
 		}
 		src = path.Clean(src)
-		if under(src, vars["TOOLBOX_HOST_WORKSPACE"]) {
+		if pathWithin(src, vars["TOOLBOX_HOST_WORKSPACE"]) {
 			continue
 		}
 		// /workspace is the container's second mount of the workspace; the
 		// host has none.
 		for _, root := range []string{"/tmp", "/workspace", vars["HOME"]} {
-			if under(src, root) {
+			if pathWithin(src, root) {
 				return fmt.Sprintf("Blocked: bind mount source %s is container-local. The Docker daemon is the host's "+
 					"and resolves the source on the host, so the mount would come up empty with no error. Put the "+
 					"files under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it.", src)

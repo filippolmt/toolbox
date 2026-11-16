@@ -1,7 +1,6 @@
 package build
 
 import (
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,31 +11,21 @@ import (
 const agentGuardrailsInit = "init.d/37-agent-guardrails.sh"
 
 // guardrailsFixture is one container start: a home with Claude's state
-// mounted, a fake claude on PATH, and a Docker socket path the test controls.
+// mounted, a fake claude on PATH and a stand-in for the baked hook binary.
 type guardrailsFixture struct {
-	dir, home, socket string
+	dir, home, bin string
 }
 
 func newGuardrailsFixture(t *testing.T) guardrailsFixture {
 	t.Helper()
 	requireTools(t, "jq", "flock")
 	dir := t.TempDir()
-	f := guardrailsFixture{dir: dir, home: filepath.Join(dir, "home"), socket: filepath.Join(dir, "docker.sock")}
+	f := guardrailsFixture{dir: dir, home: filepath.Join(dir, "home"), bin: filepath.Join(dir, "agent-guardrails")}
+	writeTestExecutable(t, f.bin, "#!/bin/sh\nexit 0\n")
 	if err := os.MkdirAll(filepath.Join(f.home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return f
-}
-
-// listen makes the fixture's Docker socket a live unix socket, as the
-// docker-sock mount does.
-func (f guardrailsFixture) listen(t *testing.T) {
-	t.Helper()
-	l, err := net.Listen("unix", f.socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = l.Close() })
 }
 
 func (f guardrailsFixture) run(t *testing.T) {
@@ -53,10 +42,10 @@ func (f guardrailsFixture) run(t *testing.T) {
 		}
 	}
 	body := readAsset(t, agentGuardrailsInit)
-	if !strings.Contains(body, "/var/run/docker.sock") {
-		t.Fatalf("%s no longer gates on /var/run/docker.sock", agentGuardrailsInit)
+	if !strings.Contains(body, bakedGuardrailsBin) {
+		t.Fatalf("%s no longer names %s", agentGuardrailsInit, bakedGuardrailsBin)
 	}
-	body = strings.ReplaceAll(body, "/var/run/docker.sock", f.socket)
+	body = strings.ReplaceAll(body, bakedGuardrailsBin, f.bin)
 	script := filepath.Join(f.dir, "37-agent-guardrails.sh")
 	if err := os.WriteFile(script, wireAgentTopologyForTest(t, f.dir, []byte(body)), 0o755); err != nil {
 		t.Fatal(err)
@@ -72,19 +61,18 @@ func (f guardrailsFixture) settings() string {
 	return filepath.Join(f.home, ".claude", "settings.json")
 }
 
-const guardrailsBin = "/usr/local/lib/toolbox/agent-guardrails"
+const bakedGuardrailsBin = "/usr/local/lib/toolbox/agent-guardrails"
 
 // TestAgentGuardrailsInitWiresTheHookIdempotently: the hook lands as a
 // PreToolUse Bash hook beside the developer's own, and a second start writes
 // the same bytes.
 func TestAgentGuardrailsInitWiresTheHookIdempotently(t *testing.T) {
 	f := newGuardrailsFixture(t)
-	f.listen(t)
 	writeFile(t, f.settings(), `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-own-hook"}]}]},"theme":"dark"}`)
 
 	f.run(t)
 	got := commands(readHooks(t, f.settings()), "PreToolUse")
-	want := []string{"my-own-hook", guardrailsBin + " --docker"}
+	want := []string{"my-own-hook", f.bin}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("PreToolUse commands = %q, want %q", got, want)
 	}
@@ -106,17 +94,16 @@ func TestAgentGuardrailsInitWiresTheHookIdempotently(t *testing.T) {
 	}
 }
 
-// TestAgentGuardrailsInitDropsTheDockerCheckWithoutTheSocket: Docker access
-// crosses the Containment Boundary, so the docker check is wired only while
-// the socket is mounted, and an earlier start's docker wiring goes with it.
-func TestAgentGuardrailsInitDropsTheDockerCheckWithoutTheSocket(t *testing.T) {
+// TestAgentGuardrailsInitSkipsAMissingBinary: an image without the hook
+// leaves settings.json alone rather than wiring a command that cannot run.
+func TestAgentGuardrailsInitSkipsAMissingBinary(t *testing.T) {
 	f := newGuardrailsFixture(t)
-	writeFile(t, f.settings(), `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"`+guardrailsBin+` --docker"}]}]}}`)
-
+	if err := os.Remove(f.bin); err != nil {
+		t.Fatal(err)
+	}
 	f.run(t)
-	got := commands(readHooks(t, f.settings()), "PreToolUse")
-	if strings.Join(got, "\n") != guardrailsBin {
-		t.Fatalf("PreToolUse commands = %q, want only %q", got, guardrailsBin)
+	if _, err := os.Stat(f.settings()); !os.IsNotExist(err) {
+		t.Fatalf("settings.json written without the hook binary (stat err %v)", err)
 	}
 }
 
