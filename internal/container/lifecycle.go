@@ -413,6 +413,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}
 
+	// A detached plan joining an existing container gets a Detached Shell only
+	// if that container already is one: the label is fixed at create.
+	if plan.Detached && op.Action != runplan.ActionCreate && (inspect.Config == nil || !runplan.Detached(inspect.Config.Labels)) {
+		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
+	}
+
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)
 	if dispatchErr != nil {
 		return nil, dispatchErr
@@ -727,7 +733,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			User:         identity.UserSpec,
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
-			Labels:       detachedLabels(plan.Detached),
+			Labels:       runplan.DetachedLabels(plan.Detached),
 		},
 		HostConfig: &container.HostConfig{
 			Binds:        binds,
@@ -755,14 +761,6 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 	ui.Success("Container started")
 	return resp.ID, nil
-}
-
-// detachedLabels is the create's label set: the Detached Shell mark, or none.
-func detachedLabels(detached bool) map[string]string {
-	if !detached {
-		return nil
-	}
-	return map[string]string{runplan.DetachedLabel: "true"}
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.

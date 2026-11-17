@@ -1601,3 +1601,78 @@ func TestShellDetachedCreatesWithoutExec(t *testing.T) {
 		t.Errorf("create labels = %v, want toolbox.detached=true", labels)
 	}
 }
+
+// A detached plan that finds its name held by an ordinary Shell must not hand
+// that Shell back as detached: the next terminal exit would remove it.
+func TestShellDetachedRefusesAnUnlabelledContainer(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ID:     "abc123",
+				State:  &container.State{Running: true},
+				Config: &container.Config{},
+			}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	_, err := Shell(context.Background(), mock, plan)
+	if err == nil || !strings.Contains(err.Error(), "not detached") {
+		t.Fatalf("Shell() error = %v, want a not-detached refusal", err)
+	}
+	if *called {
+		t.Error("a refused detached start must not exec a terminal")
+	}
+}
+
+// Connecting a detached plan to a container that already carries the label is
+// the idempotent case: nothing to create, nothing to exec, no error.
+func TestShellDetachedJoinsALabelledContainer(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ID:     "abc123",
+				State:  &container.State{Running: true},
+				Config: &container.Config{Labels: map[string]string{runplan.DetachedLabel: "true"}},
+			}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if *called {
+		t.Error("a detached Shell must not exec a terminal")
+	}
+}
+
+// `toolbox stop <name>` reaches a Detached Shell by the container name
+// `toolbox list` prints, and removes it: the label spares it only on shell exit.
+func TestStopByNameRemovesADetachedShell(t *testing.T) {
+	var stopped, removed string
+	mock := &mockClient{
+		stopFn: func(_ context.Context, name string, _ client.ContainerStopOptions) error {
+			stopped = name
+			return nil
+		},
+		removeFn: func(_ context.Context, name string, _ client.ContainerRemoveOptions) error {
+			removed = name
+			return nil
+		},
+	}
+	if err := StopByName(context.Background(), mock, "toolbox-orca"); err != nil {
+		t.Fatalf("StopByName() error: %v", err)
+	}
+	if stopped != "toolbox-orca" || removed != "toolbox-orca" {
+		t.Errorf("stopped=%q removed=%q, want both toolbox-orca", stopped, removed)
+	}
+}

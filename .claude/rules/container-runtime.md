@@ -86,8 +86,11 @@ them.
 - **A Detached Shell survives shell exit:** `teardown.OnShellExit` spares a
   container carrying `runplan.DetachedLabel` before it looks at sibling execs;
   `container.Shell` on a detached plan creates and starts with the label and
-  returns without an exec. Pinned by `TestOnShellExitSparesDetachedShell`,
-  `TestShellDetachedCreatesWithoutExec` and `TestStopAll`. →
+  returns without an exec; it refuses an existing container without the label.
+  Pinned by `TestOnShellExitSparesDetachedShell`,
+  `TestShellDetachedCreatesWithoutExec`,
+  `TestShellDetachedRefusesAnUnlabelledContainer`,
+  `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container

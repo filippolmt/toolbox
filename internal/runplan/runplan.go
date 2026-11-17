@@ -69,10 +69,21 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 // terminal attached to it. → CONTEXT.md, Detached Shell.
 const DetachedLabel = "toolbox.detached"
 
+// detachedValue is the label's value; DetachedLabels writes it, Detached reads it.
+const detachedValue = "true"
+
 // Detached reports whether a container's labels mark it as a Detached Shell.
 // Takes the label map so an inspect and a list summary read it alike.
 func Detached(labels map[string]string) bool {
-	return labels[DetachedLabel] == "true"
+	return labels[DetachedLabel] == detachedValue
+}
+
+// DetachedLabels is the create's label set: the Detached Shell mark, or none.
+func DetachedLabels(detached bool) map[string]string {
+	if !detached {
+		return nil
+	}
+	return map[string]string{DetachedLabel: detachedValue}
 }
 
 // Compute derives the Op from a ContainerInspect result.
