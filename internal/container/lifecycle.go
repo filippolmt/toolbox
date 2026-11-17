@@ -159,12 +159,8 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, freshness fres
 		if fresh.Action == runplan.ActionStart {
 			ui.Info("Recreating container " + plan.ContainerName + " on the newer image...")
 		}
-		act := "start-up refresh"
-		if fresh.Reaped != "" {
-			act = "reaped container"
-		}
 		if id := cmp.Or(fresh.ExistingID, fresh.Reaped); id != "" {
-			if removeErr := removeAndWait(ctx, cli, id, act); removeErr != nil {
+			if removeErr := removeAndWait(ctx, cli, id, "start-up refresh"); removeErr != nil {
 				return container.InspectResponse{}, runplan.Op{}, removeErr
 			}
 		}
@@ -183,12 +179,12 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, freshness fres
 // Op.Reaped — one the daemon is still reaping under the name the create needs
 // — and waits until it is gone. By ID, so a fresh container a sibling shell
 // has already created under that name is never the one removed. A no-op when
-// the op names none.
-func removeReaped(ctx context.Context, cli client.APIClient, op runplan.Op) error {
+// the op names none. act names the caller in the error, as for removeAndWait.
+func removeReaped(ctx context.Context, cli client.APIClient, op runplan.Op, act string) error {
 	if op.Reaped == "" {
 		return nil
 	}
-	return removeAndWait(ctx, cli, op.Reaped, "reaped container")
+	return removeAndWait(ctx, cli, op.Reaped, act)
 }
 
 // formatPublishMismatch builds the warning string emitted when a reused
@@ -472,7 +468,7 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 	}
 
 	if op.Action == runplan.ActionCreate {
-		if err := removeReaped(ctx, cli, op); err != nil {
+		if err := removeReaped(ctx, cli, op, "shell start"); err != nil {
 			return container.InspectResponse{}, runplan.Op{}, err
 		}
 		// A create reads the plan, never a record: any here describes a
