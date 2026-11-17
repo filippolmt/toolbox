@@ -159,31 +159,28 @@ func (c checker) changeDirectory(argv []string) bool {
 }
 
 func (c checker) command(argv []string) string {
-	if reason := checkCommit(argv); reason != "" {
-		return reason
-	}
-	if reason := checkStash(argv); reason != "" {
-		return reason
-	}
-	if reason := checkReset(argv); reason != "" {
-		return reason
-	}
-	if reason := checkCheckout(argv); reason != "" {
-		return reason
-	}
-	if reason := checkRestore(argv); reason != "" {
-		return reason
-	}
-	if reason := checkClean(argv); reason != "" {
-		return reason
-	}
-	if reason := checkSwitch(argv); reason != "" {
-		return reason
+	if sub, args := gitSubcommand(argv); sub != "" {
+		if check, ok := gitChecks[sub]; ok {
+			return check(args)
+		}
+		return ""
 	}
 	if c.docker {
 		return checkDocker(argv, c.vars)
 	}
 	return ""
+}
+
+// gitChecks holds the rule for each git subcommand the hook checks, handed the
+// subcommand's arguments.
+var gitChecks = map[string]func(args []string) string{
+	"commit":   checkCommit,
+	"stash":    checkStash,
+	"reset":    checkReset,
+	"checkout": checkCheckout,
+	"restore":  checkRestore,
+	"clean":    checkClean,
+	"switch":   checkSwitch,
 }
 
 var shells = set("bash", "sh", "zsh", "dash", "ksh")
@@ -388,22 +385,14 @@ func gitSubcommand(argv []string) (string, []string) {
 // git options, before the subcommand, that take the next word.
 var gitGlobalValue = set("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source")
 
-func checkCommit(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "commit" {
-		return ""
-	}
+func checkCommit(args []string) string {
 	if commitOptions.parse(args).flags["all"] {
 		return commitAll
 	}
 	return ""
 }
 
-func checkStash(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "stash" {
-		return ""
-	}
+func checkStash(args []string) string {
 	if len(args) > 0 {
 		switch {
 		case args[0] == "save":
@@ -592,52 +581,36 @@ var (
 	}
 )
 
-func checkReset(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "reset" {
-		return ""
-	}
+func checkReset(args []string) string {
 	if resetOptions.parse(args).flags["hard"] {
 		return resetHard
 	}
 	return ""
 }
 
-func checkCheckout(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "checkout" {
-		return ""
-	}
+func checkCheckout(args []string) string {
 	g := checkoutOptions.parse(args)
 	switch {
 	case g.namesWholeTree():
-		return fmt.Sprintf(treeWideDiscard, sub, sub)
+		return fmt.Sprintf(treeWideDiscard, "checkout", "checkout")
 	case g.flags["force"] && len(g.paths) == 0:
 		// With files named after "--", -f only lets their unmerged entries go.
-		return fmt.Sprintf(forcedSwitch, sub)
+		return fmt.Sprintf(forcedSwitch, "checkout")
 	}
 	return ""
 }
 
-func checkRestore(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "restore" {
-		return ""
-	}
+func checkRestore(args []string) string {
 	g := restoreOptions.parse(args)
 	// Without --staged, restore writes the worktree; with it, only --worktree does.
 	writesWorktree := g.flags["worktree"] || !g.flags["staged"]
 	if writesWorktree && g.namesWholeTree() {
-		return fmt.Sprintf(treeWideDiscard, sub, sub)
+		return fmt.Sprintf(treeWideDiscard, "restore", "restore")
 	}
 	return ""
 }
 
-func checkClean(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "clean" {
-		return ""
-	}
+func checkClean(args []string) string {
 	g := cleanOptions.parse(args)
 	if !g.flags["force"] || g.flags["dry-run"] {
 		return ""
@@ -648,14 +621,10 @@ func checkClean(argv []string) string {
 	return ""
 }
 
-func checkSwitch(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "switch" {
-		return ""
-	}
+func checkSwitch(args []string) string {
 	g := switchOptions.parse(args)
 	if g.flags["force"] || g.flags["discard-changes"] {
-		return fmt.Sprintf(forcedSwitch, sub)
+		return fmt.Sprintf(forcedSwitch, "switch")
 	}
 	return ""
 }
