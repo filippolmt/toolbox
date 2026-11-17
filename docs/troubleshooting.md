@@ -124,7 +124,7 @@ The empty `credential.helper=` clears the bridge for this invocation only.
 
 - a `docker` bind mount whose source is under `/tmp`, `$HOME` or `/workspace` and not under `$TOOLBOX_HOST_WORKSPACE` — the daemon is the host's and would mount an empty directory;
 - `git commit -a` / `--all`;
-- `git stash` with no pathspec (`--staged` is fine);
+- `git stash` with no pathspec, or with `.` (`--staged` is fine);
 - `git stash pop` / `apply` with no stash reference;
 - a discard of the whole tree: `git reset --hard`, `git checkout .` / `git restore .` (or `:/`) on the worktree, `git clean -f` with no pathspec, `git checkout -f` / `git switch -f` / `--discard-changes`.
 

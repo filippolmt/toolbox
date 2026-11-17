@@ -188,6 +188,7 @@ func TestBlocksCommitAll(t *testing.T) {
 		{name: "inside a function defined with the keyword", command: "function f { git stash; }; f", blocked: true},
 		{name: "env split string", command: `env -S 'git commit -a'`, blocked: true},
 		{name: "behind env assignment", command: "env GIT_EDITOR=true git commit --all", blocked: true},
+		{name: "ambiguous value abbreviation takes one word", command: "git commit --re x -a", blocked: true},
 	})
 }
 
@@ -208,6 +209,8 @@ func TestBlocksImplicitStash(t *testing.T) {
 		{name: "only what is staged, short", command: "git stash -S"},
 		{name: "only what is staged, abbreviated", command: "git stash push --sta"},
 		{name: "separator with nothing after", command: "git stash push --", blocked: true},
+		{name: "whole tree after separator", command: "git stash push -- .", blocked: true},
+		{name: "whole tree as pathspec", command: "git stash push :/", blocked: true},
 		{name: "pathspec from a file", command: "git stash push --pathspec-from-file=list.txt"},
 		{name: "message in a short cluster", command: "git stash push -um wip", blocked: true},
 		{name: "keep index cluster with pathspec", command: "git stash push -ku -- a.go"},
@@ -285,6 +288,16 @@ func TestBlocksTreeWideCheckout(t *testing.T) {
 		{name: "parent directory", command: "git checkout -- ..", blocked: true},
 		{name: "dot with trailing slash", command: "git checkout ./", blocked: true},
 		{name: "branch name taken by -b", command: "git checkout -b f main"},
+		{name: "top without separator", command: "git checkout :/", blocked: true},
+		{name: "working directory by absolute path", command: `git checkout -- "$PWD"`, blocked: true},
+		{name: "parent of the working directory by absolute path", command: "git checkout -- /home/dev/projects", blocked: true},
+		{name: "subdirectory by absolute path", command: "git checkout -- /home/dev/projects/app/src"},
+		{name: "path that climbs back", command: "git checkout -- src/..", blocked: true},
+		{name: "doubled slash", command: "git checkout -- .//", blocked: true},
+		{name: "top among combined magic", command: "git checkout -- ':(top,icase).'", blocked: true},
+		{name: "magic on a named directory", command: "git checkout -- ':(icase)src'"},
+		{name: "directory given to git -C", command: "git -C /home/dev/projects/app/sub checkout -- /home/dev/projects/app/sub", blocked: true},
+		{name: "relative directory given to git -C", command: "git -C sub checkout -- /home/dev/projects/app/sub", blocked: true},
 	})
 }
 
@@ -355,6 +368,36 @@ func TestBlocksTreeWideDiscardsThroughWrappers(t *testing.T) {
 		{name: "chained", command: "git fetch && git reset --hard origin/main", blocked: true},
 		{name: "output redirected", command: "git switch -f main >/dev/null 2>&1", blocked: true},
 	})
+}
+
+// TestGitOptionTablesNameKnownOptions: a value or optional-value entry that
+// names no option of its table is a typo, and the option it meant would be read
+// as taking no value, shifting every word after it.
+func TestGitOptionTablesNameKnownOptions(t *testing.T) {
+	tables := map[string]gitOptions{
+		"commit": commitOptions, "stash push": stashPushOptions, "stash apply": stashApplyOptions,
+		"reset": resetOptions, "checkout": checkoutOptions, "restore": restoreOptions,
+		"clean": cleanOptions, "switch": switchOptions,
+	}
+	for sub, o := range tables {
+		known := set(o.long...)
+		for _, n := range o.short {
+			known[n] = true
+		}
+		for n := range o.value {
+			if !known[n] {
+				t.Errorf("%s: value option %q is neither a long name nor a short option's", sub, n)
+			}
+		}
+		for n := range o.optional {
+			if !known[n] {
+				t.Errorf("%s: optional-value option %q is neither a long name nor a short option's", sub, n)
+			}
+			if o.value[n] {
+				t.Errorf("%s: %q is both a value and an optional-value option", sub, n)
+			}
+		}
+	}
 }
 
 // TestReasonsSayWhatToDoInstead: the reason is all the agent sees, so it names

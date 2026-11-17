@@ -28,15 +28,15 @@ const (
 	containerLocalMount = "Blocked: bind mount source %s is container-local. The Docker daemon is the host's " +
 		"and resolves the source on the host, so the mount would come up empty with no error. Put the files " +
 		"under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it."
-	implicitStash = "Blocked: a git stash without a pathspec sweeps up every change in the tree, including work " +
+	implicitStash = "Blocked: a git stash without a pathspec, or of the whole tree, sweeps up every change in it, including work " +
 		"that is not yours. Name what to stash: `git stash push -- <path>`."
 	implicitStashApply = "Blocked: git stash pop/apply without a reference takes stash@{0}, which can be another " +
 		"session's. Check `git stash list` and name yours: `git stash pop stash@{n}`."
 	resetHard = "Blocked: git reset --hard throws away every uncommitted change in the tree, including work that " +
 		"is not yours, and git keeps no copy. Use `git reset --keep <target>`, which refuses when it would lose " +
 		"changes, or set yours aside first with `git stash push -- <path>`."
-	treeWideDiscard = "Blocked: git %s on the whole tree throws away every uncommitted change, including work " +
-		"that is not yours. Name the files to discard: `git %s -- <path>`."
+	treeWideDiscard = "Blocked: git %[1]s on the whole tree throws away every uncommitted change, including work " +
+		"that is not yours. Name the files to discard: `git %[1]s -- <path>`."
 	forcedSwitch = "Blocked: a forced git %s throws away every uncommitted change in the tree, including work " +
 		"that is not yours. Commit yours, or set it aside with `git stash push -- <path>`, then switch without force."
 	treeWideClean = "Blocked: a forced git clean with no pathspec deletes every untracked file in the tree, " +
@@ -161,7 +161,7 @@ func (c checker) changeDirectory(argv []string) bool {
 func (c checker) command(argv []string) string {
 	if sub, args := gitSubcommand(argv); sub != "" {
 		if check, ok := gitChecks[sub]; ok {
-			return check(args)
+			return check(args, gitWorkDir(argv, c.vars["PWD"]))
 		}
 		return ""
 	}
@@ -172,8 +172,8 @@ func (c checker) command(argv []string) string {
 }
 
 // gitChecks holds the rule for each git subcommand the hook checks, handed the
-// subcommand's arguments.
-var gitChecks = map[string]func(args []string) string{
+// subcommand's arguments and the directory git runs in.
+var gitChecks = map[string]func(args []string, cwd string) string{
 	"commit":   checkCommit,
 	"stash":    checkStash,
 	"reset":    checkReset,
@@ -382,17 +382,35 @@ func gitSubcommand(argv []string) (string, []string) {
 	return argv[k], argv[k+1:]
 }
 
+// gitWorkDir returns the directory git runs in: pwd, moved by each -C.
+func gitWorkDir(argv []string, pwd string) string {
+	for k := 1; k < len(argv) && strings.HasPrefix(argv[k], "-"); k++ {
+		if !gitGlobalValue[argv[k]] {
+			continue
+		}
+		k++
+		if argv[k-1] == "-C" && k < len(argv) {
+			if path.IsAbs(argv[k]) {
+				pwd = path.Clean(argv[k])
+			} else {
+				pwd = path.Join(pwd, argv[k])
+			}
+		}
+	}
+	return pwd
+}
+
 // git options, before the subcommand, that take the next word.
 var gitGlobalValue = set("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source")
 
-func checkCommit(args []string) string {
+func checkCommit(args []string, _ string) string {
 	if commitOptions.parse(args).flags["all"] {
 		return commitAll
 	}
 	return ""
 }
 
-func checkStash(args []string) string {
+func checkStash(args []string, cwd string) string {
 	if len(args) > 0 {
 		switch {
 		case args[0] == "save":
@@ -400,7 +418,7 @@ func checkStash(args []string) string {
 		case args[0] == "push":
 			args = args[1:]
 		case args[0] == "pop" || args[0] == "apply":
-			if len(stashApplyOptions.parse(args[1:]).pathspecs()) > 0 {
+			if len(stashApplyOptions.parse(args[1:]).operands()) > 0 {
 				return "" // the stash is named; none of the options takes a value
 			}
 			return implicitStashApply
@@ -410,7 +428,10 @@ func checkStash(args []string) string {
 	}
 	g := stashPushOptions.parse(args)
 	// --staged keeps to what is already staged, which the agent chose.
-	if g.flags["staged"] || g.flags["pathspec-from-file"] || len(g.pathspecs()) > 0 {
+	switch {
+	case g.namesWholeTree(cwd):
+		return implicitStash
+	case g.flags["staged"] || g.flags["pathspec-from-file"] || len(g.operands()) > 0:
 		return ""
 	}
 	return implicitStash
@@ -444,11 +465,13 @@ func (o gitOptions) parse(args []string) gitArgs {
 			return g
 		case strings.HasPrefix(a, "--"):
 			name, _, attached := strings.Cut(a[2:], "=")
+			takesValue := false
 			for _, n := range o.resolve(name) {
 				g.flags[n] = true
-				if o.value[n] && !attached {
-					i++
-				}
+				takesValue = takesValue || o.value[n]
+			}
+			if takesValue && !attached {
+				i++
 			}
 		case strings.HasPrefix(a, "-") && len(a) > 1:
 			if o.readCluster(a[1:], g.flags) {
@@ -463,7 +486,7 @@ func (o gitOptions) parse(args []string) gitArgs {
 
 // resolve maps a long option as written to the names it can mean: the exact
 // name, or every name it abbreviates. git rejects an ambiguous abbreviation,
-// so marking each candidate only ever blocks a command git would refuse.
+// so whatever marking each candidate does, git runs no such command.
 func (o gitOptions) resolve(name string) []string {
 	var out []string
 	for _, n := range o.long {
@@ -497,37 +520,58 @@ func (o gitOptions) readCluster(cluster string, flags map[string]bool) (takesNex
 	return false
 }
 
-// pathspecs returns every word that can be a pathspec: after "--" only those,
-// else every other word, since git tells revisions from paths by the tree.
-func (g gitArgs) pathspecs() []string {
+// operands returns the words that are not options: after "--" pathspecs only,
+// before it revisions and pathspecs alike, since git tells them apart by the tree.
+func (g gitArgs) operands() []string {
 	return append(append([]string{}, g.positional...), g.paths...)
 }
 
-func (g gitArgs) namesWholeTree() bool {
-	return slices.ContainsFunc(g.pathspecs(), wholeTree)
+// namesWholeTree reports whether an operand, read as a pathspec from cwd, covers
+// the whole tree or a parent of cwd.
+func (g gitArgs) namesWholeTree(cwd string) bool {
+	return slices.ContainsFunc(g.operands(), func(p string) bool { return wholeTree(p, cwd) })
 }
 
-// wholeTree reports whether a pathspec covers the whole tree, or a parent of
-// the working directory: ".", "..", "*", ":/" and ":(top)" in their forms.
-func wholeTree(p string) bool {
-	for _, magic := range []string{":/", ":(top)"} {
-		if rest, ok := strings.CutPrefix(p, magic); ok {
-			if rest == "" {
-				return true
-			}
-			p = rest
-		}
+// wholeTree reports whether pathspec p, given in cwd, covers cwd or more: ".",
+// "..", "*", the top magic (":/", ":(top)" among other magic words), and an
+// absolute path to cwd or a parent of it, in any spelling path.Clean folds.
+func wholeTree(p, cwd string) bool {
+	rest, top := stripMagic(p)
+	if top && rest == "" {
+		return true
 	}
-	if p == "" {
+	if rest == "*" {
+		rest = "."
+	} else if strings.HasSuffix(rest, "/*") {
+		rest = strings.TrimSuffix(rest, "*")
+	}
+	if rest == "" {
 		return false
 	}
-	segments := strings.Split(strings.TrimSuffix(p, "/"), "/")
-	for i, s := range segments {
-		if s != "." && s != ".." && (s != "*" || i != len(segments)-1) {
+	if path.IsAbs(rest) {
+		root := path.Clean(rest)
+		return root == "/" || pathWithin(cwd, root)
+	}
+	for _, segment := range strings.Split(path.Clean(rest), "/") {
+		if segment != "." && segment != ".." {
 			return false
 		}
 	}
 	return true
+}
+
+// stripMagic removes a pathspec's magic prefix (":/" or ":(word,…)") and
+// reports whether it anchors the pathspec at the top of the tree.
+func stripMagic(p string) (rest string, top bool) {
+	if after, ok := strings.CutPrefix(p, ":/"); ok {
+		return after, true
+	}
+	if after, ok := strings.CutPrefix(p, ":("); ok {
+		if words, rest, ok := strings.Cut(after, ")"); ok {
+			return rest, slices.Contains(strings.Split(words, ","), "top")
+		}
+	}
+	return p, false
 }
 
 var (
@@ -561,8 +605,8 @@ var (
 	}
 	checkoutOptions = gitOptions{
 		long:  []string{"force", "orphan", "pathspec-from-file", "ours", "theirs", "track", "merge", "conflict", "patch", "detach", "quiet"},
-		short: map[rune]string{'f': "force", 'b': "b", 'B': "B", 'q': "quiet", 'm': "merge", 'p': "patch", 't': "track"},
-		value: set("b", "B", "orphan", "pathspec-from-file", "conflict"),
+		short: map[rune]string{'f': "force", 'b': "new-branch", 'B': "reset-branch", 'q': "quiet", 'm': "merge", 'p': "patch", 't': "track"},
+		value: set("new-branch", "reset-branch", "orphan", "pathspec-from-file", "conflict"),
 	}
 	restoreOptions = gitOptions{
 		long:  []string{"staged", "worktree", "source", "pathspec-from-file", "ours", "theirs", "merge", "conflict", "patch", "quiet", "overlay", "no-overlay", "progress"},
@@ -581,18 +625,18 @@ var (
 	}
 )
 
-func checkReset(args []string) string {
+func checkReset(args []string, _ string) string {
 	if resetOptions.parse(args).flags["hard"] {
 		return resetHard
 	}
 	return ""
 }
 
-func checkCheckout(args []string) string {
+func checkCheckout(args []string, cwd string) string {
 	g := checkoutOptions.parse(args)
 	switch {
-	case g.namesWholeTree():
-		return fmt.Sprintf(treeWideDiscard, "checkout", "checkout")
+	case g.namesWholeTree(cwd):
+		return fmt.Sprintf(treeWideDiscard, "checkout")
 	case g.flags["force"] && len(g.paths) == 0:
 		// With files named after "--", -f only lets their unmerged entries go.
 		return fmt.Sprintf(forcedSwitch, "checkout")
@@ -600,28 +644,28 @@ func checkCheckout(args []string) string {
 	return ""
 }
 
-func checkRestore(args []string) string {
+func checkRestore(args []string, cwd string) string {
 	g := restoreOptions.parse(args)
 	// Without --staged, restore writes the worktree; with it, only --worktree does.
 	writesWorktree := g.flags["worktree"] || !g.flags["staged"]
-	if writesWorktree && g.namesWholeTree() {
-		return fmt.Sprintf(treeWideDiscard, "restore", "restore")
+	if writesWorktree && g.namesWholeTree(cwd) {
+		return fmt.Sprintf(treeWideDiscard, "restore")
 	}
 	return ""
 }
 
-func checkClean(args []string) string {
+func checkClean(args []string, cwd string) string {
 	g := cleanOptions.parse(args)
 	if !g.flags["force"] || g.flags["dry-run"] {
 		return ""
 	}
-	if len(g.pathspecs()) == 0 || g.namesWholeTree() {
+	if len(g.operands()) == 0 || g.namesWholeTree(cwd) {
 		return treeWideClean
 	}
 	return ""
 }
 
-func checkSwitch(args []string) string {
+func checkSwitch(args []string, _ string) string {
 	g := switchOptions.parse(args)
 	if g.flags["force"] || g.flags["discard-changes"] {
 		return fmt.Sprintf(forcedSwitch, "switch")
