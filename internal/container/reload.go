@@ -89,8 +89,9 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 
 // removeAndWait destroys the container a create is about to replace and does
 // not return until the name is free again. act names the caller in the error,
-// which is the only thing that differs between them: a session reload, and a
-// start-up refresh whose yes was a yes to rebuilding a stopped container.
+// which is the only thing that differs between them: a session reload, a
+// start-up refresh whose yes was a yes to rebuilding a stopped container, and
+// removeReaped's callers clearing a container the daemon is reaping.
 //
 // Deliberately not teardown.OnShellExit, and the reason is structural rather
 // than a preference: that policy declines while a sibling shell is attached,
@@ -102,11 +103,12 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 // Force-remove rather than kill-and-let-AutoRemove-reap: the AutoRemove path
 // returns as soon as the SIGKILL lands, which races the new container's name.
 // The wait is subscribed before the removal because the daemon's own worker
-// can finish in between, and a wait started after that never fires.
-func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) error {
-	waitRes := cli.ContainerWait(ctx, name, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
+// can finish in between, and a wait started after that never fires. ref is a
+// container name or ID.
+func removeAndWait(ctx context.Context, cli client.APIClient, ref, act string) error {
+	waitRes := cli.ContainerWait(ctx, ref, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
 
-	_, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
+	_, err := cli.ContainerRemove(ctx, ref, client.ContainerRemoveOptions{Force: true})
 	switch {
 	case cerrdefs.IsNotFound(err):
 		// Already gone — an external `toolbox stop`, or a daemon that reaped it
@@ -115,7 +117,7 @@ func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) 
 	case err != nil && !cerrdefs.IsConflict(err):
 		// Conflict is the daemon's "removal already in progress": redundant,
 		// not an error, and the wait below is exactly how we find out it ended.
-		return fmt.Errorf("%s: failed to remove container %s: %w", act, name, err)
+		return fmt.Errorf("%s: failed to remove container %s: %w", act, ref, err)
 	}
 
 	select {
@@ -123,7 +125,7 @@ func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) 
 		return nil
 	case werr := <-waitRes.Error:
 		if werr != nil && !cerrdefs.IsNotFound(werr) {
-			return fmt.Errorf("%s: waiting for container %s to be removed: %w", act, name, werr)
+			return fmt.Errorf("%s: waiting for container %s to be removed: %w", act, ref, werr)
 		}
 		return nil
 	case <-ctx.Done():

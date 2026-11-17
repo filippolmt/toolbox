@@ -82,6 +82,11 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, base sessionplan.Im
 		// Already holding the namespace — nothing to do.
 		return nil
 	case runplan.ActionCreate:
+		// The anchor is created without AutoRemove, so the daemon never reaps it;
+		// the removal clears one a hand-typed `docker run --rm` left under the name.
+		if reapErr := removeReaped(ctx, cli, op, "peer anchor"); reapErr != nil {
+			return reapErr
+		}
 		ui.Info("Creating peer-messaging anchor " + name + "...")
 		created, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Name: name,

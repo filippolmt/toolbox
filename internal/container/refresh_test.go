@@ -61,9 +61,9 @@ func refreshKinds(calls *[]refreshCall) []imagefreshness.StartKind {
 	return out
 }
 
-// stoppedContainer is the start path: a container the daemon still holds but
-// is not running, which is what a daemon restart or a hand-typed
-// `docker stop` leaves behind.
+// stoppedContainer is the start path: a container the daemon keeps but is not
+// running — one created before AutoRemove, since the daemon removes any newer
+// one as it stops. No HostConfig, so runplan.DaemonReaps reads it as kept.
 func stoppedContainer(env []string) func(context.Context, string) (container.InspectResponse, error) {
 	return func(context.Context, string) (container.InspectResponse, error) {
 		return container.InspectResponse{
@@ -414,6 +414,56 @@ func TestShellStartRereadsTheContainerBeforeReplacingIt(t *testing.T) {
 				t.Errorf("the prefetch was baselined on %q, want %q", got, tc.wantDigest)
 			}
 		})
+	}
+}
+
+// A yes at the recreate stake re-reads the container before removing it. When
+// that read finds a stopped container the daemon is reaping — another shell's,
+// left by a hangup — the name is not free until it is gone: it is removed by
+// its own ID, and the create follows.
+func TestShellStartClearsAReapedContainerFoundOnTheReread(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+	stubPrefetch(t)
+
+	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imagefreshness.Replace)
+	reads := 0
+	var removed []string
+	mock.inspectFn = func(ctx context.Context, name string) (container.InspectResponse, error) {
+		reads++
+		if reads == 1 {
+			return stoppedContainer(nil)(ctx, name)
+		}
+		if len(removed) > 0 {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		}
+		return container.InspectResponse{
+			ID:         "reaped789",
+			State:      &container.State{Running: false},
+			HostConfig: &container.HostConfig{AutoRemove: true},
+		}, nil
+	}
+	mock.removeFn = func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+		if !slices.Contains(mock.calls, "ContainerCreate") {
+			removed = append(removed, id)
+		}
+		return nil
+	}
+	var waited []string
+	mock.waitFn = func(_ context.Context, id string, _ client.ContainerWaitOptions) (int64, error) {
+		waited = append(waited, id)
+		return 0, nil
+	}
+
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !slices.Equal(removed, []string{"reaped789"}) || !slices.Equal(waited, []string{"reaped789"}) {
+		t.Errorf("removed %v and waited on %v before the create, want only the reaped container, by ID", removed, waited)
+	}
+	if wait, create := slices.Index(mock.calls, "ContainerWait"), slices.Index(mock.calls, "ContainerCreate"); wait < 0 || create < wait {
+		t.Errorf("calls %v, want the wait for the reaped container before the create", mock.calls)
 	}
 }
 

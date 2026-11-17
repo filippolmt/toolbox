@@ -175,7 +175,7 @@ Five cases never reach the question, because the answer is already settled:
 | No tty (a script, a pipeline, CI) | Neither asks nor probes. The default inverts: start now, fetch behind. The interactive default is justified by the work that follows the wait; a script has no work that follows, so the same wait is pure latency times every invocation. |
 | A container for this workspace is already **running** (you are attaching a second terminal) | Nothing is asked. Docker cannot swap the image under a running container, and replacing it would end whatever else is attached to it — panes, agents, another shell. The prefetch fetches it behind you and the banner then offers `toolbox-reload`. |
 
-A container that exists but is **stopped** — after a daemon or host restart, or a hand-typed `docker stop` — *is* asked about, and the question is a different one, because there a yes can be honoured: nothing runs inside it and nobody's session is attached, so the download is followed by a rebuild.
+A container that exists but is **stopped** — only one created before toolbox removed containers on exit can be, since Docker removes any newer one as it stops — *is* asked about, and the question is a different one, because there a yes can be honoured: nothing runs inside it and nobody's session is attached, so the download is followed by a rebuild.
 
 ```
   A newer runtime image is available. Recreate this container on it? [y/N] (Ns)
@@ -203,7 +203,7 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
 
 **Fail-loud.** A failing overlay build (e.g. a broken `RUN`) aborts the shell and surfaces the build log — Toolbox never silently falls back to the base image.
 
-**Next fresh container.** A rebuilt `:local` takes effect for the next freshly-created container under the existing [`AutoRemove`](internals/container-lifecycle.md#container-teardown) lifecycle. A running/stopped container is reused as-is and adopts the new image only when a fresh container is next created — `toolbox stop` (or exiting the shell) forces that. Rollback: delete `~/.toolbox/Dockerfile` (revert to base) or `docker rmi ghcr.io/filippolmt/toolbox:local`.
+**Next fresh container.** A rebuilt `:local` takes effect for the next freshly-created container under the existing [`AutoRemove`](internals/container-lifecycle.md#container-teardown) lifecycle. A running container is reused as-is, and so is a stopped one created before toolbox removed containers on exit; either adopts the new image only when a fresh container is next created — `toolbox stop` (or exiting the shell) forces that. Rollback: delete `~/.toolbox/Dockerfile` (revert to base) or `docker rmi ghcr.io/filippolmt/toolbox:local`.
 
 ## `browser_bridge` (deprecated)
 

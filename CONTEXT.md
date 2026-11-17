@@ -494,18 +494,23 @@ composition is what the Architecture Deepening milestone set out to build.
 
 The runtime decision step inside `container.Shell`: given a
 `ContainerInspect` result, decide whether to connect to a running
-container, start a stopped one, or create a fresh one. Pure function, no
-Docker side-effects — the typed `Op` is dispatched at the Docker edge by
-`lifecycle.go::dispatchOp`.
+container, start a stopped one the daemon keeps, or create a fresh one.
+Pure function, no Docker side-effects — the typed `Op` is dispatched at
+the Docker edge by `lifecycle.go::dispatchOp`.
 
-Concretely: `runplan.Compute(inspect, inspectErr) → Op{Action, ExistingID}`
-with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
-`internal/runplan`. An `InspectResponse` with an empty `ID` and an errdefs
-`NotFound` both route to `ActionCreate` so callers never dispatch on a
-half-populated record; any other inspect error is returned verbatim and
-the caller aborts. Composes with Session Plan: SessionPlan resolves
-design-time inputs before any Docker call; RunPlan resolves the runtime
-branch after `ContainerInspect`.
+Concretely: `runplan.Compute(inspect, inspectErr)` returns
+`Op{Action, ExistingID, Reaped}` with `Action ∈ {ActionConnect, ActionStart,
+ActionCreate}`. Owned by `internal/runplan`. An `InspectResponse` with
+an empty `ID` and an errdefs `NotFound` both route to `ActionCreate` so
+callers never dispatch on a half-populated record; any other inspect
+error is returned verbatim and the caller aborts. A stopped container
+the daemon reaps (`DaemonReaps`: `AutoRemove`) also routes to
+`ActionCreate`, its ID in `Reaped`: it is on its way out, and the caller
+force-removes that ID before it takes the name — by ID, because a sibling
+shell may already have created a fresh container under the name, and that
+one is not on its way out. Composes with Session
+Plan: SessionPlan resolves design-time inputs before any Docker call;
+RunPlan resolves the runtime branch after `ContainerInspect`.
 
 Why the term exists: before this concept was named, the state machine
 lived inline in `internal/container/lifecycle.go::Shell` as a 4-case
@@ -745,7 +750,8 @@ the [Idle Reload](#idle-reload) is the accepted answer there), and a
 [Session Reload](#session-reload) skips the act whole (it has already
 refreshed and proved the image, and the same path is what an unattended
 trigger walks). What is left — `auto`, image present, registry ahead, a tty,
-and a container that is either absent or stopped — is the prompt:
+and a container that is either absent or stopped and kept by the daemon (one
+it is reaping takes the absent path, see [Run Plan](#run-plan)) — is the prompt:
 `ui.ConfirmCountdown`, where `y` pulls synchronously and `n` starts the
 session on what is already there.
 
@@ -1591,9 +1597,10 @@ waits for the removal, because skip-if-sibling would spare a container
 still holding the deterministic name the reload's own create is about
 to ask for. Considerate refusal there turns into a name collision, so
 the reload owns `container.removeAndWait` instead — shared since with
-the [Start-up Refresh Prompt](#start-up-refresh-prompt)'s recreate,
-which destroys a stopped container for the same reason and names
-itself in the error through the same `act` argument.
+the [Start-up Refresh Prompt](#start-up-refresh-prompt)'s recreate and
+with the clearing of a container the daemon is reaping
+([Run Plan](#run-plan)), each destroying for the same reason and
+naming itself in the error through the same `act` argument.
 
 Why the term exists: before this concept was named, the policy was a
 4-deep nested defer block inside `Shell`, with the timing constants as
