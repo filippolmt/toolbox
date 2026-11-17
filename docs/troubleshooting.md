@@ -125,9 +125,10 @@ The empty `credential.helper=` clears the bridge for this invocation only.
 - a `docker` bind mount whose source is under `/tmp`, `$HOME` or `/workspace` and not under `$TOOLBOX_HOST_WORKSPACE` — the daemon is the host's and would mount an empty directory;
 - `git commit -a` / `--all`;
 - `git stash` with no pathspec (`--staged` is fine);
-- `git stash pop` / `apply` with no stash reference.
+- `git stash pop` / `apply` with no stash reference;
+- a discard of the whole tree: `git reset --hard`, `git checkout .` / `git restore .` (or `:/`) on the worktree, `git clean -f` with no pathspec, `git checkout -f` / `git switch -f` / `--discard-changes`.
 
-**Fix:** do what the reason says: mount `$TOOLBOX_HOST_WORKSPACE` followed by the path below it, `git add <path>` before committing, `git stash push -- <path>`, `git stash list` then `git stash pop stash@{n}`. For a command you mean as written, run it yourself from the agent's prompt with `!`; there is no switch to turn the guardrails off.
+**Fix:** do what the reason says: mount `$TOOLBOX_HOST_WORKSPACE` followed by the path below it, `git add <path>` before committing, `git stash push -- <path>`, `git stash list` then `git stash pop stash@{n}`, `git reset --keep <target>`, the files named after `--` for checkout, restore and clean (`git clean -n` to review first). For a command you mean as written, run it yourself from the agent's prompt with `!`; there is no switch to turn the guardrails off.
 
 ## A repo's graphify, codegraph or playwright-cli setup is out of date
 

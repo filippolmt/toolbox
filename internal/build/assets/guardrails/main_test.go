@@ -241,6 +241,98 @@ func TestBlocksStashApplyWithoutReference(t *testing.T) {
 	})
 }
 
+// TestBlocksResetHard: a hard reset throws away every uncommitted change in the
+// tree, other sessions' included, and git keeps no copy of what it dropped.
+func TestBlocksResetHard(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "bare", command: "git reset --hard", blocked: true},
+		{name: "to a target", command: "git reset --hard origin/main", blocked: true},
+		{name: "keep refuses to lose changes", command: "git reset --keep origin/main"},
+		{name: "soft", command: "git reset --soft HEAD~1"},
+		{name: "mixed", command: "git reset"},
+		{name: "unstage a path", command: "git reset -- a.go"},
+	})
+}
+
+// TestBlocksTreeWideCheckout: checking out the whole tree, or forcing a branch
+// switch, overwrites every uncommitted change; naming the files is the agent
+// choosing what to throw away.
+func TestBlocksTreeWideCheckout(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "dot", command: "git checkout .", blocked: true},
+		{name: "dot after separator", command: "git checkout -- .", blocked: true},
+		{name: "dot from a tree-ish", command: "git checkout HEAD -- .", blocked: true},
+		{name: "top of the tree", command: "git checkout -- :/", blocked: true},
+		{name: "force", command: "git checkout -f main", blocked: true},
+		{name: "long force", command: "git checkout --force main", blocked: true},
+		{name: "named file", command: "git checkout -- a.go"},
+		{name: "named directory", command: "git checkout -- src/"},
+		{name: "branch switch", command: "git checkout main"},
+		{name: "new branch", command: "git checkout -b feat/x"},
+		{name: "file named like an option", command: "git checkout -- -f"},
+	})
+}
+
+// TestBlocksTreeWideRestore: restoring the whole worktree is the same discard
+// as checking it out; restoring only the index keeps the changes.
+func TestBlocksTreeWideRestore(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "dot", command: "git restore .", blocked: true},
+		{name: "top of the tree", command: "git restore :/", blocked: true},
+		{name: "from a source", command: "git restore -s HEAD~1 .", blocked: true},
+		{name: "index and worktree", command: "git restore --staged --worktree .", blocked: true},
+		{name: "index and worktree, short", command: "git restore -SW .", blocked: true},
+		{name: "index only", command: "git restore --staged ."},
+		{name: "index only, short", command: "git restore -S ."},
+		{name: "named file", command: "git restore a.go"},
+	})
+}
+
+// TestBlocksTreeWideClean: a forced clean with no pathspec deletes every
+// untracked file, other sessions' new files included, and git never had them.
+func TestBlocksTreeWideClean(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "force", command: "git clean -f", blocked: true},
+		{name: "force with directories", command: "git clean -fd", blocked: true},
+		{name: "force with ignored files", command: "git clean -xdf", blocked: true},
+		{name: "long force", command: "git clean --force -d", blocked: true},
+		{name: "force on the whole tree", command: "git clean -f -- .", blocked: true},
+		{name: "force with an exclude", command: "git clean -f -e keep.txt", blocked: true},
+		{name: "dry run", command: "git clean -n"},
+		{name: "forced dry run", command: "git clean -fn"},
+		{name: "long dry run", command: "git clean -f --dry-run"},
+		{name: "named directory", command: "git clean -f -- build/"},
+		{name: "named path without separator", command: "git clean -fd build/"},
+	})
+}
+
+// TestBlocksForcedSwitch: a forced switch overwrites the uncommitted changes a
+// plain switch would refuse to touch.
+func TestBlocksForcedSwitch(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "force", command: "git switch -f main", blocked: true},
+		{name: "long force", command: "git switch --force main", blocked: true},
+		{name: "discard changes", command: "git switch --discard-changes main", blocked: true},
+		{name: "plain", command: "git switch main"},
+		{name: "create", command: "git switch -c feat/x"},
+		{name: "create a branch named f", command: "git switch -cf main"},
+		{name: "force after the branch", command: "git switch -c fix -f", blocked: true},
+	})
+}
+
+// TestTreeWideDiscardsSeenThroughWrappers: the discard rules see the command
+// the shell runs, as the other git rules do.
+func TestTreeWideDiscardsSeenThroughWrappers(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "git -C", command: "git -C /home/dev/projects/app reset --hard", blocked: true},
+		{name: "behind sudo", command: "sudo git clean -fdx", blocked: true},
+		{name: "inside bash -c", command: `bash -c "git checkout ."`, blocked: true},
+		{name: "inside command substitution", command: "echo $(git restore .)", blocked: true},
+		{name: "chained", command: "git fetch && git reset --hard origin/main", blocked: true},
+		{name: "output redirected", command: "git switch -f main >/dev/null 2>&1", blocked: true},
+	})
+}
+
 // TestReasonsSayWhatToDoInstead: the reason is all the agent sees, so it names
 // the way out, not only the rule.
 func TestReasonsSayWhatToDoInstead(t *testing.T) {
@@ -251,6 +343,11 @@ func TestReasonsSayWhatToDoInstead(t *testing.T) {
 		{"git stash", "git stash push -- <path>"},
 		{"git stash pop", "git stash list"},
 		{"git stash apply", "git stash pop stash@{n}"},
+		{"git reset --hard", "git reset --keep <target>"},
+		{"git checkout .", "git checkout -- <path>"},
+		{"git restore .", "git restore -- <path>"},
+		{"git clean -fd", "git clean -n"},
+		{"git switch -f main", "git stash push -- <path>"},
 	} {
 		_, stderr := runCase(t, guardrailCase{command: c.command})
 		if !strings.Contains(stderr, c.want) {

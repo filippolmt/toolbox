@@ -31,6 +31,16 @@ const (
 		"that is not yours. Name what to stash: `git stash push -- <path>`."
 	implicitStashApply = "Blocked: git stash pop/apply without a reference takes stash@{0}, which can be another " +
 		"session's. Check `git stash list` and name yours: `git stash pop stash@{n}`."
+	resetHard = "Blocked: git reset --hard throws away every uncommitted change in the tree, including work that " +
+		"is not yours, and git keeps no copy. Use `git reset --keep <target>`, which refuses when it would lose " +
+		"changes, or set yours aside first with `git stash push -- <path>`."
+	treeWideDiscard = "Blocked: git %s on the whole tree throws away every uncommitted change, including work " +
+		"that is not yours. Name the files to discard: `git %s -- <path>`."
+	forcedSwitch = "Blocked: a forced git %s throws away every uncommitted change in the tree, including work " +
+		"that is not yours. Commit yours, or set it aside with `git stash push -- <path>`, then switch without force."
+	treeWideClean = "Blocked: a forced git clean with no pathspec deletes every untracked file in the tree, " +
+		"including new files that are not yours. Review with `git clean -n`, then name the paths: " +
+		"`git clean -f -- <path>`."
 )
 
 func main() {
@@ -152,6 +162,21 @@ func (c checker) command(argv []string) string {
 		return reason
 	}
 	if reason := checkStash(argv); reason != "" {
+		return reason
+	}
+	if reason := checkReset(argv); reason != "" {
+		return reason
+	}
+	if reason := checkCheckout(argv); reason != "" {
+		return reason
+	}
+	if reason := checkRestore(argv); reason != "" {
+		return reason
+	}
+	if reason := checkClean(argv); reason != "" {
+		return reason
+	}
+	if reason := checkSwitch(argv); reason != "" {
 		return reason
 	}
 	if c.docker {
@@ -492,6 +517,185 @@ func readStashCluster(cluster string) (staged, takesNext bool) {
 		}
 	}
 	return false, false
+}
+
+func checkReset(argv []string) string {
+	sub, args := gitSubcommand(argv)
+	if sub != "reset" {
+		return ""
+	}
+	for _, a := range args {
+		if a == "--" {
+			return ""
+		}
+		if a == "--hard" {
+			return resetHard
+		}
+	}
+	return ""
+}
+
+// rootPathspec holds the pathspecs that name the whole tree.
+var rootPathspec = set(".", "./", ":/")
+
+func checkCheckout(argv []string) string {
+	sub, args := gitSubcommand(argv)
+	if sub != "checkout" {
+		return ""
+	}
+	options := true
+	for _, a := range args {
+		switch {
+		case rootPathspec[a]:
+			return fmt.Sprintf(treeWideDiscard, sub, sub)
+		case !options:
+		case a == "--":
+			options = false
+		case a == "--force" || shortClusterHas(a, 'f', "bB"):
+			return fmt.Sprintf(forcedSwitch, sub)
+		}
+	}
+	return ""
+}
+
+func checkRestore(argv []string) string {
+	sub, args := gitSubcommand(argv)
+	if sub != "restore" {
+		return ""
+	}
+	var staged, worktree, root bool
+	options := true
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case rootPathspec[a]:
+			root = true
+		case !options || !strings.HasPrefix(a, "-"):
+		case a == "--":
+			options = false
+		case a == "--staged":
+			staged = true
+		case a == "--worktree":
+			worktree = true
+		case a == "--source" || a == "--pathspec-from-file":
+			i++
+		case !strings.HasPrefix(a, "--"):
+			s, w, takesNext := readRestoreCluster(a[1:])
+			staged, worktree = staged || s, worktree || w
+			if takesNext {
+				i++
+			}
+		}
+	}
+	// Without --staged, restore writes the worktree; with it, only --worktree does.
+	if root && (worktree || !staged) {
+		return fmt.Sprintf(treeWideDiscard, sub, sub)
+	}
+	return ""
+}
+
+func checkClean(argv []string) string {
+	sub, args := gitSubcommand(argv)
+	if sub != "clean" {
+		return ""
+	}
+	var force, dryRun, named bool
+	options := true
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case !options || !strings.HasPrefix(a, "-"):
+			named = named || !rootPathspec[a]
+		case a == "--":
+			options = false
+		case a == "--force":
+			force = true
+		case a == "--dry-run":
+			dryRun = true
+		case a == "--exclude":
+			i++
+		case !strings.HasPrefix(a, "--"):
+			f, n, takesNext := readCleanCluster(a[1:])
+			force, dryRun = force || f, dryRun || n
+			if takesNext {
+				i++
+			}
+		}
+	}
+	if force && !dryRun && !named {
+		return treeWideClean
+	}
+	return ""
+}
+
+// readCleanCluster reads a cluster of git clean short options: whether it
+// holds -f and -n, and whether it ends in -e, whose value is then the next word.
+// -e ends the cluster: the rest of it is the pattern.
+func readCleanCluster(cluster string) (force, dryRun, takesNext bool) {
+	for j, ch := range cluster {
+		switch ch {
+		case 'f':
+			force = true
+		case 'n':
+			dryRun = true
+		case 'e':
+			return force, dryRun, j == len(cluster)-1
+		}
+	}
+	return force, dryRun, false
+}
+
+// readRestoreCluster reads a cluster of git restore short options: whether it
+// holds -S and -W, and whether it ends in -s, whose value is then the next word.
+// -s ends the cluster: the rest of it is the source.
+func readRestoreCluster(cluster string) (staged, worktree, takesNext bool) {
+	for j, ch := range cluster {
+		switch ch {
+		case 'S':
+			staged = true
+		case 'W':
+			worktree = true
+		case 's':
+			return staged, worktree, j == len(cluster)-1
+		}
+	}
+	return staged, worktree, false
+}
+
+func checkSwitch(argv []string) string {
+	sub, args := gitSubcommand(argv)
+	if sub != "switch" {
+		return ""
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return ""
+		case a == "-c" || a == "-C" || a == "--create" || a == "--force-create" || a == "--orphan":
+			i++
+		case a == "--force" || a == "--discard-changes" || shortClusterHas(a, 'f', "cC"):
+			return fmt.Sprintf(forcedSwitch, sub)
+		}
+	}
+	return ""
+}
+
+// shortClusterHas reports whether a short option cluster holds flag before any
+// of the options in valueOpts, whose value is the rest of the cluster.
+func shortClusterHas(word string, flag rune, valueOpts string) bool {
+	if !strings.HasPrefix(word, "-") || strings.HasPrefix(word, "--") {
+		return false
+	}
+	for _, ch := range word[1:] {
+		if ch == flag {
+			return true
+		}
+		if strings.ContainsRune(valueOpts, ch) {
+			return false
+		}
+	}
+	return false
 }
 
 var (
