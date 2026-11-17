@@ -213,6 +213,31 @@ func TestBlocksImplicitStash(t *testing.T) {
 		{name: "redirection target as its own word", command: "git stash > out.txt", blocked: true},
 		{name: "both streams redirected", command: "git stash &>/dev/null", blocked: true},
 		{name: "list redirected", command: "git stash list >/dev/null"},
+		{name: "pathspec variable set empty in the line", command: "P=; git stash push $P", blocked: true},
+	})
+}
+
+// TestBlocksStashApplyWithoutReference: with no reference, pop and apply take
+// stash@{0}, which can be another session's; after an agent's stash that saved
+// nothing, that is someone else's work landing on the tree.
+func TestBlocksStashApplyWithoutReference(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "bare pop", command: "git stash pop", blocked: true},
+		{name: "bare apply", command: "git stash apply", blocked: true},
+		{name: "options are not a reference", command: "git stash pop --index -q", blocked: true},
+		{name: "apply with quiet only", command: "git stash apply --quiet", blocked: true},
+		{name: "pop with a reference", command: "git stash pop stash@{1}"},
+		{name: "apply with a bare index", command: "git stash apply 1"},
+		{name: "reference after an option", command: "git stash pop --index stash@{2}"},
+		{name: "after git -C", command: "git -C /home/dev/projects/app stash pop", blocked: true},
+		{name: "behind sudo", command: "sudo git stash pop", blocked: true},
+		{name: "inside bash -c", command: `bash -c "git stash apply"`, blocked: true},
+		{name: "inside command substitution", command: "echo $(git stash pop)", blocked: true},
+		{name: "chained after a pathspec stash", command: "git stash push -- a.go && git pull && git stash pop", blocked: true},
+		{name: "output redirected", command: "git stash pop > out.txt", blocked: true},
+		{name: "reference variable set empty in the line", command: "R=; git stash pop $R", blocked: true},
+		{name: "quoted empty reference reaches git as a word", command: `git stash pop ""`},
+		{name: "drop is not apply", command: "git stash drop"},
 	})
 }
 
@@ -224,6 +249,8 @@ func TestReasonsSayWhatToDoInstead(t *testing.T) {
 		{"docker run -v /tmp/fx:/data alpine", "$TOOLBOX_HOST_WORKSPACE"},
 		{"git commit -am fix", "git add <path>"},
 		{"git stash", "git stash push -- <path>"},
+		{"git stash pop", "git stash list"},
+		{"git stash apply", "git stash pop stash@{n}"},
 	} {
 		_, stderr := runCase(t, guardrailCase{command: c.command})
 		if !strings.Contains(stderr, c.want) {

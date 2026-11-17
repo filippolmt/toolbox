@@ -120,13 +120,14 @@ The empty `credential.helper=` clears the bridge for this invocation only.
 
 **Symptom:** Claude Code, Codex or pi reports a Bash command `Blocked:` before it runs.
 
-**Cause:** the image's [agent guardrails](internals/image-build.md#agent-guardrails) refuse three commands by design:
+**Cause:** the image's [agent guardrails](internals/image-build.md#agent-guardrails) refuse these commands by design:
 
 - a `docker` bind mount whose source is under `/tmp`, `$HOME` or `/workspace` and not under `$TOOLBOX_HOST_WORKSPACE` — the daemon is the host's and would mount an empty directory;
 - `git commit -a` / `--all`;
-- `git stash` with no pathspec (`--staged` is fine).
+- `git stash` with no pathspec (`--staged` is fine);
+- `git stash pop` / `apply` with no stash reference.
 
-**Fix:** do what the reason says: mount `$TOOLBOX_HOST_WORKSPACE` followed by the path below it, `git add <path>` before committing, `git stash push -- <path>`. For a command you mean as written, run it yourself from the agent's prompt with `!`; there is no switch to turn the guardrails off.
+**Fix:** do what the reason says: mount `$TOOLBOX_HOST_WORKSPACE` followed by the path below it, `git add <path>` before committing, `git stash push -- <path>`, `git stash list` then `git stash pop stash@{n}`. For a command you mean as written, run it yourself from the agent's prompt with `!`; there is no switch to turn the guardrails off.
 
 ## A repo's graphify, codegraph or playwright-cli setup is out of date
 
