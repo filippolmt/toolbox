@@ -42,6 +42,24 @@ another developer's active namespace. Use a dedicated daemon or close peer
 sessions yourself before running the suite. The socket grants daemon access;
 run these gates only against trusted repository code.
 
+A failing run ends by restating its `--- FAIL` lines, or says none was printed
+when the build or setup failed, and keeps its whole output in
+`dist/.scratch/dockergate/last-run.log`. To tell whether a failure is yours,
+run the same gate on `main` from a worktree under `dist/.scratch/` — inside
+the workspace, so the runner can mount it — then remove it, which deletes that
+run's log too:
+
+```bash
+git fetch origin
+git worktree add dist/.scratch/main-check origin/main
+make -C dist/.scratch/main-check go-dockergate PKG=./internal/container RUN=TestName
+git worktree remove --force dist/.scratch/main-check
+```
+
+Both runs use the image `FULL` names, so this separates test and CLI changes
+only. When your branch changes the image, pass the published `main` image as
+`FULL` to the baseline run instead of your build.
+
 For tagged tests that do not require a daemon or special mounts:
 
 ```bash

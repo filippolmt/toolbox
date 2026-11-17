@@ -25,3 +25,14 @@ sections, the how-to under `docs/`, and `docs/troubleshooting.md` when the
 change creates a new way to end up stuck. Updating the glossary, the internals
 and the ADR alone leaves the reader who never opens them with a wrong picture.
 Review the diff against each of those pages and name the one left behind.
+
+## Two routes to one operation share their exceptions
+
+When a flag and a config key reach the same operation — `--profile` and
+`mounts_root` both retarget the Mount Plan — every exception to it (a mount
+that stays on the host, a warning, a validation) lives in the one place both
+routes call, and a test table runs each exception through every route. An
+exception written on one route only makes the routes drift apart while the
+docs still call them the same, and a sweep test over the other route then pins
+the drift as intended. Review a change to either route by naming its sibling
+and checking the exception reaches both.

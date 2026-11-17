@@ -138,6 +138,18 @@ func TestPeerMessagingMechanism(t *testing.T) {
 	// socket directory is shared through the toolbox-cc-socks volume rather
 	// than through it, so both sessions land in it regardless.
 	host := planHost(t)
+	// Docker Desktop keeps refusing the unlink of bridge/run (EACCES, mode
+	// 0700, empty) after both sessions and the anchor are removed, waiting for
+	// the removal included — about two seconds, measured 2026-11-17. Registered after planHost, so
+	// it runs before t.TempDir's own RemoveAll and leaves it nothing to fail on.
+	// shortcut: retries a window measured on Docker Desktop for macOS whose
+	// cause is unconfirmed (#1493); widen it, or find the holder, if it recurs.
+	t.Cleanup(func() {
+		deadline := time.Now().Add(15 * time.Second)
+		for os.RemoveAll(host.Home) != nil && time.Now().Before(deadline) {
+			time.Sleep(250 * time.Millisecond)
+		}
+	})
 
 	// The anchor outlives sessions by design, so it is torn down explicitly.
 	t.Cleanup(func() {
