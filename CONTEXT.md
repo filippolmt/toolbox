@@ -2364,19 +2364,17 @@ boundary that says which of them it may cross.
 
 ### Profile
 
-A named identity a Shell runs under: its own set of toolbox-managed
-credentials and state, kept apart from the default identity and from every
-other profile. _Avoid_: "account" — one profile can hold several accounts of
-the same provider, and those share the Profile's boundary.
+A named credential identity a Shell runs under: its own set of
+toolbox-managed credentials and state, kept apart from the default set and
+from every other profile. _Avoid_: "account" — one profile can hold several
+accounts of the same provider, and those share the Profile's boundary.
 
 Concretely: a mounts root at `~/.toolbox/profiles/<name>`, owned by
-`internal/mountplan` (`NewProfile`, `Profile.Root`). It is selected by
-`--profile <name>`, which wins over any configured `mounts_root`, or by a
-`mounts_root` pointing at the same root, which ties the identity to a
-directory. Isolation is all-or-nothing over the default mounts; `--share`
-names the exceptions, and the bridge, `~/.ssh` and `~/.gitconfig` always stay
-on the host. The profile is part of the Shell's identity: it feeds the
-container name, so two profiles coexist on one workspace.
+`internal/mountplan` (`NewProfile`, `Profile.Root`). `--profile <name>` selects
+it and wins over any configured `mounts_root`; a `mounts_root` pointing at the
+same root binds the same credentials from a directory. What stays on the host
+under a profile, and what only the flag adds, is in
+[docs/mounts.md](docs/mounts.md#profiles).
 
 Why the term exists: a second account of one provider is not the problem a
 Profile solves — most CLIs have their own profiles for that. A Profile is the

@@ -147,8 +147,9 @@ func TestMergeDisableDefault(t *testing.T) {
 }
 
 // TestMergeMountsRootRetargetsAllDefaults: setting MountsRoot rewrites every
-// default mount whose Source lives under ~/.toolbox/ to live under the new
-// root, leaving Targets, ReadOnly flags, and SymlinkFrom values untouched.
+// default mount whose Source lives under ~/.toolbox/ — the bridge's excepted —
+// to live under the new root, leaving Targets, ReadOnly flags, and SymlinkFrom
+// values untouched.
 func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 	cfg := config.Config{MountsRoot: "/custom/root"}
 
@@ -163,7 +164,8 @@ func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 			t.Errorf("mount %q missing after mounts_root override", d.Name)
 			continue
 		}
-		if !strings.HasPrefix(d.Source, "~/.toolbox/") {
+		// The bridge daemon's dir is host infrastructure: no root moves it.
+		if !strings.HasPrefix(d.Source, "~/.toolbox/") || shareCovers([]string{"bridge"}, d.Name) {
 			if got.Source != d.Source {
 				t.Errorf("mount %q Source drifted: got %q, want %q", d.Name, got.Source, d.Source)
 			}

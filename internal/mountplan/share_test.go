@@ -58,6 +58,26 @@ func TestMergeProfileKeepsBridgeOnHostRoot(t *testing.T) {
 	}
 }
 
+// TestMergeMountsRootKeepsBridgeOnHostRoot: a config-level mounts_root, with no
+// profile, keeps the bridge mounts on the host root as a profile does — the
+// daemon writes its token and socket under ~/.toolbox whatever the root.
+func TestMergeMountsRootKeepsBridgeOnHostRoot(t *testing.T) {
+	merged, err := Merge(testHost(t), &config.Config{MountsRoot: "~/.toolbox/profiles/client-a"}, nil, proximo.Gate{})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	for _, name := range []string{"bridge", "bridge-legacy", "bridge-run"} {
+		got := findMount(merged, name).Source
+		if strings.Contains(got, "profiles/") {
+			t.Errorf("bridge mount %q Source = %q, want kept on host root", name, got)
+		}
+	}
+	if got := findMount(merged, "claude").Source; got != "~/.toolbox/profiles/client-a/.claude" {
+		t.Errorf("claude Source = %q, want %q (retargeted)", got, "~/.toolbox/profiles/client-a/.claude")
+	}
+}
+
 // TestMergeShareUnknownErrors: a --share token matching no shareable mount
 // fails loudly rather than silently isolating everything.
 func TestMergeShareUnknownErrors(t *testing.T) {
