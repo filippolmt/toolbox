@@ -233,6 +233,7 @@ func TestBlocksStashApplyWithoutReference(t *testing.T) {
 		{name: "inside bash -c", command: `bash -c "git stash apply"`, blocked: true},
 		{name: "inside command substitution", command: "echo $(git stash pop)", blocked: true},
 		{name: "chained after a pathspec stash", command: "git stash push -- a.go && git pull && git stash pop", blocked: true},
+		{name: "output redirected", command: "git stash pop > out.txt", blocked: true},
 		{name: "drop is not apply", command: "git stash drop"},
 	})
 }

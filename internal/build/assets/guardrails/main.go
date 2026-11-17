@@ -425,9 +425,12 @@ func checkStash(argv []string) string {
 		case args[0] == "push":
 			args = args[1:]
 		case args[0] == "pop" || args[0] == "apply":
-			return stashApplyNamed(args[1:])
+			if stashApplyNamesStash(args[1:]) {
+				return ""
+			}
+			return implicitStashApply
 		case !strings.HasPrefix(args[0], "-"):
-			return "" // list, show, pop, apply, drop, branch, …
+			return "" // list, show, drop, branch, …
 		}
 	}
 	if stashSelects(args) {
@@ -436,14 +439,15 @@ func checkStash(argv []string) string {
 	return implicitStash
 }
 
-// stashApplyNamed blocks a pop or apply whose arguments name no stash.
-func stashApplyNamed(args []string) string {
+// stashApplyNamesStash reports whether git stash pop/apply arguments name a
+// stash: none of their options (--index, -q) takes a value, so any other word is one.
+func stashApplyNamesStash(args []string) bool {
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
-			return ""
+			return true
 		}
 	}
-	return implicitStashApply
+	return false
 }
 
 // stashSelects reports whether git stash push arguments name what to stash:

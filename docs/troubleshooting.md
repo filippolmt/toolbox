@@ -120,7 +120,7 @@ The empty `credential.helper=` clears the bridge for this invocation only.
 
 **Symptom:** Claude Code, Codex or pi reports a Bash command `Blocked:` before it runs.
 
-**Cause:** the image's [agent guardrails](internals/image-build.md#agent-guardrails) refuse four commands by design:
+**Cause:** the image's [agent guardrails](internals/image-build.md#agent-guardrails) refuse these commands by design:
 
 - a `docker` bind mount whose source is under `/tmp`, `$HOME` or `/workspace` and not under `$TOOLBOX_HOST_WORKSPACE` — the daemon is the host's and would mount an empty directory;
 - `git commit -a` / `--all`;
