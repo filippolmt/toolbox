@@ -21,6 +21,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -972,6 +973,8 @@ func TestStopAll(t *testing.T) {
 				{Names: []string{"/toolbox-project-a-abcdef12"}},
 				{Names: []string{"/toolbox-project-b-11223344"}},
 				{Names: []string{"/toolbox"}}, // legacy singleton
+				// A Detached Shell survives terminals, not the sweep.
+				{Names: []string{"/toolbox-orca"}, Labels: map[string]string{runplan.DetachedLabel: "true"}},
 				{Names: []string{"/unrelated-toolbox-clone"}},
 			}, nil
 		},
@@ -994,6 +997,7 @@ func TestStopAll(t *testing.T) {
 		"toolbox-project-a-abcdef12",
 		"toolbox-project-b-11223344",
 		"toolbox",
+		"toolbox-orca",
 	}
 	for _, name := range expectedStopped {
 		if !stopped[name] {
@@ -1552,5 +1556,47 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 				t.Errorf("Cmd = %v, want %v", capturedCmd, tc.wantCmd)
 			}
 		})
+	}
+}
+
+// A detached plan creates and starts its container with the detached label and
+// hands back at once: no exec runs and nothing tears the container down, so it
+// stays up with nobody attached. Stop, remove and kill are unmocked.
+func TestShellDetachedCreatesWithoutExec(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	var labels map[string]string
+	started := false
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			labels = cfg.Labels
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+		startFn: func(context.Context, string, client.ContainerStartOptions) error {
+			started = true
+			return nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !started {
+		t.Fatal("ContainerStart was not called")
+	}
+	if *called {
+		t.Error("a detached Shell must not exec a terminal")
+	}
+	if labels["toolbox.detached"] != "true" {
+		t.Errorf("create labels = %v, want toolbox.detached=true", labels)
 	}
 }

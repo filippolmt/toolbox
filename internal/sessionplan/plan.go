@@ -93,6 +93,9 @@ type SessionPlan struct {
 	// it — the act needs the Docker client and the digest the created
 	// container actually runs, neither of which exists here.
 	ReclaimImages bool
+	// Detached creates the container without attaching a terminal and leaves
+	// it running when terminals attached later exit. → CONTEXT.md, Detached Shell.
+	Detached bool
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes

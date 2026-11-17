@@ -35,3 +35,11 @@ func TestRenderListTable(t *testing.T) {
 		t.Errorf("row 1 workspace misaligned at col %d: %q", col, lines[1])
 	}
 }
+
+func TestRenderListMarksDetachedShell(t *testing.T) {
+	var buf bytes.Buffer
+	renderList(&buf, []container.Item{{Name: "toolbox-orca", Workspace: "-", Status: "Up 1 hour", Detached: true}})
+	if !strings.Contains(buf.String(), "Up 1 hour (detached)") {
+		t.Errorf("detached row not marked: %q", buf.String())
+	}
+}

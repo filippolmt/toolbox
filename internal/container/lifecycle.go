@@ -418,6 +418,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, dispatchErr
 	}
 
+	// A Detached Shell is up with nobody attached: there is no terminal to
+	// open, and so nothing whose exit would tear it down.
+	if plan.Detached {
+		return nil, nil
+	}
+
 	// Auto-remove on exit, suppressed on the reload path — see shellTeardown.
 	// Deferred from here, so it covers every return below this point and none
 	// of the failures above it, which have no container to remove.
@@ -721,6 +727,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			User:         identity.UserSpec,
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
+			Labels:       detachedLabels(plan.Detached),
 		},
 		HostConfig: &container.HostConfig{
 			Binds:        binds,
@@ -748,6 +755,14 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 	ui.Success("Container started")
 	return resp.ID, nil
+}
+
+// detachedLabels is the create's label set: the Detached Shell mark, or none.
+func detachedLabels(detached bool) map[string]string {
+	if !detached {
+		return nil
+	}
+	return map[string]string{runplan.DetachedLabel: "true"}
 }
 
 // Stop stops and removes the toolbox container associated with the workspace.
@@ -835,11 +850,13 @@ func containerName(c container.Summary) string {
 // Item is one row of the host's toolbox-container inventory. Workspace is the
 // host path bind-mounted at /workspace, or "-" when no such bind exists
 // (e.g. a legacy container). Status is the Docker human status string
-// ("Up 2 hours", "Exited (0) 3 minutes ago").
+// ("Up 2 hours", "Exited (0) 3 minutes ago"). Detached marks a Detached
+// Shell, which no terminal exit removes.
 type Item struct {
 	Name      string
 	Workspace string
 	Status    string
+	Detached  bool
 }
 
 // List returns every toolbox-managed container on the host (all states),
@@ -863,6 +880,7 @@ func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
 			Name:      containerName(c),
 			Workspace: workspaceOf(c),
 			Status:    c.Status,
+			Detached:  runplan.Detached(c.Labels),
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })

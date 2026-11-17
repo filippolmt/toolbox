@@ -15,7 +15,8 @@ var listCmd = &cobra.Command{
 	Short:   "List toolbox containers on the host",
 	Long: `List every toolbox container on the host, across all directories, with
 its workspace path and status. Containers are created with AutoRemove, so in
-practice the list shows the shells you have running right now.`,
+practice the list shows the shells you have running right now. A detached
+shell is marked: it keeps running until toolbox stop removes it.`,
 	Args: usageArgs(cobra.NoArgs),
 	RunE: runList,
 }
@@ -52,7 +53,11 @@ func renderList(out io.Writer, items []container.Item) {
 	}
 	_, _ = fmt.Fprintf(out, "%-*s  %-*s  %s\n", nameW, "NAME", wsW, "WORKSPACE", "STATUS")
 	for _, it := range items {
-		_, _ = fmt.Fprintf(out, "%-*s  %-*s  %s\n", nameW, it.Name, wsW, it.Workspace, it.Status)
+		status := it.Status
+		if it.Detached {
+			status += " (detached)"
+		}
+		_, _ = fmt.Fprintf(out, "%-*s  %-*s  %s\n", nameW, it.Name, wsW, it.Workspace, status)
 	}
 }
 

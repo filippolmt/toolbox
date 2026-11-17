@@ -65,6 +65,16 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 	return inspect.HostConfig != nil && inspect.HostConfig.AutoRemove
 }
 
+// DetachedLabel marks a Detached Shell: a container that outlives every
+// terminal attached to it. → CONTEXT.md, Detached Shell.
+const DetachedLabel = "toolbox.detached"
+
+// Detached reports whether a container's labels mark it as a Detached Shell.
+// Takes the label map so an inspect and a list summary read it alike.
+func Detached(labels map[string]string) bool {
+	return labels[DetachedLabel] == "true"
+}
+
 // Compute derives the Op from a ContainerInspect result.
 //
 // An InspectResponse with an empty ID is treated as "no usable record":
