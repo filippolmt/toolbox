@@ -44,19 +44,19 @@ func TestComputeActionStartWhenStopped(t *testing.T) {
 }
 
 // A stopped AutoRemove container is the daemon's to reap, not ours to start:
-// Compute takes the create branch and names the reaped container, so the caller
-// can wait out its removal before asking for the name. A stopped container
+// Compute takes the create branch and names the reaped container in Reaped, so
+// the caller can remove it by ID before asking for the name. A stopped container
 // without AutoRemove — the explicit false or a legacy one with no HostConfig —
 // keeps the start branch.
 func TestComputeStoppedContainerByAutoRemove(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		hostConfig *container.HostConfig
-		want       Action
+		want       Op
 	}{
-		{"reaped by the daemon", &container.HostConfig{AutoRemove: true}, ActionCreate},
-		{"kept by the daemon", &container.HostConfig{AutoRemove: false}, ActionStart},
-		{"no host config", nil, ActionStart},
+		{"reaped by the daemon", &container.HostConfig{AutoRemove: true}, Op{Action: ActionCreate, Reaped: "stopped123"}},
+		{"kept by the daemon", &container.HostConfig{AutoRemove: false}, Op{Action: ActionStart, ExistingID: "stopped123"}},
+		{"no host config", nil, Op{Action: ActionStart, ExistingID: "stopped123"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			op, err := Compute(container.InspectResponse{
@@ -67,8 +67,8 @@ func TestComputeStoppedContainerByAutoRemove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if op.Action != tc.want || op.ExistingID != "stopped123" {
-				t.Errorf("Op = {%v, %q}, want {%v, %q}", op.Action, op.ExistingID, tc.want, "stopped123")
+			if op != tc.want {
+				t.Errorf("Op = %+v, want %+v", op, tc.want)
 			}
 		})
 	}

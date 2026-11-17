@@ -14,7 +14,6 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/reload"
-	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -90,8 +89,9 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 
 // removeAndWait destroys the container a create is about to replace and does
 // not return until the name is free again. act names the caller in the error,
-// which is the only thing that differs between them: a session reload, and a
-// start-up refresh whose yes was a yes to rebuilding a stopped container.
+// which is the only thing that differs between them: a session reload, a
+// start-up refresh whose yes was a yes to rebuilding a stopped container, and
+// removeReaped's callers clearing a container the daemon is reaping.
 //
 // Deliberately not teardown.OnShellExit, and the reason is structural rather
 // than a preference: that policy declines while a sibling shell is attached,
@@ -131,18 +131,6 @@ func removeAndWait(ctx context.Context, cli client.APIClient, ref, act string) e
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// removeReaped force-removes, and waits out, the container a create names —
-// runplan's ActionCreate with an ExistingID — which the daemon is still
-// reaping under the name the create needs. By ID, so a fresh container a sibling shell has
-// already created under that name is never the one removed. A no-op for any
-// other op.
-func removeReaped(ctx context.Context, cli client.APIClient, op runplan.Op) error {
-	if op.Action != runplan.ActionCreate || op.ExistingID == "" {
-		return nil
-	}
-	return removeAndWait(ctx, cli, op.ExistingID, "reaped container")
 }
 
 // reloadCasualties lists the container processes the teardown is about to end,

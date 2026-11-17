@@ -78,8 +78,10 @@ removes.
 ordinary shell exit kills an `AutoRemove` container and the daemon reaps it,
 and `toolbox stop` removes it outright — so a stopped container survives only
 a daemon or host restart, a hand-typed `docker stop`, or a container created
-before `AutoRemove` was set at create time. The prompt reaching this branch is
-therefore not a common event; it is a hole closed.
+before `AutoRemove` was set at create time. (Since narrowed: of the three only
+the last still reaches this branch — a stopped `AutoRemove` container is
+recreated without the question; see the status line.) The prompt reaching
+this branch is therefore not a common event; it is a hole closed.
 
 **Everything that can fail runs before anything is destroyed.** There are
 three such things and the order is the design, not a convenience: the download

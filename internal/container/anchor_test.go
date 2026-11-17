@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,6 +122,62 @@ func TestShellPeerCreatesAnchor(t *testing.T) {
 	// worse than none: the session would believe it is reachable.
 	if !hasPeerSocketBind(sessionBinds) {
 		t.Errorf("session Binds = %v, want the %s mount", sessionBinds, mountplan.PeerSocketDirTarget)
+	}
+}
+
+// An anchor is created without AutoRemove, but one a hand-typed
+// `docker run --rm` left stopped under the name is the daemon's to reap: it is
+// removed by its ID before the anchor is created, or the create collides with
+// the name.
+func TestShellPeerClearsAReapedAnchorBeforeCreating(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	anchorRemoved := false
+	var removed, created, waited []string
+	mock := &mockClient{
+		inspectFn: func(_ context.Context, id string) (container.InspectResponse, error) {
+			if id == sessionplan.PeerAnchorContainerName && !anchorRemoved {
+				return container.InspectResponse{
+					ID:         "oldanchor",
+					State:      &container.State{Running: false},
+					HostConfig: &container.HostConfig{AutoRemove: true},
+				}, nil
+			}
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container: " + id}
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			anchorRemoved = anchorRemoved || id == "oldanchor"
+			return nil
+		},
+		waitFn: func(_ context.Context, id string, _ client.ContainerWaitOptions) (int64, error) {
+			waited = append(waited, id)
+			return 0, nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, name string) (container.CreateResponse, error) {
+			if name == sessionplan.PeerAnchorContainerName && !anchorRemoved {
+				t.Errorf("the anchor was created while the reaped one still held its name")
+			}
+			created = append(created, name)
+			return container.CreateResponse{ID: name}, nil
+		},
+	}
+
+	if _, err := Shell(context.Background(), mock, peerPlan(t, testWorkspace(t))); err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	if len(removed) == 0 || removed[0] != "oldanchor" || len(waited) == 0 || waited[0] != "oldanchor" {
+		t.Errorf("removed %v, waited on %v; want the reaped anchor first, by ID", removed, waited)
+	}
+	if len(created) == 0 || created[0] != sessionplan.PeerAnchorContainerName {
+		t.Errorf("created %v, want the anchor first", created)
+	}
+	if wait, create := slices.Index(mock.calls, "ContainerWait"), slices.Index(mock.calls, "ContainerCreate"); wait < 0 || create < wait {
+		t.Errorf("calls %v, want the wait for the reaped anchor before its create", mock.calls)
 	}
 }
 

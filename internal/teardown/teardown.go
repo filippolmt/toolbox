@@ -31,6 +31,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 )
 
@@ -156,9 +157,7 @@ func OnShellExit(cli containerRuntime, name string) error {
 		return nil
 	}
 
-	// HostConfig is a pointer field on InspectResponse; guard it before
-	// dereferencing so a degenerate inspect can't panic.
-	if inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
+	if runplan.DaemonReaps(inspect) {
 		return killAutoRemove(ctx, cli, name)
 	}
 	// Transitional fallback for containers created before AutoRemove was set

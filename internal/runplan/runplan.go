@@ -5,7 +5,9 @@
 //
 // Mirrors the Plan-family pattern: ConfigPlan / MountPlan / SessionPlan
 // compose at design-time before any Docker call; RunPlan composes at
-// runtime from the ContainerInspect snapshot. Lifecycle dispatches on
+// runtime from the ContainerInspect snapshot. DaemonReaps, the AutoRemove
+// test the decision turns on, is shared with teardown's exit policy so the
+// two never disagree on which containers the daemon removes. Lifecycle dispatches on
 // the typed Op rather than re-deriving the branch inline.
 package runplan
 
@@ -45,12 +47,22 @@ func (a Action) String() string {
 
 // Op is the typed decision returned by Compute. ExistingID carries the
 // container ID for ActionConnect / ActionStart so the caller can dispatch
-// ContainerStart / exec without re-inspecting. On ActionCreate it is empty,
-// or names a container the daemon is still reaping under the same name: the
-// caller waits that one out, by ID, before it creates.
+// ContainerStart / exec without re-inspecting; empty for ActionCreate.
+//
+// Reaped is set only on ActionCreate: the ID of a stopped container the daemon
+// is reaping under the name the create needs, which the caller force-removes
+// first. Why by ID: CONTEXT.md, Run Plan.
 type Op struct {
 	Action     Action
 	ExistingID string
+	Reaped     string
+}
+
+// DaemonReaps reports whether the daemon removes this container once it stops
+// (HostConfig.AutoRemove) — the one test for whether a stopped container is
+// still ours to start, and whether exiting it can be left to the daemon.
+func DaemonReaps(inspect container.InspectResponse) bool {
+	return inspect.HostConfig != nil && inspect.HostConfig.AutoRemove
 }
 
 // Compute derives the Op from a ContainerInspect result.
@@ -60,8 +72,8 @@ type Op struct {
 // and dispatching ContainerStart / exec on an empty ExistingID would
 // target nothing. Both empty-ID and NotFound errors route to
 // ActionCreate so the caller falls through to create-fresh instead of
-// touching a half-populated record. A stopped AutoRemove container routes to
-// ActionCreate too, carrying its ID (see Op). Any other inspect error is
+// touching a half-populated record. A stopped container the daemon reaps
+// routes to ActionCreate too, its ID in Op.Reaped. Any other inspect error is
 // returned verbatim and the caller should abort.
 func Compute(inspect container.InspectResponse, inspectErr error) (Op, error) {
 	hasData := inspectErr == nil && inspect.ID != ""
@@ -69,12 +81,12 @@ func Compute(inspect container.InspectResponse, inspectErr error) (Op, error) {
 		if inspect.State != nil && inspect.State.Running {
 			return Op{Action: ActionConnect, ExistingID: inspect.ID}, nil
 		}
-		// A stopped AutoRemove container is being reaped — a terminal hangup
-		// kills it and returns before the removal ends — so starting it races
-		// the daemon ("No such container"). Only a container the daemon keeps
-		// (legacy, AutoRemove false) is ours to start.
-		if inspect.HostConfig != nil && inspect.HostConfig.AutoRemove {
-			return Op{Action: ActionCreate, ExistingID: inspect.ID}, nil
+		// A stopped container the daemon reaps is on its way out — a terminal
+		// hangup kills it and returns before the removal ends — so starting it
+		// races the daemon ("No such container"). Only a container the daemon
+		// keeps (legacy, no AutoRemove) is ours to start.
+		if DaemonReaps(inspect) {
+			return Op{Action: ActionCreate, Reaped: inspect.ID}, nil
 		}
 		return Op{Action: ActionStart, ExistingID: inspect.ID}, nil
 	}

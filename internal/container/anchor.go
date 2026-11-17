@@ -83,7 +83,7 @@ func ensureAnchor(ctx context.Context, cli client.APIClient, base sessionplan.Im
 		return nil
 	case runplan.ActionCreate:
 		// The anchor is created without AutoRemove, so the daemon never reaps it;
-		// the wait covers one a hand-typed `docker run --rm` left under the name.
+		// the removal clears one a hand-typed `docker run --rm` left under the name.
 		if reapErr := removeReaped(ctx, cli, op); reapErr != nil {
 			return fmt.Errorf("failed to clear the peer anchor's name: %w", reapErr)
 		}
