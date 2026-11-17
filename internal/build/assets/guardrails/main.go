@@ -388,59 +388,15 @@ func gitSubcommand(argv []string) (string, []string) {
 // git options, before the subcommand, that take the next word.
 var gitGlobalValue = set("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source")
 
-// git commit short options whose value is the rest of the cluster or, ending
-// it, the next word.
-const commitShortValue = "mFCct"
-
-// git commit short options with an optional value: it can only be attached,
-// so the rest of the cluster is theirs and the next word never is.
-const commitShortOptionalValue = "uS"
-
-var commitLongValue = set("--message", "--file", "--reuse-message", "--reedit-message", "--fixup",
-	"--squash", "--author", "--date", "--cleanup", "--template", "--trailer", "--pathspec-from-file")
-
 func checkCommit(argv []string) string {
 	sub, args := gitSubcommand(argv)
 	if sub != "commit" {
 		return ""
 	}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--":
-			return ""
-		case a == "--all":
-			return commitAll
-		case commitLongValue[a]:
-			i++
-		case strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--"):
-			all, takesNext := readCommitCluster(a[1:])
-			if all {
-				return commitAll
-			}
-			if takesNext {
-				i++
-			}
-		}
+	if commitOptions.parse(args).flags["all"] {
+		return commitAll
 	}
 	return ""
-}
-
-// readCommitCluster reads a cluster of git commit short options: whether it
-// holds -a, and whether its last option takes the next word as its value.
-// A value option ends the cluster: the rest of it is the value.
-func readCommitCluster(cluster string) (all, takesNext bool) {
-	for j, ch := range cluster {
-		switch {
-		case ch == 'a':
-			return true, false
-		case strings.ContainsRune(commitShortValue, ch):
-			return false, j == len(cluster)-1
-		case strings.ContainsRune(commitShortOptionalValue, ch):
-			return false, false
-		}
-	}
-	return false, false
 }
 
 func checkStash(argv []string) string {
@@ -455,77 +411,30 @@ func checkStash(argv []string) string {
 		case args[0] == "push":
 			args = args[1:]
 		case args[0] == "pop" || args[0] == "apply":
-			if stashRefGiven(args[1:]) {
-				return ""
+			if len(stashApplyOptions.parse(args[1:]).pathspecs()) > 0 {
+				return "" // the stash is named; none of the options takes a value
 			}
 			return implicitStashApply
 		case !strings.HasPrefix(args[0], "-"):
 			return "" // list, show, drop, branch, …
 		}
 	}
-	if stashSelects(args) {
+	g := stashPushOptions.parse(args)
+	// --staged keeps to what is already staged, which the agent chose.
+	if g.flags["staged"] || g.flags["pathspec-from-file"] || len(g.pathspecs()) > 0 {
 		return ""
 	}
 	return implicitStash
 }
 
-// stashRefGiven reports whether git stash pop/apply arguments name a
-// stash: none of their options (--index, -q) takes a value, so any other word is one.
-func stashRefGiven(args []string) bool {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			return true
-		}
-	}
-	return false
-}
-
-// stashSelects reports whether git stash push arguments name what to stash:
-// a pathspec, or --staged.
-func stashSelects(args []string) bool {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "-m" || a == "--message" || a == "--pathspec-from-file":
-			i++
-		case a == "-S" || a == "--staged":
-			return true // only what is already staged, which the agent chose
-		case a == "--" || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--pathspec-from-file="):
-			return true // a pathspec follows or is here
-		case !strings.HasPrefix(a, "--"):
-			staged, takesNext := readStashCluster(a[1:])
-			if staged {
-				return true
-			}
-			if takesNext {
-				i++
-			}
-		}
-	}
-	return false
-}
-
-// readStashCluster reads a cluster of git stash short options: whether it
-// holds -S, and whether it ends in -m, whose value is then the next word.
-// -m ends the cluster: the rest of it is the message.
-func readStashCluster(cluster string) (staged, takesNext bool) {
-	for j, ch := range cluster {
-		switch ch {
-		case 'S':
-			return true, false
-		case 'm':
-			return false, j == len(cluster)-1
-		}
-	}
-	return false, false
-}
-
-// gitOptions is what a discard check knows of one git subcommand's options:
-// their long names, the short letter of each, and those that take a value.
+// gitOptions is what a check knows of one git subcommand's options: their
+// long names, the short letter of each, those that take a value, and those
+// whose value is optional, so it can only be attached.
 type gitOptions struct {
-	long  []string
-	short map[rune]string
-	value map[string]bool
+	long     []string
+	short    map[rune]string
+	value    map[string]bool
+	optional map[string]bool
 }
 
 // gitArgs is a subcommand's arguments read the way git's parse-options reads
@@ -589,6 +498,9 @@ func (o gitOptions) readCluster(cluster string, flags map[string]bool) (takesNex
 			continue
 		}
 		flags[n] = true
+		if o.optional[n] {
+			return false // the rest of the cluster is its value, never the next word
+		}
 		if o.value[n] {
 			return j == len(cluster)-1
 		}
@@ -630,6 +542,29 @@ func wholeTree(p string) bool {
 }
 
 var (
+	commitOptions = gitOptions{
+		long: []string{"all", "amend", "allow-empty", "allow-empty-message", "author", "message", "file",
+			"reuse-message", "reedit-message", "fixup", "squash", "date", "cleanup", "template", "trailer",
+			"pathspec-from-file", "untracked-files", "gpg-sign", "include", "only", "patch", "signoff", "edit",
+			"no-edit", "verbose", "quiet", "dry-run", "no-verify"},
+		short: map[rune]string{'a': "all", 'm': "message", 'F': "file", 'C': "reuse-message", 'c': "reedit-message",
+			't': "template", 'u': "untracked-files", 'S': "gpg-sign", 'i': "include", 'o': "only", 'p': "patch",
+			's': "signoff", 'e': "edit", 'v': "verbose", 'q': "quiet", 'n': "no-verify"},
+		value: set("author", "message", "file", "reuse-message", "reedit-message", "fixup", "squash", "date",
+			"cleanup", "template", "trailer", "pathspec-from-file"),
+		optional: set("untracked-files", "gpg-sign"),
+	}
+	stashPushOptions = gitOptions{
+		long: []string{"staged", "message", "keep-index", "no-keep-index", "include-untracked", "all", "patch",
+			"quiet", "pathspec-from-file", "pathspec-file-nul"},
+		short: map[rune]string{'S': "staged", 'm': "message", 'k': "keep-index", 'u': "include-untracked", 'a': "all",
+			'p': "patch", 'q': "quiet"},
+		value: set("message", "pathspec-from-file"),
+	}
+	stashApplyOptions = gitOptions{
+		long:  []string{"index", "quiet"},
+		short: map[rune]string{'q': "quiet"},
+	}
 	resetOptions = gitOptions{
 		long:  []string{"hard", "soft", "mixed", "keep", "merge", "quiet", "patch", "pathspec-from-file"},
 		short: map[rune]string{'q': "quiet", 'p': "patch"},
