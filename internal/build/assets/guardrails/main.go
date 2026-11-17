@@ -29,6 +29,8 @@ const (
 		"under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it."
 	implicitStash = "Blocked: a git stash without a pathspec sweeps up every change in the tree, including work " +
 		"that is not yours. Name what to stash: `git stash push -- <path>`."
+	implicitStashApply = "Blocked: git stash pop/apply without a reference takes stash@{0}, which can be another " +
+		"session's. Check `git stash list` and name yours: `git stash pop stash@{n}`."
 )
 
 func main() {
@@ -422,6 +424,8 @@ func checkStash(argv []string) string {
 			return implicitStash // its words are a message, never a pathspec
 		case args[0] == "push":
 			args = args[1:]
+		case args[0] == "pop" || args[0] == "apply":
+			return stashApplyNamed(args[1:])
 		case !strings.HasPrefix(args[0], "-"):
 			return "" // list, show, pop, apply, drop, branch, …
 		}
@@ -430,6 +434,16 @@ func checkStash(argv []string) string {
 		return ""
 	}
 	return implicitStash
+}
+
+// stashApplyNamed blocks a pop or apply whose arguments name no stash.
+func stashApplyNamed(args []string) string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return ""
+		}
+	}
+	return implicitStashApply
 }
 
 // stashSelects reports whether git stash push arguments name what to stash:

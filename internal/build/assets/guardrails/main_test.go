@@ -216,6 +216,27 @@ func TestBlocksImplicitStash(t *testing.T) {
 	})
 }
 
+// TestBlocksStashApplyWithoutReference: with no reference, pop and apply take
+// stash@{0}, which can be another session's; after an agent's stash that saved
+// nothing, that is someone else's work landing on the tree.
+func TestBlocksStashApplyWithoutReference(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "bare pop", command: "git stash pop", blocked: true},
+		{name: "bare apply", command: "git stash apply", blocked: true},
+		{name: "options are not a reference", command: "git stash pop --index -q", blocked: true},
+		{name: "apply with quiet only", command: "git stash apply --quiet", blocked: true},
+		{name: "pop with a reference", command: "git stash pop stash@{1}"},
+		{name: "apply with a bare index", command: "git stash apply 1"},
+		{name: "reference after an option", command: "git stash pop --index stash@{2}"},
+		{name: "after git -C", command: "git -C /home/dev/projects/app stash pop", blocked: true},
+		{name: "behind sudo", command: "sudo git stash pop", blocked: true},
+		{name: "inside bash -c", command: `bash -c "git stash apply"`, blocked: true},
+		{name: "inside command substitution", command: "echo $(git stash pop)", blocked: true},
+		{name: "chained after a pathspec stash", command: "git stash push -- a.go && git pull && git stash pop", blocked: true},
+		{name: "drop is not apply", command: "git stash drop"},
+	})
+}
+
 // TestReasonsSayWhatToDoInstead: the reason is all the agent sees, so it names
 // the way out, not only the rule.
 func TestReasonsSayWhatToDoInstead(t *testing.T) {
@@ -224,6 +245,8 @@ func TestReasonsSayWhatToDoInstead(t *testing.T) {
 		{"docker run -v /tmp/fx:/data alpine", "$TOOLBOX_HOST_WORKSPACE"},
 		{"git commit -am fix", "git add <path>"},
 		{"git stash", "git stash push -- <path>"},
+		{"git stash pop", "git stash list"},
+		{"git stash apply", "git stash pop stash@{n}"},
 	} {
 		_, stderr := runCase(t, guardrailCase{command: c.command})
 		if !strings.Contains(stderr, c.want) {
