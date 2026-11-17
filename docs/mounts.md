@@ -155,6 +155,44 @@ prints a warning naming it. Give it a profile-specific source if you want that
 mount isolated too. Switching `--profile`/`--share` on a workspace session opens
 a distinct container, so profiles coexist without a `toolbox stop`.
 
+### One folder per client
+
+To tie an identity to a directory instead of a flag, put an untracked
+`.toolbox.yaml` in the folder that holds that client's repositories and point
+`mounts_root` at a profile root:
+
+```yaml
+# ~/projects/client-a/.toolbox.yaml
+mounts_root: ~/.toolbox/profiles/client-a
+```
+
+Every `toolbox shell` started in that folder or below then reads and writes
+`client-a`'s credentials (claude, az, oci, gcloud, gh, …), and
+`toolbox shell --profile client-a` from anywhere else opens the same identity,
+because a profile root is `~/.toolbox/profiles/<name>`. A second account of the
+same provider *within* one client can still use that CLI's own profiles
+(`az account set`, `oci --profile`, `gcloud config configurations`); keep
+different clients in different folders, since every credential mounted into a
+Shell is usable by the code running in it.
+
+Which root a Shell binds, strongest first:
+
+1. `--profile <name>` → `~/.toolbox/profiles/<name>`, whatever the config says.
+2. `mounts_root` in the nearest `.toolbox.yaml` walking up from the current directory.
+3. `mounts_root` in `~/.toolbox.yaml`.
+4. `~/.toolbox/` — the default identity. `mounts_root` has no `TOOLBOX_*`
+   environment override.
+
+A tool listed in [`inherit_host_auth`](configuration.md#inherit-host-auth)
+reads the host's own credential path under any of these.
+
+**Limits.** Only the *nearest* `.toolbox.yaml` is loaded: a repository inside the
+client folder that ships its own `.toolbox.yaml` hides the folder's file, and a
+Shell started in that repository falls back to the default identity with no
+warning — use `--profile <name>` there. SSH keys and git config stay shared
+across every profile (see above), so a per-client key in `~/.ssh` is readable
+from any Shell.
+
 ## Persisting a user-installed tool's state
 
 The default mounts cover the *bundled* tools — the ones declared in `internal/catalog` and installed by the image (`claude`, `codex`, `gh`, `glab`, `herdr`, …). A tool you install yourself inside the container is a different case, and the split is easy to misread: the package-manager mounts (`~/.npm-global`, `pnpm`, `uv`, `go`) persist **binaries**, not the configuration and state those binaries write into `$HOME`. So `npm install -g some-cli` survives `toolbox stop`, while the credentials, settings, and history `some-cli` then writes under `~/.some-cli/` do not.
