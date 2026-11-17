@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -519,41 +520,166 @@ func readStashCluster(cluster string) (staged, takesNext bool) {
 	return false, false
 }
 
+// gitOptions is what a discard check knows of one git subcommand's options:
+// their long names, the short letter of each, and those that take a value.
+type gitOptions struct {
+	long  []string
+	short map[rune]string
+	value map[string]bool
+}
+
+// gitArgs is a subcommand's arguments read the way git's parse-options reads
+// them: options may follow other words, until a "--".
+type gitArgs struct {
+	flags      map[string]bool // long names of the options given
+	positional []string        // other words before "--": revisions and pathspecs alike
+	paths      []string        // words after "--": pathspecs only
+}
+
+func (o gitOptions) parse(args []string) gitArgs {
+	g := gitArgs{flags: map[string]bool{}}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			g.paths = append(g.paths, args[i+1:]...)
+			return g
+		case strings.HasPrefix(a, "--"):
+			name, _, attached := strings.Cut(a[2:], "=")
+			for _, n := range o.resolve(name) {
+				g.flags[n] = true
+				if o.value[n] && !attached {
+					i++
+				}
+			}
+		case strings.HasPrefix(a, "-") && len(a) > 1:
+			if o.readCluster(a[1:], g.flags) {
+				i++
+			}
+		default:
+			g.positional = append(g.positional, a)
+		}
+	}
+	return g
+}
+
+// resolve maps a long option as written to the names it can mean: the exact
+// name, or every name it abbreviates. git rejects an ambiguous abbreviation,
+// so marking each candidate only ever blocks a command git would refuse.
+func (o gitOptions) resolve(name string) []string {
+	var out []string
+	for _, n := range o.long {
+		if n == name {
+			return []string{n}
+		}
+		if name != "" && strings.HasPrefix(n, name) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// readCluster records a cluster of short options into flags and reports
+// whether its last option takes the next word as its value. A value option
+// ends the cluster: the rest of it is the value.
+func (o gitOptions) readCluster(cluster string, flags map[string]bool) (takesNext bool) {
+	for j, ch := range cluster {
+		n, ok := o.short[ch]
+		if !ok {
+			continue
+		}
+		flags[n] = true
+		if o.value[n] {
+			return j == len(cluster)-1
+		}
+	}
+	return false
+}
+
+// pathspecs returns every word that can be a pathspec: after "--" only those,
+// else every other word, since git tells revisions from paths by the tree.
+func (g gitArgs) pathspecs() []string {
+	return append(append([]string{}, g.positional...), g.paths...)
+}
+
+func (g gitArgs) namesWholeTree() bool {
+	return slices.ContainsFunc(g.pathspecs(), wholeTree)
+}
+
+// wholeTree reports whether a pathspec covers the whole tree, or a parent of
+// the working directory: ".", "..", "*", ":/" and ":(top)" in their forms.
+func wholeTree(p string) bool {
+	for _, magic := range []string{":/", ":(top)"} {
+		if rest, ok := strings.CutPrefix(p, magic); ok {
+			if rest == "" {
+				return true
+			}
+			p = rest
+		}
+	}
+	if p == "" {
+		return false
+	}
+	segments := strings.Split(strings.TrimSuffix(p, "/"), "/")
+	for i, s := range segments {
+		if s != "." && s != ".." && (s != "*" || i != len(segments)-1) {
+			return false
+		}
+	}
+	return true
+}
+
+var (
+	resetOptions = gitOptions{
+		long:  []string{"hard", "soft", "mixed", "keep", "merge", "quiet", "patch", "pathspec-from-file"},
+		short: map[rune]string{'q': "quiet", 'p': "patch"},
+		value: set("pathspec-from-file"),
+	}
+	checkoutOptions = gitOptions{
+		long:  []string{"force", "orphan", "pathspec-from-file", "ours", "theirs", "track", "merge", "conflict", "patch", "detach", "quiet"},
+		short: map[rune]string{'f': "force", 'b': "b", 'B': "B", 'q': "quiet", 'm': "merge", 'p': "patch", 't': "track"},
+		value: set("b", "B", "orphan", "pathspec-from-file", "conflict"),
+	}
+	restoreOptions = gitOptions{
+		long:  []string{"staged", "worktree", "source", "pathspec-from-file", "ours", "theirs", "merge", "conflict", "patch", "quiet", "overlay", "no-overlay", "progress"},
+		short: map[rune]string{'S': "staged", 'W': "worktree", 's': "source", 'q': "quiet", 'm': "merge", 'p': "patch"},
+		value: set("source", "pathspec-from-file", "conflict"),
+	}
+	cleanOptions = gitOptions{
+		long:  []string{"force", "dry-run", "exclude", "quiet", "interactive"},
+		short: map[rune]string{'f': "force", 'n': "dry-run", 'e': "exclude", 'q': "quiet", 'i': "interactive"},
+		value: set("exclude"),
+	}
+	switchOptions = gitOptions{
+		long:  []string{"force", "discard-changes", "create", "force-create", "orphan", "detach", "guess", "track", "merge", "conflict", "quiet", "progress"},
+		short: map[rune]string{'f': "force", 'c': "create", 'C': "force-create", 'd': "detach", 't': "track", 'm': "merge", 'q': "quiet"},
+		value: set("create", "force-create", "orphan", "conflict"),
+	}
+)
+
 func checkReset(argv []string) string {
 	sub, args := gitSubcommand(argv)
 	if sub != "reset" {
 		return ""
 	}
-	for _, a := range args {
-		if a == "--" {
-			return ""
-		}
-		if a == "--hard" {
-			return resetHard
-		}
+	if resetOptions.parse(args).flags["hard"] {
+		return resetHard
 	}
 	return ""
 }
-
-// rootPathspec holds the pathspecs that name the whole tree.
-var rootPathspec = set(".", "./", ":/")
 
 func checkCheckout(argv []string) string {
 	sub, args := gitSubcommand(argv)
 	if sub != "checkout" {
 		return ""
 	}
-	options := true
-	for _, a := range args {
-		switch {
-		case rootPathspec[a]:
-			return fmt.Sprintf(treeWideDiscard, sub, sub)
-		case !options:
-		case a == "--":
-			options = false
-		case a == "--force" || shortClusterHas(a, 'f', "bB"):
-			return fmt.Sprintf(forcedSwitch, sub)
-		}
+	g := checkoutOptions.parse(args)
+	switch {
+	case g.namesWholeTree():
+		return fmt.Sprintf(treeWideDiscard, sub, sub)
+	case g.flags["force"] && len(g.paths) == 0:
+		// With files named after "--", -f only lets their unmerged entries go.
+		return fmt.Sprintf(forcedSwitch, sub)
 	}
 	return ""
 }
@@ -563,32 +689,10 @@ func checkRestore(argv []string) string {
 	if sub != "restore" {
 		return ""
 	}
-	var staged, worktree, root bool
-	options := true
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case rootPathspec[a]:
-			root = true
-		case !options || !strings.HasPrefix(a, "-"):
-		case a == "--":
-			options = false
-		case a == "--staged":
-			staged = true
-		case a == "--worktree":
-			worktree = true
-		case a == "--source" || a == "--pathspec-from-file":
-			i++
-		case !strings.HasPrefix(a, "--"):
-			s, w, takesNext := readRestoreCluster(a[1:])
-			staged, worktree = staged || s, worktree || w
-			if takesNext {
-				i++
-			}
-		}
-	}
+	g := restoreOptions.parse(args)
 	// Without --staged, restore writes the worktree; with it, only --worktree does.
-	if root && (worktree || !staged) {
+	writesWorktree := g.flags["worktree"] || !g.flags["staged"]
+	if writesWorktree && g.namesWholeTree() {
 		return fmt.Sprintf(treeWideDiscard, sub, sub)
 	}
 	return ""
@@ -599,67 +703,14 @@ func checkClean(argv []string) string {
 	if sub != "clean" {
 		return ""
 	}
-	var force, dryRun, named bool
-	options := true
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case !options || !strings.HasPrefix(a, "-"):
-			named = named || !rootPathspec[a]
-		case a == "--":
-			options = false
-		case a == "--force":
-			force = true
-		case a == "--dry-run":
-			dryRun = true
-		case a == "--exclude":
-			i++
-		case !strings.HasPrefix(a, "--"):
-			f, n, takesNext := readCleanCluster(a[1:])
-			force, dryRun = force || f, dryRun || n
-			if takesNext {
-				i++
-			}
-		}
+	g := cleanOptions.parse(args)
+	if !g.flags["force"] || g.flags["dry-run"] {
+		return ""
 	}
-	if force && !dryRun && !named {
+	if len(g.pathspecs()) == 0 || g.namesWholeTree() {
 		return treeWideClean
 	}
 	return ""
-}
-
-// readCleanCluster reads a cluster of git clean short options: whether it
-// holds -f and -n, and whether it ends in -e, whose value is then the next word.
-// -e ends the cluster: the rest of it is the pattern.
-func readCleanCluster(cluster string) (force, dryRun, takesNext bool) {
-	for j, ch := range cluster {
-		switch ch {
-		case 'f':
-			force = true
-		case 'n':
-			dryRun = true
-		case 'e':
-			return force, dryRun, j == len(cluster)-1
-		}
-	}
-	return force, dryRun, false
-}
-
-// readRestoreCluster reads a cluster of git restore short options: whether it
-// holds -S and -W, and whether it ends in -s, whose value is then the next word.
-// -s ends the cluster: the rest of it is the source.
-func readRestoreCluster(cluster string) (staged, worktree, takesNext bool) {
-	for j, ch := range cluster {
-		switch ch {
-		case 'S':
-			staged = true
-		case 'W':
-			worktree = true
-		case 's':
-			return staged, worktree, j == len(cluster)-1
-		}
-	}
-	return staged, worktree, false
 }
 
 func checkSwitch(argv []string) string {
@@ -667,35 +718,11 @@ func checkSwitch(argv []string) string {
 	if sub != "switch" {
 		return ""
 	}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--":
-			return ""
-		case a == "-c" || a == "-C" || a == "--create" || a == "--force-create" || a == "--orphan":
-			i++
-		case a == "--force" || a == "--discard-changes" || shortClusterHas(a, 'f', "cC"):
-			return fmt.Sprintf(forcedSwitch, sub)
-		}
+	g := switchOptions.parse(args)
+	if g.flags["force"] || g.flags["discard-changes"] {
+		return fmt.Sprintf(forcedSwitch, sub)
 	}
 	return ""
-}
-
-// shortClusterHas reports whether a short option cluster holds flag before any
-// of the options in valueOpts, whose value is the rest of the cluster.
-func shortClusterHas(word string, flag rune, valueOpts string) bool {
-	if !strings.HasPrefix(word, "-") || strings.HasPrefix(word, "--") {
-		return false
-	}
-	for _, ch := range word[1:] {
-		if ch == flag {
-			return true
-		}
-		if strings.ContainsRune(valueOpts, ch) {
-			return false
-		}
-	}
-	return false
 }
 
 var (

@@ -250,6 +250,9 @@ func TestBlocksResetHard(t *testing.T) {
 		{name: "keep refuses to lose changes", command: "git reset --keep origin/main"},
 		{name: "soft", command: "git reset --soft HEAD~1"},
 		{name: "mixed", command: "git reset"},
+		{name: "keep without a target", command: "git reset --keep"},
+		{name: "abbreviated hard", command: "git reset --har", blocked: true},
+		{name: "hard after the target", command: "git reset HEAD~1 --hard", blocked: true},
 		{name: "unstage a path", command: "git reset -- a.go"},
 	})
 }
@@ -270,6 +273,15 @@ func TestBlocksTreeWideCheckout(t *testing.T) {
 		{name: "branch switch", command: "git checkout main"},
 		{name: "new branch", command: "git checkout -b feat/x"},
 		{name: "file named like an option", command: "git checkout -- -f"},
+		{name: "forced checkout of named files", command: "git checkout -f -- a.go"},
+		{name: "forced checkout of named files from a tree-ish", command: "git checkout -f HEAD -- a.go"},
+		{name: "forced checkout of the whole tree", command: "git checkout -f -- .", blocked: true},
+		{name: "abbreviated force", command: "git checkout --forc main", blocked: true},
+		{name: "every file by glob", command: "git checkout -- '*'", blocked: true},
+		{name: "top magic", command: "git checkout -- ':(top)'", blocked: true},
+		{name: "parent directory", command: "git checkout -- ..", blocked: true},
+		{name: "dot with trailing slash", command: "git checkout ./", blocked: true},
+		{name: "branch name taken by -b", command: "git checkout -b f main"},
 	})
 }
 
@@ -282,7 +294,12 @@ func TestBlocksTreeWideRestore(t *testing.T) {
 		{name: "from a source", command: "git restore -s HEAD~1 .", blocked: true},
 		{name: "index and worktree", command: "git restore --staged --worktree .", blocked: true},
 		{name: "index and worktree, short", command: "git restore -SW .", blocked: true},
+		{name: "worktree, short", command: "git restore -W .", blocked: true},
+		{name: "worktree, long", command: "git restore --worktree .", blocked: true},
+		{name: "abbreviated worktree", command: "git restore --staged --work .", blocked: true},
+		{name: "top glob", command: "git restore ':/*'", blocked: true},
 		{name: "index only", command: "git restore --staged ."},
+		{name: "abbreviated staged", command: "git restore --sta ."},
 		{name: "index only, short", command: "git restore -S ."},
 		{name: "named file", command: "git restore a.go"},
 	})
@@ -298,6 +315,9 @@ func TestBlocksTreeWideClean(t *testing.T) {
 		{name: "long force", command: "git clean --force -d", blocked: true},
 		{name: "force on the whole tree", command: "git clean -f -- .", blocked: true},
 		{name: "force with an exclude", command: "git clean -f -e keep.txt", blocked: true},
+		{name: "named path beside the whole tree", command: "git clean -fd build/ .", blocked: true},
+		{name: "named path beside the top", command: "git clean -f -- build/ :/", blocked: true},
+		{name: "abbreviated force", command: "git clean --forc -d", blocked: true},
 		{name: "dry run", command: "git clean -n"},
 		{name: "forced dry run", command: "git clean -fn"},
 		{name: "long dry run", command: "git clean -f --dry-run"},
@@ -313,6 +333,7 @@ func TestBlocksForcedSwitch(t *testing.T) {
 		{name: "force", command: "git switch -f main", blocked: true},
 		{name: "long force", command: "git switch --force main", blocked: true},
 		{name: "discard changes", command: "git switch --discard-changes main", blocked: true},
+		{name: "abbreviated discard changes", command: "git switch --discard main", blocked: true},
 		{name: "plain", command: "git switch main"},
 		{name: "create", command: "git switch -c feat/x"},
 		{name: "create a branch named f", command: "git switch -cf main"},
@@ -320,9 +341,9 @@ func TestBlocksForcedSwitch(t *testing.T) {
 	})
 }
 
-// TestTreeWideDiscardsSeenThroughWrappers: the discard rules see the command
+// TestBlocksTreeWideDiscardsThroughWrappers: the discard rules see the command
 // the shell runs, as the other git rules do.
-func TestTreeWideDiscardsSeenThroughWrappers(t *testing.T) {
+func TestBlocksTreeWideDiscardsThroughWrappers(t *testing.T) {
 	checkCases(t, []guardrailCase{
 		{name: "git -C", command: "git -C /home/dev/projects/app reset --hard", blocked: true},
 		{name: "behind sudo", command: "sudo git clean -fdx", blocked: true},
