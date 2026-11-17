@@ -37,11 +37,21 @@ if [[ ! $socket_gid =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 umask 077
-mkdir -p "dist/.scratch/dockergate/home-$uid" "dist/.scratch/dockergate/tmp-$uid"
-home="$source/dist/.scratch/dockergate/home-$uid"
-tmp="$source/dist/.scratch/dockergate/tmp-$uid"
-exec docker run --rm --user "$uid:$gid" --group-add "$socket_gid" \
+scratch="dist/.scratch/dockergate"
+mkdir -p "$scratch/home-$uid" "$scratch/tmp-$uid"
+home="$source/$scratch/home-$uid"
+tmp="$source/$scratch/tmp-$uid"
+log="$scratch/last-run.log"
+status=0
+docker run --rm --user "$uid:$gid" --group-add "$socket_gid" \
   -v "$source:$source" -v /var/run/docker.sock:/var/run/docker.sock -w "$source" \
   -e "HOME=$home" -e "TMPDIR=$tmp" -e GOPATH= -e GOCACHE= \
   -e GOFLAGS='-mod=mod -buildvcs=false' -e "IMAGE_TAG=$runtime" \
-  "$runner" go test -tags dockergate -count=1 -run "$pattern" "$@"
+  "$runner" go test -tags dockergate -count=1 -run "$pattern" "$@" 2>&1 | tee "$log" || status=$?
+# The session output buries the failing names; restate them last.
+if (( status != 0 )); then
+  echo
+  echo "Failed gates (full output: $log):"
+  grep -E '^[[:space:]]*--- FAIL' "$log" || echo '  no --- FAIL line: a build or setup failure, see above'
+fi
+exit "$status"
