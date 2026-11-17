@@ -14,6 +14,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/reload"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -102,11 +103,12 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 // Force-remove rather than kill-and-let-AutoRemove-reap: the AutoRemove path
 // returns as soon as the SIGKILL lands, which races the new container's name.
 // The wait is subscribed before the removal because the daemon's own worker
-// can finish in between, and a wait started after that never fires.
-func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) error {
-	waitRes := cli.ContainerWait(ctx, name, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
+// can finish in between, and a wait started after that never fires. ref is a
+// container name or ID.
+func removeAndWait(ctx context.Context, cli client.APIClient, ref, act string) error {
+	waitRes := cli.ContainerWait(ctx, ref, client.ContainerWaitOptions{Condition: container.WaitConditionRemoved})
 
-	_, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true})
+	_, err := cli.ContainerRemove(ctx, ref, client.ContainerRemoveOptions{Force: true})
 	switch {
 	case cerrdefs.IsNotFound(err):
 		// Already gone — an external `toolbox stop`, or a daemon that reaped it
@@ -115,7 +117,7 @@ func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) 
 	case err != nil && !cerrdefs.IsConflict(err):
 		// Conflict is the daemon's "removal already in progress": redundant,
 		// not an error, and the wait below is exactly how we find out it ended.
-		return fmt.Errorf("%s: failed to remove container %s: %w", act, name, err)
+		return fmt.Errorf("%s: failed to remove container %s: %w", act, ref, err)
 	}
 
 	select {
@@ -123,12 +125,24 @@ func removeAndWait(ctx context.Context, cli client.APIClient, name, act string) 
 		return nil
 	case werr := <-waitRes.Error:
 		if werr != nil && !cerrdefs.IsNotFound(werr) {
-			return fmt.Errorf("%s: waiting for container %s to be removed: %w", act, name, werr)
+			return fmt.Errorf("%s: waiting for container %s to be removed: %w", act, ref, werr)
 		}
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// removeReaped force-removes, and waits out, the container a create names —
+// runplan's ActionCreate with an ExistingID — which the daemon is still
+// reaping under the name the create needs. By ID, so a fresh container a sibling shell has
+// already created under that name is never the one removed. A no-op for any
+// other op.
+func removeReaped(ctx context.Context, cli client.APIClient, op runplan.Op) error {
+	if op.Action != runplan.ActionCreate || op.ExistingID == "" {
+		return nil
+	}
+	return removeAndWait(ctx, cli, op.ExistingID, "reaped container")
 }
 
 // reloadCasualties lists the container processes the teardown is about to end,

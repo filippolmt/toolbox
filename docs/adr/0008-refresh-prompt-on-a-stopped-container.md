@@ -1,6 +1,6 @@
 # Refresh Prompt on a Stopped Container: the branch that can honour a yes, and the countdown that has to invert
 
-Status: accepted
+Status: accepted — narrowed: a stopped `AutoRemove` container is the daemon's to reap, not a kept one, and takes the create branch without this question ([container teardown](../internals/container-lifecycle.md#container-teardown)).
 
 [ADR 0005](0005-prompted-image-refresh-on-shell-start.md) made `toolbox shell`
 ask before spending a developer's time on a download. The tree it describes

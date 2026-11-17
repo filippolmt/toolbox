@@ -509,6 +509,72 @@ func TestShellAbortsWhenStartFails(t *testing.T) {
 	}
 }
 
+// A stopped AutoRemove container is one the daemon is reaping — a terminal
+// hangup kills it and returns before the removal ends. Starting it races that
+// removal ("No such container"), so Shell waits for it to go and creates a
+// fresh one under the same name.
+func TestShellRecreatesAContainerTheDaemonIsReaping(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	inspected := 0
+	var started, removed, waited []string
+	mock := &mockClient{
+		// The first look finds the reaped container; by the next the daemon has
+		// finished with it, as it does a moment after the hangup.
+		inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+			inspected++
+			if inspected > 1 {
+				return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+			}
+			return container.InspectResponse{
+				ID:         "reaped123",
+				State:      &container.State{Running: false},
+				HostConfig: &container.HostConfig{AutoRemove: true},
+			}, nil
+		},
+		removeFn: func(_ context.Context, id string, _ client.ContainerRemoveOptions) error {
+			removed = append(removed, id)
+			return nil
+		},
+		waitFn: func(_ context.Context, id string, _ client.ContainerWaitOptions) (int64, error) {
+			waited = append(waited, id)
+			return 0, nil
+		},
+		imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "fresh123"}, nil
+		},
+		startFn: func(_ context.Context, id string, _ client.ContainerStartOptions) error {
+			started = append(started, id)
+			return nil
+		},
+	}
+	// Either branch may ask about a newer image; this test is about which one
+	// it takes, so the answer is fixed.
+	stubRefresh(t, mock, imagefreshness.Proceed)
+
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !slices.Equal(started, []string{"fresh123"}) {
+		t.Errorf("started %v, want only the fresh container", started)
+	}
+	// By ID: a sibling shell may already have created a fresh container under
+	// the name, and that one is not ours to remove.
+	if !slices.Equal(removed, []string{"reaped123"}) || !slices.Equal(waited, []string{"reaped123"}) {
+		t.Errorf("removed %v, waited on %v; want only the reaped container, by ID", removed, waited)
+	}
+	if remove, create := slices.Index(mock.calls, "ContainerRemove"), slices.Index(mock.calls, "ContainerCreate"); remove < 0 || create < remove {
+		t.Errorf("calls %v, want the removal before the create", mock.calls)
+	}
+	if !*called {
+		t.Fatal("execShellFn was not called after the recreate")
+	}
+}
+
 func TestShellCreatesNewContainer(t *testing.T) {
 	called, restore := stubExecShell()
 	defer restore()

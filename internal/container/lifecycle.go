@@ -131,6 +131,8 @@ func prepareFreshness(ctx context.Context, freshness freshnessSession, plan *ses
 //   - unreadable: nothing is destroyed on an answer the daemon would not give,
 //     and nothing is learned from it either — the asked pair is returned
 //     unchanged, which is what starting it as it is means.
+//   - stopped and being reaped (an AutoRemove container another shell left):
+//     removed by ID, like the first case, so the name is free for the create.
 func replaceForRefresh(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan,
 	asked container.InspectResponse, askedOp runplan.Op) (container.InspectResponse, runplan.Op, error) {
 	if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
@@ -152,7 +154,13 @@ func replaceForRefresh(ctx context.Context, cli client.APIClient, freshness fres
 		return res.Container, fresh, nil
 	case fresh.Action == runplan.ActionStart:
 		ui.Info("Recreating container " + plan.ContainerName + " on the newer image...")
-		if removeErr := removeAndWait(ctx, cli, plan.ContainerName, "start-up refresh"); removeErr != nil {
+		// By ID: the container the re-read found, not whatever holds the name by
+		// the time the removal lands.
+		if removeErr := removeAndWait(ctx, cli, fresh.ExistingID, "start-up refresh"); removeErr != nil {
+			return container.InspectResponse{}, runplan.Op{}, removeErr
+		}
+	default:
+		if removeErr := removeReaped(ctx, cli, fresh); removeErr != nil {
 			return container.InspectResponse{}, runplan.Op{}, removeErr
 		}
 	}
@@ -287,8 +295,9 @@ func NewClient() (client.APIClient, error) {
 //
 // State machine — dispatched by runplan.Compute on the ContainerInspect result:
 //   - ActionConnect -> exec into the running container
-//   - ActionStart   -> start the stopped container, then exec
-//   - ActionCreate  -> ensure image, create + start + exec
+//   - ActionStart   -> start the stopped container the daemon keeps, then exec
+//   - ActionCreate  -> wait out a container the daemon is reaping (when the op
+//     names one), then ensure image, create + start + exec
 //
 // Image ensure: the image ref defaults to the canonical GHCR tag but can be
 // relocated opt-in (config Image / RegistryMirror). Refresh attempts a
@@ -430,8 +439,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 
 // resolveOp settles what this session is going to do to the container: read
 // what is actually there, compute the action from it, and run the half of the
-// host-config check that can fail. Destroys nothing — a reload's own container
-// is retired by the caller, before this reads anything.
+// host-config check that can fail. It destroys only a container the daemon is
+// already reaping (a create that names one), waiting for it by ID so a sibling
+// shell's fresh container under the same name is never the one removed; a
+// reload's own container is retired by the caller, before this reads anything.
 //
 // The host-config check is create-only and runs here so that a known-fatal
 // port conflict costs no pull. The half of that check which only warns runs
@@ -445,6 +456,13 @@ func resolveOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Sess
 	}
 
 	if op.Action == runplan.ActionCreate {
+		if op.ExistingID != "" {
+			if err := removeReaped(ctx, cli, op); err != nil {
+				return container.InspectResponse{}, runplan.Op{}, err
+			}
+			// The record described the container just removed.
+			inspect, op = container.InspectResponse{}, runplan.Op{Action: runplan.ActionCreate}
+		}
 		if preflightErr := preflightCreate(ctx, cli, plan); preflightErr != nil {
 			return container.InspectResponse{}, runplan.Op{}, preflightErr
 		}

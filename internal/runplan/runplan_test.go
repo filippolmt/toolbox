@@ -43,6 +43,37 @@ func TestComputeActionStartWhenStopped(t *testing.T) {
 	}
 }
 
+// A stopped AutoRemove container is the daemon's to reap, not ours to start:
+// Compute takes the create branch and names the reaped container, so the caller
+// can wait out its removal before asking for the name. A stopped container
+// without AutoRemove — the explicit false or a legacy one with no HostConfig —
+// keeps the start branch.
+func TestComputeStoppedContainerByAutoRemove(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		hostConfig *container.HostConfig
+		want       Action
+	}{
+		{"reaped by the daemon", &container.HostConfig{AutoRemove: true}, ActionCreate},
+		{"kept by the daemon", &container.HostConfig{AutoRemove: false}, ActionStart},
+		{"no host config", nil, ActionStart},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, err := Compute(container.InspectResponse{
+				ID:         "stopped123",
+				State:      &container.State{Running: false},
+				HostConfig: tc.hostConfig,
+			}, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if op.Action != tc.want || op.ExistingID != "stopped123" {
+				t.Errorf("Op = {%v, %q}, want {%v, %q}", op.Action, op.ExistingID, tc.want, "stopped123")
+			}
+		})
+	}
+}
+
 func TestComputeActionCreateWhenNotFound(t *testing.T) {
 	op, err := Compute(container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"})
 	if err != nil {

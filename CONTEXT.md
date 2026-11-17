@@ -503,9 +503,11 @@ with `Action ∈ {ActionConnect, ActionStart, ActionCreate}`. Owned by
 `internal/runplan`. An `InspectResponse` with an empty `ID` and an errdefs
 `NotFound` both route to `ActionCreate` so callers never dispatch on a
 half-populated record; any other inspect error is returned verbatim and
-the caller aborts. Composes with Session Plan: SessionPlan resolves
-design-time inputs before any Docker call; RunPlan resolves the runtime
-branch after `ContainerInspect`.
+the caller aborts. A stopped `AutoRemove` container also routes to
+`ActionCreate`, carrying its ID: the daemon is reaping it, and the caller
+waits that removal out before it takes the name. Composes with Session
+Plan: SessionPlan resolves design-time inputs before any Docker call;
+RunPlan resolves the runtime branch after `ContainerInspect`.
 
 Why the term exists: before this concept was named, the state machine
 lived inline in `internal/container/lifecycle.go::Shell` as a 4-case

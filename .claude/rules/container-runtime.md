@@ -118,6 +118,12 @@ them.
   `TestSyncOnAReloadNeverAsks` and `TestSyncPullPolicyOnAReload`. →
   [Image Plan](../../CONTEXT.md#image-plan)
 
+- **Reaped is not stopped:** a stopped `AutoRemove` container is the daemon's
+  to remove, never the start branch. `runplan.Compute` routes it to create
+  with its ID; every caller removes that ID through `removeReaped` before the
+  create — by ID, never by name. `TestComputeStoppedContainerByAutoRemove` and
+  `TestShellRecreatesAContainerTheDaemonIsReaping` pin it.
+
 - **Prompt settlements are typed:** only `OutcomeAccepted` recreates a stopped
   container. `ReasonStart` defaults elapsed input to no; interruption neither
   declines nor stamps. Pull, overlay build, port preflight and a fresh inspect
