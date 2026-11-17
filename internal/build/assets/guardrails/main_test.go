@@ -188,6 +188,7 @@ func TestBlocksCommitAll(t *testing.T) {
 		{name: "inside a function defined with the keyword", command: "function f { git stash; }; f", blocked: true},
 		{name: "env split string", command: `env -S 'git commit -a'`, blocked: true},
 		{name: "behind env assignment", command: "env GIT_EDITOR=true git commit --all", blocked: true},
+		{name: "ambiguous value abbreviation takes one word", command: "git commit --re x -a", blocked: true},
 	})
 }
 
@@ -206,6 +207,11 @@ func TestBlocksImplicitStash(t *testing.T) {
 		{name: "pop", command: "git stash pop stash@{1}"},
 		{name: "only what is staged", command: "git stash push --staged"},
 		{name: "only what is staged, short", command: "git stash -S"},
+		{name: "only what is staged, abbreviated", command: "git stash push --sta"},
+		{name: "separator with nothing after", command: "git stash push --", blocked: true},
+		{name: "whole tree after separator", command: "git stash push -- .", blocked: true},
+		{name: "whole tree as pathspec", command: "git stash push :/", blocked: true},
+		{name: "pathspec from a file", command: "git stash push --pathspec-from-file=list.txt"},
 		{name: "message in a short cluster", command: "git stash push -um wip", blocked: true},
 		{name: "keep index cluster with pathspec", command: "git stash push -ku -- a.go"},
 		{name: "output redirected", command: "git stash >/dev/null", blocked: true},
@@ -241,6 +247,159 @@ func TestBlocksStashApplyWithoutReference(t *testing.T) {
 	})
 }
 
+// TestBlocksResetHard: a hard reset throws away every uncommitted change in the
+// tree, other sessions' included, and git keeps no copy of what it dropped.
+func TestBlocksResetHard(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "bare", command: "git reset --hard", blocked: true},
+		{name: "to a target", command: "git reset --hard origin/main", blocked: true},
+		{name: "keep refuses to lose changes", command: "git reset --keep origin/main"},
+		{name: "soft", command: "git reset --soft HEAD~1"},
+		{name: "mixed", command: "git reset"},
+		{name: "keep without a target", command: "git reset --keep"},
+		{name: "abbreviated hard", command: "git reset --har", blocked: true},
+		{name: "hard after the target", command: "git reset HEAD~1 --hard", blocked: true},
+		{name: "unstage a path", command: "git reset -- a.go"},
+	})
+}
+
+// TestBlocksTreeWideCheckout: checking out the whole tree, or forcing a branch
+// switch, overwrites every uncommitted change; naming the files is the agent
+// choosing what to throw away.
+func TestBlocksTreeWideCheckout(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "dot", command: "git checkout .", blocked: true},
+		{name: "dot after separator", command: "git checkout -- .", blocked: true},
+		{name: "dot from a tree-ish", command: "git checkout HEAD -- .", blocked: true},
+		{name: "top of the tree", command: "git checkout -- :/", blocked: true},
+		{name: "force", command: "git checkout -f main", blocked: true},
+		{name: "long force", command: "git checkout --force main", blocked: true},
+		{name: "named file", command: "git checkout -- a.go"},
+		{name: "named directory", command: "git checkout -- src/"},
+		{name: "branch switch", command: "git checkout main"},
+		{name: "new branch", command: "git checkout -b feat/x"},
+		{name: "file named like an option", command: "git checkout -- -f"},
+		{name: "forced checkout of named files", command: "git checkout -f -- a.go"},
+		{name: "forced checkout of named files from a tree-ish", command: "git checkout -f HEAD -- a.go"},
+		{name: "forced checkout of the whole tree", command: "git checkout -f -- .", blocked: true},
+		{name: "abbreviated force", command: "git checkout --forc main", blocked: true},
+		{name: "every file by glob", command: "git checkout -- '*'", blocked: true},
+		{name: "top magic", command: "git checkout -- ':(top)'", blocked: true},
+		{name: "parent directory", command: "git checkout -- ..", blocked: true},
+		{name: "dot with trailing slash", command: "git checkout ./", blocked: true},
+		{name: "branch name taken by -b", command: "git checkout -b f main"},
+		{name: "top without separator", command: "git checkout :/", blocked: true},
+		{name: "working directory by absolute path", command: `git checkout -- "$PWD"`, blocked: true},
+		{name: "parent of the working directory by absolute path", command: "git checkout -- /home/dev/projects", blocked: true},
+		{name: "subdirectory by absolute path", command: "git checkout -- /home/dev/projects/app/src"},
+		{name: "path that climbs back", command: "git checkout -- src/..", blocked: true},
+		{name: "doubled slash", command: "git checkout -- .//", blocked: true},
+		{name: "top among combined magic", command: "git checkout -- ':(top,icase).'", blocked: true},
+		{name: "magic on a named directory", command: "git checkout -- ':(icase)src'"},
+		{name: "directory given to git -C", command: "git -C /home/dev/projects/app/sub checkout -- /home/dev/projects/app/sub", blocked: true},
+		{name: "relative directory given to git -C", command: "git -C sub checkout -- /home/dev/projects/app/sub", blocked: true},
+	})
+}
+
+// TestBlocksTreeWideRestore: restoring the whole worktree is the same discard
+// as checking it out; restoring only the index keeps the changes.
+func TestBlocksTreeWideRestore(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "dot", command: "git restore .", blocked: true},
+		{name: "top of the tree", command: "git restore :/", blocked: true},
+		{name: "from a source", command: "git restore -s HEAD~1 .", blocked: true},
+		{name: "index and worktree", command: "git restore --staged --worktree .", blocked: true},
+		{name: "index and worktree, short", command: "git restore -SW .", blocked: true},
+		{name: "worktree, short", command: "git restore -W .", blocked: true},
+		{name: "worktree, long", command: "git restore --worktree .", blocked: true},
+		{name: "abbreviated worktree", command: "git restore --staged --work .", blocked: true},
+		{name: "top glob", command: "git restore ':/*'", blocked: true},
+		{name: "index only", command: "git restore --staged ."},
+		{name: "abbreviated staged", command: "git restore --sta ."},
+		{name: "index only, short", command: "git restore -S ."},
+		{name: "named file", command: "git restore a.go"},
+	})
+}
+
+// TestBlocksTreeWideClean: a forced clean with no pathspec deletes every
+// untracked file, other sessions' new files included, and git never had them.
+func TestBlocksTreeWideClean(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "force", command: "git clean -f", blocked: true},
+		{name: "force with directories", command: "git clean -fd", blocked: true},
+		{name: "force with ignored files", command: "git clean -xdf", blocked: true},
+		{name: "long force", command: "git clean --force -d", blocked: true},
+		{name: "force on the whole tree", command: "git clean -f -- .", blocked: true},
+		{name: "force with an exclude", command: "git clean -f -e keep.txt", blocked: true},
+		{name: "named path beside the whole tree", command: "git clean -fd build/ .", blocked: true},
+		{name: "named path beside the top", command: "git clean -f -- build/ :/", blocked: true},
+		{name: "abbreviated force", command: "git clean --forc -d", blocked: true},
+		{name: "dry run", command: "git clean -n"},
+		{name: "forced dry run", command: "git clean -fn"},
+		{name: "long dry run", command: "git clean -f --dry-run"},
+		{name: "named directory", command: "git clean -f -- build/"},
+		{name: "named path without separator", command: "git clean -fd build/"},
+	})
+}
+
+// TestBlocksForcedSwitch: a forced switch overwrites the uncommitted changes a
+// plain switch would refuse to touch.
+func TestBlocksForcedSwitch(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "force", command: "git switch -f main", blocked: true},
+		{name: "long force", command: "git switch --force main", blocked: true},
+		{name: "discard changes", command: "git switch --discard-changes main", blocked: true},
+		{name: "abbreviated discard changes", command: "git switch --discard main", blocked: true},
+		{name: "plain", command: "git switch main"},
+		{name: "create", command: "git switch -c feat/x"},
+		{name: "create a branch named f", command: "git switch -cf main"},
+		{name: "force after the branch", command: "git switch -c fix -f", blocked: true},
+	})
+}
+
+// TestBlocksTreeWideDiscardsThroughWrappers: the discard rules see the command
+// the shell runs, as the other git rules do.
+func TestBlocksTreeWideDiscardsThroughWrappers(t *testing.T) {
+	checkCases(t, []guardrailCase{
+		{name: "git -C", command: "git -C /home/dev/projects/app reset --hard", blocked: true},
+		{name: "behind sudo", command: "sudo git clean -fdx", blocked: true},
+		{name: "inside bash -c", command: `bash -c "git checkout ."`, blocked: true},
+		{name: "inside command substitution", command: "echo $(git restore .)", blocked: true},
+		{name: "chained", command: "git fetch && git reset --hard origin/main", blocked: true},
+		{name: "output redirected", command: "git switch -f main >/dev/null 2>&1", blocked: true},
+	})
+}
+
+// TestGitOptionTablesNameKnownOptions: a value or optional-value entry that
+// names no option of its table is a typo, and the option it meant would be read
+// as taking no value, shifting every word after it.
+func TestGitOptionTablesNameKnownOptions(t *testing.T) {
+	tables := map[string]gitOptions{
+		"commit": commitOptions, "stash push": stashPushOptions, "stash apply": stashApplyOptions,
+		"reset": resetOptions, "checkout": checkoutOptions, "restore": restoreOptions,
+		"clean": cleanOptions, "switch": switchOptions,
+	}
+	for sub, o := range tables {
+		known := set(o.long...)
+		for _, n := range o.short {
+			known[n] = true
+		}
+		for n := range o.value {
+			if !known[n] {
+				t.Errorf("%s: value option %q is neither a long name nor a short option's", sub, n)
+			}
+		}
+		for n := range o.optional {
+			if !known[n] {
+				t.Errorf("%s: optional-value option %q is neither a long name nor a short option's", sub, n)
+			}
+			if o.value[n] {
+				t.Errorf("%s: %q is both a value and an optional-value option", sub, n)
+			}
+		}
+	}
+}
+
 // TestReasonsSayWhatToDoInstead: the reason is all the agent sees, so it names
 // the way out, not only the rule.
 func TestReasonsSayWhatToDoInstead(t *testing.T) {
@@ -251,6 +410,11 @@ func TestReasonsSayWhatToDoInstead(t *testing.T) {
 		{"git stash", "git stash push -- <path>"},
 		{"git stash pop", "git stash list"},
 		{"git stash apply", "git stash pop stash@{n}"},
+		{"git reset --hard", "git reset --keep <target>"},
+		{"git checkout .", "git checkout -- <path>"},
+		{"git restore .", "git restore -- <path>"},
+		{"git clean -fd", "git clean -n"},
+		{"git switch -f main", "git stash push -- <path>"},
 	} {
 		_, stderr := runCase(t, guardrailCase{command: c.command})
 		if !strings.Contains(stderr, c.want) {

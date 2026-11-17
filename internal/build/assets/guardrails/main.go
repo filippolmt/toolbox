@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -27,10 +28,20 @@ const (
 	containerLocalMount = "Blocked: bind mount source %s is container-local. The Docker daemon is the host's " +
 		"and resolves the source on the host, so the mount would come up empty with no error. Put the files " +
 		"under the workspace and mount $TOOLBOX_HOST_WORKSPACE followed by their path below it."
-	implicitStash = "Blocked: a git stash without a pathspec sweeps up every change in the tree, including work " +
+	implicitStash = "Blocked: a git stash without a pathspec, or of the whole tree, sweeps up every change in it, including work " +
 		"that is not yours. Name what to stash: `git stash push -- <path>`."
 	implicitStashApply = "Blocked: git stash pop/apply without a reference takes stash@{0}, which can be another " +
 		"session's. Check `git stash list` and name yours: `git stash pop stash@{n}`."
+	resetHard = "Blocked: git reset --hard throws away every uncommitted change in the tree, including work that " +
+		"is not yours, and git keeps no copy. Use `git reset --keep <target>`, which refuses when it would lose " +
+		"changes, or set yours aside first with `git stash push -- <path>`."
+	treeWideDiscard = "Blocked: git %[1]s on the whole tree throws away every uncommitted change, including work " +
+		"that is not yours. Name the files to discard: `git %[1]s -- <path>`."
+	forcedSwitch = "Blocked: a forced git %s throws away every uncommitted change in the tree, including work " +
+		"that is not yours. Commit yours, or set it aside with `git stash push -- <path>`, then switch without force."
+	treeWideClean = "Blocked: a forced git clean with no pathspec deletes every untracked file in the tree, " +
+		"including new files that are not yours. Review with `git clean -n`, then name the paths: " +
+		"`git clean -f -- <path>`."
 )
 
 func main() {
@@ -148,16 +159,28 @@ func (c checker) changeDirectory(argv []string) bool {
 }
 
 func (c checker) command(argv []string) string {
-	if reason := checkCommit(argv); reason != "" {
-		return reason
-	}
-	if reason := checkStash(argv); reason != "" {
-		return reason
+	if sub, args := gitSubcommand(argv); sub != "" {
+		if check, ok := gitChecks[sub]; ok {
+			return check(args, gitWorkDir(argv, c.vars["PWD"]))
+		}
+		return ""
 	}
 	if c.docker {
 		return checkDocker(argv, c.vars)
 	}
 	return ""
+}
+
+// gitChecks holds the rule for each git subcommand the hook checks, handed the
+// subcommand's arguments and the directory git runs in.
+var gitChecks = map[string]func(args []string, cwd string) string{
+	"commit":   checkCommit,
+	"stash":    checkStash,
+	"reset":    checkReset,
+	"checkout": checkCheckout,
+	"restore":  checkRestore,
+	"clean":    checkClean,
+	"switch":   checkSwitch,
 }
 
 var shells = set("bash", "sh", "zsh", "dash", "ksh")
@@ -359,69 +382,35 @@ func gitSubcommand(argv []string) (string, []string) {
 	return argv[k], argv[k+1:]
 }
 
+// gitWorkDir returns the directory git runs in: pwd, moved by each -C.
+func gitWorkDir(argv []string, pwd string) string {
+	for k := 1; k < len(argv) && strings.HasPrefix(argv[k], "-"); k++ {
+		if !gitGlobalValue[argv[k]] {
+			continue
+		}
+		k++
+		if argv[k-1] == "-C" && k < len(argv) {
+			if path.IsAbs(argv[k]) {
+				pwd = path.Clean(argv[k])
+			} else {
+				pwd = path.Join(pwd, argv[k])
+			}
+		}
+	}
+	return pwd
+}
+
 // git options, before the subcommand, that take the next word.
 var gitGlobalValue = set("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source")
 
-// git commit short options whose value is the rest of the cluster or, ending
-// it, the next word.
-const commitShortValue = "mFCct"
-
-// git commit short options with an optional value: it can only be attached,
-// so the rest of the cluster is theirs and the next word never is.
-const commitShortOptionalValue = "uS"
-
-var commitLongValue = set("--message", "--file", "--reuse-message", "--reedit-message", "--fixup",
-	"--squash", "--author", "--date", "--cleanup", "--template", "--trailer", "--pathspec-from-file")
-
-func checkCommit(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "commit" {
-		return ""
-	}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--":
-			return ""
-		case a == "--all":
-			return commitAll
-		case commitLongValue[a]:
-			i++
-		case strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--"):
-			all, takesNext := readCommitCluster(a[1:])
-			if all {
-				return commitAll
-			}
-			if takesNext {
-				i++
-			}
-		}
+func checkCommit(args []string, _ string) string {
+	if commitOptions.parse(args).flags["all"] {
+		return commitAll
 	}
 	return ""
 }
 
-// readCommitCluster reads a cluster of git commit short options: whether it
-// holds -a, and whether its last option takes the next word as its value.
-// A value option ends the cluster: the rest of it is the value.
-func readCommitCluster(cluster string) (all, takesNext bool) {
-	for j, ch := range cluster {
-		switch {
-		case ch == 'a':
-			return true, false
-		case strings.ContainsRune(commitShortValue, ch):
-			return false, j == len(cluster)-1
-		case strings.ContainsRune(commitShortOptionalValue, ch):
-			return false, false
-		}
-	}
-	return false, false
-}
-
-func checkStash(argv []string) string {
-	sub, args := gitSubcommand(argv)
-	if sub != "stash" {
-		return ""
-	}
+func checkStash(args []string, cwd string) string {
 	if len(args) > 0 {
 		switch {
 		case args[0] == "save":
@@ -429,69 +418,259 @@ func checkStash(argv []string) string {
 		case args[0] == "push":
 			args = args[1:]
 		case args[0] == "pop" || args[0] == "apply":
-			if stashRefGiven(args[1:]) {
-				return ""
+			if len(stashApplyOptions.parse(args[1:]).operands()) > 0 {
+				return "" // the stash is named; none of the options takes a value
 			}
 			return implicitStashApply
 		case !strings.HasPrefix(args[0], "-"):
 			return "" // list, show, drop, branch, …
 		}
 	}
-	if stashSelects(args) {
+	g := stashPushOptions.parse(args)
+	// --staged keeps to what is already staged, which the agent chose.
+	switch {
+	case g.namesWholeTree(cwd):
+		return implicitStash
+	case g.flags["staged"] || g.flags["pathspec-from-file"] || len(g.operands()) > 0:
 		return ""
 	}
 	return implicitStash
 }
 
-// stashRefGiven reports whether git stash pop/apply arguments name a
-// stash: none of their options (--index, -q) takes a value, so any other word is one.
-func stashRefGiven(args []string) bool {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			return true
-		}
-	}
-	return false
+// gitOptions is what a check knows of one git subcommand's options: their
+// long names, the short letter of each, those that take a value, and those
+// whose value is optional, so it can only be attached.
+type gitOptions struct {
+	long     []string
+	short    map[rune]string
+	value    map[string]bool
+	optional map[string]bool
 }
 
-// stashSelects reports whether git stash push arguments name what to stash:
-// a pathspec, or --staged.
-func stashSelects(args []string) bool {
+// gitArgs is a subcommand's arguments read the way git's parse-options reads
+// them: options may follow other words, until a "--".
+type gitArgs struct {
+	flags      map[string]bool // long names of the options given
+	positional []string        // other words before "--": revisions and pathspecs alike
+	paths      []string        // words after "--": pathspecs only
+}
+
+func (o gitOptions) parse(args []string) gitArgs {
+	g := gitArgs{flags: map[string]bool{}}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "-m" || a == "--message" || a == "--pathspec-from-file":
-			i++
-		case a == "-S" || a == "--staged":
-			return true // only what is already staged, which the agent chose
-		case a == "--" || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--pathspec-from-file="):
-			return true // a pathspec follows or is here
-		case !strings.HasPrefix(a, "--"):
-			staged, takesNext := readStashCluster(a[1:])
-			if staged {
-				return true
+		case a == "--":
+			g.paths = append(g.paths, args[i+1:]...)
+			return g
+		case strings.HasPrefix(a, "--"):
+			name, _, attached := strings.Cut(a[2:], "=")
+			takesValue := false
+			for _, n := range o.resolve(name) {
+				g.flags[n] = true
+				takesValue = takesValue || o.value[n]
 			}
-			if takesNext {
+			if takesValue && !attached {
 				i++
 			}
+		case strings.HasPrefix(a, "-") && len(a) > 1:
+			if o.readCluster(a[1:], g.flags) {
+				i++
+			}
+		default:
+			g.positional = append(g.positional, a)
+		}
+	}
+	return g
+}
+
+// resolve maps a long option as written to the names it can mean: the exact
+// name, or every name it abbreviates. git rejects an ambiguous abbreviation,
+// so whatever marking each candidate does, git runs no such command.
+func (o gitOptions) resolve(name string) []string {
+	var out []string
+	for _, n := range o.long {
+		if n == name {
+			return []string{n}
+		}
+		if name != "" && strings.HasPrefix(n, name) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// readCluster records a cluster of short options into flags and reports
+// whether its last option takes the next word as its value. A value option
+// ends the cluster: the rest of it is the value.
+func (o gitOptions) readCluster(cluster string, flags map[string]bool) (takesNext bool) {
+	for j, ch := range cluster {
+		n, ok := o.short[ch]
+		if !ok {
+			continue
+		}
+		flags[n] = true
+		if o.optional[n] {
+			return false // the rest of the cluster is its value, never the next word
+		}
+		if o.value[n] {
+			return j == len(cluster)-1
 		}
 	}
 	return false
 }
 
-// readStashCluster reads a cluster of git stash short options: whether it
-// holds -S, and whether it ends in -m, whose value is then the next word.
-// -m ends the cluster: the rest of it is the message.
-func readStashCluster(cluster string) (staged, takesNext bool) {
-	for j, ch := range cluster {
-		switch ch {
-		case 'S':
-			return true, false
-		case 'm':
-			return false, j == len(cluster)-1
+// operands returns the words that are not options: after "--" pathspecs only,
+// before it revisions and pathspecs alike, since git tells them apart by the tree.
+func (g gitArgs) operands() []string {
+	return append(append([]string{}, g.positional...), g.paths...)
+}
+
+// namesWholeTree reports whether an operand, read as a pathspec from cwd, covers
+// the whole tree or a parent of cwd.
+func (g gitArgs) namesWholeTree(cwd string) bool {
+	return slices.ContainsFunc(g.operands(), func(p string) bool { return wholeTree(p, cwd) })
+}
+
+// wholeTree reports whether pathspec p, given in cwd, covers cwd or more: ".",
+// "..", "*", the top magic (":/", ":(top)" among other magic words), and an
+// absolute path to cwd or a parent of it, in any spelling path.Clean folds.
+func wholeTree(p, cwd string) bool {
+	rest, top := stripMagic(p)
+	if top && rest == "" {
+		return true
+	}
+	if rest == "*" {
+		rest = "."
+	} else if strings.HasSuffix(rest, "/*") {
+		rest = strings.TrimSuffix(rest, "*")
+	}
+	if rest == "" {
+		return false
+	}
+	if path.IsAbs(rest) {
+		root := path.Clean(rest)
+		return root == "/" || pathWithin(cwd, root)
+	}
+	for _, segment := range strings.Split(path.Clean(rest), "/") {
+		if segment != "." && segment != ".." {
+			return false
 		}
 	}
-	return false, false
+	return true
+}
+
+// stripMagic removes a pathspec's magic prefix (":/" or ":(word,…)") and
+// reports whether it anchors the pathspec at the top of the tree.
+func stripMagic(p string) (rest string, top bool) {
+	if after, ok := strings.CutPrefix(p, ":/"); ok {
+		return after, true
+	}
+	if after, ok := strings.CutPrefix(p, ":("); ok {
+		if words, rest, ok := strings.Cut(after, ")"); ok {
+			return rest, slices.Contains(strings.Split(words, ","), "top")
+		}
+	}
+	return p, false
+}
+
+var (
+	commitOptions = gitOptions{
+		long: []string{"all", "amend", "allow-empty", "allow-empty-message", "author", "message", "file",
+			"reuse-message", "reedit-message", "fixup", "squash", "date", "cleanup", "template", "trailer",
+			"pathspec-from-file", "untracked-files", "gpg-sign", "include", "only", "patch", "signoff", "edit",
+			"no-edit", "verbose", "quiet", "dry-run", "no-verify"},
+		short: map[rune]string{'a': "all", 'm': "message", 'F': "file", 'C': "reuse-message", 'c': "reedit-message",
+			't': "template", 'u': "untracked-files", 'S': "gpg-sign", 'i': "include", 'o': "only", 'p': "patch",
+			's': "signoff", 'e': "edit", 'v': "verbose", 'q': "quiet", 'n': "no-verify"},
+		value: set("author", "message", "file", "reuse-message", "reedit-message", "fixup", "squash", "date",
+			"cleanup", "template", "trailer", "pathspec-from-file"),
+		optional: set("untracked-files", "gpg-sign"),
+	}
+	stashPushOptions = gitOptions{
+		long: []string{"staged", "message", "keep-index", "no-keep-index", "include-untracked", "all", "patch",
+			"quiet", "pathspec-from-file", "pathspec-file-nul"},
+		short: map[rune]string{'S': "staged", 'm': "message", 'k': "keep-index", 'u': "include-untracked", 'a': "all",
+			'p': "patch", 'q': "quiet"},
+		value: set("message", "pathspec-from-file"),
+	}
+	stashApplyOptions = gitOptions{
+		long:  []string{"index", "quiet"},
+		short: map[rune]string{'q': "quiet"},
+	}
+	resetOptions = gitOptions{
+		long:  []string{"hard", "soft", "mixed", "keep", "merge", "quiet", "patch", "pathspec-from-file"},
+		short: map[rune]string{'q': "quiet", 'p': "patch"},
+		value: set("pathspec-from-file"),
+	}
+	checkoutOptions = gitOptions{
+		long:  []string{"force", "orphan", "pathspec-from-file", "ours", "theirs", "track", "merge", "conflict", "patch", "detach", "quiet"},
+		short: map[rune]string{'f': "force", 'b': "new-branch", 'B': "reset-branch", 'q': "quiet", 'm': "merge", 'p': "patch", 't': "track"},
+		value: set("new-branch", "reset-branch", "orphan", "pathspec-from-file", "conflict"),
+	}
+	restoreOptions = gitOptions{
+		long:  []string{"staged", "worktree", "source", "pathspec-from-file", "ours", "theirs", "merge", "conflict", "patch", "quiet", "overlay", "no-overlay", "progress"},
+		short: map[rune]string{'S': "staged", 'W': "worktree", 's': "source", 'q': "quiet", 'm': "merge", 'p': "patch"},
+		value: set("source", "pathspec-from-file", "conflict"),
+	}
+	cleanOptions = gitOptions{
+		long:  []string{"force", "dry-run", "exclude", "quiet", "interactive"},
+		short: map[rune]string{'f': "force", 'n': "dry-run", 'e': "exclude", 'q': "quiet", 'i': "interactive"},
+		value: set("exclude"),
+	}
+	switchOptions = gitOptions{
+		long:  []string{"force", "discard-changes", "create", "force-create", "orphan", "detach", "guess", "track", "merge", "conflict", "quiet", "progress"},
+		short: map[rune]string{'f': "force", 'c': "create", 'C': "force-create", 'd': "detach", 't': "track", 'm': "merge", 'q': "quiet"},
+		value: set("create", "force-create", "orphan", "conflict"),
+	}
+)
+
+func checkReset(args []string, _ string) string {
+	if resetOptions.parse(args).flags["hard"] {
+		return resetHard
+	}
+	return ""
+}
+
+func checkCheckout(args []string, cwd string) string {
+	g := checkoutOptions.parse(args)
+	switch {
+	case g.namesWholeTree(cwd):
+		return fmt.Sprintf(treeWideDiscard, "checkout")
+	case g.flags["force"] && len(g.paths) == 0:
+		// With files named after "--", -f only lets their unmerged entries go.
+		return fmt.Sprintf(forcedSwitch, "checkout")
+	}
+	return ""
+}
+
+func checkRestore(args []string, cwd string) string {
+	g := restoreOptions.parse(args)
+	// Without --staged, restore writes the worktree; with it, only --worktree does.
+	writesWorktree := g.flags["worktree"] || !g.flags["staged"]
+	if writesWorktree && g.namesWholeTree(cwd) {
+		return fmt.Sprintf(treeWideDiscard, "restore")
+	}
+	return ""
+}
+
+func checkClean(args []string, cwd string) string {
+	g := cleanOptions.parse(args)
+	if !g.flags["force"] || g.flags["dry-run"] {
+		return ""
+	}
+	if len(g.operands()) == 0 || g.namesWholeTree(cwd) {
+		return treeWideClean
+	}
+	return ""
+}
+
+func checkSwitch(args []string, _ string) string {
+	g := switchOptions.parse(args)
+	if g.flags["force"] || g.flags["discard-changes"] {
+		return fmt.Sprintf(forcedSwitch, "switch")
+	}
+	return ""
 }
 
 var (
