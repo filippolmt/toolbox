@@ -2153,8 +2153,8 @@ and start the container with the `toolbox.detached=true` label
 reads the label from the inspect `OnShellExit` already performs and spares the
 container whether or not sibling execs remain; `runplan.Detached` is the one
 reader, shared with `container.List`, which marks the row. The container keeps
-`AutoRemove`, so a stop still removes it. No user-facing flag sets it: the
-Orca Shell is its only caller. Decision and alternatives:
+`AutoRemove`, so a stop still removes it. No user-facing flag sets it: its only planned caller is the
+Orca Shell of [#1426](https://github.com/filippolmt/toolbox/issues/1426). Decision and alternatives:
 [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"

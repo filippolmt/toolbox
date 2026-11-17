@@ -1596,6 +1596,7 @@ func TestShellDetachedCreatesWithoutExec(t *testing.T) {
 	if *called {
 		t.Error("a detached Shell must not exec a terminal")
 	}
+	// The literal, not the constant: the label outlives the binary that wrote it.
 	if labels["toolbox.detached"] != "true" {
 		t.Errorf("create labels = %v, want toolbox.detached=true", labels)
 	}
