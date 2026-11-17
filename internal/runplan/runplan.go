@@ -78,6 +78,11 @@ func Detached(labels map[string]string) bool {
 	return labels[DetachedLabel] == detachedValue
 }
 
+// DetachedContainer is Detached read off an inspect, nil Config included.
+func DetachedContainer(inspect container.InspectResponse) bool {
+	return inspect.Config != nil && Detached(inspect.Config.Labels)
+}
+
 // DetachedLabels is the create's label set: the Detached Shell mark, or none.
 func DetachedLabels(detached bool) map[string]string {
 	if !detached {

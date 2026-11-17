@@ -86,17 +86,20 @@ them.
 - **A Detached Shell survives shell exit:** `teardown.OnShellExit` spares a
   container carrying `runplan.DetachedLabel` before it looks at sibling execs;
   `container.Shell` on a detached plan creates and starts with the label and
-  returns without an exec; it refuses an existing container without the label.
+  returns without an exec; it refuses an existing container without the label,
+  before any image work.
   Pinned by `TestOnShellExitSparesDetachedShell`,
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
+  `TestShellDetachedRefusesBeforeImageWork`,
+  `TestShellExitLeavesADetachedShellRunning`,
   `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use
-  `AutoRemove`, a Detached Shell included; asynchronous diagnostics use `ui.InfoAsyncf` so raw terminals
-  receive CRLF. Pinned by `TestShellSetsCodexSecurityOptByDefault`,
+  `AutoRemove`, a Detached Shell included; asynchronous diagnostics use
+  `ui.InfoAsyncf` so raw terminals receive CRLF. Pinned by `TestShellSetsCodexSecurityOptByDefault`,
   `TestShellPassesPlanHostname`, teardown tests and
   `TestInfoAsyncfReturnsTheCarriage`.
 

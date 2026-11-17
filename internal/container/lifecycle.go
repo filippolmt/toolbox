@@ -352,6 +352,14 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, resolveErr
 	}
 
+	// A detached plan joining an existing container gets a Detached Shell only
+	// if that container already is one: the label is fixed at create. Refused
+	// before any image work, so no refresh prompt can recreate an ordinary
+	// Shell, terminals and all, as a detached one.
+	if plan.Detached && op.Action != runplan.ActionCreate && !runplan.DetachedContainer(inspect) {
+		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
+	}
+
 	// State the observed branch to Image Freshness. It owns the synchronous
 	// decision and retains any live-probe provenance for the later attachment;
 	// container sees only the directive it must honour.
@@ -411,12 +419,6 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		if ensureErr := freshness.Ensure(ctx, runImage); ensureErr != nil {
 			return nil, ensureErr
 		}
-	}
-
-	// A detached plan joining an existing container gets a Detached Shell only
-	// if that container already is one: the label is fixed at create.
-	if plan.Detached && op.Action != runplan.ActionCreate && (inspect.Config == nil || !runplan.Detached(inspect.Config.Labels)) {
-		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
 	}
 
 	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)

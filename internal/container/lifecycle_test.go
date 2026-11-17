@@ -1676,3 +1676,66 @@ func TestStopByNameRemovesADetachedShell(t *testing.T) {
 		t.Errorf("stopped=%q removed=%q, want both toolbox-orca", stopped, removed)
 	}
 }
+
+// The refusal comes before any image work: a stopped unlabelled container is
+// where the start-up refresh would ask, and an accepted recreate would turn
+// the ordinary Shell into a detached one. Image calls are unmocked.
+func TestShellDetachedRefusesBeforeImageWork(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ID:         "abc123",
+				State:      &container.State{Running: false},
+				Config:     &container.Config{},
+				HostConfig: &container.HostConfig{},
+			}, nil
+		},
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			t.Error("image inspected before the refusal")
+			return client.ImageInspectResult{}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	if _, err := Shell(context.Background(), mock, plan); err == nil || !strings.Contains(err.Error(), "not detached") {
+		t.Fatalf("Shell() error = %v, want a not-detached refusal", err)
+	}
+}
+
+// An ordinary `toolbox shell` into a Detached Shell: when its terminal exits,
+// with no sibling exec left, the container stays. ContainerKill is not
+// implemented by the mock, so reaching it panics.
+func TestShellExitLeavesADetachedShellRunning(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ID:         "abc123",
+				State:      &container.State{Running: true},
+				Config:     &container.Config{Labels: runplan.DetachedLabels(true)},
+				HostConfig: &container.HostConfig{AutoRemove: true},
+				ExecIDs:    []string{"ours"},
+			}, nil
+		},
+		execInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
+		},
+		stopFn: func(context.Context, string, client.ContainerStopOptions) error {
+			t.Error("a Detached Shell must not be stopped on shell exit")
+			return nil
+		},
+	}
+
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !*called {
+		t.Fatal("the attached shell did not run")
+	}
+}

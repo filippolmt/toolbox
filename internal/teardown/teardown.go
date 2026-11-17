@@ -152,7 +152,7 @@ func OnShellExit(cli containerRuntime, name string) error {
 	}
 	inspect := result.Container
 
-	if inspect.Config != nil && runplan.Detached(inspect.Config.Labels) {
+	if runplan.DetachedContainer(inspect) {
 		ui.Infof("Container %s is detached — leaving it running", name)
 		return nil
 	}

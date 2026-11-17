@@ -2157,8 +2157,8 @@ the inspect `OnShellExit` already performs and spares the container whether or
 not sibling execs remain; `runplan.Detached` is the one reader, next to its
 writer, shared with `container.List`, which marks the row. The container keeps
 `AutoRemove`, so a stop still removes it. No user-facing flag sets it: its
-only planned caller is the Orca Shell of
-[#1426](https://github.com/filippolmt/toolbox/issues/1426). Decision and
+only planned caller is the container that hosts Orca's server
+([#1426](https://github.com/filippolmt/toolbox/issues/1426)). Decision and
 alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
