@@ -213,6 +213,7 @@ func TestBlocksImplicitStash(t *testing.T) {
 		{name: "redirection target as its own word", command: "git stash > out.txt", blocked: true},
 		{name: "both streams redirected", command: "git stash &>/dev/null", blocked: true},
 		{name: "list redirected", command: "git stash list >/dev/null"},
+		{name: "pathspec variable set empty in the line", command: "P=; git stash push $P", blocked: true},
 	})
 }
 
@@ -234,6 +235,8 @@ func TestBlocksStashApplyWithoutReference(t *testing.T) {
 		{name: "inside command substitution", command: "echo $(git stash pop)", blocked: true},
 		{name: "chained after a pathspec stash", command: "git stash push -- a.go && git pull && git stash pop", blocked: true},
 		{name: "output redirected", command: "git stash pop > out.txt", blocked: true},
+		{name: "reference variable set empty in the line", command: "R=; git stash pop $R", blocked: true},
+		{name: "quoted empty reference reaches git as a word", command: `git stash pop ""`},
 		{name: "drop is not apply", command: "git stash drop"},
 	})
 }

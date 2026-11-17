@@ -335,6 +335,17 @@ func (w word) unquotedStart() bool {
 	return len(w) > 0 && w[0].quote == unquoted
 }
 
+// quoted reports whether any part of the word is quoted: a quoted empty word
+// survives expansion as an argument, an unquoted one is removed.
+func (w word) quoted() bool {
+	for _, s := range w {
+		if s.quote != unquoted {
+			return true
+		}
+	}
+	return false
+}
+
 // assignment reports whether the word is a NAME=value assignment.
 func (w word) assignment() bool {
 	return len(w) > 0 && w[0].quote == unquoted && assignmentPrefix.MatchString(w[0].text)

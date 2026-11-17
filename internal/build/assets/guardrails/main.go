@@ -217,7 +217,8 @@ func shellOptions(args []string) (int, bool) {
 var redirection = regexp.MustCompile(`^(?:[0-9]*|&)(?:>>?|<<?<?|>&|<&|>\|)(.*)$`)
 
 // expandCommand expands a simple command's words, dropping redirections and
-// their targets. Its leading NAME=value words
+// their targets, and, as the shell does, an unquoted word that expands to
+// nothing. Its leading NAME=value words
 // are dropped from the result and written into vars, on purpose: the shell
 // expands every later command's words with them.
 func expandCommand(words []word, vars map[string]string) []string {
@@ -234,6 +235,9 @@ func expandCommand(words []word, vars map[string]string) []string {
 		if len(argv) == 0 && w.assignment() {
 			name, value, _ := strings.Cut(s, "=")
 			vars[name] = value
+			continue
+		}
+		if s == "" && !w.quoted() {
 			continue
 		}
 		argv = append(argv, s)
@@ -425,7 +429,7 @@ func checkStash(argv []string) string {
 		case args[0] == "push":
 			args = args[1:]
 		case args[0] == "pop" || args[0] == "apply":
-			if stashApplyNamesStash(args[1:]) {
+			if stashRefGiven(args[1:]) {
 				return ""
 			}
 			return implicitStashApply
@@ -439,9 +443,9 @@ func checkStash(argv []string) string {
 	return implicitStash
 }
 
-// stashApplyNamesStash reports whether git stash pop/apply arguments name a
+// stashRefGiven reports whether git stash pop/apply arguments name a
 // stash: none of their options (--index, -q) takes a value, so any other word is one.
-func stashApplyNamesStash(args []string) bool {
+func stashRefGiven(args []string) bool {
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
 			return true
