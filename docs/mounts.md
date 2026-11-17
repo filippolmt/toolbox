@@ -83,7 +83,7 @@ When you want every toolbox-managed credential / state dir to live somewhere oth
 
 ```yaml
 # Move ~/.toolbox/.claude → /Volumes/work/toolbox/.claude,
-# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every default.
+# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every credential and state default.
 mounts_root: /Volumes/work/toolbox
 
 mounts:
@@ -92,7 +92,7 @@ mounts:
     source: /Volumes/secure/gws
 ```
 
-Setting `mounts_root: /custom/path` rewrites every default mount whose Source starts with `~/.toolbox/` to live under the new root, applied *before* the user merge inside `mountplan.Merge`. Per-mount patches still win, so a global root + a single per-name override coexist. `docker-sock` and `SymlinkFrom` targets are not touched (they reference real host paths, not toolbox-managed mirrors).
+Setting `mounts_root: /custom/path` rewrites every default mount whose Source starts with `~/.toolbox/` to live under the new root, applied *before* the user merge inside `mountplan.Merge`. Per-mount patches still win, so a global root + a single per-name override coexist. `docker-sock` and `SymlinkFrom` targets are not touched (they reference real host paths, not toolbox-managed mirrors), and neither are the `bridge` mounts: the bridge daemon keeps its token and socket under `~/.toolbox/toolbox/bridge` whatever the root, so moving them would bind empty dirs.
 
 `mounts_root` accepts absolute paths (`/Volumes/work/toolbox`), home-relative paths (`~/work/toolbox-state`) and the empty string, which is the **reset**: `toolbox mounts root ""` removes the key from the targeted file so the defaults return to `~/.toolbox/`. Removing beats writing `mounts_root: ""`, which would keep shadowing whatever the layer below sets — reset the global file and a project file's root still applies in its project, reset the project file and the global root takes over again. Relative paths are rejected at startup by `config.ValidateMountsRoot`. Bare `~` is rejected too — it would rewrite `~/.toolbox/.claude` to `~/.claude`, exposing toolbox state on the real host home and defeating credential isolation. Use a sub-path (`~/toolbox-state`) or an absolute path.
 
@@ -101,10 +101,10 @@ Setting `mounts_root: /custom/path` rewrites every default mount whose Source st
 | Where you set it | Effect |
 |------------------|--------|
 | `~/.toolbox.yaml` only | Applied to every `toolbox shell`, in every project. |
-| `./.toolbox.yaml` only | Applied only when `toolbox shell` runs in that project directory. |
+| `./.toolbox.yaml` only | Applied when `toolbox shell` runs in that directory or below it, unless a nearer `.toolbox.yaml` sits in between. |
 | Both | Project file replaces the global value for that project; other projects keep the global one. (Scalar field — no concatenation.) |
 
-`mounts_root` is applied first to retarget every default; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
+`mounts_root` is applied first to retarget the defaults; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
 
 **Migration note.** `mounts_root` only changes where the container *binds* its state — it does not move data. If you already have credentials and history in `~/.toolbox/` and switch to a new root, the new directories are auto-created empty (per default `create_if_missing: true`) and the original `~/.toolbox/` data is left untouched. Move it yourself before the next `toolbox shell` if you want continuity:
 
@@ -121,7 +121,7 @@ mv ~/.toolbox /Volumes/work/toolbox
 the command line instead of the config file, and namespaced to its own
 container. Its purpose is switching *identity*: a second Claude subscription, a
 work vs. personal `gh`/`codex`/`gcloud`. Every default mount under `~/.toolbox/`
-moves into the profile root, so all bundled CLIs read that profile's own
+but the bridge's moves into the profile root, so all bundled CLIs read that profile's own
 credentials. See [profiles usage](commands.md#profiles) for the command-line
 side.
 
@@ -154,6 +154,48 @@ host root (your explicit path is respected, not silently rewritten); toolbox
 prints a warning naming it. Give it a profile-specific source if you want that
 mount isolated too. Switching `--profile`/`--share` on a workspace session opens
 a distinct container, so profiles coexist without a `toolbox stop`.
+
+### One folder per client
+
+To tie an identity to a directory instead of a flag, put an untracked
+`.toolbox.yaml` in the folder that holds that client's repositories and point
+`mounts_root` at a profile root:
+
+```yaml
+# ~/projects/client-a/.toolbox.yaml
+mounts_root: ~/.toolbox/profiles/client-a
+```
+
+Every `toolbox shell` started in that folder or below then reads and writes
+`client-a`'s credentials (claude, azure, oci, gcloud, gh, …), the same set
+`toolbox shell --profile client-a` binds from anywhere else, because a profile
+root is `~/.toolbox/profiles/<name>`. What only the flag adds is `--share` and a
+container of its own beside the default shell of the same directory. Keep the
+whole root per client rather than patching single tools under `mounts:`: a tool
+left out of the patches runs on the default identity inside the client's
+folder, silently. A second account of the same provider *within* one client can
+still use that CLI's own profiles (`az account set`, `oci --profile`,
+`gcloud config configurations`); keep different clients in different folders,
+since every credential mounted into a Shell is usable by the code running in it.
+
+Which root a Shell binds, strongest first:
+
+1. `--profile <name>` → `~/.toolbox/profiles/<name>`, whatever the config says.
+2. `--config <file>`: its `mounts_root`, and neither file below is read.
+3. `mounts_root` in the nearest `.toolbox.yaml` walking up from the current directory.
+4. `mounts_root` in `~/.toolbox.yaml`.
+5. `~/.toolbox/` — the default identity. `mounts_root` has no `TOOLBOX_*`
+   environment override.
+
+A tool listed in [`inherit_host_auth`](configuration.md#inherit-host-auth)
+reads the host's own credential path under any of these.
+
+**Limits.** Only the *nearest* `.toolbox.yaml` is loaded: a repository inside the
+client folder that ships its own `.toolbox.yaml` hides the folder's file, and a
+Shell started in that repository takes that file's `mounts_root`, else the global
+one, else the default identity — with no warning. Use `--profile <name>` there.
+SSH keys and git config stay shared across every profile (see above), so a
+per-client key in `~/.ssh` is readable from any Shell.
 
 ## Persisting a user-installed tool's state
 

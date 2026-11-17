@@ -44,8 +44,8 @@ type Config struct {
 	//   - "never"     → skip the registry round-trip entirely (air-gapped);
 	//     the hard local-presence check (imageplan.Ensure) still applies.
 	Pull string `mapstructure:"pull"`
-	// MountsRoot retargets every default mount whose Source lives under
-	// ~/.toolbox/ to the given prefix. Useful when the user wants every
+	// MountsRoot retargets the default mounts whose Source lives under
+	// ~/.toolbox/ to the given prefix, all but the bridge's. Useful when the user wants every
 	// toolbox-managed credential / state dir to live somewhere other than
 	// the host home (e.g. an encrypted volume). Empty = use ~/.toolbox/ as
 	// before. Per-mount patches in mounts: still win — applied after the

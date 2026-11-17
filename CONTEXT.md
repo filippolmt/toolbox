@@ -2361,3 +2361,24 @@ and the peer namespace in `container.ensureAnchor`.
 Why the term exists: "escalation" was used for every one of these at once,
 and a mount, a bridge route or a daemon setting can only be judged against a
 boundary that says which of them it may cross.
+
+### Profile
+
+A named credential identity a Shell runs under: its own set of
+toolbox-managed credentials and state, kept apart from the default set and
+from every other profile. _Avoid_: "account" — one profile can hold several
+accounts of the same provider, and those share the Profile's boundary.
+
+Concretely: a mounts root at `~/.toolbox/profiles/<name>`, owned by
+`internal/mountplan` (`NewProfile`, `Profile.Root`). `--profile <name>` selects
+it and wins over any configured `mounts_root`; a `mounts_root` pointing at the
+same root binds the same credentials from a directory. What stays on the host
+under a profile, and what only the flag adds, is in
+[docs/mounts.md](docs/mounts.md#profiles).
+
+Why the term exists: a second account of one provider is not the problem a
+Profile solves — most CLIs have their own profiles for that. A Profile is the
+unit of the [Containment Boundary](#containment-boundary) for credentials: what
+one Shell can use, another Shell does not have mounted. Calling it an account
+hid that line, and invited the fallback "use the default when the profile lacks
+a tool", which mounts the default identity into a Shell meant to be without it.

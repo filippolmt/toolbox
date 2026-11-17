@@ -154,11 +154,10 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
-	var shared []string
 	if profile != nil {
 		root = profile.Root()
-		shared = profile.EffectiveShare()
 	}
+	shared := profile.EffectiveShare()
 	if err := config.ValidateMountsRoot(root); err != nil {
 		return nil, err
 	}

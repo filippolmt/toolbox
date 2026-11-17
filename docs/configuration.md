@@ -29,7 +29,7 @@ Configuration is loaded from (highest priority first):
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
 | [`mounts`](mounts.md#mounts-merge-semantics) | list | built-in defaults | Patch / replace / append / disable the default bind mounts by `name`. |
-| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget every `~/.toolbox/`-managed default mount to a custom root; empty resets it. |
+| [`mounts_root`](mounts.md#mounts_root-retarget) | string | `""` | Retarget the `~/.toolbox/`-managed default mounts, all but the bridge, to a custom root; empty resets it. |
 | [`inherit_host_auth`](#inherit-host-auth) | list | `[]` | Opt listed CLIs into the host's real credential path instead of the isolated default. |
 | [`shells`](shells.md) | map | – | Named shell shortcuts: `<name>: {path, env}`. |
 | [`shell`](#shell) | string | `zsh` | Login shell inside the container (only `zsh` is supported). |
