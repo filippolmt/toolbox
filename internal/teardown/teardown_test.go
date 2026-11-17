@@ -337,7 +337,7 @@ func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
 // remove are left unstubbed, so reaching any of them panics.
 func TestOnShellExitSparesDetachedShell(t *testing.T) {
 	inspect := autoRemoveInspect()
-	inspect.Config = &container.Config{Labels: map[string]string{runplan.DetachedLabel: "true"}}
+	inspect.Config = &container.Config{Labels: runplan.DetachedLabels()}
 	mock := &exitStub{
 		inspectFn: func(context.Context, string) (container.InspectResponse, error) { return inspect, nil },
 		execInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {

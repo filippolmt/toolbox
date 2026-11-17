@@ -92,6 +92,7 @@ them.
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
   `TestShellDetachedRefusesBeforeImageWork`,
+  `TestShellDetachedJoinsALabelledContainer`,
   `TestShellExitLeavesADetachedShellRunning`,
   `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)
@@ -99,7 +100,8 @@ them.
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use
   `AutoRemove`, a Detached Shell included; asynchronous diagnostics use
-  `ui.InfoAsyncf` so raw terminals receive CRLF. Pinned by `TestShellSetsCodexSecurityOptByDefault`,
+  `ui.InfoAsyncf` so raw terminals receive CRLF. Pinned by
+  `TestShellSetsCodexSecurityOptByDefault`,
   `TestShellPassesPlanHostname`, teardown tests and
   `TestInfoAsyncfReturnsTheCarriage`.
 

@@ -69,7 +69,8 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 // terminal attached to it. → CONTEXT.md, Detached Shell.
 const DetachedLabel = "toolbox.detached"
 
-// detachedValue is the label's value; DetachedLabels writes it, Detached reads it.
+// detachedValue is the label's value; DetachedLabels writes it, Detached and
+// IsDetached read it.
 const detachedValue = "true"
 
 // Detached reports whether a container's labels mark it as a Detached Shell.
@@ -78,16 +79,13 @@ func Detached(labels map[string]string) bool {
 	return labels[DetachedLabel] == detachedValue
 }
 
-// DetachedContainer is Detached read off an inspect, nil Config included.
-func DetachedContainer(inspect container.InspectResponse) bool {
+// IsDetached is Detached read off an inspect, nil Config included.
+func IsDetached(inspect container.InspectResponse) bool {
 	return inspect.Config != nil && Detached(inspect.Config.Labels)
 }
 
-// DetachedLabels is the create's label set: the Detached Shell mark, or none.
-func DetachedLabels(detached bool) map[string]string {
-	if !detached {
-		return nil
-	}
+// DetachedLabels is the label set that marks a container as a Detached Shell.
+func DetachedLabels() map[string]string {
 	return map[string]string{DetachedLabel: detachedValue}
 }
 

@@ -356,7 +356,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// if that container already is one: the label is fixed at create. Refused
 	// before any image work, so no refresh prompt can recreate an ordinary
 	// Shell, terminals and all, as a detached one.
-	if plan.Detached && op.Action != runplan.ActionCreate && !runplan.DetachedContainer(inspect) {
+	if plan.Detached && op.Action != runplan.ActionCreate && !runplan.IsDetached(inspect) {
 		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
 	}
 
@@ -722,6 +722,11 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		tmpfs = map[string]string{"/home/toolbox/.npm/_npx": "rw,exec,uid=" + strings.Replace(identity.UserSpec, ":", ",gid=", 1) + ",mode=0700"}
 	}
 
+	var labels map[string]string
+	if plan.Detached {
+		labels = runplan.DetachedLabels()
+	}
+
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: plan.ContainerName,
@@ -735,7 +740,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			User:         identity.UserSpec,
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
-			Labels:       runplan.DetachedLabels(plan.Detached),
+			Labels:       labels,
 		},
 		HostConfig: &container.HostConfig{
 			Binds:        binds,

@@ -974,7 +974,7 @@ func TestStopAll(t *testing.T) {
 				{Names: []string{"/toolbox-project-b-11223344"}},
 				{Names: []string{"/toolbox"}}, // legacy singleton
 				// A Detached Shell survives terminals, not the sweep.
-				{Names: []string{"/toolbox-orca"}, Labels: map[string]string{runplan.DetachedLabel: "true"}},
+				{Names: []string{"/toolbox-orca"}, Labels: runplan.DetachedLabels()},
 				{Names: []string{"/unrelated-toolbox-clone"}},
 			}, nil
 		},
@@ -1640,7 +1640,7 @@ func TestShellDetachedJoinsALabelledContainer(t *testing.T) {
 			return container.InspectResponse{
 				ID:     "abc123",
 				State:  &container.State{Running: true},
-				Config: &container.Config{Labels: map[string]string{runplan.DetachedLabel: "true"}},
+				Config: &container.Config{Labels: runplan.DetachedLabels()},
 			}, nil
 		},
 	}
@@ -1718,7 +1718,7 @@ func TestShellExitLeavesADetachedShellRunning(t *testing.T) {
 			return container.InspectResponse{
 				ID:         "abc123",
 				State:      &container.State{Running: true},
-				Config:     &container.Config{Labels: runplan.DetachedLabels(true)},
+				Config:     &container.Config{Labels: runplan.DetachedLabels()},
 				HostConfig: &container.HostConfig{AutoRemove: true},
 				ExecIDs:    []string{"ours"},
 			}, nil

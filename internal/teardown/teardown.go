@@ -15,8 +15,9 @@
 //   - OnShellExit: the deferred post-shell policy. Creates its own
 //     bounded context fresh from context.Background (parent ctx may be
 //     cancelled by Ctrl+C), skips teardown for a Detached Shell or when a
-//     sibling exec is running, kills (without waiting on the remove) when the container
-//     was created with AutoRemove so the daemon reaps it asynchronously,
+//     sibling exec is running, kills (without waiting on the remove) when
+//     the container was created with AutoRemove so the daemon reaps it
+//     asynchronously,
 //     and falls back to synchronous StopOne for legacy containers.
 //     Returns the cleanup error so the caller can fold it into its own
 //     error chain.
@@ -152,7 +153,7 @@ func OnShellExit(cli containerRuntime, name string) error {
 	}
 	inspect := result.Container
 
-	if runplan.DetachedContainer(inspect) {
+	if runplan.IsDetached(inspect) {
 		ui.Infof("Container %s is detached — leaving it running", name)
 		return nil
 	}
