@@ -92,7 +92,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 | Key | One-liner |
 |-----|-----------|
 | [`mounts`](docs/mounts.md#mounts-merge-semantics) | Patch / replace / append / disable the default bind mounts by `name`. |
-| [`mounts_root`](docs/mounts.md#mounts_root-retarget) | Retarget every `~/.toolbox/`-managed default mount to a custom root (encrypted volume, work drive). |
+| [`mounts_root`](docs/mounts.md#mounts_root-retarget) | Retarget the `~/.toolbox/`-managed default mounts, all but the bridge, to a custom root (encrypted volume, work drive). |
 | [`inherit_host_auth`](docs/configuration.md#inherit-host-auth) | Opt listed CLIs (`gh`, `gcloud`, …) into the host's real credential path instead of the isolated default. |
 | [`shells`](docs/shells.md) | Named shell shortcuts: `<name>: {path, env}` → `toolbox shell <name>`. |
 | [`shell`](docs/configuration.md#shell) | Login shell inside the container (only `zsh` is supported). |

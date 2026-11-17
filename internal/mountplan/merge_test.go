@@ -165,7 +165,7 @@ func TestMergeMountsRootRetargetsAllDefaults(t *testing.T) {
 			continue
 		}
 		// The bridge daemon's dir is host infrastructure: no root moves it.
-		if !strings.HasPrefix(d.Source, "~/.toolbox/") || shareCovers([]string{"bridge"}, d.Name) {
+		if !strings.HasPrefix(d.Source, "~/.toolbox/") || bridgeMounts[d.Name] != "" {
 			if got.Source != d.Source {
 				t.Errorf("mount %q Source drifted: got %q, want %q", d.Name, got.Source, d.Source)
 			}

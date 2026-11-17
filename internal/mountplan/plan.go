@@ -154,13 +154,10 @@ func Merge(host fsx.Host, cfg *config.Config, profile *Profile, gate proximo.Gat
 	// A profile retargets to its own root and wins over a config-level
 	// mounts_root for this invocation; without one, the config value applies.
 	root := cfg.MountsRoot
-	// The bridge daemon writes under ~/.toolbox whatever the root, so no
-	// retarget may move it; a profile adds its --share tokens to the same set.
-	shared := []string{"bridge"}
 	if profile != nil {
 		root = profile.Root()
-		shared = profile.EffectiveShare()
 	}
+	shared := profile.EffectiveShare()
 	if err := config.ValidateMountsRoot(root); err != nil {
 		return nil, err
 	}

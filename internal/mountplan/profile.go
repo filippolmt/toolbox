@@ -52,10 +52,11 @@ func (p *Profile) Root() string {
 // tokens plus "bridge". The bridge daemon dir is host infrastructure, not a
 // per-account credential — retargeting it into the profile would bind empty
 // dirs and break in-container URL/editor/proximo forwarding, so it always
-// stays on the host root. Nil-safe (returns nil).
+// stays on the host root, under any retarget. A nil profile — a config-level
+// mounts_root — shares only the bridge.
 func (p *Profile) EffectiveShare() []string {
 	if p == nil {
-		return nil
+		return []string{"bridge"}
 	}
 	return append(append([]string(nil), p.Share...), "bridge")
 }

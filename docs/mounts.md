@@ -83,7 +83,7 @@ When you want every toolbox-managed credential / state dir to live somewhere oth
 
 ```yaml
 # Move ~/.toolbox/.claude → /Volumes/work/toolbox/.claude,
-# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every default.
+# ~/.toolbox/gh → /Volumes/work/toolbox/gh, and so on for every credential and state default.
 mounts_root: /Volumes/work/toolbox
 
 mounts:
@@ -101,10 +101,10 @@ Setting `mounts_root: /custom/path` rewrites every default mount whose Source st
 | Where you set it | Effect |
 |------------------|--------|
 | `~/.toolbox.yaml` only | Applied to every `toolbox shell`, in every project. |
-| `./.toolbox.yaml` only | Applied only when `toolbox shell` runs in that project directory. |
+| `./.toolbox.yaml` only | Applied when `toolbox shell` runs in that directory or below it, unless a nearer `.toolbox.yaml` sits in between. |
 | Both | Project file replaces the global value for that project; other projects keep the global one. (Scalar field — no concatenation.) |
 
-`mounts_root` is applied first to retarget every default; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
+`mounts_root` is applied first to retarget the defaults; per-name `mounts:` patches are then layered on top, so a single mount can still escape the global root in any one project. Other projects keep using the global root unchanged.
 
 **Migration note.** `mounts_root` only changes where the container *binds* its state — it does not move data. If you already have credentials and history in `~/.toolbox/` and switch to a new root, the new directories are auto-created empty (per default `create_if_missing: true`) and the original `~/.toolbox/` data is left untouched. Move it yourself before the next `toolbox shell` if you want continuity:
 
@@ -121,7 +121,7 @@ mv ~/.toolbox /Volumes/work/toolbox
 the command line instead of the config file, and namespaced to its own
 container. Its purpose is switching *identity*: a second Claude subscription, a
 work vs. personal `gh`/`codex`/`gcloud`. Every default mount under `~/.toolbox/`
-moves into the profile root, so all bundled CLIs read that profile's own
+but the bridge's moves into the profile root, so all bundled CLIs read that profile's own
 credentials. See [profiles usage](commands.md#profiles) for the command-line
 side.
 
@@ -167,7 +167,7 @@ mounts_root: ~/.toolbox/profiles/client-a
 ```
 
 Every `toolbox shell` started in that folder or below then reads and writes
-`client-a`'s credentials (claude, az, oci, gcloud, gh, …), the same set
+`client-a`'s credentials (claude, azure, oci, gcloud, gh, …), the same set
 `toolbox shell --profile client-a` binds from anywhere else, because a profile
 root is `~/.toolbox/profiles/<name>`. What only the flag adds is `--share` and a
 container of its own beside the default shell of the same directory. Keep the

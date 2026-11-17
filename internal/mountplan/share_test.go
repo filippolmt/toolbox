@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/bridge"
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
@@ -41,40 +42,41 @@ func TestMergeSharePrefixCoversSplitMounts(t *testing.T) {
 	}
 }
 
-// TestMergeProfileKeepsBridgeOnHostRoot: a profile always keeps the bridge
-// mounts on the host root (EffectiveShare appends "bridge") so the daemon
-// token/socket stay reachable — even with no explicit --share.
-func TestMergeProfileKeepsBridgeOnHostRoot(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{}, &Profile{Name: "work"}, proximo.Gate{})
-	if err != nil {
-		t.Fatalf("Merge: %v", err)
-	}
-
-	for _, name := range []string{"bridge", "bridge-legacy", "bridge-run"} {
-		got := findMount(merged, name).Source
-		if strings.Contains(got, "profiles/") {
-			t.Errorf("bridge mount %q Source = %q, want kept on host root", name, got)
-		}
-	}
+// bridgeMounts are the defaults the bridge daemon's host dir backs, by the
+// source each must keep under any retarget.
+var bridgeMounts = map[string]string{
+	"bridge":        "~/" + bridge.HostDir,
+	"bridge-legacy": "~/" + bridge.HostDir,
+	"bridge-run":    "~/" + bridge.HostRunDir,
 }
 
-// TestMergeMountsRootKeepsBridgeOnHostRoot: a config-level mounts_root, with no
-// profile, keeps the bridge mounts on the host root as a profile does — the
-// daemon writes its token and socket under ~/.toolbox whatever the root.
-func TestMergeMountsRootKeepsBridgeOnHostRoot(t *testing.T) {
-	merged, err := Merge(testHost(t), &config.Config{MountsRoot: "~/.toolbox/profiles/client-a"}, nil, proximo.Gate{})
-	if err != nil {
-		t.Fatalf("Merge: %v", err)
-	}
-
-	for _, name := range []string{"bridge", "bridge-legacy", "bridge-run"} {
-		got := findMount(merged, name).Source
-		if strings.Contains(got, "profiles/") {
-			t.Errorf("bridge mount %q Source = %q, want kept on host root", name, got)
-		}
-	}
-	if got := findMount(merged, "claude").Source; got != "~/.toolbox/profiles/client-a/.claude" {
-		t.Errorf("claude Source = %q, want %q (retargeted)", got, "~/.toolbox/profiles/client-a/.claude")
+// TestMergeKeepsBridgeOnHostRoot: neither a profile nor a config-level
+// mounts_root moves the bridge mounts — the daemon writes its token and socket
+// under ~/.toolbox whatever the root, so a retargeted bind would come up empty.
+func TestMergeKeepsBridgeOnHostRoot(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cfg     config.Config
+		profile *Profile
+		claude  string
+	}{
+		{"profile", config.Config{}, &Profile{Name: "work"}, "~/.toolbox/profiles/work/.claude"},
+		{"mounts_root", config.Config{MountsRoot: "~/.toolbox/profiles/client-a"}, nil, "~/.toolbox/profiles/client-a/.claude"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			merged, err := Merge(testHost(t), &tc.cfg, tc.profile, proximo.Gate{})
+			if err != nil {
+				t.Fatalf("Merge: %v", err)
+			}
+			for name, want := range bridgeMounts {
+				if got := findMount(merged, name).Source; got != want {
+					t.Errorf("bridge mount %q Source = %q, want %q (kept on host root)", name, got, want)
+				}
+			}
+			if got := findMount(merged, "claude").Source; got != tc.claude {
+				t.Errorf("claude Source = %q, want %q (retargeted)", got, tc.claude)
+			}
+		})
 	}
 }
 
