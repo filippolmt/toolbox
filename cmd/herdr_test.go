@@ -20,8 +20,8 @@ import (
 )
 
 // fakeHerdrCore is the host's herdr-core: machines is what it lists, addErr
-// what an add answers. Every call lands in log; noHC makes every call
-// ErrNoHC, as on a host without hc.
+// what an add answers. Every call lands in log ("ls" for the listing); noHC
+// makes every call ErrNoHC, as on a host without hc.
 type fakeHerdrCore struct {
 	machines []herdrcore.Machine
 	addErr   error
@@ -30,6 +30,7 @@ type fakeHerdrCore struct {
 }
 
 func (h fakeHerdrCore) Machines() ([]herdrcore.Machine, error) {
+	*h.log = append(*h.log, "ls")
 	if h.noHC {
 		return nil, herdrcore.ErrNoHC
 	}
@@ -82,7 +83,7 @@ func TestHerdrStartsTheHerdrCoreShellAndAddsItsMachine(t *testing.T) {
 	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {
 		t.Errorf("workspace = %q, want the dir argument %q", got, ws)
 	}
-	if want := []string{"add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -96,7 +97,7 @@ func TestHerdrUnderAProfileAddsTheProfileNamedMachine(t *testing.T) {
 	if (*attached).ContainerName != "toolbox-herdr-work" {
 		t.Errorf("container = %q, want toolbox-herdr-work", (*attached).ContainerName)
 	}
-	if want := []string{"add toolbox-work via docker exec -i toolbox-herdr-work sh -c"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "add toolbox-work via docker exec -i toolbox-herdr-work sh -c"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -197,8 +198,8 @@ func TestHerdrRerunOnARunningShellWithItsMachineChangesNothing(t *testing.T) {
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
-	if len(*calls) != 0 {
-		t.Errorf("herdr-core calls %q, want none", *calls)
+	if want := []string{"ls"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want only the listing: no add, update or rm", *calls)
 	}
 	if len(probes) != 1 || !strings.Contains(probes[0], "toolbox-herdr: ") || !strings.Contains(probes[0], ".local/bin/herdr-core") {
 		t.Errorf("probes %q, want one for herdr-core's binary in toolbox-herdr", probes)
@@ -218,7 +219,7 @@ func TestHerdrRunningShellWithoutHerdrCoreBinaryUpdatesItsMachine(t *testing.T) 
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
-	if want := []string{"update toolbox"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "update toolbox"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -230,7 +231,7 @@ func TestHerdrNewShellWithItsMachineUpdatesIt(t *testing.T) {
 	if err := runHerdr(herdrCmd, []string{sessionWorkspace(t, "src")}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
-	if want := []string{"update toolbox"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "update toolbox"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -243,7 +244,7 @@ func TestHerdrReregisterRemovesAndAddsTheMachine(t *testing.T) {
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
-	if want := []string{"rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -259,7 +260,7 @@ func TestHerdrReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
-	if want := []string{"rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
+	if want := []string{"ls", "rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
@@ -281,8 +282,9 @@ func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
 	if *attached == nil || len(stopped) != 0 {
 		t.Fatalf("attached %v, daemon calls %q: want the Shell started and kept", *attached != nil, stopped)
 	}
-	if len(*calls) != 0 {
-		t.Errorf("herdr-core calls %q, want none", *calls)
+	// The listing is how the adapter reports no hc: nothing else is tried.
+	if want := []string{"ls"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want only the listing that found no hc: no add, update or rm", *calls)
 	}
 	if want := "hc machine add --name toolbox-work --install --via 'docker exec -i toolbox-herdr-work sh -c'"; !strings.Contains(out.String(), want) {
 		t.Errorf("output %q, want it to carry %q", out.String(), want)
