@@ -41,7 +41,7 @@ var peerSocketVolume = ownedVolume{
 	what:     "peer socket volume",
 }
 
-// orcaDataVolume is an Orca Shell's data volume (sessionplan.OrcaDataVolumeName),
+// orcaDataVolume is an Orca Shell's data volume (SessionPlan.OrcaDataVolume),
 // mounted at sessionplan.OrcaDataTarget. One initialiser name per volume, so
 // two Profiles' Orca Shells starting at once do not collide.
 func orcaDataVolume(name string) ownedVolume {

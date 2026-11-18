@@ -41,29 +41,23 @@ var hashShapedRe = regexp.MustCompile(fmt.Sprintf(`^[a-f0-9]{%d}$`, WorkspaceHas
 // suffix shaped like the workspace hash is refused: `toolbox-orca-<8hex>` is
 // the workspace container of a directory named "orca".
 func OrcaContainerName(profile *mountplan.Profile) (string, error) {
-	suffix, err := orcaProfileSuffix(profile)
-	return ContainerNamePrefix + "orca" + suffix, err
+	name, _, err := orcaNames(profile)
+	return name, err
 }
 
-// OrcaDataVolumeName is the Docker named volume holding the Orca Shell's data
-// directory: `toolbox-orca-data`, or `toolbox-orca-data-<profile>`, so each
-// Profile keeps its own pairing identity. It outlives the container.
-func OrcaDataVolumeName(profile *mountplan.Profile) (string, error) {
-	suffix, err := orcaProfileSuffix(profile)
-	return ContainerNamePrefix + "orca-data" + suffix, err
-}
-
-// orcaProfileSuffix is "" without a profile, else "-<sanitized profile>".
-func orcaProfileSuffix(profile *mountplan.Profile) (string, error) {
-	pn := mountplan.ProfileName(profile)
-	if pn == "" {
-		return "", nil
+// orcaNames is the Orca Shell's container name and its data volume's name:
+// `toolbox-orca-data`, or `toolbox-orca-data-<profile>`, so each Profile keeps
+// its own pairing identity. The volume outlives the container.
+func orcaNames(profile *mountplan.Profile) (container, volume string, err error) {
+	suffix := ""
+	if pn := mountplan.ProfileName(profile); pn != "" {
+		suffix = SanitizeShellName(pn)
+		if suffix == "" || hashShapedRe.MatchString(suffix) {
+			return "", "", fmt.Errorf("profile %q cannot name an Orca Shell: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn)
+		}
+		suffix = "-" + suffix
 	}
-	suffix := SanitizeShellName(pn)
-	if suffix == "" || hashShapedRe.MatchString(suffix) {
-		return "", fmt.Errorf("profile %q cannot name an Orca Shell: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn)
-	}
-	return "-" + suffix, nil
+	return ContainerNamePrefix + "orca" + suffix, ContainerNamePrefix + "orca-data" + suffix, nil
 }
 
 // orcaWorkspace is the dir argument when given, else orca_workspace expanded

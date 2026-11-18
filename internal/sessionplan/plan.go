@@ -257,10 +257,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	var orcaName, orcaVolume string
 	if orca {
 		var err error
-		if orcaName, err = OrcaContainerName(in.Profile); err != nil {
-			return nil, err
-		}
-		if orcaVolume, err = OrcaDataVolumeName(in.Profile); err != nil {
+		if orcaName, orcaVolume, err = orcaNames(in.Profile); err != nil {
 			return nil, err
 		}
 		if in.Workspace, err = orcaWorkspace(in); err != nil {

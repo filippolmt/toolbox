@@ -2185,7 +2185,7 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the Orca Shell's own named volume
-(`sessionplan.OrcaDataVolumeName`: `toolbox-orca-data` or
+(`SessionPlan.OrcaDataVolume`: `toolbox-orca-data` or
 `toolbox-orca-data-<profile>`, mounted at `sessionplan.OrcaDataTarget`), the
 server log on the state mount (`TOOLBOX_ORCA_LOG`), the workspace from the `dir`
 argument, `orca_workspace`, or else the running Orca Shell's own (a start
