@@ -359,6 +359,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	if plan.Detached && op.Action != runplan.ActionCreate && !runplan.IsDetached(inspect) {
 		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
 	}
+	// Already up and already detached: there is nothing to refresh, build or
+	// start, and no terminal to open.
+	if plan.Detached && op.Action == runplan.ActionConnect {
+		return nil, nil
+	}
 
 	// State the observed branch to Image Freshness. It owns the synchronous
 	// decision and retains any live-probe provenance for the later attachment;

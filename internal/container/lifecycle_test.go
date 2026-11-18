@@ -1643,15 +1643,25 @@ func TestShellDetachedJoinsALabelledContainer(t *testing.T) {
 				Config: &container.Config{Labels: runplan.DetachedLabels()},
 			}, nil
 		},
+		// Already up and already detached: nothing to refresh, so no image
+		// work and no start-up prompt for a command with nobody to answer it.
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			t.Error("image inspected on a detached join")
+			return client.ImageInspectResult{}, nil
+		},
 	}
 
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.Detached = true
+	withOverlay(t, plan) // a join builds no `:local` either
 	if _, err := Shell(context.Background(), mock, plan); err != nil {
 		t.Fatalf("Shell() error: %v", err)
 	}
 	if *called {
 		t.Error("a detached Shell must not exec a terminal")
+	}
+	if slices.Contains(mock.calls, "ImageBuild") {
+		t.Error("a detached join built the local overlay")
 	}
 }
 
