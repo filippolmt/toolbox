@@ -168,17 +168,20 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 }
 
 // registerHerdrMachine adds machine reached through via unless the host's
-// herdr-core already knows it. A known machine on a container this run created
-// is updated: the hc herdr-core installed lived in the old container's layer.
-// --reregister removes a known machine and adds it again.
+// herdr-core already knows it on that connection. A known machine on a
+// container this run created is updated: the hc herdr-core installed lived in
+// the old container's layer. --reregister, or a machine of that name on
+// another connection, removes it and adds it again.
 func registerHerdrMachine(machine, via string, created bool) error {
 	machines, err := herdrHost.Machines()
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(machines, func(m herdrcore.Machine) bool { return m.Name == machine }) {
+	if i := slices.IndexFunc(machines, func(m herdrcore.Machine) bool { return m.Name == machine }); i >= 0 {
+		// hc lists a --via machine's target as the --via command verbatim.
+		same := machines[i].Via && machines[i].Target == via
 		switch {
-		case herdrReregister:
+		case herdrReregister || !same:
 			if err := herdrHost.Remove(machine); err != nil {
 				return err
 			}

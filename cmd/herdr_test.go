@@ -199,6 +199,22 @@ func TestHerdrReregisterRemovesAndAddsTheMachine(t *testing.T) {
 	}
 }
 
+// herdr-core lists a --via machine's target as the --via command verbatim: a
+// machine called toolbox that reaches anything else is not this Shell's, and is
+// removed and added again on the Shell's own connection.
+func TestHerdrReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
+	other := []herdrcore.Machine{{Name: "toolbox", Target: "ssh devbox", Via: false}}
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: other})
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
+	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	if want := []string{"rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want %q", *calls, want)
+	}
+}
+
 // Without hc the Shell stays up and the command to register it once herdr-core
 // is installed is printed, built from the planned names.
 func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
