@@ -14,7 +14,7 @@ MANIFEST_URL=https://dl.google.com/android/repository/repository2-3.xml
 # cmdline-tools launcher fetches the latest android-cli, and the runtime comes
 # from the Debian archive, like the image's own apt layer.
 CMDLINE_TOOLS_BUILD=16111833
-TEMURIN_VERSION=jdk-21.0.13+9
+TEMURIN_VERSION=jdk-21.0.13.1+2
 
 accept=0
 for arg in "$@"; do
