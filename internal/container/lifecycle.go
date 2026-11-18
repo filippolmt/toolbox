@@ -354,20 +354,9 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, resolveErr
 	}
 
-	// A detached plan joining an existing container gets a Detached Shell only
-	// if that container already is one: the label is fixed at create. Refused
-	// before any image work, so no refresh prompt can recreate an ordinary
-	// Shell, terminals and all, as a detached one. One already up has nothing
-	// to refresh, build or start and no terminal to open — only what this
-	// start asked for and the running container cannot give it.
-	if plan.Detached && op.Action != runplan.ActionCreate {
-		if !runplan.IsDetached(inspect) {
-			return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
-		}
-		if op.Action == runplan.ActionConnect {
-			warnReattachMismatch(ctx, cli, plan, inspect, op)
-			return nil, nil
-		}
+	// Before any image work: see joinDetached.
+	if joined, joinErr := joinDetached(ctx, cli, plan, inspect, op); joinErr != nil || joined {
+		return nil, joinErr
 	}
 
 	// State the observed branch to Image Freshness. It owns the synchronous
@@ -472,6 +461,27 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, execErr
 	}
 	return requested, nil
+}
+
+// joinDetached settles a detached plan that finds a container already under
+// its name, and reports whether there is nothing left to do. That container
+// is a Detached Shell only if it already is one: the label is fixed at
+// create. An unlabelled one is refused here, before any image work, so no
+// refresh prompt can recreate an ordinary Shell, terminals and all, as a
+// detached one. A running one has nothing to refresh, build or start and no
+// terminal to open — only what this start asked for and it cannot give.
+func joinDetached(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) (bool, error) {
+	if !plan.Detached || op.Action == runplan.ActionCreate {
+		return false, nil
+	}
+	if !runplan.IsDetached(inspect) {
+		return false, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
+	}
+	if op.Action != runplan.ActionConnect {
+		return false, nil
+	}
+	warnReattachMismatch(ctx, cli, plan, inspect, op)
+	return true, nil
 }
 
 // resolveOp settles what this session is going to do to the container: read
