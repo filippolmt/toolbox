@@ -2185,14 +2185,18 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
-argument or `orca_workspace`, and `Detached`. The gate is read by
+argument or `orca_workspace`, and `Detached` — unless `OrcaAttach`
+(`toolbox orca shell`) asks for a terminal, planned off the running Orca
+Shell's version and workspace so a recreate restarts the server. The gate is read by
 `init.d/80-orca.sh`, which installs the verified server under
 `<data>/server/<version>` (pruning every other version; offline, the newest
 cached one runs) and starts it in the background; the host waits for the
 server's readiness record in `<data>/serve.log` through the state mount
-(`internal/orca.WaitPairing`), removing an Orca Shell whose installer logged
-a `fatal:` line instead and relaying its `warning:` lines, then registers it
-with the desktop app as the environment `toolbox` or `toolbox-<profile>`
+(`internal/orca.WaitPairing`, as of the latest start: a run that ended wrote
+a stop line, so a join never reports a dead server as ready), removing an
+Orca Shell whose installer logged a `fatal:` line instead and relaying its
+`warning:` lines, then registers it with the desktop app as the environment
+`toolbox` or `toolbox-<profile>`
 (`orca.Pair`, from an offer the server makes through `orca.Offer`). Orca's own data profile is never called a
 Profile here. Decision and alternatives:
 [ADR 0023](docs/adr/0023-orca-is-a-first-class-toolbox-command.md).

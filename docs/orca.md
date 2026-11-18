@@ -43,6 +43,18 @@ toolbox uses the CLI bundled inside the app (`Orca.app/Contents/Resources/bin/or
 
 If an open desktop app does not show the new environment, restart it.
 
+## Open a terminal in it
+
+```sh
+toolbox orca shell
+```
+
+It attaches a terminal to the running Orca Shell, the agents' own workspace and tools; `exit` leaves Orca running. With no Orca Shell running it fails and tells you to start one with `toolbox orca`. A [session reload](session-reload.md) from that terminal re-enters `toolbox orca shell`, and the recreated Orca Shell starts the server again; if the desktop app loses it, `toolbox orca pair`. Ordinary `toolbox shell` sessions run alongside it.
+
+## Run it again
+
+A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
+
 ## Stop
 
 ```sh
@@ -51,7 +63,7 @@ toolbox orca stop
 
 It removes the Orca Shell, and succeeds with a warning when there is none. `toolbox stop --all` removes it too, and `toolbox list` shows it marked `(detached)`.
 
-To change the server version, stop first: a second `toolbox orca` joins the running Orca Shell and leaves its version as it is.
+To change the server version, stop first: a second `toolbox orca` joins the running Orca Shell, leaves its version as it is, and says so.
 
 ## Profiles
 
@@ -66,7 +78,7 @@ The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine 
 Orca's data lives on the state mount, `~/.toolbox/toolbox/state/orca` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). Inside it:
 
 - `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes every other cached version, so the cache holds one server. A checksum mismatch leaves `current` where it was.
-- `serve.log` — what the installer and the server printed. When `toolbox orca` times out waiting for the link, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
+- `serve.log` — what the installer and the server printed, with a `toolbox: orca: server stopped with status <n>` line when a start ends. When `toolbox orca` times out waiting for the server, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
 
 ## Offline
 

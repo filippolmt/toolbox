@@ -19,6 +19,14 @@ import (
 
 var versionRe = regexp.MustCompile(`^v?([0-9]+(\.[0-9]+)*)$`)
 
+// startRe matches the line the init script writes as a server start begins.
+var startRe = regexp.MustCompile(`^toolbox: orca \S+: start`)
+
+// ExitedMarker begins the line the init script appends when its run ends
+// without a server — an install that failed or a server that exited —
+// followed by " with status <n>".
+const ExitedMarker = "toolbox: orca: server stopped"
+
 // NormalizeVersion accepts a release version (digits and dots, optional
 // leading v) and returns the v-prefixed release tag. The value reaches a
 // download URL and a container env, so anything else is refused.
@@ -49,10 +57,9 @@ const pollInterval = 200 * time.Millisecond
 // ever serve in it.
 var ErrNotStarted = errors.New("orca: no server started")
 
-// Lines the init script (init.d/80-orca.sh) writes to the log: one opens each
-// start attempt, the others carry its outcome for the host.
-var startRe = regexp.MustCompile(`^toolbox: orca \S+: start `)
-
+// Lines the init script (init.d/80-orca.sh) writes to the log, besides the
+// start line (startRe) and the stop line (ExitedMarker): they carry an
+// attempt's outcome for the host.
 const (
 	fatalPrefix   = "toolbox: orca: fatal: "
 	warningPrefix = "toolbox: orca: warning: "
@@ -62,7 +69,8 @@ const (
 // past byte offset, and returns its pairing link. The latest start attempt
 // wins: the log is appended across server starts. A record whose pairing is
 // unavailable is an error carrying Orca's own guidance; an installer's fatal
-// line is ErrNotStarted with its reason.
+// line is ErrNotStarted with its reason; a start that has stopped otherwise
+// is an error, not the link it printed before.
 func WaitPairing(path string, offset int64, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -72,6 +80,9 @@ func WaitPairing(path string, offset int64, timeout time.Duration) (string, erro
 		}
 		if st.fatal != "" {
 			return "", fmt.Errorf("%w: %s; read %s", ErrNotStarted, st.fatal, path)
+		}
+		if st.stopped != "" {
+			return "", fmt.Errorf("orca: the server stopped (%q); read %s, then toolbox orca stop and start it again", st.stopped, path)
 		}
 		if rec := st.record; rec != nil {
 			if !rec.Pairing.Available {
@@ -93,9 +104,12 @@ func Warnings(path string, offset int64) ([]string, error) {
 	return st.warnings, err
 }
 
-// logState is the latest start attempt as the log past an offset tells it.
+// logState is the latest start attempt as the log past an offset tells it:
+// its readiness record, or the stop line written after it, plus the
+// installer's fatal reason and warnings.
 type logState struct {
 	record   *readiness
+	stopped  string
 	fatal    string
 	warnings []string
 }
@@ -122,6 +136,8 @@ func readLog(path string, offset int64) (logState, error) {
 		switch {
 		case startRe.MatchString(line):
 			st = logState{}
+		case strings.HasPrefix(line, ExitedMarker):
+			st.record, st.stopped = nil, line
 		case strings.HasPrefix(line, fatalPrefix):
 			st.fatal = strings.TrimPrefix(line, fatalPrefix)
 		case strings.HasPrefix(line, warningPrefix):
@@ -129,7 +145,7 @@ func readLog(path string, offset int64) (logState, error) {
 		case strings.HasPrefix(line, "{"):
 			var r readiness
 			if json.Unmarshal([]byte(line), &r) == nil && r.Type == "orca_server_ready" {
-				st.record = &r
+				st.record, st.stopped = &r, ""
 			}
 		}
 	}

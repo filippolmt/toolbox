@@ -1768,3 +1768,41 @@ func TestShellDetachedJoinStillWarnsOnPublishMismatch(t *testing.T) {
 		t.Errorf("stderr = %q, want a publish mismatch warning", stderr)
 	}
 }
+
+// `toolbox orca shell`: a terminal in the running Orca Shell, planned as the
+// Orca Shell so a recreate keeps the server. Exiting it leaves the Orca Shell
+// running, its server with it.
+func TestShellOrcaAttachLeavesTheOrcaShellRunning(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			inspect := existingInspect(true, runplan.DetachedLabels())
+			inspect.HostConfig.AutoRemove = true
+			return inspect, nil
+		},
+		stopFn: func(context.Context, string, client.ContainerStopOptions) error {
+			t.Error("exiting `toolbox orca shell` stopped the Orca Shell")
+			return nil
+		},
+		removeFn: func(context.Context, string, client.ContainerRemoveOptions) error {
+			t.Error("exiting `toolbox orca shell` removed the Orca Shell")
+			return nil
+		},
+	}
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost(t), Cfg: testConfig(),
+		Workspace: testWorkspace(t), OrcaVersion: "v1.4.262", OrcaAttach: true})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !*called {
+		t.Fatal("`toolbox orca shell` opened no terminal")
+	}
+	if slices.Contains(mock.calls, "ContainerCreate") {
+		t.Error("`toolbox orca shell` created a container")
+	}
+}

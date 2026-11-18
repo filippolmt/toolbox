@@ -19,8 +19,10 @@ set -euo pipefail
 # link switched atomically after that; a fresh install then prunes every other
 # version. A failed download falls back to the newest cached version with a
 # `warning:` line; a mismatch, or a failed download with nothing cached, ends
-# with a `fatal:` line and no server. No restart of a crashed server: tini (PID 1) keeps
-# the container up, and the log says why the server stopped.
+# with a `fatal:` line and no server. No restart of a crashed server: tini
+# (PID 1) keeps the container up, and the log says why the server stopped.
+# However the run ends, its last log line is the stop line the host reads as
+# "not serving" (internal/orca, ExitedMarker).
 
 [ -n "${TOOLBOX_ORCA_VERSION:-}" ] || exit 0
 
@@ -38,6 +40,13 @@ fi
 mkdir -p "$data"
 exec >>"$log" 2>&1 </dev/null
 echo "toolbox: orca ${TOOLBOX_ORCA_VERSION}: start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+tmp=""
+on_exit() {
+    local status=$?
+    [ -z "$tmp" ] || rm -rf "$tmp"
+    echo "toolbox: orca: server stopped with status $status"
+}
+trap on_exit EXIT
 
 # fail ends an attempt that starts no server with the line the host reads to
 # report the reason and stop the Orca Shell (orca.WaitPairing).
@@ -70,7 +79,6 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     base="https://github.com/stablyai/orca/releases/download/$version"
     # Beside the destination, so the final rename stays on one filesystem.
     tmp=$(mktemp -d "$servers/.install-$version.XXXXXX")
-    trap 'rm -rf "$tmp"' EXIT
     echo "toolbox: orca: downloading $base/$archive"
     if curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive" &&
         curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"; then
@@ -87,13 +95,13 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
         rm -rf "$dest"
         mv "$tmp/tree" "$dest"
         rm -rf "$tmp"
-        trap - EXIT
+        tmp=""
         installed=1
     else
         # Offline: the newest server already cached runs instead, by version
         # order; the warning line is relayed by the host.
         rm -rf "$tmp"
-        trap - EXIT
+        tmp=""
         cached=$(cd "$servers" && for v in v*; do
             if [ -x "$v/bin/orca-ide" ]; then echo "$v"; fi
         done | sort -V | tail -n 1)
@@ -117,5 +125,5 @@ fi
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,
-# where the session plan publishes the port.
-exec "$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json
+# where the session plan publishes the port. Not exec'd: on_exit logs its end.
+"$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json

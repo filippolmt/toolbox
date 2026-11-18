@@ -193,6 +193,10 @@ Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running O
 | `--profile <name>` | Run the Orca Shell for this [profile](#profiles) (`toolbox-orca-<name>`). |
 | `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
 
+On a running Orca Shell it creates nothing: it says the shell is already running, at which version, prints the endpoint, and pairs as a fresh start does; when that server has stopped, it fails and names the log.
+
+`toolbox orca shell [--profile <name>] [--share <tools>]` opens a terminal in the running Orca Shell; exiting it leaves Orca running. With no Orca Shell running it fails and points at `toolbox orca`. Pass the `--share` the Orca Shell was started with: a recreate on the way in (refresh, [reload](session-reload.md)) uses it.
+
 `toolbox orca stop [--profile <name>]` removes the Orca Shell; with none running it warns and exits 0.
 
 `toolbox orca pair [--profile <name>]` removes the running Orca Shell's environment from the desktop app and adds it again from a fresh pairing offer.
