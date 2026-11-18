@@ -26,9 +26,9 @@ usage() {
 # named only inside quotes, a heredoc body or a comment is not a command.
 # Unparseable input prints nothing: the hook fails open, CI stays the gate.
 # shortcut: commands nested in $(…), backticks or `bash -c` are not seen,
-# `git push` without a refspec is read as pushing HEAD, and a `cd` holds for
-# the rest of the command even inside a subshell; parse them if an
-# off-policy branch gets through that way.
+# `git push` without a refspec is read as pushing HEAD, a `cd` holds for the
+# rest of the command even inside a subshell, and after a `cd -` the git
+# calls go unchecked; parse them if an off-policy branch gets through that way.
 # shellcheck disable=SC2016 # Python source, not shell
 read -r -d '' parse_command <<'PY' || true
 import json, os, re, shlex, subprocess, sys
@@ -168,6 +168,17 @@ def push_args(rest, d, new_tags):
         out.append(dst)
     return out
 
+def cd_target(cwd, args):
+    """The directory a `cd`/`pushd` lands in, or None when it cannot be known."""
+    if cwd is None:
+        return None
+    dirs = [a for a in args if a == '-' or not a.startswith('-')]
+    if not dirs:
+        return os.path.expanduser('~')
+    if dirs[0] == '-':
+        return None
+    return os.path.join(cwd, os.path.expanduser(dirs[0]))
+
 def git_call(seg, cwd):
     """(repo dir, subcommand, its args) for a git command, else None. The dir
     is resolved, so `-C .` and the cwd name the same repo."""
@@ -210,9 +221,13 @@ try:
     for seg in simple_commands(cmd):
         # A `cd` earlier in the command moves the git calls after it: a push
         # from a worktree beside the checkout pushes the worktree's branch.
-        if seg[0] == 'cd' and len(seg) > 1:
-            cwd = os.path.join(cwd, seg[1])
+        if seg[0] == 'builtin':
+            seg = seg[1:]
+        if seg and seg[0] in ('cd', 'pushd'):
+            cwd = cd_target(cwd, seg[1:])
             continue
+        if cwd is None:
+            continue  # `cd -` and the like: the directory is unknown, fail open
         call = git_call(seg, cwd)
         if not call:
             continue
@@ -311,6 +326,12 @@ self_test() {
         'cd wt; git push -u origin HEAD'                 'fix/wt'
         'cd wt && git -C .. push'                        'chore/current'
         'git push; cd wt'                                'chore/current'
+        "cd $repo/wt && git push"                        'fix/wt'
+        'cd -- wt && git push'                           'fix/wt'
+        'cd -P wt && git push'                           'fix/wt'
+        'builtin cd wt && git push'                      'fix/wt'
+        'pushd wt && git push'                           'fix/wt'
+        'cd - && git push'                               ''
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
