@@ -111,7 +111,13 @@ them.
   `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
   `TestOrcaInitWithoutTheGateDoesNothing` and
-  `TestOrcaInitRefusesAChecksumMismatch`. →
+  `TestOrcaInitRefusesAChecksumMismatch`. Pairing reaches the desktop app
+  only through the `orca.Desktop` seam, from an offer the Orca Shell's server
+  makes; an environment already there is left alone, and no error carries the
+  pairing code. Pinned by
+  `TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment`,
+  `TestOrcaPairRemovesAndReAddsTheEnvironment` and
+  `TestMacDesktopKeepsThePairingCodeOutOfItsErrors`. →
   [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
