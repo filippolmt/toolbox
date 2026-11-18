@@ -26,8 +26,11 @@ usage() {
 # named only inside quotes, a heredoc body or a comment is not a command.
 # Unparseable input prints nothing: the hook fails open, CI stays the gate.
 # shortcut: commands nested in $(…), backticks or `bash -c` are not seen,
-# and `git push` without a refspec is read as pushing HEAD; parse them if an
-# off-policy branch gets through that way.
+# `git push` without a refspec is read as pushing HEAD, and only `cd DIR`,
+# a bare `cd` and `pushd DIR` move the directory: any other form leaves the
+# git calls after it unchecked, and the operator after a cd is not read
+# (`cd x || git …`, `cd x &`, a subshell); parse them if an off-policy
+# branch gets through that way.
 # shellcheck disable=SC2016 # Python source, not shell
 read -r -d '' parse_command <<'PY' || true
 import json, os, re, shlex, subprocess, sys
@@ -167,6 +170,17 @@ def push_args(rest, d, new_tags):
         out.append(dst)
     return out
 
+def cd_target(cwd, args):
+    """The directory `cd DIR` or a bare `cd` lands in, or None when unknown:
+    any other form (flags, -, ±N, a variable, extra words) is not followed."""
+    if cwd is None:
+        return None
+    if not args:
+        return os.path.expanduser('~')
+    if len(args) != 1 or args[0][:1] in '-+' or '$' in args[0]:
+        return None
+    return os.path.join(cwd, os.path.expanduser(args[0]))
+
 def git_call(seg, cwd):
     """(repo dir, subcommand, its args) for a git command, else None. The dir
     is resolved, so `-C .` and the cwd name the same repo."""
@@ -207,8 +221,22 @@ try:
     # its push as a branch push.
     names, new_tags = [], set()
     for seg in simple_commands(cmd):
+        # A `cd` earlier in the command moves the git calls after it: a push
+        # from a worktree beside the checkout pushes the worktree's branch.
+        while seg and seg[0] in ('builtin', 'command', 'exec', 'time', '{'):
+            seg = seg[1:]
+        if seg and seg[0] in ('cd', 'pushd', 'popd'):
+            # pushd DIR lands like cd DIR; every other pushd and every popd
+            # works the directory stack.
+            stack = seg[0] == 'popd' or (seg[0] == 'pushd' and len(seg) != 2)
+            cwd = None if stack else cd_target(cwd, seg[1:])
+            continue
+        if cwd is None:
+            continue  # `cd -` and the like: the directory is unknown, fail open
         call = git_call(seg, cwd)
         if not call:
+            if {'cd', 'pushd', 'popd'} & set(seg):
+                cwd = None  # a cd under a wrapper this parser does not know
             continue
         d, sub, rest = call
         if sub == 'tag' and (name := tag_created(rest)):
@@ -259,6 +287,9 @@ self_test() {
         git -C "$repo" init -q -b chore/current
         git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m t
         git -C "$repo" tag v1
+        # A second checkout on its own branch, as a worktree beside it is.
+        git -C "$repo" init -q -b fix/wt wt
+        git -C "$repo/wt" -c user.name=t -c user.email=t@t commit -q --allow-empty -m t
     )
 
     # Pairs: command, then the branches it creates or pushes (comma-joined).
@@ -298,6 +329,28 @@ self_test() {
         'git -C . tag v11 && git push origin v11'        ''
         'git tag v12 && git -C ./ push origin v12'       ''
         'git tag --create-reflog v13 && git push origin v13' ''
+        'cd wt && git push'                              'fix/wt'
+        'cd wt; git push -u origin HEAD'                 'fix/wt'
+        'cd wt && git -C .. push'                        'chore/current'
+        'git push; cd wt'                                'chore/current'
+        "cd $repo/wt && git push"                        'fix/wt'
+        'cd -- wt && git push'                           ''
+        'cd -P wt && git push'                           ''
+        'cd +1 && git push origin v1'                    ''
+        'cd wt extra; git push'                          ''
+        'command cd wt && git push'                      'fix/wt'
+        '{ cd wt; } && git push'                         'fix/wt'
+        'time cd wt && git push'                         'fix/wt'
+        'sudo cd wt && git push'                         ''
+        'builtin cd wt && git push'                      'fix/wt'
+        'pushd wt && git push'                           'fix/wt'
+        'cd - && git push'                               ''
+        'pushd wt && popd && git push'                   ''
+        'cd "$WT" && git push'                           ''
+        'pushd +1 && git push'                           ''
+        'pushd && git push'                              ''
+        'pushd -1 && git push'                           ''
+        'pushd -n wt && git push'                        ''
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
