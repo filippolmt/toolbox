@@ -327,6 +327,14 @@ test("gates follow docker-ci's image filter: daemon packages get the gate, the r
   assert.doesNotMatch(outside, /^make (test|go-dockergate)$/m, outside);
 });
 
+test("the real-daemon gate asks for a fresh image only when the image changed", () => {
+  const goOnly = gatesFor(["internal/sessionplan/x.go"]);
+  assert.match(goOnly, /no image input touched: the default image serves/, goOnly);
+  assert.doesNotMatch(goOnly, /after `make build`/, goOnly);
+  const withImage = gatesFor(["internal/sessionplan/x.go", "internal/build/assets/Dockerfile"]);
+  assert.match(withImage, /after `make build`, pass FULL=/, withImage);
+});
+
 test("gates read renames, non-ASCII paths and untracked files from git", () => {
   const repo = mkdtempSync(join(tmpdir(), "gates-"));
   try {

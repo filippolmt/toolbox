@@ -44,6 +44,11 @@ def dockergate_pkg(p):
     return matches(p, DAEMON_PATHS)
 
 
+def image_input(p):
+    """A path docker-ci builds the image from, beyond the daemon-gated Go."""
+    return matches(p, DOCKER_PATHS) and not dockergate_pkg(p)
+
+
 def renovate_pin():
     m = re.search(r"RENOVATE_VERSION:\s*['\"]?([^'\"\s]+)", (ROOT / ".github/workflows/ci.yml").read_text())
     return m.group(1) if m else "<RENOVATE_VERSION from ci.yml>"
@@ -63,7 +68,7 @@ ROWS = [
      "make go-check", "ci.yml (coverage-enforced test + lint)"),
     Gate(lambda p: p.startswith(".pi/"),
      "make check-agent", "ci.yml (lint)"),
-    Gate(lambda p: matches(p, DOCKER_PATHS) and not dockergate_pkg(p),
+    Gate(image_input,
      "make test", "docker-ci.yml (build + smoke)"),
     Gate(dockergate_pkg,
      "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
@@ -120,6 +125,8 @@ def gates(paths):
         if hits:
             entry = found.setdefault(row.command, {"ci": row.ci, "note": row.note, "paths": []})
             entry["paths"] += [p for p in hits if p not in entry["paths"]]
+    if "make go-dockergate" in found and not any(image_input(p) for p in paths):
+        found["make go-dockergate"]["note"] = "no image input touched: the default image serves, no `make build` needed"
     return found
 
 
