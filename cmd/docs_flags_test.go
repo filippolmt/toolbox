@@ -17,6 +17,8 @@ var flagRow = regexp.MustCompile("^\\| `(?:-\\w, )?--([a-z0-9-]+)")
 
 // commandSection is one `## toolbox <cmd>` section of docs/commands.md: its
 // text, `###` subsections included, and the long flags its flag table lists.
+// A `### toolbox <cmd> <sub>` subsection is a section of its own for rows: its
+// table belongs to the subcommand, its text to the top-level section.
 type commandSection struct {
 	text string
 	rows []string
@@ -28,10 +30,14 @@ func commandSections(t *testing.T) map[string]*commandSection {
 	if err != nil {
 		t.Fatalf("read docs/commands.md: %v", err)
 	}
+	return parseCommandSections(string(raw))
+}
+
+func parseCommandSections(raw string) map[string]*commandSection {
 	sections := map[string]*commandSection{}
-	var cur *commandSection
+	var cur, rowsTo *commandSection
 	fenced := false
-	for line := range strings.SplitSeq(string(raw), "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		if strings.HasPrefix(line, "```") {
 			fenced = !fenced
 		} else if !fenced && strings.HasPrefix(line, "## ") {
@@ -44,7 +50,11 @@ func commandSections(t *testing.T) map[string]*commandSection {
 				cur = &commandSection{}
 				sections[name] = cur
 			}
+			rowsTo = cur
 			continue
+		} else if name, ok := strings.CutPrefix(line, "### toolbox "); ok && !fenced && cur != nil {
+			rowsTo = &commandSection{}
+			sections[name] = rowsTo
 		}
 		if cur == nil {
 			continue
@@ -53,7 +63,7 @@ func commandSections(t *testing.T) map[string]*commandSection {
 		// fence counts as a row.
 		cur.text += line + "\n"
 		if m := flagRow.FindStringSubmatch(line); m != nil && !fenced {
-			cur.rows = append(cur.rows, m[1])
+			rowsTo.rows = append(rowsTo.rows, m[1])
 		}
 	}
 	return sections
@@ -89,6 +99,19 @@ func ownFlags(c *cobra.Command) []string {
 // the wrong command (a merge resolving two sections) fails here, where no link
 // check can see it.
 func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
+	t.Run("a ### subsection table belongs to its subcommand", func(t *testing.T) {
+		got := parseCommandSections("## toolbox config\n\n### toolbox config set\n\n| `--image` | x |\n\n## toolbox stop\n\n| `--all` | x |\n")
+		if rows := got["config set"]; rows == nil || !slices.Equal(rows.rows, []string{"image"}) {
+			t.Errorf("config set rows = %v, want [image]", rows)
+		}
+		if rows := got["config"].rows; len(rows) != 0 {
+			t.Errorf("config rows = %v, want none", rows)
+		}
+		if rows := got["stop"].rows; !slices.Equal(rows, []string{"all"}) {
+			t.Errorf("stop rows = %v, want [all]", rows)
+		}
+	})
+
 	tables := 0
 	for name, s := range commandSections(t) {
 		if len(s.rows) == 0 || name == "" {
