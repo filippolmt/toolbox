@@ -15,8 +15,12 @@ import (
 var flagRow = regexp.MustCompile("^\\| `(?:-\\w, )?--([a-z0-9-]+)")
 
 // commandFlagTables returns, per `## toolbox <cmd>` section of
-// docs/commands.md, the long flags its flag table lists. Sections without a
-// table are absent.
+// docs/commands.md, the long flags its flag table lists. Rows count toward the
+// last `##` heading, `###` subsections included.
+//
+// shortcut: a section without a table is absent, so its command's flags go
+// unchecked (init, config, mounts, shells document theirs in prose); require a
+// table per command if those drift.
 func commandFlagTables(t *testing.T) map[string][]string {
 	t.Helper()
 	raw, err := os.ReadFile("../docs/commands.md")
@@ -59,7 +63,7 @@ func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
 		t.Fatal("docs/commands.md has no flag table: the row pattern no longer matches")
 	}
 	for section, rows := range tables {
-		c, _, err := rootCmd.Find([]string{section})
+		c, _, err := rootCmd.Find(strings.Fields(section))
 		if err != nil || c == rootCmd {
 			t.Errorf("## toolbox %s: no such command", section)
 			continue

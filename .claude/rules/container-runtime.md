@@ -267,7 +267,8 @@ them.
 
 - **Declared Docker surface:** daemon-using leaf packages declare narrow,
   unexported interfaces. `internal/container` keeps the
-  full client because it hands it onward. Keep container seam vars as wrappers,
+  full client because it hands it onward, and only `cmd/` imports it (depguard
+  `container-edge` in `.golangci.yml`). Keep container seam vars as wrappers,
   and never make `dockertest.Fake` satisfy the full client accidentally. Pinned
   by `TestFakeIsNotAnAPIClient` and `TestFakeZeroValueRefusesEveryCall`. The
   overlay builder follows [image-build rules](image-build.md).

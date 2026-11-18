@@ -45,7 +45,9 @@ def dockergate_pkg(p):
 
 
 def image_input(p):
-    """A path docker-ci builds the image from, beyond the daemon-gated Go."""
+    """A path in docker-ci's filter beyond the daemon-gated Go: the image
+    inputs, plus a few that only trigger the workflow (go.mod, the workflow
+    itself), so it errs toward asking for a build."""
     return matches(p, DOCKER_PATHS) and not dockergate_pkg(p)
 
 
