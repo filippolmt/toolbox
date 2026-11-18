@@ -77,7 +77,7 @@ The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine 
 
 Orca's data lives on the state mount, `~/.toolbox/toolbox/state/orca` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). Inside it:
 
-- `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes every other cached version, so the cache holds one server. A checksum mismatch leaves `current` where it was.
+- `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes the cached versions older than it, so upgrades leave one server; after a downgrade the newer version stays cached for the next upgrade. A checksum mismatch leaves `current` where it was.
 - `serve.log` — what the installer and the server printed, with a `toolbox: orca: server stopped with status <n>` line when a start ends. When `toolbox orca` times out waiting for the server, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
 
 ## Offline
