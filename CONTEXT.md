@@ -1590,8 +1590,7 @@ the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
 must not block teardown), skip-if-detached (the
 [Detached Shell](#detached-shell) label, read off the same inspect),
 skip-if-sibling, otherwise StopOne. Owned by
-`internal/teardown`. Timing constants `DefaultTimeout` (30s) and
-`DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+`internal/teardown`. Timing constants `DefaultTimeout` and `DefaultStopGrace` live on the package, not on the lifecycle file.
 
 One caller deliberately does **not** use this policy: a
 [Session Reload](#session-reload) needs an unconditional destroy that
@@ -2159,10 +2158,9 @@ sibling execs remain; `runplan` owns the label: `DetachedLabels` writes it,
 `IsDetached` reads it off an inspect for lifecycle and Teardown, and
 `DetachedInLabels` off a list summary for `container.List`, which marks the
 row. The container keeps `AutoRemove`, so a stop still removes it. No
-user-facing flag sets it: its only planned caller is the container that hosts
-Orca's server ([#1426](https://github.com/filippolmt/toolbox/issues/1426)).
-Decision and alternatives: [ADR
-0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
+user-facing flag sets it: its only planned caller comes with
+[#1426](https://github.com/filippolmt/toolbox/issues/1426). Decision and
+alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
 was an invariant every reader could rely on. A container that hosts a server

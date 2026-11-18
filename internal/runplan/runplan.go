@@ -10,9 +10,8 @@
 // two never disagree on which containers the daemon removes. Lifecycle
 // dispatches on the typed Op rather than re-deriving the branch inline.
 //
-// It also owns the Detached Shell label, for the same reason: lifecycle writes
-// it at create and reads it before joining, teardown reads it on shell exit,
-// and List reads it to mark the row. One spelling keeps the three agreeing.
+// It also owns the Detached Shell label, for the same reason: every reader
+// and the one writer share a single spelling.
 package runplan
 
 import (
@@ -73,8 +72,7 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 // terminal attached to it. → CONTEXT.md, Detached Shell.
 const detachedLabel = "toolbox.detached"
 
-// detachedValue is the label's value; DetachedLabels writes it, DetachedInLabels
-// and IsDetached read it.
+// detachedValue is the label's value.
 const detachedValue = "true"
 
 // DetachedInLabels reports whether a label set marks a Detached Shell: the
