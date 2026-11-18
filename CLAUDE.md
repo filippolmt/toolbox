@@ -9,7 +9,7 @@
 **Go is not installed on the host** — reach every Go command through the `make` targets, which run the `golang` image pinned by `GO_IMAGE_VERSION` in the `Makefile` (cache volume `toolbox-gomod`). `make help` lists them; what the target comments can't carry:
 
 - `make go-build` — targets the host through `TOOLBOX_HOST_OS` / `TOOLBOX_HOST_ARCH` (set by `sessionplan`), since `uname` in a toolbox shell reports the container. Explicit override: `make go-build-macos` (`MACOS_ARCH=amd64` for an Intel Mac).
-- `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Inspect a build through `toolbox-local:build`, which no pull re-points. → [image selection](docs/configuration.md#image-selection)
+- `make build` — overwrites the local cache of the registry tag, so the next `./toolbox shell` picks up the freshly built image. Inspect a build through `toolbox-local:build`, which no pull re-points. A linked worktree tags only `toolbox-local:<worktree>`, so parallel builds stay apart; pass `FULL=` to tag more. → [image selection](docs/configuration.md#image-selection)
 - One package: `make go-test-one PKG=./internal/mountplan` (optional `RUN=TestFoo`, `TAGS=...`).
 - Ad-hoc `docker run -v`/`--mount` from a toolbox shell, daemon gates, new-code preflight: [development feedback loops](docs/agents/development-feedback.md).
 

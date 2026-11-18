@@ -23,8 +23,12 @@ make go-dockergate PKG=./internal/container RUN='TestTerminalClose|TestShellProc
 
 The target uses the existing runtime image selected by `FULL`; it does not
 rebuild that image. When testing changed image assets, run `make build` first
-and pass `FULL=toolbox-local:build`: a pull or prefetch can re-point the
-registry tag before the gate runs, while the local tag stays on your build. CI still verifies the
+and pass `FULL=` the tag it printed (`toolbox-local:build`, or
+`toolbox-local:<worktree>` in a linked worktree): a pull or prefetch can
+re-point the registry tag before the gate runs, while the local tag stays on
+your build. A linked worktree's build leaves the registry tag alone and its
+gate runner image is `toolbox-dockergate:<worktree>`, so builds in parallel
+worktrees cannot overwrite each other or the image `./toolbox shell` runs. CI still verifies the
 complete gate suite against the runtime image built from the PR.
 
 The development-only runner uses `GO_IMAGE` from the Makefile, the runtime's

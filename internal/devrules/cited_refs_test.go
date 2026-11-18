@@ -154,6 +154,82 @@ func TestCitedMakeTargets(t *testing.T) {
 }
 
 var (
+	// citedTest matches a Go test named as inline code: `TestFoo`, a subtest
+	// `TestFoo/case`, or a family `TestFoo*` (every test starting with TestFoo).
+	citedTest = regexp.MustCompile("`(Test[A-Z][A-Za-z0-9_]*)(\\*)?(?:/[^`]*)?`")
+	// definedTest matches a top-level test function declaration.
+	definedTest = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+)
+
+// citedTestRetired names the tests prose cites on purpose although no code
+// defines them any more, each with the reason; anything else cited must exist.
+var citedTestRetired = map[string]string{
+	"TestShellInspectNilContainerJSONBase": "CONTEXT.md's Run Plan entry names it as the tripwire the term replaced",
+}
+
+// TestCitedTestNamesExist holds prose to the tests it names: a rule pins its
+// guardrail by test name, and a renamed or deleted test leaves that pin
+// pointing at nothing with every other check green.
+func TestCitedTestNamesExist(t *testing.T) {
+	root := repoRoot(t)
+	var defined []string
+	walkTestFiles(t, root, func(_, body string) {
+		for _, m := range definedTest.FindAllStringSubmatch(body, -1) {
+			defined = append(defined, m[1])
+		}
+	})
+	if !slices.Contains(defined, "TestCitedTestNamesExist") {
+		t.Fatal("the declaration pattern did not find this test: it no longer matches a test function")
+	}
+
+	cited := 0
+	for rel, body := range markdownDocs(t, root) {
+		for _, m := range citedTest.FindAllStringSubmatch(body, -1) {
+			name := m[1]
+			cited++
+			if _, ok := citedTestRetired[name]; ok {
+				continue
+			}
+			if m[2] == "*" {
+				if !slices.ContainsFunc(defined, func(d string) bool { return strings.HasPrefix(d, name) }) {
+					t.Errorf("%s cites the test family `%s*`, but no test starts with %s: cite the current names", rel, name, name)
+				}
+				continue
+			}
+			if !slices.Contains(defined, name) {
+				t.Errorf("%s cites `%s`, which no test defines: cite the current test name", rel, name)
+			}
+		}
+	}
+	if cited == 0 {
+		t.Error("no Markdown file cites a test: the citation pattern no longer matches")
+	}
+}
+
+func TestCitedTestPattern(t *testing.T) {
+	cases := []struct {
+		body, name string
+		family     bool
+	}{
+		{"pinned by `TestFoo`.", "TestFoo", false},
+		{"`TestFoo/sub case`", "TestFoo", false},
+		{"the `TestBridgeContract*` tests", "TestBridgeContract", true},
+		{"`TestBridgeContract_ShimMatchesGo`", "TestBridgeContract_ShimMatchesGo", false},
+	}
+	for _, tc := range cases {
+		m := citedTest.FindStringSubmatch(tc.body)
+		if m == nil || m[1] != tc.name || (m[2] == "*") != tc.family {
+			t.Errorf("citedTest on %q = %q, want name %q family %v", tc.body, m, tc.name, tc.family)
+		}
+	}
+	for _, body := range []string{"`Tests`", "TestFoo without backticks", "`TestFoo bar`"} {
+		if m := citedTest.FindStringSubmatch(body); m != nil {
+			t.Errorf("citedTest on %q = %q, want no match", body, m)
+		}
+	}
+}
+
+var (
 	// citedInitScript matches an Init Sequence member: init.d/30-graphify.sh.
 	citedInitScript = regexp.MustCompile(`init\.d/([0-9]{2}-[A-Za-z0-9_.-]*\.sh)`)
 	// citedAssetBin matches an image asset under bin/, written as inline code

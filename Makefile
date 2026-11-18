@@ -11,6 +11,17 @@ FULL  := $(IMAGE):$(TAG)
 # background prefetch that re-points FULL leaves it on the image just built:
 # the targets that build and then use the image read this one.
 LOCAL := toolbox-local:build
+# A linked worktree builds under its own tags: worktrees share one daemon, so a
+# shared LOCAL is clobbered by a parallel build, and FULL would replace the
+# image `./toolbox shell` runs. There `make build` tags only LOCAL unless FULL
+# (or IMAGE / TAG) is passed on the command line; the gates then take
+# FULL=<the LOCAL it printed>. The tag is the worktree directory's basename,
+# cut to a valid Docker tag.
+WORKTREE := $(shell git rev-parse --git-dir 2>/dev/null | grep -q '/worktrees/' && basename "$(CURDIR)" | sed -e 's/[^A-Za-z0-9_.-]/-/g' -e 's/^[.-]*//' | cut -c1-100)
+ifneq ($(WORKTREE),)
+LOCAL := toolbox-local:$(WORKTREE)
+endif
+BUILD_TAGS := $(if $(and $(WORKTREE),$(if $(filter command line,$(origin FULL) $(origin IMAGE) $(origin TAG)),,x)),,-t $(FULL)) -t $(LOCAL)
 # BuildKit registry cache published by CI (docker-publish-reusable.yml, mode=max), one
 # ref per arch (`$(CACHE_REF)-amd64`, `-arm64`); BuildKit uses whichever matches
 # the daemon's platform. Seeding from it makes the
@@ -48,7 +59,7 @@ GO_IMAGE        := golang:$(GO_IMAGE_VERSION)
 GOLANGCI_VERSION := v2.15.0
 GOLANGCI_IMAGE  := golangci/golangci-lint:$(GOLANGCI_VERSION)-alpine
 GO_MOD_VOL      := toolbox-gomod
-DOCKERGATE_IMAGE := toolbox-dockergate:local
+DOCKERGATE_IMAGE := toolbox-dockergate:$(or $(WORKTREE),local)
 GOTEST_IMAGE    := toolbox-gotest:local
 # When running inside a toolbox shell we are talking to the host daemon over
 # the bind-mounted socket (DooD): the literal in-container path ($(CURDIR),
@@ -117,8 +128,9 @@ COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}
 
 .PHONY: go-dockergate go-dockergate-image go-test-image scratch build test test-graphify-hooks shell shell-bash clean help go-build go-build-macos go-test go-coverage go-test-one go-vet go-test-verbose go-fmt go-lint go-lint-new go-preflight go-check gates check-devtools go-shell go-clean-cache go-run go-run-clean test-host-share check-links check-agent update-skills
 
-build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build)
-	docker buildx build -f internal/build/assets/Dockerfile -t $(FULL) -t $(LOCAL) \
+build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build; a linked worktree: toolbox-local:<worktree> only)
+	@echo "build tags:$(subst -t , ,$(BUILD_TAGS))"
+	docker buildx build -f internal/build/assets/Dockerfile $(BUILD_TAGS) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --cache-from type=registry,ref=$(CACHE_REF)-amd64 \
 	  --cache-from type=registry,ref=$(CACHE_REF)-arm64 \
@@ -139,8 +151,8 @@ shell: build ## Build the image and open an interactive zsh shell in it
 shell-bash: build ## Build the image and open an interactive bash shell (override default zsh)
 	docker run --rm -it $(LOCAL) bash
 
-clean: ## Remove the toolbox image
-	docker rmi $(FULL) $(LOCAL) 2>/dev/null || true
+clean: ## Remove the toolbox image (the tags make build writes here)
+	docker rmi$(subst -t , ,$(BUILD_TAGS)) 2>/dev/null || true
 
 # Offline = relative links + #fragment anchors only; external URLs are never
 # checked, so the target works air-gapped and can't flake on third-party

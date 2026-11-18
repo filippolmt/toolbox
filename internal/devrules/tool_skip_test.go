@@ -60,29 +60,44 @@ func TestSkipsWithoutCIGuard(t *testing.T) {
 // requireTools; elsewhere an inline os.Getenv("CI") check.
 func TestAMissingToolNeverSkipsUnderCI(t *testing.T) {
 	root := repoRoot(t)
+	walkTestFiles(t, root, func(rel, body string) {
+		if rel == "internal/devrules/tool_skip_test.go" {
+			return
+		}
+		for _, line := range skipsWithoutCIGuard(body) {
+			t.Errorf("%s:%d skips on a missing tool without failing under $CI — use requireTools or an os.Getenv(\"CI\") check", rel, line)
+		}
+	})
+}
+
+// walkTestFiles calls fn with the repo-relative path and body of every Go test
+// file in the repo. dist/ is gitignored build and scratch output: make
+// go-dockergate keeps a whole Go module cache under dist/.scratch, and a
+// scratch checkout there would answer for tests the working tree renamed.
+func walkTestFiles(t *testing.T, root string, fn func(rel, body string)) {
+	t.Helper()
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// dist/ is gitignored build and scratch output: make go-dockergate
-		// keeps a whole Go module cache under dist/.scratch.
 		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules" || path == filepath.Join(root, "dist")) {
 			return filepath.SkipDir
 		}
-		if d.IsDir() || !strings.HasSuffix(path, "_test.go") || path == filepath.Join(root, "internal/devrules/tool_skip_test.go") {
+		if d.IsDir() || !strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		for _, line := range skipsWithoutCIGuard(string(b)) {
-			rel, _ := filepath.Rel(root, path)
-			t.Errorf("%s:%d skips on a missing tool without failing under $CI — use requireTools or an os.Getenv(\"CI\") check", rel, line)
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
 		}
+		fn(filepath.ToSlash(rel), string(b))
 		return nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("walk test files: %v", err)
 	}
 }
