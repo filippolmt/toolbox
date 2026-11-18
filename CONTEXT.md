@@ -2181,15 +2181,18 @@ Concretely: `sessionplan.PlanInput.OrcaVersion` set is what makes a plan the
 Orca Shell, and `sessionplan.Plan` owns everything that follows from it: the
 fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 (`sessionplan.OrcaContainerName`, a hash-shaped profile suffix refused),
-`127.0.0.1:6768` published, the `TOOLBOX_ORCA_VERSION` env gate (the
+`sessionplan.OrcaPort` published on host loopback, the `TOOLBOX_ORCA_VERSION` env gate (the
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
-argument or `orca_workspace`, and `Detached` — unless `OrcaAttach`
+argument or `orca_workspace` (one check for both: an existing directory,
+never the home itself, which would mount the whole home), a host-port probe
+on create, and `Detached` — unless `OrcaAttach`
 (`toolbox orca shell`) asks for a terminal, planned off the running Orca
 Shell's version and workspace so a recreate restarts the server. The gate is read by
 `init.d/80-orca.sh`, which installs the verified server under
-`<data>/server/<version>` (pruning every other version; offline, the newest
+`<data>/server/<version>` (pruning the versions older than it, so a
+downgrade keeps the newer one for the next upgrade; offline, the newest
 cached one runs) and starts it in the background; the host waits for the
 server's readiness record in `<data>/serve.log` through the state mount
 (`internal/orca.WaitPairing`, as of the latest start: a run that ended wrote
@@ -2205,6 +2208,15 @@ Why the term exists: Orca's runtime lock admits one server per data
 directory, so the container hosting it is not "a shell for a workspace" but
 a fixed, per-Profile singleton — the name, the port and the data directory
 all follow from that one fact.
+
+Why the guards sit where they do: the init script runs under tini as a
+detached child and cannot stop its own container, so an attempt that starts
+no server ends with a `fatal:` log line and the host removes the Orca Shell.
+The port is fixed, so the create probes it on the host after the container
+conflict check: a holder outside Docker would otherwise surface only as the
+daemon's bind error. The pairing link and Spotlight's results reach host
+commands' argv, so the desktop seam accepts only an `orca://` link and
+absolute `.app` paths, neither of which can read as an option.
 
 ### Peer Anchor
 
