@@ -31,8 +31,9 @@ func runStatusline(t *testing.T, paneKey string, installReporter bool) (rendered
 		if err := os.MkdirAll(hooks, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// tee: a reporter that prints must still leave the rendered line alone.
 		// Write then rename, so a poller never reads a half-written record.
-		fake := "#!/bin/sh\ncat > \"$HOME/received.tmp\"\nmv \"$HOME/received.tmp\" \"$HOME/received\"\n"
+		fake := "#!/bin/sh\ntee \"$HOME/received.tmp\"\nmv \"$HOME/received.tmp\" \"$HOME/received\"\n"
 		if err := os.WriteFile(filepath.Join(hooks, "claude-statusline.sh"), []byte(fake), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -74,5 +75,16 @@ func TestStatuslineForwardsTheExactPayloadToOrcasReporter(t *testing.T) {
 	}
 	if string(got) != orcaStatuslinePayload {
 		t.Fatalf("reporter received %q, want %q", got, orcaStatuslinePayload)
+	}
+}
+
+func TestStatuslineRendersTheSameLineWhileForwardingToOrca(t *testing.T) {
+	plain, _ := runStatusline(t, "", false)
+	forwarded, _ := runStatusline(t, "tab-1:pane-1", true)
+	if plain == "" {
+		t.Fatal("statusline rendered nothing; the comparison would prove nothing")
+	}
+	if forwarded != plain {
+		t.Fatalf("forwarding changed the rendered line:\n got %q\nwant %q", forwarded, plain)
 	}
 }
