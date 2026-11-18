@@ -88,3 +88,19 @@ func TestStatuslineRendersTheSameLineWhileForwardingToOrca(t *testing.T) {
 		t.Fatalf("forwarding changed the rendered line:\n got %q\nwant %q", forwarded, plain)
 	}
 }
+
+func TestStatuslineOutsideAnOrcaPaneNeverInvokesTheReporter(t *testing.T) {
+	_, home := runStatusline(t, "", true)
+	// The reporter would run in the background: give it the time a positive run takes.
+	if _, ok := waitForFile(filepath.Join(home, "received"), time.Second); ok {
+		t.Fatal("Orca's reporter ran without ORCA_PANE_KEY")
+	}
+}
+
+func TestStatuslineInAnOrcaPaneWithoutTheReporterRendersAsBefore(t *testing.T) {
+	plain, _ := runStatusline(t, "", false)
+	got, _ := runStatusline(t, "tab-1:pane-1", false)
+	if got != plain {
+		t.Fatalf("a missing reporter changed the rendered line:\n got %q\nwant %q", got, plain)
+	}
+}
