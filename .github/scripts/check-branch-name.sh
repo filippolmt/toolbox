@@ -26,7 +26,8 @@ usage() {
 # named only inside quotes, a heredoc body or a comment is not a command.
 # Unparseable input prints nothing: the hook fails open, CI stays the gate.
 # shortcut: commands nested in $(…), backticks or `bash -c` are not seen,
-# and `git push` without a refspec is read as pushing HEAD; parse them if an
+# `git push` without a refspec is read as pushing HEAD, and a `cd` holds for
+# the rest of the command even inside a subshell; parse them if an
 # off-policy branch gets through that way.
 # shellcheck disable=SC2016 # Python source, not shell
 read -r -d '' parse_command <<'PY' || true
@@ -207,6 +208,11 @@ try:
     # its push as a branch push.
     names, new_tags = [], set()
     for seg in simple_commands(cmd):
+        # A `cd` earlier in the command moves the git calls after it: a push
+        # from a worktree beside the checkout pushes the worktree's branch.
+        if seg[0] == 'cd' and len(seg) > 1:
+            cwd = os.path.join(cwd, seg[1])
+            continue
         call = git_call(seg, cwd)
         if not call:
             continue
@@ -259,6 +265,9 @@ self_test() {
         git -C "$repo" init -q -b chore/current
         git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m t
         git -C "$repo" tag v1
+        # A second checkout on its own branch, as a worktree beside it is.
+        git -C "$repo" init -q -b fix/wt wt
+        git -C "$repo/wt" -c user.name=t -c user.email=t@t commit -q --allow-empty -m t
     )
 
     # Pairs: command, then the branches it creates or pushes (comma-joined).
@@ -298,6 +307,10 @@ self_test() {
         'git -C . tag v11 && git push origin v11'        ''
         'git tag v12 && git -C ./ push origin v12'       ''
         'git tag --create-reflog v13 && git push origin v13' ''
+        'cd wt && git push'                              'fix/wt'
+        'cd wt; git push -u origin HEAD'                 'fix/wt'
+        'cd wt && git -C .. push'                        'chore/current'
+        'git push; cd wt'                                'chore/current'
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
