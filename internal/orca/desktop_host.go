@@ -97,7 +97,7 @@ func (d MacDesktop) bundleVersion(app string) (string, error) {
 func (noDesktop) Environments() ([]string, error)     { return nil, ErrNoCLI }
 func (noDesktop) AddEnvironment(string, string) error { return ErrNoCLI }
 func (noDesktop) RemoveEnvironment(string) error      { return ErrNoCLI }
-func (noDesktop) OpenURL(string) error                { return errNoDesktop }
+func (noDesktop) OpenPairingLink(string) error        { return errNoDesktop }
 
 var errNoDesktop = errors.New("toolbox looks for the Orca desktop app on macOS only")
 
@@ -184,8 +184,8 @@ func (d MacDesktop) RemoveEnvironment(name string) error {
 	return err
 }
 
-// OpenURL uses macOS `open`; Orca.app registers the orca:// scheme.
-func (d MacDesktop) OpenURL(link string) error {
+// OpenPairingLink uses macOS `open`; Orca.app registers the orca:// scheme.
+func (d MacDesktop) OpenPairingLink(link string) error {
 	if err := checkPairingURL(link); err != nil {
 		return err
 	}

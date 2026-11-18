@@ -11,7 +11,7 @@ import (
 )
 
 // fakeApp is an Orca desktop app whose pairing store is envs. noCLI makes the
-// environment calls fail as with no Orca CLI; openErr fails OpenURL.
+// environment calls fail as with no Orca CLI; openErr fails OpenPairingLink.
 type fakeApp struct {
 	envs    []string
 	noCLI   bool
@@ -41,7 +41,7 @@ func (a *fakeApp) RemoveEnvironment(name string) error {
 	return nil
 }
 
-func (a *fakeApp) OpenURL(url string) error {
+func (a *fakeApp) OpenPairingLink(url string) error {
 	a.calls = append(a.calls, "open "+url)
 	return a.openErr
 }
@@ -179,8 +179,8 @@ func TestMacDesktopKeepsThePairingCodeOutOfItsErrors(t *testing.T) {
 
 func TestMacDesktopOpensTheLinkWithOpen(t *testing.T) {
 	var ran []string
-	if err := fakeCLI("open", "", &ran).OpenURL("orca://pair?code=y"); err != nil || ran[0] != "open orca://pair?code=y" {
-		t.Errorf("OpenURL ran %q, %v; want open with the link", ran, err)
+	if err := fakeCLI("open", "", &ran).OpenPairingLink("orca://pair?code=y"); err != nil || ran[0] != "open orca://pair?code=y" {
+		t.Errorf("OpenPairingLink ran %q, %v; want open with the link", ran, err)
 	}
 }
 
@@ -192,8 +192,8 @@ func TestMacDesktopRefusesALinkThatIsNotOrcas(t *testing.T) {
 		var ran []string
 		d := fakeCLI("orca", "{}", &ran)
 		for op, call := range map[string]func() error{
-			"AddEnvironment": func() error { return d.AddEnvironment("toolbox", link) },
-			"OpenURL":        func() error { return d.OpenURL(link) },
+			"AddEnvironment":  func() error { return d.AddEnvironment("toolbox", link) },
+			"OpenPairingLink": func() error { return d.OpenPairingLink(link) },
 		} {
 			err := call()
 			if err == nil || (link != "" && strings.Contains(err.Error(), "secret")) {

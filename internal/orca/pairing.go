@@ -57,7 +57,7 @@ func Pair(d Desktop, name string, force bool, offer func() (string, error), out 
 // it opened: the app takes the scheme, but whether it acts on a pairing link
 // depends on its version.
 func openOrPrint(d Desktop, url string, out io.Writer) error {
-	if err := d.OpenURL(url); err == nil {
+	if err := d.OpenPairingLink(url); err == nil {
 		_, _ = fmt.Fprintln(out, "No Orca CLI found: opened the pairing link with Orca.")
 	} else {
 		_, _ = fmt.Fprintf(out, "No Orca CLI found, and the link did not open (%v).\n", err)

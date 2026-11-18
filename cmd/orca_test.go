@@ -38,9 +38,9 @@ type fakeDesktop struct {
 	log     *[]string
 }
 
-func (d fakeDesktop) Version() (string, error)        { return d.version, nil }
-func (d fakeDesktop) Environments() ([]string, error) { return d.envs, nil }
-func (d fakeDesktop) OpenURL(url string) error        { return d.note("open " + url) }
+func (d fakeDesktop) Version() (string, error)         { return d.version, nil }
+func (d fakeDesktop) Environments() ([]string, error)  { return d.envs, nil }
+func (d fakeDesktop) OpenPairingLink(url string) error { return d.note("open " + url) }
 func (d fakeDesktop) AddEnvironment(name, url string) error {
 	return d.note("add " + name + " " + url)
 }
