@@ -74,9 +74,10 @@ after the server's identity changed. The Orca Shell must be running.`,
 	RunE: runOrcaPair,
 }
 
-// runOrca validates the flags before any container work, then opens the Orca
-// Shell through startSession like `shell` does; the session plan makes it the
-// Orca Shell.
+// runOrca validates the flags before any container work (only an inspect for
+// a running Orca Shell when no version resolves), then opens the Orca Shell
+// through startSession like `shell` does; the session plan makes it the Orca
+// Shell.
 func runOrca(cmd *cobra.Command, args []string) error {
 	profile, err := resolveShellProfile(cmd, orcaProfile, orcaShare)
 	if err != nil {
