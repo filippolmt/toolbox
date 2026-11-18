@@ -74,3 +74,27 @@ func TestWaitPairingSeesARecordWrittenWhileWaiting(t *testing.T) {
 		t.Errorf("WaitPairing = %q, %v; want the late link", got, err)
 	}
 }
+
+// A join reads the whole log: only what the latest server start wrote counts,
+// and a server that has since exited is reported as stopped, not as serving
+// the link it printed before it died.
+func TestWaitPairingReportsTheLatestStartsState(t *testing.T) {
+	ready := `{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#now"}}` + "\n"
+	for _, tc := range []struct {
+		label, log, want, wantErr string
+	}{
+		{"running", stale + "toolbox: orca v1: start x\n" + ready, "orca://pair#now", ""},
+		{"crashed", "toolbox: orca v1: start x\n" + ready + ExitedMarker + " with status 1\n", "", "status 1"},
+		{"install failed", stale + "toolbox: orca v1: start x\n" + ExitedMarker + " with status 1\n", "", "stopped"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			got, err := WaitPairing(writeLog(t, tc.log), 0, 300*time.Millisecond)
+			if tc.wantErr == "" && (err != nil || got != tc.want) {
+				t.Errorf("WaitPairing = %q, %v; want %q", got, err, tc.want)
+			}
+			if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Errorf("WaitPairing = %q, %v; want an error with %q", got, err, tc.wantErr)
+			}
+		})
+	}
+}

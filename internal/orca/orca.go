@@ -17,6 +17,14 @@ import (
 
 var versionRe = regexp.MustCompile(`^v?([0-9]+(\.[0-9]+)*)$`)
 
+// startRe matches the line the init script writes as a server start begins.
+var startRe = regexp.MustCompile(`^toolbox: orca \S+: start`)
+
+// ExitedMarker begins the line the init script appends when its run ends
+// without a server — an install that failed or a server that exited —
+// followed by " with status <n>".
+const ExitedMarker = "toolbox: orca: server stopped"
+
 // NormalizeVersion accepts a release version (digits and dots, optional
 // leading v) and returns the v-prefixed release tag. The value reaches a
 // download URL and a container env, so anything else is refused.
@@ -45,13 +53,17 @@ const pollInterval = 200 * time.Millisecond
 // WaitPairing waits up to timeout for a readiness record in the log at path,
 // past byte offset, and returns its pairing link. The last record wins: the
 // log is appended across server starts. A record whose pairing is unavailable
-// is an error carrying Orca's own guidance.
+// is an error carrying Orca's own guidance. Only the latest start counts, and
+// one that has stopped is an error, not the link it printed before.
 func WaitPairing(path string, offset int64, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		rec, err := lastRecord(path, offset)
+		rec, stopped, err := lastRecord(path, offset)
 		if err != nil {
 			return "", err
+		}
+		if stopped != "" {
+			return "", fmt.Errorf("orca: the server stopped (%q); read %s, then toolbox orca stop and start it again", stopped, path)
 		}
 		if rec != nil {
 			if !rec.Pairing.Available {
@@ -66,32 +78,36 @@ func WaitPairing(path string, offset int64, timeout time.Duration) (string, erro
 	}
 }
 
-// lastRecord returns the last readiness record past offset, nil when there is
-// none yet (a missing log included: the server may not have started).
-func lastRecord(path string, offset int64) (*readiness, error) {
+// lastRecord reads the log past offset as of the latest server start: its
+// readiness record, or the stop line written after it. Both empty when there
+// is neither yet (a missing log included: the server may not have started).
+func lastRecord(path string, offset int64) (last *readiness, stopped string, err error) {
 	f, err := os.Open(path) //nolint:gosec // the log path comes from the session plan
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer func() { _ = f.Close() }()
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	var last *readiness
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
-		if !bytes.HasPrefix(line, []byte("{")) {
-			continue
-		}
-		var r readiness
-		if json.Unmarshal(line, &r) == nil && r.Type == "orca_server_ready" {
-			last = &r
+		switch {
+		case startRe.Match(line):
+			last, stopped = nil, ""
+		case bytes.HasPrefix(line, []byte(ExitedMarker)):
+			last, stopped = nil, string(line)
+		case bytes.HasPrefix(line, []byte("{")):
+			var r readiness
+			if json.Unmarshal(line, &r) == nil && r.Type == "orca_server_ready" {
+				last, stopped = &r, ""
+			}
 		}
 	}
-	return last, sc.Err()
+	return last, stopped, sc.Err()
 }
