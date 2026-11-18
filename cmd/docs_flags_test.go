@@ -152,8 +152,8 @@ func namesWord(text, word string) bool {
 			return false
 		}
 		start, end := i+j, i+j+len(word)
-		before := start == 0 || !isFlagChar(text[start-1])
-		after := end == len(text) || !isFlagChar(text[end])
+		before := start == 0 || !isTokenChar(text[start-1])
+		after := end == len(text) || !isTokenChar(text[end])
 		if before && after {
 			return true
 		}
@@ -161,7 +161,7 @@ func namesWord(text, word string) bool {
 	}
 }
 
-func isFlagChar(b byte) bool {
+func isTokenChar(b byte) bool {
 	return b == '-' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9'
 }
 
