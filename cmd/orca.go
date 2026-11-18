@@ -48,7 +48,8 @@ the desktop app lists it as the environment toolbox (toolbox-<profile>);
 'toolbox orca pair' pairs it again. The runtime keeps running until
 'toolbox orca stop'.
 
-The workspace is the absolute dir argument, or the orca_workspace config key.
+The workspace is the absolute dir argument, or the orca_workspace config key,
+or else the running Orca Shell's.
 One Orca Shell per host and --profile. On a running one the command creates
 nothing and reports its state; a different server version needs 'toolbox
 orca stop' first. 'toolbox orca shell' opens a terminal in it. See
@@ -75,7 +76,7 @@ after the server's identity changed. The Orca Shell must be running.`,
 }
 
 // runOrca validates the flags before any container work (only an inspect for
-// a running Orca Shell when no version resolves), then opens the Orca Shell
+// a running Orca Shell when no version or no workspace resolves), then opens the Orca Shell
 // through startSession like `shell` does; the session plan makes it the Orca
 // Shell.
 func runOrca(cmd *cobra.Command, args []string) error {
@@ -88,12 +89,16 @@ func runOrca(cmd *cobra.Command, args []string) error {
 		ws = args[0]
 	}
 	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
-	if err != nil && orcaVersion == "" {
-		// No version to ask for: a running Orca Shell is still joined and
-		// reported, at its own version and workspace.
+	noVersion := err != nil && orcaVersion == ""
+	noWorkspace := ws == "" && cfg.OrcaWorkspace == ""
+	if noVersion || noWorkspace {
+		// What the command cannot resolve, a running Orca Shell supplies: it
+		// is joined and reported at its own version and workspace.
 		if env, runErr := runningOrcaShellOf(profile); runErr == nil {
-			version, err = sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv), nil
-			if ws == "" {
+			if noVersion {
+				version, err = sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv), nil
+			}
+			if noWorkspace {
 				ws = sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE")
 			}
 		}

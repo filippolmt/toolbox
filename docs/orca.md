@@ -19,13 +19,13 @@ toolbox orca
 
 The first start downloads `orca-server-linux-<arch>.tar.gz` from the [server version](#server-version)'s release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and the desktop app lists it (see [pairing](#pairing)). The runtime keeps running with no terminal open until you stop it.
 
-`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
+`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command joins a running Orca Shell on its workspace ([run it again](#run-it-again)); with none running, it fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
 
 ### Server version
 
 The server runs the same version as the Orca desktop app on your Mac, so the two always speak the same protocol. toolbox reads the app's `CFBundleShortVersionString` from `/Applications/Orca.app`; when the app is elsewhere, it finds it through Spotlight by its bundle identifier, `com.stablyai.orca`. After the desktop app updates itself, `toolbox orca stop` and `toolbox orca` bring the server to the new version.
 
-`--version 1.4.262` overrides the app's version. It is required when there is no desktop app on this machine (on Linux toolbox does not look for one), or when the app is a release candidate: RC releases publish no server. With neither an app nor `--version`, the command fails before any container work and names both.
+`--version 1.4.262` overrides the app's version. It is required when there is no desktop app on this machine (on Linux toolbox does not look for one), or when the app is a release candidate: RC releases publish no server. With neither an app nor `--version`, the command joins a running Orca Shell at its version ([run it again](#run-it-again)); with none running, it fails before any container work and names both.
 
 ### Pairing
 
@@ -53,7 +53,7 @@ It attaches a terminal to the running Orca Shell, the agents' own workspace and 
 
 ## Run it again
 
-A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. It needs neither `--version`, the desktop app, nor a `dir`: the running Orca Shell's own version and workspace stand in. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
+A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. With no `dir` argument and no `orca_workspace`, the running Orca Shell's workspace stands in; with neither `--version` nor the desktop app, its version does. A `--version` that differs from the running one is not applied: the report says so (see [Stop](#stop)). When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
 
 ## Stop
 

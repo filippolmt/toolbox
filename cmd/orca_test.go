@@ -386,40 +386,53 @@ func TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint(t *testing.T) {
 	}
 }
 
-// A second `toolbox orca` with no desktop app, no --version and no dir still
-// reports the running Orca Shell: its version and workspace stand in, and no
-// version-mismatch note appears, since none was asked for.
-func TestOrcaJoinWithoutAVersionReportsTheRunningOrcaShell(t *testing.T) {
-	orcaHarness(t, "", "")
-	ws := sessionWorkspace(t, "src")
-	newDockerClient = func() (client.APIClient, error) {
-		return runningOrcaDaemon{version: "v1.4.262", workspace: ws}, nil
-	}
-	shellFn = func(ctx context.Context, cli client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
-		log := p.OrcaLogPath()
-		if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(log, []byte("toolbox: orca v1.4.262: start x\n"+
-			`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#running"}}`+"\n"), 0o600); err != nil {
-			return nil, err
-		}
-		return container.Shell(ctx, cli, p)
-	}
-	var out bytes.Buffer
-	orcaCmd.SetOut(&out)
-	t.Cleanup(func() { orcaCmd.SetOut(nil) })
+// A second `toolbox orca` with no dir and no orca_workspace joins the running
+// Orca Shell on its own workspace, whatever the version resolves from: with no
+// desktop app and no --version its version stands in too, and only a version
+// asked for that differs from the running one carries the mismatch note.
+func TestOrcaJoinWithoutADirReportsTheRunningOrcaShell(t *testing.T) {
+	for _, tc := range []struct {
+		name, flag, app string
+		mismatch        bool
+	}{
+		{name: "no app, no --version"},
+		{name: "desktop app installed", app: "1.4.262"},
+		{name: "--version differs", flag: "1.5.0", mismatch: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orcaHarness(t, tc.flag, "")
+			orcaDesktop = fakeDesktop{version: tc.app}
+			ws := sessionWorkspace(t, "src")
+			newDockerClient = func() (client.APIClient, error) {
+				return runningOrcaDaemon{version: "v1.4.262", workspace: ws}, nil
+			}
+			shellFn = func(ctx context.Context, cli client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
+				log := p.OrcaLogPath()
+				if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile(log, []byte("toolbox: orca v1.4.262: start x\n"+
+					`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#running"}}`+"\n"), 0o600); err != nil {
+					return nil, err
+				}
+				return container.Shell(ctx, cli, p)
+			}
+			var out bytes.Buffer
+			orcaCmd.SetOut(&out)
+			t.Cleanup(func() { orcaCmd.SetOut(nil) })
 
-	if err := runOrca(orcaCmd, nil); err != nil {
-		t.Fatalf("runOrca: %v", err)
-	}
-	for _, want := range []string{"already running Orca v1.4.262", "127.0.0.1:" + sessionplan.OrcaPort} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output %q lacks %q", out.String(), want)
-		}
-	}
-	if strings.Contains(out.String(), "toolbox orca stop first") {
-		t.Errorf("output %q carries a version-mismatch note with no version asked", out.String())
+			if err := runOrca(orcaCmd, nil); err != nil {
+				t.Fatalf("runOrca: %v", err)
+			}
+			for _, want := range []string{"already running Orca v1.4.262", "127.0.0.1:" + sessionplan.OrcaPort} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output %q lacks %q", out.String(), want)
+				}
+			}
+			if got := strings.Contains(out.String(), "to run v1.5.0, toolbox orca stop first"); got != tc.mismatch {
+				t.Errorf("output %q: version-mismatch note = %v, want %v", out.String(), got, tc.mismatch)
+			}
+		})
 	}
 }
 
