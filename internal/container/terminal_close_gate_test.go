@@ -50,7 +50,7 @@ func TestShellProcessCleanupFencesStartupAndRejectsReusedPIDs(t *testing.T) {
 		ContainerName: "toolbox-shell-cleanup-" + rand.Text(),
 		Cmd:           []string{"sleep", "infinity"},
 	}
-	id, err := createAndStart(ctx, cli, plan, plan.Image)
+	id, err := createAndStart(ctx, cli, plan, plan.Image, plan.Detached)
 	if err != nil {
 		t.Fatal(err)
 	}
