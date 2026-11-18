@@ -168,8 +168,7 @@ func TestOrcaUnderAProfileAddsTheProfileNamedEnvironment(t *testing.T) {
 
 func TestOrcaPairRemovesAndReAddsTheEnvironment(t *testing.T) {
 	orcaHarness(t, "", "")
-	orcaPairProfile = "work"
-	t.Cleanup(func() { orcaPairProfile = "" })
+	orcaProfile = "work"
 	var calls []string
 	orcaDesktop = fakeDesktop{envs: []string{"toolbox", "toolbox-work"}, log: &calls}
 	orcaPairCmd.SetOut(&bytes.Buffer{})
@@ -329,13 +328,11 @@ func TestOrcaShellPlansTheRunningOrcaShellAndReentersIt(t *testing.T) {
 		return &reload.From{Container: p.ContainerName}, nil
 	}
 	exec := stubExecSelf(t, "/usr/local/bin/toolbox")
+	orcaShellCmd.InheritedFlags() // merges the persistent --profile, as cobra's parse does
 	if err := orcaShellCmd.Flags().Set("profile", "work"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		orcaShellProfile = ""
-		orcaShellCmd.Flags().Lookup("profile").Changed = false
-	})
+	t.Cleanup(func() { orcaShellCmd.Flags().Lookup("profile").Changed = false })
 
 	_ = runOrcaShell(orcaShellCmd, nil) // the exec stub reports the reload as an error
 
