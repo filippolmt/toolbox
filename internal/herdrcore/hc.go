@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // Host is the host's herdr-core: the seam `toolbox herdr` registers the Herdr
@@ -114,5 +116,5 @@ func Via(container string) (string, error) {
 // MachineName is the machine a Herdr Core Shell registers as: toolbox, or
 // toolbox-<profile>.
 func MachineName(container string) string {
-	return "toolbox" + strings.TrimPrefix(container, "toolbox-herdr")
+	return "toolbox" + strings.TrimPrefix(container, sessionplan.ContainerNamePrefix+sessionplan.HerdrCoreBase)
 }

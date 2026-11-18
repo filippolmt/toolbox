@@ -11,6 +11,10 @@ import "github.com/filippolmt/toolbox/internal/mountplan"
 // exists, and a Host Share bind cannot hold one.
 const HerdrCoreStateTarget = "/home/toolbox/.local/state/herdr-core"
 
+// HerdrCoreBase names the Herdr Core Shell: its container is
+// ContainerNamePrefix + HerdrCoreBase, plus a profile suffix.
+const HerdrCoreBase = "herdr"
+
 // HerdrCoreContainerName is `toolbox-herdr`, or `toolbox-herdr-<profile>`.
 func HerdrCoreContainerName(profile *mountplan.Profile) (string, error) {
 	n, err := herdrCoreNames(profile)
@@ -18,7 +22,7 @@ func HerdrCoreContainerName(profile *mountplan.Profile) (string, error) {
 }
 
 func herdrCoreNames(profile *mountplan.Profile) (singletonNameSet, error) {
-	return singletonNames("herdr", "a Herdr Core Shell", profile)
+	return singletonNames(HerdrCoreBase, "a Herdr Core Shell", profile)
 }
 
 // herdrCoreWorkspace is the dir argument when given, else herdr_workspace.
