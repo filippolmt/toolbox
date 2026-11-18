@@ -52,9 +52,12 @@ func parseCommandSections(raw string) map[string]*commandSection {
 			}
 			rowsTo = cur
 			continue
-		} else if name, ok := strings.CutPrefix(line, "### toolbox "); ok && !fenced && cur != nil {
-			rowsTo = &commandSection{}
-			sections[name] = rowsTo
+		} else if !fenced && cur != nil && strings.HasPrefix(line, "### ") {
+			rowsTo = cur // a plain ### subsection's table is the command's
+			if name, ok := strings.CutPrefix(line, "### toolbox "); ok {
+				rowsTo = &commandSection{}
+				sections[name] = rowsTo
+			}
 		}
 		if cur == nil {
 			continue
@@ -100,12 +103,12 @@ func ownFlags(c *cobra.Command) []string {
 // check can see it.
 func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
 	t.Run("a ### subsection table belongs to its subcommand", func(t *testing.T) {
-		got := parseCommandSections("## toolbox config\n\n### toolbox config set\n\n| `--image` | x |\n\n## toolbox stop\n\n| `--all` | x |\n")
+		got := parseCommandSections("## toolbox config\n\n### toolbox config set\n\n| `--image` | x |\n\n### Notes\n\n| `--origin` | x |\n\n## toolbox stop\n\n| `--all` | x |\n")
 		if rows := got["config set"]; rows == nil || !slices.Equal(rows.rows, []string{"image"}) {
 			t.Errorf("config set rows = %v, want [image]", rows)
 		}
-		if rows := got["config"].rows; len(rows) != 0 {
-			t.Errorf("config rows = %v, want none", rows)
+		if rows := got["config"].rows; !slices.Equal(rows, []string{"origin"}) {
+			t.Errorf("config rows = %v, want [origin] (the plain ### subsection's)", rows)
 		}
 		if rows := got["stop"].rows; !slices.Equal(rows, []string{"all"}) {
 			t.Errorf("stop rows = %v, want [all]", rows)
@@ -162,29 +165,56 @@ func isFlagChar(b byte) bool {
 	return b == '-' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9'
 }
 
+// flagNamed reports whether docs/commands.md names flag f of c, given c's
+// top-level section name ("" for the root). A top-level command's flag (and
+// the root's, under "## Global flag") counts anywhere in its section; a
+// subcommand's in its own `### toolbox <cmd> <sub>` table or on a line of the
+// top-level section that also names the subcommand, so `config show --where`
+// is not vouched for by a `set [--where]` row.
+func flagNamed(sections map[string]*commandSection, top string, c *cobra.Command, f string) bool {
+	s, ok := sections[top]
+	flag := "--" + f
+	if !ok || !namesWord(s.text, flag) {
+		return false
+	}
+	if c.Parent() == nil || c.Parent() == rootCmd {
+		return true
+	}
+	if own, ok := sections[strings.TrimPrefix(c.CommandPath(), rootCmd.Name()+" ")]; ok && slices.Contains(own.rows, f) {
+		return true
+	}
+	return slices.ContainsFunc(strings.Split(s.text, "\n"), func(line string) bool {
+		return namesWord(line, flag) && namesWord(line, c.Name())
+	})
+}
+
 // TestCommandsDocMentionsEveryFlag covers the commands a table does not: every
-// visible flag of every command is named in docs/commands.md. A top-level
-// command's flag (and the root's, under "## Global flag") anywhere in its
-// section; a subcommand's on a line of its top-level section that also names
-// the subcommand, so `config show --where` is not vouched for by a
-// `set [--where]` row.
+// visible flag of every command is named for it in docs/commands.md
+// (flagNamed).
 func TestCommandsDocMentionsEveryFlag(t *testing.T) {
+	t.Run("a subcommand's ### table names its flags", func(t *testing.T) {
+		set, _, err := rootCmd.Find([]string{"config", "set"})
+		if err != nil {
+			t.Fatalf("find config set: %v", err)
+		}
+		got := parseCommandSections("## toolbox config\n\n### toolbox config set\n\n| `--image` | x |\n")
+		if !flagNamed(got, "config", set, "image") {
+			t.Error("--image in the ### toolbox config set table: not named, want named")
+		}
+		if flagNamed(got, "config", set, "pull") {
+			t.Error("--pull, absent from the section: named, want not named")
+		}
+	})
+
 	sections := commandSections(t)
 	check := func(top string, c *cobra.Command) {
-		s, ok := sections[top]
 		heading := "## toolbox " + top
 		if top == "" {
 			heading = "## Global flag"
 		}
 		for _, f := range ownFlags(c) {
 			flag := "--" + f
-			named := ok && namesWord(s.text, flag)
-			if named && c.Parent() != nil && c.Parent() != rootCmd {
-				named = slices.ContainsFunc(strings.Split(s.text, "\n"), func(line string) bool {
-					return namesWord(line, flag) && namesWord(line, c.Name())
-				})
-			}
-			if !named {
+			if !flagNamed(sections, top, c, f) {
 				t.Errorf("%s has %s, not named for it under %s in docs/commands.md", c.CommandPath(), flag, heading)
 			}
 		}
