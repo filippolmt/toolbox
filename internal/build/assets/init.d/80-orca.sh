@@ -57,6 +57,7 @@ servers="$data/server"
 dest="$servers/$version"
 mkdir -p "$servers"
 
+installed=""
 if [ ! -x "$dest/bin/orca-ide" ]; then
     archive="orca-server-linux-$arch.tar.gz"
     base="https://github.com/stablyai/orca/releases/download/$version"
@@ -82,10 +83,18 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     mv "$tmp/tree" "$dest"
     rm -rf "$tmp"
     trap - EXIT
+    installed=1
 fi
 
 ln -sfn "$version" "$servers/.current.new"
 mv -T "$servers/.current.new" "$servers/current"
+
+# Bounded cache: once current is on a fresh install, no other version stays.
+if [ -n "$installed" ]; then
+    for old in "$servers"/v*; do
+        [ "${old##*/}" = "$version" ] || rm -rf "$old"
+    done
+fi
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,

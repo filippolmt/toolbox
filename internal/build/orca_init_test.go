@@ -222,3 +222,40 @@ func TestOrcaInitReusesAnInstalledVersion(t *testing.T) {
 		t.Errorf("server started %d times, want 2", n)
 	}
 }
+
+// seedOrcaVersion puts a runnable server for version in data's cache, as an
+// earlier install would have left it.
+func seedOrcaVersion(t *testing.T, data, version string) {
+	t.Helper()
+	bin := filepath.Join(data, "server", version, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(bin, "orca-ide"),
+		"#!/bin/sh\necho \"orca-ide "+version+" $*\" >> \"$ORCA_USER_DATA_PATH/served\"\n")
+}
+
+// Installing a version prunes the versions cached before it and moves
+// current onto it: the cache holds one server, not every one ever run.
+func TestOrcaInitPrunesOlderVersionsOnInstall(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	seedOrcaVersion(t, data, "v1.0.0")
+	seedOrcaVersion(t, data, "v1.2.0")
+	if err := os.Symlink("v1.2.0", filepath.Join(data, "server", "current")); err != nil {
+		t.Fatal(err)
+	}
+
+	run := runOrcaInit(t, data, fakeOrcaRelease(t, "arm64", false), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, readFile(t, filepath.Join(data, "serve.log")))
+	}
+	for _, old := range []string{"v1.0.0", "v1.2.0"} {
+		if _, err := os.Stat(filepath.Join(data, "server", old)); !os.IsNotExist(err) {
+			t.Errorf("%s still cached (stat err %v)", old, err)
+		}
+	}
+	if link, err := os.Readlink(filepath.Join(data, "server", "current")); err != nil || link != "v1.4.262" {
+		t.Errorf("current -> %q (%v), want v1.4.262", link, err)
+	}
+}
