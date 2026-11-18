@@ -309,7 +309,7 @@ func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.Cont
 		State:      &dockercontainer.State{Running: true},
 		Config: &dockercontainer.Config{
 			Labels: runplan.DetachedLabels(),
-			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, "TOOLBOX_HOST_WORKSPACE=" + d.workspace},
+			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, sessionplan.HostWorkspaceEnv + "=" + d.workspace},
 		},
 	}}, nil
 }
@@ -431,6 +431,60 @@ func TestOrcaJoinWithoutADirReportsTheRunningOrcaShell(t *testing.T) {
 			}
 			if got := strings.Contains(out.String(), "to run v1.5.0, toolbox orca stop first"); got != tc.mismatch {
 				t.Errorf("output %q: version-mismatch note = %v, want %v", out.String(), got, tc.mismatch)
+			}
+		})
+	}
+}
+
+// A join serves the running Orca Shell's tree: a workspace asked for, by the
+// dir argument or orca_workspace, that differs from it is not applied, and the
+// report says so the way it does for a version.
+func TestOrcaJoinReportsAWorkspaceMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name, arg, key string
+		mismatch       bool
+	}{
+		{name: "same dir argument", arg: "src"},
+		{name: "other dir argument", arg: "other", mismatch: true},
+		{name: "other orca_workspace", key: "other", mismatch: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orcaHarness(t, "v1.4.262", "")
+			running, other := sessionWorkspace(t, "src"), sessionWorkspace(t, "other")
+			var args []string
+			if tc.arg != "" {
+				args = []string{sessionWorkspace(t, tc.arg)}
+			}
+			if tc.key != "" {
+				cfg.OrcaWorkspace = sessionWorkspace(t, tc.key)
+			}
+			newDockerClient = func() (client.APIClient, error) {
+				return runningOrcaDaemon{version: "v1.4.262", workspace: running}, nil
+			}
+			shellFn = func(ctx context.Context, cli client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
+				log := p.OrcaLogPath()
+				if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile(log, []byte("toolbox: orca v1.4.262: start x\n"+
+					`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#running"}}`+"\n"), 0o600); err != nil {
+					return nil, err
+				}
+				return container.Shell(ctx, cli, p)
+			}
+			var out bytes.Buffer
+			orcaCmd.SetOut(&out)
+			t.Cleanup(func() { orcaCmd.SetOut(nil) })
+
+			if err := runOrca(orcaCmd, args); err != nil {
+				t.Fatalf("runOrca: %v", err)
+			}
+			note := "it keeps serving " + running + "; to serve " + other + ", toolbox orca stop first"
+			if got := strings.Contains(out.String(), note); got != tc.mismatch {
+				t.Errorf("output %q: workspace-mismatch note = %v, want %v", out.String(), got, tc.mismatch)
+			}
+			if strings.Contains(out.String(), "to run ") {
+				t.Errorf("output %q carries a version-mismatch note", out.String())
 			}
 		})
 	}

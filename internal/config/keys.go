@@ -234,7 +234,7 @@ var keyRows = []Key{
 		Kind:    KindScalar,
 		Editor:  EditorText,
 		Summary: "Host directory `toolbox orca` serves when no dir argument is given. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
-		Default: "unset (toolbox orca needs a dir argument)",
+		Default: "unset (a dir argument, or else a running Orca Shell's workspace)",
 		Example: "# orca_workspace — the directory holding your repositories, served by\n" +
 			"# `toolbox orca` when no dir argument is given. Absolute (/path) or\n" +
 			"# home-relative (~/sub); bare \"~\" is rejected.\n" +

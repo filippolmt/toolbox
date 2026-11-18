@@ -527,6 +527,11 @@ const CLIVersionEnv = "TOOLBOX_CLI_VERSION"
 // a rename on one side alone would quietly half-disable the feature.
 const NoUpdateCheckEnv = "TOOLBOX_NO_UPDATE_CHECK"
 
+// HostWorkspaceEnv carries the session's absolute host workspace (see
+// shellEnv). Exported because `toolbox orca` reads it back off the running
+// Orca Shell to join it on its own workspace.
+const HostWorkspaceEnv = "TOOLBOX_HOST_WORKSPACE"
+
 // EnvValue reads one variable out of a docker-style KEY=VALUE list, the shape
 // both a composed plan and a ContainerInspect carry. The last occurrence wins,
 // matching how the daemon resolves a duplicated key — which is the reason this
@@ -947,7 +952,7 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // workingDir and forwards it here.
 func shellEnv(workspace, workingDir string) []string {
 	return []string{
-		"TOOLBOX_HOST_WORKSPACE=" + workspace,
+		HostWorkspaceEnv + "=" + workspace,
 		"PWD=" + workingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
 		"HERDR_SESSION=" + ContainerNameFor(workspace, ""),

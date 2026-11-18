@@ -2185,8 +2185,9 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
-argument or `orca_workspace` (one check for both: an existing directory,
-never the home itself, which would mount the whole home), a host-port probe
+argument, `orca_workspace`, or else the running Orca Shell's own (one check
+for all: an existing directory, never the home itself, which would mount the
+whole home), a host-port probe
 on create, and `Detached` — unless `OrcaAttach`
 (`toolbox orca shell`) asks for a terminal, planned off the running Orca
 Shell's version and workspace so a recreate restarts the server. The gate is read by
