@@ -2181,7 +2181,9 @@ Concretely: `sessionplan.PlanInput.OrcaVersion` set is what makes a plan the
 Orca Shell, and `sessionplan.Plan` owns everything that follows from it: the
 fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 (`sessionplan.OrcaContainerName`, a hash-shaped profile suffix refused),
-`127.0.0.1:6768` published, the `TOOLBOX_ORCA_VERSION` env gate,
+`127.0.0.1:6768` published, the `TOOLBOX_ORCA_VERSION` env gate (the
+`--version` flag, else the desktop app's version read through the
+`orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
 argument or `orca_workspace`, and `Detached`. The gate is read by
 `init.d/80-orca.sh`, which installs the verified server under
