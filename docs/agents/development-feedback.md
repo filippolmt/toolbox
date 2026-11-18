@@ -120,22 +120,19 @@ fails on any `make <target>` or `.github/scripts/` path the docs still cite.
 
 ## Splitting a commit
 
-A behaviour change and a refactor land as separate commits. Commit the
-behaviour at green, before the refactor starts: that costs one command. When
-the two already share a file, the agent guardrails refuse the shortcuts, so
-split it this way:
+Commit the behaviour change at green, before the refactor starts: that costs
+one command. When the two already share a file, split it this way, within what
+the [agent guardrails](../troubleshooting.md#an-agent-command-is-blocked-by-the-agent-guardrails)
+allow:
 
 1. Copy every modified file to `dist/.scratch/split/` and `cmp` each copy.
-2. Reset only the shared files: `GIT_DISCARD_OK=1 git checkout HEAD -- <path>`.
+2. Reset only the shared files: `git checkout HEAD -- <path>`.
 3. Re-apply the behaviour hunks, `git add <path>`, commit.
 4. To test that commit alone, set the rest aside by path,
    `git stash push -m <name> -- <path>…`, run the tests, then restore it by
    the entry `git stash list` shows: `git stash pop stash@{n}`.
 5. Copy the saved files back, `cmp` them against the copies, commit the
    refactor.
-
-A bare `git stash` or `git stash pop` is refused: either can reach another
-session's work.
 
 ## GitHub monitoring
 

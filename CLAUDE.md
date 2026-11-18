@@ -31,7 +31,7 @@ Shared fs primitives live in `internal/fsx` (listed in its package doc; `Home()`
 - **Organisation-neutral.** Toolbox serves any company and team: nothing in the repo names one (marketplaces, hosts, internal skills, policies). An organisation's own config reaches its developers through its own channel, such as Claude Code's managed settings.
 - **Name the pin, not the value.** Renovate moves every pinned tool, so prose names what pins it (`GO_IMAGE_VERSION` in the `Makefile`, `toolchain` in `go.mod`, the Dockerfile `*_VERSION` ARGs) and describes behaviour, not the release it changed in. Same for any moving figure: coverage totals, tool counts, timings. Figures stay only as an enforced threshold, a dated ADR measurement, or in a commit message / PR body.
 - `AGENTS.md` is a symlink to this file (Codex CLI). Keep the symlink while Codex is in use.
-- Test-first changes: use the `tdd` skill — Specify-Encode-Fulfill, one test at a time; a behavior change and a refactor stay in separate steps and commits ([splitting a commit](docs/agents/development-feedback.md#splitting-a-commit)).
+- Test-first changes: use the `tdd` skill — Specify-Encode-Fulfill, one test at a time; a behavior change and a refactor stay in separate steps and commits ([splitting one](docs/agents/development-feedback.md#splitting-a-commit)).
 
 ## Gotchas
 
@@ -57,7 +57,7 @@ Code questions go to `codegraph_explore` (CLI: `codegraph explore`, bounded with
 
 ### Change workflow
 
-Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push: a commit after the review means running it again, with both axes handed the `make gates` result and every finding already settled (fixed, or kept with its reason) so a round re-opens none of them. A round that returns only judgement calls already weighed ends the loop. If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
+Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push, handing both axes the `make gates` result: a commit after the review means running it again, with the findings already settled (fixed, or kept with a reason). A round of only judgement calls already weighed ends the loop. If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
 
 ### Issue tracker
 
