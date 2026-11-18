@@ -185,15 +185,17 @@ The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructur
 
 ## toolbox orca
 
-Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running Orca's server at the release `--version` names, on host `127.0.0.1:6768`. Returns once the server is ready and prints the pairing link. The workspace is the absolute `dir` argument, or [`orca_workspace`](configuration.md#key-reference). Guide: [orca.md](orca.md).
+Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running Orca's server at the Orca desktop app's version (or the release `--version` names), on host `127.0.0.1:6768`. Returns once the server is ready and the Orca desktop app lists it as the environment `toolbox` (`toolbox-<profile>`); [how pairing works](orca.md#pairing). The workspace is the absolute `dir` argument, or [`orca_workspace`](configuration.md#key-reference). Guide: [orca.md](orca.md).
 
 | Flag | Description |
 |------|-------------|
-| `--version <v>` | Required. Server release, digits and dots (`1.4.262` or `v1.4.262`); anything else is refused before container work. |
+| `--version <v>` | Server release, digits and dots (`1.4.262` or `v1.4.262`); anything else is refused before container work. Default: the installed Orca desktop app's version ([where it comes from](orca.md#server-version)). |
 | `--profile <name>` | Run the Orca Shell for this [profile](#profiles) (`toolbox-orca-<name>`). |
 | `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
 
 `toolbox orca stop [--profile <name>]` removes the Orca Shell; with none running it warns and exits 0.
+
+`toolbox orca pair [--profile <name>]` removes the running Orca Shell's environment from the desktop app and adds it again from a fresh pairing offer.
 
 ## toolbox stop
 

@@ -11,17 +11,37 @@ Tell toolbox once which directory holds your repositories:
 orca_workspace: ~/src
 ```
 
-Then start the runtime with the server version that matches your desktop app (Orca → About):
+Then start the runtime:
 
 ```sh
-toolbox orca --version 1.4.262
+toolbox orca
 ```
 
-The first start downloads `orca-server-linux-<arch>.tar.gz` from that release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and prints a link: paste it in Orca under **Settings → Remote Orca Servers → Add Server**. The runtime keeps running with no terminal open until you stop it.
+The first start downloads `orca-server-linux-<arch>.tar.gz` from the [server version](#server-version)'s release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and the desktop app lists it (see [pairing](#pairing)). The runtime keeps running with no terminal open until you stop it.
 
-`toolbox orca <abs-dir> --version …` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both.
+`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both.
 
-Every server start creates a new pairing offer: after a restart, pair with the new link, not an old one.
+### Server version
+
+The server runs the same version as the Orca desktop app on your Mac, so the two always speak the same protocol. toolbox reads the app's `CFBundleShortVersionString` from `/Applications/Orca.app`; when the app is elsewhere, it finds it through Spotlight by its bundle identifier, `com.stablyai.orca`. After the desktop app updates itself, `toolbox orca stop` and `toolbox orca` bring the server to the new version.
+
+`--version 1.4.262` overrides the app's version. It is required when there is no desktop app on this machine (on Linux toolbox does not look for one), or when the app is a release candidate: RC releases publish no server. With neither an app nor `--version`, the command fails before any container work and names both.
+
+### Pairing
+
+`toolbox orca` registers the runtime with the desktop app as the environment `toolbox` (`toolbox-<profile>` under a [profile](#profiles)). When the app already lists that environment, it does nothing; otherwise it asks the server in the Orca Shell for a pairing offer (`orca-ide pair --address 127.0.0.1`) and adds it with Orca's CLI:
+
+```sh
+orca environment add --name toolbox --pairing-code 'orca://pair?code=…'
+```
+
+The pairing code sits on that command line, visible in the process list for the few seconds the call runs: that is how Orca's CLI takes it.
+
+toolbox uses the CLI bundled inside the app (`Orca.app/Contents/Resources/bin/orca`), else an `orca` on your `PATH`. With neither, it opens the `orca://pair` link (the app registers the scheme) and prints it; when the link does not open, it only prints it. Paste a printed link in Orca under **Settings → Remote Orca Servers → Add Server**. Without a CLI toolbox cannot tell whether the app already lists the runtime, so every start offers the link again.
+
+`toolbox orca pair` forces a fresh pairing: it removes the environment and adds it again from a new offer. Use it after the server's identity changed, for example after deleting Orca's data. With a profile: `toolbox orca pair --profile work`.
+
+If an open desktop app does not show the new environment, restart it.
 
 ## Stop
 
@@ -35,7 +55,7 @@ To change the server version, stop first: a second `toolbox orca` joins the runn
 
 ## Profiles
 
-`toolbox orca --profile work --version …` starts a separate Orca Shell, `toolbox-orca-work`, with the profile's own credentials and its own Orca data (pairing identity, paired devices). `toolbox orca stop --profile work` stops it. A profile name shaped like eight hex characters is refused, because it would collide with a workspace container's name.
+`toolbox orca --profile work` starts a separate Orca Shell, `toolbox-orca-work`, with the profile's own credentials and its own Orca data (pairing identity, paired devices). `toolbox orca stop --profile work` stops it. A profile name shaped like eight hex characters is refused, because it would collide with a workspace container's name.
 
 All Orca Shells publish the same host port, so only one runs at a time.
 
