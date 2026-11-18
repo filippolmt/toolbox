@@ -67,7 +67,7 @@ ROWS = [
      "make test", "docker-ci.yml (build + smoke)"),
     Gate(dockergate_pkg,
      "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
-     "against the intended runtime image: after `make build`, pass FULL=toolbox-local:build"),
+     "against the intended runtime image: after `make build`, pass FULL=<the tag it printed> (toolbox-local:build; a worktree: toolbox-local:<worktree>)"),
     Gate(lambda p: p == "renovate.json",
      f"npx --yes --package renovate@{renovate_pin()} renovate-config-validator renovate.json",
      "ci.yml (renovate-validate)", "pinned: unpinned `latest` has shipped an unfetchable tarball before"),
