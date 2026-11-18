@@ -19,6 +19,7 @@ import (
 
 var herdrProfile string // persistent on herdr: every subcommand acts on this profile's Herdr Core Shell
 var herdrShare []string
+var herdrShellShare []string
 
 // herdrHost is the host's herdr-core the Herdr Core Shell registers with;
 // tests swap it.
@@ -48,6 +49,37 @@ var herdrStopCmd = &cobra.Command{
 	Short: "Stop and remove the Herdr Core Shell; its state volume stays",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE:  runHerdrStop,
+}
+
+var herdrShellCmd = &cobra.Command{
+	Use:   "shell",
+	Short: "Open a terminal in the running Herdr Core Shell; exiting leaves herdr-core running",
+	Args:  usageArgs(cobra.NoArgs),
+	RunE:  runHerdrShell,
+}
+
+// runHerdrShell attaches a terminal to the running Herdr Core Shell, planned
+// off its workspace, so a recreate on the way in (refresh, Session Reload)
+// keeps it the Herdr Core Shell; the re-entry form re-runs this command.
+func runHerdrShell(cmd *cobra.Command, _ []string) error {
+	profile, err := resolveShellProfile(cmd, herdrProfile, herdrShellShare)
+	if err != nil {
+		return err
+	}
+	env, err := runningHerdrCoreShellOf(profile)
+	if err != nil {
+		return err
+	}
+	return startSession(sessionIntent{
+		Plan: sessionplan.PlanInput{
+			Cfg:         cfg,
+			Workspace:   sessionplan.EnvValue(env, sessionplan.HostWorkspaceEnv),
+			Profile:     profile,
+			HerdrCore:   true,
+			HerdrAttach: true,
+		},
+		Reentry: append([]string{"herdr", "shell"}, reentryFlags(cmd.Flags(), nil)...),
+	})
 }
 
 // runHerdr opens the Herdr Core Shell through startSession like `shell` does
@@ -147,6 +179,8 @@ func init() {
 		"the toolbox profile whose Herdr Core Shell to act on (its own credentials and herdr-core state)")
 	herdrCmd.Flags().StringSliceVar(&herdrShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root (see toolbox shell --share)")
-	herdrCmd.AddCommand(herdrStopCmd)
+	herdrShellCmd.Flags().StringSliceVar(&herdrShellShare, "share", nil,
+		"under --profile, the --share the Herdr Core Shell was started with")
+	herdrCmd.AddCommand(herdrStopCmd, herdrShellCmd)
 	rootCmd.AddCommand(herdrCmd)
 }

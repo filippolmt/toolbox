@@ -228,3 +228,51 @@ func TestHerdrJoinReportsAWorkspaceMismatch(t *testing.T) {
 		})
 	}
 }
+
+// The terminal is planned as the Herdr Core Shell it enters, on its
+// workspace, not a detached start; a Session Reload from it re-enters
+// `toolbox herdr shell` with the profile.
+func TestHerdrShellReentersTheRunningShell(t *testing.T) {
+	attached, calls := herdrHarness(t, fakeHerdrCore{})
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) { return runningHerdrDaemon{workspace: ws}, nil }
+	shellFn = func(_ context.Context, _ client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
+		*attached = p
+		return &reload.From{Container: p.ContainerName}, nil
+	}
+	exec := stubExecSelf(t, "/usr/local/bin/toolbox")
+	herdrShellCmd.InheritedFlags() // merges the persistent --profile, as cobra's parse does
+	if err := herdrShellCmd.Flags().Set("profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { herdrShellCmd.Flags().Lookup("profile").Changed = false })
+
+	_ = runHerdrShell(herdrShellCmd, nil) // the exec stub reports the reload as an error
+
+	p := *attached
+	if p == nil || p.ContainerName != "toolbox-herdr-work" || p.Detached || p.HerdrDataVolume != "toolbox-herdr-data-work" {
+		t.Fatalf("attached plan = %+v, want an attached toolbox-herdr-work with its state volume", p)
+	}
+	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {
+		t.Errorf("workspace = %q, want the running Shell's %q", got, ws)
+	}
+	if want := []string{"/usr/local/bin/toolbox", "herdr", "shell", "--profile", "work"}; !slices.Equal(exec.argv, want) {
+		t.Errorf("reload argv = %q, want %q", exec.argv, want)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("herdr-core calls %q, want none", *calls)
+	}
+}
+
+// Without a running Herdr Core Shell, `toolbox herdr shell` points at
+// `toolbox herdr` and creates nothing.
+func TestHerdrShellWithoutAShellPointsAtToolboxHerdr(t *testing.T) {
+	attached, _ := herdrHarness(t, fakeHerdrCore{})
+	err := runHerdrShell(herdrShellCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "start it with toolbox herdr") {
+		t.Fatalf("runHerdrShell = %v, want an error pointing at toolbox herdr", err)
+	}
+	if *attached != nil {
+		t.Error("`toolbox herdr shell` with no Herdr Core Shell reached the attach")
+	}
+}

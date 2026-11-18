@@ -225,6 +225,9 @@ type PlanInput struct {
 	// workspace from herdr_workspace when Workspace is empty, and creates
 	// detached.
 	HerdrCore bool
+	// HerdrAttach opens a terminal in the Herdr Core Shell (`toolbox herdr
+	// shell`) instead of starting it detached; the rest stays the Shell's.
+	HerdrAttach bool
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -371,7 +374,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
-		Detached:          orcaDetached(in) || in.HerdrCore,
+		Detached:          orcaDetached(in) || (in.HerdrCore && !in.HerdrAttach),
 		ProbeHostPorts:    orca,
 		OrcaDataVolume:    orcaN.volume,
 		OrcaDataInit:      orcaN.init,
