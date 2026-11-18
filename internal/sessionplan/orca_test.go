@@ -53,8 +53,8 @@ func TestPlanOrcaShell(t *testing.T) {
 			if got := env["TOOLBOX_ORCA_VERSION"]; got != "v1.4.262" {
 				t.Errorf("TOOLBOX_ORCA_VERSION = %q, want v1.4.262", got)
 			}
-			if plan.OrcaDataVolume != tc.volume {
-				t.Errorf("OrcaDataVolume = %q, want %q", plan.OrcaDataVolume, tc.volume)
+			if plan.DataVolume.Name != tc.volume {
+				t.Errorf("DataVolume.Name = %q, want %q", plan.DataVolume.Name, tc.volume)
 			}
 			wantBind := mountplan.Bind{Source: tc.volume, Target: "/home/toolbox/.orca-data", Mode: "rw"}
 			if !slices.Contains(plan.Binds, wantBind) {
@@ -93,10 +93,10 @@ func TestPlanOrcaDataInitNameIsNoOrcaShellName(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
-		if plan.OrcaDataInit != tc.init {
-			t.Errorf("OrcaDataInit = %q, want %q", plan.OrcaDataInit, tc.init)
+		if plan.DataVolume.Init != tc.init {
+			t.Errorf("DataVolume.Init = %q, want %q", plan.DataVolume.Init, tc.init)
 		}
-		for _, name := range []string{plan.ContainerName, plan.OrcaDataInit} {
+		for _, name := range []string{plan.ContainerName, plan.DataVolume.Init} {
 			if other, dup := seen[name]; dup {
 				t.Errorf("%q names both %s and another Orca container (%s)", name, plan.ContainerName, other)
 			}
@@ -124,8 +124,8 @@ func TestPlanOrdinaryShellCarriesNoOrca(t *testing.T) {
 	if len(plan.PortBindings) != 0 {
 		t.Errorf("ordinary plan publishes %v", plan.PortBindings)
 	}
-	if plan.OrcaDataVolume != "" {
-		t.Errorf("ordinary plan names an Orca data volume %q", plan.OrcaDataVolume)
+	if plan.DataVolume.Name != "" {
+		t.Errorf("ordinary plan names an Orca data volume %q", plan.DataVolume.Name)
 	}
 	for _, b := range plan.Binds {
 		if strings.Contains(b.Source, "orca") || strings.Contains(b.Target, "orca") {

@@ -201,6 +201,20 @@ On a running Orca Shell it creates nothing: it says the shell is already running
 
 `toolbox orca pair [--profile <name>]` removes the running Orca Shell's environment from the desktop app and adds it again from a fresh pairing offer.
 
+## toolbox herdr
+
+Start the [Herdr Core Shell](../CONTEXT.md#herdr-core-shell): a detached container hosting herdr-core for the Herdr desktop app, added to the host's herdr-core (`hc`) as the machine `toolbox` (`toolbox-<profile>`), reached with `docker exec` and with herdr-core's own `hc` installed in it. The workspace is the absolute `dir` argument, or [`herdr_workspace`](configuration.md#key-reference), or else the running Herdr Core Shell's; on a running one the command creates nothing and reports its workspace, and a different one requested is reported as a mismatch. A machine herdr-core already knows on the Shell's connection is left alone on a running Shell that still holds herdr-core's binary, and updated on a container this run created or one that lost the binary (a [Session Reload](session-reload.md)); a machine of that name on another connection is refused, naming its target, unless `--reregister` replaces it. When herdr-core cannot register the machine on a Shell this run created, the Shell is removed and herdr-core's reason is the error. Without `hc` on the host the Shell stays up and the `hc machine add` command to run later is printed. Guide: [herdr.md](herdr.md).
+
+| Flag | Description |
+|------|-------------|
+| `--profile <name>` | Run the Herdr Core Shell for this [profile](#profiles) (`toolbox-herdr-<name>`). |
+| `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
+| `--reregister` | Remove the machine from the host's herdr-core and add it again, reinstalling `hc` in the Shell. |
+
+`toolbox herdr stop [--profile <name>]` removes the Herdr Core Shell; its state volume stays. With none it exits 0 without a word.
+
+`toolbox herdr shell [--profile <name>] [--share <tools>]` opens a terminal in the running Herdr Core Shell; with none running it points at `toolbox herdr` and creates nothing.
+
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.

@@ -72,6 +72,7 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		Pull:              "always",
 		MountsRoot:        "~/r",
 		OrcaWorkspace:     "~/src",
+		HerdrWorkspace:    "~/src",
 		Bridge:            &yes,
 		BrowserBridge:     &yes,
 		Proximo:           &yes,

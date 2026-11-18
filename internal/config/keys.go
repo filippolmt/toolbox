@@ -244,6 +244,20 @@ var keyRows = []Key{
 		Scalar: ValidateOrcaWorkspace,
 	},
 	{
+		Name:    "herdr_workspace",
+		Kind:    KindScalar,
+		Editor:  EditorText,
+		Summary: "Host directory `toolbox herdr` mounts when it starts a Herdr Core Shell with no dir argument; a running Herdr Core Shell keeps its own. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
+		Default: "unset (a dir argument, or else a running Herdr Core Shell's workspace)",
+		Example: "# herdr_workspace — the directory holding your repositories, mounted by\n" +
+			"# `toolbox herdr` when it starts a Herdr Core Shell with no dir argument\n" +
+			"# (a running one keeps its own). Absolute (/path) or\n" +
+			"# home-relative (~/sub); bare \"~\" is rejected.\n" +
+			"# herdr_workspace: ~/src\n",
+		Str:    func(c *Config) string { return c.HerdrWorkspace },
+		Scalar: ValidateHerdrWorkspace,
+	},
+	{
 		Name:    "bridge",
 		Kind:    KindTri,
 		Editor:  EditorTri,

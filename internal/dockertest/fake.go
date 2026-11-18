@@ -9,10 +9,11 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// Fake is the daemon double the image packages drive their narrow interfaces
-// with: one function field per method those interfaces declare, and nothing
-// else. It satisfies each of them structurally, so a package whose interface
-// is unexported still takes this value without naming a type.
+// Fake is the daemon double the image packages and herdrcore drive their
+// narrow interfaces with: one function field per method those interfaces
+// declare, and nothing else. It satisfies each of them structurally, so a
+// package whose interface is unexported still takes this value without naming
+// a type.
 //
 // A nil field panics naming the method. That is the behaviour the hand-rolled
 // adapters got from embedding a nil client.APIClient, and it is load-bearing:
@@ -43,6 +44,8 @@ type Fake struct {
 	ContainerRemoveFn     func(ctx context.Context, name string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	ContainerKillFn       func(ctx context.Context, name string, opts client.ContainerKillOptions) (client.ContainerKillResult, error)
 	ExecInspectFn         func(ctx context.Context, execID string) (client.ExecInspectResult, error)
+	ExecCreateFn          func(ctx context.Context, container string, opts client.ExecCreateOptions) (client.ExecCreateResult, error)
+	ExecStartFn           func(ctx context.Context, execID string, opts client.ExecStartOptions) (client.ExecStartResult, error)
 
 	// mu guards the counters alone: a poll runs on its own goroutine, and a
 	// test that reads a count while one is in flight would otherwise race.
@@ -127,6 +130,16 @@ func (f *Fake) ExecInspect(ctx context.Context, execID string, _ client.ExecInsp
 	return f.ExecInspectFn(ctx, execID)
 }
 
+func (f *Fake) ExecCreate(ctx context.Context, container string, opts client.ExecCreateOptions) (client.ExecCreateResult, error) {
+	f.record("ExecCreate", f.ExecCreateFn != nil)
+	return f.ExecCreateFn(ctx, container, opts)
+}
+
+func (f *Fake) ExecStart(ctx context.Context, execID string, opts client.ExecStartOptions) (client.ExecStartResult, error) {
+	f.record("ExecStart", f.ExecStartFn != nil)
+	return f.ExecStartFn(ctx, execID, opts)
+}
+
 // The call counters. Separate methods rather than one string-keyed accessor:
 // a mistyped method name is then a compile error rather than a count of zero
 // that quietly passes.
@@ -142,6 +155,8 @@ func (f *Fake) ContainerStopCalls() int       { return f.count("ContainerStop") 
 func (f *Fake) ContainerRemoveCalls() int     { return f.count("ContainerRemove") }
 func (f *Fake) ContainerKillCalls() int       { return f.count("ContainerKill") }
 func (f *Fake) ExecInspectCalls() int         { return f.count("ExecInspect") }
+func (f *Fake) ExecCreateCalls() int          { return f.count("ExecCreate") }
+func (f *Fake) ExecStartCalls() int           { return f.count("ExecStart") }
 
 // InspectSeq builds an ImageInspectFn that answers one queued result per call
 // and then reports the image missing. Shared because two packages need the

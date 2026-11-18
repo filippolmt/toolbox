@@ -113,6 +113,8 @@ func TestFakeZeroValueRefusesEveryCall(t *testing.T) {
 		}},
 		{"ContainerKill", func(f *Fake) { _, _ = f.ContainerKill(t.Context(), "c", client.ContainerKillOptions{}) }},
 		{"ExecInspect", func(f *Fake) { _, _ = f.ExecInspect(t.Context(), "e", client.ExecInspectOptions{}) }},
+		{"ExecCreate", func(f *Fake) { _, _ = f.ExecCreate(t.Context(), "c", client.ExecCreateOptions{}) }},
+		{"ExecStart", func(f *Fake) { _, _ = f.ExecStart(t.Context(), "e", client.ExecStartOptions{}) }},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
 			defer func() {
@@ -167,6 +169,12 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 		ExecInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
 			return client.ExecInspectResult{}, nil
 		},
+		ExecCreateFn: func(context.Context, string, client.ExecCreateOptions) (client.ExecCreateResult, error) {
+			return client.ExecCreateResult{}, nil
+		},
+		ExecStartFn: func(context.Context, string, client.ExecStartOptions) (client.ExecStartResult, error) {
+			return client.ExecStartResult{}, nil
+		},
 	}
 
 	res, err := f.ImageInspect(t.Context(), "ref")
@@ -206,6 +214,12 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 	if _, err := f.ExecInspect(t.Context(), "e", client.ExecInspectOptions{}); err != nil {
 		t.Errorf("ExecInspect = %v, want nil", err)
 	}
+	if _, err := f.ExecCreate(t.Context(), "c", client.ExecCreateOptions{}); err != nil {
+		t.Errorf("ExecCreate = %v, want nil", err)
+	}
+	if _, err := f.ExecStart(t.Context(), "e", client.ExecStartOptions{}); err != nil {
+		t.Errorf("ExecStart = %v, want nil", err)
+	}
 
 	for _, tc := range []struct {
 		method string
@@ -223,6 +237,8 @@ func TestFakeAnswersItsStubsAndCounts(t *testing.T) {
 		{"ContainerRemove", f.ContainerRemoveCalls(), 1},
 		{"ContainerKill", f.ContainerKillCalls(), 1},
 		{"ExecInspect", f.ExecInspectCalls(), 1},
+		{"ExecCreate", f.ExecCreateCalls(), 1},
+		{"ExecStart", f.ExecStartCalls(), 1},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%sCalls() = %d, want %d", tc.method, tc.got, tc.want)

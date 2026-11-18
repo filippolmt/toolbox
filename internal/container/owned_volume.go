@@ -15,7 +15,7 @@ import (
 
 // ownedVolume is a Docker named volume that must belong to the session's
 // runtime user before any session binds it: the peer inbox-socket volume, and
-// each Orca Shell's data volume. Both exist because a Host Share bind cannot
+// each Orca Shell's data volume and Herdr Core Shell's state volume. All exist because a Host Share bind cannot
 // hold Unix sockets (see mountplan.PeerSocketVolumeName).
 type ownedVolume struct {
 	name, target string
@@ -26,10 +26,10 @@ type ownedVolume struct {
 	label string
 }
 
-// orcaDataVolume is an Orca Shell's data volume, mounted at
-// sessionplan.OrcaDataTarget; sessionplan names it and its initialiser.
-func orcaDataVolume(plan *sessionplan.SessionPlan) ownedVolume {
-	return ownedVolume{name: plan.OrcaDataVolume, target: sessionplan.OrcaDataTarget, initName: plan.OrcaDataInit, label: "Orca data volume"}
+// dataVolume is a singleton Shell's data volume, as sessionplan names it.
+func dataVolume(plan *sessionplan.SessionPlan) ownedVolume {
+	v := plan.DataVolume
+	return ownedVolume{name: v.Name, target: v.Target, initName: v.Init, label: v.Label}
 }
 
 // ensureOwnedVolume makes v exist, owned by the runtime user with mode 0700.

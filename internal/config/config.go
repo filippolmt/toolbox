@@ -56,6 +56,9 @@ type Config struct {
 	// argument is given. Same shape as MountsRoot: absolute or ~/sub, never
 	// bare ~ (the Orca Shell would mount the whole host home). Empty = unset.
 	OrcaWorkspace string `mapstructure:"orca_workspace"`
+	// HerdrWorkspace is the host directory `toolbox herdr` mounts when no
+	// `dir` argument is given; validated like OrcaWorkspace. Empty = unset.
+	HerdrWorkspace string `mapstructure:"herdr_workspace"`
 	// Bridge toggles the host-side ~/.toolbox/bridge RO mount in the
 	// container and gates the `toolbox bridge install` command. When false,
 	// the mount is omitted and the install command refuses. Default true.
@@ -235,18 +238,50 @@ func ValidateMountsRoot(s string) error {
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
 }
 
+// SingletonShell describes a Detached Shell kept one per host and Profile
+// under a fixed name (the Orca Shell, the Herdr Core Shell): what its
+// container is named after and how the CLI, the config and errors call it.
+type SingletonShell struct {
+	// Base names the container: toolbox-<Base>, or toolbox-<Base>-<profile>.
+	Base string
+	// Command is the CLI that starts it ("toolbox orca").
+	Command string
+	// Key is its workspace config key ("orca_workspace").
+	Key string
+	// Label is the Shell as prose names it ("Orca Shell"); Article goes
+	// before it where errors say "an Orca Shell".
+	Label, Article string
+}
+
+// OrcaShell and HerdrCoreShell are the singleton Shells.
+var (
+	OrcaShell      = SingletonShell{Base: "orca", Command: "toolbox orca", Key: "orca_workspace", Label: "Orca Shell", Article: "an"}
+	HerdrCoreShell = SingletonShell{Base: "herdr", Command: "toolbox herdr", Key: "herdr_workspace", Label: "Herdr Core Shell", Article: "a"}
+)
+
 // ValidateOrcaWorkspace applies the mounts_root shape to orca_workspace:
 // absolute or ~/sub. Bare "~" and "~/" are refused because the Orca Shell
 // would mount the whole host home as its workspace, breaking the containment
 // boundary. The syntactic check only: sessionplan checks the expanded path.
 func ValidateOrcaWorkspace(s string) error {
+	return validateShellWorkspace(OrcaShell, s)
+}
+
+// ValidateHerdrWorkspace is ValidateOrcaWorkspace for herdr_workspace.
+func ValidateHerdrWorkspace(s string) error {
+	return validateShellWorkspace(HerdrCoreShell, s)
+}
+
+// validateShellWorkspace is the syntactic check of a singleton Shell's
+// workspace key: absolute or ~/sub, never the bare home.
+func validateShellWorkspace(shell SingletonShell, s string) error {
 	if s == "~" || s == "~/" {
-		return fmt.Errorf("orca_workspace %q is too broad: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", s)
+		return fmt.Errorf("%s %q is too broad: it would mount the whole host home into the %s; name the directory that holds your repositories", shell.Key, s, shell.Label)
 	}
 	if s == "" || strings.HasPrefix(s, "~/") || filepath.IsAbs(s) {
 		return nil
 	}
-	return fmt.Errorf("orca_workspace %q must be absolute or start with ~/", s)
+	return fmt.Errorf("%s %q must be absolute or start with ~/", shell.Key, s)
 }
 
 // Pull policy values accepted by the `pull` key. These are the single source
