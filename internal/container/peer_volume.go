@@ -21,16 +21,41 @@ import (
 // lets `toolbox list` show it and `toolbox stop --all` sweep it up.
 const peerSocketInitContainerName = sessionplan.ContainerNamePrefix + "cc-socks-init"
 
+// ownedVolume is a Docker named volume that must belong to the session's
+// runtime user before any session binds it: the peer inbox-socket volume, and
+// each Orca Shell's data volume. Both exist because a Host Share bind cannot
+// hold Unix sockets (see mountplan.PeerSocketVolumeName).
+type ownedVolume struct {
+	name, target string
+	// initName is the throwaway initialiser container; see
+	// peerSocketInitContainerName for why it carries the toolbox prefix.
+	initName string
+	// what names the volume in progress lines and errors.
+	what string
+}
+
+var peerSocketVolume = ownedVolume{
+	name:     mountplan.PeerSocketVolumeName,
+	target:   mountplan.PeerSocketDirTarget,
+	initName: peerSocketInitContainerName,
+	what:     "peer socket volume",
+}
+
 // ensurePeerSocketVolume makes the shared inbox-socket volume exist and carry
 // the ownership Claude Code requires, so an opted-in session finds a directory
 // it can bind sockets in.
+func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image) error {
+	return ensureOwnedVolume(ctx, cli, base, peerSocketVolume)
+}
+
+// ensureOwnedVolume makes v exist, owned by the runtime user with mode 0700.
 //
 // The init is tied to the volume's creation rather than run on every shell: a
 // volume that already exists went through this same path, and confirming it
 // otherwise would cost a container start per session. The tradeoff only holds
 // because a failed init removes the volume again — see below.
-func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image) error {
-	name := mountplan.PeerSocketVolumeName
+func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, v ownedVolume) error {
+	name := v.name
 
 	switch _, err := cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); {
 	case err == nil:
@@ -39,53 +64,53 @@ func ensurePeerSocketVolume(ctx context.Context, cli client.APIClient, base sess
 		// Anything but a clean "no such volume" leaves the volume's existence
 		// unknown, and guessing "absent" is the dangerous guess: VolumeCreate
 		// returns the *existing* volume, so a failing init below would then
-		// force-remove one live sessions are binding sockets in.
-		return fmt.Errorf("failed to inspect peer socket volume %s: %w", name, err)
+		// force-remove one live sessions are using.
+		return fmt.Errorf("failed to inspect %s %s: %w", v.what, name, err)
 	}
 
-	ui.Info("Creating peer-messaging socket volume " + name + "...")
+	ui.Info("Creating " + v.what + " " + name + "...")
 	if _, err := cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name}); err != nil {
-		return fmt.Errorf("failed to create peer socket volume: %w", err)
+		return fmt.Errorf("failed to create %s: %w", v.what, err)
 	}
 
-	if err := initPeerSocketVolume(ctx, cli, base, name); err != nil {
+	if err := initOwnedVolume(ctx, cli, base, v); err != nil {
 		// A volume left behind root-owned would satisfy the VolumeInspect above
 		// on every later shell, so the init would never run again and each
-		// session would fail its bind instead — silently, which is the failure
+		// session would fail on it instead — silently, which is the failure
 		// mode this whole subsystem is written to avoid. Removing it keeps the
 		// next shell on the same self-healing path.
 		if _, rmErr := cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
 			return fmt.Errorf("%w — and %s could not be removed (%v), so every later shell would reuse it "+
-				"as-is: remove it with `docker volume rm %s` once no participating shell is running", err, name, rmErr, name)
+				"as-is: remove it with `docker volume rm %s` once no shell using it is running", err, name, rmErr, name)
 		}
 		return err
 	}
 	return nil
 }
 
-// initPeerSocketVolume chowns the freshly created volume to the host UID/GID
+// initOwnedVolume chowns the freshly created volume to the host UID/GID
 // and tightens it to 0700, in a throwaway container that runs as root.
 //
 // Root is the point: a Docker volume is created root-owned, the session
 // container runs as the unprivileged host UID (see the host-UID mapping), and
-// nothing in a bind spec can hand over ownership. 0700 matters just as much as
-// the owner — Claude Code answers a looser directory by falling back to
+// nothing in a bind spec can hand over ownership. For the peer volume 0700
+// matters just as much as the owner — Claude Code answers a looser directory by falling back to
 // /tmp/cc-socks-<uid>, without saying so, which leaves every peer alone in a
 // private directory.
 //
 // It runs the toolbox runtime image with that image's own entrypoint
 // overridden: none of the shell-start init belongs in a container that only
 // fixes a mode bit. Like the anchor, it takes the session's *base* ref and
-// never the `:local` overlay — the volume it initialises is host-global, and
-// see ensureAnchor for why the base is present locally by then.
-func initPeerSocketVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, volume string) error {
-	target := mountplan.PeerSocketDirTarget
+// never the `:local` overlay — the volume it initialises outlives any one
+// session, and see ensureAnchor for why the base is present locally by then.
+func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, v ownedVolume) error {
+	target := v.target
 	// Resolve(nil) reads only os.Getuid/os.Getgid; GroupAdd is bind-derived and
 	// this container mounts nothing but the volume.
 	owner := dockeridentity.Resolve(nil).UserSpec
 
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: peerSocketInitContainerName,
+		Name: v.initName,
 		Config: &container.Config{
 			Image:      base.Ref,
 			User:       "0:0",
@@ -93,7 +118,7 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, base sessio
 			Cmd:        []string{fmt.Sprintf("chown %s %s && chmod 0700 %s", owner, target, target)},
 		},
 		HostConfig: &container.HostConfig{
-			Binds: []string{volume + ":" + target},
+			Binds: []string{v.name + ":" + target},
 			// Not AutoRemove: the exit status is the only report this container
 			// produces, and the daemon may reap an auto-removed container before
 			// ContainerWait can read it.
@@ -101,12 +126,12 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, base sessio
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create peer socket volume initialiser: %w", err)
+		return fmt.Errorf("failed to create %s initialiser: %w", v.what, err)
 	}
 	defer func() {
 		// WithoutCancel: a Ctrl-C reaches this defer through a cancelled ctx,
 		// and passing that straight on would leave the container alive — which
-		// keeps the volume in use, so the rollback in ensurePeerSocketVolume
+		// keeps the volume in use, so the rollback in ensureOwnedVolume
 		// could not remove it either, and the name above would collide on the
 		// next shell.
 		_, _ = cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
@@ -119,18 +144,18 @@ func initPeerSocketVolume(ctx context.Context, cli client.APIClient, base sessio
 		Condition: container.WaitConditionNotRunning,
 	})
 	if _, startErr := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); startErr != nil {
-		return fmt.Errorf("failed to start peer socket volume initialiser: %w", startErr)
+		return fmt.Errorf("failed to start %s initialiser: %w", v.what, startErr)
 	}
 
 	select {
 	case waitErr := <-wait.Error:
-		return fmt.Errorf("failed to wait for peer socket volume initialiser: %w", waitErr)
+		return fmt.Errorf("failed to wait for %s initialiser: %w", v.what, waitErr)
 	case res := <-wait.Result:
 		if res.StatusCode != 0 {
-			return fmt.Errorf("peer socket volume initialiser exited %d: could not take ownership of %s", res.StatusCode, target)
+			return fmt.Errorf("%s initialiser exited %d: could not take ownership of %s", v.what, res.StatusCode, target)
 		}
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("peer socket volume init interrupted: %w", ctx.Err())
+		return fmt.Errorf("%s init interrupted: %w", v.what, ctx.Err())
 	}
 }
