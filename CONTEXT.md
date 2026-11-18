@@ -1405,7 +1405,9 @@ Concretely: `imageplan.registry` (`ImagePull`), `imagereclaim.imageStore`
 `imageprefetch.registryStore`, `imageplan.imageSource`,
 `teardown.containerRuntime` (the container it inspects, stops, removes or
 kills, plus the execs it asks about), `imageref.localStore` (the one
-`ImageInspect` behind `LocalRepoDigest`) and the `imageBuilder` that
+`ImageInspect` behind `LocalRepoDigest`), `herdrcore.shellExec`
+(`ExecCreate` + `ExecStart` + `ExecInspect`, the probe for herdr-core's
+binary in the Herdr Core Shell) and the `imageBuilder` that
 `internal/build`'s two build functions share. No one package owns the
 concept: each module owns the interface it declares, and
 `internal/dockertest` owns the shared half — the double all of them are
