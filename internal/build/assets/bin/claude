@@ -1,0 +1,54 @@
+#!/bin/sh
+# DO_NOT_TRACK turns off feature-flag fetching (flag-gated features, Remote
+# Control auto-connect): strip it for claude only. fetch-claude-code asserts
+# the target path.
+#
+# In an Orca pane, drop the orca-agent-view plugin Orca sideloads: managed
+# disableSideloadFlags makes Claude Code refuse to start on it, and Orca's own
+# switch does not reach a remote server (stablyai/orca#26935). Remove this
+# block once Orca fixes that or ships the plugin through a marketplace.
+# Why: docs/orca.md#claude-code-and-orcas-agent-view-plugin
+claude_cli=/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+
+is_orca_plugin() {
+	case "${1%/}" in
+	orca-agent-view | */orca-agent-view) return 0 ;;
+	esac
+	return 1
+}
+
+if [ -n "${ORCA_PANE_KEY-}" ]; then
+	# Rebuild "$@" in place: each argument is shifted off the front and,
+	# unless dropped, appended at the back, so spaces and order survive.
+	n=$#
+	while [ "$n" -gt 0 ]; do
+		arg=$1
+		shift
+		n=$((n - 1))
+		if [ "$arg" = --plugin-dir ] && [ "$n" -gt 0 ] && is_orca_plugin "$1"; then
+			shift
+			n=$((n - 1))
+			continue
+		fi
+		case "$arg" in
+		--plugin-dir=*) is_orca_plugin "${arg#--plugin-dir=}" && continue ;;
+		esac
+		set -- "$@" "$arg"
+	done
+	if [ -n "${CLAUDE_CODE_PLUGIN_DIRS-}" ]; then
+		kept=
+		rest=$CLAUDE_CODE_PLUGIN_DIRS:
+		while [ -n "$rest" ]; do
+			entry=${rest%%:*}
+			rest=${rest#*:}
+			[ -n "$entry" ] && ! is_orca_plugin "$entry" && kept=${kept:+$kept:}$entry
+		done
+		if [ -n "$kept" ]; then
+			export CLAUDE_CODE_PLUGIN_DIRS="$kept"
+		else
+			unset CLAUDE_CODE_PLUGIN_DIRS
+		fi
+	fi
+fi
+
+exec env -u DO_NOT_TRACK "$claude_cli" "$@"
