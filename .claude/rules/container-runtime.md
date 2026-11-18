@@ -159,14 +159,22 @@ them.
   initialises the volume like the Orca data volume. The host's herdr-core is
   reached only through the `herdrcore.Host` seam, and the `--via` line only
   from `herdrcore.Via` on the planned container name: hc runs it as an sh
-  line. A Shell the run created that herdr-core cannot add is removed. Pinned
+  line. A known machine is left alone on a running Shell, updated on a
+  container the run created (its `hc` was in the old writable layer), removed
+  and added under `--reregister`; without `hc` the Shell stays and the add
+  command is printed. A Shell the run created that herdr-core cannot register
+  is removed. Pinned
   by `TestPlanHerdrCoreShell`, `TestPlanOrdinaryShellCarriesNoHerdrCore`,
   `TestPlanHerdrCoreRefusesHashShapedProfile`,
   `TestPlanHerdrCoreWorkspaceRefusals`,
   `TestShellHerdrCoreShellInitialisesItsStateVolumeBeforeCreate`,
   `TestViaIsBuiltFromTheContainerName`, `TestCLIReportsAMissingHCDistinctly`,
   `TestHerdrStartsTheHerdrCoreShellAndAddsItsMachine`,
-  `TestHerdrRemovesANewShellWhoseMachineAddFailed` and
+  `TestHerdrRemovesANewShellWhoseMachineAddFailed`,
+  `TestHerdrRerunOnARunningShellWithItsMachineChangesNothing`,
+  `TestHerdrNewShellWithItsMachineUpdatesIt`,
+  `TestHerdrReregisterRemovesAndAddsTheMachine`,
+  `TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand` and
   `TestHerdrStopWithoutAHerdrCoreShellIsQuiet`. →
   [Herdr Core Shell](../../CONTEXT.md#herdr-core-shell)
 

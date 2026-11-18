@@ -32,7 +32,10 @@ herdr-core for the Herdr desktop app (herdr.app). The command registers it with
 the host's herdr-core (hc) as the machine toolbox (toolbox-<profile>), reached
 through 'docker exec' rather than ssh; herdr-core installs its own hc in the
 container. Spaces on that machine run their terminals and agents in the
-container until 'toolbox herdr stop'.
+container until 'toolbox herdr stop'. A re-run leaves a known machine alone,
+or updates it when the run created the container (a new container has no hc);
+--reregister removes and adds it again. Without hc on the host, the Shell
+starts and the hc machine add command to run later is printed.
 
 The workspace is the absolute dir argument. One Herdr Core Shell per host and
 --profile. The Herdr TUI ('herdr' inside a toolbox shell) is unrelated. See
@@ -72,8 +75,8 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 
 // addHerdrMachine registers the Herdr Core Shell called shell with the host's
 // herdr-core, or prints how to once the host has hc. A Shell this run created
-// and herdr-core cannot register is removed:
-// left running, it would be a detached container nothing uses.
+// and herdr-core cannot register is removed: left running, it would be a
+// detached container nothing uses.
 func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, cmd *cobra.Command) error {
 	machine := herdrcore.MachineName(shell)
 	via, err := herdrcore.Via(shell)

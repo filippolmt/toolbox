@@ -192,6 +192,7 @@ Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running O
 | `--version <v>` | Server release, digits and dots (`1.4.262` or `v1.4.262`); anything else is refused before container work. Default: the installed Orca desktop app's version ([where it comes from](orca.md#server-version)). |
 | `--profile <name>` | Run the Orca Shell for this [profile](#profiles) (`toolbox-orca-<name>`). |
 | `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
+| `--reregister` | Remove the machine from the host's herdr-core and add it again, reinstalling `hc` in the Shell. |
 
 On a running Orca Shell it creates nothing: it says the shell is already running, at which version, prints the endpoint, and pairs as a fresh start does; when that server has stopped, it fails and names the log.
 
@@ -203,7 +204,7 @@ On a running Orca Shell it creates nothing: it says the shell is already running
 
 ## toolbox herdr
 
-Start the [Herdr Core Shell](../CONTEXT.md#herdr-core-shell): a detached container hosting herdr-core for the Herdr desktop app, added to the host's herdr-core (`hc`) as the machine `toolbox` (`toolbox-<profile>`), reached with `docker exec` and with herdr-core's own `hc` installed in it. The workspace is the absolute `dir` argument. When herdr-core cannot add the machine on a Shell this run created, the Shell is removed and herdr-core's reason is the error. Guide: [herdr.md](herdr.md).
+Start the [Herdr Core Shell](../CONTEXT.md#herdr-core-shell): a detached container hosting herdr-core for the Herdr desktop app, added to the host's herdr-core (`hc`) as the machine `toolbox` (`toolbox-<profile>`), reached with `docker exec` and with herdr-core's own `hc` installed in it. The workspace is the absolute `dir` argument. A machine herdr-core already knows is left alone on a running Shell and updated on a container this run created. When herdr-core cannot register the machine on a Shell this run created, the Shell is removed and herdr-core's reason is the error. Without `hc` on the host the Shell stays up and the `hc machine add` command to run later is printed. Guide: [herdr.md](herdr.md).
 
 | Flag | Description |
 |------|-------------|

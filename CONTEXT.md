@@ -2258,8 +2258,11 @@ with the host's herdr-core through the `herdrcore.Host` seam (adapter
 (`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
 (`herdrcore.Via`, built from the planned container name only) and
 `--install`, so herdr-core copies the host's own `hc` into the container's
-writable layer. A Shell this run created that herdr-core cannot add is
-removed. No init script and no env gate: nothing runs herdr-core in the
+writable layer. A machine herdr-core already knows is left alone on a running
+Shell and updated (`hc machine update`, which reinstalls `hc`) on a container
+this run created; `--reregister` removes and adds it. A Shell this run created
+that herdr-core cannot register is removed; without `hc` on the host the Shell
+stays and the `hc machine add` command is printed. No init script and no env gate: nothing runs herdr-core in the
 container until the host connects. Decision and alternatives:
 [ADR 0024](docs/adr/0024-herdr-core-runs-in-a-detached-shell-reached-by-docker-exec.md).
 
