@@ -2256,8 +2256,8 @@ created and initialised like the Orca data volume, surviving
 `Detached` unless `PlanInput.HerdrAttach` asks for a terminal
 (`toolbox herdr shell`). A `toolbox herdr` on a running Shell joins it: no
 create, its workspace reported, a different one requested reported as a
-mismatch. After the create, `toolbox herdr` registers the Shell
-with the host's herdr-core through the `herdrcore.Host` seam (adapter
+mismatch. After the create, `toolbox herdr` registers the Shell with the
+host's herdr-core through the `herdrcore.Host` seam (adapter
 `herdrcore.CLI`) as the machine `toolbox` or `toolbox-<profile>`
 (`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
 (`herdrcore.Via`, built from the planned container name only) and
@@ -2271,7 +2271,8 @@ connection may be the developer's own: it is refused, untouched, unless
 `--reregister`. A Shell this run created that herdr-core cannot register, or
 whose machine is refused, is removed; without `hc` on the host the Shell stays
 and the `hc machine add` command is printed. No init script and no env gate:
-nothing runs herdr-core in the container until the host connects. Decision and alternatives:
+nothing runs herdr-core in the container until the host connects. Decision
+and alternatives:
 [ADR 0024](docs/adr/0024-herdr-core-runs-in-a-detached-shell-reached-by-docker-exec.md).
 
 Why the term exists: herdr.app talks only to herdr-core, never to the TUI,
