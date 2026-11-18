@@ -14,7 +14,17 @@ export LC_NUMERIC=C
 # Config dir: resolve paths against wherever Claude Code runs, not a fixed env (issue: portability).
 CFG=$(toolbox_agent_home claude)
 
-input=$(cat)
+# The x sentinel keeps the payload's trailing newlines, which $(...) would strip.
+input=$(cat; printf x); input=${input%x}
+
+# Orca's usage feed: toolbox owns statusLine, so Orca's own reporter never runs
+# unless handed the payload. Background, output discarded, nothing rendered.
+# Couples to an internal Orca path, not a public API: if Orca moves the
+# script, forwarding stops silently and this line renders as before.
+ORCA_REPORTER="$HOME/.orca/agent-hooks/claude-statusline.sh"
+if [ -n "${ORCA_PANE_KEY:-}" ] && [ -f "$ORCA_REPORTER" ]; then
+  printf '%s' "$input" | sh "$ORCA_REPORTER" >/dev/null 2>&1 &
+fi
 
 # Single jq pass — fields joined with \x1f (unit separator: NOT IFS-whitespace,
 # so empty fields are preserved by read instead of collapsing/shifting)
