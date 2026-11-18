@@ -168,7 +168,10 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 		return nil
 	}
 	if err != nil {
-		err = fmt.Errorf("herdr-core could not register the machine %s: %w", machine, err)
+		var taken *machineTakenError
+		if !errors.As(err, &taken) {
+			err = fmt.Errorf("herdr-core could not register the machine %s: %w", machine, err)
+		}
 		if created {
 			return errors.Join(err, container.StopByName(ctx, cli, shell))
 		}
@@ -176,6 +179,15 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	}
 	_, _ = fmt.Fprintf(w, "herdr-core reaches the Herdr Core Shell %s as the machine %s: open herdr.app.\n", shell, machine)
 	return nil
+}
+
+// machineTakenError is toolbox refusing a machine of the Shell's name that
+// herdr-core reaches another way, not a failure of herdr-core's own.
+type machineTakenError struct{ machine, target string }
+
+func (e *machineTakenError) Error() string {
+	return fmt.Sprintf("the host's herdr-core already has a machine %s reached through %q, not this Shell; "+
+		"to replace it, run toolbox herdr --reregister", e.machine, e.target)
 }
 
 // registerHerdrMachine adds machine reached through via unless the host's
@@ -195,8 +207,7 @@ func registerHerdrMachine(machine, via string, lacksHerdrCore func() (bool, erro
 		same := machines[i].Via && machines[i].Target == via
 		switch {
 		case !same && !herdrReregister:
-			return fmt.Errorf("the host's herdr-core already has a machine %s reached through %q, not this Shell; "+
-				"to replace it, run toolbox herdr --reregister", machine, machines[i].Target)
+			return &machineTakenError{machine: machine, target: machines[i].Target}
 		case herdrReregister:
 			if err := herdrHost.Remove(machine); err != nil {
 				return err

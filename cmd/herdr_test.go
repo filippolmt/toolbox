@@ -254,6 +254,10 @@ func TestHerdrRefusesASameNameMachineOnAnotherConnection(t *testing.T) {
 			t.Errorf("error %q lacks %q", err, want)
 		}
 	}
+	// toolbox refuses, not herdr-core: no "herdr-core could not register" prefix.
+	if strings.Contains(err.Error(), "could not register") {
+		t.Errorf("error %q reads as herdr-core's failure", err)
+	}
 	if want := []string{"ls"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want only the listing: no rm or add", *calls)
 	}
