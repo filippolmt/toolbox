@@ -50,20 +50,37 @@ def docker_ci_trigger(p):
     return matches(p, DOCKER_PATHS) and not dockergate_pkg(p)
 
 
-# What `make build` reads: the build context, and go.mod's go/toolchain line
-# as the GO_VERSION build arg. Only these leave the default image stale.
+# What `make build` reads: the build context, and the GO_VERSION build arg
+# derived from go.mod. Only these leave the default image stale.
 BUILD_CONTEXT = "internal/build/assets/"
-GO_VERSION_LINE = re.compile(r"^[+-](go|toolchain) ", re.M)
 
 
-def image_stale(paths, go_mod_diff=None):
-    """Whether the change touches what `make build` reads. go_mod_diff is
-    go.mod's diff text; None (no git to read it) counts any go.mod change."""
+def go_version(gomod):
+    """GO_VERSION as the Makefile's awk derives it: the last toolchain line
+    without its "go" prefix, else the first go line. None for no go.mod."""
+    if gomod is None:
+        return None
+    toolchain = go = None
+    for line in gomod.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        if fields[0] == "toolchain":
+            toolchain = fields[1].removeprefix("go")
+        elif fields[0] == "go" and go is None:
+            go = fields[1]
+    return toolchain or go
+
+
+def image_stale(paths, go_versions=None):
+    """Whether the change touches what `make build` reads. go_versions is
+    GO_VERSION (before, after); None (no git to read it) counts any go.mod
+    change."""
     if any(p.startswith(BUILD_CONTEXT) for p in paths):
         return True
     if "go.mod" not in paths:
         return False
-    return go_mod_diff is None or bool(GO_VERSION_LINE.search(go_mod_diff))
+    return go_versions is None or go_versions[0] != go_versions[1]
 
 
 def renovate_pin():
@@ -138,15 +155,16 @@ def touched(repo, base):
     return sorted(set(paths))
 
 
-def go_mod_diff(repo, base):
-    """go.mod's committed and uncommitted diff since base, as patch text."""
-    out = ""
-    for rev in (f"{base}...HEAD", "HEAD"):
-        r = subprocess.run(["git", "-C", str(repo), "diff", "-U0", rev, "--", "go.mod"], capture_output=True, text=True)
-        if r.returncode != 0:
-            sys.exit(f"pre-push-gates: git diff {rev} -- go.mod: {r.stderr.strip()}")
-        out += r.stdout
-    return out
+def go_versions(repo, base):
+    """GO_VERSION at the merge-base with base and in the working tree, the
+    same two ends touched() diffs."""
+    r = subprocess.run(["git", "-C", str(repo), "merge-base", base, "HEAD"], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"pre-push-gates: git merge-base {base} HEAD: {r.stderr.strip()}")
+    old = subprocess.run(["git", "-C", str(repo), "show", f"{r.stdout.strip()}:go.mod"], capture_output=True, text=True)
+    new = Path(repo, "go.mod")
+    return (go_version(old.stdout if old.returncode == 0 else None),
+            go_version(new.read_text() if new.exists() else None))
 
 
 def gates(paths, stale=True):
@@ -172,7 +190,7 @@ def main():
         stale = image_stale(paths)
     elif args.base:
         paths = touched(args.repo, args.base)
-        stale = image_stale(paths, go_mod_diff(args.repo, args.base) if "go.mod" in paths else None)
+        stale = image_stale(paths, go_versions(args.repo, args.base) if "go.mod" in paths else None)
     else:
         ap.error("--base is required unless --files - is given")
     found = gates(paths, stale)

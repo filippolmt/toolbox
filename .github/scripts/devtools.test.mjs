@@ -340,14 +340,14 @@ test("the real-daemon gate asks for a fresh image only when the image changed", 
   assert.match(triggerOnly, /the default image serves/, triggerOnly);
 });
 
-test("a go.mod change asks for a fresh image only when its go or toolchain line moved", () => {
+test("a go.mod change asks for a fresh image only when GO_VERSION moved", () => {
   const repo = mkdtempSync(join(tmpdir(), "gates-gomod-"));
   try {
     const git = (...args) => {
       const r = spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
     };
-    const gomod = (toolchain, dep) => `module x\n\ngo 1.26.0\n\ntoolchain go${toolchain}\n\nrequire example.com/dep ${dep}\n`;
+    const gomod = (toolchain, dep, go = "1.26.0") => `module x\n\ngo ${go}\n\ntoolchain go${toolchain}\n\nrequire example.com/dep ${dep}\n`;
     git("init", "-q", "-b", "main");
     mkdirSync(join(repo, "internal/sessionplan"), { recursive: true });
     writeFileSync(join(repo, "internal/sessionplan/x.go"), "package x\n");
@@ -362,6 +362,12 @@ test("a go.mod change asks for a fresh image only when its go or toolchain line 
     const requireOnly = run();
     assert.equal(requireOnly.status, 0, requireOnly.stderr);
     assert.match(requireOnly.stdout, /the default image serves/, `a require bump leaves the image as it is:\n${requireOnly.stdout}`);
+
+    // GO_VERSION is the toolchain line when there is one (Makefile, docker-ci).
+    writeFileSync(join(repo, "go.mod"), gomod("1.26.1", "v1.0.0", "1.26.1"));
+    const goOnly = run();
+    assert.equal(goOnly.status, 0, goOnly.stderr);
+    assert.match(goOnly.stdout, /the default image serves/, `a go bump under a toolchain leaves GO_VERSION as it is:\n${goOnly.stdout}`);
 
     writeFileSync(join(repo, "go.mod"), gomod("1.26.2", "v1.0.0"));
     const toolchain = run();
