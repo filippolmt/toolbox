@@ -3,6 +3,7 @@ package sessionplan_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 )
 
 // TestPlanOrcaShell pins what makes a plan the Orca Shell: the fixed name per
-// Profile, Orca's port on host loopback, the env gate and Orca's data directory
-// on the state mount, and the detached create.
+// Profile, Orca's port on host loopback, the env gate, Orca's data directory
+// on the Orca Shell's own named volume (Orca's sockets cannot live on a Host
+// Share bind), its log on the state mount, and the detached create.
 func TestPlanOrcaShell(t *testing.T) {
 	planHost, workspace := planWorkspace(t)
 
@@ -23,9 +25,10 @@ func TestPlanOrcaShell(t *testing.T) {
 		label   string
 		profile *mountplan.Profile
 		name    string
+		volume  string
 	}{
-		{"no profile", nil, "toolbox-orca"},
-		{"profile", &mountplan.Profile{Name: "Work"}, "toolbox-orca-work"},
+		{"no profile", nil, "toolbox-orca", "toolbox-orca-data"},
+		{"profile", &mountplan.Profile{Name: "Work"}, "toolbox-orca-work", "toolbox-orca-data-work"},
 	} {
 		t.Run(tc.label, func(t *testing.T) {
 			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(),
@@ -50,13 +53,55 @@ func TestPlanOrcaShell(t *testing.T) {
 			if got := env["TOOLBOX_ORCA_VERSION"]; got != "v1.4.262" {
 				t.Errorf("TOOLBOX_ORCA_VERSION = %q, want v1.4.262", got)
 			}
-			if got := env["ORCA_USER_DATA_PATH"]; got != "/home/toolbox/.toolbox-state/orca" {
-				t.Errorf("ORCA_USER_DATA_PATH = %q, want the orca dir on the state mount", got)
+			if plan.OrcaDataVolume != tc.volume {
+				t.Errorf("OrcaDataVolume = %q, want %q", plan.OrcaDataVolume, tc.volume)
+			}
+			wantBind := mountplan.Bind{Source: tc.volume, Target: "/home/toolbox/.orca-data", Mode: "rw"}
+			if !slices.Contains(plan.Binds, wantBind) {
+				t.Errorf("Binds = %v, want the data volume bind %v", plan.Binds, wantBind)
+			}
+			if got := env["ORCA_USER_DATA_PATH"]; got != "/home/toolbox/.orca-data" {
+				t.Errorf("ORCA_USER_DATA_PATH = %q, want the data volume's mount target", got)
+			}
+			if got := env["TOOLBOX_ORCA_LOG"]; got != "/home/toolbox/.toolbox-state/orca/serve.log" {
+				t.Errorf("TOOLBOX_ORCA_LOG = %q, want serve.log on the state mount", got)
 			}
 			if want := filepath.Join(plan.StateDir, "orca", "serve.log"); plan.OrcaLogPath() != want {
 				t.Errorf("OrcaLogPath = %q, want %q", plan.OrcaLogPath(), want)
 			}
 		})
+	}
+}
+
+// TestPlanOrcaDataInitNameIsNoOrcaShellName: the data volume's initialiser
+// is named in a form no Profile suffix can take (an underscore), so it never
+// equals an Orca Shell's name — `toolbox-orca-data-init` is the Orca Shell of
+// a Profile named data-init.
+func TestPlanOrcaDataInitNameIsNoOrcaShellName(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+	seen := map[string]string{}
+	for _, tc := range []struct {
+		profile *mountplan.Profile
+		init    string
+	}{
+		{nil, "toolbox-orca-data_init"},
+		{&mountplan.Profile{Name: "data-init"}, "toolbox-orca-data-data-init_init"},
+		{&mountplan.Profile{Name: "Work"}, "toolbox-orca-data-work_init"},
+	} {
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(),
+			Workspace: workspace, Profile: tc.profile, OrcaVersion: "v1.4.262"})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if plan.OrcaDataInit != tc.init {
+			t.Errorf("OrcaDataInit = %q, want %q", plan.OrcaDataInit, tc.init)
+		}
+		for _, name := range []string{plan.ContainerName, plan.OrcaDataInit} {
+			if other, dup := seen[name]; dup {
+				t.Errorf("%q names both %s and another Orca container (%s)", name, plan.ContainerName, other)
+			}
+			seen[name] = plan.ContainerName
+		}
 	}
 }
 
@@ -78,6 +123,14 @@ func TestPlanOrdinaryShellCarriesNoOrca(t *testing.T) {
 	}
 	if len(plan.PortBindings) != 0 {
 		t.Errorf("ordinary plan publishes %v", plan.PortBindings)
+	}
+	if plan.OrcaDataVolume != "" {
+		t.Errorf("ordinary plan names an Orca data volume %q", plan.OrcaDataVolume)
+	}
+	for _, b := range plan.Binds {
+		if strings.Contains(b.Source, "orca") || strings.Contains(b.Target, "orca") {
+			t.Errorf("ordinary plan carries Orca bind %v", b)
+		}
 	}
 }
 

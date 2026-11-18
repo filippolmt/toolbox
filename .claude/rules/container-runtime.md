@@ -104,8 +104,12 @@ them.
 - **The Orca Shell is planned, not assembled:** `toolbox orca` reaches the
   container through `startSession` like `shell`; `PlanInput.OrcaVersion` is
   the only switch, and `sessionplan.Plan` derives the name, the loopback
-  publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
-  mount, `Detached` and the host-port probe from it. No cmd-side env, port,
+  publish of `OrcaPort`, the env gate, the per-Profile data volume bind
+  with `ORCA_USER_DATA_PATH` on it (never the state mount: a Host Share bind
+  cannot hold Orca's sockets), `TOOLBOX_ORCA_LOG` on the state mount,
+  `Detached` and the host-port probe from it. The container edge creates and
+  initialises the data volume before the create, through the same
+  ensure/init/rollback as the peer socket volume. No cmd-side env, port,
   name or workspace check: the `dir` argument and `orca_workspace` pass the
   one check in `sessionplan`. Its init script stays gated on
   `TOOLBOX_ORCA_VERSION`, never blocks the entrypoint, and ends an attempt
@@ -114,6 +118,11 @@ them.
   `TestPlanOrcaWorkspace`, `TestPlanOrcaWorkspaceRefusals`,
   `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
+  `TestPlanOrcaDataInitNameIsNoOrcaShellName`,
+  `TestShellOrcaShellInitialisesItsDataVolumeBeforeCreate`,
+  `TestShellOrcaShellReusesItsDataVolume`,
+  `TestShellOrcaShellRemovesADataVolumeWhoseInitFailed`,
+  `TestOrcaInitLogsToTheStateMountApartFromTheData`,
   `TestShellHostPortProbeFailsBeforeCreate`,
   `TestOrcaInitWithoutTheGateDoesNothing`,
   `TestOrcaInitRefusesAChecksumMismatch`,

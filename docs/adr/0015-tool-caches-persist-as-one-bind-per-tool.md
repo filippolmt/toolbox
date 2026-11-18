@@ -58,7 +58,7 @@ sequential throughput 2.0 GB/s against 1.5 GB/s and a metadata walk equal. Go's
 build cache is precisely the small-file write workload in that table, so the
 volume is the faster home for it, and the type already supports one — a
 `mountplan.Bind` whose `Source` is not an absolute path is read by Docker as a
-volume name, with `peerSocketBind` as the precedent and `peer_volume.go` as the
+volume name, with `peerSocketBind` as the precedent and `owned_volume.go` as the
 ownership machinery. It loses on control. No config surface can express a
 volume: `config.Mount` carries no type field and every `mounts:` entry goes
 through `resolveAll`, which stats and creates a host path, which is why the one
