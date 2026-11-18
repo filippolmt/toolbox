@@ -25,6 +25,7 @@ func orcaPlan(t *testing.T) *sessionplan.SessionPlan {
 	plan.ContainerName = "toolbox-orca-work"
 	plan.Detached = true
 	plan.OrcaDataVolume = testOrcaVolume
+	plan.OrcaDataInit = testOrcaVolume + "_init"
 	plan.Binds = append(plan.Binds, mountplan.Bind{Source: testOrcaVolume, Target: sessionplan.OrcaDataTarget, Mode: "rw"})
 	return plan
 }
@@ -48,7 +49,7 @@ func (r *orcaVolumeMock) client(volumeExists bool, initExit int64) *mockClient {
 		},
 		createFn: func(_ context.Context, cfg *container.Config, hostCfg *container.HostConfig, name string) (container.CreateResponse, error) {
 			r.created = append(r.created, name)
-			if strings.HasSuffix(name, "-init") {
+			if strings.HasSuffix(name, "_init") {
 				r.initCfg, r.initHost = cfg, hostCfg
 			}
 			return container.CreateResponse{ID: name}, nil
@@ -80,7 +81,7 @@ func TestShellOrcaShellInitialisesItsDataVolumeBeforeCreate(t *testing.T) {
 	if _, err := Shell(context.Background(), r.client(false, 0), orcaPlan(t)); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
-	want := []string{"toolbox-orca-data-work-init", "toolbox-orca-work"}
+	want := []string{"toolbox-orca-data-work_init", "toolbox-orca-work"}
 	if !slices.Equal(r.created, want) {
 		t.Fatalf("created %v, want %v", r.created, want)
 	}

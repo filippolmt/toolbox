@@ -118,6 +118,7 @@ them.
   `TestPlanOrcaWorkspace`, `TestPlanOrcaWorkspaceRefusals`,
   `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
+  `TestPlanOrcaDataInitNameIsNoOrcaShellName`,
   `TestShellOrcaShellInitialisesItsDataVolumeBeforeCreate`,
   `TestShellOrcaShellReusesItsDataVolume`,
   `TestShellOrcaShellRemovesADataVolumeWhoseInitFailed`,

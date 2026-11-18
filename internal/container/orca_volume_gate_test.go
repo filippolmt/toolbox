@@ -44,6 +44,7 @@ func TestOrcaDataVolumeHoldsASocketTheSessionUserChmods(t *testing.T) {
 		Hostname:       name,
 		Cmd:            []string{"sleep", "infinity"},
 		OrcaDataVolume: volume,
+		OrcaDataInit:   volume + "_init",
 	}
 
 	id, err := createAndStart(ctx, cli, plan, plan.Image, plan.Detached)

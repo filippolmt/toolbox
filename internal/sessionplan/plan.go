@@ -104,6 +104,8 @@ type SessionPlan struct {
 	// OrcaDataTarget; the container edge creates and initialises it before
 	// the create. Empty for every other session.
 	OrcaDataVolume string
+	// OrcaDataInit names the container that initialises OrcaDataVolume.
+	OrcaDataInit string
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes
@@ -254,10 +256,10 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
 	orca := in.OrcaVersion != ""
-	var orcaName, orcaVolume string
+	var orcaN orcaNameSet
 	if orca {
 		var err error
-		if orcaName, orcaVolume, err = orcaNames(in.Profile); err != nil {
+		if orcaN, err = orcaNames(in.Profile); err != nil {
 			return nil, err
 		}
 		if in.Workspace, err = orcaWorkspace(in); err != nil {
@@ -317,14 +319,14 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 			return nil, fmt.Errorf("the Orca Shell keeps Orca's server log on the state mount (%s), which mounts: removed", mountplan.StateMountTarget)
 		}
 		extraEnv = orcaEnv(in.OrcaVersion)
-		binds = append(slices.Clone(binds), orcaDataBind(orcaVolume))
+		binds = append(slices.Clone(binds), orcaDataBind(orcaN.volume))
 	}
 
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
 	name := containerName(workspace, in.Name, in.Profile, in.Peer)
 	if orca {
-		name = orcaName
+		name = orcaN.container
 	}
 	// The name is also the hostname, and unlike a container name a hostname is
 	// capped by the daemon, which rejects the create outright. Only the named
@@ -360,7 +362,8 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReloadFrom:        in.ReloadFrom,
 		Detached:          orcaDetached(in),
 		ProbeHostPorts:    orca,
-		OrcaDataVolume:    orcaVolume,
+		OrcaDataVolume:    orcaN.volume,
+		OrcaDataInit:      orcaN.init,
 	}, nil
 }
 

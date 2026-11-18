@@ -771,7 +771,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	// Unlike peer messaging, no degrade: an Orca Shell without a writable data
 	// directory starts no server.
 	if plan.OrcaDataVolume != "" {
-		if err := ensureOwnedVolume(ctx, cli, plan.Image, orcaDataVolume(plan.OrcaDataVolume)); err != nil {
+		if err := ensureOwnedVolume(ctx, cli, plan.Image, orcaDataVolume(plan)); err != nil {
 			return "", err
 		}
 	}

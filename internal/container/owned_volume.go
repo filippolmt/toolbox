@@ -26,11 +26,10 @@ type ownedVolume struct {
 	label string
 }
 
-// orcaDataVolume is an Orca Shell's data volume (SessionPlan.OrcaDataVolume),
-// mounted at sessionplan.OrcaDataTarget. One initialiser name per volume, so
-// two Profiles' Orca Shells starting at once do not collide.
-func orcaDataVolume(name string) ownedVolume {
-	return ownedVolume{name: name, target: sessionplan.OrcaDataTarget, initName: name + "-init", label: "Orca data volume"}
+// orcaDataVolume is an Orca Shell's data volume, mounted at
+// sessionplan.OrcaDataTarget; sessionplan names it and its initialiser.
+func orcaDataVolume(plan *sessionplan.SessionPlan) ownedVolume {
+	return ownedVolume{name: plan.OrcaDataVolume, target: sessionplan.OrcaDataTarget, initName: plan.OrcaDataInit, label: "Orca data volume"}
 }
 
 // ensureOwnedVolume makes v exist, owned by the runtime user with mode 0700.

@@ -73,6 +73,38 @@ func TestPlanOrcaShell(t *testing.T) {
 	}
 }
 
+// TestPlanOrcaDataInitNameIsNoOrcaShellName: the data volume's initialiser
+// is named in a form no Profile suffix can take (an underscore), so it never
+// equals an Orca Shell's name — `toolbox-orca-data-init` is the Orca Shell of
+// a Profile named data-init.
+func TestPlanOrcaDataInitNameIsNoOrcaShellName(t *testing.T) {
+	planHost, workspace := planWorkspace(t)
+	seen := map[string]string{}
+	for _, tc := range []struct {
+		profile *mountplan.Profile
+		init    string
+	}{
+		{nil, "toolbox-orca-data_init"},
+		{&mountplan.Profile{Name: "data-init"}, "toolbox-orca-data-data-init_init"},
+		{&mountplan.Profile{Name: "Work"}, "toolbox-orca-data-work_init"},
+	} {
+		plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(),
+			Workspace: workspace, Profile: tc.profile, OrcaVersion: "v1.4.262"})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if plan.OrcaDataInit != tc.init {
+			t.Errorf("OrcaDataInit = %q, want %q", plan.OrcaDataInit, tc.init)
+		}
+		for _, name := range []string{plan.ContainerName, plan.OrcaDataInit} {
+			if other, dup := seen[name]; dup {
+				t.Errorf("%q names both %s and another Orca container (%s)", name, plan.ContainerName, other)
+			}
+			seen[name] = plan.ContainerName
+		}
+	}
+}
+
 // TestPlanOrdinaryShellCarriesNoOrca: adopting Orca changes nothing for an
 // ordinary session — no Orca env, no Orca port, not detached.
 func TestPlanOrdinaryShellCarriesNoOrca(t *testing.T) {
