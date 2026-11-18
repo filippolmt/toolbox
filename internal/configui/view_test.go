@@ -328,6 +328,11 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("orca_workspace", "/tmp/src")) },
 		},
 		{
+			key:  "herdr_workspace",
+			open: typeValue("/tmp/src"),
+			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Scalar("herdr_workspace", "/tmp/src")) },
+		},
+		{
 			key:  "bridge",
 			open: chooseValue("false"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },

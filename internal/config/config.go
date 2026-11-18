@@ -56,6 +56,9 @@ type Config struct {
 	// argument is given. Same shape as MountsRoot: absolute or ~/sub, never
 	// bare ~ (the Orca Shell would mount the whole host home). Empty = unset.
 	OrcaWorkspace string `mapstructure:"orca_workspace"`
+	// HerdrWorkspace is the host directory `toolbox herdr` mounts when no
+	// `dir` argument is given; validated like OrcaWorkspace. Empty = unset.
+	HerdrWorkspace string `mapstructure:"herdr_workspace"`
 	// Bridge toggles the host-side ~/.toolbox/bridge RO mount in the
 	// container and gates the `toolbox bridge install` command. When false,
 	// the mount is omitted and the install command refuses. Default true.
@@ -241,6 +244,11 @@ func ValidateMountsRoot(s string) error {
 // boundary. The syntactic check only: sessionplan checks the expanded path.
 func ValidateOrcaWorkspace(s string) error {
 	return validateShellWorkspace("orca_workspace", "the Orca Shell", s)
+}
+
+// ValidateHerdrWorkspace is ValidateOrcaWorkspace for herdr_workspace.
+func ValidateHerdrWorkspace(s string) error {
+	return validateShellWorkspace("herdr_workspace", "the Herdr Core Shell", s)
 }
 
 // validateShellWorkspace is the syntactic check of a singleton Shell's
