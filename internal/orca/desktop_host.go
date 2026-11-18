@@ -46,19 +46,31 @@ func (d MacDesktop) Version() (string, error) {
 	if v, err := d.bundleVersion(defaultApp); err == nil {
 		return v, nil
 	}
-	out, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'")
+	apps, err := d.spotlightApps()
 	if err != nil {
-		return "", fmt.Errorf("mdfind %s: %w", BundleID, err)
+		return "", err
 	}
-	for _, app := range strings.Split(string(out), "\n") {
-		if app == "" {
-			continue
-		}
+	for _, app := range apps {
 		if v, err := d.bundleVersion(app); err == nil {
 			return v, nil
 		}
 	}
 	return "", nil
+}
+
+// spotlightApps lists the apps Spotlight indexed under BundleID.
+func (d MacDesktop) spotlightApps() ([]string, error) {
+	out, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'")
+	if err != nil {
+		return nil, fmt.Errorf("mdfind %s: %w", BundleID, err)
+	}
+	var apps []string
+	for _, app := range strings.Split(string(out), "\n") {
+		if app != "" {
+			apps = append(apps, app)
+		}
+	}
+	return apps, nil
 }
 
 func (d MacDesktop) bundleVersion(app string) (string, error) {
@@ -85,14 +97,13 @@ func (d MacDesktop) orca(args ...string) ([]byte, error) {
 	if out, ok, err := d.runCLI(defaultApp+bundledCLI, args); ok {
 		return out, err
 	}
-	if found, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'"); err == nil {
-		for _, app := range strings.Split(string(found), "\n") {
-			if app == "" || app == defaultApp {
-				continue
-			}
-			if out, ok, err := d.runCLI(app+bundledCLI, args); ok {
-				return out, err
-			}
+	apps, _ := d.spotlightApps() // no Spotlight answer: fall through to PATH
+	for _, app := range apps {
+		if app == defaultApp {
+			continue
+		}
+		if out, ok, err := d.runCLI(app+bundledCLI, args); ok {
+			return out, err
 		}
 	}
 	if out, ok, err := d.runCLI("orca", args); ok {
