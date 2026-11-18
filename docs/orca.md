@@ -65,8 +65,17 @@ The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine 
 
 Orca's data lives on the state mount, `~/.toolbox/toolbox/state/orca` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). Inside it:
 
-- `server/<version>/` — each installed server version, and `server/current`, the one that runs. A failed download or a checksum mismatch leaves `current` where it was.
+- `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes every other cached version, so the cache holds one server. A checksum mismatch leaves `current` where it was.
 - `serve.log` — what the installer and the server printed. When `toolbox orca` times out waiting for the link, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
+
+## Offline
+
+Each start downloads the requested version unless it is already cached. When the download fails:
+
+- **A version is cached**: the newest cached version starts, and `toolbox orca` prints a warning naming the version you asked for and the one that runs. A desktop app at another version may refuse to pair or misbehave; once online, `toolbox orca stop` and start again to install the matching version.
+- **Nothing is cached**: `toolbox orca` fails with the installer's reason, and removes the Orca Shell, so no container is left running without a server. Connect and start again.
+
+A checksum mismatch never falls back: it fails the same way as an empty cache.
 
 ## What Orca changes in your toolbox config
 

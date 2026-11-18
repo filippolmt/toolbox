@@ -200,8 +200,8 @@ func TestOrcaInitRefusesAChecksumMismatch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, "served")); !os.IsNotExist(err) {
 		t.Error("a server started after a checksum mismatch")
 	}
-	if !strings.Contains(readFile(t, filepath.Join(data, "serve.log")), "checksum") {
-		t.Error("serve.log does not say the checksum failed")
+	if !strings.Contains(fatalLine(t, data), "checksum") {
+		t.Error("serve.log has no fatal line saying the checksum failed")
 	}
 }
 
@@ -220,5 +220,106 @@ func TestOrcaInitReusesAnInstalledVersion(t *testing.T) {
 	}
 	if n := strings.Count(readFile(t, filepath.Join(data, "served")), "orca-ide serve"); n != 2 {
 		t.Errorf("server started %d times, want 2", n)
+	}
+}
+
+// seedOrcaVersion puts a runnable server for version in data's cache, as an
+// earlier install would have left it.
+func seedOrcaVersion(t *testing.T, data, version string) {
+	t.Helper()
+	bin := filepath.Join(data, "server", version, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(bin, "orca-ide"),
+		"#!/bin/sh\necho \"orca-ide "+version+" $*\" >> \"$ORCA_USER_DATA_PATH/served\"\n")
+}
+
+// Installing a version prunes the versions cached before it and moves
+// current onto it: the cache holds one server, not every one ever run.
+func TestOrcaInitPrunesOlderVersionsOnInstall(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	seedOrcaVersion(t, data, "v1.0.0")
+	seedOrcaVersion(t, data, "v1.2.0")
+	if err := os.Symlink("v1.2.0", filepath.Join(data, "server", "current")); err != nil {
+		t.Fatal(err)
+	}
+
+	run := runOrcaInit(t, data, fakeOrcaRelease(t, "arm64", false), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, readFile(t, filepath.Join(data, "serve.log")))
+	}
+	for _, old := range []string{"v1.0.0", "v1.2.0"} {
+		if _, err := os.Stat(filepath.Join(data, "server", old)); !os.IsNotExist(err) {
+			t.Errorf("%s still cached (stat err %v)", old, err)
+		}
+	}
+	if link, err := os.Readlink(filepath.Join(data, "server", "current")); err != nil || link != "v1.4.262" {
+		t.Errorf("current -> %q (%v), want v1.4.262", link, err)
+	}
+}
+
+// Offline with a cache: the requested version does not download, so the
+// newest cached version (by version order, not by name) starts, and the log
+// carries a warning naming both, which the host relays.
+func TestOrcaInitFallsBackToTheNewestCachedVersionOffline(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	seedOrcaVersion(t, data, "v1.9.0")
+	seedOrcaVersion(t, data, "v1.10.0")
+	if err := os.Symlink("v1.9.0", filepath.Join(data, "server", "current")); err != nil {
+		t.Fatal(err)
+	}
+	offline := t.TempDir() // a release with no files: every download fails
+
+	run := runOrcaInit(t, data, offline, "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, readFile(t, filepath.Join(data, "serve.log")))
+	}
+	if served := readFile(t, filepath.Join(data, "served")); !strings.Contains(served, "orca-ide v1.10.0 serve") {
+		t.Errorf("served %q, want the newest cached v1.10.0", served)
+	}
+	if link, _ := os.Readlink(filepath.Join(data, "server", "current")); link != "v1.10.0" {
+		t.Errorf("current -> %q, want v1.10.0", link)
+	}
+	var warning string
+	for _, line := range strings.Split(readFile(t, filepath.Join(data, "serve.log")), "\n") {
+		if strings.HasPrefix(line, "toolbox: orca: warning: ") {
+			warning = line
+		}
+	}
+	if !strings.Contains(warning, "v1.4.262") || !strings.Contains(warning, "v1.10.0") {
+		t.Errorf("warning %q does not name the requested and the started version", warning)
+	}
+}
+
+// fatalLine returns the log's last `toolbox: orca: fatal:` line, the marker
+// the host reads to stop an Orca Shell that will never serve.
+func fatalLine(t *testing.T, data string) string {
+	t.Helper()
+	var last string
+	for _, line := range strings.Split(readFile(t, filepath.Join(data, "serve.log")), "\n") {
+		if strings.HasPrefix(line, "toolbox: orca: fatal: ") {
+			last = line
+		}
+	}
+	return last
+}
+
+// Offline with nothing cached: no server starts, the script fails, and the
+// log ends the attempt with a fatal line naming the version.
+func TestOrcaInitFailsOfflineWithAnEmptyCache(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	run := runOrcaInit(t, data, t.TempDir(), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code == 0 {
+		t.Error("exit 0 with no server to start")
+	}
+	if _, err := os.Stat(filepath.Join(data, "served")); !os.IsNotExist(err) {
+		t.Error("a server started with an empty cache")
+	}
+	if line := fatalLine(t, data); !strings.Contains(line, "v1.4.262") {
+		t.Errorf("fatal line %q does not name the version", line)
 	}
 }

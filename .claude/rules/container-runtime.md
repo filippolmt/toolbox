@@ -106,12 +106,16 @@ them.
   the only switch, and `sessionplan.Plan` derives the name, the loopback
   publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
   mount and `Detached` from it. No cmd-side env, port or name. Its init script
-  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint.
+  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint; it
+  cannot stop its own container, so an attempt that starts no server ends
+  with a `fatal:` log line and the host removes the Orca Shell.
   Pinned by `TestPlanOrcaShell`, `TestPlanOrdinaryShellCarriesNoOrca`,
   `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
-  `TestOrcaInitWithoutTheGateDoesNothing` and
-  `TestOrcaInitRefusesAChecksumMismatch`. Pairing reaches the desktop app
+  `TestOrcaInitWithoutTheGateDoesNothing`,
+  `TestOrcaInitRefusesAChecksumMismatch`,
+  `TestOrcaInitFailsOfflineWithAnEmptyCache` and
+  `TestOrcaStopsTheOrcaShellWhenNoServerStarts`. Pairing reaches the desktop app
   only through the `orca.Desktop` seam, from an offer the Orca Shell's server
   makes; an environment already there is left alone, and no error carries the
   pairing code. Pinned by

@@ -15,7 +15,7 @@ sections.** Every `##` of a linked guide needs an entry
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
-| [orca.md](orca.md) | how-to | Orca's runtime in a detached Orca Shell: start, pair, stop, profiles, port, log, side effects |
+| [orca.md](orca.md) | how-to | Orca's runtime in a detached Orca Shell: start, pair, stop, profiles, port, log, offline, side effects |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
@@ -125,6 +125,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Stop](orca.md#stop)
 - [Profiles](orca.md#profiles)
 - [Port and log](orca.md#port-and-log)
+- [Offline](orca.md#offline)
 - [What Orca changes in your toolbox config](orca.md#what-orca-changes-in-your-toolbox-config)
 - [Troubleshooting](orca.md#troubleshooting)
 

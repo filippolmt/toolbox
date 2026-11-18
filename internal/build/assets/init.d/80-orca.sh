@@ -16,8 +16,10 @@ set -euo pipefail
 # Layout under $ORCA_USER_DATA_PATH/server: one directory per version,
 # extracted beside its final name and renamed into place only after the
 # archive matched its line in the release's checksum file, and a `current`
-# link switched atomically after that. A failed download or a mismatch leaves
-# `current` where it was. No restart of a crashed server: tini (PID 1) keeps
+# link switched atomically after that; a fresh install then prunes every other
+# version. A failed download falls back to the newest cached version with a
+# `warning:` line; a mismatch, or a failed download with nothing cached, ends
+# with a `fatal:` line and no server. No restart of a crashed server: tini (PID 1) keeps
 # the container up, and the log says why the server stopped.
 
 [ -n "${TOOLBOX_ORCA_VERSION:-}" ] || exit 0
@@ -37,19 +39,24 @@ mkdir -p "$data"
 exec >>"$log" 2>&1 </dev/null
 echo "toolbox: orca ${TOOLBOX_ORCA_VERSION}: start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# fail ends an attempt that starts no server with the line the host reads to
+# report the reason and stop the Orca Shell (orca.WaitPairing).
+fail() {
+    echo "toolbox: orca: fatal: $*"
+    exit 1
+}
+
 version="$TOOLBOX_ORCA_VERSION"
 # The tag lands in a URL and a path: the host validated it, this re-checks.
 if ! [[ "$version" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
-    echo "toolbox: orca: refusing malformed version '$version'"
-    exit 1
+    fail "refusing malformed version '$version'"
 fi
 
 case "$(uname -m)" in
 x86_64 | amd64) arch=x64 ;;
 aarch64 | arm64) arch=arm64 ;;
 *)
-    echo "toolbox: orca: no server build for architecture $(uname -m)"
-    exit 1
+    fail "no server build for architecture $(uname -m)"
     ;;
 esac
 
@@ -57,6 +64,7 @@ servers="$data/server"
 dest="$servers/$version"
 mkdir -p "$servers"
 
+installed=""
 if [ ! -x "$dest/bin/orca-ide" ]; then
     archive="orca-server-linux-$arch.tar.gz"
     base="https://github.com/stablyai/orca/releases/download/$version"
@@ -64,28 +72,48 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     tmp=$(mktemp -d "$servers/.install-$version.XXXXXX")
     trap 'rm -rf "$tmp"' EXIT
     echo "toolbox: orca: downloading $base/$archive"
-    curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive"
-    curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"
-    want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
-    if [ -z "$want" ]; then
-        echo "toolbox: orca: checksum file has no line for $archive; not installing"
-        exit 1
+    if curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive" &&
+        curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"; then
+        want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
+        if [ -z "$want" ]; then
+            fail "checksum file has no line for $archive; not installing"
+        fi
+        got=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
+        if [ "$got" != "$want" ]; then
+            fail "checksum mismatch for $archive (got $got, want $want); not installing"
+        fi
+        mkdir "$tmp/tree"
+        tar -xzf "$tmp/$archive" -C "$tmp/tree" --strip-components=1
+        rm -rf "$dest"
+        mv "$tmp/tree" "$dest"
+        rm -rf "$tmp"
+        trap - EXIT
+        installed=1
+    else
+        # Offline: the newest server already cached runs instead, by version
+        # order; the warning line is relayed by the host.
+        rm -rf "$tmp"
+        trap - EXIT
+        cached=$(cd "$servers" && for v in v*; do
+            if [ -x "$v/bin/orca-ide" ]; then echo "$v"; fi
+        done | sort -V | tail -n 1)
+        if [ -z "$cached" ]; then
+            fail "could not download Orca server $version and no server is cached; connect to the network and retry"
+        fi
+        echo "toolbox: orca: warning: could not download Orca server $version; starting the cached $cached instead, which may not match the desktop app"
+        version=$cached
     fi
-    got=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
-    if [ "$got" != "$want" ]; then
-        echo "toolbox: orca: checksum mismatch for $archive (got $got, want $want); not installing"
-        exit 1
-    fi
-    mkdir "$tmp/tree"
-    tar -xzf "$tmp/$archive" -C "$tmp/tree" --strip-components=1
-    rm -rf "$dest"
-    mv "$tmp/tree" "$dest"
-    rm -rf "$tmp"
-    trap - EXIT
 fi
 
 ln -sfn "$version" "$servers/.current.new"
 mv -T "$servers/.current.new" "$servers/current"
+
+# Bounded cache: once current is on a fresh install, no other version stays.
+if [ -n "$installed" ]; then
+    for old in "$servers"/v*; do
+        [ "${old##*/}" = "$version" ] || rm -rf "$old"
+    done
+fi
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,
