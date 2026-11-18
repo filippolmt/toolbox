@@ -42,8 +42,8 @@ CACHE_REF := $(IMAGE):buildcache-main
 # the `go` directive when no toolchain line is present. It reaches the image as
 # a --build-arg naming a tarball on go.dev, which exists the moment the release
 # does — same for CI's setup-go, which resolves go.mod against the Go release
-# index. So this stays derived.
-GO_VERSION      := $(shell awk '/^toolchain /{v=substr($$2,3)} /^go /{if(!g)g=$$2} END{print (v?v:g)}' go.mod)
+# index. So this stays derived, in go-version.sh: the image workflows read it too.
+GO_VERSION      := $(shell .github/scripts/go-version.sh)
 # GO_IMAGE is deliberately NOT derived from GO_VERSION. Docker Hub publishes a
 # golang:<patch> tag days after the Go release lands in the index, so deriving
 # the tag turned a green Renovate go.mod bump into a broken `make go-test` on
@@ -170,7 +170,7 @@ gates: ## List the pre-push gates CI would run for what changed since BASE (defa
 
 check-devtools: ## Test local development targets and coverage preflight
 	node --test .github/scripts/*.test.mjs
-	shellcheck .github/scripts/go-dockergate.sh .github/scripts/format-go.sh
+	shellcheck .github/scripts/go-dockergate.sh .github/scripts/format-go.sh .github/scripts/go-version.sh
 
 check-agent: ## Test project agent extensions
 	node --test .pi/tests/*.test.ts

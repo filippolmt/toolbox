@@ -359,3 +359,24 @@ test("gates refuse to guess a base", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--base is required/);
 });
+
+test("go-version.sh derives GO_VERSION: the toolchain line, else the go line", () => {
+  const run = (gomod) => spawnSync(".github/scripts/go-version.sh", ["-"], { cwd: root, input: gomod, encoding: "utf8" });
+  const withToolchain = run("module x\n\ngo 1.26.0\n\ntoolchain go1.27.4\n");
+  assert.equal(withToolchain.status, 0, withToolchain.stderr);
+  assert.equal(withToolchain.stdout.trim(), "1.27.4");
+  const goOnly = run("module x\n\ngo 1.26.0\n");
+  assert.equal(goOnly.status, 0, goOnly.stderr);
+  assert.equal(goOnly.stdout.trim(), "1.26.0", "no toolchain line: an empty GO_VERSION would override the Dockerfile's default with nothing");
+  const none = run("module x\n");
+  assert.notEqual(none.status, 0, "a go.mod with neither line must fail, not build with an empty GO_VERSION");
+});
+
+test("every GO_VERSION build arg comes from go-version.sh", () => {
+  const makefile = readFileSync(join(root, "Makefile"), "utf8");
+  assert.match(makefile, /^GO_VERSION\s*:=\s*\$\(shell \.github\/scripts\/go-version\.sh\)/m);
+  for (const wf of ["docker-ci.yml", "docker-publish-reusable.yml"]) {
+    const src = readFileSync(join(root, ".github/workflows", wf), "utf8");
+    assert.match(src, /id: gover\n\s+run: echo "version=\$\(\.github\/scripts\/go-version\.sh\)" >> "\$GITHUB_OUTPUT"/, wf);
+  }
+});
