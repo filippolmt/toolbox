@@ -34,6 +34,8 @@ func Installed(ctx context.Context, cli shellExec, container string) (bool, erro
 	if _, err := cli.ExecStart(ctx, created.ID, client.ExecStartOptions{Detach: true}); err != nil {
 		return false, fmt.Errorf("probe herdr-core in %s: %w", container, err)
 	}
+	// Not container's waitForExec: there a vanished exec has finished, here it
+	// is an error, and this leaf package does not import the container edge.
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
