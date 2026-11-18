@@ -103,6 +103,14 @@ To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox
 
 `~/.toolbox/toolbox/state/orca` (and the same directory under `~/.toolbox/profiles/<name>/` for each profile, or under your `mounts_root`) should hold only `serve.log`. Anything else there (`server/`, Orca's old identity and its unencrypted credentials) is left from a toolbox that kept Orca's data on the state mount: stop the Orca Shell and delete the whole directory. An Orca Shell created by that toolbox keeps using the old directory until `toolbox orca stop` and `toolbox orca`; the desktop app then pairs again, since nothing is migrated to the volume.
 
+## Claude Code and Orca's agent-view plugin
+
+Orca starts Claude Code in every pane with its `orca-agent-view` plugin sideloaded through `--plugin-dir` and `CLAUDE_CODE_PLUGIN_DIRS`. Under Claude Code managed settings with `disableSideloadFlags`, Claude Code refuses those flags and does not start. Orca's own switch (**Settings → Agents → Claude subagent navigation**) does not reach a remote server: the server keeps its own copy of the setting ([stablyai/orca#26935](https://github.com/stablyai/orca/issues/26935)).
+
+So in an Orca pane toolbox's `claude` wrapper drops that plugin, and only that one: the `--plugin-dir` pointing at a directory named `orca-agent-view` and its entry in `CLAUDE_CODE_PLUGIN_DIRS`. Your own `--plugin-dir` values pass through, and outside an Orca pane nothing changes. The cost is Orca's subagent navigation: the `ctrl+alt+g` keybinding does nothing.
+
+To get navigation back, an organisation publishes the `orca-agent-view` plugin in a marketplace its `strictKnownMarketplaces` allows and enables it in its managed `enabledPlugins`; Claude Code then loads it without a sideload flag. The filter goes away once Orca honours the setting on remote servers or ships the plugin through a marketplace.
+
 ## Troubleshooting
 
 - A forgotten Orca Shell, or a container that keeps running with no terminal: [a shell stays in `toolbox list`](troubleshooting.md#a-shell-stays-in-toolbox-list-after-every-terminal-closed).

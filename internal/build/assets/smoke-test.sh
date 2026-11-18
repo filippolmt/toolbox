@@ -681,10 +681,11 @@ check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
-# Wrapper strips image-wide DO_NOT_TRACK for claude only (feature-flag
-# fetching) — see the fetch-claude-code stage in the Dockerfile.
+# /usr/local/bin/claude is the bin/claude wrapper, not the npm symlink.
+# Behaviour: internal/build/claude_wrapper_test.go.
 # NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
+check_optional  "claude Orca plugin filter" claude grep -c "ORCA_PANE_KEY" /usr/local/bin/claude
 # Fork mode off stops the agent_summary side query. Asserts the knob, not its
 # effect: if upstream decouples the summaries from fork mode they come back
 # silently. Why: docs/internals/image-build.md#claude-fork-mode-off-agent_summary

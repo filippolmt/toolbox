@@ -1110,10 +1110,9 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       /out/usr/local/bin/codegraph --version; \
       # Optional-locks wrapper: export GIT_OPTIONAL_LOCKS=0 for codegraph only.
       # Rationale: docs/internals/image-build.md, codegraph optional-locks
-      # wrapper. Same shape as the claude wrapper in fetch-claude-code, with
-      # its two guards: the target must exist, and must not be the wrapper
-      # path itself — a real shim there would have the wrapper exec itself
-      # forever. A change to the guards changes both. \
+      # wrapper. Two guards: the target must exist, and must not be the
+      # wrapper path itself — a real shim there would have the wrapper exec
+      # itself forever. \
       target="$(readlink -f /out/usr/local/bin/codegraph)"; \
       test -f "${target}"; \
       test "${target}" != /out/usr/local/bin/codegraph; \
@@ -1523,25 +1522,10 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       npm install -g --prefix /out/usr/local "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
       /out/usr/local/bin/claude --version; \
       prune-node-weight /out/usr/local/lib/node_modules/@anthropic-ai; \
-      # DO_NOT_TRACK exemption: swap the npm symlink for a wrapper that strips
-      # the var for the claude process only. Rationale: the ENV comment in the
-      # final stage; known cost: runtime-notes. The wrapper has to name the
-      # path the file will have in the final image, so the stage's own /out
-      # prefix is stripped off the resolved target — and the target is checked
-      # here because the wrapper itself cannot run until the COPY lands. The
-      # codegraph wrapper in fetch-codegraph copies these guards: a change
-      # here changes both. \
-      target="$(readlink -f /out/usr/local/bin/claude)"; \
-      test -f "${target}"; \
-      # `readlink -f` on a regular file returns the file itself, so an upstream
-      # switch from an npm symlink to a real shim at that path would have the
-      # wrapper exec its own final path and loop forever on first run — green
-      # build, broken image. Refuse that target explicitly. \
-      test "${target}" != /out/usr/local/bin/claude; \
+      # /usr/local/bin/claude is the bin/claude wrapper, COPYed in the final
+      # stage. It execs this exact path, so an upstream move fails here. \
+      test "$(readlink -f /out/usr/local/bin/claude)" = /out/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe; \
       rm /out/usr/local/bin/claude; \
-      printf '#!/bin/sh\n# Wrapper: DO_NOT_TRACK turns off feature-flag fetching\n# (flag-gated features, Remote Control auto-connect) — strip it for claude only.\nexec env -u DO_NOT_TRACK "%s" "$@"\n' "${target#/out}" \
-        > /out/usr/local/bin/claude; \
-      chmod 0755 /out/usr/local/bin/claude; \
       freeze-mtimes
 
 # graphify (knowledge-graph builder, Claude Code skill). PyPI name is
@@ -1623,8 +1607,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # the JS toolchain users run in here (next, astro, turbo, …). claude is the
 # one exemption: it reads DO_NOT_TRACK like DISABLE_TELEMETRY, which also
 # turns off feature-flag fetching (flag-gated features, Remote Control
-# auto-connect — see the Claude Code env knobs block). Exemption lives in the fetch-claude-code stage as an `env -u`
-# wrapper around the real binary.
+# auto-connect — see the Claude Code env knobs block). The exemption is the
+# `env -u` in the bin/claude wrapper around the real binary.
 ENV DO_NOT_TRACK=1
 
 # Base apt deps. `rm -f docker-clean` keeps BuildKit cache mount populated.
@@ -1913,7 +1897,7 @@ RUN set -eux; \
 #     Telemetry is product analytics, not training data — the
 #     model-improvement opt-out lives in the claude.ai account privacy
 #     settings. Same reason the image-wide DO_NOT_TRACK=1 is stripped for
-#     claude via the /usr/local/bin/claude wrapper (install layer above):
+#     claude via the /usr/local/bin/claude wrapper (bin/claude):
 #     claude reads it exactly like DISABLE_TELEMETRY. Full matrix:
 #     docs/internals/privacy.md#claude-code-env-var-matrix
 #   CLAUDE_CONFIG_DIR: the directory claude keeps settings, sessions,
@@ -2055,6 +2039,9 @@ COPY --link agent-instructions.md /etc/toolbox/agent-instructions.md
 COPY --link pi-agent-instructions.ts /usr/local/lib/toolbox/pi/agent-instructions.ts
 COPY --link guardrails/agent-guardrails.ts /usr/local/lib/toolbox/pi/agent-guardrails.ts
 COPY --link --chmod=0755 bin/pi /usr/local/bin/pi
+# Claude Code wrapper (what it does: bin/claude); fetch-claude-code asserts
+# the path it execs.
+COPY --link --chmod=0755 bin/claude /usr/local/bin/claude
 # Worktrunk's system config layer (Image Default): worktree hooks and commit
 # message generation for every developer, below their own user config. The
 # smoke test asserts wt loads it.
