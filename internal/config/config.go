@@ -240,13 +240,20 @@ func ValidateMountsRoot(s string) error {
 // would mount the whole host home as its workspace, breaking the containment
 // boundary. The syntactic check only: sessionplan checks the expanded path.
 func ValidateOrcaWorkspace(s string) error {
+	return validateShellWorkspace("orca_workspace", "the Orca Shell", s)
+}
+
+// validateShellWorkspace is the syntactic check of a singleton Shell's
+// workspace key: absolute or ~/sub, never the bare home. shell names the
+// Shell in the error ("the Orca Shell").
+func validateShellWorkspace(key, shell, s string) error {
 	if s == "~" || s == "~/" {
-		return fmt.Errorf("orca_workspace %q is too broad: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", s)
+		return fmt.Errorf("%s %q is too broad: it would mount the whole host home into %s; name the directory that holds your repositories", key, s, shell)
 	}
 	if s == "" || strings.HasPrefix(s, "~/") || filepath.IsAbs(s) {
 		return nil
 	}
-	return fmt.Errorf("orca_workspace %q must be absolute or start with ~/", s)
+	return fmt.Errorf("%s %q must be absolute or start with ~/", key, s)
 }
 
 // Pull policy values accepted by the `pull` key. These are the single source

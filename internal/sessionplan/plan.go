@@ -256,7 +256,7 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
 	orca := in.OrcaVersion != ""
-	var orcaN orcaNameSet
+	var orcaN singletonNameSet
 	if orca {
 		var err error
 		if orcaN, err = orcaNames(in.Profile); err != nil {

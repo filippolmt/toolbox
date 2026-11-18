@@ -1,14 +1,10 @@
 package sessionplan
 
 import (
-	"errors"
-	"fmt"
 	"path"
 	"path/filepath"
-	"regexp"
 
 	"github.com/filippolmt/toolbox/internal/mountplan"
-	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 // Orca Shell: the Detached Shell that hosts Orca's runtime, one per host and
@@ -35,8 +31,6 @@ const (
 	orcaLogName = "serve.log"
 )
 
-var hashShapedRe = regexp.MustCompile(fmt.Sprintf(`^[a-f0-9]{%d}$`, WorkspaceHashLen))
-
 // OrcaContainerName is `toolbox-orca`, or `toolbox-orca-<profile>`. A profile
 // suffix shaped like the workspace hash is refused: `toolbox-orca-<8hex>` is
 // the workspace container of a directory named "orca".
@@ -45,53 +39,16 @@ func OrcaContainerName(profile *mountplan.Profile) (string, error) {
 	return n.container, err
 }
 
-// orcaNameSet is every name an Orca Shell owns, from one profile check.
-type orcaNameSet struct {
-	container string
-	// volume is the data volume: `toolbox-orca-data`, or
-	// `toolbox-orca-data-<profile>`, so each Profile keeps its own pairing
-	// identity. It outlives the container.
-	volume string
-	// init is the volume's initialiser container, `<volume>_init`. The
-	// underscore is what no sanitized Profile suffix holds, so it never
-	// equals an Orca Shell's name (`toolbox-orca-data-init` is the Orca
-	// Shell of a Profile named data-init).
-	init string
+// orcaNames is every name an Orca Shell owns: its container, its data volume
+// (one per Profile, keeping its own pairing identity) and that volume's
+// initialiser.
+func orcaNames(profile *mountplan.Profile) (singletonNameSet, error) {
+	return singletonNames("orca", "an Orca Shell", profile)
 }
 
-func orcaNames(profile *mountplan.Profile) (orcaNameSet, error) {
-	suffix := ""
-	if pn := mountplan.ProfileName(profile); pn != "" {
-		suffix = SanitizeShellName(pn)
-		if suffix == "" || hashShapedRe.MatchString(suffix) {
-			return orcaNameSet{}, fmt.Errorf("profile %q cannot name an Orca Shell: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn)
-		}
-		suffix = "-" + suffix
-	}
-	volume := ContainerNamePrefix + "orca-data" + suffix
-	return orcaNameSet{container: ContainerNamePrefix + "orca" + suffix, volume: volume, init: volume + "_init"}, nil
-}
-
-// orcaWorkspace is the dir argument when given, else orca_workspace expanded
-// against the declared host's home. Both routes pass the one check: a
-// colon-free absolute path to an existing directory that is not the home
-// itself (the Orca Shell would mount the whole host home).
+// orcaWorkspace is the dir argument when given, else orca_workspace.
 func orcaWorkspace(in PlanInput) (string, error) {
-	raw := in.Workspace
-	if raw == "" {
-		if in.Cfg.OrcaWorkspace == "" {
-			return "", errors.New("toolbox orca has no workspace: set orca_workspace in ~/.toolbox.yaml or pass a dir argument")
-		}
-		raw = in.Host.Expand(in.Cfg.OrcaWorkspace)
-	}
-	ws, err := workspace.ResolveExplicit(raw)
-	if err != nil {
-		return "", fmt.Errorf("toolbox orca workspace: %w", err)
-	}
-	if ws == filepath.Clean(in.Host.Home) {
-		return "", fmt.Errorf("toolbox orca workspace %s is the home directory: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", ws)
-	}
-	return ws, nil
+	return singletonWorkspace(in, "toolbox orca", "orca_workspace", in.Cfg.OrcaWorkspace, "the Orca Shell")
 }
 
 // orcaDetached: the Orca Shell starts detached unless a terminal asked for it.
