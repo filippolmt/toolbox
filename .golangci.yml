@@ -6,6 +6,7 @@ run:
 linters:
   default: none
   enable:
+    - depguard
     - errcheck
     - govet
     - gosec
@@ -26,6 +27,18 @@ linters:
         linters:
           - gosec
   settings:
+    depguard:
+      rules:
+        # internal/container is the Docker edge: cmd/ hands its client down to
+        # the leaves, and a leaf importing it back inverts that direction.
+        container-edge:
+          files:
+            - "$all"
+            - "!**/cmd/**"
+            - "!**/internal/container/**"
+          deny:
+            - pkg: github.com/filippolmt/toolbox/internal/container
+              desc: only cmd/ imports the container edge; take the narrow Docker interface you need instead
     # Enabled separately for the diff by go-lint-new and CI, not retroactively
     # across untouched functions. SonarQube remains the authoritative gate.
     gocognit:
