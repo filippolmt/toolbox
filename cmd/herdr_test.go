@@ -43,8 +43,8 @@ func (h fakeHerdrCore) Remove(name string) error {
 func herdrHarness(t *testing.T, core fakeHerdrCore) (**sessionplan.SessionPlan, *[]string) {
 	t.Helper()
 	sessionHarness(t)
-	origCfg, origProfile, origCore := cfg, herdrProfile, herdrHost
-	t.Cleanup(func() { cfg, herdrProfile, herdrHost = origCfg, origProfile, origCore })
+	origCfg, origProfile, origCore, origReregister := cfg, herdrProfile, herdrHost, herdrReregister
+	t.Cleanup(func() { cfg, herdrProfile, herdrHost, herdrReregister = origCfg, origProfile, origCore, origReregister })
 	var calls []string
 	core.log = &calls
 	cfg, herdrProfile, herdrHost = &config.Config{Shell: "zsh"}, "", core
@@ -171,6 +171,19 @@ func TestHerdrNewShellWithItsMachineUpdatesIt(t *testing.T) {
 		t.Fatalf("runHerdr: %v", err)
 	}
 	if want := []string{"update toolbox"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want %q", *calls, want)
+	}
+}
+
+func TestHerdrReregisterRemovesAndAddsTheMachine(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: toolboxMachine})
+	herdrReregister = true
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
+	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	if want := []string{"rm toolbox", "add toolbox via docker exec -i toolbox-herdr sh -c"}; !slices.Equal(*calls, want) {
 		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
