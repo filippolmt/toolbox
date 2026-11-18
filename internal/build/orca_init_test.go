@@ -259,3 +259,37 @@ func TestOrcaInitPrunesOlderVersionsOnInstall(t *testing.T) {
 		t.Errorf("current -> %q (%v), want v1.4.262", link, err)
 	}
 }
+
+// Offline with a cache: the requested version does not download, so the
+// newest cached version (by version order, not by name) starts, and the log
+// carries a warning naming both, which the host relays.
+func TestOrcaInitFallsBackToTheNewestCachedVersionOffline(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	seedOrcaVersion(t, data, "v1.9.0")
+	seedOrcaVersion(t, data, "v1.10.0")
+	if err := os.Symlink("v1.9.0", filepath.Join(data, "server", "current")); err != nil {
+		t.Fatal(err)
+	}
+	offline := t.TempDir() // a release with no files: every download fails
+
+	run := runOrcaInit(t, data, offline, "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, readFile(t, filepath.Join(data, "serve.log")))
+	}
+	if served := readFile(t, filepath.Join(data, "served")); !strings.Contains(served, "orca-ide v1.10.0 serve") {
+		t.Errorf("served %q, want the newest cached v1.10.0", served)
+	}
+	if link, _ := os.Readlink(filepath.Join(data, "server", "current")); link != "v1.10.0" {
+		t.Errorf("current -> %q, want v1.10.0", link)
+	}
+	var warning string
+	for _, line := range strings.Split(readFile(t, filepath.Join(data, "serve.log")), "\n") {
+		if strings.HasPrefix(line, "toolbox: orca: warning: ") {
+			warning = line
+		}
+	}
+	if !strings.Contains(warning, "v1.4.262") || !strings.Contains(warning, "v1.10.0") {
+		t.Errorf("warning %q does not name the requested and the started version", warning)
+	}
+}

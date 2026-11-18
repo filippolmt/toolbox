@@ -65,25 +65,40 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     tmp=$(mktemp -d "$servers/.install-$version.XXXXXX")
     trap 'rm -rf "$tmp"' EXIT
     echo "toolbox: orca: downloading $base/$archive"
-    curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive"
-    curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"
-    want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
-    if [ -z "$want" ]; then
-        echo "toolbox: orca: checksum file has no line for $archive; not installing"
-        exit 1
+    if curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive" &&
+        curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"; then
+        want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
+        if [ -z "$want" ]; then
+            echo "toolbox: orca: checksum file has no line for $archive; not installing"
+            exit 1
+        fi
+        got=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
+        if [ "$got" != "$want" ]; then
+            echo "toolbox: orca: checksum mismatch for $archive (got $got, want $want); not installing"
+            exit 1
+        fi
+        mkdir "$tmp/tree"
+        tar -xzf "$tmp/$archive" -C "$tmp/tree" --strip-components=1
+        rm -rf "$dest"
+        mv "$tmp/tree" "$dest"
+        rm -rf "$tmp"
+        trap - EXIT
+        installed=1
+    else
+        # Offline: the newest server already cached runs instead, by version
+        # order; the warning line is relayed by the host.
+        rm -rf "$tmp"
+        trap - EXIT
+        cached=$(cd "$servers" && for v in v*; do
+            if [ -x "$v/bin/orca-ide" ]; then echo "$v"; fi
+        done | sort -V | tail -n 1)
+        if [ -z "$cached" ]; then
+            echo "toolbox: orca: could not download $version and no server is cached"
+            exit 1
+        fi
+        echo "toolbox: orca: warning: could not download Orca server $version; starting the cached $cached instead, which may not match the desktop app"
+        version=$cached
     fi
-    got=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
-    if [ "$got" != "$want" ]; then
-        echo "toolbox: orca: checksum mismatch for $archive (got $got, want $want); not installing"
-        exit 1
-    fi
-    mkdir "$tmp/tree"
-    tar -xzf "$tmp/$archive" -C "$tmp/tree" --strip-components=1
-    rm -rf "$dest"
-    mv "$tmp/tree" "$dest"
-    rm -rf "$tmp"
-    trap - EXIT
-    installed=1
 fi
 
 ln -sfn "$version" "$servers/.current.new"
