@@ -1523,9 +1523,7 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
       /out/usr/local/bin/claude --version; \
       prune-node-weight /out/usr/local/lib/node_modules/@anthropic-ai; \
       # /usr/local/bin/claude is the bin/claude wrapper, COPYed in the final
-      # stage: it strips DO_NOT_TRACK (rationale: the ENV comment in the final
-      # stage) and drops Orca's sideloaded plugin in an Orca pane. It execs
-      # this exact path, so an upstream move fails here. \
+      # stage. It execs this exact path, so an upstream move fails here. \
       test "$(readlink -f /out/usr/local/bin/claude)" = /out/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe; \
       rm /out/usr/local/bin/claude; \
       freeze-mtimes
@@ -1899,7 +1897,7 @@ RUN set -eux; \
 #     Telemetry is product analytics, not training data — the
 #     model-improvement opt-out lives in the claude.ai account privacy
 #     settings. Same reason the image-wide DO_NOT_TRACK=1 is stripped for
-#     claude via the /usr/local/bin/claude wrapper (install layer above):
+#     claude via the /usr/local/bin/claude wrapper (bin/claude):
 #     claude reads it exactly like DISABLE_TELEMETRY. Full matrix:
 #     docs/internals/privacy.md#claude-code-env-var-matrix
 #   CLAUDE_CONFIG_DIR: the directory claude keeps settings, sessions,
@@ -2041,8 +2039,8 @@ COPY --link agent-instructions.md /etc/toolbox/agent-instructions.md
 COPY --link pi-agent-instructions.ts /usr/local/lib/toolbox/pi/agent-instructions.ts
 COPY --link guardrails/agent-guardrails.ts /usr/local/lib/toolbox/pi/agent-guardrails.ts
 COPY --link --chmod=0755 bin/pi /usr/local/bin/pi
-# Claude Code wrapper: strips DO_NOT_TRACK, drops Orca's sideloaded plugin in
-# an Orca pane. fetch-claude-code asserts the path it execs.
+# Claude Code wrapper (what it does: bin/claude); fetch-claude-code asserts
+# the path it execs.
 COPY --link --chmod=0755 bin/claude /usr/local/bin/claude
 # Worktrunk's system config layer (Image Default): worktree hooks and commit
 # message generation for every developer, below their own user config. The

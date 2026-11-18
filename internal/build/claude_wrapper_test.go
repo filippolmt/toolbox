@@ -65,15 +65,21 @@ func runClaudeWrapper(t *testing.T, env []string, args ...string) claudeRun {
 func TestClaudeWrapperOutsideOrcaPassesEverythingThrough(t *testing.T) {
 	args := []string{"--plugin-dir", orcaPlugin, "--plugin-dir=" + orcaPlugin, "-p", "two words", ""}
 	dirs := "/opt/mine:" + orcaPlugin
-	run := runClaudeWrapper(t, []string{"CLAUDE_CODE_PLUGIN_DIRS=" + dirs, "DO_NOT_TRACK=1"}, args...)
-	if !reflect.DeepEqual(run.argv, args) {
-		t.Errorf("argv = %q, want %q", run.argv, args)
-	}
-	if got := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; got != dirs {
-		t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want %q", got, dirs)
-	}
-	if _, ok := run.env["DO_NOT_TRACK"]; ok {
-		t.Error("DO_NOT_TRACK reached claude")
+	// An empty ORCA_PANE_KEY is no Orca pane either.
+	for name, pane := range map[string][]string{"unset": nil, "empty": {"ORCA_PANE_KEY="}} {
+		t.Run(name, func(t *testing.T) {
+			env := append([]string{"CLAUDE_CODE_PLUGIN_DIRS=" + dirs, "DO_NOT_TRACK=1"}, pane...)
+			run := runClaudeWrapper(t, env, args...)
+			if !reflect.DeepEqual(run.argv, args) {
+				t.Errorf("argv = %q, want %q", run.argv, args)
+			}
+			if got := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; got != dirs {
+				t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want %q", got, dirs)
+			}
+			if _, ok := run.env["DO_NOT_TRACK"]; ok {
+				t.Error("DO_NOT_TRACK reached claude")
+			}
+		})
 	}
 }
 
@@ -98,5 +104,16 @@ func TestClaudeWrapperInAnOrcaPaneDropsOrcasPluginDirsEntry(t *testing.T) {
 	run = runClaudeWrapper(t, []string{pane, "CLAUDE_CODE_PLUGIN_DIRS=" + orcaPlugin})
 	if got, ok := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; ok {
 		t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want it unset", got)
+	}
+}
+
+func TestClaudeWrapperInAnOrcaPaneLeavesPluginDirsWithoutOrcasEntryAlone(t *testing.T) {
+	dirs := "/opt/a::/opt/b"
+	run := runClaudeWrapper(t, []string{"ORCA_PANE_KEY=tab-1:pane-1", "CLAUDE_CODE_PLUGIN_DIRS=" + dirs, "DO_NOT_TRACK=1"})
+	if got := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; got != dirs {
+		t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want %q", got, dirs)
+	}
+	if _, ok := run.env["DO_NOT_TRACK"]; ok {
+		t.Error("DO_NOT_TRACK reached claude")
 	}
 }

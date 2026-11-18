@@ -681,9 +681,8 @@ check_required "sudo setuid"       sh -c "command -v sudo >/dev/null && test -u 
 check_optional  "pnpm"      pnpm     pnpm --version
 check_optional  "bun"       bun      bun --version
 check_optional  "claude"    claude   claude --version
-# /usr/local/bin/claude is the bin/claude wrapper: it strips image-wide
-# DO_NOT_TRACK for claude only (feature-flag fetching) and drops the Orca
-# sideloaded plugin in an Orca pane. Behaviour: internal/build/claude_wrapper_test.go.
+# /usr/local/bin/claude is the bin/claude wrapper, not the npm symlink.
+# Behaviour: internal/build/claude_wrapper_test.go.
 # NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "claude Orca plugin filter" claude grep -c "ORCA_PANE_KEY" /usr/local/bin/claude

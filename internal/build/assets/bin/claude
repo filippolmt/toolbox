@@ -36,14 +36,24 @@ if [ -n "${ORCA_PANE_KEY-}" ]; then
 		set -- "$@" "$arg"
 	done
 	if [ -n "${CLAUDE_CODE_PLUGIN_DIRS-}" ]; then
+		# Rewritten only when an Orca entry goes; every other entry stays as is.
 		kept=
+		sep=
+		dropped=
 		rest=$CLAUDE_CODE_PLUGIN_DIRS:
 		while [ -n "$rest" ]; do
 			entry=${rest%%:*}
 			rest=${rest#*:}
-			[ -n "$entry" ] && ! is_orca_plugin "$entry" && kept=${kept:+$kept:}$entry
+			if is_orca_plugin "$entry"; then
+				dropped=1
+			else
+				kept=$kept$sep$entry
+				sep=:
+			fi
 		done
-		if [ -n "$kept" ]; then
+		if [ -z "$dropped" ]; then
+			:
+		elif [ -n "$kept" ]; then
 			export CLAUDE_CODE_PLUGIN_DIRS="$kept"
 		else
 			unset CLAUDE_CODE_PLUGIN_DIRS
