@@ -637,9 +637,9 @@ func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.Inspect
 // the holder. When the plan asks for it (ProbeHostPorts), it then bind-tests
 // each published host address for a non-Docker holder; that probe runs in the
 // CLI's own network namespace, which is the host's, since the CLI runs on the
-// host, not in a container. Only a create can conflict — connecting to or starting an
-// existing container publishes nothing new — so this is the create path's
-// gate, called before any image work by Shell and again by
+// host, not in a container. Only a create can conflict — connecting to or
+// starting an existing container publishes nothing new — so this is the create
+// path's gate, called before any image work by Shell and again by
 // replaceForRefresh, which turns a start into a create.
 //
 // Deliberately before the start-up refresh in Shell: a known-fatal conflict
