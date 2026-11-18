@@ -2185,7 +2185,9 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
-argument, `orca_workspace`, or else the running Orca Shell's own (one check
+argument, `orca_workspace`, or else the running Orca Shell's own (a start
+uses it; a join keeps the running Orca Shell's workspace and version and
+`toolbox orca` reports any difference; one check
 for all: an existing directory, never the home itself, which would mount the
 whole home), a host-port probe
 on create, and `Detached` — unless `OrcaAttach`

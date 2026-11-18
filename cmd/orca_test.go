@@ -126,7 +126,7 @@ func TestOrcaStartsTheOrcaShellAndAddsItsEnvironmentToTheDesktopApp(t *testing.T
 	if got := sessionplan.EnvValue(p.Env, sessionplan.OrcaVersionEnv); got != "v1.4.262" {
 		t.Errorf("%s = %q, want the normalised tag", sessionplan.OrcaVersionEnv, got)
 	}
-	if got := sessionplan.EnvValue(p.Env, "TOOLBOX_HOST_WORKSPACE"); got != ws {
+	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {
 		t.Errorf("workspace = %q, want the dir argument %q", got, ws)
 	}
 	if !slices.Equal(*asked, []string{"toolbox-orca"}) || !slices.Equal(calls, []string{"add toolbox orca://pair?code=toolbox-orca"}) {
@@ -343,7 +343,7 @@ func TestOrcaShellPlansTheRunningOrcaShellAndReentersIt(t *testing.T) {
 	if got := sessionplan.EnvValue(p.Env, sessionplan.OrcaVersionEnv); got != "v1.4.262" {
 		t.Errorf("%s = %q, want the running Orca Shell's", sessionplan.OrcaVersionEnv, got)
 	}
-	if got := sessionplan.EnvValue(p.Env, "TOOLBOX_HOST_WORKSPACE"); got != ws {
+	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {
 		t.Errorf("workspace = %q, want the running Orca Shell's %q", got, ws)
 	}
 	want := []string{"/usr/local/bin/toolbox", "orca", "shell", "--profile", "work"}
