@@ -2184,7 +2184,10 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `sessionplan.OrcaPort` published on host loopback, the `TOOLBOX_ORCA_VERSION` env gate (the
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
-`ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
+`ORCA_USER_DATA_PATH` on the Orca Shell's own named volume
+(`sessionplan.OrcaDataVolumeName`: `toolbox-orca-data` or
+`toolbox-orca-data-<profile>`, mounted at `sessionplan.OrcaDataTarget`), the
+server log on the state mount (`TOOLBOX_ORCA_LOG`), the workspace from the `dir`
 argument, `orca_workspace`, or else the running Orca Shell's own (a start
 uses it; a join keeps the running Orca Shell's workspace and version and
 `toolbox orca` reports any difference; one check
@@ -2197,7 +2200,7 @@ Shell's version and workspace so a recreate restarts the server. The gate is rea
 `<data>/server/<version>` (pruning the versions older than it, so a
 downgrade keeps the newer one for the next upgrade; offline, the newest
 cached one runs) and starts it in the background; the host waits for the
-server's readiness record in `<data>/serve.log` through the state mount
+server's readiness record in `serve.log` through the state mount
 (`internal/orca.WaitPairing`, as of the latest start: a run that ended wrote
 a stop line, so a join never reports a dead server as ready), removing an
 Orca Shell whose installer logged a `fatal:` line instead and relaying its
@@ -2211,6 +2214,15 @@ Why the term exists: Orca's runtime lock admits one server per data
 directory, so the container hosting it is not "a shell for a workspace" but
 a fixed, per-Profile singleton — the name, the port and the data directory
 all follow from that one fact.
+
+Why the data directory is a volume: Orca creates its Unix sockets in it, and
+a [Host Share](#host-share) bind refuses to `chmod` one, so on the state mount
+the server never started. The volume follows the peer socket volume's
+precedent (`mountplan.PeerSocketVolumeName`): `internal/container` creates it
+before the Orca Shell and hands it to the runtime user in a root initialiser,
+removing it again when that fails. It survives `toolbox orca stop`, so the
+pairing identity outlives a recreate; the log stays on the state mount
+because the host reads it there.
 
 Why the guards sit where they do: the init script runs under tini as a
 detached child and cannot stop its own container, so an attempt that starts

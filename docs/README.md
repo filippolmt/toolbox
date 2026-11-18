@@ -170,6 +170,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [herdr reopens in the wrong directory](troubleshooting.md#herdr-reopens-in-the-wrong-directory)
 - [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
 - [The Orca server does not start](troubleshooting.md#the-orca-server-does-not-start)
+- [The Orca server stops with EINVAL on a socket](troubleshooting.md#the-orca-server-stops-with-einval-on-a-socket)
 - [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable)
 
 ## Internals

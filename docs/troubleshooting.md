@@ -201,6 +201,14 @@ The next launch records the directory it started from. Note that this clears a s
 
 **Fix:** read the `fatal:` line in the log the error names (`~/.toolbox/toolbox/state/orca/serve.log` without a profile). Offline with an empty cache: connect and run `toolbox orca` again. A checksum mismatch: retry once; if it persists, the release asset is not the one its checksum file describes, so pin another version with `--version`. See [Orca: offline](orca.md#offline) and [port and log](orca.md#port-and-log).
 
+## The Orca server stops with EINVAL on a socket
+
+**Symptom:** `toolbox orca` fails with `orca: the server stopped (...)`, and `serve.log` ends with `orcad: failed to start: EINVAL ... chmod .../o-<pid>-<x>.sock`, followed by `toolbox: orca: server stopped with status 1`.
+
+**Cause:** the Orca Shell was created by a toolbox that kept Orca's data directory on the state mount. Orca creates its sockets there, and Docker Desktop's host file sharing refuses to `chmod` a socket.
+
+**Fix:** `toolbox orca stop`, then `toolbox orca`: the new Orca Shell keeps its data on the `toolbox-orca-data` volume. The desktop app pairs again, since the old pairing identity stayed in the old directory. See [port and log](orca.md#port-and-log).
+
 ## Orca pairing is unavailable
 
 **Symptom:** `toolbox orca` fails with `orca: the server is up but pairing is unavailable (<reason>): <guidance>`, or `toolbox orca pair` fails asking the Orca Shell for a pairing link.
