@@ -27,7 +27,13 @@ hc machine add --name toolbox --install --via 'docker exec -i toolbox-herdr sh -
 
 herdr-core installs its own `hc` in the container, at the host's version, checked against the release's SHA-256. Open herdr.app: the `toolbox` machine shows as connected, and a space on it runs its terminals and agents in the container. Claude Code, Codex and pi report their status to the app without any hook.
 
-When herdr-core cannot add the machine on a Shell the command just created, the Shell is removed and herdr-core's reason is the error.
+Running `toolbox herdr` again is safe. On a running Shell whose machine herdr-core already knows, it changes nothing. When it creates the container (the first start after a stop, an image update, a recreate) and the machine is already known, it runs `hc machine update toolbox`, which installs `hc` in the new container again. When herdr-core cannot register the machine on a Shell the command just created, the Shell is removed and herdr-core's reason is the error.
+
+To repair a machine entry, force a fresh registration: `toolbox herdr --reregister` removes the machine (`hc machine rm`) and adds it again with `--install`.
+
+### Without hc on the host
+
+Without `hc` on your `PATH`, `toolbox herdr` still starts the Shell and prints the exact `hc machine add` command for it, with the machine name and `--via` line of the Shell it planned. Run it once herdr-core is installed, or run `toolbox herdr` again.
 
 The Herdr TUI (`herdr` in a toolbox shell) is unaffected: the two runtimes coexist and do not see each other's terminals.
 
@@ -49,7 +55,7 @@ A second `toolbox herdr` on a running Herdr Core Shell creates nothing: it says 
 toolbox herdr stop
 ```
 
-removes the Herdr Core Shell. With none running it exits 0 without a word. herdr-core's state (terminal records, saved screens) stays on the volume `toolbox-herdr-data`, so the next start restores the spaces. The machine stays registered on the host; a new container has no `hc` yet, and `hc machine update toolbox` installs it again.
+removes the Herdr Core Shell. With none running it exits 0 without a word. herdr-core's state (terminal records, saved screens) stays on the volume `toolbox-herdr-data`, so the next start restores the spaces. The machine stays registered on the host; the next `toolbox herdr` creates a new container and updates the machine, which installs `hc` in it again.
 
 ## Profiles
 
@@ -61,7 +67,7 @@ herdr-core is not a sandbox: whoever reaches its socket controls its terminals. 
 
 ## Recreate
 
-An image update or a [Session Reload](session-reload.md) recreates the container. Running programs end; the spaces come back from the state volume with fresh shells. The `hc` herdr-core installed lives in the container's writable layer and is gone too: `hc machine update toolbox` installs it again.
+An image update or a [Session Reload](session-reload.md) recreates the container. Running programs end; the spaces come back from the state volume with fresh shells. The `hc` herdr-core installed lives in the container's writable layer and is gone too. When `toolbox herdr` itself created the new container (an image update taken at its start), it updates the machine, which installs `hc` again. A Session Reload recreates a running Shell outside `toolbox herdr`, and a later `toolbox herdr` sees a running Shell and changes nothing: run `hc machine update toolbox` (or `toolbox herdr --reregister`) once.
 
 ## Remove the machine
 

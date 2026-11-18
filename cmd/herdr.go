@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
@@ -20,6 +21,7 @@ import (
 var herdrProfile string // persistent on herdr: every subcommand acts on this profile's Herdr Core Shell
 var herdrShare []string
 var herdrShellShare []string
+var herdrReregister bool
 
 // herdrHost is the host's herdr-core the Herdr Core Shell registers with;
 // tests swap it.
@@ -33,7 +35,10 @@ herdr-core for the Herdr desktop app (herdr.app). The command registers it with
 the host's herdr-core (hc) as the machine toolbox (toolbox-<profile>), reached
 through 'docker exec' rather than ssh; herdr-core installs its own hc in the
 container. Spaces on that machine run their terminals and agents in the
-container until 'toolbox herdr stop'.
+container until 'toolbox herdr stop'. A re-run leaves a known machine alone,
+or updates it when the run created the container (a new container has no hc);
+--reregister removes and adds it again. Without hc on the host, the Shell
+starts and the hc machine add command to run later is printed.
 
 The workspace is the absolute dir argument, or the herdr_workspace config key,
 or else the running Herdr Core Shell's. One Herdr Core Shell per host and
@@ -137,16 +142,22 @@ func runningHerdrCoreShellOf(profile *mountplan.Profile) ([]string, error) {
 }
 
 // addHerdrMachine registers the Herdr Core Shell called shell with the host's
-// herdr-core. A Shell this run created and herdr-core cannot reach is removed:
-// left running, it would be a detached container nothing uses.
+// herdr-core, or prints how to once the host has hc. A Shell this run created
+// and herdr-core cannot register is removed: left running, it would be a
+// detached container nothing uses.
 func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, cmd *cobra.Command) error {
 	machine := herdrcore.MachineName(shell)
 	via, err := herdrcore.Via(shell)
 	if err == nil {
-		err = herdrHost.Add(machine, via)
+		err = registerHerdrMachine(machine, via, created)
+	}
+	if errors.Is(err, herdrcore.ErrNoHC) {
+		// via is a plain container name and fixed words: single quotes suffice.
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "The Herdr Core Shell %s is up, but this host has no hc (herdr-core) on its PATH. Once herdr-core is installed, register it with:\n  hc machine add --name %s --install --via '%s'\n", shell, machine, via)
+		return nil
 	}
 	if err != nil {
-		err = fmt.Errorf("herdr-core could not add the machine %s: %w", machine, err)
+		err = fmt.Errorf("herdr-core could not register the machine %s: %w", machine, err)
 		if created {
 			return errors.Join(err, container.StopByName(ctx, cli, shell))
 		}
@@ -154,6 +165,30 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "herdr-core reaches the Herdr Core Shell %s as the machine %s: open herdr.app.\n", shell, machine)
 	return nil
+}
+
+// registerHerdrMachine adds machine reached through via unless the host's
+// herdr-core already knows it. A known machine on a container this run created
+// is updated: the hc herdr-core installed lived in the old container's layer.
+// --reregister removes a known machine and adds it again.
+func registerHerdrMachine(machine, via string, created bool) error {
+	machines, err := herdrHost.Machines()
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(machines, func(m herdrcore.Machine) bool { return m.Name == machine }) {
+		switch {
+		case herdrReregister:
+			if err := herdrHost.Remove(machine); err != nil {
+				return err
+			}
+		case created:
+			return herdrHost.Update(machine)
+		default:
+			return nil
+		}
+	}
+	return herdrHost.Add(machine, via)
 }
 
 func runHerdrStop(cmd *cobra.Command, _ []string) error {
@@ -179,6 +214,8 @@ func init() {
 		"the toolbox profile whose Herdr Core Shell to act on (its own credentials and herdr-core state)")
 	herdrCmd.Flags().StringSliceVar(&herdrShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root (see toolbox shell --share)")
+	herdrCmd.Flags().BoolVar(&herdrReregister, "reregister", false,
+		"remove the machine from the host's herdr-core and add it again, reinstalling hc in the Shell")
 	herdrShellCmd.Flags().StringSliceVar(&herdrShellShare, "share", nil,
 		"under --profile, the --share the Herdr Core Shell was started with")
 	herdrCmd.AddCommand(herdrStopCmd, herdrShellCmd)
