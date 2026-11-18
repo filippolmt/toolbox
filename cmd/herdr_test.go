@@ -8,14 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/herdrcore"
 	"github.com/filippolmt/toolbox/internal/reload"
-	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -107,7 +105,7 @@ func TestHerdrUnderAProfileAddsTheProfileNamedMachine(t *testing.T) {
 func TestHerdrRemovesANewShellWhoseMachineAddFailed(t *testing.T) {
 	herdrHarness(t, fakeHerdrCore{addErr: errors.New("hc machine add: toolbox has an hc too old to talk to")})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingOrcaDaemon{stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil }
 
 	err := runHerdr(herdrCmd, []string{sessionWorkspace(t, "src")})
 	if err == nil || !strings.Contains(err.Error(), "too old to talk to") {
@@ -118,27 +116,10 @@ func TestHerdrRemovesANewShellWhoseMachineAddFailed(t *testing.T) {
 	}
 }
 
-// stoppingRunningDaemon answers a running Detached Shell and records the
-// containers stopped and removed.
-type stoppingRunningDaemon struct {
-	runningOrcaDaemon
-	stopped *[]string
-}
-
-func (d stoppingRunningDaemon) ContainerStop(_ context.Context, name string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
-	*d.stopped = append(*d.stopped, "stop "+name)
-	return client.ContainerStopResult{}, nil
-}
-
-func (d stoppingRunningDaemon) ContainerRemove(_ context.Context, name string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
-	*d.stopped = append(*d.stopped, "remove "+name)
-	return client.ContainerRemoveResult{}, nil
-}
-
 func TestHerdrStopStopsTheHerdrCoreShell(t *testing.T) {
 	herdrHarness(t, fakeHerdrCore{})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingRunningDaemon{stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: runningOrcaDaemon{}, stopped: &stopped}, nil }
 	if err := runHerdrStop(herdrStopCmd, nil); err != nil {
 		t.Fatalf("runHerdrStop: %v", err)
 	}
@@ -270,7 +251,7 @@ func TestHerdrReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
 func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
 	attached, calls := herdrHarness(t, fakeHerdrCore{noHC: true})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingOrcaDaemon{stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil }
 	herdrProfile = "work"
 	var out bytes.Buffer
 	herdrCmd.SetOut(&out)
@@ -291,30 +272,11 @@ func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
 	}
 }
 
-// runningHerdrDaemon answers that the Herdr Core Shell is up, detached, on
-// workspace. Any other call panics through stubDaemon: a create among them.
-type runningHerdrDaemon struct {
-	stubDaemon
-	workspace string
-}
-
-func (d runningHerdrDaemon) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
-	return client.ContainerInspectResult{Container: dockercontainer.InspectResponse{
-		ID:         "herdr1",
-		HostConfig: &dockercontainer.HostConfig{AutoRemove: true},
-		State:      &dockercontainer.State{Running: true},
-		Config: &dockercontainer.Config{
-			Labels: runplan.DetachedLabels(),
-			Env:    []string{sessionplan.HostWorkspaceEnv + "=" + d.workspace},
-		},
-	}}, nil
-}
-
 // joinHerdr runs `toolbox herdr args` against a running Herdr Core Shell on
 // running, through the real attach, and returns what it printed.
 func joinHerdr(t *testing.T, running string, args []string) string {
 	t.Helper()
-	newDockerClient = func() (client.APIClient, error) { return runningHerdrDaemon{workspace: running}, nil }
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: running}, nil }
 	shellFn = container.Shell
 	var out bytes.Buffer
 	herdrCmd.SetOut(&out)
@@ -375,7 +337,7 @@ func TestHerdrJoinReportsAWorkspaceMismatch(t *testing.T) {
 func TestHerdrShellReentersTheRunningShell(t *testing.T) {
 	attached, calls := herdrHarness(t, fakeHerdrCore{})
 	ws := sessionWorkspace(t, "src")
-	newDockerClient = func() (client.APIClient, error) { return runningHerdrDaemon{workspace: ws}, nil }
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
 	shellFn = func(_ context.Context, _ client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
 		*attached = p
 		return &reload.From{Container: p.ContainerName}, nil

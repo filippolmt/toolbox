@@ -229,19 +229,20 @@ func TestOrcaVersionFlagWinsOverTheDesktopApp(t *testing.T) {
 	}
 }
 
-// stoppingOrcaDaemon is orcaDaemon recording the containers stopped and
-// removed.
-type stoppingOrcaDaemon struct {
-	orcaDaemon
+// stoppingDaemon is a daemon (orcaDaemon: no singleton Shell yet;
+// runningOrcaDaemon: one running) recording the containers stopped and
+// removed. The orca and herdr command tests share it.
+type stoppingDaemon struct {
+	client.APIClient
 	stopped *[]string
 }
 
-func (d stoppingOrcaDaemon) ContainerStop(_ context.Context, name string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+func (d stoppingDaemon) ContainerStop(_ context.Context, name string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
 	*d.stopped = append(*d.stopped, "stop "+name)
 	return client.ContainerStopResult{}, nil
 }
 
-func (d stoppingOrcaDaemon) ContainerRemove(_ context.Context, name string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+func (d stoppingDaemon) ContainerRemove(_ context.Context, name string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	*d.stopped = append(*d.stopped, "remove "+name)
 	return client.ContainerRemoveResult{}, nil
 }
@@ -254,7 +255,7 @@ func TestOrcaStopsTheOrcaShellWhenNoServerStarts(t *testing.T) {
 		"toolbox: orca: fatal: could not download Orca server v1.4.262 and no server is cached\n")
 	var stopped []string
 	newDockerClient = func() (client.APIClient, error) {
-		return stoppingOrcaDaemon{stopped: &stopped}, nil
+		return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil
 	}
 
 	err := runOrca(orcaCmd, []string{sessionWorkspace(t, "src")})
@@ -295,8 +296,9 @@ func TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca(t *testing.T) {
 	}
 }
 
-// runningOrcaDaemon answers that the Orca Shell is up, detached, and was
-// started at version on workspace.
+// runningOrcaDaemon answers that a singleton Shell is up, detached, and was
+// started on workspace (the Orca Shell at version). The herdr command tests
+// use it for the Herdr Core Shell.
 type runningOrcaDaemon struct {
 	stubDaemon
 	version, workspace string
