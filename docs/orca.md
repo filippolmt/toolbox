@@ -75,7 +75,7 @@ All Orca Shells publish the same host port, so only one runs at a time.
 
 The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine reaches it. When another container already publishes the port, the start fails before any container work and names the holder; when a process outside Docker holds it, the start fails naming the port.
 
-Orca's data lives on a Docker volume, `toolbox-orca-data` (`toolbox-orca-data-<profile>` with a profile), mounted at `~/.orca-data` in the Orca Shell. A volume rather than a host directory because Orca keeps Unix sockets there, which Docker Desktop's host file sharing cannot hold. `toolbox orca stop` keeps the volume, so the pairing survives a restart. Inside it:
+Orca's data lives on a Docker volume, `toolbox-orca-data` (`toolbox-orca-data-<profile>` with a profile, the profile name lowercased with other characters turned into `-`, as in the container name), mounted at `~/.orca-data` in the Orca Shell. A volume rather than a host directory because Orca keeps Unix sockets there, which Docker Desktop's host file sharing cannot hold. `toolbox orca stop` keeps the volume, so the pairing survives a restart. Inside it:
 
 - `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes the cached versions older than it, so upgrades leave one server; after a downgrade the newer version stays cached for the next upgrade. A checksum mismatch leaves `current` where it was.
 
@@ -101,7 +101,7 @@ Orca's runtime writes into the agent config every toolbox shell shares under `~/
 
 To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox/.claude/settings.json` and `~/.toolbox/.claude/keybindings.json`, the Codex, Gemini and Antigravity hook config under `~/.toolbox`, and run `docker volume rm toolbox-orca-data` (`toolbox-orca-data-<profile>` per profile) to drop Orca's data and credentials.
 
-`~/.toolbox/toolbox/state/orca` should hold only `serve.log`. Anything else there (`server/`, Orca's old identity and its unencrypted credentials) is left from a toolbox that kept Orca's data on the state mount: stop the Orca Shell and delete the whole directory. An Orca Shell created by that toolbox keeps using the old directory until `toolbox orca stop` and `toolbox orca`; the desktop app then pairs again, since nothing is migrated to the volume.
+`~/.toolbox/toolbox/state/orca` (and the same directory under `~/.toolbox/profiles/<name>/` for each profile, or under your `mounts_root`) should hold only `serve.log`. Anything else there (`server/`, Orca's old identity and its unencrypted credentials) is left from a toolbox that kept Orca's data on the state mount: stop the Orca Shell and delete the whole directory. An Orca Shell created by that toolbox keeps using the old directory until `toolbox orca stop` and `toolbox orca`; the desktop app then pairs again, since nothing is migrated to the volume.
 
 ## Troubleshooting
 
