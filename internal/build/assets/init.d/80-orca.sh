@@ -10,8 +10,10 @@ set -euo pipefail
 # The entrypoint runs init.d scripts to completion before the shell, so the
 # download and the server run in a detached child (`--foreground`): this
 # script returns at once and never fails the container. The child appends
-# everything it and the server print to $ORCA_USER_DATA_PATH/serve.log, which
-# the host reads the pairing link from through the state mount.
+# everything it and the server print to $TOOLBOX_ORCA_LOG, serve.log on the
+# state mount, which the host reads the pairing link from. The data directory
+# ($ORCA_USER_DATA_PATH) is the Orca Shell's own volume instead: Orca keeps
+# Unix sockets there, which a Host Share bind cannot hold.
 #
 # Layout under $ORCA_USER_DATA_PATH/server: one directory per version,
 # extracted beside its final name and renamed into place only after the
@@ -27,17 +29,17 @@ set -euo pipefail
 [ -n "${TOOLBOX_ORCA_VERSION:-}" ] || exit 0
 
 data="${ORCA_USER_DATA_PATH:?ORCA_USER_DATA_PATH unset in an Orca Shell}"
-log="$data/serve.log"
+log="${TOOLBOX_ORCA_LOG:?TOOLBOX_ORCA_LOG unset in an Orca Shell}"
 
 if [ "${1:-}" != "--foreground" ]; then
-    mkdir -p "$data"
+    mkdir -p "$data" "$(dirname "$log")"
     setsid nohup bash "$0" --foreground >/dev/null 2>&1 </dev/null &
     disown 2>/dev/null || true
     echo "  orca: starting server ${TOOLBOX_ORCA_VERSION} (log: $log)"
     exit 0
 fi
 
-mkdir -p "$data"
+mkdir -p "$data" "$(dirname "$log")"
 exec >>"$log" 2>&1 </dev/null
 echo "toolbox: orca ${TOOLBOX_ORCA_VERSION}: start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 tmp=""

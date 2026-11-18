@@ -254,10 +254,13 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
 	orca := in.OrcaVersion != ""
-	var orcaName string
+	var orcaName, orcaVolume string
 	if orca {
 		var err error
 		if orcaName, err = OrcaContainerName(in.Profile); err != nil {
+			return nil, err
+		}
+		if orcaVolume, err = OrcaDataVolumeName(in.Profile); err != nil {
 			return nil, err
 		}
 		if in.Workspace, err = orcaWorkspace(in); err != nil {
@@ -310,12 +313,14 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	// second time, and rebuilding the gate would repeat its host queries.
 	stateDir := mp.StateDir
 	var extraEnv []string
+	binds := mp.Binds
 	if orca {
-		// Orca's identity and paired devices must survive a recreate.
+		// The host reads the server log through the state mount.
 		if stateDir == "" {
-			return nil, fmt.Errorf("the Orca Shell keeps Orca's data on the state mount (%s), which mounts: removed", mountplan.StateMountTarget)
+			return nil, fmt.Errorf("the Orca Shell keeps Orca's server log on the state mount (%s), which mounts: removed", mountplan.StateMountTarget)
 		}
 		extraEnv = orcaEnv(in.OrcaVersion)
+		binds = append(slices.Clone(binds), orcaDataBind(orcaVolume))
 	}
 
 	// Resolved before the env is composed: the reload marker is named after the
@@ -340,7 +345,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 
 	return &SessionPlan{
 		Image:             Image{Ref: ref, PullPolicy: in.Cfg.Pull},
-		Binds:             mp.Binds,
+		Binds:             binds,
 		Warnings:          mp.Warnings,
 		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
@@ -358,6 +363,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReloadFrom:        in.ReloadFrom,
 		Detached:          orcaDetached(in),
 		ProbeHostPorts:    orca,
+		OrcaDataVolume:    orcaVolume,
 	}, nil
 }
 

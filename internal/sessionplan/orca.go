@@ -26,10 +26,12 @@ const (
 	// creates its Unix sockets in its data directory, and a Host Share bind
 	// cannot hold one (see mountplan.PeerSocketVolumeName).
 	OrcaDataTarget = "/home/toolbox/.orca-data"
-	// orcaDataDir is Orca's data directory, relative to the state mount on
-	// both sides of the bind.
-	orcaDataDir = "orca"
-	// orcaLogName is the server log the init script appends to, in orcaDataDir.
+	// orcaLogEnv hands the init script the container-side serve.log path.
+	orcaLogEnv = "TOOLBOX_ORCA_LOG"
+	// orcaLogDir is the server log's directory, relative to the state mount
+	// on both sides of the bind: the host reads the log there.
+	orcaLogDir = "orca"
+	// orcaLogName is the server log the init script appends to, in orcaLogDir.
 	orcaLogName = "serve.log"
 )
 
@@ -39,16 +41,29 @@ var hashShapedRe = regexp.MustCompile(fmt.Sprintf(`^[a-f0-9]{%d}$`, WorkspaceHas
 // suffix shaped like the workspace hash is refused: `toolbox-orca-<8hex>` is
 // the workspace container of a directory named "orca".
 func OrcaContainerName(profile *mountplan.Profile) (string, error) {
-	name := ContainerNamePrefix + "orca"
+	suffix, err := orcaProfileSuffix(profile)
+	return ContainerNamePrefix + "orca" + suffix, err
+}
+
+// OrcaDataVolumeName is the Docker named volume holding the Orca Shell's data
+// directory: `toolbox-orca-data`, or `toolbox-orca-data-<profile>`, so each
+// Profile keeps its own pairing identity. It outlives the container.
+func OrcaDataVolumeName(profile *mountplan.Profile) (string, error) {
+	suffix, err := orcaProfileSuffix(profile)
+	return ContainerNamePrefix + "orca-data" + suffix, err
+}
+
+// orcaProfileSuffix is "" without a profile, else "-<sanitized profile>".
+func orcaProfileSuffix(profile *mountplan.Profile) (string, error) {
 	pn := mountplan.ProfileName(profile)
 	if pn == "" {
-		return name, nil
+		return "", nil
 	}
 	suffix := SanitizeShellName(pn)
 	if suffix == "" || hashShapedRe.MatchString(suffix) {
 		return "", fmt.Errorf("profile %q cannot name an Orca Shell: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn)
 	}
-	return name + "-" + suffix, nil
+	return "-" + suffix, nil
 }
 
 // orcaWorkspace is the dir argument when given, else orca_workspace expanded
@@ -78,12 +93,20 @@ func orcaDetached(in PlanInput) bool {
 	return in.OrcaVersion != "" && !in.OrcaAttach
 }
 
-// orcaEnv is the gate plus Orca's data directory on the state mount.
+// orcaEnv is the gate, Orca's data directory on its volume and the server
+// log on the state mount.
 func orcaEnv(version string) []string {
 	return []string{
 		OrcaVersionEnv + "=" + version,
-		"ORCA_USER_DATA_PATH=" + path.Join(mountplan.StateMountTarget, orcaDataDir),
+		"ORCA_USER_DATA_PATH=" + OrcaDataTarget,
+		orcaLogEnv + "=" + path.Join(mountplan.StateMountTarget, orcaLogDir, orcaLogName),
 	}
+}
+
+// orcaDataBind mounts the data volume. A session input appended after the
+// Mount Plan, like the peer socket bind: no `mounts:` patch can retarget it.
+func orcaDataBind(volume string) mountplan.Bind {
+	return mountplan.Bind{Source: volume, Target: OrcaDataTarget, Mode: "rw"}
 }
 
 // OrcaLogPath is the host-side path of the Orca server log: the state mount's
@@ -93,5 +116,5 @@ func (p *SessionPlan) OrcaLogPath() string {
 	if p.StateDir == "" {
 		return ""
 	}
-	return filepath.Join(p.StateDir, orcaDataDir, orcaLogName)
+	return filepath.Join(p.StateDir, orcaLogDir, orcaLogName)
 }

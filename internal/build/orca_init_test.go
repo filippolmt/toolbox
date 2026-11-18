@@ -106,6 +106,8 @@ cp "$FAKE_RELEASE/$(basename "$url")" "$out"
 		"FAKE_RELEASE="+release,
 		"FAKE_MACHINE="+machine,
 		"ORCA_USER_DATA_PATH="+data,
+		// Beside the data by default; a case that cares sets its own.
+		"TOOLBOX_ORCA_LOG="+filepath.Join(data, "serve.log"),
 	)
 	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
@@ -174,6 +176,27 @@ func TestOrcaInitInstallsVerifiesAndStarts(t *testing.T) {
 				t.Errorf("server dir holds %d entries, want the version and current only: %v", len(entries), entries)
 			}
 		})
+	}
+}
+
+// The log goes where TOOLBOX_ORCA_LOG says (the state mount, which the host
+// reads), apart from the data directory (the Orca Shell's own volume).
+func TestOrcaInitLogsToTheStateMountApartFromTheData(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca-data")
+	log := filepath.Join(t.TempDir(), "state", "orca", "serve.log")
+	run := runOrcaInit(t, data, fakeOrcaRelease(t, "arm64", false), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262", "TOOLBOX_ORCA_LOG=" + log}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, run.out)
+	}
+	if !strings.Contains(readFile(t, log), `"orca_server_ready"`) {
+		t.Errorf("%s does not hold the server's output", log)
+	}
+	if _, err := os.Stat(filepath.Join(data, "serve.log")); !os.IsNotExist(err) {
+		t.Errorf("serve.log written in the data directory (stat err %v)", err)
+	}
+	if served := readFile(t, filepath.Join(data, "served")); !strings.Contains(served, "ORCA_USER_DATA_PATH="+data) {
+		t.Errorf("server ran with %q, want ORCA_USER_DATA_PATH=%s", served, data)
 	}
 }
 
