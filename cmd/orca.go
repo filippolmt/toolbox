@@ -200,6 +200,12 @@ func runningOrcaShellOf(profile *mountplan.Profile) ([]string, error) {
 // runningOrcaShellEnv returns the env of the running Orca Shell called name,
 // or an error naming the command that starts one.
 func runningOrcaShellEnv(name string) ([]string, error) {
+	return runningSingletonEnv(name, sessionplan.OrcaVersionEnv, "no Orca Shell "+name+" is running: start it with toolbox orca")
+}
+
+// runningSingletonEnv returns the env of the running Detached Shell called
+// name, which must carry gate when gate is set; else an error saying missing.
+func runningSingletonEnv(name, gate, missing string) ([]string, error) {
 	var env []string
 	err := withDocker(func(ctx context.Context, cli client.APIClient) error {
 		res, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
@@ -208,8 +214,8 @@ func runningOrcaShellEnv(name string) ([]string, error) {
 		}
 		c := res.Container
 		if err != nil || c.State == nil || !c.State.Running || !runplan.IsDetached(c) || c.Config == nil ||
-			sessionplan.EnvValue(c.Config.Env, sessionplan.OrcaVersionEnv) == "" {
-			return fmt.Errorf("no Orca Shell %s is running: start it with toolbox orca", name)
+			(gate != "" && sessionplan.EnvValue(c.Config.Env, gate) == "") {
+			return errors.New(missing)
 		}
 		env = c.Config.Env
 		return nil

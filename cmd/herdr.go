@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/herdrcore"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -32,9 +34,11 @@ through 'docker exec' rather than ssh; herdr-core installs its own hc in the
 container. Spaces on that machine run their terminals and agents in the
 container until 'toolbox herdr stop'.
 
-The workspace is the absolute dir argument. One Herdr Core Shell per host and
---profile. The Herdr TUI ('herdr' inside a toolbox shell) is unrelated. See
-docs/herdr.md.`,
+The workspace is the absolute dir argument, or the herdr_workspace config key,
+or else the running Herdr Core Shell's. One Herdr Core Shell per host and
+--profile. On a running one the command creates nothing and reports its
+workspace. 'toolbox herdr shell' opens a terminal in it. The Herdr TUI
+('herdr' inside a toolbox shell) is unrelated. See docs/herdr.md.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runHerdr,
 }
@@ -53,9 +57,15 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var ws string // sessionplan checks it
+	var ws string // sessionplan checks it, the same way as herdr_workspace
 	if len(args) == 1 {
 		ws = args[0]
+	}
+	if ws == "" && cfg.HerdrWorkspace == "" {
+		// A running Herdr Core Shell supplies the workspace: it is joined.
+		if env, err := runningHerdrCoreShellOf(profile); err == nil {
+			ws = sessionplan.EnvValue(env, sessionplan.HostWorkspaceEnv)
+		}
 	}
 	warnIfNewProfile(hostBestEffort(), profile)
 	return startSession(sessionIntent{
@@ -63,9 +73,35 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 		Around: func(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan) (func() error, error) {
 			res, err := cli.ContainerInspect(ctx, plan.ContainerName, client.ContainerInspectOptions{})
 			created := err != nil || res.Container.State == nil || !res.Container.State.Running || !runplan.IsDetached(res.Container)
-			return func() error { return addHerdrMachine(ctx, cli, plan.ContainerName, created, cmd) }, nil
+			return func() error {
+				if !created && res.Container.Config != nil {
+					reportHerdrJoin(cmd.OutOrStdout(), plan, res.Container.Config.Env)
+				}
+				return addHerdrMachine(ctx, cli, plan.ContainerName, created, cmd)
+			}, nil
 		},
 	})
+}
+
+// reportHerdrJoin says the Herdr Core Shell was already running and on which
+// workspace, and that a different requested workspace needs a stop first.
+func reportHerdrJoin(w io.Writer, plan *sessionplan.SessionPlan, runningEnv []string) {
+	served := sessionplan.EnvValue(runningEnv, sessionplan.HostWorkspaceEnv)
+	_, _ = fmt.Fprintf(w, "The Herdr Core Shell %s is already running on %s", plan.ContainerName, served)
+	if want := sessionplan.EnvValue(plan.Env, sessionplan.HostWorkspaceEnv); want != served {
+		_, _ = fmt.Fprintf(w, "; it keeps %s; to mount %s, toolbox herdr stop first", served, want)
+	}
+	_, _ = fmt.Fprintln(w, ".")
+}
+
+// runningHerdrCoreShellOf returns the env of the running Herdr Core Shell of
+// profile, or an error naming the command that starts one.
+func runningHerdrCoreShellOf(profile *mountplan.Profile) ([]string, error) {
+	name, err := sessionplan.HerdrCoreContainerName(profile)
+	if err != nil {
+		return nil, err
+	}
+	return runningSingletonEnv(name, "", "no Herdr Core Shell "+name+" is running: start it with toolbox herdr")
 }
 
 // addHerdrMachine registers the Herdr Core Shell called shell with the host's

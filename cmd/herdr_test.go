@@ -1,17 +1,21 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/herdrcore"
 	"github.com/filippolmt/toolbox/internal/reload"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -144,5 +148,83 @@ func TestHerdrStopWithoutAHerdrCoreShellIsQuiet(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Errorf("stderr %q, want nothing", stderr)
+	}
+}
+
+// runningHerdrDaemon answers that the Herdr Core Shell is up, detached, on
+// workspace. Any other call panics through stubDaemon: a create among them.
+type runningHerdrDaemon struct {
+	stubDaemon
+	workspace string
+}
+
+func (d runningHerdrDaemon) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	return client.ContainerInspectResult{Container: dockercontainer.InspectResponse{
+		ID:         "herdr1",
+		HostConfig: &dockercontainer.HostConfig{AutoRemove: true},
+		State:      &dockercontainer.State{Running: true},
+		Config: &dockercontainer.Config{
+			Labels: runplan.DetachedLabels(),
+			Env:    []string{sessionplan.HostWorkspaceEnv + "=" + d.workspace},
+		},
+	}}, nil
+}
+
+// joinHerdr runs `toolbox herdr args` against a running Herdr Core Shell on
+// running, through the real attach, and returns what it printed.
+func joinHerdr(t *testing.T, running string, args []string) string {
+	t.Helper()
+	newDockerClient = func() (client.APIClient, error) { return runningHerdrDaemon{workspace: running}, nil }
+	shellFn = container.Shell
+	var out bytes.Buffer
+	herdrCmd.SetOut(&out)
+	t.Cleanup(func() { herdrCmd.SetOut(nil) })
+	if err := runHerdr(herdrCmd, args); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	return out.String()
+}
+
+// With no dir and no herdr_workspace, `toolbox herdr` joins the running Herdr
+// Core Shell on its own workspace: no create, and the report names it.
+func TestHerdrJoinsARunningShellOnItsWorkspace(t *testing.T) {
+	herdrHarness(t, fakeHerdrCore{})
+	ws := sessionWorkspace(t, "src")
+	out := joinHerdr(t, ws, nil)
+	if want := "The Herdr Core Shell toolbox-herdr is already running on " + ws; !strings.Contains(out, want) {
+		t.Errorf("output %q lacks %q", out, want)
+	}
+	if strings.Contains(out, "stop first") {
+		t.Errorf("output %q reports a mismatch", out)
+	}
+}
+
+// A join keeps the running Shell's workspace: a dir argument or
+// herdr_workspace that differs from it is reported, not silently ignored.
+func TestHerdrJoinReportsAWorkspaceMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name, arg, key string
+		mismatch       bool
+	}{
+		{name: "same dir argument", arg: "src"},
+		{name: "other dir argument", arg: "other", mismatch: true},
+		{name: "other herdr_workspace", key: "other", mismatch: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			herdrHarness(t, fakeHerdrCore{})
+			running, other := sessionWorkspace(t, "src"), sessionWorkspace(t, "other")
+			var args []string
+			if tc.arg != "" {
+				args = []string{sessionWorkspace(t, tc.arg)}
+			}
+			if tc.key != "" {
+				cfg.HerdrWorkspace = sessionWorkspace(t, tc.key)
+			}
+			out := joinHerdr(t, running, args)
+			note := "it keeps " + running + "; to mount " + other + ", toolbox herdr stop first"
+			if got := strings.Contains(out, note); got != tc.mismatch {
+				t.Errorf("output %q: workspace-mismatch note = %v, want %v", out, got, tc.mismatch)
+			}
+		})
 	}
 }
