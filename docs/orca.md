@@ -73,7 +73,7 @@ All Orca Shells publish the same host port, so only one runs at a time.
 
 ## Port and log
 
-The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine reaches it. When the port is already taken by another toolbox container, the start fails before any container work and names the holder.
+The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine reaches it. When another container already publishes the port, the start fails before any container work and names the holder; when a process outside Docker holds it, the start fails naming the port.
 
 Orca's data lives on the state mount, `~/.toolbox/toolbox/state/orca` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). Inside it:
 

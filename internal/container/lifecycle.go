@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -646,7 +647,40 @@ func preflightCreate(ctx context.Context, cli client.APIClient, plan *sessionpla
 	if len(plan.PortBindings) == 0 {
 		return nil
 	}
-	return preflightPortConflicts(ctx, cli, plan)
+	if err := preflightPortConflicts(ctx, cli, plan); err != nil {
+		return err
+	}
+	if plan.ProbeHostPorts {
+		return probeHostPorts(plan)
+	}
+	return nil
+}
+
+// hostPortFree bind-tests a host address and releases it; tests swap it.
+var hostPortFree = func(addr string) error {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return l.Close()
+}
+
+// probeHostPorts fails when a published host address cannot be bound on this
+// host. It runs after preflightPortConflicts, so a holder it reaches is not a
+// container that check would have named.
+func probeHostPorts(plan *sessionplan.SessionPlan) error {
+	for _, bindings := range plan.PortBindings {
+		for _, b := range bindings {
+			if b.HostPort == "" {
+				continue
+			}
+			addr := net.JoinHostPort(b.HostIP.String(), b.HostPort)
+			if err := hostPortFree(addr); err != nil {
+				return fmt.Errorf("cannot publish %s: a process on this host already holds it (%w); stop it and retry", addr, err)
+			}
+		}
+	}
+	return nil
 }
 
 // warnReattachMismatch is the half that cannot fail: what this session asked

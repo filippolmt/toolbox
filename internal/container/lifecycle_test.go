@@ -1806,3 +1806,55 @@ func TestShellOrcaAttachLeavesTheOrcaShellRunning(t *testing.T) {
 		t.Error("`toolbox orca shell` created a container")
 	}
 }
+
+// TestShellHostPortProbeFailsBeforeCreate: a plan that asks for it (the Orca
+// Shell) probes its host ports on the create path, so a port a non-Docker
+// host process holds fails with the port named instead of the daemon's opaque
+// bind error. A plan that does not ask never probes.
+func TestShellHostPortProbeFailsBeforeCreate(t *testing.T) {
+	for _, probe := range []bool{true, false} {
+		t.Run(fmt.Sprintf("probe=%v", probe), func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+			orig := hostPortFree
+			t.Cleanup(func() { hostPortFree = orig })
+			var probed []string
+			hostPortFree = func(addr string) error {
+				probed = append(probed, addr)
+				return errors.New("address already in use")
+			}
+			created := false
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
+				},
+				listFn: func(_ context.Context, _ client.ContainerListOptions) ([]container.Summary, error) {
+					return nil, nil
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					created = true
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+			plan := testPlan(t, testWorkspace(t), []string{"127.0.0.1:6768:6768"})
+			plan.ProbeHostPorts = probe
+
+			_, err := Shell(context.Background(), mock, plan)
+			if !probe {
+				if err != nil || !created || len(probed) != 0 {
+					t.Fatalf("Shell = %v, created %v, probed %q; want a create and no probe", err, created, probed)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "127.0.0.1:6768") {
+				t.Fatalf("Shell = %v, want an error naming 127.0.0.1:6768", err)
+			}
+			if created {
+				t.Error("ContainerCreate ran with the host port held")
+			}
+		})
+	}
+}

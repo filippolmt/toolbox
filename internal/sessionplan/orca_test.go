@@ -39,6 +39,9 @@ func TestPlanOrcaShell(t *testing.T) {
 			if !plan.Detached {
 				t.Error("an Orca Shell plan is not detached")
 			}
+			if !plan.ProbeHostPorts {
+				t.Error("an Orca Shell plan does not probe its host port before the create")
+			}
 			bindings := plan.PortBindings[network.MustParsePort("6768/tcp")]
 			if len(bindings) != 1 || bindings[0].HostIP.String() != "127.0.0.1" || bindings[0].HostPort != "6768" {
 				t.Errorf("6768/tcp bindings = %v, want 127.0.0.1:6768", bindings)
@@ -65,8 +68,8 @@ func TestPlanOrdinaryShellCarriesNoOrca(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Detached {
-		t.Error("an ordinary plan is detached")
+	if plan.Detached || plan.ProbeHostPorts {
+		t.Errorf("an ordinary plan is detached (%v) or probes host ports (%v)", plan.Detached, plan.ProbeHostPorts)
 	}
 	for _, e := range plan.Env {
 		if strings.HasPrefix(e, "TOOLBOX_ORCA_") || strings.HasPrefix(e, "ORCA_") {
