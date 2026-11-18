@@ -183,6 +183,18 @@ toolbox-named-infra   /home/u/infra  Up 10 minutes
 
 The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructure, not a shell anyone opened. Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. A [Detached Shell](../CONTEXT.md#detached-shell) is the exception: its status ends in `(detached)`, and it keeps running with no terminal attached until `toolbox stop <name>` or `toolbox stop --all` removes it. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
 
+## toolbox orca
+
+Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running Orca's server at the release `--version` names, on host `127.0.0.1:6768`. Returns once the server is ready and prints the pairing link. The workspace is the absolute `dir` argument, or [`orca_workspace`](configuration.md#key-reference). Guide: [orca.md](orca.md).
+
+| Flag | Description |
+|------|-------------|
+| `--version <v>` | Required. Server release, digits and dots (`1.4.262` or `v1.4.262`); anything else is refused before container work. |
+| `--profile <name>` | Run the Orca Shell for this [profile](#profiles) (`toolbox-orca-<name>`). |
+| `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
+
+`toolbox orca stop [--profile <name>]` removes the Orca Shell; with none running it warns and exits 0.
+
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.
