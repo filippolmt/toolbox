@@ -105,7 +105,9 @@ func TestHerdrUnderAProfileAddsTheProfileNamedMachine(t *testing.T) {
 func TestHerdrRemovesANewShellWhoseMachineAddFailed(t *testing.T) {
 	herdrHarness(t, fakeHerdrCore{addErr: errors.New("hc machine add: toolbox has an hc too old to talk to")})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) {
+		return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil
+	}
 
 	err := runHerdr(herdrCmd, []string{sessionWorkspace(t, "src")})
 	if err == nil || !strings.Contains(err.Error(), "too old to talk to") {
@@ -119,7 +121,9 @@ func TestHerdrRemovesANewShellWhoseMachineAddFailed(t *testing.T) {
 func TestHerdrStopStopsTheHerdrCoreShell(t *testing.T) {
 	herdrHarness(t, fakeHerdrCore{})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: runningOrcaDaemon{}, stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) {
+		return stoppingDaemon{APIClient: runningOrcaDaemon{}, stopped: &stopped}, nil
+	}
 	if err := runHerdrStop(herdrStopCmd, nil); err != nil {
 		t.Fatalf("runHerdrStop: %v", err)
 	}
@@ -251,7 +255,9 @@ func TestHerdrReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
 func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
 	attached, calls := herdrHarness(t, fakeHerdrCore{noHC: true})
 	var stopped []string
-	newDockerClient = func() (client.APIClient, error) { return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil }
+	newDockerClient = func() (client.APIClient, error) {
+		return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil
+	}
 	herdrProfile = "work"
 	var out bytes.Buffer
 	herdrCmd.SetOut(&out)

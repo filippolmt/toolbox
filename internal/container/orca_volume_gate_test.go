@@ -38,12 +38,12 @@ func TestOrcaDataVolumeHoldsASocketTheSessionUserChmods(t *testing.T) {
 	name := "toolbox-orca-gate-" + suffix
 	volume := "toolbox-orca-gate-data-" + suffix
 	plan := &sessionplan.SessionPlan{
-		Image:          sessionplan.Image{Ref: image},
-		Binds:          []mountplan.Bind{{Source: volume, Target: sessionplan.OrcaDataTarget, Mode: "rw"}},
-		ContainerName:  name,
-		Hostname:       name,
-		Cmd:            []string{"sleep", "infinity"},
-		DataVolume:     sessionplan.DataVolume{Name: volume, Init: volume + "_init", Target: sessionplan.OrcaDataTarget, Label: "Orca data volume"},
+		Image:         sessionplan.Image{Ref: image},
+		Binds:         []mountplan.Bind{{Source: volume, Target: sessionplan.OrcaDataTarget, Mode: "rw"}},
+		ContainerName: name,
+		Hostname:      name,
+		Cmd:           []string{"sleep", "infinity"},
+		DataVolume:    sessionplan.DataVolume{Name: volume, Init: volume + "_init", Target: sessionplan.OrcaDataTarget, Label: "Orca data volume"},
 	}
 
 	id, err := createAndStart(ctx, cli, plan, plan.Image, plan.Detached)
