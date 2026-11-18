@@ -51,12 +51,11 @@ if [ -n "${ORCA_PANE_KEY-}" ]; then
 				sep=:
 			fi
 		done
-		if [ -z "$dropped" ]; then
-			:
-		elif [ -n "$kept" ]; then
-			export CLAUDE_CODE_PLUGIN_DIRS="$kept"
-		else
-			unset CLAUDE_CODE_PLUGIN_DIRS
+		if [ -n "$dropped" ]; then
+			case "$kept" in
+			*[!:]*) export CLAUDE_CODE_PLUGIN_DIRS="$kept" ;;
+			*) unset CLAUDE_CODE_PLUGIN_DIRS ;; # only empty entries left
+			esac
 		fi
 	fi
 fi

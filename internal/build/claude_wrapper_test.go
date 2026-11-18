@@ -101,9 +101,12 @@ func TestClaudeWrapperInAnOrcaPaneDropsOrcasPluginDirsEntry(t *testing.T) {
 	if got, want := run.env["CLAUDE_CODE_PLUGIN_DIRS"], "/opt/my plugins:~/other"; got != want {
 		t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want %q", got, want)
 	}
-	run = runClaudeWrapper(t, []string{pane, "CLAUDE_CODE_PLUGIN_DIRS=" + orcaPlugin})
-	if got, ok := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; ok {
-		t.Errorf("CLAUDE_CODE_PLUGIN_DIRS = %q, want it unset", got)
+	// Only empty entries left is nothing left.
+	for _, dirs := range []string{orcaPlugin, "::" + orcaPlugin} {
+		run = runClaudeWrapper(t, []string{pane, "CLAUDE_CODE_PLUGIN_DIRS=" + dirs})
+		if got, ok := run.env["CLAUDE_CODE_PLUGIN_DIRS"]; ok {
+			t.Errorf("from %q: CLAUDE_CODE_PLUGIN_DIRS = %q, want it unset", dirs, got)
+		}
 	}
 }
 
