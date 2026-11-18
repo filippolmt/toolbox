@@ -169,6 +169,8 @@ sections.** Every `##` of a linked guide needs an entry
 - ["manifest unknown" with a registry mirror](troubleshooting.md#manifest-unknown-with-a-registry-mirror)
 - [herdr reopens in the wrong directory](troubleshooting.md#herdr-reopens-in-the-wrong-directory)
 - [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
+- [The Orca server does not start](troubleshooting.md#the-orca-server-does-not-start)
+- [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable)
 
 ## Internals
 

@@ -192,3 +192,19 @@ The next launch records the directory it started from. Note that this clears a s
 **Cause:** herdr installs its integrations into each *agent's* own config directory, not under `~/.config/herdr` — so the `herdr` and `herdr-state` binds do not cover them, and survival depends entirely on whether that agent's directory is itself a mount. `claude` (`~/.claude/hooks/`), `codex` (`~/.codex/`) and `pi` (`~/.pi/agent/extensions/`) are bundled tools with a row in `internal/catalog`, so they land on the `~/.toolbox/.claude`, `~/.toolbox/.codex` and `~/.toolbox/.pi` binds and persist. A user-installed agent does not: `opencode`, for instance, is an npm global whose binary survives through `~/.npm-global`, while the integration herdr drops into `~/.config/opencode/plugins/` — like everything else it writes outside the mounts — is gone after `toolbox stop`. Persistence cuts both ways, and that is precisely why the bundled case is automated: because those registrations outlive a recreate, they would otherwise stay pinned to the herdr that installed them. `internal/build/assets/init.d/61-herdr.sh` rewrites the `claude` and `pi` ones on **every container start**, so the binary in the container is always the authority for its own hook. `codex` is the exception: its hook ships in the image's `/etc/codex/hooks.json`, built from the same herdr, where Codex runs it with no trust prompt — so `herdr integration status`, which looks in `~/.codex/`, reports it `not installed` while it works.
 
 **Fix:** for a bundled agent, `toolbox stop` and open a new shell — the recreate re-runs the install against the herdr the new image ships. A stale registration that survives that is a real failure, and the script says so on stderr at boot; `~/.toolbox/state/init/61-herdr.log` has the detail, and `herdr integration install <name>` re-runs it by hand. For a user-installed agent there is nothing to automate against — re-run the install after every recreate, or, better, move its config directory onto a mount so it stops vanishing: see [persisting a user-installed tool's state](mounts.md#persisting-a-user-installed-tools-state). `herdr integration status` lists the state of all of them.
+
+## The Orca server does not start
+
+**Symptom:** `toolbox orca` fails with `orca: no server started: <reason>; read <log>`, and the Orca Shell is gone from `toolbox list`.
+
+**Cause:** the installer in the Orca Shell gave up before any server ran and wrote a `toolbox: orca: fatal: <reason>` line to `serve.log`. The usual reasons: the download failed while nothing was cached (offline, or GitHub unreachable), or the archive did not match the release's checksum. toolbox removes the Orca Shell so no container runs without a server.
+
+**Fix:** read the `fatal:` line in the log the error names (`~/.toolbox/toolbox/state/orca/serve.log` without a profile). Offline with an empty cache: connect and run `toolbox orca` again. A checksum mismatch: retry once; if it persists, the release asset is not the one its checksum file describes, so pin another version with `--version`. See [Orca: offline](orca.md#offline) and [port and log](orca.md#port-and-log).
+
+## Orca pairing is unavailable
+
+**Symptom:** `toolbox orca` fails with `orca: the server is up but pairing is unavailable (<reason>): <guidance>`, or `toolbox orca pair` fails asking the Orca Shell for a pairing link.
+
+**Cause:** the server runs but refuses to offer a pairing link; the reason and guidance are Orca's own, copied from its readiness record or its `pair` command.
+
+**Fix:** follow Orca's guidance, then `toolbox orca pair`, which asks the running server for a fresh offer. The Orca Shell keeps running meanwhile; when the server itself is the problem, `toolbox orca stop` and start again. See [Orca: pairing](orca.md#pairing).

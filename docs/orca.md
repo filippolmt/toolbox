@@ -104,3 +104,5 @@ To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox
 
 - A forgotten Orca Shell, or a container that keeps running with no terminal: [a shell stays in `toolbox list`](troubleshooting.md#a-shell-stays-in-toolbox-list-after-every-terminal-closed).
 - `container toolbox-orca exists and is not detached`: [the not-detached refusal](troubleshooting.md#exists-and-is-not-detached-run-toolbox-stop--first).
+- `orca: no server started` (a `fatal:` line in `serve.log`): [the Orca server does not start](troubleshooting.md#the-orca-server-does-not-start).
+- `pairing is unavailable`: [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable).
