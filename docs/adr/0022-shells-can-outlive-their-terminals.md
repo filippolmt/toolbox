@@ -22,10 +22,9 @@ execs remain. It ends only through `toolbox stop <target>` or
 `toolbox stop --all`; `toolbox list` marks it. The label lives on the
 container, so the policy needs no state beyond the inspect it already does.
 
-**No user-facing flag.** The only planned caller is the container that hosts
-Orca's server (#1426). A `--detach` on `toolbox shell` would turn every Shell
-into a candidate for a container nobody remembers starting, and nothing has
-asked for it.
+**No user-facing flag.** The only planned caller is `toolbox orca` (#1502). A
+`--detach` on `toolbox shell` would turn every Shell into a candidate for a
+container nobody remembers starting, and nothing has asked for it.
 
 ## Considered options
 

@@ -83,12 +83,9 @@ them.
   [Tool Cache](../../CONTEXT.md#tool-cache),
   [ADR 0015](../../docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md)
 
-- **A Detached Shell survives shell exit:** `teardown.OnShellExit` spares a
-  container `runplan.IsDetached` reports, before it looks at sibling execs;
-  `container.Shell` on a detached plan creates and starts with the label and
-  returns without an exec; it refuses an existing container without the label,
-  before any image work, and returns at once from a running one with it.
-  Pinned by `TestOnShellExitSparesDetachedShell`,
+- **A Detached Shell survives shell exit, and nothing else makes one:** only a
+  detached create writes the label, and no terminal exit removes a container
+  that carries it. Pinned by `TestOnShellExitSparesDetachedShell`,
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
   `TestShellDetachedRefusesBeforeImageWork`,

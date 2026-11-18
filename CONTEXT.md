@@ -2158,9 +2158,9 @@ inspect `OnShellExit` already performs and spares the container whether or not
 sibling execs remain; `runplan` owns the label, its one writer and its
 readers; `container.List` marks the row. The container keeps `AutoRemove`, so
 a stop still removes it. No user-facing flag sets it: its only planned caller
-comes with [#1426](https://github.com/filippolmt/toolbox/issues/1426).
-Decision and alternatives: [ADR
-0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
+is `toolbox orca`
+([#1502](https://github.com/filippolmt/toolbox/issues/1502)). Decision and
+alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
 was an invariant every reader could rely on. A container that hosts a server
