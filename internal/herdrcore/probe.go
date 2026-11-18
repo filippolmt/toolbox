@@ -19,8 +19,14 @@ type shellExec interface {
 // `hc machine update` write: the container's writable layer, lost on recreate.
 var installedCmd = []string{"sh", "-c", `test -x "$HOME/.local/bin/herdr-core"`}
 
+// probeTimeout bounds the probe: `test -x` answers at once, so a probe still
+// running is a stuck daemon, and toolbox herdr must not hang on it.
+var probeTimeout = 15 * time.Second
+
 // Installed reports whether herdr-core's binary is in the running container.
 func Installed(ctx context.Context, cli shellExec, container string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
 	created, err := cli.ExecCreate(ctx, container, client.ExecCreateOptions{Cmd: installedCmd})
 	if err != nil {
 		return false, fmt.Errorf("probe herdr-core in %s: %w", container, err)
