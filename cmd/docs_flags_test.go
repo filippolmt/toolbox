@@ -64,12 +64,17 @@ func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
 			t.Errorf("## toolbox %s: no such command", section)
 			continue
 		}
+		// Flags() and PersistentFlags() hold what c defines itself; the merged
+		// views (LocalFlags, NonInheritedFlags) copy the parents' persistent
+		// flags into c and leak into every later test that walks it.
 		var flags []string
-		c.NonInheritedFlags().VisitAll(func(f *pflag.Flag) {
-			if !f.Hidden && f.Name != "help" {
+		visit := func(f *pflag.Flag) {
+			if !f.Hidden && f.Name != "help" && !slices.Contains(flags, f.Name) {
 				flags = append(flags, f.Name)
 			}
-		})
+		}
+		c.Flags().VisitAll(visit)
+		c.PersistentFlags().VisitAll(visit)
 		for _, r := range rows {
 			if !slices.Contains(flags, r) {
 				t.Errorf("## toolbox %s lists --%s, which is not a flag of toolbox %s", section, r, section)
