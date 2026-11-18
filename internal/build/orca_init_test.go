@@ -200,8 +200,8 @@ func TestOrcaInitRefusesAChecksumMismatch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, "served")); !os.IsNotExist(err) {
 		t.Error("a server started after a checksum mismatch")
 	}
-	if !strings.Contains(readFile(t, filepath.Join(data, "serve.log")), "checksum") {
-		t.Error("serve.log does not say the checksum failed")
+	if !strings.Contains(fatalLine(t, data), "checksum") {
+		t.Error("serve.log has no fatal line saying the checksum failed")
 	}
 }
 
@@ -291,5 +291,35 @@ func TestOrcaInitFallsBackToTheNewestCachedVersionOffline(t *testing.T) {
 	}
 	if !strings.Contains(warning, "v1.4.262") || !strings.Contains(warning, "v1.10.0") {
 		t.Errorf("warning %q does not name the requested and the started version", warning)
+	}
+}
+
+// fatalLine returns the log's last `toolbox: orca: fatal:` line, the marker
+// the host reads to stop an Orca Shell that will never serve.
+func fatalLine(t *testing.T, data string) string {
+	t.Helper()
+	var last string
+	for _, line := range strings.Split(readFile(t, filepath.Join(data, "serve.log")), "\n") {
+		if strings.HasPrefix(line, "toolbox: orca: fatal: ") {
+			last = line
+		}
+	}
+	return last
+}
+
+// Offline with nothing cached: no server starts, the script fails, and the
+// log ends the attempt with a fatal line naming the version.
+func TestOrcaInitFailsOfflineWithAnEmptyCache(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	run := runOrcaInit(t, data, t.TempDir(), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code == 0 {
+		t.Error("exit 0 with no server to start")
+	}
+	if _, err := os.Stat(filepath.Join(data, "served")); !os.IsNotExist(err) {
+		t.Error("a server started with an empty cache")
+	}
+	if line := fatalLine(t, data); !strings.Contains(line, "v1.4.262") {
+		t.Errorf("fatal line %q does not name the version", line)
 	}
 }

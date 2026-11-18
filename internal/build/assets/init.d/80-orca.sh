@@ -16,8 +16,10 @@ set -euo pipefail
 # Layout under $ORCA_USER_DATA_PATH/server: one directory per version,
 # extracted beside its final name and renamed into place only after the
 # archive matched its line in the release's checksum file, and a `current`
-# link switched atomically after that. A failed download or a mismatch leaves
-# `current` where it was. No restart of a crashed server: tini (PID 1) keeps
+# link switched atomically after that; a fresh install then prunes every other
+# version. A failed download falls back to the newest cached version with a
+# `warning:` line; a mismatch, or a failed download with nothing cached, ends
+# with a `fatal:` line and no server. No restart of a crashed server: tini (PID 1) keeps
 # the container up, and the log says why the server stopped.
 
 [ -n "${TOOLBOX_ORCA_VERSION:-}" ] || exit 0
@@ -37,19 +39,24 @@ mkdir -p "$data"
 exec >>"$log" 2>&1 </dev/null
 echo "toolbox: orca ${TOOLBOX_ORCA_VERSION}: start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# fail ends an attempt that starts no server with the line the host reads to
+# report the reason and stop the Orca Shell (orca.WaitPairing).
+fail() {
+    echo "toolbox: orca: fatal: $*"
+    exit 1
+}
+
 version="$TOOLBOX_ORCA_VERSION"
 # The tag lands in a URL and a path: the host validated it, this re-checks.
 if ! [[ "$version" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
-    echo "toolbox: orca: refusing malformed version '$version'"
-    exit 1
+    fail "refusing malformed version '$version'"
 fi
 
 case "$(uname -m)" in
 x86_64 | amd64) arch=x64 ;;
 aarch64 | arm64) arch=arm64 ;;
 *)
-    echo "toolbox: orca: no server build for architecture $(uname -m)"
-    exit 1
+    fail "no server build for architecture $(uname -m)"
     ;;
 esac
 
@@ -69,13 +76,11 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
         curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"; then
         want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/sums")
         if [ -z "$want" ]; then
-            echo "toolbox: orca: checksum file has no line for $archive; not installing"
-            exit 1
+            fail "checksum file has no line for $archive; not installing"
         fi
         got=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
         if [ "$got" != "$want" ]; then
-            echo "toolbox: orca: checksum mismatch for $archive (got $got, want $want); not installing"
-            exit 1
+            fail "checksum mismatch for $archive (got $got, want $want); not installing"
         fi
         mkdir "$tmp/tree"
         tar -xzf "$tmp/$archive" -C "$tmp/tree" --strip-components=1
@@ -93,8 +98,7 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
             if [ -x "$v/bin/orca-ide" ]; then echo "$v"; fi
         done | sort -V | tail -n 1)
         if [ -z "$cached" ]; then
-            echo "toolbox: orca: could not download $version and no server is cached"
-            exit 1
+            fail "could not download Orca server $version and no server is cached; connect to the network and retry"
         fi
         echo "toolbox: orca: warning: could not download Orca server $version; starting the cached $cached instead, which may not match the desktop app"
         version=$cached
