@@ -2157,7 +2157,11 @@ it is, with no image work. [Teardown](#teardown) reads the label from the
 inspect `OnShellExit` already performs and spares the container whether or not
 sibling execs remain; `runplan` owns the label, its one writer and its
 readers; `container.List` marks the row. The container keeps `AutoRemove`, so
-a stop still removes it. No user-facing flag sets it: its only planned caller
+a stop still removes it. The property follows the container, not the command
+that recreates it: an accepted start-up refresh or a
+[Session Reload](#session-reload) of a Detached Shell writes the label again,
+read off the container being replaced, even from an ordinary plan, whose
+terminal still opens. No user-facing flag sets it: its only planned caller
 is `toolbox orca`
 ([#1502](https://github.com/filippolmt/toolbox/issues/1502)). Decision and
 alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
