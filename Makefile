@@ -13,13 +13,15 @@ FULL  := $(IMAGE):$(TAG)
 LOCAL := toolbox-local:build
 # A linked worktree builds under its own tags: worktrees share one daemon, so a
 # shared LOCAL is clobbered by a parallel build, and FULL would replace the
-# image `./toolbox shell` runs. There `make build` tags only LOCAL unless FULL is
-# passed on the command line; the gates then take FULL=<the LOCAL it printed>.
-WORKTREE := $(shell git rev-parse --git-dir 2>/dev/null | grep -q '/worktrees/' && basename "$(CURDIR)" | tr -c 'A-Za-z0-9_.\n-' '-')
+# image `./toolbox shell` runs. There `make build` tags only LOCAL unless FULL
+# (or IMAGE / TAG) is passed on the command line; the gates then take
+# FULL=<the LOCAL it printed>. The tag is the worktree directory's basename,
+# cut to a valid Docker tag.
+WORKTREE := $(shell git rev-parse --git-dir 2>/dev/null | grep -q '/worktrees/' && basename "$(CURDIR)" | sed -e 's/[^A-Za-z0-9_.-]/-/g' -e 's/^[.-]*//' | cut -c1-100)
 ifneq ($(WORKTREE),)
 LOCAL := toolbox-local:$(WORKTREE)
 endif
-BUILD_TAGS := $(if $(and $(WORKTREE),$(filter-out command line,$(origin FULL))),,-t $(FULL)) -t $(LOCAL)
+BUILD_TAGS := $(if $(and $(WORKTREE),$(if $(filter command line,$(origin FULL) $(origin IMAGE) $(origin TAG)),,x)),,-t $(FULL)) -t $(LOCAL)
 # BuildKit registry cache published by CI (docker-publish-reusable.yml, mode=max), one
 # ref per arch (`$(CACHE_REF)-amd64`, `-arm64`); BuildKit uses whichever matches
 # the daemon's platform. Seeding from it makes the
@@ -149,8 +151,8 @@ shell: build ## Build the image and open an interactive zsh shell in it
 shell-bash: build ## Build the image and open an interactive bash shell (override default zsh)
 	docker run --rm -it $(LOCAL) bash
 
-clean: ## Remove the toolbox image
-	docker rmi $(FULL) $(LOCAL) 2>/dev/null || true
+clean: ## Remove the toolbox image (the tags make build writes here)
+	docker rmi$(subst -t , ,$(BUILD_TAGS)) 2>/dev/null || true
 
 # Offline = relative links + #fragment anchors only; external URLs are never
 # checked, so the target works air-gapped and can't flake on third-party

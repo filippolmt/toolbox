@@ -173,28 +173,11 @@ var citedTestRetired = map[string]string{
 func TestCitedTestNamesExist(t *testing.T) {
 	root := repoRoot(t)
 	var defined []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules") {
-			return filepath.SkipDir
-		}
-		if d.IsDir() || !strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for _, m := range definedTest.FindAllStringSubmatch(string(body), -1) {
+	walkTestFiles(t, root, func(_, body string) {
+		for _, m := range definedTest.FindAllStringSubmatch(body, -1) {
 			defined = append(defined, m[1])
 		}
-		return nil
 	})
-	if err != nil {
-		t.Fatalf("walk test files: %v", err)
-	}
 	if !slices.Contains(defined, "TestCitedTestNamesExist") {
 		t.Fatal("the declaration pattern did not find this test: it no longer matches a test function")
 	}
