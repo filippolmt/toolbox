@@ -106,12 +106,16 @@ them.
   the only switch, and `sessionplan.Plan` derives the name, the loopback
   publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
   mount and `Detached` from it. No cmd-side env, port or name. Its init script
-  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint.
+  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint; it
+  cannot stop its own container, so an attempt that starts no server ends
+  with a `fatal:` log line and the host removes the Orca Shell.
   Pinned by `TestPlanOrcaShell`, `TestPlanOrdinaryShellCarriesNoOrca`,
   `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
-  `TestOrcaInitWithoutTheGateDoesNothing` and
-  `TestOrcaInitRefusesAChecksumMismatch`. →
+  `TestOrcaInitWithoutTheGateDoesNothing`,
+  `TestOrcaInitRefusesAChecksumMismatch`,
+  `TestOrcaInitFailsOfflineWithAnEmptyCache` and
+  `TestOrcaStopsTheOrcaShellWhenNoServerStarts`. →
   [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container

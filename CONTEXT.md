@@ -2185,9 +2185,11 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
 argument or `orca_workspace`, and `Detached`. The gate is read by
 `init.d/80-orca.sh`, which installs the verified server under
-`<data>/server/<version>` and starts it in the background; the host reads the
-pairing link out of `<data>/serve.log` through the state mount
-(`internal/orca.WaitPairing`). Orca's own data profile is never called a
+`<data>/server/<version>` (pruning every other version; offline, the newest
+cached one runs) and starts it in the background; the host reads the pairing
+link, or the installer's `fatal:` and `warning:` lines, out of
+`<data>/serve.log` through the state mount (`internal/orca.WaitPairing`), and
+removes an Orca Shell whose installer started no server. Orca's own data profile is never called a
 Profile here. Decision and alternatives:
 [ADR 0023](docs/adr/0023-orca-is-a-first-class-toolbox-command.md).
 
