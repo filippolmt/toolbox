@@ -146,3 +146,31 @@ func TestHerdrStopWithoutAHerdrCoreShellIsQuiet(t *testing.T) {
 		t.Errorf("stderr %q, want nothing", stderr)
 	}
 }
+
+// toolboxMachine is the host's herdr-core already knowing the default Herdr
+// Core Shell's machine.
+var toolboxMachine = []herdrcore.Machine{{Name: "toolbox", Target: "docker exec -i toolbox-herdr sh -c", Via: true}}
+
+func TestHerdrRerunOnARunningShellWithItsMachineChangesNothing(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: toolboxMachine})
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
+	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("herdr-core calls %q, want none", *calls)
+	}
+}
+
+// A container this run created has no hc in its writable layer: the known
+// machine is updated, which installs it again.
+func TestHerdrNewShellWithItsMachineUpdatesIt(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: toolboxMachine})
+	if err := runHerdr(herdrCmd, []string{sessionWorkspace(t, "src")}); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	if want := []string{"update toolbox"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want %q", *calls, want)
+	}
+}

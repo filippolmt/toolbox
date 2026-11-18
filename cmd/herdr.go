@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
@@ -75,7 +76,7 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	machine := herdrcore.MachineName(shell)
 	via, err := herdrcore.Via(shell)
 	if err == nil {
-		err = herdrHost.Add(machine, via)
+		err = registerHerdrMachine(machine, via, created)
 	}
 	if err != nil {
 		err = fmt.Errorf("herdr-core could not add the machine %s: %w", machine, err)
@@ -86,6 +87,23 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "herdr-core reaches the Herdr Core Shell %s as the machine %s: open herdr.app.\n", shell, machine)
 	return nil
+}
+
+// registerHerdrMachine adds machine reached through via unless the host's
+// herdr-core already knows it. A known machine on a container this run created
+// is updated: the hc herdr-core installed lived in the old container's layer.
+func registerHerdrMachine(machine, via string, created bool) error {
+	machines, err := herdrHost.Machines()
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(machines, func(m herdrcore.Machine) bool { return m.Name == machine }) {
+		if created {
+			return herdrHost.Update(machine)
+		}
+		return nil
+	}
+	return herdrHost.Add(machine, via)
 }
 
 func runHerdrStop(cmd *cobra.Command, _ []string) error {
