@@ -223,7 +223,7 @@ try:
     for seg in simple_commands(cmd):
         # A `cd` earlier in the command moves the git calls after it: a push
         # from a worktree beside the checkout pushes the worktree's branch.
-        if seg[0] == 'builtin':
+        while seg and seg[0] in ('builtin', 'command', 'exec', 'time', '{'):
             seg = seg[1:]
         if seg and seg[0] in ('cd', 'pushd', 'popd'):
             # pushd DIR lands like cd DIR; every other pushd and every popd
@@ -235,6 +235,8 @@ try:
             continue  # `cd -` and the like: the directory is unknown, fail open
         call = git_call(seg, cwd)
         if not call:
+            if {'cd', 'pushd', 'popd'} & set(seg):
+                cwd = None  # a cd under a wrapper this parser does not know
             continue
         d, sub, rest = call
         if sub == 'tag' and (name := tag_created(rest)):
@@ -336,6 +338,10 @@ self_test() {
         'cd -P wt && git push'                           ''
         'cd +1 && git push origin v1'                    ''
         'cd wt extra; git push'                          ''
+        'command cd wt && git push'                      'fix/wt'
+        '{ cd wt; } && git push'                         'fix/wt'
+        'time cd wt && git push'                         'fix/wt'
+        'sudo cd wt && git push'                         ''
         'builtin cd wt && git push'                      'fix/wt'
         'pushd wt && git push'                           'fix/wt'
         'cd - && git push'                               ''
