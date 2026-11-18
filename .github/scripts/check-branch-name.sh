@@ -26,10 +26,11 @@ usage() {
 # named only inside quotes, a heredoc body or a comment is not a command.
 # Unparseable input prints nothing: the hook fails open, CI stays the gate.
 # shortcut: commands nested in $(…), backticks or `bash -c` are not seen,
-# `git push` without a refspec is read as pushing HEAD, a `cd` holds for the
-# rest of the command even inside a subshell, and after a `cd -`, a
-# `cd "$var"`, a popd or any pushd but `pushd DIR` the git calls go
-# unchecked; parse them if an off-policy branch gets through that way.
+# `git push` without a refspec is read as pushing HEAD, and only `cd DIR`,
+# a bare `cd` and `pushd DIR` move the directory: any other form leaves the
+# git calls after it unchecked, and the operator after a cd is not read
+# (`cd x || git …`, `cd x &`, a subshell); parse them if an off-policy
+# branch gets through that way.
 # shellcheck disable=SC2016 # Python source, not shell
 read -r -d '' parse_command <<'PY' || true
 import json, os, re, shlex, subprocess, sys
@@ -170,15 +171,15 @@ def push_args(rest, d, new_tags):
     return out
 
 def cd_target(cwd, args):
-    """The directory a `cd` or `pushd DIR` lands in, or None when unknown."""
+    """The directory `cd DIR` or a bare `cd` lands in, or None when unknown:
+    any other form (flags, -, ±N, a variable, extra words) is not followed."""
     if cwd is None:
         return None
-    dirs = [a for a in args if a == '-' or not a.startswith('-')]
-    if not dirs:
+    if not args:
         return os.path.expanduser('~')
-    if dirs[0] == '-' or '$' in dirs[0]:
+    if len(args) != 1 or args[0][:1] in '-+' or '$' in args[0]:
         return None
-    return os.path.join(cwd, os.path.expanduser(dirs[0]))
+    return os.path.join(cwd, os.path.expanduser(args[0]))
 
 def git_call(seg, cwd):
     """(repo dir, subcommand, its args) for a git command, else None. The dir
@@ -224,14 +225,11 @@ try:
         # from a worktree beside the checkout pushes the worktree's branch.
         if seg[0] == 'builtin':
             seg = seg[1:]
-        if seg and seg[0] == 'cd':
-            cwd = cd_target(cwd, seg[1:])
-            continue
-        if seg and seg[0] in ('pushd', 'popd'):
-            # Only `pushd DIR` lands where it names; every other form (bare,
-            # -n, ±N) and every popd works the directory stack.
-            plain = seg[0] == 'pushd' and len(seg) == 2 and seg[1][:1] not in '-+'
-            cwd = cd_target(cwd, seg[1:]) if plain else None
+        if seg and seg[0] in ('cd', 'pushd', 'popd'):
+            # pushd DIR lands like cd DIR; every other pushd and every popd
+            # works the directory stack.
+            stack = seg[0] == 'popd' or (seg[0] == 'pushd' and len(seg) != 2)
+            cwd = None if stack else cd_target(cwd, seg[1:])
             continue
         if cwd is None:
             continue  # `cd -` and the like: the directory is unknown, fail open
@@ -334,8 +332,10 @@ self_test() {
         'cd wt && git -C .. push'                        'chore/current'
         'git push; cd wt'                                'chore/current'
         "cd $repo/wt && git push"                        'fix/wt'
-        'cd -- wt && git push'                           'fix/wt'
-        'cd -P wt && git push'                           'fix/wt'
+        'cd -- wt && git push'                           ''
+        'cd -P wt && git push'                           ''
+        'cd +1 && git push origin v1'                    ''
+        'cd wt extra; git push'                          ''
         'builtin cd wt && git push'                      'fix/wt'
         'pushd wt && git push'                           'fix/wt'
         'cd - && git push'                               ''
