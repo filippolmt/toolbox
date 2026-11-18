@@ -245,7 +245,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	var orcaName string
 	if orca {
 		var err error
-		if orcaName, err = orcaContainerName(in.Profile); err != nil {
+		if orcaName, err = OrcaContainerName(in.Profile); err != nil {
 			return nil, err
 		}
 		if in.Workspace, err = orcaWorkspace(in); err != nil {

@@ -28,10 +28,10 @@ const (
 
 var hashShapedRe = regexp.MustCompile(fmt.Sprintf(`^[a-f0-9]{%d}$`, WorkspaceHashLen))
 
-// orcaContainerName is `toolbox-orca`, or `toolbox-orca-<profile>`. A profile
+// OrcaContainerName is `toolbox-orca`, or `toolbox-orca-<profile>`. A profile
 // suffix shaped like the workspace hash is refused: `toolbox-orca-<8hex>` is
 // the workspace container of a directory named "orca".
-func orcaContainerName(profile *mountplan.Profile) (string, error) {
+func OrcaContainerName(profile *mountplan.Profile) (string, error) {
 	name := ContainerNamePrefix + "orca"
 	pn := mountplan.ProfileName(profile)
 	if pn == "" {
