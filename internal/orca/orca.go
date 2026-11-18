@@ -1,6 +1,7 @@
 // Package orca holds the host half of the Orca Shell that is not session
-// planning: the trust-boundary check on the requested server version, and
-// reading the pairing link out of the server log. → CONTEXT.md, Orca Shell.
+// planning: which server version to run (the --version flag or the desktop
+// app's, behind the Desktop seam) and its trust-boundary check, and reading
+// the pairing link out of the server log. → CONTEXT.md, Orca Shell.
 package orca
 
 import (

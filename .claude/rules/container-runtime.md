@@ -111,9 +111,16 @@ them.
   `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
   `TestOrcaInitWithoutTheGateDoesNothing` and
-  `TestOrcaInitRefusesAChecksumMismatch`. `toolbox orca shell` plans with the
-  running Orca Shell's `OrcaVersion` plus `OrcaAttach`, and re-enters itself on
-  reload; a join reports the latest start's state, never an older record:
+  `TestOrcaInitRefusesAChecksumMismatch`. Pairing reaches the desktop app
+  only through the `orca.Desktop` seam, from an offer the Orca Shell's server
+  makes; an environment already there is left alone, and no error carries the
+  pairing code. Pinned by
+  `TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment`,
+  `TestOrcaPairRemovesAndReAddsTheEnvironment` and
+  `TestMacDesktopKeepsThePairingCodeOutOfItsErrors`. `toolbox orca shell`
+  plans with the running Orca Shell's `OrcaVersion` plus `OrcaAttach`, and
+  re-enters itself on reload; a join reports the latest start's state, never
+  an older record:
   `TestShellOrcaAttachLeavesTheOrcaShellRunning`,
   `TestOrcaShellPlansTheRunningOrcaShellAndReentersIt`,
   `TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca`,
