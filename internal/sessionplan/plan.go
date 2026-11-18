@@ -96,6 +96,10 @@ type SessionPlan struct {
 	// Detached creates the container without attaching a terminal and leaves
 	// it running when terminals attached later exit. → CONTEXT.md, Detached Shell.
 	Detached bool
+	// ProbeHostPorts makes the create path bind-test each published host
+	// address first, so a port a non-Docker host process holds fails naming
+	// it. Set for the Orca Shell, whose port is fixed.
+	ProbeHostPorts bool
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes
@@ -349,6 +353,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
 		Detached:          orcaDetached(in),
+		ProbeHostPorts:    orca,
 	}, nil
 }
 

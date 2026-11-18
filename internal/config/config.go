@@ -236,10 +236,11 @@ func ValidateMountsRoot(s string) error {
 }
 
 // ValidateOrcaWorkspace applies the mounts_root shape to orca_workspace:
-// absolute or ~/sub. Bare "~" is refused because the Orca Shell would mount
-// the whole host home as its workspace, breaking the containment boundary.
+// absolute or ~/sub. Bare "~" and "~/" are refused because the Orca Shell
+// would mount the whole host home as its workspace, breaking the containment
+// boundary. The syntactic check only: sessionplan checks the expanded path.
 func ValidateOrcaWorkspace(s string) error {
-	if s == "~" {
+	if s == "~" || s == "~/" {
 		return fmt.Errorf("orca_workspace %q is too broad: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", s)
 	}
 	if s == "" || strings.HasPrefix(s, "~/") || filepath.IsAbs(s) {

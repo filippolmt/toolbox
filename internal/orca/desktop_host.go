@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -25,7 +27,11 @@ func HostDesktop() Desktop {
 		return noDesktop{}
 	}
 	return MacDesktop{Run: func(name string, args ...string) ([]byte, error) {
-		return exec.Command(name, args...).Output() //nolint:gosec // name and args are package-controlled
+		// name is plutil, mdfind, open, orca on PATH, or a bundled CLI under an
+		// absolute .app path spotlightApps accepted; args are literals, the
+		// toolbox-* environment name, and a link checkPairingURL proved starts
+		// with orca://, so no value becomes an option.
+		return exec.Command(name, args...).Output() //nolint:gosec // executables and the link are validated by spotlightApps and checkPairingURL (comment above)
 	}}
 }
 
@@ -46,19 +52,42 @@ func (d MacDesktop) Version() (string, error) {
 	if v, err := d.bundleVersion(defaultApp); err == nil {
 		return v, nil
 	}
-	out, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'")
+	apps, err := d.spotlightApps()
 	if err != nil {
-		return "", fmt.Errorf("mdfind %s: %w", BundleID, err)
+		return "", err
 	}
-	for _, app := range strings.Split(string(out), "\n") {
-		if app == "" {
-			continue
-		}
+	for _, app := range apps {
 		if v, err := d.bundleVersion(app); err == nil {
 			return v, nil
 		}
 	}
 	return "", nil
+}
+
+// spotlightApps lists the apps Spotlight indexed under BundleID.
+func (d MacDesktop) spotlightApps() ([]string, error) {
+	out, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'")
+	if err != nil {
+		return nil, fmt.Errorf("mdfind %s: %w", BundleID, err)
+	}
+	var apps []string
+	for _, app := range strings.Split(string(out), "\n") {
+		// A result becomes an executable path: only an absolute .app counts.
+		if filepath.IsAbs(app) && strings.HasSuffix(app, ".app") {
+			apps = append(apps, app)
+		}
+	}
+	return apps, nil
+}
+
+// checkPairingURL refuses anything but a parseable orca:// URL, so the link
+// never reaches a host command as an option or another scheme's handler. The
+// error does not echo it: the link carries the pairing code.
+func checkPairingURL(link string) error {
+	if u, err := url.Parse(link); err != nil || u.Scheme != "orca" || !strings.HasPrefix(link, "orca://") {
+		return errors.New("orca: the pairing link is not an orca:// URL; refusing to hand it to the Orca desktop app")
+	}
+	return nil
 }
 
 func (d MacDesktop) bundleVersion(app string) (string, error) {
@@ -85,14 +114,13 @@ func (d MacDesktop) orca(args ...string) ([]byte, error) {
 	if out, ok, err := d.runCLI(defaultApp+bundledCLI, args); ok {
 		return out, err
 	}
-	if found, err := d.Run("mdfind", "kMDItemCFBundleIdentifier == '"+BundleID+"'"); err == nil {
-		for _, app := range strings.Split(string(found), "\n") {
-			if app == "" || app == defaultApp {
-				continue
-			}
-			if out, ok, err := d.runCLI(app+bundledCLI, args); ok {
-				return out, err
-			}
+	apps, _ := d.spotlightApps() // no Spotlight answer: fall through to PATH
+	for _, app := range apps {
+		if app == defaultApp {
+			continue
+		}
+		if out, ok, err := d.runCLI(app+bundledCLI, args); ok {
+			return out, err
 		}
 	}
 	if out, ok, err := d.runCLI("orca", args); ok {
@@ -145,6 +173,9 @@ func (d MacDesktop) Environments() ([]string, error) {
 // AddEnvironment puts the pairing link on the CLI's command line for the
 // duration of the call, the way Orca documents `environment add`.
 func (d MacDesktop) AddEnvironment(name, pairingURL string) error {
+	if err := checkPairingURL(pairingURL); err != nil {
+		return err
+	}
 	_, err := d.orca("environment", "add", "--name", name, "--pairing-code", pairingURL, "--json")
 	return err
 }
@@ -155,7 +186,10 @@ func (d MacDesktop) RemoveEnvironment(name string) error {
 }
 
 // OpenURL uses macOS `open`; Orca.app registers the orca:// scheme.
-func (d MacDesktop) OpenURL(url string) error {
-	_, err := d.Run("open", url)
+func (d MacDesktop) OpenURL(link string) error {
+	if err := checkPairingURL(link); err != nil {
+		return err
+	}
+	_, err := d.Run("open", link)
 	return err
 }

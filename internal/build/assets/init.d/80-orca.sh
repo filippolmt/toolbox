@@ -16,8 +16,8 @@ set -euo pipefail
 # Layout under $ORCA_USER_DATA_PATH/server: one directory per version,
 # extracted beside its final name and renamed into place only after the
 # archive matched its line in the release's checksum file, and a `current`
-# link switched atomically after that; a fresh install then prunes every other
-# version. A failed download falls back to the newest cached version with a
+# link switched atomically after that; a fresh install then prunes the
+# versions older than it. A failed download falls back to the newest cached version with a
 # `warning:` line; a mismatch, or a failed download with nothing cached, ends
 # with a `fatal:` line and no server. No restart of a crashed server: tini
 # (PID 1) keeps the container up, and the log says why the server stopped.
@@ -116,14 +116,19 @@ fi
 ln -sfn "$version" "$servers/.current.new"
 mv -T "$servers/.current.new" "$servers/current"
 
-# Bounded cache: once current is on a fresh install, no other version stays.
+# Bounded cache: once current is on a fresh install, the versions older than
+# it go (by version order); a downgrade keeps the newer one cached.
 if [ -n "$installed" ]; then
     for old in "$servers"/v*; do
-        [ "${old##*/}" = "$version" ] || rm -rf "$old"
+        v="${old##*/}"
+        if [ "$v" != "$version" ] && [ "$(printf '%s\n' "$v" "$version" | sort -V | head -n 1)" = "$v" ]; then
+            rm -rf "$old"
+        fi
     done
 fi
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,
-# where the session plan publishes the port. Not exec'd: on_exit logs its end.
+# where the session plan publishes the port (sessionplan.OrcaPort, which the
+# build test holds equal to --port). Not exec'd: on_exit logs its end.
 "$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json

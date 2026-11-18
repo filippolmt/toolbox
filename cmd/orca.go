@@ -13,20 +13,17 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/orca"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
-	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 var orcaVersion string
-var orcaProfile string
+var orcaProfile string // persistent on orca: every subcommand acts on this profile's Orca Shell
 var orcaShare []string
-var orcaStopProfile string
-var orcaShellProfile string
 var orcaShellShare []string
-var orcaPairProfile string
 
 // orcaOffer asks the running Orca Shell for a pairing link; tests swap it.
 var orcaOffer = func(ctx context.Context, cli client.APIClient, container string) (string, error) {
@@ -77,23 +74,32 @@ after the server's identity changed. The Orca Shell must be running.`,
 	RunE: runOrcaPair,
 }
 
-// runOrca validates the flags before any container work, then opens the Orca
-// Shell through startSession like `shell` does; the session plan makes it the
-// Orca Shell.
+// runOrca validates the flags before any container work (only an inspect for
+// a running Orca Shell when no version resolves), then opens the Orca Shell
+// through startSession like `shell` does; the session plan makes it the Orca
+// Shell.
 func runOrca(cmd *cobra.Command, args []string) error {
-	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
-	if err != nil {
-		return &usageError{err: err}
-	}
 	profile, err := resolveShellProfile(cmd, orcaProfile, orcaShare)
 	if err != nil {
 		return err
 	}
-	var ws string
+	var ws string // sessionplan checks it, the same way as orca_workspace
 	if len(args) == 1 {
-		if ws, err = workspace.ResolveExplicit(args[0]); err != nil {
-			return err
+		ws = args[0]
+	}
+	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
+	if err != nil && orcaVersion == "" {
+		// No version to ask for: a running Orca Shell is still joined and
+		// reported, at its own version and workspace.
+		if env, runErr := runningOrcaShellOf(profile); runErr == nil {
+			version, err = sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv), nil
+			if ws == "" {
+				ws = sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE")
+			}
 		}
+	}
+	if err != nil {
+		return &usageError{err: err}
 	}
 	warnIfNewProfile(hostBestEffort(), profile)
 
@@ -157,15 +163,11 @@ var orcaShellCmd = &cobra.Command{
 // way in (refresh, Session Reload) brings the server back; the re-entry form
 // re-runs this command, not `toolbox shell`.
 func runOrcaShell(cmd *cobra.Command, _ []string) error {
-	profile, err := resolveShellProfile(cmd, orcaShellProfile, orcaShellShare)
+	profile, err := resolveShellProfile(cmd, orcaProfile, orcaShellShare)
 	if err != nil {
 		return err
 	}
-	name, err := sessionplan.OrcaContainerName(profile)
-	if err != nil {
-		return err
-	}
-	env, err := runningOrcaShellEnv(name)
+	env, err := runningOrcaShellOf(profile)
 	if err != nil {
 		return err
 	}
@@ -181,26 +183,46 @@ func runOrcaShell(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+// runningOrcaShellOf returns the env of the running Orca Shell of profile.
+func runningOrcaShellOf(profile *mountplan.Profile) ([]string, error) {
+	name, err := sessionplan.OrcaContainerName(profile)
+	if err != nil {
+		return nil, err
+	}
+	return runningOrcaShellEnv(name)
+}
+
 // runningOrcaShellEnv returns the env of the running Orca Shell called name,
 // or an error naming the command that starts one.
 func runningOrcaShellEnv(name string) ([]string, error) {
+	var env []string
+	err := withDocker(func(ctx context.Context, cli client.APIClient) error {
+		res, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+		if err != nil && !cerrdefs.IsNotFound(err) {
+			return err
+		}
+		c := res.Container
+		if err != nil || c.State == nil || !c.State.Running || !runplan.IsDetached(c) || c.Config == nil ||
+			sessionplan.EnvValue(c.Config.Env, sessionplan.OrcaVersionEnv) == "" {
+			return fmt.Errorf("no Orca Shell %s is running: start it with toolbox orca", name)
+		}
+		env = c.Config.Env
+		return nil
+	})
+	return env, err
+}
+
+// withDocker runs fn with the Docker client every orca subcommand uses and a
+// context cancelled on SIGINT/SIGTERM.
+func withDocker(fn func(context.Context, client.APIClient) error) error {
 	cli, err := newDockerClient()
 	if err != nil {
-		return nil, dockerClientErr(err)
+		return dockerClientErr(err)
 	}
 	defer cli.Close()
 	ctx, stop := signalCtx()
 	defer stop()
-	res, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
-	if err != nil && !cerrdefs.IsNotFound(err) {
-		return nil, err
-	}
-	c := res.Container
-	if err != nil || c.State == nil || !c.State.Running || !runplan.IsDetached(c) || c.Config == nil ||
-		sessionplan.EnvValue(c.Config.Env, sessionplan.OrcaVersionEnv) == "" {
-		return nil, fmt.Errorf("no Orca Shell %s is running: start it with toolbox orca", name)
-	}
-	return c.Config.Env, nil
+	return fn(ctx, cli)
 }
 
 // reportJoin says the Orca Shell was already running, at which version, and
@@ -221,55 +243,47 @@ func pairOrcaShell(ctx context.Context, cli client.APIClient, shell string, forc
 }
 
 func runOrcaPair(cmd *cobra.Command, _ []string) error {
-	profile, err := resolveShellProfile(cmd, orcaPairProfile, nil)
+	name, err := orcaShellName(cmd)
 	if err != nil {
 		return err
 	}
-	name, err := sessionplan.OrcaContainerName(profile)
-	if err != nil {
-		return err
-	}
-	cli, err := newDockerClient()
-	if err != nil {
-		return dockerClientErr(err)
-	}
-	defer cli.Close()
-	ctx, stopSig := signalCtx()
-	defer stopSig()
-	return pairOrcaShell(ctx, cli, name, true, cmd)
+	return withDocker(func(ctx context.Context, cli client.APIClient) error {
+		return pairOrcaShell(ctx, cli, name, true, cmd)
+	})
 }
 
 func runOrcaStop(cmd *cobra.Command, _ []string) error {
-	profile, err := resolveShellProfile(cmd, orcaStopProfile, nil)
+	name, err := orcaShellName(cmd)
 	if err != nil {
 		return err
 	}
-	name, err := sessionplan.OrcaContainerName(profile)
+	return withDocker(func(ctx context.Context, cli client.APIClient) error {
+		// No Orca Shell is the goal already reached: quiet, unlike `toolbox stop`.
+		if _, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		return container.StopByName(ctx, cli, name)
+	})
+}
+
+// orcaShellName is the container name of the --profile's Orca Shell.
+func orcaShellName(cmd *cobra.Command) (string, error) {
+	profile, err := resolveShellProfile(cmd, orcaProfile, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
-	cli, err := container.NewClient()
-	if err != nil {
-		return err
-	}
-	defer cli.Close()
-	ctx, stopSig := signalCtx()
-	defer stopSig()
-	return container.StopByName(ctx, cli, name)
+	return sessionplan.OrcaContainerName(profile)
 }
 
 func init() {
+	orcaCmd.PersistentFlags().StringVar(&orcaProfile, "profile", "",
+		"the toolbox profile whose Orca Shell to act on (its own credentials and Orca data)")
 	orcaCmd.Flags().StringVar(&orcaVersion, "version", "",
 		"Orca server release to run (e.g. 1.4.262); default: the installed Orca desktop app's version")
-	orcaCmd.Flags().StringVar(&orcaProfile, "profile", "",
-		"run the Orca Shell under this toolbox profile (its own credentials and Orca data)")
 	orcaCmd.Flags().StringSliceVar(&orcaShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root (see toolbox shell --share)")
-	orcaStopCmd.Flags().StringVar(&orcaStopProfile, "profile", "", "stop the Orca Shell of this toolbox profile")
-	orcaShellCmd.Flags().StringVar(&orcaShellProfile, "profile", "", "open a terminal in the Orca Shell of this toolbox profile")
 	orcaShellCmd.Flags().StringSliceVar(&orcaShellShare, "share", nil,
 		"under --profile, the --share the Orca Shell was started with")
-	orcaPairCmd.Flags().StringVar(&orcaPairProfile, "profile", "", "pair the Orca Shell of this toolbox profile")
 	orcaCmd.AddCommand(orcaStopCmd, orcaPairCmd, orcaShellCmd)
 	rootCmd.AddCommand(orcaCmd)
 }

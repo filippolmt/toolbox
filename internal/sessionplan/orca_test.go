@@ -1,12 +1,14 @@
 package sessionplan_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -37,6 +39,9 @@ func TestPlanOrcaShell(t *testing.T) {
 			if !plan.Detached {
 				t.Error("an Orca Shell plan is not detached")
 			}
+			if !plan.ProbeHostPorts {
+				t.Error("an Orca Shell plan does not probe its host port before the create")
+			}
 			bindings := plan.PortBindings[network.MustParsePort("6768/tcp")]
 			if len(bindings) != 1 || bindings[0].HostIP.String() != "127.0.0.1" || bindings[0].HostPort != "6768" {
 				t.Errorf("6768/tcp bindings = %v, want 127.0.0.1:6768", bindings)
@@ -63,8 +68,8 @@ func TestPlanOrdinaryShellCarriesNoOrca(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Detached {
-		t.Error("an ordinary plan is detached")
+	if plan.Detached || plan.ProbeHostPorts {
+		t.Errorf("an ordinary plan is detached (%v) or probes host ports (%v)", plan.Detached, plan.ProbeHostPorts)
 	}
 	for _, e := range plan.Env {
 		if strings.HasPrefix(e, "TOOLBOX_ORCA_") || strings.HasPrefix(e, "ORCA_") {
@@ -123,5 +128,39 @@ func TestPlanOrcaRefusesHashShapedProfile(t *testing.T) {
 		Profile: &mountplan.Profile{Name: "deadbeef"}, OrcaVersion: "v1.0.0"})
 	if err == nil || !strings.Contains(err.Error(), "deadbeef") {
 		t.Fatalf("Plan with a hash-shaped profile = %v, want a refusal naming it", err)
+	}
+}
+
+// TestPlanOrcaWorkspaceRefusals runs every workspace exception through both
+// routes to the Orca Shell's workspace — the dir argument and orca_workspace —
+// so the routes cannot drift apart (CODING_STANDARDS: two routes to one
+// operation share their exceptions).
+func TestPlanOrcaWorkspaceRefusals(t *testing.T) {
+	planHost, _ := planWorkspace(t)
+	file := planHost.Join("file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ label, value string }{
+		{"colon", planHost.Join("a:b")},
+		{"relative", "src"},
+		{"missing", planHost.Join("missing")},
+		{"not a directory", file},
+		{"bare tilde", "~"},
+		{"tilde slash", "~/"},
+		{"home", planHost.Home},
+		{"home with trailing slash", planHost.Home + "/"},
+	} {
+		routes := map[string]sessionplan.PlanInput{
+			"dir argument":   {Host: planHost, Cfg: testConfig(), Workspace: tc.value, OrcaVersion: "v1.0.0"},
+			"orca_workspace": {Host: planHost, Cfg: &config.Config{Shell: "zsh", OrcaWorkspace: tc.value}, OrcaVersion: "v1.0.0"},
+		}
+		for route, in := range routes {
+			t.Run(tc.label+"/"+route, func(t *testing.T) {
+				if _, err := sessionplan.Plan(in); err == nil {
+					t.Errorf("Plan accepted the workspace %q", tc.value)
+				}
+			})
+		}
 	}
 }

@@ -105,32 +105,39 @@ them.
   container through `startSession` like `shell`; `PlanInput.OrcaVersion` is
   the only switch, and `sessionplan.Plan` derives the name, the loopback
   publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
-  mount and `Detached` from it. No cmd-side env, port or name. Its init script
-  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint; it
-  cannot stop its own container, so an attempt that starts no server ends
-  with a `fatal:` log line and the host removes the Orca Shell.
+  mount, `Detached` and the host-port probe from it. No cmd-side env, port,
+  name or workspace check: the `dir` argument and `orca_workspace` pass the
+  one check in `sessionplan`. Its init script stays gated on
+  `TOOLBOX_ORCA_VERSION`, never blocks the entrypoint, and ends an attempt
+  that starts no server with a `fatal:` log line the host acts on.
   Pinned by `TestPlanOrcaShell`, `TestPlanOrdinaryShellCarriesNoOrca`,
-  `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
+  `TestPlanOrcaWorkspace`, `TestPlanOrcaWorkspaceRefusals`,
+  `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
+  `TestShellHostPortProbeFailsBeforeCreate`,
   `TestOrcaInitWithoutTheGateDoesNothing`,
   `TestOrcaInitRefusesAChecksumMismatch`,
-  `TestOrcaInitFailsOfflineWithAnEmptyCache` and
-  `TestOrcaStopsTheOrcaShellWhenNoServerStarts`. Pairing reaches the desktop app
-  only through the `orca.Desktop` seam, from an offer the Orca Shell's server
-  makes; an environment already there is left alone, and no error carries the
-  pairing code. Pinned by
-  `TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment`,
-  `TestOrcaPairRemovesAndReAddsTheEnvironment` and
-  `TestMacDesktopKeepsThePairingCodeOutOfItsErrors`. `toolbox orca shell`
-  plans with the running Orca Shell's `OrcaVersion` plus `OrcaAttach`, and
-  re-enters itself on reload; a join reports the latest start's state, never
-  an older record:
+  `TestOrcaInitFailsOfflineWithAnEmptyCache`,
+  `TestOrcaInitKeepsNewerVersionsOnADowngrade` and
+  `TestOrcaStopsTheOrcaShellWhenNoServerStarts`. Pairing reaches the desktop
+  app only through the `orca.Desktop` seam, which refuses a link that is not
+  `orca://` and a Spotlight result that is not an absolute `.app`; an
+  environment already there is left alone, and no error carries the pairing
+  code. Pinned by `TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment`,
+  `TestOrcaPairRemovesAndReAddsTheEnvironment`,
+  `TestMacDesktopKeepsThePairingCodeOutOfItsErrors`,
+  `TestMacDesktopRefusesALinkThatIsNotOrcas` and
+  `TestMacDesktopTakesOnlyAbsoluteAppPathsFromSpotlight`. `toolbox orca shell`
+  plans with the running Orca Shell's `OrcaVersion` plus `OrcaAttach` and
+  re-enters itself on reload; a join reports the latest start's state:
   `TestShellOrcaAttachLeavesTheOrcaShellRunning`,
   `TestOrcaShellPlansTheRunningOrcaShellAndReentersIt`,
   `TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca`,
   `TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint`,
+  `TestOrcaJoinWithoutAVersionReportsTheRunningOrcaShell`,
   `TestWaitPairingReportsTheLatestStartsState`,
-  `TestOrcaInitLogsTheServerStopping`. →
+  `TestOrcaInitLogsTheServerStopping`. `toolbox orca stop` with none is
+  quiet: `TestOrcaStopWithoutAnOrcaShellIsQuiet`. →
   [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container

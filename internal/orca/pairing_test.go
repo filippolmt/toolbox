@@ -183,3 +183,43 @@ func TestMacDesktopOpensTheLinkWithOpen(t *testing.T) {
 		t.Errorf("OpenURL ran %q, %v; want open with the link", ran, err)
 	}
 }
+
+// TestMacDesktopRefusesALinkThatIsNotOrcas: the link reaches a host command's
+// argv, so anything but a parseable orca:// URL — an option, another scheme —
+// is refused before any command runs, without echoing it (it may carry a code).
+func TestMacDesktopRefusesALinkThatIsNotOrcas(t *testing.T) {
+	for _, link := range []string{"", "-secret", "--pairing-code=secret", "https://secret.example", "orca:secret", "orca://%zzsecret"} {
+		var ran []string
+		d := fakeCLI("orca", "{}", &ran)
+		for op, call := range map[string]func() error{
+			"AddEnvironment": func() error { return d.AddEnvironment("toolbox", link) },
+			"OpenURL":        func() error { return d.OpenURL(link) },
+		} {
+			err := call()
+			if err == nil || (link != "" && strings.Contains(err.Error(), "secret")) {
+				t.Errorf("%s(%q) = %v, want a refusal that does not echo the link", op, link, err)
+			}
+		}
+		if len(ran) != 0 {
+			t.Errorf("link %q ran %q, want nothing run", link, ran)
+		}
+	}
+}
+
+// TestMacDesktopTakesOnlyAbsoluteAppPathsFromSpotlight: a Spotlight result
+// becomes an executable path, so only absolute paths ending in .app count.
+func TestMacDesktopTakesOnlyAbsoluteAppPathsFromSpotlight(t *testing.T) {
+	var ran []string
+	d := MacDesktop{Run: func(name string, args ...string) ([]byte, error) {
+		ran = append(ran, name)
+		if name == "mdfind" {
+			return []byte("Orca.app\n-rf.app\n/Users/me/Orca\n/Users/me/Apps/Orca.app\n"), nil
+		}
+		return nil, &fs.PathError{Op: "fork/exec", Path: name, Err: fs.ErrNotExist}
+	}}
+	_, _ = d.Environments()
+	want := []string{"/Applications/Orca.app/Contents/Resources/bin/orca", "mdfind", "/Users/me/Apps/Orca.app/Contents/Resources/bin/orca", "orca"}
+	if !slices.Equal(ran, want) {
+		t.Errorf("ran %q, want %q", ran, want)
+	}
+}

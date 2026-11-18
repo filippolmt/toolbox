@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/orca"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // The Orca Shell's init script, run as the image ships it with a stubbed
@@ -161,7 +162,7 @@ func TestOrcaInitInstallsVerifiesAndStarts(t *testing.T) {
 				t.Errorf("current -> %q (%v), want v1.4.262", link, err)
 			}
 			served := readFile(t, filepath.Join(data, "served"))
-			for _, want := range []string{"orca-ide serve", "--port 6768", "--bind 0.0.0.0", "--pairing-address 127.0.0.1", "--json"} {
+			for _, want := range []string{"orca-ide serve", "--port " + sessionplan.OrcaPort, "--bind 0.0.0.0", "--pairing-address 127.0.0.1", "--json"} {
 				if !strings.Contains(served, want) {
 					t.Errorf("server argv %q lacks %q", served, want)
 				}
@@ -237,7 +238,7 @@ func seedOrcaVersion(t *testing.T, data, version string) {
 		"#!/bin/sh\necho \"orca-ide "+version+" $*\" >> \"$ORCA_USER_DATA_PATH/served\"\n")
 }
 
-// Installing a version prunes the versions cached before it and moves
+// Installing a version prunes the older cached versions and moves
 // current onto it: the cache holds one server, not every one ever run.
 func TestOrcaInitPrunesOlderVersionsOnInstall(t *testing.T) {
 	data := filepath.Join(t.TempDir(), "orca")
@@ -259,6 +260,26 @@ func TestOrcaInitPrunesOlderVersionsOnInstall(t *testing.T) {
 	}
 	if link, err := os.Readlink(filepath.Join(data, "server", "current")); err != nil || link != "v1.4.262" {
 		t.Errorf("current -> %q (%v), want v1.4.262", link, err)
+	}
+}
+
+// A downgrade keeps the newer cached server: only versions older than the
+// fresh install (by version order — v1.10.0 sorts after v1.4.262) are pruned.
+func TestOrcaInitKeepsNewerVersionsOnADowngrade(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "orca")
+	seedOrcaVersion(t, data, "v1.2.0")
+	seedOrcaVersion(t, data, "v1.10.0")
+
+	run := runOrcaInit(t, data, fakeOrcaRelease(t, "arm64", false), "aarch64",
+		[]string{"TOOLBOX_ORCA_VERSION=v1.4.262"}, "--foreground")
+	if run.code != 0 {
+		t.Fatalf("exit %d\n%s", run.code, readFile(t, filepath.Join(data, "serve.log")))
+	}
+	if _, err := os.Stat(filepath.Join(data, "server", "v1.2.0")); !os.IsNotExist(err) {
+		t.Errorf("older v1.2.0 still cached (stat err %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(data, "server", "v1.10.0", "bin", "orca-ide")); err != nil {
+		t.Errorf("newer v1.10.0 pruned: %v", err)
 	}
 }
 

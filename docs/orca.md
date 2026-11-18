@@ -19,7 +19,7 @@ toolbox orca
 
 The first start downloads `orca-server-linux-<arch>.tar.gz` from the [server version](#server-version)'s release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and the desktop app lists it (see [pairing](#pairing)). The runtime keeps running with no terminal open until you stop it.
 
-`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both.
+`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
 
 ### Server version
 
@@ -53,7 +53,7 @@ It attaches a terminal to the running Orca Shell, the agents' own workspace and 
 
 ## Run it again
 
-A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
+A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. It needs neither `--version`, the desktop app, nor a `dir`: the running Orca Shell's own version and workspace stand in. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
 
 ## Stop
 
@@ -61,7 +61,7 @@ A second `toolbox orca` on a running Orca Shell recreates nothing. It says the O
 toolbox orca stop
 ```
 
-It removes the Orca Shell, and succeeds with a warning when there is none. `toolbox stop --all` removes it too, and `toolbox list` shows it marked `(detached)`.
+It removes the Orca Shell, and succeeds quietly when there is none, so scripts can call it unconditionally. `toolbox stop --all` removes it too, and `toolbox list` shows it marked `(detached)`.
 
 To change the server version, stop first: a second `toolbox orca` joins the running Orca Shell, leaves its version as it is, and says so.
 
@@ -73,11 +73,11 @@ All Orca Shells publish the same host port, so only one runs at a time.
 
 ## Port and log
 
-The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine reaches it. When the port is already taken by another toolbox container, the start fails before any container work and names the holder.
+The runtime listens on host `127.0.0.1:6768` only; nothing outside your machine reaches it. When another container already publishes the port, the start fails before any container work and names the holder; when a process outside Docker holds it, the start fails naming the port.
 
 Orca's data lives on the state mount, `~/.toolbox/toolbox/state/orca` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). Inside it:
 
-- `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes every other cached version, so the cache holds one server. A checksum mismatch leaves `current` where it was.
+- `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes the cached versions older than it, so upgrades leave one server; after a downgrade the newer version stays cached for the next upgrade. A checksum mismatch leaves `current` where it was.
 - `serve.log` — what the installer and the server printed, with a `toolbox: orca: server stopped with status <n>` line when a start ends. When `toolbox orca` times out waiting for the server, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
 
 ## Offline
@@ -104,3 +104,5 @@ To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox
 
 - A forgotten Orca Shell, or a container that keeps running with no terminal: [a shell stays in `toolbox list`](troubleshooting.md#a-shell-stays-in-toolbox-list-after-every-terminal-closed).
 - `container toolbox-orca exists and is not detached`: [the not-detached refusal](troubleshooting.md#exists-and-is-not-detached-run-toolbox-stop--first).
+- `orca: no server started` (a `fatal:` line in `serve.log`): [the Orca server does not start](troubleshooting.md#the-orca-server-does-not-start).
+- `pairing is unavailable`: [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable).
