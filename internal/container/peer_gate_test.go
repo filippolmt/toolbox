@@ -102,7 +102,7 @@ func startPeerSession(ctx context.Context, t *testing.T, cli client.APIClient, h
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	id, err := createAndStart(ctx, cli, plan, plan.Image)
+	id, err := createAndStart(ctx, cli, plan, plan.Image, plan.Detached)
 	if err != nil {
 		t.Fatalf("createAndStart %s: %v", plan.ContainerName, err)
 	}

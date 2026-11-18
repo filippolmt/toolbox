@@ -41,7 +41,7 @@ func TestNpxExecTmpfsRunsInstalledBinsAsTheSessionUser(t *testing.T) {
 		Cmd:           []string{"sleep", "infinity"},
 	}
 
-	id, err := createAndStart(ctx, cli, plan, plan.Image)
+	id, err := createAndStart(ctx, cli, plan, plan.Image, plan.Detached)
 	if err != nil {
 		_, _ = cli.VolumeRemove(context.Background(), volume, client.VolumeRemoveOptions{})
 		t.Fatalf("createAndStart: %v", err)

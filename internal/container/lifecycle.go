@@ -344,7 +344,8 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// A reload arrives owning a container it must replace, and it must do so
 	// before the inspect below — which would otherwise compute a connect to the
 	// very container being retired. A no-op for every other session.
-	if reloadErr := replaceForReload(ctx, cli, freshness, plan); reloadErr != nil {
+	reloadedDetached, reloadErr := replaceForReload(ctx, cli, freshness, plan)
+	if reloadErr != nil {
 		return nil, reloadErr
 	}
 
@@ -394,6 +395,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, overlayErr
 	}
 
+	// The detached property follows the container, not the command: a create
+	// that replaces a Detached Shell — by reload or by an accepted refresh of
+	// the stopped one read here — writes the label again (CONTEXT.md, Detached
+	// Shell). Only the label: the terminal this command asked for still opens.
+	keepDetached := plan.Detached || reloadedDetached || runplan.IsDetached(inspect)
+
 	// After the overlay, not before — see replaceIfRefreshAccepted for what that
 	// ordering protects and for why a yes at the recreate stake spends the
 	// container.
@@ -420,7 +427,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}
 
-	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)
+	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage, keepDetached)
 	if dispatchErr != nil {
 		return nil, dispatchErr
 	}
@@ -678,7 +685,7 @@ func warnReattachMismatch(ctx context.Context, cli client.APIClient, plan *sessi
 // precisely because it is the only ref that means that. Everything else here
 // reads plan.Image, which is the base and is what the host-global halves of
 // peer messaging are created from.
-func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, runImage sessionplan.Image) (string, error) {
+func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, runImage sessionplan.Image, detached bool) (string, error) {
 	switch op.Action {
 	case runplan.ActionConnect:
 		ui.Info("Connecting to running container " + plan.ContainerName + "...")
@@ -703,7 +710,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 		return op.ExistingID, nil
 
 	case runplan.ActionCreate:
-		return createAndStart(ctx, cli, plan, runImage)
+		return createAndStart(ctx, cli, plan, runImage, detached)
 
 	default:
 		return "", fmt.Errorf("unknown runplan action: %s", op.Action)
@@ -715,8 +722,10 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 // the run image is present.
 //
 // runImage is the ref this container runs (see dispatchOp); plan.Image is the
-// base, and stays the base for ensurePeerRuntime below.
-func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image) (string, error) {
+// base, and stays the base for ensurePeerRuntime below. detached writes the
+// Detached Shell label: plan.Detached, or the container this create replaces
+// already carried it.
+func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image, detached bool) (string, error) {
 	// Resolved before the bind set is flattened because an unusable anchor or
 	// socket volume degrades the session to its own PID namespace, without the
 	// shared socket mount, rather than failing it.
@@ -743,7 +752,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 
 	var labels map[string]string
-	if plan.Detached {
+	if detached {
 		labels = runplan.DetachedLabels()
 	}
 

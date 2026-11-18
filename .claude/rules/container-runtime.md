@@ -84,8 +84,12 @@ them.
   [ADR 0015](../../docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md)
 
 - **A Detached Shell survives shell exit, and nothing else makes one:** only a
-  detached create writes the label, and no terminal exit removes a container
-  that carries it. Pinned by `TestOnShellExitSparesDetachedShell`,
+  detached create, or a create replacing a container that carries the label
+  (accepted refresh, Session Reload), writes it, and no terminal exit removes
+  a container that carries it. Pinned by
+  `TestShellStartRecreatesADetachedShellDetached`,
+  `TestShellStartRecreatesAnOrdinaryShellOrdinary`,
+  `TestShellReloadKeepsADetachedShellDetached`, `TestOnShellExitSparesDetachedShell`,
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
   `TestShellDetachedRefusesBeforeImageWork`,

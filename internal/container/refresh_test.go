@@ -554,3 +554,56 @@ func TestShellStartKeepsTheContainerOnADeclinedRefresh(t *testing.T) {
 		t.Errorf("a declined refresh left no stamp: %v", err)
 	}
 }
+
+// recreateLabels runs an ordinary plan through an accepted start-up refresh of
+// a stopped container carrying labels, and returns the labels the recreate
+// wrote and whether the session still opened its terminal.
+func recreateLabels(t *testing.T, labels map[string]string) (map[string]string, bool) {
+	t.Helper()
+	execed, restore := stubExecShell()
+	defer restore()
+	stubPrefetch(t)
+	mock := startPathMock("sha256:fresh")
+	stubRefresh(t, mock, imagefreshness.Replace)
+	mock.inspectFn = func(context.Context, string) (container.InspectResponse, error) {
+		return container.InspectResponse{
+			ID:     "stopped123",
+			State:  &container.State{Running: false},
+			Config: &container.Config{Labels: labels},
+		}, nil
+	}
+	var created map[string]string
+	mock.createFn = func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+		created = cfg.Labels
+		return container.CreateResponse{ID: "new123"}, nil
+	}
+
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	return created, *execed
+}
+
+// The detached property follows the container, not the command recreating it:
+// an ordinary shell that accepts a refresh of a Detached Shell must leave a
+// Detached Shell behind, or the next terminal exit removes it. The terminal
+// the command asked for still opens.
+func TestShellStartRecreatesADetachedShellDetached(t *testing.T) {
+	// The literal, not the constant: the label outlives the binary that wrote it.
+	created, execed := recreateLabels(t, map[string]string{"toolbox.detached": "true"})
+	if created["toolbox.detached"] != "true" {
+		t.Errorf("recreate labels = %v, want toolbox.detached=true", created)
+	}
+	if !execed {
+		t.Error("the recreated Detached Shell was never attached to")
+	}
+}
+
+// The other half: an ordinary Shell recreated by an accepted refresh stays
+// ordinary, so its last terminal exit still removes it.
+func TestShellStartRecreatesAnOrdinaryShellOrdinary(t *testing.T) {
+	created, _ := recreateLabels(t, nil)
+	if _, ok := created["toolbox.detached"]; ok {
+		t.Errorf("recreate labels = %v, want no toolbox.detached", created)
+	}
+}
