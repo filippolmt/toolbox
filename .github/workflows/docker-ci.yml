@@ -131,8 +131,9 @@ jobs:
 
       # GO_VERSION comes from go.mod through go-version.sh, the Makefile's
       # source too. The buildx context is the assets subdir, so derive it from
-      # the repo root here and inject it as a build arg. The assignment fails the step under
-      # bash -e when the script does; inside echo's argument it would not.
+      # the repo root here and inject it as a build arg.
+      # The assignment fails the step under bash -e when the script does;
+      # inside echo's argument it would not.
       - name: Resolve Go version from go.mod
         id: gover
         run: |
