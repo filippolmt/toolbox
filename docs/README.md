@@ -138,6 +138,8 @@ sections.** Every `##` of a linked guide needs an entry
 ## troubleshooting.md
 
 - [Config or port edits don't take effect](troubleshooting.md#config-or-port-edits-dont-take-effect)
+- [A shell stays in `toolbox list` after every terminal closed](troubleshooting.md#a-shell-stays-in-toolbox-list-after-every-terminal-closed)
+- ["exists and is not detached: run toolbox stop … first"](troubleshooting.md#exists-and-is-not-detached-run-toolbox-stop--first)
 - [Port already in use on the host](troubleshooting.md#port-already-in-use-on-the-host)
 - ["unknown mount name" at startup](troubleshooting.md#unknown-mount-name-at-startup)
 - [npx reports `ECOMPROMISED` or `Lock compromised`](troubleshooting.md#npx-reports-ecompromised-or-lock-compromised)

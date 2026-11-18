@@ -181,7 +181,7 @@ toolbox-api-1a2b3c4d  /home/u/api    Up 2 hours
 toolbox-named-infra   /home/u/infra  Up 10 minutes
 ```
 
-The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructure, not a shell anyone opened. Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
+The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructure, not a shell anyone opened. Containers are created with `AutoRemove`, so a shell that has exited is gone and the list shows the sessions running right now. A [Detached Shell](../CONTEXT.md#detached-shell) is the exception: its status ends in `(detached)`, and it keeps running with no terminal attached until `toolbox stop <name>` or `toolbox stop --all` removes it. When none exist it prints `No toolbox containers.`. Pair it with [`toolbox stop`](#toolbox-stop) to clean up a shell you spot in another directory.
 
 ## toolbox stop
 

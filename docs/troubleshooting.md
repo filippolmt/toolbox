@@ -10,6 +10,22 @@ Symptoms, causes, and fixes for the failure modes users actually hit. Bridge-spe
 
 **Fix:** `toolbox stop`, then re-run `toolbox shell …`. The container is disposable; all persistent state lives on the `~/.toolbox/` binds, so nothing is lost.
 
+## A shell stays in `toolbox list` after every terminal closed
+
+**Symptom:** `toolbox list` shows a container whose status ends in `(detached)`, and it keeps running with no terminal open.
+
+**Cause:** it is a [Detached Shell](../CONTEXT.md#detached-shell): created without a terminal, it outlives every terminal attached to it, by design ([ADR 0022](adr/0022-shells-can-outlive-their-terminals.md)).
+
+**Fix:** `toolbox stop <name>`, with the name `toolbox list` prints, or `toolbox stop --all`.
+
+## "exists and is not detached: run toolbox stop … first"
+
+**Symptom:** starting a detached shell fails with `container <name> exists and is not detached: run toolbox stop <name> first`.
+
+**Cause:** an ordinary shell already holds the container name. The detached label is fixed when a container is created, so that shell cannot become detached, and handing it back would leave it to die with its last terminal.
+
+**Fix:** close what runs in that shell, `toolbox stop <name>`, then start the detached shell again.
+
 ## Port already in use on the host
 
 **Symptom:** `toolbox shell -p <port>` fails at container start with a Docker "address already in use" error.

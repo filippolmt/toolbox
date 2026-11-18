@@ -1584,12 +1584,14 @@ container-stop seam used by `toolbox stop`, `toolbox stop --all`, and
 the shell-exit defer; NotFound on either ContainerStop or
 ContainerRemove is tolerated. `teardown.HasActiveExecs(ctx, cli, name)`
 probes for a sibling shell still attached to the same container —
-inspect errors are treated as "no active execs" so a daemon hiccup
-never strands a container. `teardown.OnShellExit(cli, name)` composes
-the deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled,
-must not block teardown), skip-if-sibling, otherwise StopOne. Owned by
-`internal/teardown`. Timing constants `DefaultTimeout` (30s) and
-`DefaultStopGrace` (2s) live on the package, not on the lifecycle file.
+inspect errors are treated as "no active execs" so a daemon hiccup never
+strands a container. `teardown.OnShellExit(cli, name)` composes the
+deferred policy: fresh-context (parent ctx may be Ctrl+C cancelled, must
+not block teardown), skip-if-detached (the [Detached
+Shell](#detached-shell) label, read off the same inspect),
+skip-if-sibling, otherwise StopOne. Owned by `internal/teardown`. Timing
+constants `DefaultTimeout` and `DefaultStopGrace` live on the package,
+not on the lifecycle file.
 
 One caller deliberately does **not** use this policy: a
 [Session Reload](#session-reload) needs an unconditional destroy that
@@ -2118,7 +2120,8 @@ opt-in differently: a workspace shell hashes it into the seed through
 branch appends the suffix before `namedContainerNameFromSanitized`, the
 sibling `NamedContainerName` fronts for callers outside the package;
 `AutoRemove: true`, so it is gone once
-the last attached terminal exits; it carries the workspace bind at
+the last attached terminal exits — unless it is a
+[Detached Shell](#detached-shell), which only `toolbox stop` ends; it carries the workspace bind at
 `mountplan.WorkspaceTarget`. Every shell is a toolbox container
 (`sessionplan.IsToolboxContainerName`), but not every toolbox container is a
 shell — the [Peer Anchor](#peer-anchor) carries the same `toolbox-` prefix and
@@ -2137,6 +2140,32 @@ up. Unnamed, the apparent inconsistency has two obvious "fixes" and both are
 wrong: listing the anchor invites a `toolbox stop` on infrastructure, and
 dropping it from `StopAll`'s prefix match leaves no command that ever removes
 it.
+
+### Detached Shell
+
+A [Shell](#shell) created and started without an attached terminal. It stays
+up with nobody attached, outlives every terminal that later attaches and
+exits, and ends only through `toolbox stop <target>` or `toolbox stop --all`.
+
+Concretely: a Session Plan with `Detached` set makes `container.Shell` create
+and start the container with the `toolbox.detached=true` label
+(`runplan.DetachedLabels`) and return without an exec. The label is fixed at
+create, so a detached plan that finds its name held by an unlabelled container
+fails and names the `toolbox stop` to run, rather than hand back a Shell the
+next terminal exit would remove; one already running with the label is left as
+it is, with no image work. [Teardown](#teardown) reads the label from the
+inspect `OnShellExit` already performs and spares the container whether or not
+sibling execs remain; `runplan` owns the label, its one writer and its
+readers; `container.List` marks the row. The container keeps `AutoRemove`, so
+a stop still removes it. No user-facing flag sets it: its only planned caller
+is `toolbox orca`
+([#1502](https://github.com/filippolmt/toolbox/issues/1502)). Decision and
+alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
+
+Why the term exists: until it, "a Shell is gone once its last terminal exits"
+was an invariant every reader could rely on. A container that hosts a server
+breaks it on purpose, and naming the exception keeps the invariant true for
+everything else: an unmarked Shell still dies with its terminals.
 
 ### Peer Anchor
 

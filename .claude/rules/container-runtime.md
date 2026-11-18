@@ -83,10 +83,23 @@ them.
   [Tool Cache](../../CONTEXT.md#tool-cache),
   [ADR 0015](../../docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md)
 
+- **A Detached Shell survives shell exit, and nothing else makes one:** only a
+  detached create writes the label, and no terminal exit removes a container
+  that carries it. Pinned by `TestOnShellExitSparesDetachedShell`,
+  `TestShellDetachedCreatesWithoutExec`,
+  `TestShellDetachedRefusesAnUnlabelledContainer`,
+  `TestShellDetachedRefusesBeforeImageWork`,
+  `TestShellDetachedJoinsALabelledContainer`,
+  `TestShellDetachedJoinStillWarnsOnPublishMismatch`,
+  `TestShellExitLeavesADetachedShellRunning`,
+  `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
+  [Detached Shell](../../CONTEXT.md#detached-shell)
+
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use
-  `AutoRemove`; asynchronous diagnostics use `ui.InfoAsyncf` so raw terminals
-  receive CRLF. Pinned by `TestShellSetsCodexSecurityOptByDefault`,
+  `AutoRemove`, a Detached Shell included; asynchronous diagnostics use
+  `ui.InfoAsyncf` so raw terminals receive CRLF. Pinned by
+  `TestShellSetsCodexSecurityOptByDefault`,
   `TestShellPassesPlanHostname`, teardown tests and
   `TestInfoAsyncfReturnsTheCarriage`.
 

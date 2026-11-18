@@ -304,7 +304,9 @@ func NewClient() (client.APIClient, error) {
 // WorkingDir. When the attached shell exits the container is stopped and
 // removed — all persistent state lives on bind-mounted volumes under
 // ~/.toolbox/ (creds, shell history, caches), so nothing is lost by trashing
-// the container itself.
+// the container itself. A Detached Shell is the exception: a detached plan
+// creates and starts it without an exec and returns, and no terminal exit
+// removes it (CONTEXT.md, Detached Shell).
 //
 // State machine — dispatched by runplan.Compute on the ContainerInspect result:
 //   - ActionConnect -> exec into the running container
@@ -318,9 +320,9 @@ func NewClient() (client.APIClient, error) {
 // Image Freshness hard-requires the image be present before dispatch
 // locally — `toolbox build` is the explicit path to a local rebuild.
 //
-// Multi-session caveat: if two terminals open a shell into the same
-// workspace, both attach to the same container. When either exits the
-// container is removed and the other session dies with it.
+// Multi-session: two terminals that open a shell into the same workspace
+// attach to the same container; the first to exit leaves it running while the
+// other's exec is still attached (CONTEXT.md, Teardown).
 //
 // Reload: a non-nil first return means the attached shell asked to move onto a
 // newer image (docs/session-reload.md). Shell does not perform the re-exec —
@@ -350,6 +352,11 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	inspect, op, resolveErr := resolveOp(ctx, cli, plan)
 	if resolveErr != nil {
 		return nil, resolveErr
+	}
+
+	// Before any image work: see joinDetached.
+	if joined, joinErr := joinDetached(ctx, cli, plan, inspect, op); joinErr != nil || joined {
+		return nil, joinErr
 	}
 
 	// State the observed branch to Image Freshness. It owns the synchronous
@@ -418,6 +425,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, dispatchErr
 	}
 
+	// A Detached Shell is up with nobody attached: there is no terminal to
+	// open, and so nothing whose exit would tear it down.
+	if plan.Detached {
+		return nil, nil
+	}
+
 	// Auto-remove on exit, suppressed on the reload path — see shellTeardown.
 	// Deferred from here, so it covers every return below this point and none
 	// of the failures above it, which have no container to remove.
@@ -448,6 +461,27 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, execErr
 	}
 	return requested, nil
+}
+
+// joinDetached settles a detached plan that finds a container already under
+// its name, and reports whether there is nothing left to do. That container
+// is a Detached Shell only if it already is one: the label is fixed at
+// create. An unlabelled one is refused here, before any image work, so no
+// refresh prompt can recreate an ordinary Shell, terminals and all, as a
+// detached one. A running one has nothing to refresh, build or start and no
+// terminal to open — only what this start asked for and it cannot give.
+func joinDetached(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, inspect container.InspectResponse, op runplan.Op) (bool, error) {
+	if !plan.Detached || op.Action == runplan.ActionCreate {
+		return false, nil
+	}
+	if !runplan.IsDetached(inspect) {
+		return false, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
+	}
+	if op.Action != runplan.ActionConnect {
+		return false, nil
+	}
+	warnReattachMismatch(ctx, cli, plan, inspect, op)
+	return true, nil
 }
 
 // resolveOp settles what this session is going to do to the container: read
@@ -708,6 +742,11 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 		tmpfs = map[string]string{"/home/toolbox/.npm/_npx": "rw,exec,uid=" + strings.Replace(identity.UserSpec, ":", ",gid=", 1) + ",mode=0700"}
 	}
 
+	var labels map[string]string
+	if plan.Detached {
+		labels = runplan.DetachedLabels()
+	}
+
 	ui.Info("Creating container " + plan.ContainerName + "...")
 	resp, createErr := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: plan.ContainerName,
@@ -721,6 +760,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 			User:         identity.UserSpec,
 			ExposedPorts: plan.ExposedPorts,
 			Env:          plan.Env,
+			Labels:       labels,
 		},
 		HostConfig: &container.HostConfig{
 			Binds:        binds,
@@ -835,11 +875,13 @@ func containerName(c container.Summary) string {
 // Item is one row of the host's toolbox-container inventory. Workspace is the
 // host path bind-mounted at /workspace, or "-" when no such bind exists
 // (e.g. a legacy container). Status is the Docker human status string
-// ("Up 2 hours", "Exited (0) 3 minutes ago").
+// ("Up 2 hours", "Exited (0) 3 minutes ago"). Detached marks a Detached
+// Shell, which no terminal exit removes.
 type Item struct {
 	Name      string
 	Workspace string
 	Status    string
+	Detached  bool
 }
 
 // List returns every toolbox-managed container on the host (all states),
@@ -863,6 +905,7 @@ func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
 			Name:      containerName(c),
 			Workspace: workspaceOf(c),
 			Status:    c.Status,
+			Detached:  runplan.DetachedInLabels(c.Labels),
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })

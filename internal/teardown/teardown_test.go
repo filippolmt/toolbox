@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/dockertest"
+	"github.com/filippolmt/toolbox/internal/runplan"
 )
 
 // conflictErr satisfies cerrdefs.IsConflict — models the daemon's "removal
@@ -328,5 +329,22 @@ func TestStopOneSwallowsConflictOnRemove(t *testing.T) {
 	}
 	if err := StopOne(context.Background(), mock.docker(), "toolbox-x", DefaultStopGrace); err != nil {
 		t.Fatalf("StopOne should swallow Conflict (AutoRemove race), got: %v", err)
+	}
+}
+
+// A Detached Shell outlives every terminal attached to it: the exit of the last
+// one leaves it running, with no sibling exec to justify it. Kill, stop and
+// remove are left unstubbed, so reaching any of them panics.
+func TestOnShellExitSparesDetachedShell(t *testing.T) {
+	inspect := autoRemoveInspect()
+	inspect.Config = &container.Config{Labels: runplan.DetachedLabels()}
+	mock := &exitStub{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) { return inspect, nil },
+		execInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
+		},
+	}
+	if err := OnShellExit(mock.docker(), "toolbox-x"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

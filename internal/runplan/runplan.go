@@ -7,8 +7,11 @@
 // compose at design-time before any Docker call; RunPlan composes at
 // runtime from the ContainerInspect snapshot. DaemonReaps, the AutoRemove
 // test the decision turns on, is shared with teardown's exit policy so the
-// two never disagree on which containers the daemon removes. Lifecycle dispatches on
-// the typed Op rather than re-deriving the branch inline.
+// two never disagree on which containers the daemon removes. Lifecycle
+// dispatches on the typed Op rather than re-deriving the branch inline.
+//
+// It also owns the Detached Shell label, for the same reason: every reader
+// and the one writer share a single spelling.
 package runplan
 
 import (
@@ -63,6 +66,30 @@ type Op struct {
 // still ours to start, and whether exiting it can be left to the daemon.
 func DaemonReaps(inspect container.InspectResponse) bool {
 	return inspect.HostConfig != nil && inspect.HostConfig.AutoRemove
+}
+
+// detachedLabel marks a Detached Shell: a container that outlives every
+// terminal attached to it. → CONTEXT.md, Detached Shell.
+const detachedLabel = "toolbox.detached"
+
+// detachedValue is shared so the writer and the readers cannot disagree.
+const detachedValue = "true"
+
+// DetachedInLabels reports whether a label set marks a Detached Shell: the
+// reader for a list summary, which carries labels and no Config.
+func DetachedInLabels(labels map[string]string) bool {
+	return labels[detachedLabel] == detachedValue
+}
+
+// IsDetached reports whether an inspected container is a Detached Shell, nil
+// Config included.
+func IsDetached(inspect container.InspectResponse) bool {
+	return inspect.Config != nil && DetachedInLabels(inspect.Config.Labels)
+}
+
+// DetachedLabels is the label set that marks a container as a Detached Shell.
+func DetachedLabels() map[string]string {
+	return map[string]string{detachedLabel: detachedValue}
 }
 
 // Compute derives the Op from a ContainerInspect result.

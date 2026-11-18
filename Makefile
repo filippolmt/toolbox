@@ -263,7 +263,7 @@ go-lint-new: scratch ## Check cognitive complexity in changed functions (BASE=re
 go-preflight: go-coverage go-lint-new ## Check new-code complexity and estimate delta coverage (BASE=ref)
 	python3 .github/scripts/new-code-coverage.py "$(GO_COVERAGE_FILE)" --base "$(BASE)" --minimum "$(COVERAGE_MIN)" --warn-only
 
-go-check: go-coverage go-lint ## Go gate: run CI's coverage-enforced tests and linter (run `make test` too when the change touches the image)
+go-check: go-coverage go-lint go-lint-new ## Go gate: run CI's coverage-enforced tests, linter and changed-function complexity check (BASE=ref; run `make test` too when the change touches the image)
 
 go-shell: ## Open a shell in the golang container for ad-hoc commands
 	docker run --rm -it $(GO_MOUNT) $(GO_BUILD_ENV) -e CGO_ENABLED=0 $(GO_IMAGE) bash

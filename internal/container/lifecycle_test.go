@@ -21,6 +21,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/dockertest"
 	"github.com/filippolmt/toolbox/internal/imagefreshness"
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -972,6 +973,8 @@ func TestStopAll(t *testing.T) {
 				{Names: []string{"/toolbox-project-a-abcdef12"}},
 				{Names: []string{"/toolbox-project-b-11223344"}},
 				{Names: []string{"/toolbox"}}, // legacy singleton
+				// A Detached Shell survives terminals, not the sweep.
+				{Names: []string{"/toolbox-orca"}, Labels: runplan.DetachedLabels()},
 				{Names: []string{"/unrelated-toolbox-clone"}},
 			}, nil
 		},
@@ -994,6 +997,7 @@ func TestStopAll(t *testing.T) {
 		"toolbox-project-a-abcdef12",
 		"toolbox-project-b-11223344",
 		"toolbox",
+		"toolbox-orca",
 	}
 	for _, name := range expectedStopped {
 		if !stopped[name] {
@@ -1552,5 +1556,215 @@ func TestShellCreateUsesResolvedShellCmd(t *testing.T) {
 				t.Errorf("Cmd = %v, want %v", capturedCmd, tc.wantCmd)
 			}
 		})
+	}
+}
+
+// A detached plan creates and starts its container with the detached label and
+// hands back at once: no exec runs and nothing tears the container down, so it
+// stays up with nobody attached. Stop, remove and kill are unmocked.
+func TestShellDetachedCreatesWithoutExec(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	var labels map[string]string
+	started := false
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+		},
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			return client.ImageInspectResult{}, nil
+		},
+		createFn: func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+			labels = cfg.Labels
+			return container.CreateResponse{ID: "new123"}, nil
+		},
+		startFn: func(context.Context, string, client.ContainerStartOptions) error {
+			started = true
+			return nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !started {
+		t.Fatal("ContainerStart was not called")
+	}
+	if *called {
+		t.Error("a detached Shell must not exec a terminal")
+	}
+	// The literal, not the constant: the label outlives the binary that wrote it.
+	if labels["toolbox.detached"] != "true" {
+		t.Errorf("create labels = %v, want toolbox.detached=true", labels)
+	}
+}
+
+// A detached plan that finds its name held by an ordinary Shell must not hand
+// that Shell back as detached: the next terminal exit would remove it.
+func TestShellDetachedRefusesAnUnlabelledContainer(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return existingInspect(true, nil), nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	_, err := Shell(context.Background(), mock, plan)
+	if err == nil || !strings.Contains(err.Error(), "not detached") {
+		t.Fatalf("Shell() error = %v, want a not-detached refusal", err)
+	}
+	if *called {
+		t.Error("a refused detached start must not exec a terminal")
+	}
+}
+
+// Connecting a detached plan to a container that already carries the label is
+// the idempotent case: nothing to create, nothing to exec, no error.
+func TestShellDetachedJoinsALabelledContainer(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return existingInspect(true, runplan.DetachedLabels()), nil
+		},
+		// Already up and already detached: nothing to refresh, so no image
+		// work and no start-up prompt for a command with nobody to answer it.
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			t.Error("image inspected on a detached join")
+			return client.ImageInspectResult{}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	withOverlay(t, plan) // a join builds no `:local` either
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if *called {
+		t.Error("a detached Shell must not exec a terminal")
+	}
+	if slices.Contains(mock.calls, "ImageBuild") {
+		t.Error("a detached join built the local overlay")
+	}
+}
+
+// `toolbox stop <name>` reaches a Detached Shell by the container name
+// `toolbox list` prints, and removes it: the label spares it only on shell exit.
+func TestStopByNameRemovesADetachedShell(t *testing.T) {
+	var stopped, removed string
+	mock := &mockClient{
+		stopFn: func(_ context.Context, name string, _ client.ContainerStopOptions) error {
+			stopped = name
+			return nil
+		},
+		removeFn: func(_ context.Context, name string, _ client.ContainerRemoveOptions) error {
+			removed = name
+			return nil
+		},
+	}
+	if err := StopByName(context.Background(), mock, "toolbox-orca"); err != nil {
+		t.Fatalf("StopByName() error: %v", err)
+	}
+	if stopped != "toolbox-orca" || removed != "toolbox-orca" {
+		t.Errorf("stopped=%q removed=%q, want both toolbox-orca", stopped, removed)
+	}
+}
+
+// The refusal comes before any image work: a stopped unlabelled container is
+// where the start-up refresh would ask, and an accepted recreate would turn
+// the ordinary Shell into a detached one. Image calls are unmocked.
+func TestShellDetachedRefusesBeforeImageWork(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return existingInspect(false, nil), nil
+		},
+		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
+			t.Error("image inspected before the refusal")
+			return client.ImageInspectResult{}, nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), nil)
+	plan.Detached = true
+	if _, err := Shell(context.Background(), mock, plan); err == nil || !strings.Contains(err.Error(), "not detached") {
+		t.Fatalf("Shell() error = %v, want a not-detached refusal", err)
+	}
+}
+
+// An ordinary `toolbox shell` into a Detached Shell: when its terminal exits,
+// with no sibling exec left, the container stays. ContainerKill is not
+// implemented by the mock, so reaching it panics.
+func TestShellExitLeavesADetachedShellRunning(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			inspect := existingInspect(true, runplan.DetachedLabels())
+			inspect.HostConfig.AutoRemove = true
+			inspect.ExecIDs = []string{"ours"}
+			return inspect, nil
+		},
+		execInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
+			return client.ExecInspectResult{Running: false}, nil
+		},
+		stopFn: func(context.Context, string, client.ContainerStopOptions) error {
+			t.Error("a Detached Shell must not be stopped on shell exit")
+			return nil
+		},
+	}
+
+	if _, err := Shell(context.Background(), mock, testPlan(t, testWorkspace(t), nil)); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !*called {
+		t.Fatal("the attached shell did not run")
+	}
+}
+
+// existingInspect is the daemon's answer for a container already under the
+// session's name: running or stopped (and kept, not reaped), with labels.
+func existingInspect(running bool, labels map[string]string) container.InspectResponse {
+	return container.InspectResponse{
+		ID:         "abc123",
+		State:      &container.State{Running: running},
+		Config:     &container.Config{Labels: labels},
+		HostConfig: &container.HostConfig{},
+	}
+}
+
+// A detached join skips the image work, not the reattach warnings: a running
+// Detached Shell that lacks a port this start asks for says so.
+func TestShellDetachedJoinStillWarnsOnPublishMismatch(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return existingInspect(true, runplan.DetachedLabels()), nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), []string{"6768"})
+	plan.Detached = true
+	stderr := captureStderr(t, func() {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
+			t.Fatalf("Shell() error: %v", err)
+		}
+	})
+	if !strings.Contains(stderr, "publish mismatch") {
+		t.Errorf("stderr = %q, want a publish mismatch warning", stderr)
 	}
 }

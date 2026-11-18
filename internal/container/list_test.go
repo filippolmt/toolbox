@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/runplan"
 )
 
 func TestList(t *testing.T) {
@@ -28,6 +29,8 @@ func TestList(t *testing.T) {
 				},
 				// Named shell with no /workspace bind → Workspace falls back to "-".
 				{Names: []string{"/toolbox-named-infra"}, Status: "Exited (0) 1 minute ago"},
+				// A Detached Shell is listed and marked.
+				{Names: []string{"/toolbox-orca"}, Status: "Up 1 hour", Labels: runplan.DetachedLabels()},
 				// Non-toolbox container the daemon's name filter can still return.
 				{Names: []string{"/redis"}, Status: "Up 5 days"},
 				// Nameless container is skipped, not panicked on.
@@ -43,6 +46,7 @@ func TestList(t *testing.T) {
 
 	want := []Item{
 		{Name: "toolbox-named-infra", Workspace: "-", Status: "Exited (0) 1 minute ago"},
+		{Name: "toolbox-orca", Workspace: "-", Status: "Up 1 hour", Detached: true},
 		{Name: "toolbox-proj-a1b2c3d4", Workspace: "/home/u/proj", Status: "Up 2 hours"},
 	}
 	if len(items) != len(want) {

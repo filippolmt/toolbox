@@ -12,11 +12,12 @@ Codex is unconditionally installed, so `toolbox shell` creates the container wit
 
 ## Container teardown
 
-The container is disposable: when the last attached shell exits it is destroyed (all persistent state lives on the `~/.toolbox/` bind mounts). The cost of *how* it is destroyed used to land on the user's prompt — `teardown.StopOne` ran a synchronous `ContainerStop` + `ContainerRemove`, and on macOS Docker Desktop the remove blocks on unmounting ~25 Host Share binds inside the LinuxKit VM (~1–2s). The SIGTERM grace is not the cost (PID 1 is `sleep`, dies instantly) and neither is zsh (~90ms); the daemon-side unmount is.
+The container is disposable, since all persistent state lives on the `~/.toolbox/` bind mounts: when the last attached shell exits it is destroyed, unless it is a [Detached Shell](../../CONTEXT.md#detached-shell) ([ADR 0022](../adr/0022-shells-can-outlive-their-terminals.md)). The cost of *how* it is destroyed used to land on the user's prompt — `teardown.StopOne` ran a synchronous `ContainerStop` + `ContainerRemove`, and on macOS Docker Desktop the remove blocks on unmounting every Host Share bind inside the LinuxKit VM, a cost that grows with the bind count. The SIGTERM grace is not the cost (see `teardown.DefaultStopGrace`) and neither is the shell's own exit; the daemon-side unmount is. PID 1 is the session's interactive shell under tini (`plan.Cmd` overrides the image's `sleep infinity` at create), kept alive by the TTY and open stdin set at create, with nobody needing to attach: that is what keeps a container up between its start and the first exec, and what keeps a Detached Shell up with no exec at all.
 
 Fix: containers are created with `HostConfig.AutoRemove: true` (`container.createAndStart`). The daemon's auto-remove worker performs the unmount + delete **after the container exits**, asynchronously from any client call. So the exit path only has to make the container *exit*:
 
 - `teardown.OnShellExit` does a single `ContainerInspect` and branches on it:
+  - the `toolbox.detached` label (`runplan.IsDetached`) → leave the container running: a Detached Shell ends only through `toolbox stop`;
   - a still-running sibling exec → leave the container running so the other terminal survives;
   - `HostConfig.AutoRemove` true → `ContainerKill` (SIGKILL — nothing to flush) and return immediately; the daemon reaps it off the prompt's critical path;
   - AutoRemove false (legacy container created before this change) → synchronous `StopOne` fallback, dead within one upgrade cycle since containers are recreated each shell.
