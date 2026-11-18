@@ -162,9 +162,11 @@ them.
   edge initialises the volume like the Orca data volume. The host's herdr-core is
   reached only through the `herdrcore.Host` seam, and the `--via` line only
   from `herdrcore.Via` on the planned container name: hc runs it as an sh
-  line. A known machine is left alone on a running Shell, updated on a
-  container the run created (its `hc` was in the old writable layer), removed
-  and added under `--reregister`; without `hc` the Shell stays and the add
+  line. A known machine on the Shell's `--via` line is left alone on a
+  running Shell that still holds herdr-core's binary, updated on a container
+  the run created or one that lost the binary (its `hc` was in the old
+  writable layer), removed and added under `--reregister` or when it is on
+  another connection; without `hc` the Shell stays and the add
   command is printed. A Shell the run created that herdr-core cannot register
   is removed. Pinned
   by `TestPlanHerdrCoreShell`, `TestPlanOrdinaryShellCarriesNoHerdrCore`,
@@ -176,6 +178,8 @@ them.
   `TestHerdrRemovesANewShellWhoseMachineAddFailed`,
   `TestHerdrRerunOnARunningShellWithItsMachineChangesNothing`,
   `TestHerdrNewShellWithItsMachineUpdatesIt`,
+  `TestHerdrRunningShellWithoutHerdrCoreBinaryUpdatesItsMachine`,
+  `TestHerdrReplacesASameNameMachineOnAnotherConnection`,
   `TestHerdrReregisterRemovesAndAddsTheMachine`,
   `TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand`,
   `TestHerdrJoinsARunningShellOnItsWorkspace`,

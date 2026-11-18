@@ -2262,9 +2262,12 @@ with the host's herdr-core through the `herdrcore.Host` seam (adapter
 (`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
 (`herdrcore.Via`, built from the planned container name only) and
 `--install`, so herdr-core copies the host's own `hc` into the container's
-writable layer. A machine herdr-core already knows is left alone on a running
-Shell and updated (`hc machine update`, which reinstalls `hc`) on a container
-this run created; `--reregister` removes and adds it. A Shell this run created
+writable layer. A machine herdr-core already knows on the Shell's `--via` line is left
+alone on a running Shell that still holds herdr-core's binary
+(`herdrcore.Installed`), and updated (`hc machine update`, which reinstalls
+`hc`) on a container this run created or one a Session Reload recreated;
+a machine of that name on another connection, or `--reregister`, is removed
+and added. A Shell this run created
 that herdr-core cannot register is removed; without `hc` on the host the Shell
 stays and the `hc machine add` command is printed. No init script and no env gate: nothing runs herdr-core in the
 container until the host connects. Decision and alternatives:

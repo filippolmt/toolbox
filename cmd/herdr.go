@@ -36,8 +36,9 @@ the host's herdr-core (hc) as the machine toolbox (toolbox-<profile>), reached
 through 'docker exec' rather than ssh; herdr-core installs its own hc in the
 container. Spaces on that machine run their terminals and agents in the
 container until 'toolbox herdr stop'. A re-run leaves a known machine alone,
-or updates it when the run created the container (a new container has no hc);
---reregister removes and adds it again. Without hc on the host, the Shell
+or updates it when the container has no hc (one the run created, or one a
+Session Reload recreated); a same-name machine on another connection, or
+--reregister, is removed and added again. Without hc on the host, the Shell
 starts and the hc machine add command to run later is printed.
 
 The workspace is the absolute dir argument, or the herdr_workspace config key,
