@@ -145,8 +145,9 @@ func runningHerdrCoreShellOf(profile *mountplan.Profile) ([]string, error) {
 
 // addHerdrMachine registers the Herdr Core Shell called shell with the host's
 // herdr-core, or prints how to once the host has hc. A Shell this run created
-// and herdr-core cannot register is removed: left running, it would be a
-// detached container nothing uses.
+// and could not register (herdr-core failed, or the name is taken on another
+// connection) is removed: left running, it would be a detached container
+// nothing uses.
 func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, w io.Writer) error {
 	machine := herdrcore.MachineName(shell)
 	via, err := herdrcore.Via(shell)
