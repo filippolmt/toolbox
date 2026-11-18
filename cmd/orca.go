@@ -20,9 +20,15 @@ var orcaVersion string
 var orcaProfile string
 var orcaShare []string
 var orcaStopProfile string
+var orcaPairProfile string
+
+// orcaOffer asks the running Orca Shell for a pairing link; tests swap it.
+var orcaOffer = func(ctx context.Context, cli client.APIClient, container string) (string, error) {
+	return orca.Offer(ctx, cli, container)
+}
 
 // orcaDesktop is the Orca desktop app runOrca takes the server version from
-// when --version is unset; tests swap it.
+// when --version is unset, and registers the runtime with; tests swap it.
 var orcaDesktop = orca.HostDesktop()
 
 // orcaReadyTimeout bounds the wait for the pairing link: a first start
@@ -31,12 +37,13 @@ const orcaReadyTimeout = 3 * time.Minute
 
 var orcaCmd = &cobra.Command{
 	Use:   "orca [dir]",
-	Short: "Start Orca's runtime in a detached Orca Shell and print the pairing link",
+	Short: "Start Orca's runtime in a detached Orca Shell and pair the desktop app with it",
 	Long: `Start the Orca Shell: a detached toolbox container that runs the Orca
 server (stablyai/orca) at the Orca desktop app's version (--version
 overrides it), published on host 127.0.0.1:` + sessionplan.OrcaPort + `. The command returns once the server is ready and
-prints the link to paste into the Orca desktop app (Settings → Remote Orca
-Servers → Add Server). The runtime keeps running until 'toolbox orca stop'.
+the desktop app lists it as the environment toolbox (toolbox-<profile>);
+'toolbox orca pair' pairs it again. The runtime keeps running until
+'toolbox orca stop'.
 
 The workspace is the absolute dir argument, or the orca_workspace config key.
 One Orca Shell per host and --profile. A different server version
@@ -50,6 +57,16 @@ var orcaStopCmd = &cobra.Command{
 	Short: "Stop and remove the Orca Shell",
 	Args:  usageArgs(cobra.NoArgs),
 	RunE:  runOrcaStop,
+}
+
+var orcaPairCmd = &cobra.Command{
+	Use:   "pair",
+	Short: "Pair the Orca desktop app with the running Orca Shell again",
+	Long: `Remove the Orca Shell's environment (toolbox, or toolbox-<profile>) from
+the Orca desktop app and add it again from a fresh pairing offer: the way back
+after the server's identity changed. The Orca Shell must be running.`,
+	Args: usageArgs(cobra.NoArgs),
+	RunE: runOrcaPair,
 }
 
 // runOrca validates the flags before any container work, then opens the Orca
@@ -98,13 +115,37 @@ func awaitPairing(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 		offset = info.Size()
 	}
 	return func() error {
-		url, err := orca.WaitPairing(logPath, offset, orcaReadyTimeout)
-		if err != nil {
+		if _, err := orca.WaitPairing(logPath, offset, orcaReadyTimeout); err != nil {
 			return fmt.Errorf("%w (the Orca Shell %s keeps running; toolbox orca stop removes it)", err, plan.ContainerName)
 		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Orca is serving on 127.0.0.1:%s. Paste this link in Orca (Settings → Remote Orca Servers → Add Server):\n%s\n", sessionplan.OrcaPort, url)
-		return nil
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Orca is serving on 127.0.0.1:%s.\n", sessionplan.OrcaPort)
+		return pairOrcaShell(ctx, cli, plan.ContainerName, false, cmd)
 	}, nil
+}
+
+// pairOrcaShell registers the Orca Shell named shell with the desktop app.
+func pairOrcaShell(ctx context.Context, cli client.APIClient, shell string, force bool, cmd *cobra.Command) error {
+	offer := func() (string, error) { return orcaOffer(ctx, cli, shell) }
+	return orca.Pair(orcaDesktop, orca.EnvironmentName(shell), force, offer, cmd.OutOrStdout())
+}
+
+func runOrcaPair(cmd *cobra.Command, _ []string) error {
+	profile, err := resolveShellProfile(cmd, orcaPairProfile, nil)
+	if err != nil {
+		return err
+	}
+	name, err := sessionplan.OrcaContainerName(profile)
+	if err != nil {
+		return err
+	}
+	cli, err := newDockerClient()
+	if err != nil {
+		return dockerClientErr(err)
+	}
+	defer cli.Close()
+	ctx, stopSig := signalCtx()
+	defer stopSig()
+	return pairOrcaShell(ctx, cli, name, true, cmd)
 }
 
 func runOrcaStop(cmd *cobra.Command, _ []string) error {
@@ -134,6 +175,7 @@ func init() {
 	orcaCmd.Flags().StringSliceVar(&orcaShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root (see toolbox shell --share)")
 	orcaStopCmd.Flags().StringVar(&orcaStopProfile, "profile", "", "stop the Orca Shell of this toolbox profile")
-	orcaCmd.AddCommand(orcaStopCmd)
+	orcaPairCmd.Flags().StringVar(&orcaPairProfile, "profile", "", "pair the Orca Shell of this toolbox profile")
+	orcaCmd.AddCommand(orcaStopCmd, orcaPairCmd)
 	rootCmd.AddCommand(orcaCmd)
 }

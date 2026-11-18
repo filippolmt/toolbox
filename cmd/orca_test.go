@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,10 +25,42 @@ func (orcaDaemon) ContainerInspect(context.Context, string, client.ContainerInsp
 	return client.ContainerInspectResult{}, cerrdefs.ErrNotFound
 }
 
-// fakeDesktop is an Orca desktop app reporting version; "" is no app.
-type fakeDesktop struct{ version string }
+// fakeDesktop is an Orca desktop app reporting version ("" is no app) whose
+// pairing store holds envs. Changes to the store land in log when set.
+type fakeDesktop struct {
+	version string
+	envs    []string
+	log     *[]string
+}
 
-func (d fakeDesktop) Version() (string, error) { return d.version, nil }
+func (d fakeDesktop) Version() (string, error)        { return d.version, nil }
+func (d fakeDesktop) Environments() ([]string, error) { return d.envs, nil }
+func (d fakeDesktop) OpenURL(url string) error        { return d.note("open " + url) }
+func (d fakeDesktop) AddEnvironment(name, url string) error {
+	return d.note("add " + name + " " + url)
+}
+func (d fakeDesktop) RemoveEnvironment(name string) error { return d.note("rm " + name) }
+
+func (d fakeDesktop) note(call string) error {
+	if d.log != nil {
+		*d.log = append(*d.log, call)
+	}
+	return nil
+}
+
+// fakeOffer makes the Orca Shell's server offer orca://pair?code=<container>
+// and returns the containers asked.
+func fakeOffer(t *testing.T) *[]string {
+	t.Helper()
+	orig := orcaOffer
+	t.Cleanup(func() { orcaOffer = orig })
+	var asked []string
+	orcaOffer = func(_ context.Context, _ client.APIClient, container string) (string, error) {
+		asked = append(asked, container)
+		return "orca://pair?code=" + container, nil
+	}
+	return &asked
+}
 
 // orcaHarness sets the orca flag globals and cfg, and returns the plan the
 // attach was handed plus whether the Docker client was ever built. The fake
@@ -38,6 +71,7 @@ func orcaHarness(t *testing.T, version, record string) (**sessionplan.SessionPla
 	origCfg, origVersion, origProfile, origDesktop := cfg, orcaVersion, orcaProfile, orcaDesktop
 	t.Cleanup(func() { cfg, orcaVersion, orcaProfile, orcaDesktop = origCfg, origVersion, origProfile, origDesktop })
 	cfg, orcaVersion, orcaProfile, orcaDesktop = &config.Config{Shell: "zsh"}, version, "", fakeDesktop{}
+	fakeOffer(t)
 
 	built := false
 	newDockerClient = func() (client.APIClient, error) {
@@ -67,11 +101,13 @@ func TestOrcaRefusesAMalformedVersionBeforePlanning(t *testing.T) {
 	}
 }
 
-func TestOrcaStartsTheOrcaShellAndPrintsThePairingLink(t *testing.T) {
+func TestOrcaStartsTheOrcaShellAndAddsItsEnvironmentToTheDesktopApp(t *testing.T) {
 	attached, _ := orcaHarness(t, "1.4.262",
 		`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#fresh"}}`+"\n")
-	var out bytes.Buffer
-	orcaCmd.SetOut(&out)
+	var calls []string
+	orcaDesktop = fakeDesktop{envs: []string{"laptop"}, log: &calls}
+	asked := fakeOffer(t)
+	orcaCmd.SetOut(&bytes.Buffer{})
 	t.Cleanup(func() { orcaCmd.SetOut(nil) })
 
 	ws := sessionWorkspace(t, "src")
@@ -88,8 +124,58 @@ func TestOrcaStartsTheOrcaShellAndPrintsThePairingLink(t *testing.T) {
 	if got := sessionplan.EnvValue(p.Env, "TOOLBOX_HOST_WORKSPACE"); got != ws {
 		t.Errorf("workspace = %q, want the dir argument %q", got, ws)
 	}
-	if !strings.Contains(out.String(), "orca://pair#fresh") {
-		t.Errorf("output %q lacks the pairing link", out.String())
+	if !slices.Equal(*asked, []string{"toolbox-orca"}) || !slices.Equal(calls, []string{"add toolbox orca://pair?code=toolbox-orca"}) {
+		t.Errorf("offers from %q, desktop calls %q; want toolbox added from the Orca Shell's offer", *asked, calls)
+	}
+}
+
+func TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment(t *testing.T) {
+	orcaHarness(t, "1.4.262", readyRecord)
+	var calls []string
+	orcaDesktop = fakeDesktop{envs: []string{"toolbox"}, log: &calls}
+	asked := fakeOffer(t)
+	orcaCmd.SetOut(&bytes.Buffer{})
+	t.Cleanup(func() { orcaCmd.SetOut(nil) })
+
+	if err := runOrca(orcaCmd, []string{sessionWorkspace(t, "src")}); err != nil {
+		t.Fatalf("runOrca: %v", err)
+	}
+	if len(*asked) != 0 || len(calls) != 0 {
+		t.Errorf("offers from %q, desktop calls %q; want none", *asked, calls)
+	}
+}
+
+func TestOrcaUnderAProfileAddsTheProfileNamedEnvironment(t *testing.T) {
+	orcaHarness(t, "1.4.262", readyRecord)
+	orcaProfile = "work"
+	var calls []string
+	orcaDesktop = fakeDesktop{envs: []string{"toolbox"}, log: &calls}
+	orcaCmd.SetOut(&bytes.Buffer{})
+	t.Cleanup(func() { orcaCmd.SetOut(nil) })
+
+	if err := runOrca(orcaCmd, []string{sessionWorkspace(t, "src")}); err != nil {
+		t.Fatalf("runOrca: %v", err)
+	}
+	if !slices.Equal(calls, []string{"add toolbox-work orca://pair?code=toolbox-orca-work"}) {
+		t.Errorf("desktop calls %q, want toolbox-work added from toolbox-orca-work", calls)
+	}
+}
+
+func TestOrcaPairRemovesAndReAddsTheEnvironment(t *testing.T) {
+	orcaHarness(t, "", "")
+	orcaPairProfile = "work"
+	t.Cleanup(func() { orcaPairProfile = "" })
+	var calls []string
+	orcaDesktop = fakeDesktop{envs: []string{"toolbox", "toolbox-work"}, log: &calls}
+	orcaPairCmd.SetOut(&bytes.Buffer{})
+	t.Cleanup(func() { orcaPairCmd.SetOut(nil) })
+
+	if err := runOrcaPair(orcaPairCmd, nil); err != nil {
+		t.Fatalf("runOrcaPair: %v", err)
+	}
+	want := []string{"rm toolbox-work", "add toolbox-work orca://pair?code=toolbox-orca-work"}
+	if !slices.Equal(calls, want) {
+		t.Errorf("desktop calls %q, want %q", calls, want)
 	}
 }
 
