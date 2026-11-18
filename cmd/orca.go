@@ -231,12 +231,16 @@ func withDocker(fn func(context.Context, client.APIClient) error) error {
 }
 
 // reportJoin says the Orca Shell was already running, at which version, and
-// that a different requested one needs a stop first.
+// that a different requested version or workspace needs a stop first.
 func reportJoin(w io.Writer, plan *sessionplan.SessionPlan, runningEnv []string) {
 	running := sessionplan.EnvValue(runningEnv, sessionplan.OrcaVersionEnv)
 	_, _ = fmt.Fprintf(w, "The Orca Shell %s is already running Orca %s", plan.ContainerName, running)
 	if want := sessionplan.EnvValue(plan.Env, sessionplan.OrcaVersionEnv); want != running {
 		_, _ = fmt.Fprintf(w, "; to run %s, toolbox orca stop first", want)
+	}
+	served := sessionplan.EnvValue(runningEnv, "TOOLBOX_HOST_WORKSPACE")
+	if want := sessionplan.EnvValue(plan.Env, "TOOLBOX_HOST_WORKSPACE"); want != served {
+		_, _ = fmt.Fprintf(w, "; it keeps serving %s; to serve %s, toolbox orca stop first", served, want)
 	}
 	_, _ = fmt.Fprintln(w, ".")
 }

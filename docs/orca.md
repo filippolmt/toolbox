@@ -19,7 +19,7 @@ toolbox orca
 
 The first start downloads `orca-server-linux-<arch>.tar.gz` from the [server version](#server-version)'s release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and the desktop app lists it (see [pairing](#pairing)). The runtime keeps running with no terminal open until you stop it.
 
-`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command joins a running Orca Shell on its workspace ([run it again](#run-it-again)); with none running, it fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
+`toolbox orca <abs-dir>` serves another directory, overriding `orca_workspace`, when it starts an Orca Shell; a running one keeps its own ([run it again](#run-it-again)). With neither, the command joins a running Orca Shell on its workspace ([run it again](#run-it-again)); with none running, it fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
 
 ### Server version
 
@@ -53,7 +53,7 @@ It attaches a terminal to the running Orca Shell, the agents' own workspace and 
 
 ## Run it again
 
-A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. With no `dir` argument and no `orca_workspace`, the running Orca Shell's workspace stands in; with neither `--version` nor the desktop app, its version does. A `--version` that differs from the running one is not applied: the report says so (see [Stop](#stop)). When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
+A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. With no `dir` argument and no `orca_workspace`, the running Orca Shell's workspace stands in; with neither `--version` nor the desktop app, its version does. A `--version`, `dir` argument or `orca_workspace` that differs from the running Orca Shell's is not applied: it keeps serving its own version and tree, and the report says so (see [Stop](#stop)). When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
 
 ## Stop
 
