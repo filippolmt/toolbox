@@ -68,6 +68,16 @@ func TestMergeScenarios(t *testing.T) {
 			want:    want{Shell: "zsh", MountsRoot: "~/toolbox-state"},
 		},
 		{
+			name:    "orca_workspace_bare_tilde_rejected",
+			project: "orca_workspace: \"~\"\n",
+			want:    want{ErrSubstr: "orca_workspace"},
+		},
+		{
+			name:    "orca_workspace_relative_rejected",
+			project: "orca_workspace: ./src\n",
+			want:    want{ErrSubstr: "orca_workspace"},
+		},
+		{
 			name:    "shells_map_loaded",
 			project: "shells:\n  infra:\n    path: /tmp/infra\n",
 			want:    want{Shell: "zsh", InfraPath: "/tmp/infra"},

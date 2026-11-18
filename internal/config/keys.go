@@ -230,6 +230,19 @@ var keyRows = []Key{
 		Scalar: ValidateMountsRoot,
 	},
 	{
+		Name:    "orca_workspace",
+		Kind:    KindScalar,
+		Editor:  EditorText,
+		Summary: "Host directory `toolbox orca` serves when no dir argument is given. Absolute (/path) or home-relative (~/sub); bare ~ rejected.",
+		Default: "unset (toolbox orca needs a dir argument)",
+		Example: "# orca_workspace — the directory holding your repositories, served by\n" +
+			"# `toolbox orca` when no dir argument is given. Absolute (/path) or\n" +
+			"# home-relative (~/sub); bare \"~\" is rejected.\n" +
+			"# orca_workspace: ~/src\n",
+		Str:    func(c *Config) string { return c.OrcaWorkspace },
+		Scalar: ValidateOrcaWorkspace,
+	},
+	{
 		Name:    "bridge",
 		Kind:    KindTri,
 		Editor:  EditorTri,

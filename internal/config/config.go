@@ -52,6 +52,10 @@ type Config struct {
 	// root rewrite by mountplan.Merge, so a single override remains
 	// possible.
 	MountsRoot string `mapstructure:"mounts_root"`
+	// OrcaWorkspace is the host directory `toolbox orca` serves when no `dir`
+	// argument is given. Same shape as MountsRoot: absolute or ~/sub, never
+	// bare ~ (the Orca Shell would mount the whole host home). Empty = unset.
+	OrcaWorkspace string `mapstructure:"orca_workspace"`
 	// Bridge toggles the host-side ~/.toolbox/bridge RO mount in the
 	// container and gates the `toolbox bridge install` command. When false,
 	// the mount is omitted and the install command refuses. Default true.
@@ -229,6 +233,19 @@ func ValidateMountsRoot(s string) error {
 		return nil
 	}
 	return fmt.Errorf("mounts_root %q must be absolute or start with ~/", s)
+}
+
+// ValidateOrcaWorkspace applies the mounts_root shape to orca_workspace:
+// absolute or ~/sub. Bare "~" is refused because the Orca Shell would mount
+// the whole host home as its workspace, breaking the containment boundary.
+func ValidateOrcaWorkspace(s string) error {
+	if s == "~" {
+		return fmt.Errorf("orca_workspace %q is too broad: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", s)
+	}
+	if s == "" || strings.HasPrefix(s, "~/") || filepath.IsAbs(s) {
+		return nil
+	}
+	return fmt.Errorf("orca_workspace %q must be absolute or start with ~/", s)
 }
 
 // Pull policy values accepted by the `pull` key. These are the single source

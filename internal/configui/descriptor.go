@@ -121,6 +121,11 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		hint: "(~/.toolbox)",
 	},
+	"orca_workspace": {
+		mutator: scalarFromInput,
+
+		hint: "(unset)",
+	},
 	"bridge":             {mutator: boolFromChoice},
 	"proximo":            {mutator: boolFromChoice},
 	"managed_statusline": {mutator: boolFromChoice},
