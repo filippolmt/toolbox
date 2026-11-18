@@ -200,6 +200,10 @@ type PlanInput struct {
 	// the env gate and Orca's data directory, takes the workspace from
 	// orca_workspace when Workspace is empty, and creates detached.
 	OrcaVersion string
+	// OrcaAttach opens a terminal in the Orca Shell (`toolbox orca shell`)
+	// instead of starting it detached. The rest of the plan stays the Orca
+	// Shell's, so a recreate on the way in restarts the server.
+	OrcaAttach bool
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -344,7 +348,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
-		Detached:          orca,
+		Detached:          orca && !in.OrcaAttach,
 	}, nil
 }
 
