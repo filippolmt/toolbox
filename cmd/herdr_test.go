@@ -162,15 +162,64 @@ func TestHerdrStopWithoutAHerdrCoreShellIsQuiet(t *testing.T) {
 // Core Shell's machine.
 var toolboxMachine = []herdrcore.Machine{{Name: "toolbox", Target: "docker exec -i toolbox-herdr sh -c", Via: true}}
 
+// hcProbeDaemon is a running Herdr Core Shell that answers the probe for
+// herdr-core's binary: present unless missing. Each probed command lands in
+// probes.
+type hcProbeDaemon struct {
+	runningOrcaDaemon
+	missing bool
+	probes  *[]string
+}
+
+func (d hcProbeDaemon) ExecCreate(_ context.Context, name string, o client.ExecCreateOptions) (client.ExecCreateResult, error) {
+	*d.probes = append(*d.probes, name+": "+strings.Join(o.Cmd, " "))
+	return client.ExecCreateResult{ID: "probe"}, nil
+}
+
+func (hcProbeDaemon) ExecStart(context.Context, string, client.ExecStartOptions) (client.ExecStartResult, error) {
+	return client.ExecStartResult{}, nil
+}
+
+func (d hcProbeDaemon) ExecInspect(context.Context, string, client.ExecInspectOptions) (client.ExecInspectResult, error) {
+	if d.missing {
+		return client.ExecInspectResult{ExitCode: 1}, nil
+	}
+	return client.ExecInspectResult{}, nil
+}
+
 func TestHerdrRerunOnARunningShellWithItsMachineChangesNothing(t *testing.T) {
 	_, calls := herdrHarness(t, fakeHerdrCore{machines: toolboxMachine})
 	ws := sessionWorkspace(t, "src")
-	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
+	var probes []string
+	newDockerClient = func() (client.APIClient, error) {
+		return hcProbeDaemon{runningOrcaDaemon: runningOrcaDaemon{workspace: ws}, probes: &probes}, nil
+	}
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
 		t.Fatalf("runHerdr: %v", err)
 	}
 	if len(*calls) != 0 {
 		t.Errorf("herdr-core calls %q, want none", *calls)
+	}
+	if len(probes) != 1 || !strings.Contains(probes[0], "toolbox-herdr: ") || !strings.Contains(probes[0], ".local/bin/herdr-core") {
+		t.Errorf("probes %q, want one for herdr-core's binary in toolbox-herdr", probes)
+	}
+}
+
+// A Session Reload or start-up refresh recreates the Herdr Core Shell without
+// toolbox herdr: a running Shell whose layer lost herdr-core's binary has its
+// known machine updated, which installs it again.
+func TestHerdrRunningShellWithoutHerdrCoreBinaryUpdatesItsMachine(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: toolboxMachine})
+	ws := sessionWorkspace(t, "src")
+	var probes []string
+	newDockerClient = func() (client.APIClient, error) {
+		return hcProbeDaemon{runningOrcaDaemon: runningOrcaDaemon{workspace: ws}, missing: true, probes: &probes}, nil
+	}
+	if err := runHerdr(herdrCmd, []string{ws}); err != nil {
+		t.Fatalf("runHerdr: %v", err)
+	}
+	if want := []string{"update toolbox"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want %q", *calls, want)
 	}
 }
 
