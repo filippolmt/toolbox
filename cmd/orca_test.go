@@ -114,7 +114,7 @@ func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.Cont
 	return client.ContainerInspectResult{Container: dockercontainer.InspectResponse{
 		ID:         "orca1",
 		HostConfig: &dockercontainer.HostConfig{AutoRemove: true},
-		State: &dockercontainer.State{Running: true},
+		State:      &dockercontainer.State{Running: true},
 		Config: &dockercontainer.Config{
 			Labels: runplan.DetachedLabels(),
 			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, "TOOLBOX_HOST_WORKSPACE=" + d.workspace},
