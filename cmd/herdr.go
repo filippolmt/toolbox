@@ -153,14 +153,14 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	if err == nil {
 		// A running Shell was maybe recreated without toolbox herdr (Session
 		// Reload, start-up refresh): its layer may have lost herdr-core.
-		fresh := func() (bool, error) {
+		lacksHerdrCore := func() (bool, error) {
 			if created {
 				return true, nil
 			}
 			ok, err := herdrcore.Installed(ctx, cli, shell)
 			return !ok, err
 		}
-		err = registerHerdrMachine(machine, via, fresh)
+		err = registerHerdrMachine(machine, via, lacksHerdrCore)
 	}
 	if errors.Is(err, herdrcore.ErrNoHC) {
 		// via is a plain container name and fixed words: single quotes suffice.
@@ -180,11 +180,12 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 
 // registerHerdrMachine adds machine reached through via unless the host's
 // herdr-core already knows it on that connection. A known machine is updated
-// when fresh reports a container without herdr-core (one this run created, or
-// a recreate that lost the old container's layer); update reinstalls it.
-// --reregister removes it and adds it again. A machine of that name on another
-// connection may be the developer's own: it is refused unless --reregister.
-func registerHerdrMachine(machine, via string, fresh func() (bool, error)) error {
+// when lacksHerdrCore reports a container without herdr-core (one this run
+// created, or a recreate that lost the old container's layer); update
+// reinstalls it. --reregister removes it and adds it again. A machine of that
+// name on another connection may be the developer's own: it is refused unless
+// --reregister.
+func registerHerdrMachine(machine, via string, lacksHerdrCore func() (bool, error)) error {
 	machines, err := herdrHost.Machines()
 	if err != nil {
 		return err
@@ -201,7 +202,7 @@ func registerHerdrMachine(machine, via string, fresh func() (bool, error)) error
 				return err
 			}
 		default:
-			if missing, err := fresh(); err != nil || !missing {
+			if missing, err := lacksHerdrCore(); err != nil || !missing {
 				return err
 			}
 			return herdrHost.Update(machine)
