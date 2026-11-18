@@ -261,13 +261,17 @@ func runOrcaStop(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	cli, err := container.NewClient()
+	cli, err := newDockerClient()
 	if err != nil {
-		return err
+		return dockerClientErr(err)
 	}
 	defer cli.Close()
 	ctx, stopSig := signalCtx()
 	defer stopSig()
+	// No Orca Shell is the goal already reached: quiet, unlike `toolbox stop`.
+	if _, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); cerrdefs.IsNotFound(err) {
+		return nil
+	}
 	return container.StopByName(ctx, cli, name)
 }
 

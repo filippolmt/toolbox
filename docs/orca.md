@@ -61,7 +61,7 @@ A second `toolbox orca` on a running Orca Shell recreates nothing. It says the O
 toolbox orca stop
 ```
 
-It removes the Orca Shell, and succeeds with a warning when there is none. `toolbox stop --all` removes it too, and `toolbox list` shows it marked `(detached)`.
+It removes the Orca Shell, and succeeds quietly when there is none, so scripts can call it unconditionally. `toolbox stop --all` removes it too, and `toolbox list` shows it marked `(detached)`.
 
 To change the server version, stop first: a second `toolbox orca` joins the running Orca Shell, leaves its version as it is, and says so.
 

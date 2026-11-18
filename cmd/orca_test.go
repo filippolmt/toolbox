@@ -425,3 +425,17 @@ func TestOrcaJoinWithoutAVersionReportsTheRunningOrcaShell(t *testing.T) {
 		t.Errorf("output %q carries a version-mismatch note with no version asked", out.String())
 	}
 }
+
+// `toolbox orca stop` with no Orca Shell succeeds quietly, safe in scripts
+// (#1502 story 5); `toolbox stop <name>` keeps its "not found" warning.
+func TestOrcaStopWithoutAnOrcaShellIsQuiet(t *testing.T) {
+	orcaHarness(t, "", "")
+	var err error
+	stderr := captureCmdStderr(t, func() { err = runOrcaStop(orcaStopCmd, nil) })
+	if err != nil {
+		t.Fatalf("runOrcaStop = %v, want nil", err)
+	}
+	if strings.Contains(strings.ToLower(stderr), "not found") {
+		t.Errorf("stderr %q warns about a missing Orca Shell", stderr)
+	}
+}
