@@ -19,6 +19,8 @@ paths:
   - "internal/bridge/**"
   - "cmd/**"
   - "internal/build/assets/init.d/70-loopback-bridge.sh"
+  - "internal/build/assets/init.d/80-orca.sh"
+  - "internal/orca/**"
   - "internal/build/assets/entrypoint.sh"
 ---
 
@@ -98,6 +100,19 @@ them.
   `TestShellExitLeavesADetachedShellRunning`,
   `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)
+
+- **The Orca Shell is planned, not assembled:** `toolbox orca` reaches the
+  container through `startSession` like `shell`; `PlanInput.OrcaVersion` is
+  the only switch, and `sessionplan.Plan` derives the name, the loopback
+  publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
+  mount and `Detached` from it. No cmd-side env, port or name. Its init script
+  stays gated on `TOOLBOX_ORCA_VERSION` and never blocks the entrypoint.
+  Pinned by `TestPlanOrcaShell`, `TestPlanOrdinaryShellCarriesNoOrca`,
+  `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
+  `TestOrcaRefusesAMalformedVersionBeforePlanning`,
+  `TestOrcaInitWithoutTheGateDoesNothing` and
+  `TestOrcaInitRefusesAChecksumMismatch`. →
+  [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use

@@ -71,6 +71,7 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		RegistryMirror:    "mirror",
 		Pull:              "always",
 		MountsRoot:        "~/r",
+		OrcaWorkspace:     "~/src",
 		Bridge:            &yes,
 		BrowserBridge:     &yes,
 		Proximo:           &yes,

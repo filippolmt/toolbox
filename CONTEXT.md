@@ -2161,15 +2161,40 @@ a stop still removes it. The property follows the container, not the command
 that recreates it: an accepted start-up refresh or a
 [Session Reload](#session-reload) of a Detached Shell writes the label again,
 read off the container being replaced, even from an ordinary plan, whose
-terminal still opens. No user-facing flag sets it: its only planned caller
-is `toolbox orca`
-([#1502](https://github.com/filippolmt/toolbox/issues/1502)). Decision and
+terminal still opens. No user-facing flag sets it: its only caller is the
+[Orca Shell](#orca-shell). Decision and
 alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
 was an invariant every reader could rely on. A container that hosts a server
 breaks it on purpose, and naming the exception keeps the invariant true for
 everything else: an unmarked Shell still dies with its terminals.
+
+### Orca Shell
+
+The [Detached Shell](#detached-shell) that hosts Orca's runtime (the
+`stablyai/orca` server the Orca desktop app pairs with): one per host and
+[Profile](docs/commands.md#profiles), started by `toolbox orca`, ended by
+`toolbox orca stop`.
+
+Concretely: `sessionplan.PlanInput.OrcaVersion` set is what makes a plan the
+Orca Shell, and `sessionplan.Plan` owns everything that follows from it: the
+fixed name `toolbox-orca` or `toolbox-orca-<profile>`
+(`sessionplan.OrcaContainerName`, a hash-shaped profile suffix refused),
+`127.0.0.1:6768` published, the `TOOLBOX_ORCA_VERSION` env gate,
+`ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
+argument or `orca_workspace`, and `Detached`. The gate is read by
+`init.d/80-orca.sh`, which installs the verified server under
+`<data>/server/<version>` and starts it in the background; the host reads the
+pairing link out of `<data>/serve.log` through the state mount
+(`internal/orca.WaitPairing`). Orca's own data profile is never called a
+Profile here. Decision and alternatives:
+[ADR 0023](docs/adr/0023-orca-is-a-first-class-toolbox-command.md).
+
+Why the term exists: Orca's runtime lock admits one server per data
+directory, so the container hosting it is not "a shell for a workspace" but
+a fixed, per-Profile singleton — the name, the port and the data directory
+all follow from that one fact.
 
 ### Peer Anchor
 
