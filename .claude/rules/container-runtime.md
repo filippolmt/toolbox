@@ -93,6 +93,7 @@ them.
   `TestShellDetachedRefusesAnUnlabelledContainer`,
   `TestShellDetachedRefusesBeforeImageWork`,
   `TestShellDetachedJoinsALabelledContainer`,
+  `TestShellDetachedJoinStillWarnsOnPublishMismatch`,
   `TestShellExitLeavesADetachedShellRunning`,
   `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)

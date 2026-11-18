@@ -72,7 +72,7 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 // terminal attached to it. → CONTEXT.md, Detached Shell.
 const detachedLabel = "toolbox.detached"
 
-// detachedValue is the label's value.
+// detachedValue is shared so the writer and the readers cannot disagree.
 const detachedValue = "true"
 
 // DetachedInLabels reports whether a label set marks a Detached Shell: the

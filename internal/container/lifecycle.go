@@ -304,7 +304,9 @@ func NewClient() (client.APIClient, error) {
 // WorkingDir. When the attached shell exits the container is stopped and
 // removed — all persistent state lives on bind-mounted volumes under
 // ~/.toolbox/ (creds, shell history, caches), so nothing is lost by trashing
-// the container itself.
+// the container itself. A Detached Shell is the exception: a detached plan
+// creates and starts it without an exec and returns, and no terminal exit
+// removes it (CONTEXT.md, Detached Shell).
 //
 // State machine — dispatched by runplan.Compute on the ContainerInspect result:
 //   - ActionConnect -> exec into the running container
@@ -318,9 +320,9 @@ func NewClient() (client.APIClient, error) {
 // Image Freshness hard-requires the image be present before dispatch
 // locally — `toolbox build` is the explicit path to a local rebuild.
 //
-// Multi-session caveat: if two terminals open a shell into the same
-// workspace, both attach to the same container. When either exits the
-// container is removed and the other session dies with it.
+// Multi-session: two terminals that open a shell into the same workspace
+// attach to the same container; the first to exit leaves it running while the
+// other's exec is still attached (CONTEXT.md, Teardown).
 //
 // Reload: a non-nil first return means the attached shell asked to move onto a
 // newer image (docs/session-reload.md). Shell does not perform the re-exec —
@@ -355,16 +357,17 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// A detached plan joining an existing container gets a Detached Shell only
 	// if that container already is one: the label is fixed at create. Refused
 	// before any image work, so no refresh prompt can recreate an ordinary
-	// Shell, terminals and all, as a detached one.
-	if plan.Detached && op.Action != runplan.ActionCreate && !runplan.IsDetached(inspect) {
-		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
-	}
-	// Already up and already detached: there is nothing to refresh, build or
-	// start, and no terminal to open — only what this start asked for and
-	// the running container cannot give it.
-	if plan.Detached && op.Action == runplan.ActionConnect {
-		warnReattachMismatch(ctx, cli, plan, inspect, op)
-		return nil, nil
+	// Shell, terminals and all, as a detached one. One already up has nothing
+	// to refresh, build or start and no terminal to open — only what this
+	// start asked for and the running container cannot give it.
+	if plan.Detached && op.Action != runplan.ActionCreate {
+		if !runplan.IsDetached(inspect) {
+			return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
+		}
+		if op.Action == runplan.ActionConnect {
+			warnReattachMismatch(ctx, cli, plan, inspect, op)
+			return nil, nil
+		}
 	}
 
 	// State the observed branch to Image Freshness. It owns the synchronous
