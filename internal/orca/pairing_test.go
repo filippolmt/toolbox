@@ -185,10 +185,10 @@ func TestMacDesktopOpensTheLinkWithOpen(t *testing.T) {
 }
 
 // TestMacDesktopRefusesALinkThatIsNotOrcas: the link reaches a host command's
-// argv, so anything but a parseable orca:// URL — an option, another scheme —
+// argv, so anything but an orca:// link — an option, another scheme —
 // is refused before any command runs, without echoing it (it may carry a code).
 func TestMacDesktopRefusesALinkThatIsNotOrcas(t *testing.T) {
-	for _, link := range []string{"", "-secret", "--pairing-code=secret", "https://secret.example", "orca:secret", "orca://%zzsecret"} {
+	for _, link := range []string{"", "-secret", "--pairing-code=secret", "https://secret.example", "orca:secret", "ORCA://secret", " orca://secret"} {
 		var ran []string
 		d := fakeCLI("orca", "{}", &ran)
 		for op, call := range map[string]func() error{

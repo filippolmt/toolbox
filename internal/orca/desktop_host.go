@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -80,11 +79,11 @@ func (d MacDesktop) spotlightApps() ([]string, error) {
 	return apps, nil
 }
 
-// checkPairingURL refuses anything but a parseable orca:// URL, so the link
-// never reaches a host command as an option or another scheme's handler. The
-// error does not echo it: the link carries the pairing code.
+// checkPairingURL refuses anything but an orca:// link, so it never reaches a
+// host command as an option or another scheme's handler. The error does not
+// echo it: the link carries the pairing code.
 func checkPairingURL(link string) error {
-	if u, err := url.Parse(link); err != nil || u.Scheme != "orca" || !strings.HasPrefix(link, "orca://") {
+	if !strings.HasPrefix(link, "orca://") {
 		return errors.New("orca: the pairing link is not an orca:// URL; refusing to hand it to the Orca desktop app")
 	}
 	return nil
