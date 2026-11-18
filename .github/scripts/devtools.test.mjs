@@ -410,3 +410,32 @@ test("gates refuse to guess a base", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--base is required/);
 });
+
+test("go-version.sh derives GO_VERSION: the toolchain line, else the go line", () => {
+  const run = (gomod) => spawnSync(".github/scripts/go-version.sh", ["-"], { cwd: root, input: gomod, encoding: "utf8" });
+  const withToolchain = run("module x\n\ngo 1.26.0\n\ntoolchain go1.27.4\n");
+  assert.equal(withToolchain.status, 0, withToolchain.stderr);
+  assert.equal(withToolchain.stdout.trim(), "1.27.4");
+  const goOnly = run("module x\n\ngo 1.26.0\n");
+  assert.equal(goOnly.status, 0, goOnly.stderr);
+  assert.equal(goOnly.stdout.trim(), "1.26.0", "no toolchain line: an empty GO_VERSION would override the Dockerfile's default with nothing");
+  const none = run("module x\n");
+  assert.notEqual(none.status, 0, "a go.mod with neither line must fail, not build with an empty GO_VERSION");
+});
+
+test("every GO_VERSION build arg comes from go-version.sh", () => {
+  const makefile = readFileSync(join(root, "Makefile"), "utf8");
+  assert.match(makefile, /^GO_VERSION\s*:=\s*\$\(shell \.github\/scripts\/go-version\.sh\)/m);
+  for (const wf of ["docker-ci.yml", "docker-publish-reusable.yml"]) {
+    const src = readFileSync(join(root, ".github/workflows", wf), "utf8");
+    // An assignment, so a failing script fails the step under bash -e.
+    assert.match(src, /id: gover\n\s+run: \|\n\s+version=\$\(\.github\/scripts\/go-version\.sh\)\n\s+echo "version=\$version" >> "\$GITHUB_OUTPUT"/, wf);
+  }
+});
+
+test("make build refuses an empty GO_VERSION before reaching docker", () => {
+  const result = spawnSync("make", ["build", "GO_VERSION="], { cwd: root, env: makeEnv, encoding: "utf8" });
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /GO_VERSION is empty/);
+  assert.doesNotMatch(result.stdout, /docker buildx build/);
+});

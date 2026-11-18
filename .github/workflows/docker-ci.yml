@@ -57,6 +57,7 @@ jobs:
             docker:
               - 'internal/build/assets/**'
               - '.github/scripts/test-graphify-hooks.sh'
+              - '.github/scripts/go-version.sh'
               - '.github/fixtures/android-e2e/**'
               - '.github/workflows/docker-ci.yml'
               - 'go.mod'
@@ -69,6 +70,7 @@ jobs:
               - 'internal/build/assets/Dockerfile'
               - '.github/workflows/docker-ci.yml'
               - 'go.mod'
+              - '.github/scripts/go-version.sh'
             android_e2e:
               - 'internal/build/assets/bin/android-sdk-install.sh'
               - 'internal/build/assets/bin/android-env.sh'
@@ -127,12 +129,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Single source of truth for the Go version is go.mod's `toolchain`
-      # directive (Renovate-bumped). The buildx context is the assets subdir,
-      # so read go.mod from the repo root here and inject it as a build arg.
+      # GO_VERSION comes from go.mod through go-version.sh, the Makefile's
+      # source too. The buildx context is the assets subdir, so derive it from
+      # the repo root here and inject it as a build arg.
+      # The assignment fails the step under bash -e when the script does;
+      # inside echo's argument it would not.
       - name: Resolve Go version from go.mod
         id: gover
-        run: echo "version=$(awk '/^toolchain /{print substr($2,3)}' go.mod)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(.github/scripts/go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build image
         uses: docker/build-push-action@v7

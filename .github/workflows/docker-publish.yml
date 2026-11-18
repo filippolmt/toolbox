@@ -13,6 +13,7 @@ on:
       - 'internal/build/assets/**'
       - '.github/workflows/docker-publish.yml'
       - '.github/workflows/docker-publish-reusable.yml'
+      - '.github/scripts/go-version.sh'
   workflow_dispatch:
   # NOTE: tag-driven semver publish lives in `docker-release.yml`. Two
   # workflow files because GitHub Actions ANDs `paths:` with every push
