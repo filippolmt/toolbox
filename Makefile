@@ -130,6 +130,8 @@ COVERAGE_MIN := $(shell awk -F"'" '/^[[:space:]]+COVERAGE_MIN:/{print $$2; exit}
 
 build: ## Build the toolbox runtime image (tags: ghcr.io/filippolmt/toolbox:latest + toolbox-local:build; a linked worktree: toolbox-local:<worktree> only)
 	@echo "build tags:$(subst -t , ,$(BUILD_TAGS))"
+	@# $(shell) drops go-version.sh's exit status; an empty build arg would override the Dockerfile default.
+	@test -n "$(GO_VERSION)" || { echo "build: GO_VERSION is empty (go-version.sh's error is above)" >&2; exit 1; }
 	docker buildx build -f internal/build/assets/Dockerfile $(BUILD_TAGS) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --cache-from type=registry,ref=$(CACHE_REF)-amd64 \

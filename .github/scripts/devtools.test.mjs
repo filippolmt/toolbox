@@ -377,6 +377,14 @@ test("every GO_VERSION build arg comes from go-version.sh", () => {
   assert.match(makefile, /^GO_VERSION\s*:=\s*\$\(shell \.github\/scripts\/go-version\.sh\)/m);
   for (const wf of ["docker-ci.yml", "docker-publish-reusable.yml"]) {
     const src = readFileSync(join(root, ".github/workflows", wf), "utf8");
-    assert.match(src, /id: gover\n\s+run: echo "version=\$\(\.github\/scripts\/go-version\.sh\)" >> "\$GITHUB_OUTPUT"/, wf);
+    // An assignment, so a failing script fails the step under bash -e.
+    assert.match(src, /id: gover\n\s+run: \|\n\s+version=\$\(\.github\/scripts\/go-version\.sh\)\n\s+echo "version=\$version" >> "\$GITHUB_OUTPUT"/, wf);
   }
+});
+
+test("make build refuses an empty GO_VERSION before reaching docker", () => {
+  const result = spawnSync("make", ["build", "GO_VERSION="], { cwd: root, env: makeEnv, encoding: "utf8" });
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /GO_VERSION is empty/);
+  assert.doesNotMatch(result.stdout, /docker buildx build/);
 });
