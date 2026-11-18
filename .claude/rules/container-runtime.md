@@ -153,20 +153,27 @@ them.
 
 - **The Herdr Core Shell is planned, not assembled:** `toolbox herdr` reaches
   the container through `startSession`; `PlanInput.HerdrCore` is the only
-  switch, and `sessionplan.Plan` derives the name, the per-Profile state
-  volume bind at `sessionplan.HerdrCoreStateTarget` (never the Host Share:
-  herdr-core's sockets live there) and `Detached`. The container edge
+  switch (`HerdrAttach` only drops `Detached` for `toolbox herdr shell`), and
+  `sessionplan.Plan` derives the name, the per-Profile state volume bind at
+  `sessionplan.HerdrCoreStateTarget` (never the Host Share: herdr-core's
+  sockets live there), the workspace (`dir`, else `herdr_workspace`; `cmd`
+  hands in a running Shell's own) and `Detached`. A run on a running Shell
+  joins it without a create and reports a workspace mismatch. The container edge
   initialises the volume like the Orca data volume. The host's herdr-core is
   reached only through the `herdrcore.Host` seam, and the `--via` line only
   from `herdrcore.Via` on the planned container name: hc runs it as an sh
   line. A Shell the run created that herdr-core cannot add is removed. Pinned
   by `TestPlanHerdrCoreShell`, `TestPlanOrdinaryShellCarriesNoHerdrCore`,
   `TestPlanHerdrCoreRefusesHashShapedProfile`,
-  `TestPlanHerdrCoreWorkspaceRefusals`,
+  `TestPlanHerdrCoreWorkspace`, `TestPlanHerdrCoreWorkspaceRefusals`,
   `TestShellHerdrCoreShellInitialisesItsStateVolumeBeforeCreate`,
   `TestViaIsBuiltFromTheContainerName`, `TestCLIReportsAMissingHCDistinctly`,
   `TestHerdrStartsTheHerdrCoreShellAndAddsItsMachine`,
-  `TestHerdrRemovesANewShellWhoseMachineAddFailed` and
+  `TestHerdrRemovesANewShellWhoseMachineAddFailed`,
+  `TestHerdrJoinsARunningShellOnItsWorkspace`,
+  `TestHerdrJoinReportsAWorkspaceMismatch`,
+  `TestHerdrShellReentersTheRunningShell`,
+  `TestHerdrShellWithoutAShellPointsAtToolboxHerdr` and
   `TestHerdrStopWithoutAHerdrCoreShellIsQuiet`. →
   [Herdr Core Shell](../../CONTEXT.md#herdr-core-shell)
 

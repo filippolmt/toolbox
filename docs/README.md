@@ -16,7 +16,7 @@ sections.** Every `##` of a linked guide needs an entry
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
 | [orca.md](orca.md) | how-to | Orca's runtime in a detached Orca Shell: start, pair, a terminal in it, stop, profiles, port, log, offline, side effects, the dropped Claude Code plugin |
-| [herdr.md](herdr.md) | how-to | The Herdr desktop app's agents in a detached Herdr Core Shell: start, stop, profiles, trust boundary, recreate, removing the machine |
+| [herdr.md](herdr.md) | how-to | The Herdr desktop app's agents in a detached Herdr Core Shell: start, terminal, run again, stop, profiles, trust boundary, recreate, removing the machine |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
@@ -137,6 +137,8 @@ sections.** Every `##` of a linked guide needs an entry
 ## herdr.md
 
 - [Start](herdr.md#start)
+- [Open a terminal in it](herdr.md#open-a-terminal-in-it)
+- [Run it again](herdr.md#run-it-again)
 - [Stop](herdr.md#stop)
 - [Profiles](herdr.md#profiles)
 - [Trust boundary](herdr.md#trust-boundary)

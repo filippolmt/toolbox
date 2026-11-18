@@ -10,7 +10,14 @@ Install herdr-core on the host first (herdr.app ships it, or see [herdr.dev/core
 toolbox herdr ~/src
 ```
 
-The directory is the workspace the app's spaces can reach. It must exist and must not be your home itself: the Shell would otherwise mount the whole home.
+The directory is the workspace the app's spaces can reach. To skip it on every start, set it once:
+
+```yaml
+# ~/.toolbox.yaml
+herdr_workspace: ~/src
+```
+
+A `dir` argument overrides `herdr_workspace` when it starts a Herdr Core Shell. With neither, the command joins a running Herdr Core Shell on its own workspace ([run it again](#run-it-again)); with none running, it fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Shell would otherwise mount the whole home.
 
 The command starts the Herdr Core Shell (`toolbox-herdr`) and adds it to the host's herdr-core as the machine `toolbox`:
 
@@ -23,6 +30,18 @@ herdr-core installs its own `hc` in the container, at the host's version, checke
 When herdr-core cannot add the machine on a Shell the command just created, the Shell is removed and herdr-core's reason is the error.
 
 The Herdr TUI (`herdr` in a toolbox shell) is unaffected: the two runtimes coexist and do not see each other's terminals.
+
+## Open a terminal in it
+
+```sh
+toolbox herdr shell
+```
+
+It attaches a terminal to the running Herdr Core Shell, on its workspace; `exit` leaves herdr-core running. With no Herdr Core Shell running it fails and tells you to start one with `toolbox herdr`. A [session reload](session-reload.md) from that terminal re-enters `toolbox herdr shell`.
+
+## Run it again
+
+A second `toolbox herdr` on a running Herdr Core Shell creates nothing: it says the Shell is already running and on which workspace. With no `dir` argument and no `herdr_workspace`, that workspace stands in. A `dir` argument or `herdr_workspace` that differs from it is not applied: the Shell keeps its own, and the report says so; `toolbox herdr stop` first to mount another.
 
 ## Stop
 

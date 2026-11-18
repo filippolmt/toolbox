@@ -2251,8 +2251,12 @@ herdr-core's state on the Shell's own named volume
 (`SessionPlan.HerdrDataVolume`: `toolbox-herdr-data` or
 `toolbox-herdr-data-<profile>`, mounted at `sessionplan.HerdrCoreStateTarget`,
 created and initialised like the Orca data volume, surviving
-`toolbox herdr stop`), the workspace from the `dir` argument (the Orca Shell's
-check), and `Detached`. After the create, `toolbox herdr` registers the Shell
+`toolbox herdr stop`), the workspace from the `dir` argument, else
+`herdr_workspace`, else the running Shell's own (the Orca Shell's check), and
+`Detached` unless `PlanInput.HerdrAttach` asks for a terminal
+(`toolbox herdr shell`). A `toolbox herdr` on a running Shell joins it: no
+create, its workspace reported, a different one requested reported as a
+mismatch. After the create, `toolbox herdr` registers the Shell
 with the host's herdr-core through the `herdrcore.Host` seam (adapter
 `herdrcore.CLI`) as the machine `toolbox` or `toolbox-<profile>`
 (`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
