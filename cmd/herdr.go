@@ -71,7 +71,8 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 }
 
 // addHerdrMachine registers the Herdr Core Shell called shell with the host's
-// herdr-core. A Shell this run created and herdr-core cannot reach is removed:
+// herdr-core, or prints how to once the host has hc. A Shell this run created
+// and herdr-core cannot register is removed:
 // left running, it would be a detached container nothing uses.
 func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, cmd *cobra.Command) error {
 	machine := herdrcore.MachineName(shell)
@@ -79,8 +80,13 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	if err == nil {
 		err = registerHerdrMachine(machine, via, created)
 	}
+	if errors.Is(err, herdrcore.ErrNoHC) {
+		// via is a plain container name and fixed words: single quotes suffice.
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "The Herdr Core Shell %s is up, but this host has no hc (herdr-core) on its PATH. Once herdr-core is installed, register it with:\n  hc machine add --name %s --install --via '%s'\n", shell, machine, via)
+		return nil
+	}
 	if err != nil {
-		err = fmt.Errorf("herdr-core could not add the machine %s: %w", machine, err)
+		err = fmt.Errorf("herdr-core could not register the machine %s: %w", machine, err)
 		if created {
 			return errors.Join(err, container.StopByName(ctx, cli, shell))
 		}
