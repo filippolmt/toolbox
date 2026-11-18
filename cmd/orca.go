@@ -21,6 +21,10 @@ var orcaProfile string
 var orcaShare []string
 var orcaStopProfile string
 
+// orcaDesktop is the Orca desktop app runOrca takes the server version from
+// when --version is unset; tests swap it.
+var orcaDesktop = orca.HostDesktop()
+
 // orcaReadyTimeout bounds the wait for the pairing link: a first start
 // downloads the server before it runs.
 const orcaReadyTimeout = 3 * time.Minute
@@ -29,14 +33,14 @@ var orcaCmd = &cobra.Command{
 	Use:   "orca [dir]",
 	Short: "Start Orca's runtime in a detached Orca Shell and print the pairing link",
 	Long: `Start the Orca Shell: a detached toolbox container that runs the Orca
-server (stablyai/orca) at the version --version names, published on host
-127.0.0.1:` + sessionplan.OrcaPort + `. The command returns once the server is ready and
+server (stablyai/orca) at the Orca desktop app's version (--version
+overrides it), published on host 127.0.0.1:` + sessionplan.OrcaPort + `. The command returns once the server is ready and
 prints the link to paste into the Orca desktop app (Settings → Remote Orca
 Servers → Add Server). The runtime keeps running until 'toolbox orca stop'.
 
 The workspace is the absolute dir argument, or the orca_workspace config key.
-One Orca Shell per host and --profile. A different --version needs
-'toolbox orca stop' first. See docs/orca.md.`,
+One Orca Shell per host and --profile. A different server version
+needs 'toolbox orca stop' first. See docs/orca.md.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runOrca,
 }
@@ -52,7 +56,7 @@ var orcaStopCmd = &cobra.Command{
 // Shell through startSession like `shell` does; the session plan makes it the
 // Orca Shell.
 func runOrca(cmd *cobra.Command, args []string) error {
-	version, err := orca.NormalizeVersion(orcaVersion)
+	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
 	if err != nil {
 		return &usageError{err: err}
 	}
@@ -124,8 +128,7 @@ func runOrcaStop(cmd *cobra.Command, _ []string) error {
 
 func init() {
 	orcaCmd.Flags().StringVar(&orcaVersion, "version", "",
-		"Orca server release to run (e.g. 1.4.262); match your desktop app's version")
-	_ = orcaCmd.MarkFlagRequired("version")
+		"Orca server release to run (e.g. 1.4.262); default: the installed Orca desktop app's version")
 	orcaCmd.Flags().StringVar(&orcaProfile, "profile", "",
 		"run the Orca Shell under this toolbox profile (its own credentials and Orca data)")
 	orcaCmd.Flags().StringSliceVar(&orcaShare, "share", nil,
