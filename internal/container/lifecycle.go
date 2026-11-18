@@ -769,9 +769,12 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	pidMode, planBinds := ensurePeerRuntime(ctx, cli, plan)
 
 	// Unlike peer messaging, no degrade: an Orca Shell without a writable data
-	// directory starts no server.
-	if plan.OrcaDataVolume != "" {
-		if err := ensureOwnedVolume(ctx, cli, plan.Image, orcaDataVolume(plan)); err != nil {
+	// directory starts no server, a Herdr Core Shell no herdr-core.
+	for _, v := range []ownedVolume{orcaDataVolume(plan), herdrDataVolume(plan)} {
+		if v.name == "" {
+			continue
+		}
+		if err := ensureOwnedVolume(ctx, cli, plan.Image, v); err != nil {
 			return "", err
 		}
 	}
