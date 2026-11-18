@@ -348,7 +348,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
-		Detached:          orca && !in.OrcaAttach,
+		Detached:          orcaDetached(in),
 	}, nil
 }
 

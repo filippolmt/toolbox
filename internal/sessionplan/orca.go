@@ -56,6 +56,11 @@ func orcaWorkspace(in PlanInput) (string, error) {
 	return in.Host.Expand(in.Cfg.OrcaWorkspace), nil
 }
 
+// orcaDetached: the Orca Shell starts detached unless a terminal asked for it.
+func orcaDetached(in PlanInput) bool {
+	return in.OrcaVersion != "" && !in.OrcaAttach
+}
+
 // orcaEnv is the gate plus Orca's data directory on the state mount.
 func orcaEnv(version string) []string {
 	return []string{
