@@ -15,7 +15,8 @@ import (
 // Profile. → CONTEXT.md, Orca Shell.
 const (
 	// OrcaPort is the port Orca's server listens on in the container and the
-	// one published on host loopback.
+	// one published on host loopback. init.d/80-orca.sh repeats it as
+	// --port; TestOrcaInitInstallsVerifiesAndStarts holds the two equal.
 	OrcaPort = "6768"
 	// OrcaVersionEnv is the env gate the init script reads: only the Orca
 	// Shell carries it, and its value is the release tag to run.

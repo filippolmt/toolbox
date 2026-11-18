@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/orca"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // The Orca Shell's init script, run as the image ships it with a stubbed
@@ -161,7 +162,7 @@ func TestOrcaInitInstallsVerifiesAndStarts(t *testing.T) {
 				t.Errorf("current -> %q (%v), want v1.4.262", link, err)
 			}
 			served := readFile(t, filepath.Join(data, "served"))
-			for _, want := range []string{"orca-ide serve", "--port 6768", "--bind 0.0.0.0", "--pairing-address 127.0.0.1", "--json"} {
+			for _, want := range []string{"orca-ide serve", "--port " + sessionplan.OrcaPort, "--bind 0.0.0.0", "--pairing-address 127.0.0.1", "--json"} {
 				if !strings.Contains(served, want) {
 					t.Errorf("server argv %q lacks %q", served, want)
 				}

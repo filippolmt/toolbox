@@ -129,5 +129,6 @@ fi
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,
-# where the session plan publishes the port. Not exec'd: on_exit logs its end.
+# where the session plan publishes the port (sessionplan.OrcaPort, which the
+# build test holds equal to --port). Not exec'd: on_exit logs its end.
 "$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json
