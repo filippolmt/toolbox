@@ -79,9 +79,7 @@ Orca's data lives on a Docker volume, `toolbox-orca-data` (`toolbox-orca-data-<p
 
 - `server/<version>/` — the cached server, and `server/current`, the one that runs. Installing a version removes the cached versions older than it, so upgrades leave one server; after a downgrade the newer version stays cached for the next upgrade. A checksum mismatch leaves `current` where it was.
 
-The server log stays on the state mount, where toolbox reads it: `~/.toolbox/toolbox/state/orca/serve.log` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`).
-
-- `serve.log` — what the installer and the server printed, with a `toolbox: orca: server stopped with status <n>` line when a start ends. When `toolbox orca` times out waiting for the server, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
+The server log, `serve.log`, is the only Orca file on the state mount, where toolbox reads it: `~/.toolbox/toolbox/state/orca/serve.log` on the host (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`). It holds what the installer and the server printed, with a `toolbox: orca: server stopped with status <n>` line when a start ends. When `toolbox orca` times out waiting for the server, the error names this file; the Orca Shell keeps running so you can read it. A crashed server is not restarted: `toolbox orca stop`, then start again.
 
 ## Offline
 
@@ -101,7 +99,9 @@ Orca's runtime writes into the agent config every toolbox shell shares under `~/
 - **A Claude Code keybinding**, `ctrl+alt+g`, in `~/.claude/keybindings.json`.
 - **Credentials stored unencrypted** under Orca's data directory: the headless server has no keyring.
 
-To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox/.claude/settings.json` and `~/.toolbox/.claude/keybindings.json`, the Codex, Gemini and Antigravity hook config under `~/.toolbox`, and run `docker volume rm toolbox-orca-data` (`toolbox-orca-data-<profile>` per profile) to drop Orca's data and credentials. `~/.toolbox/toolbox/state/orca` then holds only `serve.log`; a `server/` directory beside it is left from a toolbox that kept Orca's data there, and can be deleted.
+To undo them, stop the Orca Shell, then remove the Orca entries from `~/.toolbox/.claude/settings.json` and `~/.toolbox/.claude/keybindings.json`, the Codex, Gemini and Antigravity hook config under `~/.toolbox`, and run `docker volume rm toolbox-orca-data` (`toolbox-orca-data-<profile>` per profile) to drop Orca's data and credentials.
+
+`~/.toolbox/toolbox/state/orca` should hold only `serve.log`. Anything else there (`server/`, Orca's old identity and its unencrypted credentials) is left from a toolbox that kept Orca's data on the state mount: stop the Orca Shell and delete the whole directory. An Orca Shell created by that toolbox keeps using the old directory until `toolbox orca stop` and `toolbox orca`; the desktop app then pairs again, since nothing is migrated to the volume.
 
 ## Troubleshooting
 

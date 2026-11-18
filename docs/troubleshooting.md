@@ -207,7 +207,7 @@ The next launch records the directory it started from. Note that this clears a s
 
 **Cause:** the Orca Shell was created by a toolbox that kept Orca's data directory on the state mount. Orca creates its sockets there, and Docker Desktop's host file sharing refuses to `chmod` a socket.
 
-**Fix:** `toolbox orca stop`, then `toolbox orca`: the new Orca Shell keeps its data on the `toolbox-orca-data` volume. The desktop app pairs again, since the old pairing identity stayed in the old directory. See [port and log](orca.md#port-and-log).
+**Fix:** `toolbox orca stop`, then `toolbox orca`: the new Orca Shell keeps its data on the `toolbox-orca-data` volume. The desktop app pairs again: nothing is migrated, so the old pairing identity stays behind. The old `~/.toolbox/toolbox/state/orca` may still hold that identity and Orca's unencrypted credentials besides `server/`; with the Orca Shell stopped, it is safe to delete whole. See [port and log](orca.md#port-and-log) and [what Orca changes in your toolbox config](orca.md#what-orca-changes-in-your-toolbox-config).
 
 ## Orca pairing is unavailable
 
