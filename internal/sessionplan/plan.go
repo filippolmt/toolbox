@@ -266,26 +266,9 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
 	orca := in.OrcaVersion != ""
-	var orcaN singletonNameSet
-	if orca {
-		var err error
-		if orcaN, err = orcaNames(in.Profile); err != nil {
-			return nil, err
-		}
-		if in.Workspace, err = orcaWorkspace(in); err != nil {
-			return nil, err
-		}
-		in.Ports = append(slices.Clone(in.Ports), defaultHostIP.String()+":"+OrcaPort+":"+OrcaPort)
-	}
-	var herdrN singletonNameSet
-	if in.HerdrCore {
-		var err error
-		if herdrN, err = herdrCoreNames(in.Profile); err != nil {
-			return nil, err
-		}
-		if in.Workspace, err = herdrCoreWorkspace(in); err != nil {
-			return nil, err
-		}
+	orcaN, herdrN, err := singletonInputs(&in)
+	if err != nil {
+		return nil, err
 	}
 	workspace := normalizeWorkspace(in.Workspace)
 

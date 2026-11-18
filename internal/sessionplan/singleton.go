@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
@@ -69,4 +70,26 @@ func singletonWorkspace(in PlanInput, command, key, configured, shell string) (s
 		return "", fmt.Errorf("%s workspace %s is the home directory: it would mount the whole host home into %s; name the directory that holds your repositories", command, ws, shell)
 	}
 	return ws, nil
+}
+
+// singletonInputs resolves what an Orca or Herdr Core Shell input fixes before
+// the Mount Plan: its names, its workspace, and the Orca Shell's port. Zero
+// name sets for an ordinary session.
+func singletonInputs(in *PlanInput) (orcaN, herdrN singletonNameSet, err error) {
+	if in.OrcaVersion != "" {
+		if orcaN, err = orcaNames(in.Profile); err != nil {
+			return orcaN, herdrN, err
+		}
+		if in.Workspace, err = orcaWorkspace(*in); err != nil {
+			return orcaN, herdrN, err
+		}
+		in.Ports = append(slices.Clone(in.Ports), defaultHostIP.String()+":"+OrcaPort+":"+OrcaPort)
+	}
+	if in.HerdrCore {
+		if herdrN, err = herdrCoreNames(in.Profile); err != nil {
+			return orcaN, herdrN, err
+		}
+		in.Workspace, err = herdrCoreWorkspace(*in)
+	}
+	return orcaN, herdrN, err
 }
