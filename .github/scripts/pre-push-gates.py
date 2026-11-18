@@ -44,6 +44,45 @@ def dockergate_pkg(p):
     return matches(p, DAEMON_PATHS)
 
 
+def docker_ci_trigger(p):
+    """A path in docker-ci's filter beyond the daemon-gated Go: docker-ci
+    builds and smoke-tests the image for it."""
+    return matches(p, DOCKER_PATHS) and not dockergate_pkg(p)
+
+
+# What `make build` reads: the build context, and the GO_VERSION build arg
+# derived from go.mod. Only these leave the default image stale.
+BUILD_CONTEXT = "internal/build/assets/"
+
+
+def go_version(gomod):
+    """GO_VERSION as the Makefile's awk derives it: the last toolchain line
+    without its "go" prefix, else the first go line. None for no go.mod."""
+    if gomod is None:
+        return None
+    toolchain = go = None
+    for line in gomod.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        if fields[0] == "toolchain":
+            toolchain = fields[1].removeprefix("go")
+        elif fields[0] == "go" and go is None:
+            go = fields[1]
+    return toolchain or go
+
+
+def image_stale(paths, go_versions=None):
+    """Whether the change touches what `make build` reads. go_versions is
+    GO_VERSION (before, after); None (no git to read it) counts any go.mod
+    change."""
+    if any(p.startswith(BUILD_CONTEXT) for p in paths):
+        return True
+    if "go.mod" not in paths:
+        return False
+    return go_versions is None or go_versions[0] != go_versions[1]
+
+
 def renovate_pin():
     m = re.search(r"RENOVATE_VERSION:\s*['\"]?([^'\"\s]+)", (ROOT / ".github/workflows/ci.yml").read_text())
     return m.group(1) if m else "<RENOVATE_VERSION from ci.yml>"
@@ -54,6 +93,8 @@ class Gate(NamedTuple):
     command: str
     ci: str
     note: str = ""
+    # Printed instead of note when nothing `make build` reads changed.
+    fresh_note: str = ""
 
 
 # Every row is checked against every path; a command two rows name prints once.
@@ -63,11 +104,12 @@ ROWS = [
      "make go-check", "ci.yml (coverage-enforced test + lint)"),
     Gate(lambda p: p.startswith(".pi/"),
      "make check-agent", "ci.yml (lint)"),
-    Gate(lambda p: matches(p, DOCKER_PATHS) and not dockergate_pkg(p),
+    Gate(docker_ci_trigger,
      "make test", "docker-ci.yml (build + smoke)"),
     Gate(dockergate_pkg,
      "make go-dockergate", "docker-ci.yml (build + smoke + real-daemon gates)",
-     "against the intended runtime image: after `make build`, pass FULL=<the tag it printed> (toolbox-local:build; a worktree: toolbox-local:<worktree>)"),
+     "against the intended runtime image: after `make build`, pass FULL=<the tag it printed> (toolbox-local:build; a worktree: toolbox-local:<worktree>)",
+     "nothing `make build` reads changed: the default image serves, no build needed"),
     Gate(lambda p: p == "renovate.json",
      f"npx --yes --package renovate@{renovate_pin()} renovate-config-validator renovate.json",
      "ci.yml (renovate-validate)", "pinned: unpinned `latest` has shipped an unfetchable tarball before"),
@@ -113,12 +155,25 @@ def touched(repo, base):
     return sorted(set(paths))
 
 
-def gates(paths):
+def go_versions(repo, base):
+    """GO_VERSION at the merge-base with base and in the working tree, the
+    same two ends touched() diffs."""
+    r = subprocess.run(["git", "-C", str(repo), "merge-base", base, "HEAD"], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"pre-push-gates: git merge-base {base} HEAD: {r.stderr.strip()}")
+    old = subprocess.run(["git", "-C", str(repo), "show", f"{r.stdout.strip()}:go.mod"], capture_output=True, text=True)
+    new = Path(repo, "go.mod")
+    return (go_version(old.stdout if old.returncode == 0 else None),
+            go_version(new.read_text() if new.exists() else None))
+
+
+def gates(paths, stale=True):
     found = {}
     for row in ROWS:
         hits = [p for p in paths if row.matches(p)]
         if hits:
-            entry = found.setdefault(row.command, {"ci": row.ci, "note": row.note, "paths": []})
+            note = row.fresh_note if row.fresh_note and not stale else row.note
+            entry = found.setdefault(row.command, {"ci": row.ci, "note": note, "paths": []})
             entry["paths"] += [p for p in hits if p not in entry["paths"]]
     return found
 
@@ -132,11 +187,13 @@ def main():
     args = ap.parse_args()
     if args.files == "-":
         paths = sorted({line.strip() for line in sys.stdin if line.strip()})
+        stale = image_stale(paths)
     elif args.base:
         paths = touched(args.repo, args.base)
+        stale = image_stale(paths, go_versions(args.repo, args.base) if "go.mod" in paths else None)
     else:
         ap.error("--base is required unless --files - is given")
-    found = gates(paths)
+    found = gates(paths, stale)
     if not found:
         print("no gate in the table matches the touched paths")
         return

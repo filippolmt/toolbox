@@ -36,3 +36,17 @@ exception written on one route only makes the routes drift apart while the
 docs still call them the same, and a sweep test over the other route then pins
 the drift as intended. Review a change to either route by naming its sibling
 and checking the exception reaches both.
+
+## A wait on container-side work carries its own deadline
+
+A Docker call that waits for something inside a container — an exec, a
+probe, a container wait — bounds itself with a timeout of its own rather than
+trusting the caller's context to carry one. Review each new wait by naming the
+deadline that ends it.
+
+## Removing host state the command did not create is opt-in
+
+A command that would delete or replace something the user may own on the
+host — a registered machine, a volume, a config entry — refuses by default,
+names what it found and the flag that replaces it, and acts only under that
+flag. Review each remove call by asking who created the thing it removes.

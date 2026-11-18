@@ -327,6 +327,57 @@ test("gates follow docker-ci's image filter: daemon packages get the gate, the r
   assert.doesNotMatch(outside, /^make (test|go-dockergate)$/m, outside);
 });
 
+test("the real-daemon gate asks for a fresh image only when the image changed", () => {
+  const goOnly = gatesFor(["internal/sessionplan/x.go"]);
+  assert.match(goOnly, /nothing `make build` reads changed: the default image serves/, goOnly);
+  assert.doesNotMatch(goOnly, /after `make build`/, goOnly);
+  // --files cannot read go.mod's diff, so it counts as changed.
+  for (const input of ["internal/build/assets/Dockerfile", "go.mod"]) {
+    const withImage = gatesFor(["internal/sessionplan/x.go", input]);
+    assert.match(withImage, /after `make build`, pass FULL=/, `${input}: ${withImage}`);
+  }
+  const triggerOnly = gatesFor(["internal/sessionplan/x.go", ".github/workflows/docker-ci.yml"]);
+  assert.match(triggerOnly, /the default image serves/, triggerOnly);
+});
+
+test("a go.mod change asks for a fresh image only when GO_VERSION moved", () => {
+  const repo = mkdtempSync(join(tmpdir(), "gates-gomod-"));
+  try {
+    const git = (...args) => {
+      const r = spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+    };
+    const gomod = (toolchain, dep, go = "1.26.0") => `module x\n\ngo ${go}\n\ntoolchain go${toolchain}\n\nrequire example.com/dep ${dep}\n`;
+    git("init", "-q", "-b", "main");
+    mkdirSync(join(repo, "internal/sessionplan"), { recursive: true });
+    writeFileSync(join(repo, "internal/sessionplan/x.go"), "package x\n");
+    writeFileSync(join(repo, "go.mod"), gomod("1.26.1", "v1.0.0"));
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    git("switch", "-q", "-c", "fix/x");
+    writeFileSync(join(repo, "internal/sessionplan/x.go"), "package x // changed\n");
+    const run = () => spawnSync("python3", [".github/scripts/pre-push-gates.py", "--repo", repo, "--base", "main"], { cwd: root, encoding: "utf8" });
+
+    writeFileSync(join(repo, "go.mod"), gomod("1.26.1", "v1.1.0"));
+    const requireOnly = run();
+    assert.equal(requireOnly.status, 0, requireOnly.stderr);
+    assert.match(requireOnly.stdout, /the default image serves/, `a require bump leaves the image as it is:\n${requireOnly.stdout}`);
+
+    // GO_VERSION is the toolchain line when there is one (Makefile, docker-ci).
+    writeFileSync(join(repo, "go.mod"), gomod("1.26.1", "v1.0.0", "1.26.1"));
+    const goOnly = run();
+    assert.equal(goOnly.status, 0, goOnly.stderr);
+    assert.match(goOnly.stdout, /the default image serves/, `a go bump under a toolchain leaves GO_VERSION as it is:\n${goOnly.stdout}`);
+
+    writeFileSync(join(repo, "go.mod"), gomod("1.26.2", "v1.0.0"));
+    const toolchain = run();
+    assert.equal(toolchain.status, 0, toolchain.stderr);
+    assert.match(toolchain.stdout, /after `make build`, pass FULL=/, `a toolchain move is the GO_VERSION build arg:\n${toolchain.stdout}`);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("gates read renames, non-ASCII paths and untracked files from git", () => {
   const repo = mkdtempSync(join(tmpdir(), "gates-"));
   try {

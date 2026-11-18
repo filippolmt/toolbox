@@ -200,6 +200,13 @@ them.
   `TestShellPassesPlanHostname`, teardown tests and
   `TestInfoAsyncfReturnsTheCarriage`.
 
+- **Every flag is named in `docs/commands.md`:** under its command's
+  `## toolbox <cmd>` section, in that section's flag table when it has one, a
+  subcommand's on a line naming the subcommand or in a
+  `### toolbox <cmd> <sub>` table. Pinned by
+  `TestCommandsDocFlagTablesMatchTheirCommand` and
+  `TestCommandsDocMentionsEveryFlag`. → [commands](../../docs/commands.md)
+
 ## Image lifecycle
 
 - **One freshness seam:** `internal/container` states create, stopped, running,
@@ -267,7 +274,8 @@ them.
 
 - **Declared Docker surface:** daemon-using leaf packages declare narrow,
   unexported interfaces. `internal/container` keeps the
-  full client because it hands it onward. Keep container seam vars as wrappers,
+  full client because it hands it onward, and only `cmd/` imports it (depguard
+  `container-edge` in `.golangci.yml`). Keep container seam vars as wrappers,
   and never make `dockertest.Fake` satisfy the full client accidentally. Pinned
   by `TestFakeIsNotAnAPIClient` and `TestFakeZeroValueRefusesEveryCall`. The
   overlay builder follows [image-build rules](image-build.md).

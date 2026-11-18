@@ -288,11 +288,27 @@ For `mounts`, the structured editor covers the common operation (disable a defau
 
 ## toolbox mounts
 
-Edit the `mounts:` list / `mounts_root:` key without hand-editing YAML. Subcommands: `list [--defaults-only]`, `add <name> --source --target [--readonly]`, `disable <name>`, `remove <name>`, `root <path>` (empty path resets the key) — the writers all accept [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [mounts](mounts.md#mounts-cli).
+Edit the `mounts:` list / `mounts_root:` key without hand-editing YAML. The writers take [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [mounts](mounts.md#mounts-cli).
+
+| Subcommand | Description |
+|------------|-------------|
+| `list [--defaults-only]` | List the effective mount set, each entry classified against the defaults. |
+| `add <name> --source <host-path> --target <container-path> [--readonly] [--where] [--dry-run]` | Add a mount entry, or replace the default of that name. |
+| `disable <name> [--where] [--dry-run]` | Disable a mount by name. |
+| `remove <name> [--where] [--dry-run]` | Remove a user mount entry. |
+| `root <path> [--where] [--dry-run]` | Set `mounts_root`, retargeting the default mount sources (empty path resets the key). |
 
 ## toolbox shells
 
-Manage named shell shortcuts (the `shells:` block). Subcommands: `list`, `get <name>`, `add <name> --path [--create-dir] [--env K=V]`, `set <name> --env K=V`, `remove <name> [--purge-dir]` — the writers all accept [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [shells](shells.md).
+Manage named shell shortcuts (the `shells:` block). The writers take [`--where`](#--where-targeting) and [`--dry-run`](#dry-runs). Full semantics: [shells](shells.md).
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List the configured named shells. |
+| `get <name>` | Show one named shell's resolved entry. |
+| `add <name> --path <dir> [--create-dir] [--env K=V …] [--where] [--dry-run]` | Add (or replace) a named shell. |
+| `set <name> --env K=V […] [--where] [--dry-run]` | Set env overlay keys on a named shell. |
+| `remove <name> [--purge-dir] [--where] [--dry-run]` | Remove a named shell entry; `--purge-dir` also removes its directory. |
 
 ## toolbox bridge
 
