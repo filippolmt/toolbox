@@ -37,9 +37,10 @@ through 'docker exec' rather than ssh; herdr-core installs its own hc in the
 container. Spaces on that machine run their terminals and agents in the
 container until 'toolbox herdr stop'. A re-run leaves a known machine alone,
 or updates it when the container has no hc (one the run created, or one a
-Session Reload recreated); a same-name machine on another connection, or
---reregister, is removed and added again. Without hc on the host, the Shell
-starts and the hc machine add command to run later is printed.
+Session Reload recreated); --reregister removes and adds it again. A machine
+of that name on another connection is refused unless --reregister. Without hc
+on the host, the Shell starts and the hc machine add command to run later is
+printed.
 
 The workspace is the absolute dir argument, or the herdr_workspace config key,
 or else the running Herdr Core Shell's. One Herdr Core Shell per host and
@@ -180,8 +181,9 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 // registerHerdrMachine adds machine reached through via unless the host's
 // herdr-core already knows it on that connection. A known machine is updated
 // when fresh reports a container without herdr-core (one this run created, or
-// a recreate that lost the old container's layer); update reinstalls it. --reregister, or a machine of that name on
-// another connection, removes it and adds it again.
+// a recreate that lost the old container's layer); update reinstalls it.
+// --reregister removes it and adds it again. A machine of that name on another
+// connection may be the developer's own: it is refused unless --reregister.
 func registerHerdrMachine(machine, via string, fresh func() (bool, error)) error {
 	machines, err := herdrHost.Machines()
 	if err != nil {
@@ -191,7 +193,10 @@ func registerHerdrMachine(machine, via string, fresh func() (bool, error)) error
 		// hc lists a --via machine's target as the --via command verbatim.
 		same := machines[i].Via && machines[i].Target == via
 		switch {
-		case herdrReregister || !same:
+		case !same && !herdrReregister:
+			return fmt.Errorf("the host's herdr-core already has a machine %s reached through %q, not this Shell; "+
+				"to replace it, run toolbox herdr --reregister", machine, machines[i].Target)
+		case herdrReregister:
 			if err := herdrHost.Remove(machine); err != nil {
 				return err
 			}

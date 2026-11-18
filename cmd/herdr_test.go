@@ -234,12 +234,50 @@ func TestHerdrReregisterRemovesAndAddsTheMachine(t *testing.T) {
 	}
 }
 
-// herdr-core lists a --via machine's target as the --via command verbatim: a
-// machine called toolbox that reaches anything else is not this Shell's, and is
-// removed and added again on the Shell's own connection.
-func TestHerdrReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
-	other := []herdrcore.Machine{{Name: "toolbox", Target: "ssh devbox", Via: false}}
-	_, calls := herdrHarness(t, fakeHerdrCore{machines: other})
+// otherToolboxMachine is a machine called toolbox that herdr-core reaches
+// some other way: hc lists a --via machine's target as the --via command
+// verbatim, so this one is not the Herdr Core Shell's.
+var otherToolboxMachine = []herdrcore.Machine{{Name: "toolbox", Target: "ssh devbox", Via: false}}
+
+// A machine of the Shell's name on another connection may be the developer's
+// own: without --reregister it is refused, named with its target, untouched.
+func TestHerdrRefusesASameNameMachineOnAnotherConnection(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: otherToolboxMachine})
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
+	err := runHerdr(herdrCmd, []string{ws})
+	if err == nil {
+		t.Fatal("runHerdr = nil, want a refusal")
+	}
+	for _, want := range []string{"toolbox", "ssh devbox", "--reregister"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if want := []string{"ls"}; !slices.Equal(*calls, want) {
+		t.Errorf("herdr-core calls %q, want only the listing: no rm or add", *calls)
+	}
+}
+
+// The refusal on a Shell this run created removes it, like a failed add: no
+// unusable detached container is left.
+func TestHerdrRefusalRemovesANewShell(t *testing.T) {
+	herdrHarness(t, fakeHerdrCore{machines: otherToolboxMachine})
+	var stopped []string
+	newDockerClient = func() (client.APIClient, error) {
+		return stoppingDaemon{APIClient: orcaDaemon{}, stopped: &stopped}, nil
+	}
+	if err := runHerdr(herdrCmd, []string{sessionWorkspace(t, "src")}); err == nil || !strings.Contains(err.Error(), "--reregister") {
+		t.Fatalf("runHerdr = %v, want the refusal naming --reregister", err)
+	}
+	if got := strings.Join(stopped, ", "); got != "stop toolbox-herdr, remove toolbox-herdr" {
+		t.Errorf("daemon calls %q, want toolbox-herdr stopped and removed", got)
+	}
+}
+
+func TestHerdrReregisterReplacesASameNameMachineOnAnotherConnection(t *testing.T) {
+	_, calls := herdrHarness(t, fakeHerdrCore{machines: otherToolboxMachine})
+	herdrReregister = true
 	ws := sessionWorkspace(t, "src")
 	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: ws}, nil }
 	if err := runHerdr(herdrCmd, []string{ws}); err != nil {

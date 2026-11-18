@@ -165,10 +165,11 @@ them.
   line. A known machine on the Shell's `--via` line is left alone on a
   running Shell that still holds herdr-core's binary, updated on a container
   the run created or one that lost the binary (its `hc` was in the old
-  writable layer), removed and added under `--reregister` or when it is on
-  another connection; without `hc` the Shell stays and the add
-  command is printed. A Shell the run created that herdr-core cannot register
-  is removed. Pinned
+  writable layer), removed and added under `--reregister`. A machine of that
+  name on another connection is refused (named with its target and
+  `--reregister`) and left untouched unless `--reregister`. Without `hc` the
+  Shell stays and the add command is printed. A Shell the run created that
+  herdr-core cannot register, or whose machine is refused, is removed. Pinned
   by `TestPlanHerdrCoreShell`, `TestPlanOrdinaryShellCarriesNoHerdrCore`,
   `TestPlanHerdrCoreRefusesHashShapedProfile`,
   `TestPlanHerdrCoreWorkspace`, `TestPlanHerdrCoreWorkspaceRefusals`,
@@ -179,7 +180,9 @@ them.
   `TestHerdrRerunOnARunningShellWithItsMachineChangesNothing`,
   `TestHerdrNewShellWithItsMachineUpdatesIt`,
   `TestHerdrRunningShellWithoutHerdrCoreBinaryUpdatesItsMachine`,
-  `TestHerdrReplacesASameNameMachineOnAnotherConnection`,
+  `TestHerdrRefusesASameNameMachineOnAnotherConnection`,
+  `TestHerdrRefusalRemovesANewShell`,
+  `TestHerdrReregisterReplacesASameNameMachineOnAnotherConnection`,
   `TestHerdrReregisterRemovesAndAddsTheMachine`,
   `TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand`,
   `TestHerdrJoinsARunningShellOnItsWorkspace`,
