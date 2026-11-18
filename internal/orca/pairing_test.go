@@ -114,12 +114,13 @@ func TestPairPrintsTheLinkWhenOpeningItFails(t *testing.T) {
 func fakeCLI(cli, out string, ran *[]string) MacDesktop {
 	return MacDesktop{Run: func(name string, args ...string) ([]byte, error) {
 		*ran = append(*ran, name+" "+strings.Join(args, " "))
-		switch {
-		case name == "mdfind":
-			return nil, nil
-		case name == cli:
+		if name == cli {
 			return []byte(out), nil
-		case name == "orca":
+		}
+		switch name {
+		case "mdfind":
+			return nil, nil
+		case "orca":
 			return nil, &exec.Error{Name: name, Err: exec.ErrNotFound}
 		}
 		return nil, &fs.PathError{Op: "fork/exec", Path: name, Err: fs.ErrNotExist}

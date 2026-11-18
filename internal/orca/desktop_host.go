@@ -66,10 +66,10 @@ func (d MacDesktop) bundleVersion(app string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func (noDesktop) Environments() ([]string, error)      { return nil, ErrNoCLI }
-func (noDesktop) AddEnvironment(string, string) error  { return ErrNoCLI }
-func (noDesktop) RemoveEnvironment(string) error       { return ErrNoCLI }
-func (noDesktop) OpenURL(string) error                 { return errNoDesktop }
+func (noDesktop) Environments() ([]string, error)     { return nil, ErrNoCLI }
+func (noDesktop) AddEnvironment(string, string) error { return ErrNoCLI }
+func (noDesktop) RemoveEnvironment(string) error      { return ErrNoCLI }
+func (noDesktop) OpenURL(string) error                { return errNoDesktop }
 
 var errNoDesktop = errors.New("toolbox looks for the Orca desktop app on macOS only")
 
