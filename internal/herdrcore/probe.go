@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
+
+	toolboxcontainer "github.com/filippolmt/toolbox/internal/container"
 )
 
 // shellExec is the part of the Docker client Installed needs.
@@ -34,20 +36,9 @@ func Installed(ctx context.Context, cli shellExec, container string) (bool, erro
 	if _, err := cli.ExecStart(ctx, created.ID, client.ExecStartOptions{Detach: true}); err != nil {
 		return false, fmt.Errorf("probe herdr-core in %s: %w", container, err)
 	}
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		res, err := cli.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
-		if err != nil {
-			return false, fmt.Errorf("probe herdr-core in %s: %w", container, err)
-		}
-		if !res.Running {
-			return res.ExitCode == 0, nil
-		}
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return false, fmt.Errorf("probe herdr-core in %s: %w", container, ctx.Err())
-		}
+	res, err := toolboxcontainer.WaitExec(ctx, cli, created.ID)
+	if err != nil {
+		return false, fmt.Errorf("probe herdr-core in %s: %w", container, err)
 	}
+	return res.ExitCode == 0, nil
 }

@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -109,24 +110,41 @@ func cleanupShell(cli client.APIClient, containerID, execID, marker string) erro
 	return err
 }
 
+// waitForExec is WaitExec for the shell cleanup: an exec the daemon no longer
+// knows has finished.
 func waitForExec(ctx context.Context, cli client.APIClient, id string) (client.ExecInspectResult, error) {
+	result, err := WaitExec(ctx, cli, id)
+	switch {
+	case cerrdefs.IsNotFound(err):
+		return client.ExecInspectResult{}, nil
+	case err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		return result, fmt.Errorf("wait for shell cleanup exec: %w", err)
+	case err != nil:
+		return result, fmt.Errorf("inspect shell cleanup exec: %w", err)
+	}
+	return result, nil
+}
+
+// execInspector is the part of the Docker client WaitExec needs.
+type execInspector interface {
+	ExecInspect(ctx context.Context, execID string, o client.ExecInspectOptions) (client.ExecInspectResult, error)
+}
+
+// WaitExec polls the exec id until it stops running and returns its last
+// inspect, which carries the exit code. A failed inspect is returned as is;
+// ctx ending first returns ctx's error.
+func WaitExec(ctx context.Context, cli execInspector, id string) (client.ExecInspectResult, error) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		result, err := cli.ExecInspect(ctx, id, client.ExecInspectOptions{})
-		if cerrdefs.IsNotFound(err) {
-			return client.ExecInspectResult{}, nil
-		}
-		if err != nil {
-			return result, fmt.Errorf("inspect shell cleanup exec: %w", err)
-		}
-		if !result.Running {
-			return result, nil
+		if err != nil || !result.Running {
+			return result, err
 		}
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			return result, fmt.Errorf("wait for shell cleanup exec: %w", ctx.Err())
+			return result, ctx.Err()
 		}
 	}
 }
