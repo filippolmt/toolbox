@@ -21,8 +21,7 @@ func herdrCoreNames(profile *mountplan.Profile) (singletonNameSet, error) {
 	return singletonNames("herdr", "a Herdr Core Shell", profile)
 }
 
-// herdrCoreWorkspace is the dir argument.
-// shortcut: no herdr_workspace key yet; #1531 passes in.Cfg.HerdrWorkspace here.
+// herdrCoreWorkspace is the dir argument when given, else herdr_workspace.
 func herdrCoreWorkspace(in PlanInput) (string, error) {
-	return singletonWorkspace(in, "toolbox herdr", "herdr_workspace", "", "the Herdr Core Shell")
+	return singletonWorkspace(in, "toolbox herdr", "herdr_workspace", in.Cfg.HerdrWorkspace, "the Herdr Core Shell")
 }

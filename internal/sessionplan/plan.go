@@ -221,7 +221,8 @@ type PlanInput struct {
 	// Shell's, so a recreate on the way in restarts the server.
 	OrcaAttach bool
 	// HerdrCore makes this session the Herdr Core Shell (CONTEXT.md): it
-	// fixes the container name, mounts herdr-core's state volume and creates
+	// fixes the container name, mounts herdr-core's state volume, takes the
+	// workspace from herdr_workspace when Workspace is empty, and creates
 	// detached.
 	HerdrCore bool
 }
