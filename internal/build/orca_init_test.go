@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/orca"
 )
 
 // The Orca Shell's init script, run as the image ships it with a stubbed
@@ -220,5 +222,29 @@ func TestOrcaInitReusesAnInstalledVersion(t *testing.T) {
 	}
 	if n := strings.Count(readFile(t, filepath.Join(data, "served")), "orca-ide serve"); n != 2 {
 		t.Errorf("server started %d times, want 2", n)
+	}
+}
+
+// Whatever ends the run — a refused install or a server that exits — the log
+// ends with the stop line the host reads as "not serving" (orca.WaitPairing),
+// so a join never reports a dead server's link.
+func TestOrcaInitLogsTheServerStopping(t *testing.T) {
+	env := []string{"TOOLBOX_ORCA_VERSION=v1.4.262"}
+	for _, tc := range []struct {
+		label   string
+		corrupt bool
+		want    string
+	}{
+		{"server exited", false, orca.ExitedMarker + " with status 0"},
+		{"install refused", true, orca.ExitedMarker + " with status 1"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			data := filepath.Join(t.TempDir(), "orca")
+			runOrcaInit(t, data, fakeOrcaRelease(t, "arm64", tc.corrupt), "aarch64", env, "--foreground")
+			log := strings.TrimRight(readFile(t, filepath.Join(data, "serve.log")), "\n")
+			if last := log[strings.LastIndex(log, "\n")+1:]; last != tc.want {
+				t.Errorf("serve.log ends with %q, want %q\n%s", last, tc.want, log)
+			}
+		})
 	}
 }

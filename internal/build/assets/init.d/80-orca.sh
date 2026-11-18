@@ -18,7 +18,9 @@ set -euo pipefail
 # archive matched its line in the release's checksum file, and a `current`
 # link switched atomically after that. A failed download or a mismatch leaves
 # `current` where it was. No restart of a crashed server: tini (PID 1) keeps
-# the container up, and the log says why the server stopped.
+# the container up, and the log says why the server stopped. However the run
+# ends, its last log line is the stop line the host reads as "not serving"
+# (internal/orca, ExitedMarker).
 
 [ -n "${TOOLBOX_ORCA_VERSION:-}" ] || exit 0
 
@@ -36,6 +38,13 @@ fi
 mkdir -p "$data"
 exec >>"$log" 2>&1 </dev/null
 echo "toolbox: orca ${TOOLBOX_ORCA_VERSION}: start $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+tmp=""
+on_exit() {
+    local status=$?
+    [ -z "$tmp" ] || rm -rf "$tmp"
+    echo "toolbox: orca: server stopped with status $status"
+}
+trap on_exit EXIT
 
 version="$TOOLBOX_ORCA_VERSION"
 # The tag lands in a URL and a path: the host validated it, this re-checks.
@@ -62,7 +71,6 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     base="https://github.com/stablyai/orca/releases/download/$version"
     # Beside the destination, so the final rename stays on one filesystem.
     tmp=$(mktemp -d "$servers/.install-$version.XXXXXX")
-    trap 'rm -rf "$tmp"' EXIT
     echo "toolbox: orca: downloading $base/$archive"
     curl -fsSL --retry 3 -o "$tmp/$archive" "$base/$archive"
     curl -fsSL --retry 3 -o "$tmp/sums" "$base/orca-server-sha256sums.txt"
@@ -81,7 +89,7 @@ if [ ! -x "$dest/bin/orca-ide" ]; then
     rm -rf "$dest"
     mv "$tmp/tree" "$dest"
     rm -rf "$tmp"
-    trap - EXIT
+    tmp=""
 fi
 
 ln -sfn "$version" "$servers/.current.new"
@@ -89,5 +97,5 @@ mv -T "$servers/.current.new" "$servers/current"
 
 # Wildcard bind: Docker's port forward reaches the container's external
 # interface, not its loopback. The advertised address is the host's loopback,
-# where the session plan publishes the port.
-exec "$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json
+# where the session plan publishes the port. Not exec'd: on_exit logs its end.
+"$servers/current/bin/orca-ide" serve --port 6768 --bind 0.0.0.0 --pairing-address 127.0.0.1 --json
