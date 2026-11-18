@@ -4,6 +4,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
 
@@ -43,12 +44,12 @@ func OrcaContainerName(profile *mountplan.Profile) (string, error) {
 // (one per Profile, keeping its own pairing identity) and that volume's
 // initialiser.
 func orcaNames(profile *mountplan.Profile) (singletonNameSet, error) {
-	return singletonNames("orca", "an Orca Shell", profile)
+	return singletonNames(config.OrcaShell, profile)
 }
 
 // orcaWorkspace is the dir argument when given, else orca_workspace.
 func orcaWorkspace(in PlanInput) (string, error) {
-	return singletonWorkspace(in, "toolbox orca", "orca_workspace", in.Cfg.OrcaWorkspace, "the Orca Shell")
+	return singletonWorkspace(in, config.OrcaShell, in.Cfg.OrcaWorkspace)
 }
 
 // orcaDetached: the Orca Shell starts detached unless a terminal asked for it.

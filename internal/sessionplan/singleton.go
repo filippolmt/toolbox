@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/workspace"
 )
@@ -34,31 +35,31 @@ type singletonNameSet struct {
 // singletonNames names the Shell `toolbox-<base>`, or `toolbox-<base>-<profile>`.
 // A profile suffix shaped like the workspace hash is refused:
 // `toolbox-<base>-<8hex>` is the workspace container of a directory named
-// <base>. shell names the Shell in that error, article included ("an Orca Shell").
-func singletonNames(base, shell string, profile *mountplan.Profile) (singletonNameSet, error) {
+// <base>.
+func singletonNames(shell config.SingletonShell, profile *mountplan.Profile) (singletonNameSet, error) {
 	suffix := ""
 	if pn := mountplan.ProfileName(profile); pn != "" {
 		suffix = SanitizeShellName(pn)
 		if suffix == "" || hashShapedRe.MatchString(suffix) {
-			return singletonNameSet{}, fmt.Errorf("profile %q cannot name %s: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn, shell)
+			return singletonNameSet{}, fmt.Errorf("profile %q cannot name %s: it is empty once sanitized or shaped like a workspace hash; pick a different profile name", pn, shell.Article+" "+shell.Label)
 		}
 		suffix = "-" + suffix
 	}
-	volume := ContainerNamePrefix + base + "-data" + suffix
-	return singletonNameSet{container: ContainerNamePrefix + base + suffix, volume: volume, init: volume + "_init"}, nil
+	volume := ContainerNamePrefix + shell.Base + "-data" + suffix
+	return singletonNameSet{container: ContainerNamePrefix + shell.Base + suffix, volume: volume, init: volume + "_init"}, nil
 }
 
 // singletonWorkspace is the dir argument when given, else the configured key
 // expanded against the declared host's home. Both routes pass the one check:
 // a colon-free absolute path to an existing directory that is not the home
-// itself (the Shell would mount the whole host home). command is the CLI
-// ("toolbox orca"), key and configured the config key and its value, shell the
-// Shell as errors name it ("the Orca Shell").
-func singletonWorkspace(in PlanInput, command, key, configured, shell string) (string, error) {
+// itself (the Shell would mount the whole host home). configured is the
+// value of shell's workspace key.
+func singletonWorkspace(in PlanInput, shell config.SingletonShell, configured string) (string, error) {
+	command := shell.Command
 	raw := in.Workspace
 	if raw == "" {
 		if configured == "" {
-			return "", errors.New(command + " has no workspace: set " + key + " in ~/.toolbox.yaml or pass a dir argument")
+			return "", errors.New(command + " has no workspace: set " + shell.Key + " in ~/.toolbox.yaml or pass a dir argument")
 		}
 		raw = in.Host.Expand(configured)
 	}
@@ -67,7 +68,7 @@ func singletonWorkspace(in PlanInput, command, key, configured, shell string) (s
 		return "", fmt.Errorf("%s workspace: %w", command, err)
 	}
 	if ws == filepath.Clean(in.Host.Home) {
-		return "", fmt.Errorf("%s workspace %s is the home directory: it would mount the whole host home into %s; name the directory that holds your repositories", command, ws, shell)
+		return "", fmt.Errorf("%s workspace %s is the home directory: it would mount the whole host home into %s; name the directory that holds your repositories", command, ws, "the "+shell.Label)
 	}
 	return ws, nil
 }

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -116,5 +117,5 @@ func Via(container string) (string, error) {
 // MachineName is the machine a Herdr Core Shell registers as: toolbox, or
 // toolbox-<profile>.
 func MachineName(container string) string {
-	return "toolbox" + strings.TrimPrefix(container, sessionplan.ContainerNamePrefix+sessionplan.HerdrCoreBase)
+	return "toolbox" + strings.TrimPrefix(container, sessionplan.ContainerNamePrefix+config.HerdrCoreShell.Base)
 }

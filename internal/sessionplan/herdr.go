@@ -1,6 +1,9 @@
 package sessionplan
 
-import "github.com/filippolmt/toolbox/internal/mountplan"
+import (
+	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/mountplan"
+)
 
 // Herdr Core Shell: the Detached Shell that hosts herdr-core for the Herdr
 // desktop app, one per host and Profile. → CONTEXT.md, Herdr Core Shell.
@@ -11,10 +14,6 @@ import "github.com/filippolmt/toolbox/internal/mountplan"
 // exists, and a Host Share bind cannot hold one.
 const HerdrCoreStateTarget = "/home/toolbox/.local/state/herdr-core"
 
-// HerdrCoreBase names the Herdr Core Shell: its container is
-// ContainerNamePrefix + HerdrCoreBase, plus a profile suffix.
-const HerdrCoreBase = "herdr"
-
 // HerdrCoreContainerName is `toolbox-herdr`, or `toolbox-herdr-<profile>`.
 func HerdrCoreContainerName(profile *mountplan.Profile) (string, error) {
 	n, err := herdrCoreNames(profile)
@@ -22,10 +21,10 @@ func HerdrCoreContainerName(profile *mountplan.Profile) (string, error) {
 }
 
 func herdrCoreNames(profile *mountplan.Profile) (singletonNameSet, error) {
-	return singletonNames(HerdrCoreBase, "a Herdr Core Shell", profile)
+	return singletonNames(config.HerdrCoreShell, profile)
 }
 
 // herdrCoreWorkspace is the dir argument when given, else herdr_workspace.
 func herdrCoreWorkspace(in PlanInput) (string, error) {
-	return singletonWorkspace(in, "toolbox herdr", "herdr_workspace", in.Cfg.HerdrWorkspace, "the Herdr Core Shell")
+	return singletonWorkspace(in, config.HerdrCoreShell, in.Cfg.HerdrWorkspace)
 }
