@@ -1744,3 +1744,27 @@ func existingInspect(running bool, labels map[string]string) container.InspectRe
 		HostConfig: &container.HostConfig{},
 	}
 }
+
+// A detached join skips the image work, not the reattach warnings: a running
+// Detached Shell that lacks a port this start asks for says so.
+func TestShellDetachedJoinStillWarnsOnPublishMismatch(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			return existingInspect(true, runplan.DetachedLabels()), nil
+		},
+	}
+
+	plan := testPlan(t, testWorkspace(t), []string{"6768"})
+	plan.Detached = true
+	stderr := captureStderr(t, func() {
+		if _, err := Shell(context.Background(), mock, plan); err != nil {
+			t.Fatalf("Shell() error: %v", err)
+		}
+	})
+	if !strings.Contains(stderr, "publish mismatch") {
+		t.Errorf("stderr = %q, want a publish mismatch warning", stderr)
+	}
+}

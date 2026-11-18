@@ -360,8 +360,10 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, fmt.Errorf("container %s exists and is not detached: run toolbox stop %s first", plan.ContainerName, plan.ContainerName)
 	}
 	// Already up and already detached: there is nothing to refresh, build or
-	// start, and no terminal to open.
+	// start, and no terminal to open — only what this start asked for and
+	// the running container cannot give it.
 	if plan.Detached && op.Action == runplan.ActionConnect {
+		warnReattachMismatch(ctx, cli, plan, inspect, op)
 		return nil, nil
 	}
 
