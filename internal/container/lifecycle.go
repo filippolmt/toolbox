@@ -634,7 +634,10 @@ func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.Inspect
 // preflightCreate is the half of the host-config check that can fail: a host
 // port another container already publishes can never be bound by the create
 // that follows, and the daemon's own refusal names neither the port set nor
-// the holder. Only a create can conflict — connecting to or starting an
+// the holder. When the plan asks for it (ProbeHostPorts), it then bind-tests
+// each published host address for a non-Docker holder; that probe runs in the
+// CLI's own network namespace, which is the host's, since the CLI runs on the
+// host, not in a container. Only a create can conflict — connecting to or starting an
 // existing container publishes nothing new — so this is the create path's
 // gate, called before any image work by Shell and again by
 // replaceForRefresh, which turns a start into a create.
