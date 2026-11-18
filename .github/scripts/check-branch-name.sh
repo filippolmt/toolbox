@@ -27,8 +27,9 @@ usage() {
 # Unparseable input prints nothing: the hook fails open, CI stays the gate.
 # shortcut: commands nested in $(…), backticks or `bash -c` are not seen,
 # `git push` without a refspec is read as pushing HEAD, a `cd` holds for the
-# rest of the command even inside a subshell, and after a `cd -` the git
-# calls go unchecked; parse them if an off-policy branch gets through that way.
+# rest of the command even inside a subshell, and after a `cd -`, a `popd`,
+# a `pushd +N` or a `cd "$var"` the git calls go unchecked; parse them if an
+# off-policy branch gets through that way.
 # shellcheck disable=SC2016 # Python source, not shell
 read -r -d '' parse_command <<'PY' || true
 import json, os, re, shlex, subprocess, sys
@@ -175,7 +176,7 @@ def cd_target(cwd, args):
     dirs = [a for a in args if a == '-' or not a.startswith('-')]
     if not dirs:
         return os.path.expanduser('~')
-    if dirs[0] == '-':
+    if dirs[0] == '-' or dirs[0].startswith('+') or '$' in dirs[0]:
         return None
     return os.path.join(cwd, os.path.expanduser(dirs[0]))
 
@@ -223,8 +224,8 @@ try:
         # from a worktree beside the checkout pushes the worktree's branch.
         if seg[0] == 'builtin':
             seg = seg[1:]
-        if seg and seg[0] in ('cd', 'pushd'):
-            cwd = cd_target(cwd, seg[1:])
+        if seg and seg[0] in ('cd', 'pushd', 'popd'):
+            cwd = cd_target(cwd, seg[1:]) if seg[0] != 'popd' else None
             continue
         if cwd is None:
             continue  # `cd -` and the like: the directory is unknown, fail open
@@ -332,6 +333,9 @@ self_test() {
         'builtin cd wt && git push'                      'fix/wt'
         'pushd wt && git push'                           'fix/wt'
         'cd - && git push'                               ''
+        'pushd wt && popd && git push'                   ''
+        'cd "$WT" && git push'                           ''
+        'pushd +1 && git push'                           ''
         'git push origin --delete chore/x'               ''
         'git push origin :chore/x'                       ''
         'git log --grep "git switch -c foo/x"'           ''
