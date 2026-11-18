@@ -36,7 +36,11 @@ func commandSections(t *testing.T) map[string]*commandSection {
 			fenced = !fenced
 		} else if !fenced && strings.HasPrefix(line, "## ") {
 			cur = nil
-			if name, ok := strings.CutPrefix(line, "## toolbox "); ok {
+			name, ok := strings.CutPrefix(line, "## toolbox ")
+			if strings.HasPrefix(line, "## Global flag") {
+				name, ok = "", true // the root command's own flags
+			}
+			if ok {
 				cur = &commandSection{}
 				sections[name] = cur
 			}
@@ -45,6 +49,8 @@ func commandSections(t *testing.T) map[string]*commandSection {
 		if cur == nil {
 			continue
 		}
+		// A code example counts as a mention; only a table row outside a
+		// fence counts as a row.
 		cur.text += line + "\n"
 		if m := flagRow.FindStringSubmatch(line); m != nil && !fenced {
 			cur.rows = append(cur.rows, m[1])
@@ -53,14 +59,22 @@ func commandSections(t *testing.T) map[string]*commandSection {
 	return sections
 }
 
-// ownFlags returns the visible flags c defines itself. Flags() and
-// PersistentFlags() hold those; the merged views (LocalFlags,
-// NonInheritedFlags) copy the parents' persistent flags into c and leak into
-// every later test that walks it.
+// ownFlags returns the visible flags c defines itself. Executing a command
+// (other tests do) copies its parents' persistent flags into c.Flags(), and so
+// do the merged views (LocalFlags, NonInheritedFlags), so an ancestor's
+// persistent flag is filtered out by walking the parents read-only.
 func ownFlags(c *cobra.Command) []string {
+	inherited := func(name string) bool {
+		for p := c.Parent(); p != nil; p = p.Parent() {
+			if p.PersistentFlags().Lookup(name) != nil {
+				return true
+			}
+		}
+		return false
+	}
 	var flags []string
 	visit := func(f *pflag.Flag) {
-		if !f.Hidden && f.Name != "help" && !slices.Contains(flags, f.Name) {
+		if !f.Hidden && f.Name != "help" && !inherited(f.Name) && !slices.Contains(flags, f.Name) {
 			flags = append(flags, f.Name)
 		}
 	}
@@ -74,14 +88,10 @@ func ownFlags(c *cobra.Command) []string {
 // that command, and every flag of that command has a row. A row pasted under
 // the wrong command (a merge resolving two sections) fails here, where no link
 // check can see it.
-//
-// shortcut: a section without a table is skipped, so its command's flags go
-// unchecked (init, config, mounts, shells document theirs in prose); require a
-// table per command if those drift.
 func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
 	tables := 0
 	for name, s := range commandSections(t) {
-		if len(s.rows) == 0 {
+		if len(s.rows) == 0 || name == "" {
 			continue
 		}
 		tables++
@@ -104,5 +114,71 @@ func TestCommandsDocFlagTablesMatchTheirCommand(t *testing.T) {
 	}
 	if tables == 0 {
 		t.Fatal("docs/commands.md has no flag table: the row pattern no longer matches")
+	}
+}
+
+// namesWord reports whether text names word as a whole token: "--path" is not
+// named by "--path-x", nor "set" by "reset".
+func namesWord(text, word string) bool {
+	for i := 0; ; {
+		j := strings.Index(text[i:], word)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(word)
+		before := start == 0 || !isFlagChar(text[start-1])
+		after := end == len(text) || !isFlagChar(text[end])
+		if before && after {
+			return true
+		}
+		i = start + 1
+	}
+}
+
+func isFlagChar(b byte) bool {
+	return b == '-' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9'
+}
+
+// TestCommandsDocMentionsEveryFlag covers the commands a table does not: every
+// visible flag of every command is named in docs/commands.md. A top-level
+// command's flag (and the root's, under "## Global flag") anywhere in its
+// section; a subcommand's on a line of its top-level section that also names
+// the subcommand, so `config show --where` is not vouched for by a
+// `set [--where]` row.
+func TestCommandsDocMentionsEveryFlag(t *testing.T) {
+	sections := commandSections(t)
+	check := func(top string, c *cobra.Command) {
+		s, ok := sections[top]
+		heading := "## toolbox " + top
+		if top == "" {
+			heading = "## Global flag"
+		}
+		for _, f := range ownFlags(c) {
+			flag := "--" + f
+			named := ok && namesWord(s.text, flag)
+			if named && c.Parent() != nil && c.Parent() != rootCmd {
+				named = slices.ContainsFunc(strings.Split(s.text, "\n"), func(line string) bool {
+					return namesWord(line, flag) && namesWord(line, c.Name())
+				})
+			}
+			if !named {
+				t.Errorf("%s has %s, not named for it under %s in docs/commands.md", c.CommandPath(), flag, heading)
+			}
+		}
+	}
+	var walk func(top string, c *cobra.Command)
+	walk = func(top string, c *cobra.Command) {
+		check(top, c)
+		for _, sub := range c.Commands() {
+			if !sub.Hidden {
+				walk(top, sub)
+			}
+		}
+	}
+	check("", rootCmd)
+	for _, c := range rootCmd.Commands() {
+		if !c.Hidden && c.Name() != "help" {
+			walk(c.Name(), c)
+		}
 	}
 }
