@@ -39,8 +39,8 @@ func TestPlanHerdrCoreShell(t *testing.T) {
 			if !plan.Detached {
 				t.Error("a Herdr Core Shell plan is not detached")
 			}
-			if plan.HerdrDataVolume != tc.volume || plan.HerdrDataInit != tc.volume+"_init" {
-				t.Errorf("HerdrDataVolume, HerdrDataInit = %q, %q; want %q and its _init", plan.HerdrDataVolume, plan.HerdrDataInit, tc.volume)
+			if plan.DataVolume.Name != tc.volume || plan.DataVolume.Init != tc.volume+"_init" {
+				t.Errorf("DataVolume.Name, .Init = %q, %q; want %q and its _init", plan.DataVolume.Name, plan.DataVolume.Init, tc.volume)
 			}
 			wantBind := mountplan.Bind{Source: tc.volume, Target: "/home/toolbox/.local/state/herdr-core", Mode: "rw"}
 			if !slices.Contains(plan.Binds, wantBind) {
@@ -61,8 +61,8 @@ func TestPlanOrdinaryShellCarriesNoHerdrCore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if plan.Detached || plan.HerdrDataVolume != "" || plan.HerdrDataInit != "" {
-		t.Errorf("ordinary plan: detached %v, herdr-core volume %q, init %q", plan.Detached, plan.HerdrDataVolume, plan.HerdrDataInit)
+	if plan.Detached || plan.DataVolume.Name != "" || plan.DataVolume.Init != "" {
+		t.Errorf("ordinary plan: detached %v, herdr-core volume %q, init %q", plan.Detached, plan.DataVolume.Name, plan.DataVolume.Init)
 	}
 	for _, b := range plan.Binds {
 		if strings.Contains(b.Source, "herdr-core") || strings.Contains(b.Target, "herdr-core") || strings.HasPrefix(b.Source, "toolbox-herdr") {

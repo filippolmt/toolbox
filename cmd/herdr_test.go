@@ -77,7 +77,7 @@ func TestHerdrStartsTheHerdrCoreShellAndAddsItsMachine(t *testing.T) {
 		t.Fatalf("runHerdr: %v", err)
 	}
 	p := *attached
-	if p == nil || p.ContainerName != "toolbox-herdr" || !p.Detached || p.HerdrDataVolume != "toolbox-herdr-data" {
+	if p == nil || p.ContainerName != "toolbox-herdr" || !p.Detached || p.DataVolume.Name != "toolbox-herdr-data" {
 		t.Fatalf("attached plan = %+v, want the detached toolbox-herdr with its state volume", p)
 	}
 	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {
@@ -390,7 +390,7 @@ func TestHerdrShellReentersTheRunningShell(t *testing.T) {
 	_ = runHerdrShell(herdrShellCmd, nil) // the exec stub reports the reload as an error
 
 	p := *attached
-	if p == nil || p.ContainerName != "toolbox-herdr-work" || p.Detached || p.HerdrDataVolume != "toolbox-herdr-data-work" {
+	if p == nil || p.ContainerName != "toolbox-herdr-work" || p.Detached || p.DataVolume.Name != "toolbox-herdr-data-work" {
 		t.Fatalf("attached plan = %+v, want an attached toolbox-herdr-work with its state volume", p)
 	}
 	if got := sessionplan.EnvValue(p.Env, sessionplan.HostWorkspaceEnv); got != ws {

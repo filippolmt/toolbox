@@ -67,12 +67,6 @@ func orcaEnv(version string) []string {
 	}
 }
 
-// orcaDataBind mounts the data volume. A session input appended after the
-// Mount Plan, like the peer socket bind: no `mounts:` patch can retarget it.
-func orcaDataBind(volume string) mountplan.Bind {
-	return mountplan.Bind{Source: volume, Target: OrcaDataTarget, Mode: "rw"}
-}
-
 // OrcaLogPath is the host-side path of the Orca server log: the state mount's
 // host source plus the same relative path the container writes. Empty when
 // the plan carries no state mount.

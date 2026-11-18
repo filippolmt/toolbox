@@ -73,24 +73,51 @@ func singletonWorkspace(in PlanInput, shell config.SingletonShell, configured st
 	return ws, nil
 }
 
+// DataVolume is a singleton Shell's data volume: a Docker volume that outlives
+// the container, owned by the session user before any session binds it.
+type DataVolume struct {
+	// Name is the volume, Init its initialiser container (see singletonNameSet).
+	Name, Init string
+	// Target is where the Shell mounts it.
+	Target string
+	// Label names it in progress lines and errors.
+	Label string
+}
+
+// singleton is what an Orca or Herdr Core Shell input fixes before the Mount
+// Plan: its container name and data volume. Zero for an ordinary session.
+type singleton struct {
+	container string
+	volume    DataVolume
+}
+
+func (n singletonNameSet) with(target, label string) singleton {
+	return singleton{container: n.container, volume: DataVolume{Name: n.volume, Init: n.init, Target: target, Label: label}}
+}
+
 // singletonInputs resolves what an Orca or Herdr Core Shell input fixes before
-// the Mount Plan: its names, its workspace, and the Orca Shell's port. Zero
-// name sets for an ordinary session.
-func singletonInputs(in *PlanInput) (orcaN, herdrN singletonNameSet, err error) {
-	if in.OrcaVersion != "" {
-		if orcaN, err = orcaNames(in.Profile); err != nil {
-			return orcaN, herdrN, err
+// the Mount Plan: its names, its workspace, and the Orca Shell's port.
+func singletonInputs(in *PlanInput) (singleton, error) {
+	switch {
+	case in.OrcaVersion != "":
+		n, err := orcaNames(in.Profile)
+		if err != nil {
+			return singleton{}, err
 		}
 		if in.Workspace, err = orcaWorkspace(*in); err != nil {
-			return orcaN, herdrN, err
+			return singleton{}, err
 		}
 		in.Ports = append(slices.Clone(in.Ports), defaultHostIP.String()+":"+OrcaPort+":"+OrcaPort)
-	}
-	if in.HerdrCore {
-		if herdrN, err = herdrCoreNames(in.Profile); err != nil {
-			return orcaN, herdrN, err
+		return n.with(OrcaDataTarget, "Orca data volume"), nil
+	case in.HerdrCore:
+		n, err := herdrCoreNames(in.Profile)
+		if err != nil {
+			return singleton{}, err
 		}
-		in.Workspace, err = herdrCoreWorkspace(*in)
+		if in.Workspace, err = herdrCoreWorkspace(*in); err != nil {
+			return singleton{}, err
+		}
+		return n.with(HerdrCoreStateTarget, "herdr-core state volume"), nil
 	}
-	return orcaN, herdrN, err
+	return singleton{}, nil
 }

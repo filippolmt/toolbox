@@ -24,8 +24,7 @@ func orcaPlan(t *testing.T) *sessionplan.SessionPlan {
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.ContainerName = "toolbox-orca-work"
 	plan.Detached = true
-	plan.OrcaDataVolume = testOrcaVolume
-	plan.OrcaDataInit = testOrcaVolume + "_init"
+	plan.DataVolume = sessionplan.DataVolume{Name: testOrcaVolume, Init: testOrcaVolume + "_init", Target: sessionplan.OrcaDataTarget, Label: "Orca data volume"}
 	plan.Binds = append(plan.Binds, mountplan.Bind{Source: testOrcaVolume, Target: sessionplan.OrcaDataTarget, Mode: "rw"})
 	return plan
 }

@@ -26,16 +26,10 @@ type ownedVolume struct {
 	label string
 }
 
-// orcaDataVolume is an Orca Shell's data volume, mounted at
-// sessionplan.OrcaDataTarget; sessionplan names it and its initialiser.
-func orcaDataVolume(plan *sessionplan.SessionPlan) ownedVolume {
-	return ownedVolume{name: plan.OrcaDataVolume, target: sessionplan.OrcaDataTarget, initName: plan.OrcaDataInit, label: "Orca data volume"}
-}
-
-// herdrDataVolume is a Herdr Core Shell's state volume, mounted at
-// sessionplan.HerdrCoreStateTarget.
-func herdrDataVolume(plan *sessionplan.SessionPlan) ownedVolume {
-	return ownedVolume{name: plan.HerdrDataVolume, target: sessionplan.HerdrCoreStateTarget, initName: plan.HerdrDataInit, label: "herdr-core state volume"}
+// dataVolume is a singleton Shell's data volume, as sessionplan names it.
+func dataVolume(plan *sessionplan.SessionPlan) ownedVolume {
+	v := plan.DataVolume
+	return ownedVolume{name: v.Name, target: v.Target, initName: v.Init, label: v.Label}
 }
 
 // ensureOwnedVolume makes v exist, owned by the runtime user with mode 0700.

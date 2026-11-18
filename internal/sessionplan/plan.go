@@ -100,18 +100,11 @@ type SessionPlan struct {
 	// address first, so a port a non-Docker host process holds fails naming
 	// it. Set for the Orca Shell, whose port is fixed.
 	ProbeHostPorts bool
-	// OrcaDataVolume names the Orca Shell's data volume, which Binds mounts at
-	// OrcaDataTarget; the container edge creates and initialises it before
-	// the create. Empty for every other session.
-	OrcaDataVolume string
-	// OrcaDataInit names the container that initialises OrcaDataVolume.
-	OrcaDataInit string
-	// HerdrDataVolume names the Herdr Core Shell's state volume, which Binds
-	// mounts at HerdrCoreStateTarget; created and initialised like
-	// OrcaDataVolume. Empty for every other session.
-	HerdrDataVolume string
-	// HerdrDataInit names the container that initialises HerdrDataVolume.
-	HerdrDataInit string
+	// DataVolume is a singleton Shell's data volume (the Orca Shell's data,
+	// the Herdr Core Shell's state), which Binds mounts at its Target; the
+	// container edge creates and initialises it before the create. Zero for
+	// every other session.
+	DataVolume DataVolume
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes
@@ -270,7 +263,7 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
 	orca := in.OrcaVersion != ""
-	orcaN, herdrN, err := singletonInputs(&in)
+	single, err := singletonInputs(&in)
 	if err != nil {
 		return nil, err
 	}
@@ -326,21 +319,18 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 			return nil, fmt.Errorf("the Orca Shell keeps Orca's server log on the state mount (%s), which mounts: removed", mountplan.StateMountTarget)
 		}
 		extraEnv = orcaEnv(in.OrcaVersion)
-		binds = append(slices.Clone(binds), orcaDataBind(orcaN.volume))
 	}
-	if in.HerdrCore {
-		// A session input after the Mount Plan, like the Orca data bind.
-		binds = append(slices.Clone(binds), mountplan.Bind{Source: herdrN.volume, Target: HerdrCoreStateTarget, Mode: "rw"})
+	if v := single.volume; v.Name != "" {
+		// A session input appended after the Mount Plan, like the peer socket
+		// bind: no `mounts:` patch can retarget it.
+		binds = append(slices.Clone(binds), mountplan.Bind{Source: v.Name, Target: v.Target, Mode: "rw"})
 	}
 
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
 	name := containerName(workspace, in.Name, in.Profile, in.Peer)
-	if orca {
-		name = orcaN.container
-	}
-	if in.HerdrCore {
-		name = herdrN.container
+	if single.container != "" {
+		name = single.container
 	}
 	// The name is also the hostname, and unlike a container name a hostname is
 	// capped by the daemon, which rejects the create outright. Only the named
@@ -376,10 +366,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReloadFrom:        in.ReloadFrom,
 		Detached:          orcaDetached(in) || (in.HerdrCore && !in.HerdrAttach),
 		ProbeHostPorts:    orca,
-		OrcaDataVolume:    orcaN.volume,
-		OrcaDataInit:      orcaN.init,
-		HerdrDataVolume:   herdrN.volume,
-		HerdrDataInit:     herdrN.init,
+		DataVolume:        single.volume,
 	}, nil
 }
 

@@ -19,8 +19,7 @@ func TestShellHerdrCoreShellInitialisesItsStateVolumeBeforeCreate(t *testing.T) 
 	plan := testPlan(t, testWorkspace(t), nil)
 	plan.ContainerName = "toolbox-herdr"
 	plan.Detached = true
-	plan.HerdrDataVolume = "toolbox-herdr-data"
-	plan.HerdrDataInit = "toolbox-herdr-data_init"
+	plan.DataVolume = sessionplan.DataVolume{Name: "toolbox-herdr-data", Init: "toolbox-herdr-data_init", Target: sessionplan.HerdrCoreStateTarget, Label: "herdr-core state volume"}
 	plan.Binds = append(plan.Binds, mountplan.Bind{Source: "toolbox-herdr-data", Target: sessionplan.HerdrCoreStateTarget, Mode: "rw"})
 
 	var r orcaVolumeMock

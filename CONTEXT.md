@@ -2185,7 +2185,7 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 `--version` flag, else the desktop app's version read through the
 `orca.Desktop` seam — macOS adapter `orca.MacDesktop`),
 `ORCA_USER_DATA_PATH` on the Orca Shell's own named volume
-(`SessionPlan.OrcaDataVolume`: `toolbox-orca-data` or
+(`SessionPlan.DataVolume`: `toolbox-orca-data` or
 `toolbox-orca-data-<profile>`, mounted at `sessionplan.OrcaDataTarget`), the
 server log on the state mount (`TOOLBOX_ORCA_LOG`), the workspace from the `dir`
 argument, `orca_workspace`, or else the running Orca Shell's own (a start
@@ -2248,7 +2248,7 @@ Herdr Core Shell, and `sessionplan.Plan` derives the fixed name
 `toolbox-herdr` or `toolbox-herdr-<profile>`
 (`sessionplan.HerdrCoreContainerName`, a hash-shaped profile suffix refused),
 herdr-core's state on the Shell's own named volume
-(`SessionPlan.HerdrDataVolume`: `toolbox-herdr-data` or
+(`SessionPlan.DataVolume`: `toolbox-herdr-data` or
 `toolbox-herdr-data-<profile>`, mounted at `sessionplan.HerdrCoreStateTarget`,
 created and initialised like the Orca data volume, surviving
 `toolbox herdr stop`), the workspace from the `dir` argument, else
