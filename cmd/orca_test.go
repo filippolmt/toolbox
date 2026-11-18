@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/orca"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
@@ -85,5 +87,60 @@ func TestOrcaStartsTheOrcaShellAndPrintsThePairingLink(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "orca://pair#fresh") {
 		t.Errorf("output %q lacks the pairing link", out.String())
+	}
+}
+
+// stoppingOrcaDaemon is orcaDaemon recording the containers stopped and
+// removed.
+type stoppingOrcaDaemon struct {
+	orcaDaemon
+	stopped *[]string
+}
+
+func (d stoppingOrcaDaemon) ContainerStop(_ context.Context, name string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+	*d.stopped = append(*d.stopped, "stop "+name)
+	return client.ContainerStopResult{}, nil
+}
+
+func (d stoppingOrcaDaemon) ContainerRemove(_ context.Context, name string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+	*d.stopped = append(*d.stopped, "remove "+name)
+	return client.ContainerRemoveResult{}, nil
+}
+
+// An installer that starts no server (offline, nothing cached) fails the
+// command with its reason and removes the Orca Shell: none is left running
+// empty.
+func TestOrcaStopsTheOrcaShellWhenNoServerStarts(t *testing.T) {
+	orcaHarness(t, "1.4.262", "toolbox: orca v1.4.262: start x\n"+
+		"toolbox: orca: fatal: could not download Orca server v1.4.262 and no server is cached\n")
+	var stopped []string
+	newDockerClient = func() (client.APIClient, error) {
+		return stoppingOrcaDaemon{stopped: &stopped}, nil
+	}
+
+	err := runOrca(orcaCmd, []string{sessionWorkspace(t, "src")})
+	if !errors.Is(err, orca.ErrNotStarted) || !strings.Contains(err.Error(), "no server is cached") {
+		t.Fatalf("runOrca = %v, want ErrNotStarted with the reason", err)
+	}
+	if got := strings.Join(stopped, ", "); got != "stop toolbox-orca, remove toolbox-orca" {
+		t.Errorf("daemon calls %q, want toolbox-orca stopped and removed", got)
+	}
+}
+
+// The offline fallback's warning reaches the user beside the pairing link.
+func TestOrcaRelaysTheOfflineFallbackWarning(t *testing.T) {
+	orcaHarness(t, "1.4.262", "toolbox: orca v1.4.262: start x\n"+
+		"toolbox: orca: warning: could not download Orca server v1.4.262; starting the cached v1.4.200 instead\n"+
+		`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#fresh"}}`+"\n")
+	orcaCmd.SetOut(&bytes.Buffer{})
+	t.Cleanup(func() { orcaCmd.SetOut(nil) })
+
+	var err error
+	stderr := captureCmdStderr(t, func() { err = runOrca(orcaCmd, []string{sessionWorkspace(t, "src")}) })
+	if err != nil {
+		t.Fatalf("runOrca: %v", err)
+	}
+	if !strings.Contains(stderr, "v1.4.262") || !strings.Contains(stderr, "v1.4.200") {
+		t.Errorf("stderr %q lacks the warning naming both versions", stderr)
 	}
 }

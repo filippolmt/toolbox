@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/orca"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
@@ -95,8 +97,17 @@ func awaitPairing(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 	}
 	return func() error {
 		url, err := orca.WaitPairing(logPath, offset, orcaReadyTimeout)
+		if errors.Is(err, orca.ErrNotStarted) {
+			// Nothing will ever serve in it: remove it rather than leave it running empty.
+			return errors.Join(err, container.StopByName(ctx, cli, plan.ContainerName))
+		}
 		if err != nil {
 			return fmt.Errorf("%w (the Orca Shell %s keeps running; toolbox orca stop removes it)", err, plan.ContainerName)
+		}
+		if warnings, err := orca.Warnings(logPath, offset); err == nil {
+			for _, w := range warnings {
+				ui.Warning(w)
+			}
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Orca is serving on 127.0.0.1:%s. Paste this link in Orca (Settings → Remote Orca Servers → Add Server):\n%s\n", sessionplan.OrcaPort, url)
 		return nil
