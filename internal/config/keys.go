@@ -220,7 +220,7 @@ var keyRows = []Key{
 		Name:    "mounts_root",
 		Kind:    KindScalar,
 		Editor:  EditorText,
-		Summary: "Retarget every default mount under ~/.toolbox/ to this prefix. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
+		Summary: "Retarget every default mount under ~/.toolbox/ to this prefix. Absolute (/path) or home-relative (~/sub); bare ~ rejected.",
 		Default: "~/.toolbox",
 		Example: "# Retarget every default mount whose source lives under ~/.toolbox/ to the\n" +
 			"# given prefix. Must be absolute (/path) or strictly home-relative (~/sub).\n" +
