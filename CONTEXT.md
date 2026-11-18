@@ -2183,11 +2183,14 @@ fixed name `toolbox-orca` or `toolbox-orca-<profile>`
 (`sessionplan.OrcaContainerName`, a hash-shaped profile suffix refused),
 `127.0.0.1:6768` published, the `TOOLBOX_ORCA_VERSION` env gate,
 `ORCA_USER_DATA_PATH` on the state mount, the workspace from the `dir`
-argument or `orca_workspace`, and `Detached`. The gate is read by
+argument or `orca_workspace`, and `Detached` — unless `OrcaAttach`
+(`toolbox orca shell`) asks for a terminal, planned off the running Orca
+Shell's version and workspace so a recreate restarts the server. The gate is read by
 `init.d/80-orca.sh`, which installs the verified server under
 `<data>/server/<version>` and starts it in the background; the host reads the
 pairing link out of `<data>/serve.log` through the state mount
-(`internal/orca.WaitPairing`). Orca's own data profile is never called a
+(`internal/orca.WaitPairing`), as of the latest start: a run that ended wrote
+a stop line, so a join never reports a dead server's link. Orca's own data profile is never called a
 Profile here. Decision and alternatives:
 [ADR 0023](docs/adr/0023-orca-is-a-first-class-toolbox-command.md).
 

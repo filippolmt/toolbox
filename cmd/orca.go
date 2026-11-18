@@ -38,8 +38,9 @@ prints the link to paste into the Orca desktop app (Settings → Remote Orca
 Servers → Add Server). The runtime keeps running until 'toolbox orca stop'.
 
 The workspace is the absolute dir argument, or the orca_workspace config key.
-One Orca Shell per host and --profile. A different --version needs
-'toolbox orca stop' first. See docs/orca.md.`,
+One Orca Shell per host and --profile. On a running one the command creates
+nothing and reports its state; a different --version needs 'toolbox orca
+stop' first. 'toolbox orca shell' opens a terminal in it. See docs/orca.md.`,
 	Args: usageArgs(cobra.MaximumNArgs(1)),
 	RunE: runOrca,
 }

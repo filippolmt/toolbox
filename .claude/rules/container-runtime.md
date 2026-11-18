@@ -111,7 +111,15 @@ them.
   `TestPlanOrcaWorkspace`, `TestPlanOrcaRefusesHashShapedProfile`,
   `TestOrcaRefusesAMalformedVersionBeforePlanning`,
   `TestOrcaInitWithoutTheGateDoesNothing` and
-  `TestOrcaInitRefusesAChecksumMismatch`. →
+  `TestOrcaInitRefusesAChecksumMismatch`. `toolbox orca shell` plans with the
+  running Orca Shell's `OrcaVersion` plus `OrcaAttach`, and re-enters itself on
+  reload; a join reports the latest start's state, never an older record:
+  `TestShellOrcaAttachLeavesTheOrcaShellRunning`,
+  `TestOrcaShellPlansTheRunningOrcaShellAndReentersIt`,
+  `TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca`,
+  `TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint`,
+  `TestWaitPairingReportsTheLatestStartsState`,
+  `TestOrcaInitLogsTheServerStopping`. →
   [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
