@@ -53,7 +53,7 @@ It attaches a terminal to the running Orca Shell, the agents' own workspace and 
 
 ## Run it again
 
-A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
+A second `toolbox orca` on a running Orca Shell recreates nothing. It says the Orca Shell is already running and at which version, prints the endpoint, and [pairs](#pairing) as a fresh start does. It needs neither `--version`, the desktop app, nor a `dir`: the running Orca Shell's own version and workspace stand in. When that server has stopped, it fails and names the log instead of reporting a dead server as ready.
 
 ## Stop
 

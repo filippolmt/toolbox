@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/filippolmt/toolbox/internal/container"
+	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/orca"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -80,10 +81,6 @@ after the server's identity changed. The Orca Shell must be running.`,
 // Shell through startSession like `shell` does; the session plan makes it the
 // Orca Shell.
 func runOrca(cmd *cobra.Command, args []string) error {
-	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
-	if err != nil {
-		return &usageError{err: err}
-	}
 	profile, err := resolveShellProfile(cmd, orcaProfile, orcaShare)
 	if err != nil {
 		return err
@@ -91,6 +88,20 @@ func runOrca(cmd *cobra.Command, args []string) error {
 	var ws string // sessionplan checks it, the same way as orca_workspace
 	if len(args) == 1 {
 		ws = args[0]
+	}
+	version, err := orca.ResolveVersion(orcaVersion, orcaDesktop)
+	if err != nil && orcaVersion == "" {
+		// No version to ask for: a running Orca Shell is still joined and
+		// reported, at its own version and workspace.
+		if env, runErr := runningOrcaShellOf(profile); runErr == nil {
+			version, err = sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv), nil
+			if ws == "" {
+				ws = sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE")
+			}
+		}
+	}
+	if err != nil {
+		return &usageError{err: err}
 	}
 	warnIfNewProfile(hostBestEffort(), profile)
 
@@ -158,11 +169,7 @@ func runOrcaShell(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	name, err := sessionplan.OrcaContainerName(profile)
-	if err != nil {
-		return err
-	}
-	env, err := runningOrcaShellEnv(name)
+	env, err := runningOrcaShellOf(profile)
 	if err != nil {
 		return err
 	}
@@ -176,6 +183,15 @@ func runOrcaShell(cmd *cobra.Command, _ []string) error {
 		},
 		Reentry: append([]string{"orca", "shell"}, reentryFlags(cmd.Flags(), nil)...),
 	})
+}
+
+// runningOrcaShellOf returns the env of the running Orca Shell of profile.
+func runningOrcaShellOf(profile *mountplan.Profile) ([]string, error) {
+	name, err := sessionplan.OrcaContainerName(profile)
+	if err != nil {
+		return nil, err
+	}
+	return runningOrcaShellEnv(name)
 }
 
 // runningOrcaShellEnv returns the env of the running Orca Shell called name,
