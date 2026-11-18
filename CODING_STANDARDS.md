@@ -40,8 +40,8 @@ and checking the exception reaches both.
 ## A wait on container-side work carries its own deadline
 
 A Docker call that waits for something inside a container — an exec, a
-probe, a container wait — bounds itself with a timeout of its own, not the
-session context, which has no deadline. Review each new wait by naming the
+probe, a container wait — bounds itself with a timeout of its own rather than
+trusting the caller's context to carry one. Review each new wait by naming the
 deadline that ends it.
 
 ## Removing host state the command did not create is opt-in
