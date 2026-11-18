@@ -19,6 +19,7 @@ func TestValidateKeyAgreesWithTheValidationTail(t *testing.T) {
 		{"pull", "never", "sometimes"},
 		{"shell", SupportedShells[0], "bash"},
 		{"mounts_root", "~/toolbox-state", "relative/dir"},
+		{"orca_workspace", "~/src", "relative/dir"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {

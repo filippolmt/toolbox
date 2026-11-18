@@ -1768,3 +1768,93 @@ func TestShellDetachedJoinStillWarnsOnPublishMismatch(t *testing.T) {
 		t.Errorf("stderr = %q, want a publish mismatch warning", stderr)
 	}
 }
+
+// `toolbox orca shell`: a terminal in the running Orca Shell, planned as the
+// Orca Shell so a recreate keeps the server. Exiting it leaves the Orca Shell
+// running, its server with it.
+func TestShellOrcaAttachLeavesTheOrcaShellRunning(t *testing.T) {
+	called, restore := stubExecShell()
+	defer restore()
+
+	mock := &mockClient{
+		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
+			inspect := existingInspect(true, runplan.DetachedLabels())
+			inspect.HostConfig.AutoRemove = true
+			return inspect, nil
+		},
+		stopFn: func(context.Context, string, client.ContainerStopOptions) error {
+			t.Error("exiting `toolbox orca shell` stopped the Orca Shell")
+			return nil
+		},
+		removeFn: func(context.Context, string, client.ContainerRemoveOptions) error {
+			t.Error("exiting `toolbox orca shell` removed the Orca Shell")
+			return nil
+		},
+	}
+	plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost(t), Cfg: testConfig(),
+		Workspace: testWorkspace(t), OrcaVersion: "v1.4.262", OrcaAttach: true})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if _, err := Shell(context.Background(), mock, plan); err != nil {
+		t.Fatalf("Shell() error: %v", err)
+	}
+	if !*called {
+		t.Fatal("`toolbox orca shell` opened no terminal")
+	}
+	if slices.Contains(mock.calls, "ContainerCreate") {
+		t.Error("`toolbox orca shell` created a container")
+	}
+}
+
+// TestShellHostPortProbeFailsBeforeCreate: a plan that asks for it (the Orca
+// Shell) probes its host ports on the create path, so a port a non-Docker
+// host process holds fails with the port named instead of the daemon's opaque
+// bind error. A plan that does not ask never probes.
+func TestShellHostPortProbeFailsBeforeCreate(t *testing.T) {
+	for _, probe := range []bool{true, false} {
+		t.Run(fmt.Sprintf("probe=%v", probe), func(t *testing.T) {
+			_, restore := stubExecShell()
+			defer restore()
+			orig := hostPortFree
+			t.Cleanup(func() { hostPortFree = orig })
+			var probed []string
+			hostPortFree = func(addr string) error {
+				probed = append(probed, addr)
+				return errors.New("address already in use")
+			}
+			created := false
+			mock := &mockClient{
+				inspectFn: func(_ context.Context, _ string) (container.InspectResponse, error) {
+					return container.InspectResponse{}, &dockertest.NotFoundError{Msg: "no such container"}
+				},
+				imgInspFn: func(_ context.Context, _ string) (client.ImageInspectResult, error) {
+					return client.ImageInspectResult{}, nil
+				},
+				listFn: func(_ context.Context, _ client.ContainerListOptions) ([]container.Summary, error) {
+					return nil, nil
+				},
+				createFn: func(_ context.Context, _ *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+					created = true
+					return container.CreateResponse{ID: "x"}, nil
+				},
+			}
+			plan := testPlan(t, testWorkspace(t), []string{"127.0.0.1:6768:6768"})
+			plan.ProbeHostPorts = probe
+
+			_, err := Shell(context.Background(), mock, plan)
+			if !probe {
+				if err != nil || !created || len(probed) != 0 {
+					t.Fatalf("Shell = %v, created %v, probed %q; want a create and no probe", err, created, probed)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "127.0.0.1:6768") {
+				t.Fatalf("Shell = %v, want an error naming 127.0.0.1:6768", err)
+			}
+			if created {
+				t.Error("ContainerCreate ran with the host port held")
+			}
+		})
+	}
+}

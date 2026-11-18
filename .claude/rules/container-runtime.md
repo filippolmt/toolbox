@@ -19,6 +19,8 @@ paths:
   - "internal/bridge/**"
   - "cmd/**"
   - "internal/build/assets/init.d/70-loopback-bridge.sh"
+  - "internal/build/assets/init.d/80-orca.sh"
+  - "internal/orca/**"
   - "internal/build/assets/entrypoint.sh"
 ---
 
@@ -84,8 +86,12 @@ them.
   [ADR 0015](../../docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md)
 
 - **A Detached Shell survives shell exit, and nothing else makes one:** only a
-  detached create writes the label, and no terminal exit removes a container
-  that carries it. Pinned by `TestOnShellExitSparesDetachedShell`,
+  detached create, or a create replacing a container that carries the label
+  (accepted refresh, Session Reload), writes it, and no terminal exit removes
+  a container that carries it. Pinned by
+  `TestShellStartRecreatesADetachedShellDetached`,
+  `TestShellStartRecreatesAnOrdinaryShellOrdinary`,
+  `TestShellReloadKeepsADetachedShellDetached`, `TestOnShellExitSparesDetachedShell`,
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
   `TestShellDetachedRefusesBeforeImageWork`,
@@ -94,6 +100,45 @@ them.
   `TestShellExitLeavesADetachedShellRunning`,
   `TestStopByNameRemovesADetachedShell` and `TestStopAll`. →
   [Detached Shell](../../CONTEXT.md#detached-shell)
+
+- **The Orca Shell is planned, not assembled:** `toolbox orca` reaches the
+  container through `startSession` like `shell`; `PlanInput.OrcaVersion` is
+  the only switch, and `sessionplan.Plan` derives the name, the loopback
+  publish of `OrcaPort`, the env gate, `ORCA_USER_DATA_PATH` on the state
+  mount, `Detached` and the host-port probe from it. No cmd-side env, port,
+  name or workspace check: the `dir` argument and `orca_workspace` pass the
+  one check in `sessionplan`. Its init script stays gated on
+  `TOOLBOX_ORCA_VERSION`, never blocks the entrypoint, and ends an attempt
+  that starts no server with a `fatal:` log line the host acts on.
+  Pinned by `TestPlanOrcaShell`, `TestPlanOrdinaryShellCarriesNoOrca`,
+  `TestPlanOrcaWorkspace`, `TestPlanOrcaWorkspaceRefusals`,
+  `TestPlanOrcaRefusesHashShapedProfile`,
+  `TestOrcaRefusesAMalformedVersionBeforePlanning`,
+  `TestShellHostPortProbeFailsBeforeCreate`,
+  `TestOrcaInitWithoutTheGateDoesNothing`,
+  `TestOrcaInitRefusesAChecksumMismatch`,
+  `TestOrcaInitFailsOfflineWithAnEmptyCache`,
+  `TestOrcaInitKeepsNewerVersionsOnADowngrade` and
+  `TestOrcaStopsTheOrcaShellWhenNoServerStarts`. Pairing reaches the desktop
+  app only through the `orca.Desktop` seam, which refuses a link that is not
+  `orca://` and a Spotlight result that is not an absolute `.app`; an
+  environment already there is left alone, and no error carries the pairing
+  code. Pinned by `TestOrcaMakesNoPairingCallWhenTheAppHasTheEnvironment`,
+  `TestOrcaPairRemovesAndReAddsTheEnvironment`,
+  `TestMacDesktopKeepsThePairingCodeOutOfItsErrors`,
+  `TestMacDesktopRefusesALinkThatIsNotOrcas` and
+  `TestMacDesktopTakesOnlyAbsoluteAppPathsFromSpotlight`. `toolbox orca shell`
+  plans with the running Orca Shell's `OrcaVersion` plus `OrcaAttach` and
+  re-enters itself on reload; a join reports the latest start's state:
+  `TestShellOrcaAttachLeavesTheOrcaShellRunning`,
+  `TestOrcaShellPlansTheRunningOrcaShellAndReentersIt`,
+  `TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca`,
+  `TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint`,
+  `TestOrcaJoinWithoutAVersionReportsTheRunningOrcaShell`,
+  `TestWaitPairingReportsTheLatestStartsState`,
+  `TestOrcaInitLogsTheServerStopping`. `toolbox orca stop` with none is
+  quiet: `TestOrcaStopWithoutAnOrcaShellIsQuiet`. →
+  [Orca Shell](../../CONTEXT.md#orca-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use

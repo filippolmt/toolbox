@@ -35,6 +35,8 @@ var systemInitScripts = map[string]struct{}{
 	"36-mode-flags.sh": {},
 	// Agent guardrails PreToolUse hook — image policy, not a tool toggle.
 	"37-agent-guardrails.sh": {},
+	// Orca Shell server — gated on the session plan's Orca env, not a tool.
+	"80-orca.sh": {},
 }
 
 // TestCatalogInitDBijection enforces strict set-equality between

@@ -96,6 +96,10 @@ type SessionPlan struct {
 	// Detached creates the container without attaching a terminal and leaves
 	// it running when terminals attached later exit. → CONTEXT.md, Detached Shell.
 	Detached bool
+	// ProbeHostPorts makes the create path bind-test each published host
+	// address first, so a port a non-Docker host process holds fails naming
+	// it. Set for the Orca Shell, whose port is fixed.
+	ProbeHostPorts bool
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes
@@ -193,6 +197,17 @@ type PlanInput struct {
 	// re-derives everything, so the only thing it changes here is the working
 	// directory — and only when that directory is still under the workspace.
 	ReloadFrom *reload.From
+
+	// OrcaVersion, when set, makes this session the Orca Shell (CONTEXT.md):
+	// its value is the release tag the init script installs and runs. It
+	// fixes the container name, publishes OrcaPort on host loopback, carries
+	// the env gate and Orca's data directory, takes the workspace from
+	// orca_workspace when Workspace is empty, and creates detached.
+	OrcaVersion string
+	// OrcaAttach opens a terminal in the Orca Shell (`toolbox orca shell`)
+	// instead of starting it detached. The rest of the plan stays the Orca
+	// Shell's, so a recreate on the way in restarts the server.
+	OrcaAttach bool
 }
 
 // containerName resolves the container name from the workspace path and the
@@ -234,6 +249,18 @@ func containerName(workspace, name string, profile *mountplan.Profile, peer bool
 // carries TOOLBOX_LOOPBACK_BRIDGE_PORTS so the bridge listener spawns one
 // socat per published container port — see docs/commands.md#loopback-bridge.
 func Plan(in PlanInput) (*SessionPlan, error) {
+	orca := in.OrcaVersion != ""
+	var orcaName string
+	if orca {
+		var err error
+		if orcaName, err = OrcaContainerName(in.Profile); err != nil {
+			return nil, err
+		}
+		if in.Workspace, err = orcaWorkspace(in); err != nil {
+			return nil, err
+		}
+		in.Ports = append(slices.Clone(in.Ports), defaultHostIP.String()+":"+OrcaPort+":"+OrcaPort)
+	}
 	workspace := normalizeWorkspace(in.Workspace)
 
 	exposed, bindings, uniqContainerPorts, err := parsePublishSpecs(in.Ports)
@@ -278,10 +305,21 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 	// off the plan above, never re-derived: mountplan.StateDirPath merges a
 	// second time, and rebuilding the gate would repeat its host queries.
 	stateDir := mp.StateDir
+	var extraEnv []string
+	if orca {
+		// Orca's identity and paired devices must survive a recreate.
+		if stateDir == "" {
+			return nil, fmt.Errorf("the Orca Shell keeps Orca's data on the state mount (%s), which mounts: removed", mountplan.StateMountTarget)
+		}
+		extraEnv = orcaEnv(in.OrcaVersion)
+	}
 
 	// Resolved before the env is composed: the reload marker is named after the
 	// container, and its path is what declares the capability to the image.
 	name := containerName(workspace, in.Name, in.Profile, in.Peer)
+	if orca {
+		name = orcaName
+	}
 	// The name is also the hostname, and unlike a container name a hostname is
 	// capped by the daemon, which rejects the create outright. Only the named
 	// form can overrun: ContainerNameFor budgets for MaxContainerNameLen, while
@@ -303,7 +341,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		WorkingDir:        workingDir,
 		ExposedPorts:      exposed,
 		PortBindings:      bindings,
-		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name))),
+		Env:               composeEnv(in, workspace, workingDir, uniqContainerPorts, slices.Concat(in.Proximo.Env(), agentHomeEnv(mp.Binds), reloadMarkerEnv(stateDir, name), extraEnv)),
 		ContainerName:     name,
 		Hostname:          name,
 		Cmd:               cmd,
@@ -314,6 +352,8 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		ReclaimImages:     in.Cfg.ImageReclaim == nil || *in.Cfg.ImageReclaim,
 		PidMode:           peerPidMode(in.Peer),
 		ReloadFrom:        in.ReloadFrom,
+		Detached:          orcaDetached(in),
+		ProbeHostPorts:    orca,
 	}, nil
 }
 
@@ -486,6 +526,11 @@ const CLIVersionEnv = "TOOLBOX_CLI_VERSION"
 // zshrc skips the render. Exported so neither side spells it as a literal —
 // a rename on one side alone would quietly half-disable the feature.
 const NoUpdateCheckEnv = "TOOLBOX_NO_UPDATE_CHECK"
+
+// HostWorkspaceEnv carries the session's absolute host workspace (see
+// shellEnv). Exported because `toolbox orca` reads it back off the running
+// Orca Shell to join it on its own workspace.
+const HostWorkspaceEnv = "TOOLBOX_HOST_WORKSPACE"
 
 // EnvValue reads one variable out of a docker-style KEY=VALUE list, the shape
 // both a composed plan and a ContainerInspect carry. The last occurrence wins,
@@ -907,7 +952,7 @@ func parsePublishSpecs(specs []string) (network.PortSet, network.PortMap, []stri
 // workingDir and forwards it here.
 func shellEnv(workspace, workingDir string) []string {
 	return []string{
-		"TOOLBOX_HOST_WORKSPACE=" + workspace,
+		HostWorkspaceEnv + "=" + workspace,
 		"PWD=" + workingDir,
 		"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=" + workspaceSlug(workspace),
 		"HERDR_SESSION=" + ContainerNameFor(workspace, ""),

@@ -73,6 +73,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox shell [name\|dir]`](docs/commands.md#toolbox-shell) | Start or attach to a toolbox container (`-p` publishes ports, `-B`/`--oauth` handle OAuth callbacks, `--profile` isolates a second account, named shells via [`shells:`](docs/shells.md)) |
 | [`toolbox stop [name\|dir]`](docs/commands.md#toolbox-stop) | Stop and remove toolbox containers (`--all` for every one on the host) |
 | [`toolbox list`](docs/commands.md#toolbox-list) | List toolbox containers running on the host (alias `ls`) |
+| [`toolbox orca [dir]`](docs/commands.md#toolbox-orca) | Run [Orca](docs/orca.md)'s runtime in a detached Orca Shell and pair the desktop app (`shell`, `pair`, `stop`; `--profile`) |
 | [`toolbox build`](docs/commands.md#toolbox-build) | Build the Docker image locally from the embedded context |
 | [`toolbox version`](docs/commands.md#toolbox-version) | Show version info |
 | [`toolbox init`](docs/commands.md#toolbox-init) | Write an annotated `.toolbox.yaml` in the current directory |
@@ -118,6 +119,8 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 **Agent skills.** Bundled tools that publish an agent skill (gh, glab, herdr, Worktrunk, …) have it installed for Claude Code, Codex and pi at every container start, from the copy matching the bundled version. graphify, codegraph and playwright-cli are per-repo instead: opt a repo in once with `graphify-init`, `codegraph-init` or `pwcli-init` from inside it, and run `toolbox-refresh` there after an image update to bring those installs up to date — nothing writes into a repo on its own. → [shell-start internals](docs/internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 
 **Agent guardrails.** Claude Code, Codex and pi run a hook before every shell command that blocks these mistakes: a Docker bind mount from a container-local path (it would reach the host daemon empty), `git commit -a` and a `git stash` without a pathspec, which sweep up work that is not the agent's, a `git stash pop`/`apply` without a reference, which can apply another session's, and a discard of every uncommitted change in the tree (`git reset --hard`, `git checkout .`, `git restore .`, a forced `git clean` or switch). The agent gets the reason and the way out. → [troubleshooting](docs/troubleshooting.md#an-agent-command-is-blocked-by-the-agent-guardrails)
+
+**Orca runtime.** `toolbox orca` runs [Orca](https://github.com/stablyai/orca)'s server in a detached Orca Shell at the desktop app's version, on host `127.0.0.1` only, and pairs the desktop app with it, so the agents Orca starts use the bundled CLIs and the isolated credentials. It keeps running until `toolbox orca stop`. → [docs/orca.md](docs/orca.md)
 
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 

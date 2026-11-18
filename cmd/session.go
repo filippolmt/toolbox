@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/moby/moby/client"
+
 	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/imageref"
@@ -41,6 +43,10 @@ type sessionIntent struct {
 	// ones. Rendered by the caller because only the caller knows
 	// its own flag set.
 	Reentry []string
+	// Around, when set, runs once the plan is built, just before the attach,
+	// and returns what to run after the attach returns cleanly. `orca` reads
+	// the pairing link there. Nil for an interactive session.
+	Around func(context.Context, client.APIClient, *sessionplan.SessionPlan) (func() error, error)
 }
 
 // startSession opens the session an intent describes: it consumes the reload
@@ -133,5 +139,15 @@ func startSession(in sessionIntent) error {
 	ctx, stop := signalCtx()
 	defer stop()
 
-	return runSession(ctx, cli, plan, in.Reentry)
+	if in.Around == nil {
+		return runSession(ctx, cli, plan, in.Reentry)
+	}
+	after, err := in.Around(ctx, cli, plan)
+	if err != nil {
+		return err
+	}
+	if err := runSession(ctx, cli, plan, in.Reentry); err != nil {
+		return err
+	}
+	return after()
 }

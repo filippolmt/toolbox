@@ -14,6 +14,7 @@ import (
 
 	"github.com/filippolmt/toolbox/internal/imageref"
 	"github.com/filippolmt/toolbox/internal/reload"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
 	"github.com/filippolmt/toolbox/internal/version"
@@ -57,15 +58,23 @@ func takeReloadRequest(plan *sessionplan.SessionPlan) *reload.From {
 // alive. Everything after the teardown can still fail (a port conflict, a
 // `:local` overlay that will not build), and those failures must print the
 // re-entry command, because the shell that would have printed it is gone.
-func replaceForReload(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan) error {
+//
+// Reports whether the retired container was a Detached Shell, read before the
+// removal: the replacement inherits the property (CONTEXT.md, Detached Shell).
+func replaceForReload(ctx context.Context, cli client.APIClient, freshness freshnessSession, plan *sessionplan.SessionPlan) (bool, error) {
 	from := plan.ReloadFrom
 	if from == nil {
-		return nil
+		return false, nil
 	}
 
 	if err := freshness.PrepareReload(ctx); err != nil {
-		return fmt.Errorf("reload aborted, session left as it was: %w", err)
+		return false, fmt.Errorf("reload aborted, session left as it was: %w", err)
 	}
+
+	// An unreadable record reads as ordinary: the removal below fails on the
+	// same daemon, or finds the container already gone.
+	old, _ := cli.ContainerInspect(ctx, from.Container, client.ContainerInspectOptions{})
+	detached := runplan.IsDetached(old.Container)
 
 	// Enumerated before the teardown, printed after it: the container is still
 	// alive here, and a list printed by a reload that then failed would name
@@ -73,7 +82,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 	casualties := reloadCasualties(ctx, cli, from.Container, plan.Cmd)
 
 	if err := removeAndWait(ctx, cli, from.Container, "reload"); err != nil {
-		return err
+		return false, err
 	}
 
 	// The container is new; the banner's cache still describes the old one.
@@ -84,7 +93,7 @@ func replaceForReload(ctx context.Context, cli client.APIClient, freshness fresh
 	// a gate, and printReloadSummary renders "unknown" for either.
 	after, _ := imageref.LocalRepoDigest(ctx, cli, plan.Image.Ref)
 	printReloadSummary(from, after, casualties)
-	return nil
+	return detached, nil
 }
 
 // removeAndWait destroys the container a create is about to replace and does

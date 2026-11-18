@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -344,7 +345,8 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 	// A reload arrives owning a container it must replace, and it must do so
 	// before the inspect below — which would otherwise compute a connect to the
 	// very container being retired. A no-op for every other session.
-	if reloadErr := replaceForReload(ctx, cli, freshness, plan); reloadErr != nil {
+	reloadedDetached, reloadErr := replaceForReload(ctx, cli, freshness, plan)
+	if reloadErr != nil {
 		return nil, reloadErr
 	}
 
@@ -394,6 +396,12 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		return nil, overlayErr
 	}
 
+	// The detached property follows the container, not the command: a create
+	// that replaces a Detached Shell — by reload or by an accepted refresh of
+	// the stopped one read here — writes the label again (CONTEXT.md, Detached
+	// Shell). Only the label: the terminal this command asked for still opens.
+	keepDetached := plan.Detached || reloadedDetached || runplan.IsDetached(inspect)
+
 	// After the overlay, not before — see replaceIfRefreshAccepted for what that
 	// ordering protects and for why a yes at the recreate stake spends the
 	// container.
@@ -420,7 +428,7 @@ func Shell(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionP
 		}
 	}
 
-	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage)
+	containerID, dispatchErr := dispatchOp(ctx, cli, plan, op, runImage, keepDetached)
 	if dispatchErr != nil {
 		return nil, dispatchErr
 	}
@@ -626,9 +634,12 @@ func createdImageDigest(plan *sessionplan.SessionPlan, inspect container.Inspect
 // preflightCreate is the half of the host-config check that can fail: a host
 // port another container already publishes can never be bound by the create
 // that follows, and the daemon's own refusal names neither the port set nor
-// the holder. Only a create can conflict — connecting to or starting an
-// existing container publishes nothing new — so this is the create path's
-// gate, called before any image work by Shell and again by
+// the holder. When the plan asks for it (ProbeHostPorts), it then bind-tests
+// each published host address for a non-Docker holder; that probe runs in the
+// CLI's own network namespace, which is the host's, since the CLI runs on the
+// host, not in a container. Only a create can conflict — connecting to or
+// starting an existing container publishes nothing new — so this is the create
+// path's gate, called before any image work by Shell and again by
 // replaceForRefresh, which turns a start into a create.
 //
 // Deliberately before the start-up refresh in Shell: a known-fatal conflict
@@ -639,7 +650,40 @@ func preflightCreate(ctx context.Context, cli client.APIClient, plan *sessionpla
 	if len(plan.PortBindings) == 0 {
 		return nil
 	}
-	return preflightPortConflicts(ctx, cli, plan)
+	if err := preflightPortConflicts(ctx, cli, plan); err != nil {
+		return err
+	}
+	if plan.ProbeHostPorts {
+		return probeHostPorts(plan)
+	}
+	return nil
+}
+
+// hostPortFree bind-tests a host address and releases it; tests swap it.
+var hostPortFree = func(addr string) error {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return l.Close()
+}
+
+// probeHostPorts fails when a published host address cannot be bound on this
+// host. It runs after preflightPortConflicts, so a holder it reaches is not a
+// container that check would have named.
+func probeHostPorts(plan *sessionplan.SessionPlan) error {
+	for _, bindings := range plan.PortBindings {
+		for _, b := range bindings {
+			if b.HostPort == "" {
+				continue
+			}
+			addr := net.JoinHostPort(b.HostIP.String(), b.HostPort)
+			if err := hostPortFree(addr); err != nil {
+				return fmt.Errorf("cannot publish %s: a process on this host already holds it (%w); stop it and retry", addr, err)
+			}
+		}
+	}
+	return nil
 }
 
 // warnReattachMismatch is the half that cannot fail: what this session asked
@@ -678,7 +722,7 @@ func warnReattachMismatch(ctx context.Context, cli client.APIClient, plan *sessi
 // precisely because it is the only ref that means that. Everything else here
 // reads plan.Image, which is the base and is what the host-global halves of
 // peer messaging are created from.
-func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, runImage sessionplan.Image) (string, error) {
+func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, op runplan.Op, runImage sessionplan.Image, detached bool) (string, error) {
 	switch op.Action {
 	case runplan.ActionConnect:
 		ui.Info("Connecting to running container " + plan.ContainerName + "...")
@@ -703,7 +747,7 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 		return op.ExistingID, nil
 
 	case runplan.ActionCreate:
-		return createAndStart(ctx, cli, plan, runImage)
+		return createAndStart(ctx, cli, plan, runImage, detached)
 
 	default:
 		return "", fmt.Errorf("unknown runplan action: %s", op.Action)
@@ -715,8 +759,10 @@ func dispatchOp(ctx context.Context, cli client.APIClient, plan *sessionplan.Ses
 // the run image is present.
 //
 // runImage is the ref this container runs (see dispatchOp); plan.Image is the
-// base, and stays the base for ensurePeerRuntime below.
-func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image) (string, error) {
+// base, and stays the base for ensurePeerRuntime below. detached writes the
+// Detached Shell label: plan.Detached, or the container this create replaces
+// already carried it.
+func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, runImage sessionplan.Image, detached bool) (string, error) {
 	// Resolved before the bind set is flattened because an unusable anchor or
 	// socket volume degrades the session to its own PID namespace, without the
 	// shared socket mount, rather than failing it.
@@ -743,7 +789,7 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	}
 
 	var labels map[string]string
-	if plan.Detached {
+	if detached {
 		labels = runplan.DetachedLabels()
 	}
 

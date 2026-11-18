@@ -230,6 +230,20 @@ var keyRows = []Key{
 		Scalar: ValidateMountsRoot,
 	},
 	{
+		Name:    "orca_workspace",
+		Kind:    KindScalar,
+		Editor:  EditorText,
+		Summary: "Host directory `toolbox orca` serves when it starts an Orca Shell with no dir argument; a running Orca Shell keeps its own. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
+		Default: "unset (a dir argument, or else a running Orca Shell's workspace)",
+		Example: "# orca_workspace — the directory holding your repositories, served by\n" +
+			"# `toolbox orca` when it starts an Orca Shell with no dir argument (a\n" +
+			"# running one keeps its own). Absolute (/path) or\n" +
+			"# home-relative (~/sub); bare \"~\" is rejected.\n" +
+			"# orca_workspace: ~/src\n",
+		Str:    func(c *Config) string { return c.OrcaWorkspace },
+		Scalar: ValidateOrcaWorkspace,
+	},
+	{
 		Name:    "bridge",
 		Kind:    KindTri,
 		Editor:  EditorTri,

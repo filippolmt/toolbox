@@ -14,7 +14,7 @@ import (
 func TestSchemaKeys(t *testing.T) {
 	want := []string{
 		"shell", "image", "registry_mirror", "pull",
-		"mounts_root", "bridge", "browser_bridge", "proximo", "managed_statusline",
+		"mounts_root", "orca_workspace", "bridge", "browser_bridge", "proximo", "managed_statusline",
 		"image_reclaim", "peer_messaging", "env",
 		"inherit_host_auth", "shells", "mounts",
 	}
