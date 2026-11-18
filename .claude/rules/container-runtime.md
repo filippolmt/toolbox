@@ -134,7 +134,8 @@ them.
   `TestOrcaShellPlansTheRunningOrcaShellAndReentersIt`,
   `TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca`,
   `TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint`,
-  `TestOrcaJoinWithoutAVersionReportsTheRunningOrcaShell`,
+  `TestOrcaJoinWithoutADirReportsTheRunningOrcaShell`,
+  `TestOrcaJoinReportsAWorkspaceMismatch`,
   `TestWaitPairingReportsTheLatestStartsState`,
   `TestOrcaInitLogsTheServerStopping`. `toolbox orca stop` with none is
   quiet: `TestOrcaStopWithoutAnOrcaShellIsQuiet`. →

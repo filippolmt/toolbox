@@ -29,6 +29,9 @@ directory rename cannot quietly orphan a rule.
 - **package → some rule**: every top-level package under `internal/` is claimed
   by at least one rule (`TestEveryPackageIsClaimedByARule`). The direction the
   other two cannot see: both pass for a package no rule has ever heard of.
+- **pin → test**: every test a rule names still exists
+  (`TestCitedTestNamesExist`). A renamed test leaves its guardrail pinned by
+  nothing; a test family is written `TestName*`.
 - **rule file → the index**: every rule file is linked from `CLAUDE.md`
   (`TestRuleFilesAreListedInCLAUDEMd`). A rule absent from that list is one no
   reader knows to open, and Codex loads none of them automatically.
