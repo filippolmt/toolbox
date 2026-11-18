@@ -5,14 +5,17 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/reload"
+	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
@@ -85,5 +88,73 @@ func TestOrcaStartsTheOrcaShellAndPrintsThePairingLink(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "orca://pair#fresh") {
 		t.Errorf("output %q lacks the pairing link", out.String())
+	}
+}
+
+func TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca(t *testing.T) {
+	attached, _ := orcaHarness(t, "", "")
+	err := runOrcaShell(orcaShellCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "toolbox orca --version") {
+		t.Fatalf("runOrcaShell = %v, want an error pointing at toolbox orca", err)
+	}
+	if *attached != nil {
+		t.Error("`toolbox orca shell` with no Orca Shell reached the attach")
+	}
+}
+
+// runningOrcaDaemon answers that the Orca Shell is up, detached, and was
+// started at version on workspace.
+type runningOrcaDaemon struct {
+	stubDaemon
+	version, workspace string
+}
+
+func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	return client.ContainerInspectResult{Container: container.InspectResponse{
+		State: &container.State{Running: true},
+		Config: &container.Config{
+			Labels: runplan.DetachedLabels(),
+			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, "TOOLBOX_HOST_WORKSPACE=" + d.workspace},
+		},
+	}}, nil
+}
+
+// The terminal is planned as the Orca Shell it joins — its version and
+// workspace, not a detached start — and a Session Reload from it re-enters
+// `toolbox orca shell` with the profile, so the recreate restarts the server.
+func TestOrcaShellPlansTheRunningOrcaShellAndReentersIt(t *testing.T) {
+	attached, _ := orcaHarness(t, "", "")
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) {
+		return runningOrcaDaemon{version: "v1.4.262", workspace: ws}, nil
+	}
+	shellFn = func(_ context.Context, _ client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
+		*attached = p
+		return &reload.From{Container: p.ContainerName}, nil
+	}
+	exec := stubExecSelf(t, "/usr/local/bin/toolbox")
+	if err := orcaShellCmd.Flags().Set("profile", "work"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		orcaShellProfile = ""
+		orcaShellCmd.Flags().Lookup("profile").Changed = false
+	})
+
+	_ = runOrcaShell(orcaShellCmd, nil) // the exec stub reports the reload as an error
+
+	p := *attached
+	if p == nil || p.ContainerName != "toolbox-orca-work" || p.Detached {
+		t.Fatalf("attached plan = %+v, want an attached toolbox-orca-work", p)
+	}
+	if got := sessionplan.EnvValue(p.Env, sessionplan.OrcaVersionEnv); got != "v1.4.262" {
+		t.Errorf("%s = %q, want the running Orca Shell's", sessionplan.OrcaVersionEnv, got)
+	}
+	if got := sessionplan.EnvValue(p.Env, "TOOLBOX_HOST_WORKSPACE"); got != ws {
+		t.Errorf("workspace = %q, want the running Orca Shell's %q", got, ws)
+	}
+	want := []string{"/usr/local/bin/toolbox", "orca", "shell", "--profile", "work"}
+	if !slices.Equal(exec.argv, want) {
+		t.Errorf("reload argv = %q, want %q", exec.argv, want)
 	}
 }

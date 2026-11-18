@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
@@ -20,6 +21,8 @@ var orcaVersion string
 var orcaProfile string
 var orcaShare []string
 var orcaStopProfile string
+var orcaShellProfile string
+var orcaShellShare []string
 
 // orcaReadyTimeout bounds the wait for the pairing link: a first start
 // downloads the server before it runs.
@@ -103,6 +106,64 @@ func awaitPairing(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 	}, nil
 }
 
+var orcaShellCmd = &cobra.Command{
+	Use:   "shell",
+	Short: "Open a terminal in the running Orca Shell; exiting leaves Orca running",
+	Args:  usageArgs(cobra.NoArgs),
+	RunE:  runOrcaShell,
+}
+
+// runOrcaShell attaches a terminal to the running Orca Shell. The plan takes
+// the server version and workspace off that container, so a recreate on the
+// way in (refresh, Session Reload) brings the server back; the re-entry form
+// re-runs this command, not `toolbox shell`.
+func runOrcaShell(cmd *cobra.Command, _ []string) error {
+	profile, err := resolveShellProfile(cmd, orcaShellProfile, orcaShellShare)
+	if err != nil {
+		return err
+	}
+	name, err := sessionplan.OrcaContainerName(profile)
+	if err != nil {
+		return err
+	}
+	env, err := runningOrcaShellEnv(name)
+	if err != nil {
+		return err
+	}
+	return startSession(sessionIntent{
+		Plan: sessionplan.PlanInput{
+			Cfg:         cfg,
+			Workspace:   sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE"),
+			Profile:     profile,
+			OrcaVersion: sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv),
+			OrcaAttach:  true,
+		},
+		Reentry: append([]string{"orca", "shell"}, reentryFlags(cmd.Flags(), nil)...),
+	})
+}
+
+// runningOrcaShellEnv returns the env of the running Orca Shell called name,
+// or an error naming the command that starts one.
+func runningOrcaShellEnv(name string) ([]string, error) {
+	cli, err := newDockerClient()
+	if err != nil {
+		return nil, dockerClientErr(err)
+	}
+	defer cli.Close()
+	ctx, stop := signalCtx()
+	defer stop()
+	res, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return nil, err
+	}
+	c := res.Container
+	if err != nil || c.State == nil || !c.State.Running || !runplan.IsDetached(c) || c.Config == nil ||
+		sessionplan.EnvValue(c.Config.Env, sessionplan.OrcaVersionEnv) == "" {
+		return nil, fmt.Errorf("no Orca Shell %s is running: start it with toolbox orca --version <version>", name)
+	}
+	return c.Config.Env, nil
+}
+
 func runOrcaStop(cmd *cobra.Command, _ []string) error {
 	profile, err := resolveShellProfile(cmd, orcaStopProfile, nil)
 	if err != nil {
@@ -131,6 +192,9 @@ func init() {
 	orcaCmd.Flags().StringSliceVar(&orcaShare, "share", nil,
 		"under --profile, keep the named tools on the host's ~/.toolbox/ root (see toolbox shell --share)")
 	orcaStopCmd.Flags().StringVar(&orcaStopProfile, "profile", "", "stop the Orca Shell of this toolbox profile")
-	orcaCmd.AddCommand(orcaStopCmd)
+	orcaShellCmd.Flags().StringVar(&orcaShellProfile, "profile", "", "open a terminal in the Orca Shell of this toolbox profile")
+	orcaShellCmd.Flags().StringSliceVar(&orcaShellShare, "share", nil,
+		"under --profile, the --share the Orca Shell was started with")
+	orcaCmd.AddCommand(orcaStopCmd, orcaShellCmd)
 	rootCmd.AddCommand(orcaCmd)
 }
