@@ -309,7 +309,7 @@ func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.Cont
 		State:      &dockercontainer.State{Running: true},
 		Config: &dockercontainer.Config{
 			Labels: runplan.DetachedLabels(),
-			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, "TOOLBOX_HOST_WORKSPACE=" + d.workspace},
+			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, sessionplan.HostWorkspaceEnv + "=" + d.workspace},
 		},
 	}}, nil
 }

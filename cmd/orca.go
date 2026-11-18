@@ -99,7 +99,7 @@ func runOrca(cmd *cobra.Command, args []string) error {
 				version, err = sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv), nil
 			}
 			if noWorkspace {
-				ws = sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE")
+				ws = sessionplan.EnvValue(env, sessionplan.HostWorkspaceEnv)
 			}
 		}
 	}
@@ -179,7 +179,7 @@ func runOrcaShell(cmd *cobra.Command, _ []string) error {
 	return startSession(sessionIntent{
 		Plan: sessionplan.PlanInput{
 			Cfg:         cfg,
-			Workspace:   sessionplan.EnvValue(env, "TOOLBOX_HOST_WORKSPACE"),
+			Workspace:   sessionplan.EnvValue(env, sessionplan.HostWorkspaceEnv),
 			Profile:     profile,
 			OrcaVersion: sessionplan.EnvValue(env, sessionplan.OrcaVersionEnv),
 			OrcaAttach:  true,
@@ -238,8 +238,8 @@ func reportJoin(w io.Writer, plan *sessionplan.SessionPlan, runningEnv []string)
 	if want := sessionplan.EnvValue(plan.Env, sessionplan.OrcaVersionEnv); want != running {
 		_, _ = fmt.Fprintf(w, "; to run %s, toolbox orca stop first", want)
 	}
-	served := sessionplan.EnvValue(runningEnv, "TOOLBOX_HOST_WORKSPACE")
-	if want := sessionplan.EnvValue(plan.Env, "TOOLBOX_HOST_WORKSPACE"); want != served {
+	served := sessionplan.EnvValue(runningEnv, sessionplan.HostWorkspaceEnv)
+	if want := sessionplan.EnvValue(plan.Env, sessionplan.HostWorkspaceEnv); want != served {
 		_, _ = fmt.Fprintf(w, "; it keeps serving %s; to serve %s, toolbox orca stop first", served, want)
 	}
 	_, _ = fmt.Fprintln(w, ".")
