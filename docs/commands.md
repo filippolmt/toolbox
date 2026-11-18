@@ -185,7 +185,7 @@ The [peer-messaging anchor](#peer-messaging) is excluded — it is infrastructur
 
 ## toolbox orca
 
-Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running Orca's server at the Orca desktop app's version (or the release `--version` names), on host `127.0.0.1:6768`. Returns once the server is ready and the Orca desktop app lists it as the environment `toolbox` (`toolbox-<profile>`); [how pairing works](orca.md#pairing). The workspace is the absolute `dir` argument, or [`orca_workspace`](configuration.md#key-reference). Guide: [orca.md](orca.md).
+Start the [Orca Shell](../CONTEXT.md#orca-shell): a detached container running Orca's server at the Orca desktop app's version (or the release `--version` names), on host `127.0.0.1:6768`. Returns once the server is ready and the Orca desktop app lists it as the environment `toolbox` (`toolbox-<profile>`); [how pairing works](orca.md#pairing). The workspace is the absolute `dir` argument, or [`orca_workspace`](configuration.md#key-reference), or else the running Orca Shell's. Guide: [orca.md](orca.md).
 
 | Flag | Description |
 |------|-------------|

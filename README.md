@@ -120,6 +120,8 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Agent guardrails.** Claude Code, Codex and pi run a hook before every shell command that blocks these mistakes: a Docker bind mount from a container-local path (it would reach the host daemon empty), `git commit -a` and a `git stash` without a pathspec, which sweep up work that is not the agent's, a `git stash pop`/`apply` without a reference, which can apply another session's, and a discard of every uncommitted change in the tree (`git reset --hard`, `git checkout .`, `git restore .`, a forced `git clean` or switch). The agent gets the reason and the way out. → [troubleshooting](docs/troubleshooting.md#an-agent-command-is-blocked-by-the-agent-guardrails)
 
+**Orca runtime.** `toolbox orca` runs [Orca](https://github.com/stablyai/orca)'s server in a detached Orca Shell at the desktop app's version, on host `127.0.0.1` only, and pairs the desktop app with it, so the agents Orca starts use the bundled CLIs and the isolated credentials. It keeps running until `toolbox orca stop`. → [docs/orca.md](docs/orca.md)
+
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 
 ## Documentation

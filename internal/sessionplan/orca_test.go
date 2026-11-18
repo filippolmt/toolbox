@@ -141,24 +141,37 @@ func TestPlanOrcaWorkspaceRefusals(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ label, value string }{
-		{"colon", planHost.Join("a:b")},
-		{"relative", "src"},
-		{"missing", planHost.Join("missing")},
-		{"not a directory", file},
-		{"bare tilde", "~"},
-		{"tilde slash", "~/"},
-		{"home", planHost.Home},
-		{"home with trailing slash", planHost.Home + "/"},
+	// Each case names the reason per route: the dir argument is taken as
+	// given, orca_workspace is tilde-expanded first, so "~" is relative on the
+	// one and the home on the other.
+	const (
+		colon    = "contains ':'"
+		relative = "is not absolute"
+		missing  = "no such file or directory"
+		notDir   = "is not a directory"
+		home     = "is the home directory"
+	)
+	for _, tc := range []struct{ label, value, dirReason, keyReason string }{
+		{"colon", planHost.Join("a:b"), colon, colon},
+		{"relative", "src", relative, relative},
+		{"missing", planHost.Join("missing"), missing, missing},
+		{"not a directory", file, notDir, notDir},
+		{"bare tilde", "~", relative, home},
+		{"tilde slash", "~/", relative, home},
+		{"home", planHost.Home, home, home},
+		{"home with trailing slash", planHost.Home + "/", home, home},
 	} {
-		routes := map[string]sessionplan.PlanInput{
-			"dir argument":   {Host: planHost, Cfg: testConfig(), Workspace: tc.value, OrcaVersion: "v1.0.0"},
-			"orca_workspace": {Host: planHost, Cfg: &config.Config{Shell: "zsh", OrcaWorkspace: tc.value}, OrcaVersion: "v1.0.0"},
+		routes := map[string]struct {
+			in     sessionplan.PlanInput
+			reason string
+		}{
+			"dir argument":   {sessionplan.PlanInput{Host: planHost, Cfg: testConfig(), Workspace: tc.value, OrcaVersion: "v1.0.0"}, tc.dirReason},
+			"orca_workspace": {sessionplan.PlanInput{Host: planHost, Cfg: &config.Config{Shell: "zsh", OrcaWorkspace: tc.value}, OrcaVersion: "v1.0.0"}, tc.keyReason},
 		}
-		for route, in := range routes {
+		for route, r := range routes {
 			t.Run(tc.label+"/"+route, func(t *testing.T) {
-				if _, err := sessionplan.Plan(in); err == nil {
-					t.Errorf("Plan accepted the workspace %q", tc.value)
+				if _, err := sessionplan.Plan(r.in); err == nil || !strings.Contains(err.Error(), r.reason) {
+					t.Errorf("Plan(%q) = %v, want a refusal containing %q", tc.value, err, r.reason)
 				}
 			})
 		}

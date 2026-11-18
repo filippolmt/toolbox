@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -80,11 +79,11 @@ func (d MacDesktop) spotlightApps() ([]string, error) {
 	return apps, nil
 }
 
-// checkPairingURL refuses anything but a parseable orca:// URL, so the link
-// never reaches a host command as an option or another scheme's handler. The
-// error does not echo it: the link carries the pairing code.
+// checkPairingURL refuses anything but an orca:// link, so it never reaches a
+// host command as an option or another scheme's handler. The error does not
+// echo it: the link carries the pairing code.
 func checkPairingURL(link string) error {
-	if u, err := url.Parse(link); err != nil || u.Scheme != "orca" || !strings.HasPrefix(link, "orca://") {
+	if !strings.HasPrefix(link, "orca://") {
 		return errors.New("orca: the pairing link is not an orca:// URL; refusing to hand it to the Orca desktop app")
 	}
 	return nil
@@ -98,9 +97,12 @@ func (d MacDesktop) bundleVersion(app string) (string, error) {
 func (noDesktop) Environments() ([]string, error)     { return nil, ErrNoCLI }
 func (noDesktop) AddEnvironment(string, string) error { return ErrNoCLI }
 func (noDesktop) RemoveEnvironment(string) error      { return ErrNoCLI }
-func (noDesktop) OpenURL(string) error                { return errNoDesktop }
+func (noDesktop) OpenPairingLink(string) error        { return errNoDesktop }
 
 var errNoDesktop = errors.New("toolbox looks for the Orca desktop app on macOS only")
+
+// jsonFlag asks the Orca CLI for its JSON envelope instead of prose.
+const jsonFlag = "--json"
 
 // bundledCLI is the CLI inside Orca.app: electron-builder's mac
 // extraResources put resources/darwin/bin/orca at Contents/Resources/bin/orca.
@@ -149,7 +151,7 @@ func (d MacDesktop) runCLI(cli string, args []string) (out []byte, ok bool, err 
 // Environments reads `orca environment list --json`: the CLI's success
 // envelope, {"result":{"environments":[{"name":…},…]}}.
 func (d MacDesktop) Environments() ([]string, error) {
-	out, err := d.orca("environment", "list", "--json")
+	out, err := d.orca("environment", "list", jsonFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -176,17 +178,17 @@ func (d MacDesktop) AddEnvironment(name, pairingURL string) error {
 	if err := checkPairingURL(pairingURL); err != nil {
 		return err
 	}
-	_, err := d.orca("environment", "add", "--name", name, "--pairing-code", pairingURL, "--json")
+	_, err := d.orca("environment", "add", "--name", name, "--pairing-code", pairingURL, jsonFlag)
 	return err
 }
 
 func (d MacDesktop) RemoveEnvironment(name string) error {
-	_, err := d.orca("environment", "rm", "--environment", name, "--json")
+	_, err := d.orca("environment", "rm", "--environment", name, jsonFlag)
 	return err
 }
 
-// OpenURL uses macOS `open`; Orca.app registers the orca:// scheme.
-func (d MacDesktop) OpenURL(link string) error {
+// OpenPairingLink uses macOS `open`; Orca.app registers the orca:// scheme.
+func (d MacDesktop) OpenPairingLink(link string) error {
 	if err := checkPairingURL(link); err != nil {
 		return err
 	}

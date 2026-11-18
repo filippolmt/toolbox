@@ -18,8 +18,9 @@ type Desktop interface {
 	AddEnvironment(name, pairingURL string) error
 	// RemoveEnvironment drops the environment called name.
 	RemoveEnvironment(name string) error
-	// OpenURL hands an orca:// link to the app through the OS URL scheme.
-	OpenURL(url string) error
+	// OpenPairingLink hands an orca:// pairing link to the app through the OS
+	// URL scheme.
+	OpenPairingLink(url string) error
 }
 
 // ResolveVersion returns the release tag to run: the --version flag when set,
