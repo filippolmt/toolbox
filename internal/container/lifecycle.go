@@ -768,6 +768,14 @@ func createAndStart(ctx context.Context, cli client.APIClient, plan *sessionplan
 	// shared socket mount, rather than failing it.
 	pidMode, planBinds := ensurePeerRuntime(ctx, cli, plan)
 
+	// Unlike peer messaging, no degrade: an Orca Shell without a writable data
+	// directory starts no server.
+	if plan.OrcaDataVolume != "" {
+		if err := ensureOwnedVolume(ctx, cli, plan.Image, orcaDataVolume(plan.OrcaDataVolume)); err != nil {
+			return "", err
+		}
+	}
+
 	// One pass, two slices: the daemon wants flattened specs (HostConfig.Binds
 	// below), dockeridentity wants the in-container targets it keys group-add
 	// on. Reading b.Target here rather than re-parsing the spec keeps that

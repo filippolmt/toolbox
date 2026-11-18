@@ -21,6 +21,11 @@ const (
 	// OrcaVersionEnv is the env gate the init script reads: only the Orca
 	// Shell carries it, and its value is the release tag to run.
 	OrcaVersionEnv = "TOOLBOX_ORCA_VERSION"
+	// OrcaDataTarget is where the Orca Shell mounts its data volume and what
+	// ORCA_USER_DATA_PATH names. Outside the state mount on purpose: Orca
+	// creates its Unix sockets in its data directory, and a Host Share bind
+	// cannot hold one (see mountplan.PeerSocketVolumeName).
+	OrcaDataTarget = "/home/toolbox/.orca-data"
 	// orcaDataDir is Orca's data directory, relative to the state mount on
 	// both sides of the bind.
 	orcaDataDir = "orca"

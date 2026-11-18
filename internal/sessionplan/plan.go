@@ -100,6 +100,10 @@ type SessionPlan struct {
 	// address first, so a port a non-Docker host process holds fails naming
 	// it. Set for the Orca Shell, whose port is fixed.
 	ProbeHostPorts bool
+	// OrcaDataVolume names the Orca Shell's data volume, which Binds mounts at
+	// OrcaDataTarget; the container edge creates and initialises it before
+	// the create. Empty for every other session.
+	OrcaDataVolume string
 	// PidMode is the docker --pid value. Empty for an ordinary session (the
 	// container gets its own PID namespace); `container:<anchor>` when the
 	// session opted into cross-container peer messaging, which is what makes

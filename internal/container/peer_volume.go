@@ -41,6 +41,13 @@ var peerSocketVolume = ownedVolume{
 	what:     "peer socket volume",
 }
 
+// orcaDataVolume is an Orca Shell's data volume (sessionplan.OrcaDataVolumeName),
+// mounted at sessionplan.OrcaDataTarget. One initialiser name per volume, so
+// two Profiles' Orca Shells starting at once do not collide.
+func orcaDataVolume(name string) ownedVolume {
+	return ownedVolume{name: name, target: sessionplan.OrcaDataTarget, initName: name + "-init", what: "Orca data volume"}
+}
+
 // ensurePeerSocketVolume makes the shared inbox-socket volume exist and carry
 // the ownership Claude Code requires, so an opted-in session finds a directory
 // it can bind sockets in.
