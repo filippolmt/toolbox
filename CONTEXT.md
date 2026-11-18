@@ -2161,8 +2161,8 @@ a stop still removes it. The property follows the container, not the command
 that recreates it: an accepted start-up refresh or a
 [Session Reload](#session-reload) of a Detached Shell writes the label again,
 read off the container being replaced, even from an ordinary plan, whose
-terminal still opens. No user-facing flag sets it: its only caller is the
-[Orca Shell](#orca-shell). Decision and
+terminal still opens. No user-facing flag sets it: its callers are the
+[Orca Shell](#orca-shell) and the [Herdr Core Shell](#herdr-core-shell). Decision and
 alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
@@ -2232,6 +2232,46 @@ conflict check: a holder outside Docker would otherwise surface only as the
 daemon's bind error. The pairing link and Spotlight's results reach host
 commands' argv, so the desktop seam accepts only an `orca://` link and
 absolute `.app` paths, neither of which can read as an option.
+
+### Herdr Core Shell
+
+The [Detached Shell](#detached-shell) that hosts **herdr-core** (`hc`) for the
+Herdr desktop app (herdr.app): one per host and
+[Profile](docs/commands.md#profiles), started by `toolbox herdr`, ended by
+`toolbox herdr stop`. herdr-core is not the **Herdr TUI** (`herdr`, the
+terminal multiplexer bundled in the image and run per workspace inside an
+ordinary Shell): they are separate runtimes that do not see each other's
+terminals, and "herdr" alone in this repository means the TUI.
+
+Concretely: `sessionplan.PlanInput.HerdrCore` set is what makes a plan the
+Herdr Core Shell, and `sessionplan.Plan` derives the fixed name
+`toolbox-herdr` or `toolbox-herdr-<profile>`
+(`sessionplan.HerdrCoreContainerName`, a hash-shaped profile suffix refused),
+herdr-core's state on the Shell's own named volume
+(`SessionPlan.HerdrDataVolume`: `toolbox-herdr-data` or
+`toolbox-herdr-data-<profile>`, mounted at `sessionplan.HerdrCoreStateTarget`,
+created and initialised like the Orca data volume, surviving
+`toolbox herdr stop`), the workspace from the `dir` argument (the Orca Shell's
+check), and `Detached`. After the create, `toolbox herdr` registers the Shell
+with the host's herdr-core through the `herdrcore.Host` seam (adapter
+`herdrcore.CLI`) as the machine `toolbox` or `toolbox-<profile>`
+(`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
+(`herdrcore.Via`, built from the planned container name only) and
+`--install`, so herdr-core copies the host's own `hc` into the container's
+writable layer. A Shell this run created that herdr-core cannot add is
+removed. No init script and no env gate: nothing runs herdr-core in the
+container until the host connects. Decision and alternatives:
+[ADR 0024](docs/adr/0024-herdr-core-runs-in-a-detached-shell-reached-by-docker-exec.md).
+
+Why the term exists: herdr.app talks only to herdr-core, never to the TUI,
+so running its agents in a container needs a container that hosts
+herdr-core, under a name the host's machine registration can point at. A
+fixed per-Profile singleton is that name; per-workspace Shells would mean one
+machine per repository.
+
+Why the state is a volume: herdr-core keeps its sockets in its state
+directory when the container has no runtime directory, and a
+[Host Share](#host-share) bind refuses to `chmod` a socket.
 
 ### Peer Anchor
 

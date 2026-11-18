@@ -201,6 +201,17 @@ On a running Orca Shell it creates nothing: it says the shell is already running
 
 `toolbox orca pair [--profile <name>]` removes the running Orca Shell's environment from the desktop app and adds it again from a fresh pairing offer.
 
+## toolbox herdr
+
+Start the [Herdr Core Shell](../CONTEXT.md#herdr-core-shell): a detached container hosting herdr-core for the Herdr desktop app, added to the host's herdr-core (`hc`) as the machine `toolbox` (`toolbox-<profile>`), reached with `docker exec` and with herdr-core's own `hc` installed in it. The workspace is the absolute `dir` argument. When herdr-core cannot add the machine on a Shell this run created, the Shell is removed and herdr-core's reason is the error. Guide: [herdr.md](herdr.md).
+
+| Flag | Description |
+|------|-------------|
+| `--profile <name>` | Run the Herdr Core Shell for this [profile](#profiles) (`toolbox-herdr-<name>`). |
+| `--share <tools>` | Under `--profile`, as for `toolbox shell`. |
+
+`toolbox herdr stop [--profile <name>]` removes the Herdr Core Shell; its state volume stays. With none it exits 0 without a word.
+
 ## toolbox stop
 
 Stop and remove toolbox containers. Mirrors `toolbox shell`'s targeting: no argument stops the container bound to the current directory; `toolbox stop <name>` stops a [named shell](shells.md)'s container; `toolbox stop <abs-dir>` stops the one-shot session for that directory.

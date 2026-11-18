@@ -21,6 +21,7 @@ paths:
   - "internal/build/assets/init.d/70-loopback-bridge.sh"
   - "internal/build/assets/init.d/80-orca.sh"
   - "internal/orca/**"
+  - "internal/herdrcore/**"
   - "internal/build/assets/entrypoint.sh"
 ---
 
@@ -149,6 +150,25 @@ them.
   `TestOrcaInitLogsTheServerStopping`. `toolbox orca stop` with none is
   quiet: `TestOrcaStopWithoutAnOrcaShellIsQuiet`. →
   [Orca Shell](../../CONTEXT.md#orca-shell)
+
+- **The Herdr Core Shell is planned, not assembled:** `toolbox herdr` reaches
+  the container through `startSession`; `PlanInput.HerdrCore` is the only
+  switch, and `sessionplan.Plan` derives the name, the per-Profile state
+  volume bind at `sessionplan.HerdrCoreStateTarget` (never the Host Share:
+  herdr-core's sockets live there) and `Detached`. The container edge
+  initialises the volume like the Orca data volume. The host's herdr-core is
+  reached only through the `herdrcore.Host` seam, and the `--via` line only
+  from `herdrcore.Via` on the planned container name: hc runs it as an sh
+  line. A Shell the run created that herdr-core cannot add is removed. Pinned
+  by `TestPlanHerdrCoreShell`, `TestPlanOrdinaryShellCarriesNoHerdrCore`,
+  `TestPlanHerdrCoreRefusesHashShapedProfile`,
+  `TestPlanHerdrCoreWorkspaceRefusals`,
+  `TestShellHerdrCoreShellInitialisesItsStateVolumeBeforeCreate`,
+  `TestViaIsBuiltFromTheContainerName`, `TestCLIReportsAMissingHCDistinctly`,
+  `TestHerdrStartsTheHerdrCoreShellAndAddsItsMachine`,
+  `TestHerdrRemovesANewShellWhoseMachineAddFailed` and
+  `TestHerdrStopWithoutAHerdrCoreShellIsQuiet`. →
+  [Herdr Core Shell](../../CONTEXT.md#herdr-core-shell)
 
 - **Other create invariants:** codex always gets `seccomp=unconfined`; container
   hostname equals the validated container name; session containers use

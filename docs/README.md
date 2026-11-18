@@ -16,6 +16,7 @@ sections.** Every `##` of a linked guide needs an entry
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
 | [orca.md](orca.md) | how-to | Orca's runtime in a detached Orca Shell: start, pair, a terminal in it, stop, profiles, port, log, offline, side effects, the dropped Claude Code plugin |
+| [herdr.md](herdr.md) | how-to | The Herdr desktop app's agents in a detached Herdr Core Shell: start, stop, profiles, trust boundary, recreate, removing the machine |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
@@ -27,6 +28,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [toolbox shell](commands.md#toolbox-shell) — [Profiles](commands.md#profiles) · [Publishing ports](commands.md#publishing-ports) · [Loopback bridge](commands.md#loopback-bridge) · [`--oauth` presets](commands.md#--oauth-presets)
 - [toolbox list](commands.md#toolbox-list)
 - [toolbox orca](commands.md#toolbox-orca)
+- [toolbox herdr](commands.md#toolbox-herdr)
 - [toolbox stop](commands.md#toolbox-stop) — [Containers started from inside a shell](commands.md#containers-started-from-inside-a-shell)
 - [toolbox build](commands.md#toolbox-build)
 - [toolbox version](commands.md#toolbox-version)
@@ -131,6 +133,15 @@ sections.** Every `##` of a linked guide needs an entry
 - [What Orca changes in your toolbox config](orca.md#what-orca-changes-in-your-toolbox-config)
 - [Claude Code and Orca's agent-view plugin](orca.md#claude-code-and-orcas-agent-view-plugin)
 - [Troubleshooting](orca.md#troubleshooting)
+
+## herdr.md
+
+- [Start](herdr.md#start)
+- [Stop](herdr.md#stop)
+- [Profiles](herdr.md#profiles)
+- [Trust boundary](herdr.md#trust-boundary)
+- [Recreate](herdr.md#recreate)
+- [Remove the machine](herdr.md#remove-the-machine)
 
 ## mobile.md
 
