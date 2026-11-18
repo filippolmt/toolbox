@@ -19,7 +19,7 @@ toolbox orca
 
 The first start downloads `orca-server-linux-<arch>.tar.gz` from the [server version](#server-version)'s release, checks it against the release's `orca-server-sha256sums.txt`, and installs it. The command returns once the server is ready and the desktop app lists it (see [pairing](#pairing)). The runtime keeps running with no terminal open until you stop it.
 
-`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both.
+`toolbox orca <abs-dir>` serves another directory for this start, overriding `orca_workspace`. With neither, the command fails and names both. Either way the directory must exist and must not be your home itself (`~`, `~/`, or its absolute path): the Orca Shell would otherwise mount the whole home.
 
 ### Server version
 

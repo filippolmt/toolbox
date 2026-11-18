@@ -73,6 +73,11 @@ func TestMergeScenarios(t *testing.T) {
 			want:    want{ErrSubstr: "orca_workspace"},
 		},
 		{
+			name:    "orca_workspace_tilde_slash_rejected",
+			project: "orca_workspace: \"~/\"\n",
+			want:    want{ErrSubstr: "orca_workspace"},
+		},
+		{
 			name:    "orca_workspace_relative_rejected",
 			project: "orca_workspace: ./src\n",
 			want:    want{ErrSubstr: "orca_workspace"},

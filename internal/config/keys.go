@@ -220,7 +220,7 @@ var keyRows = []Key{
 		Name:    "mounts_root",
 		Kind:    KindScalar,
 		Editor:  EditorText,
-		Summary: "Retarget every default mount under ~/.toolbox/ to this prefix. Absolute (/path) or home-relative (~/sub); bare ~ rejected.",
+		Summary: "Retarget every default mount under ~/.toolbox/ to this prefix. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
 		Default: "~/.toolbox",
 		Example: "# Retarget every default mount whose source lives under ~/.toolbox/ to the\n" +
 			"# given prefix. Must be absolute (/path) or strictly home-relative (~/sub).\n" +
@@ -233,7 +233,7 @@ var keyRows = []Key{
 		Name:    "orca_workspace",
 		Kind:    KindScalar,
 		Editor:  EditorText,
-		Summary: "Host directory `toolbox orca` serves when no dir argument is given. Absolute (/path) or home-relative (~/sub); bare ~ rejected.",
+		Summary: "Host directory `toolbox orca` serves when no dir argument is given. Absolute (/path) or home-relative (~/sub); bare ~ and ~/ rejected; the expanded path must be an existing directory other than the home.",
 		Default: "unset (toolbox orca needs a dir argument)",
 		Example: "# orca_workspace — the directory holding your repositories, served by\n" +
 			"# `toolbox orca` when no dir argument is given. Absolute (/path) or\n" +

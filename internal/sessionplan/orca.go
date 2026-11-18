@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 // Orca Shell: the Detached Shell that hosts Orca's runtime, one per host and
@@ -45,15 +46,25 @@ func OrcaContainerName(profile *mountplan.Profile) (string, error) {
 }
 
 // orcaWorkspace is the dir argument when given, else orca_workspace expanded
-// against the declared host's home.
+// against the declared host's home. Both routes pass the one check: a
+// colon-free absolute path to an existing directory that is not the home
+// itself (the Orca Shell would mount the whole host home).
 func orcaWorkspace(in PlanInput) (string, error) {
-	if in.Workspace != "" {
-		return in.Workspace, nil
+	raw := in.Workspace
+	if raw == "" {
+		if in.Cfg.OrcaWorkspace == "" {
+			return "", errors.New("toolbox orca has no workspace: set orca_workspace in ~/.toolbox.yaml or pass a dir argument")
+		}
+		raw = in.Host.Expand(in.Cfg.OrcaWorkspace)
 	}
-	if in.Cfg.OrcaWorkspace == "" {
-		return "", errors.New("toolbox orca has no workspace: set orca_workspace in ~/.toolbox.yaml or pass a dir argument")
+	ws, err := workspace.ResolveExplicit(raw)
+	if err != nil {
+		return "", fmt.Errorf("toolbox orca workspace: %w", err)
 	}
-	return in.Host.Expand(in.Cfg.OrcaWorkspace), nil
+	if ws == filepath.Clean(in.Host.Home) {
+		return "", fmt.Errorf("toolbox orca workspace %s is the home directory: it would mount the whole host home into the Orca Shell; name the directory that holds your repositories", ws)
+	}
+	return ws, nil
 }
 
 // orcaDetached: the Orca Shell starts detached unless a terminal asked for it.

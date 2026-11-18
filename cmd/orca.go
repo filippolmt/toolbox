@@ -17,7 +17,6 @@ import (
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
 	"github.com/filippolmt/toolbox/internal/ui"
-	"github.com/filippolmt/toolbox/internal/workspace"
 )
 
 var orcaVersion string
@@ -89,11 +88,9 @@ func runOrca(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var ws string
+	var ws string // sessionplan checks it, the same way as orca_workspace
 	if len(args) == 1 {
-		if ws, err = workspace.ResolveExplicit(args[0]); err != nil {
-			return err
-		}
+		ws = args[0]
 	}
 	warnIfNewProfile(hostBestEffort(), profile)
 
