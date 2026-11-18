@@ -114,7 +114,7 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 				if !created && res.Container.Config != nil {
 					reportHerdrJoin(cmd.OutOrStdout(), plan, res.Container.Config.Env)
 				}
-				return addHerdrMachine(ctx, cli, plan.ContainerName, created, cmd)
+				return addHerdrMachine(ctx, cli, plan.ContainerName, created, cmd.OutOrStdout())
 			}, nil
 		},
 	})
@@ -145,7 +145,7 @@ func runningHerdrCoreShellOf(profile *mountplan.Profile) ([]string, error) {
 // herdr-core, or prints how to once the host has hc. A Shell this run created
 // and herdr-core cannot register is removed: left running, it would be a
 // detached container nothing uses.
-func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, cmd *cobra.Command) error {
+func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, w io.Writer) error {
 	machine := herdrcore.MachineName(shell)
 	via, err := herdrcore.Via(shell)
 	if err == nil {
@@ -162,7 +162,7 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 	}
 	if errors.Is(err, herdrcore.ErrNoHC) {
 		// via is a plain container name and fixed words: single quotes suffice.
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "The Herdr Core Shell %s is up, but this host has no hc (herdr-core) on its PATH. Once herdr-core is installed, register it with:\n  hc machine add --name %s --install --via '%s'\n", shell, machine, via)
+		_, _ = fmt.Fprintf(w, "The Herdr Core Shell %s is up, but this host has no hc (herdr-core) on its PATH. Once herdr-core is installed, register it with:\n  hc machine add --name %s --install --via '%s'\n", shell, machine, via)
 		return nil
 	}
 	if err != nil {
@@ -172,7 +172,7 @@ func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, cr
 		}
 		return err
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "herdr-core reaches the Herdr Core Shell %s as the machine %s: open herdr.app.\n", shell, machine)
+	_, _ = fmt.Fprintf(w, "herdr-core reaches the Herdr Core Shell %s as the machine %s: open herdr.app.\n", shell, machine)
 	return nil
 }
 
