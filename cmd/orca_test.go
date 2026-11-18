@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
+	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/container"
 	"github.com/filippolmt/toolbox/internal/reload"
 	"github.com/filippolmt/toolbox/internal/runplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
@@ -110,9 +111,11 @@ type runningOrcaDaemon struct {
 }
 
 func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
-	return client.ContainerInspectResult{Container: container.InspectResponse{
-		State: &container.State{Running: true},
-		Config: &container.Config{
+	return client.ContainerInspectResult{Container: dockercontainer.InspectResponse{
+		ID:         "orca1",
+		HostConfig: &dockercontainer.HostConfig{AutoRemove: true},
+		State: &dockercontainer.State{Running: true},
+		Config: &dockercontainer.Config{
 			Labels: runplan.DetachedLabels(),
 			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, "TOOLBOX_HOST_WORKSPACE=" + d.workspace},
 		},
@@ -156,5 +159,39 @@ func TestOrcaShellPlansTheRunningOrcaShellAndReentersIt(t *testing.T) {
 	want := []string{"/usr/local/bin/toolbox", "orca", "shell", "--profile", "work"}
 	if !slices.Equal(exec.argv, want) {
 		t.Errorf("reload argv = %q, want %q", exec.argv, want)
+	}
+}
+
+// A second `toolbox orca` joins the running Orca Shell: the real attach with
+// a daemon that knows no create (the stub panics on any call it does not
+// answer), and a report of what is running and where, not a fresh start.
+func TestOrcaJoinMakesNoCreateAndPrintsStateAndEndpoint(t *testing.T) {
+	orcaHarness(t, "1.5.0", "")
+	ws := sessionWorkspace(t, "src")
+	newDockerClient = func() (client.APIClient, error) {
+		return runningOrcaDaemon{version: "v1.4.262", workspace: ws}, nil
+	}
+	shellFn = func(ctx context.Context, cli client.APIClient, p *sessionplan.SessionPlan) (*reload.From, error) {
+		log := p.OrcaLogPath()
+		if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(log, []byte("toolbox: orca v1.4.262: start x\n"+
+			`{"type":"orca_server_ready","pairing":{"available":true,"url":"orca://pair#running"}}`+"\n"), 0o600); err != nil {
+			return nil, err
+		}
+		return container.Shell(ctx, cli, p)
+	}
+	var out bytes.Buffer
+	orcaCmd.SetOut(&out)
+	t.Cleanup(func() { orcaCmd.SetOut(nil) })
+
+	if err := runOrca(orcaCmd, []string{ws}); err != nil {
+		t.Fatalf("runOrca: %v", err)
+	}
+	for _, want := range []string{"already running", "v1.4.262", "127.0.0.1:" + sessionplan.OrcaPort, "orca://pair#running"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output %q lacks %q", out.String(), want)
+		}
 	}
 }

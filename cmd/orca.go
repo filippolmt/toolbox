@@ -85,9 +85,10 @@ func runOrca(cmd *cobra.Command, args []string) error {
 }
 
 // awaitPairing notes where in the server log this start's readiness record
-// will land, and returns the wait for it. A running Orca Shell is joined, and
-// the last record already in the log is its server's; a new one appends past
-// what the log holds now, which may end in an earlier container's record.
+// will land, and returns the wait for it. A running Orca Shell is joined: the
+// log as of its latest server start says whether that server still serves,
+// and the report says it was already running. A new one appends past what the
+// log holds now, which may end in an earlier container's record.
 func awaitPairing(ctx context.Context, cli client.APIClient, plan *sessionplan.SessionPlan, cmd *cobra.Command) (func() error, error) {
 	logPath := plan.OrcaLogPath()
 	var offset int64
@@ -100,6 +101,14 @@ func awaitPairing(ctx context.Context, cli client.APIClient, plan *sessionplan.S
 		url, err := orca.WaitPairing(logPath, offset, orcaReadyTimeout)
 		if err != nil {
 			return fmt.Errorf("%w (the Orca Shell %s keeps running; toolbox orca stop removes it)", err, plan.ContainerName)
+		}
+		if joining && res.Container.Config != nil {
+			running := sessionplan.EnvValue(res.Container.Config.Env, sessionplan.OrcaVersionEnv)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "The Orca Shell %s is already running Orca %s", plan.ContainerName, running)
+			if want := sessionplan.EnvValue(plan.Env, sessionplan.OrcaVersionEnv); want != running {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "; to run %s, toolbox orca stop first", want)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), ".")
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Orca is serving on 127.0.0.1:%s. Paste this link in Orca (Settings → Remote Orca Servers → Add Server):\n%s\n", sessionplan.OrcaPort, url)
 		return nil
