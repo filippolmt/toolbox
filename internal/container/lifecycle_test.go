@@ -1610,11 +1610,7 @@ func TestShellDetachedRefusesAnUnlabelledContainer(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ID:     "abc123",
-				State:  &container.State{Running: true},
-				Config: &container.Config{},
-			}, nil
+			return existingInspect(true, nil), nil
 		},
 	}
 
@@ -1637,11 +1633,7 @@ func TestShellDetachedJoinsALabelledContainer(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ID:     "abc123",
-				State:  &container.State{Running: true},
-				Config: &container.Config{Labels: runplan.DetachedLabels()},
-			}, nil
+			return existingInspect(true, runplan.DetachedLabels()), nil
 		},
 		// Already up and already detached: nothing to refresh, so no image
 		// work and no start-up prompt for a command with nobody to answer it.
@@ -1696,12 +1688,7 @@ func TestShellDetachedRefusesBeforeImageWork(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ID:         "abc123",
-				State:      &container.State{Running: false},
-				Config:     &container.Config{},
-				HostConfig: &container.HostConfig{},
-			}, nil
+			return existingInspect(false, nil), nil
 		},
 		imgInspFn: func(context.Context, string) (client.ImageInspectResult, error) {
 			t.Error("image inspected before the refusal")
@@ -1725,13 +1712,10 @@ func TestShellExitLeavesADetachedShellRunning(t *testing.T) {
 
 	mock := &mockClient{
 		inspectFn: func(context.Context, string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ID:         "abc123",
-				State:      &container.State{Running: true},
-				Config:     &container.Config{Labels: runplan.DetachedLabels()},
-				HostConfig: &container.HostConfig{AutoRemove: true},
-				ExecIDs:    []string{"ours"},
-			}, nil
+			inspect := existingInspect(true, runplan.DetachedLabels())
+			inspect.HostConfig.AutoRemove = true
+			inspect.ExecIDs = []string{"ours"}
+			return inspect, nil
 		},
 		execInspectFn: func(context.Context, string) (client.ExecInspectResult, error) {
 			return client.ExecInspectResult{Running: false}, nil
@@ -1747,5 +1731,16 @@ func TestShellExitLeavesADetachedShellRunning(t *testing.T) {
 	}
 	if !*called {
 		t.Fatal("the attached shell did not run")
+	}
+}
+
+// existingInspect is the daemon's answer for a container already under the
+// session's name: running or stopped (and kept, not reaped), with labels.
+func existingInspect(running bool, labels map[string]string) container.InspectResponse {
+	return container.InspectResponse{
+		ID:         "abc123",
+		State:      &container.State{Running: running},
+		Config:     &container.Config{Labels: labels},
+		HostConfig: &container.HostConfig{},
 	}
 }

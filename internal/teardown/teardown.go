@@ -17,8 +17,8 @@
 //     cancelled by Ctrl+C), skips teardown for a Detached Shell or when a
 //     sibling exec is running, kills (without waiting on the remove) when
 //     the container was created with AutoRemove so the daemon reaps it
-//     asynchronously,
-//     and falls back to synchronous StopOne for legacy containers.
+//     asynchronously, and falls back to synchronous StopOne for legacy
+//     containers.
 //     Returns the cleanup error so the caller can fold it into its own
 //     error chain.
 package teardown

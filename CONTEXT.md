@@ -2152,15 +2152,17 @@ and start the container with the `toolbox.detached=true` label
 (`runplan.DetachedLabels`) and return without an exec. The label is fixed at
 create, so a detached plan that finds its name held by an unlabelled container
 fails and names the `toolbox stop` to run, rather than hand back a Shell the
-next terminal exit would remove. [Teardown](#teardown) reads the label from
-the inspect `OnShellExit` already performs and spares the container whether or
-not sibling execs remain; `runplan` owns the label: `DetachedLabels` writes
-it, `IsDetached` reads it off an inspect for lifecycle and Teardown, and
-`Detached` off a list summary for `container.List`, which marks the row. The
-container keeps `AutoRemove`, so a stop still removes it. No user-facing flag
-sets it: its only planned caller is the container that hosts Orca's server
-([#1426](https://github.com/filippolmt/toolbox/issues/1426)). Decision and
-alternatives: [ADR 0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
+next terminal exit would remove; one already running with the label is left as
+it is, with no image work. [Teardown](#teardown) reads the label from the
+inspect `OnShellExit` already performs and spares the container whether or not
+sibling execs remain; `runplan` owns the label: `DetachedLabels` writes it,
+`IsDetached` reads it off an inspect for lifecycle and Teardown, and
+`DetachedInLabels` off a list summary for `container.List`, which marks the
+row. The container keeps `AutoRemove`, so a stop still removes it. No
+user-facing flag sets it: its only planned caller is the container that hosts
+Orca's server ([#1426](https://github.com/filippolmt/toolbox/issues/1426)).
+Decision and alternatives: [ADR
+0022](docs/adr/0022-shells-can-outlive-their-terminals.md).
 
 Why the term exists: until it, "a Shell is gone once its last terminal exits"
 was an invariant every reader could rely on. A container that hosts a server

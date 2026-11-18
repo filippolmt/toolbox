@@ -2,7 +2,8 @@
 
 Status: accepted
 
-From [#1499](https://github.com/filippolmt/toolbox/issues/1499), part of
+The question comes from
+[#1499](https://github.com/filippolmt/toolbox/issues/1499), part of
 [#1426](https://github.com/filippolmt/toolbox/issues/1426).
 
 Until this decision a [Shell](../../CONTEXT.md#shell) was disposable by

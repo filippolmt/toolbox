@@ -890,7 +890,7 @@ func List(ctx context.Context, cli client.APIClient) ([]Item, error) {
 			Name:      containerName(c),
 			Workspace: workspaceOf(c),
 			Status:    c.Status,
-			Detached:  runplan.Detached(c.Labels),
+			Detached:  runplan.DetachedInLabels(c.Labels),
 		})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })

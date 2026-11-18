@@ -7,8 +7,12 @@
 // compose at design-time before any Docker call; RunPlan composes at
 // runtime from the ContainerInspect snapshot. DaemonReaps, the AutoRemove
 // test the decision turns on, is shared with teardown's exit policy so the
-// two never disagree on which containers the daemon removes. Lifecycle dispatches on
-// the typed Op rather than re-deriving the branch inline.
+// two never disagree on which containers the daemon removes. Lifecycle
+// dispatches on the typed Op rather than re-deriving the branch inline.
+//
+// It also owns the Detached Shell label, for the same reason: lifecycle writes
+// it at create and reads it before joining, teardown reads it on shell exit,
+// and List reads it to mark the row. One spelling keeps the three agreeing.
 package runplan
 
 import (
@@ -65,28 +69,29 @@ func DaemonReaps(inspect container.InspectResponse) bool {
 	return inspect.HostConfig != nil && inspect.HostConfig.AutoRemove
 }
 
-// DetachedLabel marks a Detached Shell: a container that outlives every
+// detachedLabel marks a Detached Shell: a container that outlives every
 // terminal attached to it. → CONTEXT.md, Detached Shell.
-const DetachedLabel = "toolbox.detached"
+const detachedLabel = "toolbox.detached"
 
-// detachedValue is the label's value; DetachedLabels writes it, Detached and
-// IsDetached read it.
+// detachedValue is the label's value; DetachedLabels writes it, DetachedInLabels
+// and IsDetached read it.
 const detachedValue = "true"
 
-// Detached reports whether a container's labels mark it as a Detached Shell.
-// Takes the label map so an inspect and a list summary read it alike.
-func Detached(labels map[string]string) bool {
-	return labels[DetachedLabel] == detachedValue
+// DetachedInLabels reports whether a label set marks a Detached Shell: the
+// reader for a list summary, which carries labels and no Config.
+func DetachedInLabels(labels map[string]string) bool {
+	return labels[detachedLabel] == detachedValue
 }
 
-// IsDetached is Detached read off an inspect, nil Config included.
+// IsDetached reports whether an inspected container is a Detached Shell, nil
+// Config included.
 func IsDetached(inspect container.InspectResponse) bool {
-	return inspect.Config != nil && Detached(inspect.Config.Labels)
+	return inspect.Config != nil && DetachedInLabels(inspect.Config.Labels)
 }
 
 // DetachedLabels is the label set that marks a container as a Detached Shell.
 func DetachedLabels() map[string]string {
-	return map[string]string{DetachedLabel: detachedValue}
+	return map[string]string{detachedLabel: detachedValue}
 }
 
 // Compute derives the Op from a ContainerInspect result.

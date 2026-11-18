@@ -84,10 +84,10 @@ them.
   [ADR 0015](../../docs/adr/0015-tool-caches-persist-as-one-bind-per-tool.md)
 
 - **A Detached Shell survives shell exit:** `teardown.OnShellExit` spares a
-  container carrying `runplan.DetachedLabel` before it looks at sibling execs;
+  container `runplan.IsDetached` reports, before it looks at sibling execs;
   `container.Shell` on a detached plan creates and starts with the label and
   returns without an exec; it refuses an existing container without the label,
-  before any image work.
+  before any image work, and returns at once from a running one with it.
   Pinned by `TestOnShellExitSparesDetachedShell`,
   `TestShellDetachedCreatesWithoutExec`,
   `TestShellDetachedRefusesAnUnlabelledContainer`,
