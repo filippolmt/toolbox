@@ -618,3 +618,34 @@ func TestShellReloadNeverReachesTheStartUpPrompt(t *testing.T) {
 		t.Errorf("the reload path ran the start-up refresh %d times, want 0", len(*stakes))
 	}
 }
+
+// A Session Reload typed in a terminal attached to a Detached Shell recreates
+// it from an ordinary plan; the replacement must still be a Detached Shell, or
+// leaving that terminal removes it.
+func TestShellReloadKeepsADetachedShellDetached(t *testing.T) {
+	_, restore := stubExecShell()
+	defer restore()
+
+	mock := createAfterReloadMock()
+	inner := mock.inspectFn
+	mock.inspectFn = func(ctx context.Context, id string) (container.InspectResponse, error) {
+		res, err := inner(ctx, id)
+		if err == nil {
+			// The literal, not the constant: the label outlives the binary that wrote it.
+			res.Config = &container.Config{Labels: map[string]string{"toolbox.detached": "true"}}
+		}
+		return res, err
+	}
+	var created map[string]string
+	mock.createFn = func(_ context.Context, cfg *container.Config, _ *container.HostConfig, _ string) (container.CreateResponse, error) {
+		created = cfg.Labels
+		return container.CreateResponse{ID: "new"}, nil
+	}
+
+	if _, err := Shell(context.Background(), mock, reloadPlan(t, "toolbox-old-1234abcd")); err != nil {
+		t.Fatalf("Shell(): %v", err)
+	}
+	if created["toolbox.detached"] != "true" {
+		t.Errorf("reload create labels = %v, want toolbox.detached=true", created)
+	}
+}
