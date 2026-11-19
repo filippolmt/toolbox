@@ -251,7 +251,10 @@ deduplicates the pull that follows, so the cost is a second manifest lookup.
 The first poll runs as soon as a shell attaches. Before consulting the gate,
 every poll republishes `cli_update` from the running CLI and the cached latest
 tag, so a completed host upgrade retracts its warning even if the next probe
-fails. A poll turned away by the gate additionally republishes `image_update`
+fails. A terminal with no poll behind it — a Detached Shell's, opened by
+herdr-core or Orca — gets the same retraction from the renderer: it drops
+`cli_update` when `cli_latest` is no newer than `TOOLBOX_CLI_VERSION`, the CLI
+that created the container. A poll turned away by the gate additionally republishes `image_update`
 from the store and this container's digest. The one cache is shared by every
 workspace and may have been written by a sibling session with a different
 container or host CLI. Registry facts stay untouched; `image_latest` and

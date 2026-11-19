@@ -283,6 +283,16 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
             esac
         done < $_toolbox_update_cache
 
+        # The cache is shared, and a Detached Shell terminal has no host poller
+        # to retract a CLI flag written before the upgrade: a release no newer
+        # than the CLI that created this session is no news. An unstamped CLI
+        # ("dev") has nothing to compare, so the flag stands.
+        local cur=${TOOLBOX_CLI_VERSION#v}
+        if [[ $cli_update == 1 && $cur == [0-9]* && -n $cli_latest ]]; then
+            autoload -Uz is-at-least
+            is-at-least ${cli_latest#v} $cur && cli_update=0
+        fi
+
         # How this session adopts an image, decided by the one thing the image
         # can know about the CLI driving it: whether the reload marker was
         # injected. Without it the CLI is older than the command, so advising

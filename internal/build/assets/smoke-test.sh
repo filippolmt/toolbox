@@ -358,6 +358,28 @@ cli_latest=v9.9.9
         echo "    no CLI version: $out"; return 1
     }
 
+    # q2d. The cache is shared and only an attached `toolbox shell` rewrites
+    # it: a Detached Shell terminal (herdr-core, Orca) has no host poller, so
+    # a cli_update=1 left by the CLI the user just upgraded away from would
+    # nag forever. The session knows the CLI that created it: a release that
+    # is not newer than that one is no news, and an older session still is.
+    _zsh_banner_cli_stale_check() {
+        local cache="image_update=0
+image_latest=sha256:eee
+image_state=none
+cli_update=1
+cli_latest=v1.13.1
+"
+        _zsh_banner_seed "$cache" || return 1
+        same=$(TOOLBOX_CLI_VERSION=1.13.1 zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
+        older=$(TOOLBOX_CLI_VERSION=1.13.0 zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
+        dev=$(TOOLBOX_CLI_VERSION=dev zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
+        _zsh_banner_cleanup
+        test -z "$same" || { echo "    CLI already at the release, got: $same"; return 1; }
+        case "$older" in *v1.13.1*) ;; *) echo "    older CLI not told: $older"; return 1 ;; esac
+        case "$dev" in *v1.13.1*) ;; *) echo "    unstamped CLI muted the banner: $dev"; return 1 ;; esac
+    }
+
     # q3. The registry moved and the download keeps failing — the state the
     # host cannot report any other way, because its stdout is the users tty.
     _zsh_banner_unavailable_check() {
@@ -436,6 +458,7 @@ cli_latest=
     _zsh_assert "update banner ready"          _zsh_banner_ready_check
     _zsh_assert "update banner ready, old CLI" _zsh_banner_ready_old_cli_check
     _zsh_assert "update banner both axes"      _zsh_banner_both_axes_check
+    _zsh_assert "update banner CLI already current" _zsh_banner_cli_stale_check
     _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
     _zsh_assert "update banner shown per shell" _zsh_banner_scope_check
     _zsh_assert "toolbox-reload refuses without marker" _zsh_reload_refusal_check
