@@ -60,6 +60,18 @@ state, and `sonar-project.properties` has no key for them. The floor is the
 repo-side backstop; the gate condition is documented here so a change to it is
 at least reviewable against something.
 
+## Issues on a PR merged while the server was off
+
+The coverage floor is the server-less backstop for coverage. A PR merged while
+`analyze` was skipped gets its first issue analysis on `main`, so the next
+`sonar.yml` run there is that PR's gate: follow it to green after a merge.
+
+golangci-lint carries the rules it can check without the server:
+`predeclared` covers `go:S978`, and is stricter, since it lints tests too.
+`goconst` was measured against `go:S1192` with Sonar's exclusions applied
+(tests, `internal/build/assets/`) and still flags literals Sonar never raised,
+so it stays off.
+
 ## Where the gate is read
 
 `sonar-gate.sh` runs after every scan, in one of two modes:

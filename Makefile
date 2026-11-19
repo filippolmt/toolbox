@@ -172,7 +172,7 @@ gates: ## List the pre-push gates CI would run for what changed since BASE (defa
 
 check-devtools: ## Test local development targets and coverage preflight
 	node --test .github/scripts/*.test.mjs
-	shellcheck .github/scripts/go-dockergate.sh .github/scripts/format-go.sh .github/scripts/go-version.sh
+	shellcheck .github/scripts/go-dockergate.sh .github/scripts/format-go.sh .github/scripts/go-version.sh .github/scripts/apt-install.sh
 
 check-agent: ## Test project agent extensions
 	node --test .pi/tests/*.test.ts

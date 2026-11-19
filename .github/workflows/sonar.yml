@@ -79,9 +79,9 @@ jobs:
           cache: true
 
       # Same reason as ci.yml's copy: internal/reload runs the shipped zsh
-      # writer, and the tests refuse to skip under $CI.
+      # writer, and the tests refuse to skip under $CI. Same apt-install.sh as there.
       - name: Install zsh
-        run: sudo apt-get update && sudo apt-get install -y zsh
+        run: .github/scripts/apt-install.sh zsh
 
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out -covermode=atomic

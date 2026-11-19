@@ -447,3 +447,48 @@ test("make build refuses an empty GO_VERSION before reaching docker", () => {
   assert.match(result.stderr, /GO_VERSION is empty/);
   assert.doesNotMatch(result.stdout, /docker buildx build/);
 });
+
+test("apt-install retries the network half until a deadline, and installs offline", () => {
+  const directory = mkdtempSync(join(tmpdir(), "toolbox-apt-"));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  const log = join(directory, "calls");
+  writeFileSync(join(bin, "sudo"), '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
+  // Logs each call. The first FAIL_DOWNLOADS downloads fail; with STALL set,
+  // the first download hangs instead, as a stalled mirror does.
+  writeFileSync(join(bin, "apt-get"), `#!/bin/sh
+echo "$*" >> "$CALL_LOG"
+case "$*" in
+  *--download-only*)
+    n=$(grep -c -- '--download-only' "$CALL_LOG")
+    if [ -n "$STALL" ] && [ "$n" -eq 1 ]; then sleep 30; fi
+    [ "$n" -gt "$FAIL_DOWNLOADS" ] ;;
+esac
+`, { mode: 0o755 });
+  const script = join(root, ".github/scripts/apt-install.sh");
+  const run = (overrides, args = ["zsh"]) => {
+    rmSync(log, { force: true });
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CALL_LOG: log, FAIL_DOWNLOADS: "0", APT_INSTALL_PAUSE: "0", APT_INSTALL_STEP_TIMEOUT: "1", ...overrides };
+    const result = spawnSync("bash", [script, ...args], { env, encoding: "utf8" });
+    const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+    return { result, calls, updates: calls.filter((c) => c.endsWith(" update")).length };
+  };
+  try {
+    // The incident: update succeeds, the package download fails.
+    const recovered = run({ FAIL_DOWNLOADS: "2" });
+    assert.equal(recovered.result.status, 0, recovered.result.stderr);
+    assert.equal(recovered.updates, 3, "a failed download did not retry the update with it");
+    assert.match(recovered.calls.at(-1), /install -y --no-download zsh$/, "the install did not run offline, last");
+    const stalled = run({ STALL: "1" });
+    assert.equal(stalled.result.status, 0, stalled.result.stderr);
+    assert.equal(stalled.updates, 2, "a stalled download was not cut off and retried");
+    const down = run({ FAIL_DOWNLOADS: "999", APT_INSTALL_DEADLINE: "25", APT_INSTALL_PAUSE: "1" });
+    assert.equal(down.result.status, 1);
+    assert.ok(down.updates >= 2, `the deadline ended the loop before any retry (${down.updates} attempts)`);
+    assert.match(down.result.stderr, /giving up after \d+ attempts \(25s deadline\)/);
+    assert.ok(!down.calls.some((c) => c.includes("--no-download")), "it installed after giving up");
+    assert.equal(run({}, []).result.status, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

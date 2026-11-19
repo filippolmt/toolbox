@@ -47,7 +47,7 @@ Path-scoped gotchas live in `.claude/rules/`, each scoped by its own `paths:` fr
 - [`mounts.md`](.claude/rules/mounts.md) — mount plan, auth isolation, profiles, catalog auth whitelist.
 - [`rules.md`](.claude/rules/rules.md) — the rule files themselves: what holds their `paths:` to their prose.
 
-Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. After a `v*` tag, follow `docker-release.yml` instead: it cancels the main publish on purpose. Check `git ls-remote --tags origin` before tagging. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Releases: `v*` tag → GoReleaser + Homebrew. Merge to `main` → image push to GHCR; after merging an image change, follow that run to green with `gh run watch --compact --exit-status` — a red publish leaves `:latest` on the previous image with nothing else signalling it. After any merge, follow `sonar.yml`'s run on `main` to green as well → [sonarqube](docs/internals/sonarqube.md#issues-on-a-pr-merged-while-the-server-was-off). After a `v*` tag, follow `docker-release.yml` instead: it cancels the main publish on purpose. Check `git ls-remote --tags origin` before tagging. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Code intelligence
 

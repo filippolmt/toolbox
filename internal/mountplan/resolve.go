@@ -73,8 +73,8 @@ func resolveOne(m config.Mount, home string) (b Bind, ok bool, warnings []string
 	// runs as the invoking user and can fail (e.g. EACCES on an
 	// intermediate dir) where the daemon (root) still mounts fine, so
 	// skipping here would break today-working mounts.
-	if real, err := filepath.EvalSymlinks(src); err == nil {
-		src = real
+	if resolved, err := filepath.EvalSymlinks(src); err == nil {
+		src = resolved
 	} else {
 		warnings = append(warnings, fmt.Sprintf("failed to resolve symlinks for mount source %s: %s", m.Source, err.Error()))
 	}
