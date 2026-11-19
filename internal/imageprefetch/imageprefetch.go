@@ -591,7 +591,8 @@ func latestRelease(ctx context.Context) (string, error) {
 // dot-separated numeric fields (the shape every toolbox release tag has). A
 // leading "v" and any pre-release/build suffix are stripped; a field that is
 // not a number compares as 0, so a malformed tag degrades to "not newer"
-// rather than nagging about a release that does not exist.
+// rather than nagging about a release that does not exist. The zsh renderer
+// (zshrc.sh, _toolbox_update_precmd) reads versions the same way.
 func newerVersion(current, latest string) bool {
 	cur, next := versionFields(current), versionFields(latest)
 	for i := 0; i < len(cur) || i < len(next); i++ {
