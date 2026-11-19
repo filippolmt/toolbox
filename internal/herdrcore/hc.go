@@ -56,6 +56,9 @@ func HostCLI() CLI {
 	}}
 }
 
+// jsonFlag asks hc for machine-readable output and errors.
+const jsonFlag = "--json"
+
 func (c CLI) hc(args ...string) ([]byte, error) {
 	out, err := c.Run(args...)
 	if err == nil {
@@ -73,7 +76,7 @@ func (c CLI) hc(args ...string) ([]byte, error) {
 }
 
 func (c CLI) Machines() ([]Machine, error) {
-	out, err := c.hc("machine", "ls", "--json")
+	out, err := c.hc("machine", "ls", jsonFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -87,17 +90,17 @@ func (c CLI) Machines() ([]Machine, error) {
 }
 
 func (c CLI) Add(name, via string) error {
-	_, err := c.hc("machine", "add", "--name", name, "--install", "--via", via, "--json")
+	_, err := c.hc("machine", "add", "--name", name, "--install", "--via", via, jsonFlag)
 	return err
 }
 
 func (c CLI) Update(name string) error {
-	_, err := c.hc("machine", "update", "--json", name)
+	_, err := c.hc("machine", "update", jsonFlag, name)
 	return err
 }
 
 func (c CLI) Remove(name string) error {
-	_, err := c.hc("machine", "rm", "--json", name)
+	_, err := c.hc("machine", "rm", jsonFlag, name)
 	return err
 }
 
