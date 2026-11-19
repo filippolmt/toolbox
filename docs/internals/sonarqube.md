@@ -50,13 +50,6 @@ never blocks a merge. On its own that leaves a PR pushed at 3am with no
 coverage gate whatsoever. The floor in `ci.yml` closes that hole: it needs no
 server, runs on every PR, and always reports.
 
-The floor covers coverage only. Issues on a PR merged while `analyze` was
-skipped get their first analysis on `main`, so the next `sonar.yml` run there
-is that PR's gate: follow it to green after a merge. golangci-lint carries the
-mechanical rules it can mirror exactly, `predeclared` for `go:S978`, so those
-hold without the server. `goconst` does not mirror `go:S1192`: on this tree
-it flags literals Sonar never raised, so it stays off.
-
 The floor is the same 80% Sonar asks for, so there is one number to remember
 and one rule to state: **tests must cover at least 80%.** It is never lowered
 to turn a red build green — the failing PR adds the tests, or the untested
@@ -66,6 +59,18 @@ The 80% itself cannot be pinned repo-side — Quality Gate conditions are server
 state, and `sonar-project.properties` has no key for them. The floor is the
 repo-side backstop; the gate condition is documented here so a change to it is
 at least reviewable against something.
+
+## Issues on a PR merged while the server was off
+
+The coverage floor is the only server-less backstop. A PR merged while
+`analyze` was skipped gets its first issue analysis on `main`, so the next
+`sonar.yml` run there is that PR's gate: follow it to green after a merge.
+
+golangci-lint carries the rules it can check without the server:
+`predeclared` covers `go:S978`, and is stricter, since it lints tests too.
+`goconst` was measured against `go:S1192` with Sonar's exclusions applied
+(tests, `internal/build/assets/`) and still flags literals Sonar never raised,
+so it stays off.
 
 ## Where the gate is read
 
