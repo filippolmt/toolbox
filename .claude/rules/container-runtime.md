@@ -296,7 +296,7 @@ them.
   The volume is host-global, ignores profiles, and is initialised as the runtime
   user with private permissions. That initialiser (also the Orca and Herdr
   Core Shells' volumes') is waited for with `next-exit` under its own
-  deadline: `not-running` answers before it starts.
+  deadline.
   The peer anchor uses the base image and tini
   as PID 1; stale replacement fails closed while any holder is possible.
   `TestShellPeerRuntimeUsesTheBaseImageNotTheOverlay`,

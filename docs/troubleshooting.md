@@ -213,9 +213,9 @@ The next launch records the directory it started from. Note that this clears a s
 
 **Symptom:** `toolbox herdr` fails with `herdr-core could not register the machine toolbox: hc machine add: … cannot start core: Permission denied (os error 13)`.
 
-**Cause:** the state volume `toolbox-herdr-data` belongs to root. A toolbox from before this fix could leave the volume it created root-owned, and toolbox initialises a volume only when it creates it, so an upgrade alone does not repair it. The Orca data volume (`toolbox-orca-data`) can be left the same way.
+**Cause:** the state volume `toolbox-herdr-data` belongs to root. An initialiser stopped before its `chown` finished leaves the volume it created root-owned, and toolbox initialises a volume only when it creates it, so a later run, or an upgrade, does not repair it. The Orca data volume (`toolbox-orca-data`) and the peer socket volume (`toolbox-cc-socks`) go through the same initialiser and can be left the same way.
 
-**Fix:** check the owner with `docker run --rm -v toolbox-herdr-data:/v debian:stable-slim stat -c '%a %u:%g' /v`. `755 0:0` is the broken state. Run `toolbox herdr stop`, then `docker volume rm toolbox-herdr-data`, then `toolbox herdr`, which creates the volume again owned by you. Under `--profile <name>` the volume is `toolbox-herdr-data-<name>`.
+**Fix:** check the owner with `docker run --rm --entrypoint stat -v toolbox-herdr-data:/v ghcr.io/filippolmt/toolbox:latest -c '%a %u:%g' /v`. `755 0:0` is the broken state. Run `toolbox herdr stop`, then `docker volume rm toolbox-herdr-data`, then `toolbox herdr`, which creates the volume again owned by you. Under `--profile <name>` the volume is `toolbox-herdr-data-<sanitized name>`. For Orca: `toolbox orca stop`, `docker volume rm toolbox-orca-data`, `toolbox orca`, which pairs again. For `toolbox-cc-socks`, a silent failure (Claude Code falls back to a private `/tmp` directory and sees no peer): close every toolbox shell, then `docker volume rm toolbox-cc-socks`.
 
 ## Orca pairing is unavailable
 
