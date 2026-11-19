@@ -31,6 +31,13 @@ gate runner image is `toolbox-dockergate:<worktree>`, so builds in parallel
 worktrees cannot overwrite each other or the image `./toolbox shell` runs. CI still verifies the
 complete gate suite against the runtime image built from the PR.
 
+A gate that passes on this daemon can still hide a race another daemon loses
+(Docker Desktop): `COUNT=N` repeats it to raise the reproduction rate. For a
+failure seen in a real run, capture the daemon's record first, before any
+retry: `docker events --since <run start> --until <now>`. The daemon keeps
+only recent events in memory, and a failed `toolbox` command often removes
+the container it created, so the events are the only trace of what ran.
+
 The development-only runner uses `GO_IMAGE` from the Makefile, the runtime's
 Docker client and an installed Python interpreter. It maps the caller's UID/GID
 and the daemon socket's group. HOME and temporary fixtures live below

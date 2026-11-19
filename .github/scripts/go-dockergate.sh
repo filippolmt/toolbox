@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run daemon gates with host-visible fixtures and the caller's identity.
+# COUNT (default 1) repeats each gate: raises a race's reproduction rate.
 set -euo pipefail
 
 if (( $# < 5 )); then
@@ -11,6 +12,11 @@ runtime=$2
 runner=$3
 pattern=$4
 shift 4
+count=${COUNT:-1}
+if [[ ! $count =~ ^[1-9][0-9]*$ ]]; then
+  echo 'COUNT must be a positive integer.' >&2
+  exit 2
+fi
 uid=$(id -u)
 gid=$(id -g)
 if [[ $uid == 0 ]]; then
@@ -47,7 +53,7 @@ docker run --rm --user "$uid:$gid" --group-add "$socket_gid" \
   -v "$source:$source" -v /var/run/docker.sock:/var/run/docker.sock -w "$source" \
   -e "HOME=$home" -e "TMPDIR=$tmp" -e GOPATH= -e GOCACHE= \
   -e GOFLAGS='-mod=mod -buildvcs=false' -e "IMAGE_TAG=$runtime" \
-  "$runner" go test -tags dockergate -count=1 -run "$pattern" "$@" 2>&1 | tee "$log" || status=$?
+  "$runner" go test -tags dockergate -count="$count" -run "$pattern" "$@" 2>&1 | tee "$log" || status=$?
 # The session output buries the failing names; restate them last.
 if (( status != 0 )); then
   echo
