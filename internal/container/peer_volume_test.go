@@ -321,3 +321,37 @@ func TestEnsureOwnedVolumeBoundsTheInitRemoval(t *testing.T) {
 		t.Fatalf("initialiser removal ended with %v, want its own deadline", removeErr)
 	}
 }
+
+// TestEnsureOwnedVolumeBoundsTheRollback pins the deadline on the rollback of a
+// failed init: a stuck daemon must not hang the shell on the volume removal.
+func TestEnsureOwnedVolumeBoundsTheRollback(t *testing.T) {
+	defer func(d time.Duration) { ownedVolumeInitTimeout = d }(ownedVolumeInitTimeout)
+	ownedVolumeInitTimeout = 10 * time.Millisecond
+
+	var rollbackErr error
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, v string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + v}
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+		waitFn: func(context.Context, string, client.ContainerWaitOptions) (int64, error) {
+			return 1, nil
+		},
+		volRemoveFn: func(ctx context.Context, _ string, _ client.VolumeRemoveOptions) error {
+			select {
+			case <-ctx.Done():
+				rollbackErr = ctx.Err()
+			case <-time.After(5 * time.Second):
+				rollbackErr = errors.New("the rollback outlived its deadline")
+			}
+			return rollbackErr
+		},
+	}
+
+	_ = ensurePeerSocketVolume(context.Background(), mock, testImage)
+	if !errors.Is(rollbackErr, context.DeadlineExceeded) {
+		t.Fatalf("rollback ended with %v, want its own deadline", rollbackErr)
+	}
+}

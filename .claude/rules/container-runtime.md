@@ -295,14 +295,14 @@ them.
   `toolbox-cc-socks` volume must succeed or the session degrades to neither.
   The volume is host-global, ignores profiles, and is initialised as the runtime
   user with private permissions. That initialiser (also the Orca and Herdr
-  Core Shells' volumes') is waited for with `next-exit` and removed, each
-  under its own deadline.
-  The peer anchor uses the base image and tini
-  as PID 1; stale replacement fails closed while any holder is possible.
+  Core Shells' volumes') is waited for with `next-exit`, removed, and on
+  failure rolled back, each under its own deadline. The peer anchor uses the
+  base image and tini as PID 1; stale replacement fails closed while any holder is possible.
   `TestShellPeerRuntimeUsesTheBaseImageNotTheOverlay`,
   `TestShellPeerAnchorReapsOrphans`, `TestShellPeerKeepsHeldStaleAnchor`,
   `TestEnsureOwnedVolumeBoundsTheInitWait`,
-  `TestEnsureOwnedVolumeBoundsTheInitRemoval` and real-daemon
+  `TestEnsureOwnedVolumeBoundsTheInitRemoval`,
+  `TestEnsureOwnedVolumeBoundsTheRollback` and real-daemon
   `TestPeerMessagingMechanism` and `TestOwnedVolumeInitReportsAnInitThatFails`
   pin the contract. Mount ownership is
   governed by [mount rules](mounts.md). →

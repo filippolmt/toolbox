@@ -63,8 +63,11 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 		// on every later shell, so the init would never run again and each
 		// session would fail on it instead — silently, which is the failure
 		// mode this whole subsystem is written to avoid. Removing it keeps the
-		// next shell on the same self-healing path.
-		if _, rmErr := cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
+		// next shell on the same self-healing path. Like the initialiser's
+		// removal, it outlives a Ctrl-C under a deadline of its own.
+		rbCtx, rbCancel := context.WithTimeout(context.WithoutCancel(ctx), ownedVolumeInitTimeout)
+		defer rbCancel()
+		if _, rmErr := cli.VolumeRemove(rbCtx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
 			return fmt.Errorf("%w — and %s could not be removed (%v), so every later shell would reuse it "+
 				"as-is: remove it with `docker volume rm %s` once no shell using it is running", err, name, rmErr, name)
 		}
@@ -73,9 +76,9 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 	return nil
 }
 
-// ownedVolumeInitTimeout bounds the initialiser, and on its own its removal: a
-// chown and chmod of an empty volume answer at once, so one still running is a
-// stuck daemon. Tests swap it.
+// ownedVolumeInitTimeout bounds the initialiser, and on their own its removal
+// and the volume's rollback: a chown and chmod of an empty volume answer at
+// once, so one still running is a stuck daemon. Tests swap it.
 var ownedVolumeInitTimeout = time.Minute
 
 // initOwnedVolume chowns the freshly created volume to the host UID/GID
