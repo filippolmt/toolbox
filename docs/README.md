@@ -258,6 +258,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 
 - [Private project, public repo](internals/sonarqube.md#private-project-public-repo)
 - [The two coverage denominators](internals/sonarqube.md#the-two-coverage-denominators)
+- [Issues on a PR merged while the server was off](internals/sonarqube.md#issues-on-a-pr-merged-while-the-server-was-off)
 - [Where the gate is read](internals/sonarqube.md#where-the-gate-is-read)
 - [Cognitive Complexity is off for test files](internals/sonarqube.md#cognitive-complexity-is-off-for-test-files)
 - [Baseline: the 56 → 0 sweep](internals/sonarqube.md#baseline-the-56--0-sweep)

@@ -156,20 +156,20 @@ func forwardResize(ctx context.Context, cli client.APIClient, execID string, fd 
 	return func() { signal.Stop(winchCh) }
 }
 
-// tailBuffer is an io.Writer that retains only the last max bytes written. It
+// tailBuffer is an io.Writer that retains only the last limit bytes written. It
 // captures the end of the exec stream (where the daemon writes its failure
 // reason) without buffering an entire interactive session in memory.
 type tailBuffer struct {
-	max int
-	buf []byte
+	limit int
+	buf   []byte
 }
 
-func newTailBuffer(limit int) *tailBuffer { return &tailBuffer{max: limit} }
+func newTailBuffer(limit int) *tailBuffer { return &tailBuffer{limit: limit} }
 
 func (t *tailBuffer) Write(p []byte) (int, error) {
 	t.buf = append(t.buf, p...)
-	if len(t.buf) > t.max {
-		t.buf = t.buf[len(t.buf)-t.max:]
+	if len(t.buf) > t.limit {
+		t.buf = t.buf[len(t.buf)-t.limit:]
 	}
 	return len(p), nil
 }

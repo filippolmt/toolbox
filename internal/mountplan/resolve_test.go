@@ -151,7 +151,7 @@ func TestResolveAllWarnsOnEvalSymlinksFailure(t *testing.T) {
 func TestResolveAllResolvesHealthySymlinkSource(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
-	realDir := filepath.Join(tmp, "realDir-dir")
+	realDir := filepath.Join(tmp, "real-dir")
 	if err := os.Mkdir(realDir, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
