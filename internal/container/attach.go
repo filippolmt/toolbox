@@ -164,7 +164,7 @@ type tailBuffer struct {
 	buf []byte
 }
 
-func newTailBuffer(max int) *tailBuffer { return &tailBuffer{max: max} }
+func newTailBuffer(limit int) *tailBuffer { return &tailBuffer{max: limit} }
 
 func (t *tailBuffer) Write(p []byte) (int, error) {
 	t.buf = append(t.buf, p...)
