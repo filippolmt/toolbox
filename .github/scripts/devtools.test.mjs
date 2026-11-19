@@ -482,9 +482,10 @@ esac
     const stalled = run({ STALL: "1" });
     assert.equal(stalled.result.status, 0, stalled.result.stderr);
     assert.equal(stalled.updates, 2, "a stalled download was not cut off and retried");
-    const down = run({ FAIL_DOWNLOADS: "999", APT_INSTALL_DEADLINE: "2", APT_INSTALL_PAUSE: "1" });
+    const down = run({ FAIL_DOWNLOADS: "999", APT_INSTALL_DEADLINE: "25", APT_INSTALL_PAUSE: "1" });
     assert.equal(down.result.status, 1);
-    assert.match(down.result.stderr, /giving up after \d+ attempts \(2s deadline\)/);
+    assert.ok(down.updates >= 2, `the deadline ended the loop before any retry (${down.updates} attempts)`);
+    assert.match(down.result.stderr, /giving up after \d+ attempts \(25s deadline\)/);
     assert.ok(!down.calls.some((c) => c.includes("--no-download")), "it installed after giving up");
     assert.equal(run({}, []).result.status, 2);
   } finally {
