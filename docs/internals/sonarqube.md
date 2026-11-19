@@ -62,7 +62,7 @@ at least reviewable against something.
 
 ## Issues on a PR merged while the server was off
 
-The coverage floor is the only server-less backstop. A PR merged while
+The coverage floor is the server-less backstop for coverage. A PR merged while
 `analyze` was skipped gets its first issue analysis on `main`, so the next
 `sonar.yml` run there is that PR's gate: follow it to green after a merge.
 
