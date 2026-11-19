@@ -447,3 +447,38 @@ test("make build refuses an empty GO_VERSION before reaching docker", () => {
   assert.match(result.stderr, /GO_VERSION is empty/);
   assert.doesNotMatch(result.stdout, /docker buildx build/);
 });
+
+test("apt-install retries the whole update+install through a mirror outage, then gives up", () => {
+  const directory = mkdtempSync(join(tmpdir(), "toolbox-apt-"));
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  const log = join(directory, "calls");
+  writeFileSync(join(bin, "sudo"), '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
+  // Fails every call until FAIL_UPDATES updates have been seen.
+  writeFileSync(join(bin, "apt-get"), `#!/bin/sh
+echo "$*" >> "$CALL_LOG"
+n=$(grep -c ' update$' "$CALL_LOG")
+[ "$n" -gt "$FAIL_UPDATES" ]
+`, { mode: 0o755 });
+  const script = join(root, ".github/scripts/apt-install.sh");
+  const run = (failUpdates, args = ["zsh"]) => {
+    rmSync(log, { force: true });
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CALL_LOG: log, FAIL_UPDATES: String(failUpdates), APT_INSTALL_PAUSE: "0" };
+    const result = spawnSync("bash", [script, ...args], { env, encoding: "utf8" });
+    const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+    return { result, calls };
+  };
+  try {
+    const recovered = run(2);
+    assert.equal(recovered.result.status, 0, recovered.result.stderr);
+    assert.equal(recovered.calls.filter((c) => c.endsWith(" update")).length, 3, "the outage was not retried as a whole");
+    assert.ok(recovered.calls.at(-1).includes("install -y zsh"));
+    const down = run(99);
+    assert.equal(down.result.status, 1);
+    assert.equal(down.calls.length, 4, "apt-install did not stop at its attempt limit");
+    assert.match(down.result.stderr, /giving up after 4 attempts/);
+    assert.equal(run(0, []).result.status, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
