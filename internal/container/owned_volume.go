@@ -123,9 +123,11 @@ func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan
 
 	// Wait before Start: ContainerWait blocks until the daemon acknowledges the
 	// request, so subscribing first cannot miss the exit of a container this
-	// short-lived.
+	// short-lived. next-exit, not not-running: a created container is already
+	// not running, so that wait answers 0 before the init runs, and the
+	// deferred force-remove then kills the chown, leaving the volume root-owned.
 	wait := cli.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{
-		Condition: container.WaitConditionNotRunning,
+		Condition: container.WaitConditionNextExit,
 	})
 	if _, startErr := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); startErr != nil {
 		return fmt.Errorf("failed to start %s initialiser: %w", v.label, startErr)
