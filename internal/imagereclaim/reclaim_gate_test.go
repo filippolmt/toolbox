@@ -38,7 +38,7 @@ func TestDaemonRefusesToRemoveAStoppedContainersImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker client: %v", err)
 	}
-	defer cli.Close()
+	t.Cleanup(func() { _ = cli.Close() })
 
 	subject := buildSubject(ctx, t, cli)
 
@@ -89,6 +89,8 @@ func runToExit(ctx context.Context, t *testing.T, cli client.APIClient, id strin
 	t.Helper()
 	// Wait before Start, with next-exit: `created` already satisfies
 	// not-running, so that wait would answer at once and prove nothing.
+	// ContainerWait returns once the daemon holds the wait, so even an
+	// instant exit after the start is seen.
 	wait := cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
 	if _, err := cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
 		t.Fatalf("ContainerStart: %v", err)

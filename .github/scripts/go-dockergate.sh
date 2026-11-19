@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run daemon gates with host-visible fixtures and the caller's identity.
-# COUNT (default 1) repeats each gate: raises a race's reproduction rate.
+# GATE_COUNT (default 1) repeats each gate: raises a race's reproduction rate.
 set -euo pipefail
 
 if (( $# < 5 )); then
@@ -12,9 +12,9 @@ runtime=$2
 runner=$3
 pattern=$4
 shift 4
-count=${COUNT:-1}
+count=${GATE_COUNT:-1}
 if [[ ! $count =~ ^[1-9][0-9]*$ ]]; then
-  echo 'COUNT must be a positive integer.' >&2
+  echo 'GATE_COUNT must be a positive integer.' >&2
   exit 2
 fi
 uid=$(id -u)
