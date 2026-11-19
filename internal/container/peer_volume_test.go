@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -257,5 +258,35 @@ func TestEnsurePeerSocketVolumeRemovesInitContainerAfterCancel(t *testing.T) {
 	}
 	if removed != "init" {
 		t.Errorf("removed %q, want the initialiser reaped despite the cancelled context", removed)
+	}
+}
+
+// TestEnsureOwnedVolumeBoundsTheInitWait pins the initialiser's own deadline:
+// the wait now lasts until the init exits, so an init that never exits must
+// not hold the session open on a caller context without one.
+func TestEnsureOwnedVolumeBoundsTheInitWait(t *testing.T) {
+	defer func(d time.Duration) { ownedVolumeInitTimeout = d }(ownedVolumeInitTimeout)
+	ownedVolumeInitTimeout = 10 * time.Millisecond
+
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, v string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + v}
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+		waitFn: func(ctx context.Context, _ string, _ client.ContainerWaitOptions) (int64, error) {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(5 * time.Second):
+				return 0, errors.New("the wait outlived its deadline")
+			}
+		},
+	}
+
+	err := ensurePeerSocketVolume(context.Background(), mock, testImage)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ensurePeerSocketVolume = %v, want the init wait ended by its own deadline", err)
 	}
 }

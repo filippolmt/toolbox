@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -72,6 +73,10 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 	return nil
 }
 
+// ownedVolumeInitTimeout bounds the initialiser: a chown and chmod of an empty
+// volume answer at once, so one still running is a stuck daemon. Tests swap it.
+var ownedVolumeInitTimeout = time.Minute
+
 // initOwnedVolume chowns the freshly created volume to the host UID/GID
 // and tightens it to 0700, in a throwaway container that runs as root.
 //
@@ -88,6 +93,8 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 // never the `:local` overlay — the volume it initialises outlives any one
 // session, and see ensureAnchor for why the base is present locally by then.
 func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, v ownedVolume) error {
+	ctx, cancel := context.WithTimeout(ctx, ownedVolumeInitTimeout)
+	defer cancel()
 	target := v.target
 	// Resolve(nil) reads only os.Getuid/os.Getgid; GroupAdd is bind-derived and
 	// this container mounts nothing but the volume.

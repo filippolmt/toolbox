@@ -209,6 +209,14 @@ The next launch records the directory it started from. Note that this clears a s
 
 **Fix:** `toolbox orca stop`, then `toolbox orca`: the new Orca Shell keeps its data on the `toolbox-orca-data` volume. The desktop app pairs again: nothing is migrated, so the old pairing identity stays behind. The old `~/.toolbox/toolbox/state/orca` (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`) may still hold that identity and Orca's unencrypted credentials besides `server/`; with the Orca Shell stopped, it is safe to delete whole. See [port and log](orca.md#port-and-log) and [what Orca changes in your toolbox config](orca.md#what-orca-changes-in-your-toolbox-config).
 
+## herdr-core cannot start: Permission denied
+
+**Symptom:** `toolbox herdr` fails with `herdr-core could not register the machine toolbox: hc machine add: … cannot start core: Permission denied (os error 13)`.
+
+**Cause:** the state volume `toolbox-herdr-data` belongs to root. A toolbox from before this fix could leave the volume it created root-owned, and toolbox initialises a volume only when it creates it, so an upgrade alone does not repair it. The Orca data volume (`toolbox-orca-data`) can be left the same way.
+
+**Fix:** check the owner with `docker run --rm -v toolbox-herdr-data:/v debian:stable-slim stat -c '%a %u:%g' /v`. `755 0:0` is the broken state. Run `toolbox herdr stop`, then `docker volume rm toolbox-herdr-data`, then `toolbox herdr`, which creates the volume again owned by you. Under `--profile <name>` the volume is `toolbox-herdr-data-<name>`.
+
 ## Orca pairing is unavailable
 
 **Symptom:** `toolbox orca` fails with `orca: the server is up but pairing is unavailable (<reason>): <guidance>`, or `toolbox orca pair` fails asking the Orca Shell for a pairing link.
