@@ -294,11 +294,17 @@ them.
 - **Peer messaging remains opt-in:** both the shared PID namespace and the
   `toolbox-cc-socks` volume must succeed or the session degrades to neither.
   The volume is host-global, ignores profiles, and is initialised as the runtime
-  user with private permissions. The peer anchor uses the base image and tini
-  as PID 1; stale replacement fails closed while any holder is possible.
+  user with private permissions. That initialiser (also the Orca and Herdr
+  Core Shells' volumes') is waited for with `next-exit`, removed, and on
+  failure rolled back, each under its own deadline. The peer anchor uses the
+  base image and tini as PID 1; stale replacement fails closed while any holder is possible.
   `TestShellPeerRuntimeUsesTheBaseImageNotTheOverlay`,
-  `TestShellPeerAnchorReapsOrphans`, `TestShellPeerKeepsHeldStaleAnchor` and
-  real-daemon `TestPeerMessagingMechanism` pin the contract. Mount ownership is
+  `TestShellPeerAnchorReapsOrphans`, `TestShellPeerKeepsHeldStaleAnchor`,
+  `TestEnsureOwnedVolumeBoundsTheInitWait`,
+  `TestEnsureOwnedVolumeBoundsTheInitRemoval`,
+  `TestEnsureOwnedVolumeBoundsTheRollback` and real-daemon
+  `TestPeerMessagingMechanism` and `TestOwnedVolumeInitReportsAnInitThatFails`
+  pin the contract. Mount ownership is
   governed by [mount rules](mounts.md). →
   [Peer Anchor](../../CONTEXT.md#peer-anchor),
   [peer lifecycle](../../docs/internals/container-lifecycle.md#peer-anchor-reaping)

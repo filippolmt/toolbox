@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -62,8 +63,11 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 		// on every later shell, so the init would never run again and each
 		// session would fail on it instead — silently, which is the failure
 		// mode this whole subsystem is written to avoid. Removing it keeps the
-		// next shell on the same self-healing path.
-		if _, rmErr := cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
+		// next shell on the same self-healing path. Like the initialiser's
+		// removal, it outlives a Ctrl-C under a deadline of its own.
+		rbCtx, rbCancel := context.WithTimeout(context.WithoutCancel(ctx), ownedVolumeInitTimeout)
+		defer rbCancel()
+		if _, rmErr := cli.VolumeRemove(rbCtx, name, client.VolumeRemoveOptions{Force: true}); rmErr != nil {
 			return fmt.Errorf("%w — and %s could not be removed (%v), so every later shell would reuse it "+
 				"as-is: remove it with `docker volume rm %s` once no shell using it is running", err, name, rmErr, name)
 		}
@@ -71,6 +75,11 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 	}
 	return nil
 }
+
+// ownedVolumeInitTimeout bounds the initialiser, and on their own its removal
+// and the volume's rollback: a chown and chmod of an empty volume answer at
+// once, so one still running is a stuck daemon. Tests swap it.
+var ownedVolumeInitTimeout = time.Minute
 
 // initOwnedVolume chowns the freshly created volume to the host UID/GID
 // and tightens it to 0700, in a throwaway container that runs as root.
@@ -88,6 +97,8 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 // never the `:local` overlay — the volume it initialises outlives any one
 // session, and see ensureAnchor for why the base is present locally by then.
 func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan.Image, v ownedVolume) error {
+	ctx, cancel := context.WithTimeout(ctx, ownedVolumeInitTimeout)
+	defer cancel()
 	target := v.target
 	// Resolve(nil) reads only os.Getuid/os.Getgid; GroupAdd is bind-derived and
 	// this container mounts nothing but the volume.
@@ -117,15 +128,20 @@ func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan
 		// and passing that straight on would leave the container alive — which
 		// keeps the volume in use, so the rollback in ensureOwnedVolume
 		// could not remove it either, and the name above would collide on the
-		// next shell.
-		_, _ = cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		// next shell. WithoutCancel drops the deadline too, so the removal
+		// takes one of its own: a stuck daemon must not hang the shell here.
+		rmCtx, rmCancel := context.WithTimeout(context.WithoutCancel(ctx), ownedVolumeInitTimeout)
+		defer rmCancel()
+		_, _ = cli.ContainerRemove(rmCtx, created.ID, client.ContainerRemoveOptions{Force: true})
 	}()
 
 	// Wait before Start: ContainerWait blocks until the daemon acknowledges the
 	// request, so subscribing first cannot miss the exit of a container this
-	// short-lived.
+	// short-lived. next-exit, not not-running: a created container is already
+	// not running, so that wait answers 0 before the init runs, and the
+	// deferred force-remove then kills the chown, leaving the volume root-owned.
 	wait := cli.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{
-		Condition: container.WaitConditionNotRunning,
+		Condition: container.WaitConditionNextExit,
 	})
 	if _, startErr := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); startErr != nil {
 		return fmt.Errorf("failed to start %s initialiser: %w", v.label, startErr)
