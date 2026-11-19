@@ -17,6 +17,7 @@ linters:
     - ineffassign
     - misspell
     - nolintlint
+    - predeclared
     - staticcheck
     - unused
   exclusions:

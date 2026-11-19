@@ -153,10 +153,10 @@ func SetMapBool(parent *yaml.Node, key string, value bool) {
 }
 
 func setScalar(parent *yaml.Node, key, tag, value string) {
-	make := func() *yaml.Node {
+	build := func() *yaml.Node {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
 	}
-	findOrAppendPair(parent, key, make, func(existing *yaml.Node) {
+	findOrAppendPair(parent, key, build, func(existing *yaml.Node) {
 		existing.Kind = yaml.ScalarNode
 		existing.Tag = tag
 		existing.Value = value
@@ -167,14 +167,14 @@ func setScalar(parent *yaml.Node, key, tag, value string) {
 // findOrAppendPair is the shared scan+upsert loop used by EnsureChildMap
 // and SetMapValue. normalize coerces parent into a mapping node; if a pair
 // with key already exists, prepare runs against the existing value node
-// and the value is returned. Otherwise make builds a fresh value node and
+// and the value is returned. Otherwise build makes a fresh value node and
 // the pair is appended. The mapping invariant (even-length Content) is
 // re-established before the scan so an upstream caller leaving an orphan
 // key does not corrupt the result.
 func findOrAppendPair(
 	parent *yaml.Node,
 	key string,
-	make func() *yaml.Node,
+	build func() *yaml.Node,
 	prepare func(existing *yaml.Node),
 ) *yaml.Node {
 	if parent.Kind != yaml.MappingNode {
@@ -190,7 +190,7 @@ func findOrAppendPair(
 		return v
 	}
 	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-	v := make()
+	v := build()
 	parent.Content = append(parent.Content, k, v)
 	return v
 }

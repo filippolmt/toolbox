@@ -658,11 +658,11 @@ func writePIDFile(path string) error {
 	return fsx.AtomicWriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	return s[:max] + "…"
+	return s[:limit] + "…"
 }
 
 // rateLimiter is a tiny token bucket. Standard library has no built-in;

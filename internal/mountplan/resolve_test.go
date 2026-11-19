@@ -151,12 +151,12 @@ func TestResolveAllWarnsOnEvalSymlinksFailure(t *testing.T) {
 func TestResolveAllResolvesHealthySymlinkSource(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	tmp := t.TempDir()
-	real := filepath.Join(tmp, "real-dir")
-	if err := os.Mkdir(real, 0o755); err != nil {
+	realDir := filepath.Join(tmp, "realDir-dir")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	src := filepath.Join(tmp, "healthy-link")
-	if err := os.Symlink(real, src); err != nil {
+	if err := os.Symlink(realDir, src); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
@@ -171,7 +171,7 @@ func TestResolveAllResolvesHealthySymlinkSource(t *testing.T) {
 	if len(binds) != 1 {
 		t.Fatalf("expected 1 resolved mount, got %d", len(binds))
 	}
-	want, err := filepath.EvalSymlinks(real)
+	want, err := filepath.EvalSymlinks(realDir)
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
