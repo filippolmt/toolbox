@@ -119,10 +119,10 @@ func TestReloadReplacesTheContainer(t *testing.T) {
 	}
 
 	newID := containerID(ctx, t, cli, second.ContainerName)
-	switch {
-	case newID == "":
+	switch newID {
+	case "":
 		t.Fatal("the reload destroyed the session and created nothing in its place")
-	case newID == oldID:
+	case oldID:
 		t.Fatal("the reload reattached to the old container instead of replacing it")
 	}
 }

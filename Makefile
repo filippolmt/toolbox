@@ -249,8 +249,8 @@ go-dockergate-image: ## Build the local daemon-test runner using the pinned Go a
 	docker build -f .github/dockergate.Dockerfile --build-arg GO_IMAGE="$(GO_IMAGE)" \
 	  --build-arg RUNTIME_IMAGE="$(FULL)" -t "$(DOCKERGATE_IMAGE)" .github
 
-go-dockergate: go-dockergate-image ## Run daemon gates against FULL without rebuilding it (optional PKG=... RUN=...)
-	bash .github/scripts/go-dockergate.sh "$(HOST_SRC)" "$(FULL)" "$(DOCKERGATE_IMAGE)" \
+go-dockergate: go-dockergate-image ## Run daemon gates against FULL without rebuilding it (optional PKG=... RUN=... GATE_COUNT=N to repeat a flaky gate)
+	GATE_COUNT="$(GATE_COUNT)" bash .github/scripts/go-dockergate.sh "$(HOST_SRC)" "$(FULL)" "$(DOCKERGATE_IMAGE)" \
 	  '$(if $(RUN),$(RUN),.)' $(if $(PKG),"$(PKG)",./internal/container/ ./internal/imagereclaim/)
 
 go-test-verbose: go-test-image ## Run Go tests with -v and race detection (requires CGO)

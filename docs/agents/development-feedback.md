@@ -19,6 +19,7 @@ skips locally when the tool is missing and fails under `$CI`, held by
 ```bash
 make go-dockergate
 make go-dockergate PKG=./internal/container RUN='TestTerminalClose|TestShellProcessCleanup'
+make go-dockergate PKG=./internal/container RUN=TestName GATE_COUNT=30
 ```
 
 The target uses the existing runtime image selected by `FULL`; it does not
@@ -30,6 +31,13 @@ your build. A linked worktree's build leaves the registry tag alone and its
 gate runner image is `toolbox-dockergate:<worktree>`, so builds in parallel
 worktrees cannot overwrite each other or the image `./toolbox shell` runs. CI still verifies the
 complete gate suite against the runtime image built from the PR.
+
+A gate that passes on this daemon can still hide a race another daemon loses
+(Docker Desktop): `GATE_COUNT=N` repeats it to raise the reproduction rate. For a
+failure seen in a real run, capture the daemon's record first, before any
+retry: `docker events --since <run start> --until <now>`. The daemon keeps
+only recent events in memory, and a failed `toolbox` command often removes
+the container it created, so the events are the only trace of what ran.
 
 The development-only runner uses `GO_IMAGE` from the Makefile, the runtime's
 Docker client and an installed Python interpreter. It maps the caller's UID/GID
