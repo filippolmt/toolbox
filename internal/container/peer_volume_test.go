@@ -290,3 +290,34 @@ func TestEnsureOwnedVolumeBoundsTheInitWait(t *testing.T) {
 		t.Fatalf("ensurePeerSocketVolume = %v, want the init wait ended by its own deadline", err)
 	}
 }
+
+// TestEnsureOwnedVolumeBoundsTheInitRemoval pins the deadline on the deferred
+// removal: it outlives a cancelled context on purpose, but not a stuck daemon.
+func TestEnsureOwnedVolumeBoundsTheInitRemoval(t *testing.T) {
+	defer func(d time.Duration) { ownedVolumeInitTimeout = d }(ownedVolumeInitTimeout)
+	ownedVolumeInitTimeout = 10 * time.Millisecond
+
+	var removeErr error
+	mock := &mockClient{
+		volInspectFn: func(_ context.Context, v string) (client.VolumeInspectResult, error) {
+			return client.VolumeInspectResult{}, &dockertest.NotFoundError{Msg: "no such volume: " + v}
+		},
+		createFn: func(context.Context, *container.Config, *container.HostConfig, string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: "init"}, nil
+		},
+		removeFn: func(rmCtx context.Context, _ string, _ client.ContainerRemoveOptions) error {
+			select {
+			case <-rmCtx.Done():
+				removeErr = rmCtx.Err()
+			case <-time.After(5 * time.Second):
+				removeErr = errors.New("the removal outlived its deadline")
+			}
+			return removeErr
+		},
+	}
+
+	_ = ensurePeerSocketVolume(context.Background(), mock, testImage)
+	if !errors.Is(removeErr, context.DeadlineExceeded) {
+		t.Fatalf("initialiser removal ended with %v, want its own deadline", removeErr)
+	}
+}

@@ -73,8 +73,9 @@ func ensureOwnedVolume(ctx context.Context, cli client.APIClient, base sessionpl
 	return nil
 }
 
-// ownedVolumeInitTimeout bounds the initialiser: a chown and chmod of an empty
-// volume answer at once, so one still running is a stuck daemon. Tests swap it.
+// ownedVolumeInitTimeout bounds the initialiser, and on its own its removal: a
+// chown and chmod of an empty volume answer at once, so one still running is a
+// stuck daemon. Tests swap it.
 var ownedVolumeInitTimeout = time.Minute
 
 // initOwnedVolume chowns the freshly created volume to the host UID/GID
@@ -124,8 +125,11 @@ func initOwnedVolume(ctx context.Context, cli client.APIClient, base sessionplan
 		// and passing that straight on would leave the container alive — which
 		// keeps the volume in use, so the rollback in ensureOwnedVolume
 		// could not remove it either, and the name above would collide on the
-		// next shell.
-		_, _ = cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		// next shell. WithoutCancel drops the deadline too, so the removal
+		// takes one of its own: a stuck daemon must not hang the shell here.
+		rmCtx, rmCancel := context.WithTimeout(context.WithoutCancel(ctx), ownedVolumeInitTimeout)
+		defer rmCancel()
+		_, _ = cli.ContainerRemove(rmCtx, created.ID, client.ContainerRemoveOptions{Force: true})
 	}()
 
 	// Wait before Start: ContainerWait blocks until the daemon acknowledges the
