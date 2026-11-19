@@ -239,10 +239,11 @@ fi
 # TOOLBOX_NO_UPDATE_CHECK — no banner. Set in `env:` it also stops the
 # host-side probe; typed inside a live shell it only stops the rendering.
 #
-# The host owns the facts, the image owns the words. The copy lives here and
-# not in a host-rendered string because the CLI and this image ship on separate
-# pipelines: a host that wrote the sentence would eventually tell an old image
-# to run a `toolbox-reload` it does not have.
+# The host owns the facts, the image owns the words — with one exception, a
+# CLI flag no poller is left to retract (see the cli_update check below). The
+# copy lives here and not in a host-rendered string because the CLI and this
+# image ship on separate pipelines: a host that wrote the sentence would
+# eventually tell an old image to run a `toolbox-reload` it does not have.
 #
 # It states a fact and a command, and no longer prescribes an exit. Because the
 # reload asks for no confirmation, this line is the only place its cost is
@@ -286,11 +287,13 @@ if [ -z "${TOOLBOX_NO_UPDATE_CHECK:-}" ] && [ -n "${HOME:-}" ]; then
         # The cache is shared, and a Detached Shell terminal has no host poller
         # to retract a CLI flag written before the upgrade: a release no newer
         # than the CLI that created this session is no news. An unstamped CLI
-        # ("dev") has nothing to compare, so the flag stands.
-        local cur=${TOOLBOX_CLI_VERSION#v}
-        if [[ $cli_update == 1 && $cur == [0-9]* && -n $cli_latest ]]; then
+        # ("dev") has nothing to compare, so the flag stands. Same reading as
+        # the host's imageprefetch.newerVersion: a leading v and any -/+
+        # suffix are dropped before the numeric comparison.
+        local cur=${${TOOLBOX_CLI_VERSION#v}%%[-+]*} latest=${${cli_latest#v}%%[-+]*}
+        if [[ $cli_update == 1 && $cur == [0-9]* && -n $latest ]]; then
             autoload -Uz is-at-least
-            is-at-least ${cli_latest#v} $cur && cli_update=0
+            is-at-least $latest $cur && cli_update=0
         fi
 
         # How this session adopts an image, decided by the one thing the image

@@ -363,21 +363,31 @@ cli_latest=v9.9.9
     # a cli_update=1 left by the CLI the user just upgraded away from would
     # nag forever. The session knows the CLI that created it: a release that
     # is not newer than that one is no news, and an older session still is.
-    _zsh_banner_cli_stale_check() {
-        local cache="image_update=0
+    _zsh_banner_cli_current_check() {
+        local same older dev both
+        _zsh_banner_seed "image_update=0
 image_latest=sha256:eee
 image_state=none
 cli_update=1
 cli_latest=v1.13.1
-"
-        _zsh_banner_seed "$cache" || return 1
+" || return 1
         same=$(TOOLBOX_CLI_VERSION=1.13.1 zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
         older=$(TOOLBOX_CLI_VERSION=1.13.0 zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
         dev=$(TOOLBOX_CLI_VERSION=dev zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
+        # Both axes with the CLI one dropped falls back to the image line.
+        _zsh_banner_seed "image_update=1
+image_latest=sha256:eee
+image_state=ready
+cli_update=1
+cli_latest=v1.13.1
+" || return 1
+        both=$(env -u TOOLBOX_RELOAD_MARKER TOOLBOX_CLI_VERSION=1.13.1 zsh -i -c "_toolbox_update_precmd" 2>/dev/null)
         _zsh_banner_cleanup
         test -z "$same" || { echo "    CLI already at the release, got: $same"; return 1; }
         case "$older" in *v1.13.1*) ;; *) echo "    older CLI not told: $older"; return 1 ;; esac
         case "$dev" in *v1.13.1*) ;; *) echo "    unstamped CLI muted the banner: $dev"; return 1 ;; esac
+        case "$both" in *v1.13.1*|*"brew upgrade"*) echo "    both axes still names the CLI: $both"; return 1 ;; esac
+        case "$both" in *"newer runtime image is downloaded"*) ;; *) echo "    image line lost: $both"; return 1 ;; esac
     }
 
     # q3. The registry moved and the download keeps failing — the state the
@@ -458,7 +468,7 @@ cli_latest=
     _zsh_assert "update banner ready"          _zsh_banner_ready_check
     _zsh_assert "update banner ready, old CLI" _zsh_banner_ready_old_cli_check
     _zsh_assert "update banner both axes"      _zsh_banner_both_axes_check
-    _zsh_assert "update banner CLI already current" _zsh_banner_cli_stale_check
+    _zsh_assert "update banner CLI already current" _zsh_banner_cli_current_check
     _zsh_assert "update banner unavailable"    _zsh_banner_unavailable_check
     _zsh_assert "update banner shown per shell" _zsh_banner_scope_check
     _zsh_assert "toolbox-reload refuses without marker" _zsh_reload_refusal_check

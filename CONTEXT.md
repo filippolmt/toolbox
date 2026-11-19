@@ -943,6 +943,11 @@ shut; a session whose own container is older would render the sibling's
 answer for as long as that lasts. Every poll first republishes
 `cli_update` from this process's version and the cached latest tag,
 before the gate, so a failed probe cannot preserve an obsolete warning.
+A Detached Shell terminal has no poll behind it, so the renderer itself
+drops `cli_update` when `cli_latest` is no newer than
+`TOOLBOX_CLI_VERSION`, the CLI that created its container. That stamp is
+fixed at create time: a Detached Shell older than the host upgrade keeps
+the warning until a Session Reload or a recreate.
 A poll turned away at the gate additionally republishes `image_update`
 from the store and this container's digest. Every pass, not just the
 first — a session outlives many ticks, and fixing only the first would

@@ -254,9 +254,12 @@ tag, so a completed host upgrade retracts its warning even if the next probe
 fails. A terminal with no poll behind it — a Detached Shell's, opened by
 herdr-core or Orca — gets the same retraction from the renderer: it drops
 `cli_update` when `cli_latest` is no newer than `TOOLBOX_CLI_VERSION`, the CLI
-that created the container. A poll turned away by the gate additionally republishes `image_update`
-from the store and this container's digest. The one cache is shared by every
-workspace and may have been written by a sibling session with a different
+that created the container. That version is stamped at create time, so a
+Detached Shell created before the host upgrade keeps the warning until a
+Session Reload or a recreate. A poll turned away by the gate additionally
+republishes `image_update` from the store and this container's digest. The one
+cache is shared by every workspace and may have been written by a sibling
+session with a different
 container or host CLI. Registry facts stay untouched; `image_latest` and
 `cli_latest` remain what the last real probes published. Probe and pull work
 happens before taking `update-check.lock`; under the lock, a publisher re-reads
