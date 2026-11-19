@@ -275,14 +275,14 @@ func countCasualties(lines []string, counts map[string]int) []string {
 // would be the entire summary.
 const casualtyLineMax = 120
 
-// cutTo shortens s to max runes, ellipsis included, and counts runes rather
+// cutTo shortens s to limit runes, ellipsis included, and counts runes rather
 // than bytes so a cut never lands inside a multi-byte character.
-func cutTo(s string, max int) string {
+func cutTo(s string, limit int) string {
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= limit {
 		return s
 	}
-	return string(r[:max-1]) + "…"
+	return string(r[:limit-1]) + "…"
 }
 
 // commandColumn locates the CMD column in a ContainerTop result. The daemon's
