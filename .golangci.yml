@@ -8,6 +8,7 @@ linters:
   enable:
     - depguard
     - errcheck
+    - forbidigo
     - govet
     - gosec
     - ineffassign
@@ -39,6 +40,12 @@ linters:
           deny:
             - pkg: github.com/filippolmt/toolbox/internal/container
               desc: only cmd/ imports the container edge; take the narrow Docker interface you need instead
+    forbidigo:
+      forbid:
+        # A created container already satisfies not-running: a wait registered
+        # before ContainerStart answers 0 at once, before the process runs.
+        - pattern: ^container\.WaitConditionNotRunning$
+          msg: "register a container.WaitConditionNextExit wait before ContainerStart: not-running answers at once on a created container"
     # Enabled separately for the diff by go-lint-new and CI, not retroactively
     # across untouched functions. SonarQube remains the authoritative gate.
     gocognit:

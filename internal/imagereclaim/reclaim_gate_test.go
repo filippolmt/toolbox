@@ -87,16 +87,12 @@ func TestDaemonRefusesToRemoveAStoppedContainersImage(t *testing.T) {
 // than assumed.
 func runToExit(ctx context.Context, t *testing.T, cli client.APIClient, id string) {
 	t.Helper()
-	// Start first, then wait — the reverse of the usual "subscribe before the
-	// event" rule, and for a reason: `created` already satisfies
-	// WaitConditionNotRunning, so a wait registered beforehand is answered
-	// instantly and proves nothing. Registering it after the start is safe
-	// here because the daemon answers a wait on an already-exited container
-	// from its record, so a process that has finished by now is not missed.
+	// Wait before Start, with next-exit: `created` already satisfies
+	// not-running, so that wait would answer at once and prove nothing.
+	wait := cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
 	if _, err := cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
 		t.Fatalf("ContainerStart: %v", err)
 	}
-	wait := cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {
 	case err := <-wait.Error:
 		t.Fatalf("ContainerWait: %v", err)
