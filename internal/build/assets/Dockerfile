@@ -42,7 +42,7 @@
 ARG GH_VERSION=2.105.0
 ARG GLAB_VERSION=1.131.0
 ARG GWS_VERSION=0.22.5
-ARG ATUIN_VERSION=18.24.8
+ARG ATUIN_VERSION=18.25.1
 ARG HERDR_VERSION=0.9.5
 ARG KUBECTL_VERSION=v1.37.2
 ARG KUBECTX_VERSION=0.11.0
@@ -1328,7 +1328,7 @@ RUN set -eux; \
       _wt_merge_hooks /etc/codex/hooks.json "$(_wt_marker_groups /usr/local/bin/wt "$_wt_codex_events")"; \
       toolbox_merge_guardrails /etc/codex/hooks.json; \
       HOME=/tmp/home CODEX_HOME=/etc/codex herdr integration install codex; \
-      HOME=/tmp/home CODEX_HOME=/etc/codex atuin hook install codex; \
+      HOME=/tmp/home CODEX_HOME=/etc/codex atuin setup --only --agent-history --agents codex; \
       bash /tmp/lib/codex-hooks-check.sh /etc/codex/hooks.json; \
       install -m 0644 /etc/codex/hooks.json /out/etc/codex/hooks.json; \
       install -m 0755 /etc/codex/herdr-agent-state.sh /out/etc/codex/herdr-agent-state.sh; \
