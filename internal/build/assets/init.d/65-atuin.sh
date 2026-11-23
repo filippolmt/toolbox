@@ -85,7 +85,7 @@ fi
 # search hides agent-authored entries by default (filter `$all-user`); use
 # `atuin search --author claude-code` or `--author '$all-agent'` to inspect.
 #
-# `atuin hook install` is idempotent upstream, but every invocation still
+# `atuin setup --only --agent-history` is idempotent upstream, but every run still
 # opens + parses the agent's config file (and uses Agent Topology's shared
 # Claude-settings lock). Gate per agent via a marker file keyed
 # on the atuin binary's mtime+size — when atuin upgrades the hook stub may
@@ -99,10 +99,10 @@ mkdir -p "$_atuin_hooks_dir"
 # the concurrent migration in init.d/10-remove-rtk.sh.
 _claude_marker="$_atuin_hooks_dir/claude-${_atuin_key}"
 if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent_persistent claude; then
-    if toolbox_with_claude_settings_lock atuin hook install claude-code >/dev/null 2>&1; then
+    if toolbox_with_claude_settings_lock atuin setup --only --agent-history --agents claude-code >/dev/null 2>&1; then
         : > "$_claude_marker"
     else
-        echo "  atuin: hook install claude-code failed (non-fatal)"
+        echo "  atuin: hook setup claude-code failed (non-fatal)"
     fi
 fi
 
@@ -118,9 +118,9 @@ toolbox_with_codex_hooks_lock rm -f "$_atuin_hooks_dir"/codex-*
 # that is no longer there and never retry it.
 _pi_marker="$_atuin_hooks_dir/pi-${_atuin_key}"
 if [ ! -f "$_pi_marker" ] && toolbox_agent_available pi && toolbox_agent_persistent pi; then
-    if atuin hook install pi >/dev/null 2>&1; then
+    if atuin setup --only --agent-history --agents pi >/dev/null 2>&1; then
         : > "$_pi_marker"
     else
-        echo "  atuin: hook install pi failed (non-fatal)"
+        echo "  atuin: hook setup pi failed (non-fatal)"
     fi
 fi

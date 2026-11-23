@@ -253,13 +253,13 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 	adapters := map[string][]adapter{
 		"claude": {
 			{"Herdr", herdr, "_herdr_install_integration claude"},
-			{"Atuin", atuin, "atuin hook install claude-code"},
+			{"Atuin", atuin, "atuin setup --only --agent-history --agents claude-code"},
 			{"Worktrunk", worktrunk, "_wt_wire_claude"},
 			{"Guardrails", guardrails, "toolbox_with_claude_settings_lock _guardrails_wire"},
 		},
 		"codex": {
 			{"Herdr", dockerfile, "CODEX_HOME=/etc/codex herdr integration install codex"},
-			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin hook install codex"},
+			{"Atuin", dockerfile, "CODEX_HOME=/etc/codex atuin setup --only --agent-history --agents codex"},
 			{"Worktrunk", dockerfile, `"$_wt_codex_events"`},
 			{"the hooks check", dockerfile, "codex-hooks-check.sh /etc/codex/hooks.json"},
 			{"Guardrails", dockerfile, "toolbox_merge_guardrails /etc/codex/hooks.json"},
@@ -267,7 +267,7 @@ func TestAgentWiringDeclaresEverySupportedAgent(t *testing.T) {
 		},
 		"pi": {
 			{"Herdr", herdr, "_herdr_install_integration pi"},
-			{"Atuin", atuin, "atuin hook install pi"},
+			{"Atuin", atuin, "atuin setup --only --agent-history --agents pi"},
 			{"Worktrunk", worktrunk, "_wt_wire_pi"},
 			{"Guardrails", piWrapper, "-e /usr/local/lib/toolbox/pi/agent-guardrails.ts"},
 		},

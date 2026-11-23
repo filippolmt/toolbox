@@ -30,7 +30,7 @@ func TestInitDWiresPiEverywhereItWiresCodex(t *testing.T) {
 			wants: []string{
 				`_pi_marker="$_atuin_hooks_dir/pi-${_atuin_key}"`,
 				`[ ! -f "$_pi_marker" ] && toolbox_agent_available pi && toolbox_agent_persistent pi`,
-				`atuin hook install pi`,
+				`atuin setup --only --agent-history --agents pi`,
 			},
 		},
 	} {
@@ -46,7 +46,7 @@ func TestInitDWiresPiEverywhereItWiresCodex(t *testing.T) {
 		}
 		// No lock. Each agent gets its own file under ~/.pi/agent/extensions/,
 		// so there is no shared writer to serialise.
-		if strings.Contains(s, "flock 200\n        atuin hook install pi") {
+		if strings.Contains(s, "flock 200\n        atuin setup --only --agent-history --agents pi") {
 			t.Errorf("%s locks the pi install; it writes no shared file", tc.script)
 		}
 	}
