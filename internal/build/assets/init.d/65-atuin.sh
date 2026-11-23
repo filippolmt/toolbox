@@ -85,8 +85,8 @@ fi
 # search hides agent-authored entries by default (filter `$all-user`); use
 # `atuin search --author claude-code` or `--author '$all-agent'` to inspect.
 #
-# `atuin setup --only --agent-history` is idempotent upstream, but every run still
-# opens + parses the agent's config file (and uses Agent Topology's shared
+# `atuin setup --only --agent-history` is idempotent upstream, but every run
+# still opens + parses the agent's config file (and uses Agent Topology's shared
 # Claude-settings lock). Gate per agent via a marker file keyed
 # on the atuin binary's mtime+size — when atuin upgrades the hook stub may
 # change, so we re-run on binary churn but skip on every other boot.
@@ -102,7 +102,7 @@ if [ ! -f "$_claude_marker" ] && toolbox_agent_available claude && toolbox_agent
     if toolbox_with_claude_settings_lock atuin setup --only --agent-history --agents claude-code >/dev/null 2>&1; then
         : > "$_claude_marker"
     else
-        echo "  atuin: hook setup claude-code failed (non-fatal)"
+        echo "  atuin: setup claude-code failed (non-fatal)"
     fi
 fi
 
@@ -121,6 +121,6 @@ if [ ! -f "$_pi_marker" ] && toolbox_agent_available pi && toolbox_agent_persist
     if atuin setup --only --agent-history --agents pi >/dev/null 2>&1; then
         : > "$_pi_marker"
     else
-        echo "  atuin: hook setup pi failed (non-fatal)"
+        echo "  atuin: setup pi failed (non-fatal)"
     fi
 fi
