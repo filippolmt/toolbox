@@ -63,7 +63,10 @@ for a in "$@"; do
 		f="$(git rev-parse --git-dir)/forge-$a"
 		if [ -f "$f" ]; then
 			list=
-			while IFS= read -r h; do list="$list${list:+,}\"$h\""; done < "$f"
+			while IFS= read -r h; do
+				case "$h" in null) h=null ;; *) h="\"$h\"" ;; esac
+				list="$list${list:+,}$h"
+			done < "$f"
 		else
 			list="\"$(git rev-parse --verify -q "refs/heads/$a")\""
 		fi
@@ -83,7 +86,8 @@ echo '[]'
 }
 
 // forgeHeads sets the head commits the fake forge reports for branch's merged
-// PRs, one per PR; an empty oid is a PR whose answer carries no head.
+// PRs, one per PR; an empty oid is a PR whose answer carries no head, and
+// "null" is sent as a JSON null, what --jq projects for a missing field.
 func forgeHeads(t *testing.T, dir, branch string, oids ...string) {
 	t.Helper()
 	gitDir := gitIn(t, dir, "rev-parse", "--absolute-git-dir")
@@ -332,6 +336,13 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		name: "merged PR without a head",
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, "")
+		},
+		kept: "merge state unverified",
+	}, {
+		// The shape --jq gives when the field is missing altogether.
+		name: "merged PR whose head is null",
+		setup: func(t *testing.T, dir, branch string) {
+			forgeHeads(t, dir, branch, "null")
 		},
 		kept: "merge state unverified",
 	}, {
