@@ -42,9 +42,9 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 // CLI named by $AUTHED_CLI holds a session, and it answers from the branch
 // name: "merged-*" has a merged PR, "closed-*" has none, "boom-*" makes the
 // query itself fail. A merged PR's head commit is the forge's view of what was
-// merged: the oid in <git-dir>/forge-<branch> when a test writes one (a file,
-// not a ref, so it can name an object the repository lacks), else the local
-// tip. Every answer is the JSON array shape the script's --jq filter produces.
+// merged: the oids in <git-dir>/forge-<branch>, one per merged PR, when a test
+// writes them (a file, not a ref, so it can name an object the repository
+// lacks), else the local tip. Every answer is the JSON array shape the script's --jq filter produces.
 func fakeForgeBin(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -60,8 +60,13 @@ for a in "$@"; do
 	case "$a" in
 	merged-*)
 		f="$(git rev-parse --git-dir)/forge-$a"
-		if [ -f "$f" ]; then read -r head < "$f"; else head=$(git rev-parse --verify -q "refs/heads/$a"); fi
-		echo "[\"$head\"]"; exit 0 ;;
+		if [ -f "$f" ]; then
+			list=
+			while IFS= read -r h; do list="$list${list:+,}\"$h\""; done < "$f"
+		else
+			list="\"$(git rev-parse --verify -q "refs/heads/$a")\""
+		fi
+		echo "[$list]"; exit 0 ;;
 	closed-*) echo '[]'; exit 0 ;;
 	boom-*) exit 1 ;;
 	esac
@@ -76,13 +81,21 @@ echo '[]'
 	return bin
 }
 
-// forgeHead sets the head commit the fake forge reports for branch's merged PR.
-func forgeHead(t *testing.T, dir, branch, oid string) {
+// forgeHead sets the head commits the fake forge reports for branch's merged
+// PRs, one per PR; an empty oid is a PR whose answer carries no head.
+func forgeHead(t *testing.T, dir, branch string, oids ...string) {
 	t.Helper()
 	gitDir := gitIn(t, dir, "rev-parse", "--absolute-git-dir")
-	if err := os.WriteFile(filepath.Join(gitDir, "forge-"+branch), []byte(oid+"\n"), 0o644); err != nil {
+	body := strings.Join(oids, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(gitDir, "forge-"+branch), []byte(body), 0o644); err != nil {
 		t.Fatalf("write forge head: %v", err)
 	}
+}
+
+// forgePath is a PATH with the fake forge CLIs ahead of git and sh.
+func forgePath(t *testing.T) string {
+	t.Helper()
+	return fakeForgeBin(t) + string(os.PathListSeparator) + toolPath(t)
 }
 
 // toolPath is a PATH holding just the interpreters the script itself needs —
@@ -146,7 +159,7 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-one", "closed-one", "boom-one")
 
 	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+		forgePath(t), "AUTHED_CLI=gh")
 
 	left := branches(t, dir)
 	if strings.Contains(left, "merged-one") {
@@ -196,7 +209,7 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 			calls := filepath.Join(t.TempDir(), "calls")
 
 			runPruneDead(t, dir,
-				fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t),
+				forgePath(t),
 				"AUTHED_CLI="+tc.cli, "FORGE_CALLS="+calls)
 
 			argv, err := os.ReadFile(calls)
@@ -223,7 +236,7 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 	// The fakes are on PATH but neither holds a session: being installed is
 	// not being logged in.
 	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=")
+		forgePath(t), "AUTHED_CLI=")
 
 	if !strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("with no logged-in CLI no branch may be deleted:\n%s", out)
@@ -246,7 +259,7 @@ func TestGitPruneDeadPicksTheCLILoggedInToThatHost(t *testing.T) {
 	dir := pruneDeadRepo(t, "git@git.example.internal:team/repo.git", "merged-one")
 
 	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=glab")
+		forgePath(t), "AUTHED_CLI=glab")
 
 	if strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("glab is logged in to this host, so its merged branch must go:\n%s", out)
@@ -256,97 +269,81 @@ func TestGitPruneDeadPicksTheCLILoggedInToThatHost(t *testing.T) {
 	}
 }
 
-// A merged PR proves its head was merged, not the local tip. A branch that
-// gained commits after the merge — a follow-up never pushed, or one pushed to
-// a remote branch deleted on merge — holds the only copy of them, so it must
-// survive, and say why in words distinct from "never merged".
-func TestGitPruneDeadKeepsCommitsAfterTheMergedHead(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-then-more")
-	forgeHead(t, dir, "merged-then-more", gitIn(t, dir, "rev-parse", "merged-then-more"))
-	tree := gitIn(t, dir, "rev-parse", "merged-then-more^{tree}")
-	after := gitIn(t, dir, "commit-tree", "-p", "merged-then-more", "-m", "after the merge", tree)
-	gitIn(t, dir, "update-ref", "refs/heads/merged-then-more", after)
-
-	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
-
-	if !strings.Contains(branches(t, dir), "merged-then-more") {
-		t.Fatalf("a branch with commits after its merged head must survive:\n%s", out)
+// A merged PR proves its head was merged, not the local tip. Each case sets
+// the forge's view of what was merged against the local branch and checks
+// the one outcome the script may reach: deleted only when a merged head is the
+// tip or contains it, otherwise kept and named with its reason.
+func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
+	// child writes a commit on top of parent without moving any branch.
+	child := func(t *testing.T, dir, parent, msg string) string {
+		t.Helper()
+		tree := gitIn(t, dir, "rev-parse", parent+"^{tree}")
+		return gitIn(t, dir, "commit-tree", "-p", parent, "-m", msg, tree)
 	}
-	if !strings.Contains(out, "kept merged-then-more (no merged PR on gh contains its tip") {
-		t.Errorf("the kept branch must be named with its own reason, got:\n%s", out)
-	}
-}
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, dir, branch string)
+		kept  string // reason prefix the run must print; "" means deleted
+	}{{
+		// A follow-up never pushed, or pushed to a remote branch deleted on
+		// merge: the only copy of those commits.
+		name: "commits after the merged head",
+		setup: func(t *testing.T, dir, branch string) {
+			forgeHead(t, dir, branch, gitIn(t, dir, "rev-parse", branch))
+			gitIn(t, dir, "update-ref", "refs/heads/"+branch, child(t, dir, branch, "after the merge"))
+		},
+		kept: "no merged PR on gh contains its tip",
+	}, {
+		// More was pushed to the PR from elsewhere before it merged: every
+		// local commit is part of what the forge merged.
+		name: "tip behind the merged head",
+		setup: func(t *testing.T, dir, branch string) {
+			forgeHead(t, dir, branch, child(t, dir, branch, "pushed from elsewhere"))
+		},
+	}, {
+		// Absent locally and different from the tip: never fetched to find out.
+		name: "merged head missing locally",
+		setup: func(t *testing.T, dir, branch string) {
+			forgeHead(t, dir, branch, strings.Repeat("0123456789", 4))
+		},
+		kept: "no merged PR on gh contains its tip",
+	}, {
+		// A name reused after an older PR merged: its head is still here but
+		// shares no history with the new work.
+		name: "reused name with an unrelated merged head",
+		setup: func(t *testing.T, dir, branch string) {
+			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
+			forgeHead(t, dir, branch, gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree))
+		},
+		kept: "no merged PR on gh contains its tip",
+	}, {
+		// A field the forge stopped sending says nothing about local commits.
+		name: "merged PR without a head",
+		setup: func(t *testing.T, dir, branch string) {
+			forgeHead(t, dir, branch, "")
+		},
+		kept: "merge state unverified",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			const branch = "merged-one"
+			dir := pruneDeadRepo(t, "https://github.com/example/repo.git", branch)
+			tc.setup(t, dir, branch)
 
-// The other direction is safe: when more was pushed to the PR from elsewhere
-// before it merged, the local tip is an ancestor of the merged head, so every
-// local commit is part of what the forge merged and the branch can go.
-func TestGitPruneDeadDeletesATipBehindTheMergedHead(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-behind")
-	tree := gitIn(t, dir, "rev-parse", "merged-behind^{tree}")
-	head := gitIn(t, dir, "commit-tree", "-p", "merged-behind", "-m", "pushed from elsewhere", tree)
-	forgeHead(t, dir, "merged-behind", head)
+			out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=gh")
 
-	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
-
-	if strings.Contains(branches(t, dir), "merged-behind") {
-		t.Errorf("a tip contained in the merged head must go, still present:\n%s", out)
-	}
-}
-
-// A merged head the repository does not have cannot vouch for the local tip,
-// and it is never fetched to find out: absent and different from the tip
-// means the branch stays.
-func TestGitPruneDeadKeepsABranchWhoseMergedHeadIsMissingLocally(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-elsewhere")
-	forgeHead(t, dir, "merged-elsewhere", strings.Repeat("0123456789", 4))
-
-	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
-
-	if !strings.Contains(branches(t, dir), "merged-elsewhere") {
-		t.Fatalf("a merged head absent locally must not count as proof:\n%s", out)
-	}
-	if !strings.Contains(out, "kept merged-elsewhere (no merged PR on gh contains its tip") {
-		t.Errorf("the kept branch must be named with its reason, got:\n%s", out)
-	}
-}
-
-// A branch name reused after an older PR with that name merged: the forge
-// answers with the old PR's head, a commit the repository still has but that
-// shares no history with the new work.
-func TestGitPruneDeadKeepsABranchWhoseNameWasReused(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-reused")
-	tree := gitIn(t, dir, "rev-parse", "merged-reused^{tree}")
-	old := gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
-	forgeHead(t, dir, "merged-reused", old)
-
-	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
-
-	if !strings.Contains(branches(t, dir), "merged-reused") {
-		t.Fatalf("an unrelated merged head must not count as proof:\n%s", out)
-	}
-	if !strings.Contains(out, "kept merged-reused (no merged PR on gh contains its tip") {
-		t.Errorf("the kept branch must be named with its reason, got:\n%s", out)
-	}
-}
-
-// A merged PR whose answer carries no head commit — a field the forge stopped
-// sending — proves nothing about the local tip, and says nothing about local
-// commits either: the state is unverified, and the branch stays.
-func TestGitPruneDeadKeepsABranchWhenTheForgeSendsNoHead(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-headless")
-	forgeHead(t, dir, "merged-headless", "")
-
-	out := runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
-
-	if !strings.Contains(branches(t, dir), "merged-headless") {
-		t.Fatalf("a merged PR without a head must not count as proof:\n%s", out)
-	}
-	if !strings.Contains(out, "kept merged-headless (merge state unverified") {
-		t.Errorf("a missing head must read as unverified, got:\n%s", out)
+			survived := strings.Contains(branches(t, dir), branch)
+			if tc.kept == "" {
+				if survived {
+					t.Errorf("a tip a merged head covers must go, still present:\n%s", out)
+				}
+				return
+			}
+			if !survived {
+				t.Fatalf("a tip no merged head covers must survive:\n%s", out)
+			}
+			if want := "kept " + branch + " (" + tc.kept; !strings.Contains(out, want) {
+				t.Errorf("want %q in the output, got:\n%s", want, out)
+			}
+		})
 	}
 }
