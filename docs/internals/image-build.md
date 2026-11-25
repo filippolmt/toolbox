@@ -59,7 +59,7 @@ The drop-in is loaded via `Include /etc/ssh/ssh_config.d/*.conf` in `/etc/ssh/ss
 
 ## Agent instructions
 
-One embedded asset, `agent-instructions.md`, carries what an agent cannot infer from inside the container: Docker talks to the host daemon, so a bind source must be a host path under the workspace, and the scratchpad, `/tmp` and `$HOME` mount empty or fail. It also says to create worktrees with Worktrunk and to show the final draft of an issue before creating it. Each bundled agent receives it as an [Image Default](../../CONTEXT.md#image-default), with no write into the developer's files:
+One embedded asset, `agent-instructions.md`, carries what an agent cannot infer from inside the container: Docker talks to the host daemon, so a bind source must be a host path under the workspace, and the scratchpad, `/tmp` and `$HOME` mount empty or fail. It also says to create worktrees with Worktrunk, to show the final draft of an issue before creating it, and to clean up after a merge with `git prune-dead`. Each bundled agent receives it as an [Image Default](../../CONTEXT.md#image-default), with no write into the developer's files:
 
 - **Claude Code** reads `/etc/claude-code/CLAUDE.md`, its managed-policy memory on Linux: loaded in every project, not excludable by `claudeMdExcludes`.
 - **Codex** reads `/etc/codex/config.toml`, its system config layer. The `gen-codex-config` stage writes the file as `developer_instructions` in a TOML literal string. Only inline text adds to the base prompt: `model_instructions_file` replaces it. A `developer_instructions` in the developer's `~/.codex/config.toml` replaces the image's whole text rather than adding to it, so whoever sets their own must copy across the lines they want to keep.
