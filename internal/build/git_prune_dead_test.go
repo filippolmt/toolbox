@@ -332,3 +332,21 @@ func TestGitPruneDeadKeepsABranchWhoseNameWasReused(t *testing.T) {
 		t.Errorf("the kept branch must be named with its reason, got:\n%s", out)
 	}
 }
+
+// A merged PR whose answer carries no head commit — a field the forge stopped
+// sending — proves nothing about the local tip, and says nothing about local
+// commits either: the state is unverified, and the branch stays.
+func TestGitPruneDeadKeepsABranchWhenTheForgeSendsNoHead(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-headless")
+	forgeHead(t, dir, "merged-headless", "")
+
+	out := runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+
+	if !strings.Contains(branches(t, dir), "merged-headless") {
+		t.Fatalf("a merged PR without a head must not count as proof:\n%s", out)
+	}
+	if !strings.Contains(out, "kept merged-headless (merge state unverified") {
+		t.Errorf("a missing head must read as unverified, got:\n%s", out)
+	}
+}
