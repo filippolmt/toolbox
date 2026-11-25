@@ -317,6 +317,15 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		},
 		kept: "no merged PR on gh contains its tip",
 	}, {
+		// A reused name whose latest PR merged with exactly this tip: one
+		// covering head among several merged PRs is proof enough.
+		name: "one of several merged heads is the tip",
+		setup: func(t *testing.T, dir, branch string) {
+			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
+			older := gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
+			forgeHead(t, dir, branch, older, gitIn(t, dir, "rev-parse", branch))
+		},
+	}, {
 		// A field the forge stopped sending says nothing about local commits.
 		name: "merged PR without a head",
 		setup: func(t *testing.T, dir, branch string) {
