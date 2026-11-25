@@ -159,8 +159,7 @@ func branches(t *testing.T, dir string) string {
 func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-one", "closed-one", "boom-one")
 
-	out := runPruneDead(t, dir,
-		forgePath(t), "AUTHED_CLI=gh")
+	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=gh")
 
 	left := branches(t, dir)
 	if strings.Contains(left, "merged-one") {
@@ -209,9 +208,7 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one")
 			calls := filepath.Join(t.TempDir(), "calls")
 
-			runPruneDead(t, dir,
-				forgePath(t),
-				"AUTHED_CLI="+tc.cli, "FORGE_CALLS="+calls)
+			runPruneDead(t, dir, forgePath(t), "AUTHED_CLI="+tc.cli, "FORGE_CALLS="+calls)
 
 			argv, err := os.ReadFile(calls)
 			if err != nil {
@@ -236,8 +233,7 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 
 	// The fakes are on PATH but neither holds a session: being installed is
 	// not being logged in.
-	out := runPruneDead(t, dir,
-		forgePath(t), "AUTHED_CLI=")
+	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=")
 
 	if !strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("with no logged-in CLI no branch may be deleted:\n%s", out)
@@ -259,8 +255,7 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 func TestGitPruneDeadPicksTheCLILoggedInToThatHost(t *testing.T) {
 	dir := pruneDeadRepo(t, "git@git.example.internal:team/repo.git", "merged-one")
 
-	out := runPruneDead(t, dir,
-		forgePath(t), "AUTHED_CLI=glab")
+	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=glab")
 
 	if strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("glab is logged in to this host, so its merged branch must go:\n%s", out)
@@ -288,6 +283,8 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
 		return gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
 	}
+	// The reason the script prints when no merged head covers the tip.
+	const uncovered = "no merged PR on gh contains its tip"
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, dir, branch string)
@@ -300,7 +297,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 			forgeHeads(t, dir, branch, gitIn(t, dir, "rev-parse", branch))
 			gitIn(t, dir, "update-ref", "refs/heads/"+branch, child(t, dir, branch, "after the merge"))
 		},
-		kept: "no merged PR on gh contains its tip",
+		kept: uncovered,
 	}, {
 		// More was pushed to the PR from elsewhere before it merged: every
 		// local commit is part of what the forge merged.
@@ -314,7 +311,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, strings.Repeat("0123456789", 4))
 		},
-		kept: "no merged PR on gh contains its tip",
+		kept: uncovered,
 	}, {
 		// A name reused after an older PR merged: its head is still here but
 		// shares no history with the new work.
@@ -322,7 +319,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, unrelated(t, dir, branch))
 		},
-		kept: "no merged PR on gh contains its tip",
+		kept: uncovered,
 	}, {
 		// A reused name whose latest PR merged with exactly this tip: one
 		// covering head among several merged PRs is proof enough.
