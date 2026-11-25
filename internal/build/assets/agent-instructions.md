@@ -5,3 +5,5 @@
 Create parallel worktrees with Worktrunk, `wt switch -c <branch> --no-cd`, in place of an agent's built-in worktree isolation: the worktree lands beside the repository, where `wt list` shows it and `wt step prune` removes it once merged.
 
 Before creating an issue, in any tracker, show the user the final title and body and wait for their approval: a draft they have not seen is not approved.
+
+After a PR or MR merges, sync with `git switch <default-branch> && git pull --ff-only && git prune-dead`: it deletes a local branch only once gh or glab confirms the merge, squash merges included. `git branch -d` takes a branch level with its upstream as merged, so it can delete work that never reached the default branch.
