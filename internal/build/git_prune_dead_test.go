@@ -44,7 +44,8 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 // query itself fail. A merged PR's head commit is the forge's view of what was
 // merged: the oids in <git-dir>/forge-<branch>, one per merged PR, when a test
 // writes them (a file, not a ref, so it can name an object the repository
-// lacks), else the local tip. Every answer is the JSON array shape the script's --jq filter produces.
+// lacks), else the local tip. Every answer is the JSON array shape the
+// script's --jq filter produces.
 func fakeForgeBin(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -81,9 +82,9 @@ echo '[]'
 	return bin
 }
 
-// forgeHead sets the head commits the fake forge reports for branch's merged
+// forgeHeads sets the head commits the fake forge reports for branch's merged
 // PRs, one per PR; an empty oid is a PR whose answer carries no head.
-func forgeHead(t *testing.T, dir, branch string, oids ...string) {
+func forgeHeads(t *testing.T, dir, branch string, oids ...string) {
 	t.Helper()
 	gitDir := gitIn(t, dir, "rev-parse", "--absolute-git-dir")
 	body := strings.Join(oids, "\n") + "\n"
@@ -280,6 +281,13 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		tree := gitIn(t, dir, "rev-parse", parent+"^{tree}")
 		return gitIn(t, dir, "commit-tree", "-p", parent, "-m", msg, tree)
 	}
+	// unrelated writes a root commit sharing no history with branch: the head
+	// of an older PR that once had the same name.
+	unrelated := func(t *testing.T, dir, branch string) string {
+		t.Helper()
+		tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
+		return gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
+	}
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, dir, branch string)
@@ -289,7 +297,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		// merge: the only copy of those commits.
 		name: "commits after the merged head",
 		setup: func(t *testing.T, dir, branch string) {
-			forgeHead(t, dir, branch, gitIn(t, dir, "rev-parse", branch))
+			forgeHeads(t, dir, branch, gitIn(t, dir, "rev-parse", branch))
 			gitIn(t, dir, "update-ref", "refs/heads/"+branch, child(t, dir, branch, "after the merge"))
 		},
 		kept: "no merged PR on gh contains its tip",
@@ -298,13 +306,13 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		// local commit is part of what the forge merged.
 		name: "tip behind the merged head",
 		setup: func(t *testing.T, dir, branch string) {
-			forgeHead(t, dir, branch, child(t, dir, branch, "pushed from elsewhere"))
+			forgeHeads(t, dir, branch, child(t, dir, branch, "pushed from elsewhere"))
 		},
 	}, {
 		// Absent locally and different from the tip: never fetched to find out.
 		name: "merged head missing locally",
 		setup: func(t *testing.T, dir, branch string) {
-			forgeHead(t, dir, branch, strings.Repeat("0123456789", 4))
+			forgeHeads(t, dir, branch, strings.Repeat("0123456789", 4))
 		},
 		kept: "no merged PR on gh contains its tip",
 	}, {
@@ -312,8 +320,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		// shares no history with the new work.
 		name: "reused name with an unrelated merged head",
 		setup: func(t *testing.T, dir, branch string) {
-			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
-			forgeHead(t, dir, branch, gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree))
+			forgeHeads(t, dir, branch, unrelated(t, dir, branch))
 		},
 		kept: "no merged PR on gh contains its tip",
 	}, {
@@ -321,15 +328,13 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		// covering head among several merged PRs is proof enough.
 		name: "one of several merged heads is the tip",
 		setup: func(t *testing.T, dir, branch string) {
-			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
-			older := gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
-			forgeHead(t, dir, branch, older, gitIn(t, dir, "rev-parse", branch))
+			forgeHeads(t, dir, branch, unrelated(t, dir, branch), gitIn(t, dir, "rev-parse", branch))
 		},
 	}, {
 		// A field the forge stopped sending says nothing about local commits.
 		name: "merged PR without a head",
 		setup: func(t *testing.T, dir, branch string) {
-			forgeHead(t, dir, branch, "")
+			forgeHeads(t, dir, branch, "")
 		},
 		kept: "merge state unverified",
 	}, {
@@ -337,8 +342,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		// unrelated head beside it cannot settle the question either way.
 		name: "headless merged PR beside an unrelated head",
 		setup: func(t *testing.T, dir, branch string) {
-			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
-			forgeHead(t, dir, branch, "", gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree))
+			forgeHeads(t, dir, branch, "", unrelated(t, dir, branch))
 		},
 		kept: "merge state unverified",
 	}} {
