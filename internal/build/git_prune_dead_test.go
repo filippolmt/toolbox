@@ -332,6 +332,15 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 			forgeHead(t, dir, branch, "")
 		},
 		kept: "merge state unverified",
+	}, {
+		// The headless PR might be the one that covers the tip, so an
+		// unrelated head beside it cannot settle the question either way.
+		name: "headless merged PR beside an unrelated head",
+		setup: func(t *testing.T, dir, branch string) {
+			tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
+			forgeHead(t, dir, branch, "", gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree))
+		},
+		kept: "merge state unverified",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			const branch = "merged-one"
