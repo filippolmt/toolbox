@@ -277,3 +277,58 @@ func TestGitPruneDeadKeepsCommitsAfterTheMergedHead(t *testing.T) {
 		t.Errorf("the kept branch must be named with its own reason, got:\n%s", out)
 	}
 }
+
+// The other direction is safe: when more was pushed to the PR from elsewhere
+// before it merged, the local tip is an ancestor of the merged head, so every
+// local commit is part of what the forge merged and the branch can go.
+func TestGitPruneDeadDeletesATipBehindTheMergedHead(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-behind")
+	tree := gitIn(t, dir, "rev-parse", "merged-behind^{tree}")
+	head := gitIn(t, dir, "commit-tree", "-p", "merged-behind", "-m", "pushed from elsewhere", tree)
+	forgeHead(t, dir, "merged-behind", head)
+
+	out := runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+
+	if strings.Contains(branches(t, dir), "merged-behind") {
+		t.Errorf("a tip contained in the merged head must go, still present:\n%s", out)
+	}
+}
+
+// A merged head the repository does not have cannot vouch for the local tip,
+// and it is never fetched to find out: absent and different from the tip
+// means the branch stays.
+func TestGitPruneDeadKeepsABranchWhoseMergedHeadIsMissingLocally(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-elsewhere")
+	forgeHead(t, dir, "merged-elsewhere", strings.Repeat("0123456789", 4))
+
+	out := runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+
+	if !strings.Contains(branches(t, dir), "merged-elsewhere") {
+		t.Fatalf("a merged head absent locally must not count as proof:\n%s", out)
+	}
+	if !strings.Contains(out, "kept merged-elsewhere (no merged PR on gh contains its tip") {
+		t.Errorf("the kept branch must be named with its reason, got:\n%s", out)
+	}
+}
+
+// A branch name reused after an older PR with that name merged: the forge
+// answers with the old PR's head, a commit the repository still has but that
+// shares no history with the new work.
+func TestGitPruneDeadKeepsABranchWhoseNameWasReused(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-reused")
+	tree := gitIn(t, dir, "rev-parse", "merged-reused^{tree}")
+	old := gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
+	forgeHead(t, dir, "merged-reused", old)
+
+	out := runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+
+	if !strings.Contains(branches(t, dir), "merged-reused") {
+		t.Fatalf("an unrelated merged head must not count as proof:\n%s", out)
+	}
+	if !strings.Contains(out, "kept merged-reused (no merged PR on gh contains its tip") {
+		t.Errorf("the kept branch must be named with its reason, got:\n%s", out)
+	}
+}

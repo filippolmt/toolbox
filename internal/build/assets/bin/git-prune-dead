@@ -77,7 +77,11 @@ fi
 #
 # A merged PR proves that its head was merged, not that the local branch was:
 # commits made after the merge, or a name reused after an older merged PR,
-# leave a tip the merge never saw. So the tip must equal a merged head.
+# leave a tip the merge never saw. So the tip must be a merged head or an
+# ancestor of one (more was pushed to the PR from elsewhere): every local commit
+# is then part of what was merged. A head absent locally and different from
+# the tip matches nothing, and is never fetched — not even lazily, by a partial
+# clone's promisor remote.
 #
 # Both filters exist to reject a merge that happened on a *fork*: neither CLI
 # scopes its branch filter to the head repository, so `--head fix` on a fork
@@ -101,6 +105,7 @@ merge_state() {
 	tip=$(git rev-parse --verify --quiet "refs/heads/$1") || return 2
 	for head in $(printf '%s' "$out" | grep -oE '[0-9a-f]{40,64}'); do
 		[ "$head" = "$tip" ] && return 0
+		GIT_NO_LAZY_FETCH=1 git merge-base --is-ancestor "$tip" "$head" 2>/dev/null && return 0
 	done
 	return 3
 }
