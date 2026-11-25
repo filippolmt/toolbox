@@ -18,18 +18,7 @@ import (
 func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 	t.Helper()
 	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
-		)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-	}
+	run := func(args ...string) { gitIn(t, dir, args...) }
 	run("init", "--initial-branch=main", "--quiet")
 	run("config", "remote.origin.url", originURL)
 	run("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
@@ -52,8 +41,10 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 // the script's decision observable without a network or an account. Only the
 // CLI named by $AUTHED_CLI holds a session, and it answers from the branch
 // name: "merged-*" has a merged PR, "closed-*" has none, "boom-*" makes the
-// query itself fail. Every answer is the JSON array shape both real CLIs
-// return.
+// query itself fail. A merged PR's head commit is the forge's view of what was
+// merged: the oid in <git-dir>/forge-<branch> when a test writes one (a file,
+// not a ref, so it can name an object the repository lacks), else the local
+// tip. Every answer is the JSON array shape the script's --jq filter produces.
 func fakeForgeBin(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -67,7 +58,10 @@ fi
 echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 for a in "$@"; do
 	case "$a" in
-	merged-*) echo '[{"number":1}]'; exit 0 ;;
+	merged-*)
+		f="$(git rev-parse --git-dir)/forge-$a"
+		if [ -f "$f" ]; then read -r head < "$f"; else head=$(git rev-parse --verify -q "refs/heads/$a"); fi
+		echo "[\"$head\"]"; exit 0 ;;
 	closed-*) echo '[]'; exit 0 ;;
 	boom-*) exit 1 ;;
 	esac
@@ -80,6 +74,15 @@ echo '[]'
 		}
 	}
 	return bin
+}
+
+// forgeHead sets the head commit the fake forge reports for branch's merged PR.
+func forgeHead(t *testing.T, dir, branch, oid string) {
+	t.Helper()
+	gitDir := gitIn(t, dir, "rev-parse", "--absolute-git-dir")
+	if err := os.WriteFile(filepath.Join(gitDir, "forge-"+branch), []byte(oid+"\n"), 0o644); err != nil {
+		t.Fatalf("write forge head: %v", err)
+	}
 }
 
 // toolPath is a PATH holding just the interpreters the script itself needs —
@@ -171,25 +174,37 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 // fork. The fakes answer on the branch name alone and cannot catch a wrong
 // flag, so the argv itself is what gets pinned here.
 func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-one")
-	calls := filepath.Join(t.TempDir(), "calls")
-
-	runPruneDead(t, dir,
-		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t),
-		"AUTHED_CLI=gh", "FORGE_CALLS="+calls)
-
-	argv, err := os.ReadFile(calls)
-	if err != nil {
-		t.Fatalf("no forge call recorded: %v", err)
-	}
-	for _, want := range []string{
-		"--repo example/repo", // not whatever remote gh would have picked
-		"isCrossRepository",   // the fork-collision filter
-		"select(.isCrossRepository == false)",
+	for _, tc := range []struct {
+		cli, origin string
+		want        []string
+	}{
+		{"gh", "https://github.com/example/repo.git", []string{
+			"--repo example/repo", // not whatever remote gh would have picked
+			"select(.isCrossRepository == false)",
+		}},
+		{"glab", "git@git.example.internal:team/repo.git", []string{
+			"--repo team/repo",
+			"select(.source_project_id != null and .source_project_id == .project_id)",
+		}},
 	} {
-		if !strings.Contains(string(argv), want) {
-			t.Errorf("forge call %q is missing %q", strings.TrimSpace(string(argv)), want)
-		}
+		t.Run(tc.cli, func(t *testing.T) {
+			dir := pruneDeadRepo(t, tc.origin, "merged-one")
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			runPruneDead(t, dir,
+				fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t),
+				"AUTHED_CLI="+tc.cli, "FORGE_CALLS="+calls)
+
+			argv, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatalf("no forge call recorded: %v", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(string(argv), want) {
+					t.Errorf("forge call %q is missing %q", strings.TrimSpace(string(argv)), want)
+				}
+			}
+		})
 	}
 }
 
