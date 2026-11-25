@@ -171,8 +171,10 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 // branch name returns merged PRs from thirty different fork owners. Reading
 // that as proof would force-delete local work, so the query must carry both
 // the repository it means and a filter rejecting merges that happened on a
-// fork. The fakes answer on the branch name alone and cannot catch a wrong
-// flag, so the argv itself is what gets pinned here.
+// fork, and it must ask for the PR's head commit — on GitLab `sha`, not the
+// merge or squash commit, which a local tip never equals. The fakes answer on
+// the branch name alone and cannot catch a wrong flag or field, so the argv
+// itself is what gets pinned here.
 func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 	for _, tc := range []struct {
 		cli, origin string
@@ -181,10 +183,12 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 		{"gh", "https://github.com/example/repo.git", []string{
 			"--repo example/repo", // not whatever remote gh would have picked
 			"select(.isCrossRepository == false)",
+			"| .headRefOid]",
 		}},
 		{"glab", "git@git.example.internal:team/repo.git", []string{
 			"--repo team/repo",
 			"select(.source_project_id != null and .source_project_id == .project_id)",
+			"| .sha]",
 		}},
 	} {
 		t.Run(tc.cli, func(t *testing.T) {
@@ -249,5 +253,27 @@ func TestGitPruneDeadPicksTheCLILoggedInToThatHost(t *testing.T) {
 	}
 	if !strings.Contains(out, "git.example.internal") {
 		t.Errorf("the host asked must be named in the output, got:\n%s", out)
+	}
+}
+
+// A merged PR proves its head was merged, not the local tip. A branch that
+// gained commits after the merge — a follow-up never pushed, or one pushed to
+// a remote branch deleted on merge — holds the only copy of them, so it must
+// survive, and say why in words distinct from "never merged".
+func TestGitPruneDeadKeepsCommitsAfterTheMergedHead(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-then-more")
+	forgeHead(t, dir, "merged-then-more", gitIn(t, dir, "rev-parse", "merged-then-more"))
+	tree := gitIn(t, dir, "rev-parse", "merged-then-more^{tree}")
+	after := gitIn(t, dir, "commit-tree", "-p", "merged-then-more", "-m", "after the merge", tree)
+	gitIn(t, dir, "update-ref", "refs/heads/merged-then-more", after)
+
+	out := runPruneDead(t, dir,
+		fakeForgeBin(t)+string(os.PathListSeparator)+toolPath(t), "AUTHED_CLI=gh")
+
+	if !strings.Contains(branches(t, dir), "merged-then-more") {
+		t.Fatalf("a branch with commits after its merged head must survive:\n%s", out)
+	}
+	if !strings.Contains(out, "kept merged-then-more (no merged PR on gh contains its tip") {
+		t.Errorf("the kept branch must be named with its own reason, got:\n%s", out)
 	}
 }

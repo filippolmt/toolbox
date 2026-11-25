@@ -69,9 +69,15 @@ if [ -n "$host" ]; then
 	done
 fi
 
-# merge_state <branch> — 0 merged, 1 no merged PR, 2 could not tell. Both CLIs
-# answer with a JSON array, so "[]" is the one shape that means "no match";
-# anything else, including a failure, must never be read as "not merged".
+# merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
+# 2 could not tell, 3 merged but the local tip is not covered. Both CLIs answer
+# with a JSON array of the merged heads, so "[]" is the one shape that means
+# "no match"; anything else, including a failure, must never be read as "not
+# merged".
+#
+# A merged PR proves that its head was merged, not that the local branch was:
+# commits made after the merge, or a name reused after an older merged PR,
+# leave a tip the merge never saw. So the tip must equal a merged head.
 #
 # Both filters exist to reject a merge that happened on a *fork*: neither CLI
 # scopes its branch filter to the head repository, so `--head fix` on a fork
@@ -83,16 +89,20 @@ fi
 merge_state() {
 	case "$forge" in
 	gh) out=$(gh pr list --repo "$slug" --head "$1" --state merged \
-		--json number,isCrossRepository \
-		--jq '[.[] | select(.isCrossRepository == false)]' 2>/dev/null) || return 2 ;;
+		--json headRefOid,isCrossRepository \
+		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
 	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
-		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id)]' 2>/dev/null) || return 2 ;;
+		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
 	*) return 2 ;;
 	esac
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
 	"" | "[]") return 1 ;;
 	esac
-	return 0
+	tip=$(git rev-parse --verify --quiet "refs/heads/$1") || return 2
+	for head in $(printf '%s' "$out" | grep -oE '[0-9a-f]{40,64}'); do
+		[ "$head" = "$tip" ] && return 0
+	done
+	return 3
 }
 
 delete_branch() {
@@ -132,6 +142,7 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		case $? in
 		0) delete_branch "$name" ;;
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
+		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, or a reused name)" ;;
 		# Named even with no forge to ask: a branch that survives silently reads
 		# as one that was pruned.
 		*) echo "  kept $name (merge state unverified${forge:+ — $forge could not answer})" ;;
