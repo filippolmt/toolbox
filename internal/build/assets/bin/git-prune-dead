@@ -7,7 +7,9 @@
 # reachable from the default branch, so locally an abandoned branch and a
 # squash-merged one look identical — both simply lose their remote. Deleting on
 # a gone upstream alone therefore throws away the only copy of unmerged work,
-# which is why every deletion below needs positive proof of a merge.
+# which is why every deletion below needs positive proof of a merge — and the
+# proof has to cover the local tip: the merged PR's head is the tip, or contains
+# it.
 #
 # The forge CLI is picked by asking which one is authenticated for origin's
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
