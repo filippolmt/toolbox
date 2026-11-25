@@ -200,6 +200,7 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 		{"gh", "https://github.com/example/repo.git", []string{
 			"--repo example/repo", // not whatever remote gh would have picked
 			"select(.isCrossRepository == false)",
+			"--json headRefOid,", // the field the projection below reads
 			"| .headRefOid]",
 		}},
 		{"glab", "git@git.example.internal:team/repo.git", []string{
