@@ -32,10 +32,14 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
 # Default branch from origin/HEAD (set by `git remote set-head`). When it is
-# unset (no remote, or never fetched) fall back to whichever of main/master
-# exists locally, then to the current branch — so we never compare against a
-# non-existent ref.
-default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+# unset (no remote, or never fetched) or dangling (fetch --prune removed the
+# branch it names, which set-head alone refreshes) fall back to whichever of
+# main/master exists locally, then to the current branch — so we never
+# compare against a non-existent ref.
+default=
+if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
+	default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+fi
 if [ -z "$default" ]; then
 	for cand in main master; do
 		if git show-ref --verify --quiet "refs/heads/$cand"; then

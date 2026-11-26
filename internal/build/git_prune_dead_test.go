@@ -383,3 +383,27 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		})
 	}
 }
+
+// origin/HEAD is only refreshed by `git remote set-head`, so it can outlive
+// the branch it names: fetch --prune deletes origin/<old-default> and leaves
+// the symref dangling. A default read from it names a ref that resolves to
+// nothing, and `git branch --merged` on it dies with "malformed object name".
+// The default must fall back as if origin/HEAD were unset.
+func TestGitPruneDeadIgnoresADanglingOriginHEAD(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
+	gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+	gitIn(t, dir, "branch", "worktree-agent-done")
+	gitIn(t, dir, "switch", "--quiet", "-c", "work")
+
+	out := runPruneDead(t, dir, toolPath(t))
+
+	if strings.Contains(out, "malformed object name") {
+		t.Errorf("a dangling origin/HEAD must not reach git as a revision, got:\n%s", out)
+	}
+	if strings.Contains(branches(t, dir), "worktree-agent-done") {
+		t.Errorf("a worktree-agent-* leftover merged into main must go:\n%s", out)
+	}
+	if !strings.Contains(out, "kept main, current work") {
+		t.Errorf("the default must fall back to main, got:\n%s", out)
+	}
+}
