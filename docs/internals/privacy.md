@@ -15,7 +15,8 @@ The image sets:
 - `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS` — the default and the ceiling for a foreground Bash call, both raised above upstream's defaults: in-container image builds and test suites routinely outlast them.
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — opt into agent teams (experimental upstream; the default in-process mode needs no tmux). A subagent Claude names launches as a teammate, so a team can form unasked.
 - `CLAUDE_CODE_NEW_INIT=1` — `/init` asks which files to generate (CLAUDE.md, skills, hooks) before exploring and writing them.
-- `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1` — stops the per-agent progress-summary side query. → [Claude progress summaries off](image-build.md#claude-progress-summaries-off)
+
+`CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES` is deliberately not set: the subagent progress summaries are cheap now. → [Claude progress summaries left on](image-build.md#claude-progress-summaries-left-on)
 
 Host-side (not baked — set per-shell by `sessionplan.shellEnv`): `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=<workspace basename>`. The upstream default is the machine hostname, which inside the container is the container name (`SessionPlan.Hostname`) — every Remote Control session on claude.ai web/mobile would be named after the container rather than the workspace, carrying the `toolbox-` prefix and, on a workspace session, the path hash.
 

@@ -1924,10 +1924,6 @@ RUN set -eux; \
 #     the repo and writes them; without it /init writes a CLAUDE.md unasked.
 #     Per-user opt-out: "env" map in the ~/.claude/settings.json bind
 #     overrides this.
-#   CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES: stops the per-agent
-#     progress-summary side query (anthropics/claude-code#86879) —
-#     measured with --debug-file. Why, opt-out:
-#     docs/internals/image-build.md#claude-progress-summaries-off
 ENV DISABLE_UPDATES=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
@@ -1939,8 +1935,7 @@ ENV DISABLE_UPDATES=1 \
     BASH_DEFAULT_TIMEOUT_MS=300000 \
     BASH_MAX_TIMEOUT_MS=1200000 \
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
-    CLAUDE_CODE_NEW_INIT=1 \
-    CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1
+    CLAUDE_CODE_NEW_INIT=1
 
 # pi env knobs. pi installs in the `fetch-pi` stage, but these cannot go there
 # — `COPY --from` carries filesystem, not image metadata — so they live here,
