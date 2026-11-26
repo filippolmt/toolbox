@@ -2097,11 +2097,12 @@ COPY --link --chmod=0755 bin/git-credential-toolbox /usr/local/bin/git-credentia
 # ADR-0009.
 COPY --link --chmod=0755 bin/paplay /usr/local/bin/paplay
 # Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
-# invoked as `git prune-dead`: deletes local branches whose PR/MR the forge
-# reports as merged (gh or glab, whichever is logged in to origin's host) +
-# merged worktree-agent-* leftovers, then prunes stale worktree entries. A gone
-# upstream alone is never enough — it looks the same for an abandoned branch.
-# Never touches the current or default branch.
+# invoked as `git prune-dead`: deletes local branches whose tip is, or is an
+# ancestor of, the head of a PR/MR the forge reports as merged (gh or glab,
+# whichever is logged in to origin's host) + merged worktree-agent-* leftovers,
+# then prunes stale worktree entries. A gone upstream alone is never enough — it
+# looks the same for an abandoned branch. Never touches the current or default
+# branch.
 COPY --link --chmod=0755 bin/git-prune-dead /usr/local/bin/git-prune-dead
 # proximo route projection. Reads the mounted effective-route inventory (legacy
 # fallback: proximo.hosts labels over docker.sock) and rewrites a managed block
