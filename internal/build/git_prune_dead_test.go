@@ -618,10 +618,13 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one", "merged-feat/two", "closed-one", "boom-one",
 				"forkonly-one", "paged-one", "live-one", "nullpage-one", "boom2-one")
+			gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=s3cret; }; f")
 			calls := filepath.Join(t.TempDir(), "calls")
 
+			// An environment token names no host, so it could reach any
+			// instance the probe finds: it is never sent.
 			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST="+tc.host,
-				"FORGEJO_TOKEN=s3cret", "FORGE_CALLS="+calls)
+				"FORGEJO_TOKEN=envtoken", "FORGE_CALLS="+calls)
 
 			left := branches(t, dir)
 			for _, gone := range []string{"merged-one", "merged-feat/two", "paged-one"} {
@@ -648,7 +651,7 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("no forge call recorded: %v", err)
 			}
-			want := "curl " + tc.api + "/repos/team/repo/pulls?state=closed&head=merged-one&limit=50&page=1 auth=token s3cret"
+			want := "curl " + tc.api + "/repos/team/repo/pulls?state=closed&head=merged-one&limit=50&page=1 auth=user me:s3cret"
 			if !strings.Contains(string(argv), want) {
 				t.Errorf("want %q among the calls, got:\n%s", want, argv)
 			}
@@ -657,21 +660,23 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 			if !strings.Contains(string(argv), probe) {
 				t.Errorf("want the probe %q, sent with no credential, got:\n%s", probe, argv)
 			}
-			// On argv the token would show in ps to every local user.
+			if strings.Contains(string(argv), "envtoken") {
+				t.Errorf("FORGEJO_TOKEN must never be sent, got calls:\n%s", argv)
+			}
+			// On argv the credential would show in ps to every local user.
 			for _, line := range strings.Split(string(argv), "\n") {
 				if strings.HasPrefix(line, "curl-argv ") && strings.Contains(line, "s3cret") {
-					t.Errorf("the token must reach curl on stdin, not argv: %s", line)
+					t.Errorf("the credential must reach curl on stdin, not argv: %s", line)
 				}
 			}
 		})
 	}
 }
 
-// With no FORGEJO_TOKEN, the credential git itself would use for the
-// instance is the one to send — never prompted for, since the run is not
-// interactive — and none at all still reads a public repository. TLS trusts
-// what git trusts for that URL: a self-hosted instance's private CA lives in
-// git's http.<url>.sslCAInfo.
+// The credential git itself would use for the instance is the one to send —
+// never prompted for, since the run is not interactive — and none at all
+// still reads a public repository. TLS trusts what git trusts for that URL:
+// a self-hosted instance's private CA lives in git's http.<url>.sslCAInfo.
 func TestGitPruneDeadUsesGitsCredentialAndCAForForgejo(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -690,7 +695,7 @@ func TestGitPruneDeadUsesGitsCredentialAndCAForForgejo(t *testing.T) {
 			calls := filepath.Join(t.TempDir(), "calls")
 
 			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
-				"FORGEJO_TOKEN=", "FORGE_CALLS="+calls)
+				"FORGE_CALLS="+calls)
 
 			if strings.Contains(branches(t, dir), "merged-one") {
 				t.Errorf("a merged PR on Forgejo must delete its branch:\n%s", out)
@@ -735,13 +740,13 @@ func TestGitPruneDeadSendsNoForgejoCredentialOverHTTP(t *testing.T) {
 	calls := filepath.Join(t.TempDir(), "calls")
 
 	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
-		"FORGEJO_TOKEN=s3cret", "FORGE_CALLS="+calls)
+		"FORGE_CALLS="+calls)
 
 	argv, err := os.ReadFile(calls)
 	if err != nil {
 		t.Fatalf("no forge call recorded: %v", err)
 	}
-	if strings.Contains(string(argv), "s3cret") || strings.Contains(string(argv), "me:pw") {
+	if strings.Contains(string(argv), "me:pw") {
 		t.Errorf("no credential may be sent over http, got calls:\n%s", argv)
 	}
 	if strings.Contains(branches(t, dir), "merged-one") {

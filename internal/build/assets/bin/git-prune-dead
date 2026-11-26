@@ -128,15 +128,16 @@ if [ -n "$host" ]; then
 	done
 fi
 
-# Forgejo has no CLI session to find; its API is asked over HTTPS — on the
-# origin's own scheme and port when it is an http(s) URL, the default HTTPS
-# port otherwise, an SSH port being no web one. Only a JSON version answer
-# marks the host as Forgejo: a catch-all web front answers 200 to any path.
-# The probe carries no credential; the one sent afterwards is FORGEJO_TOKEN or
-# what git would send there — asked for without any prompt, GCM's included —
-# and only over https, never in clear text. It reaches curl on stdin: on argv
-# it would show in ps. None at all still reads a public repository. TLS trusts
-# what git trusts for that URL: a self-hosted instance's private CA sits in
+# Forgejo has no CLI session to find; its API is asked on the origin's own
+# scheme and port when it is an http(s) URL, over HTTPS on the default port
+# otherwise, an SSH port being no web one. Only a JSON version answer marks the
+# host as Forgejo: a catch-all web front answers 200 to any path. The probe
+# carries no credential; the one sent afterwards is what git itself would send
+# to that URL — scoped to the host by git's credential helpers, unlike any
+# environment token, and asked for without a prompt, GCM's included — and only
+# over https, never in clear text. It reaches curl on stdin: on argv it would
+# show in ps. None at all still reads a public repository. TLS trusts what git
+# trusts for that URL: a self-hosted instance's private CA sits in
 # http.<url>.sslCAInfo.
 # shortcut: an instance served under a sub-path (https://host/forgejo/) is not
 # found; derive the API root from the repository URL if one turns up.
@@ -155,19 +156,15 @@ if [ -z "$forge" ] && [ -n "$host" ] &&
 		forgejo_api="$web/api/v1"
 		case $web in
 		https://*)
-			if [ -n "${FORGEJO_TOKEN:-}" ]; then
-				forgejo_auth="header = $(curl_quote "Authorization: token $FORGEJO_TOKEN")"
-			else
-				cred=$(printf 'url=%s\n\n' "$web" |
-					GIT_ASKPASS= SSH_ASKPASS= GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-						git -c core.askPass= -c credential.interactive=false credential fill 2>/dev/null || true)
-				cred_user=$(printf '%s\n' "$cred" | sed -n 's/^username=//p')
-				cred_pass=$(printf '%s\n' "$cred" | sed -n 's/^password=//p')
-				if [ -n "$cred_user" ] && [ -n "$cred_pass" ]; then
-					forgejo_auth="user = $(curl_quote "$cred_user:$cred_pass")"
-				fi
-				unset cred cred_user cred_pass
+			cred=$(printf 'url=%s\n\n' "$web" |
+				GIT_ASKPASS='' SSH_ASKPASS='' GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
+					git -c core.askPass= -c credential.interactive=false credential fill 2>/dev/null || true)
+			cred_user=$(printf '%s\n' "$cred" | sed -n 's/^username=//p')
+			cred_pass=$(printf '%s\n' "$cred" | sed -n 's/^password=//p')
+			if [ -n "$cred_user" ] && [ -n "$cred_pass" ]; then
+				forgejo_auth="user = $(curl_quote "$cred_user:$cred_pass")"
 			fi
+			unset cred cred_user cred_pass
 			;;
 		esac
 	fi
@@ -283,7 +280,7 @@ else
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
 	if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-		echo "  or, on a Forgejo instance: its API must answer at https://${host:-HOST}/api/forgejo/v1/version"
+		echo "  or, on a Forgejo instance: its API must answer /api/forgejo/v1/version on ${host:-HOST}"
 	else
 		echo "  or, on a Forgejo instance: install curl and jq, which its API is asked with"
 	fi
