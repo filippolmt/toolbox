@@ -207,7 +207,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Updatable checkouts](internals/image-build.md#updatable-checkouts)
 - [System git settings](internals/image-build.md#system-git-settings)
 - [DO_NOT_TRACK + claude wrapper](internals/image-build.md#do_not_track--claude-wrapper)
-- [Claude fork mode off (agent_summary)](internals/image-build.md#claude-fork-mode-off-agent_summary)
+- [Claude progress summaries off](internals/image-build.md#claude-progress-summaries-off)
 - [codegraph optional-locks wrapper](internals/image-build.md#codegraph-optional-locks-wrapper)
 - [Two Docker version streams](internals/image-build.md#two-docker-version-streams)
 - [Go version single source of truth](internals/image-build.md#go-version-single-source-of-truth)

@@ -182,25 +182,21 @@ The same wrapper drops Orca's sideloaded `orca-agent-view` plugin in an Orca pan
 
 Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
 
-## Claude fork mode off (agent_summary)
+## Claude progress summaries off
 
-In an interactive session Claude Code arms a timer for every running background agent: on each tick it sends that agent's whole transcript to the agent's own model and asks for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). Fork mode is a blunt switch for it; revisit this section once upstream ships a setting for the timer itself. The knob below lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
+In an interactive session Claude Code arms a timer for every running background agent: on each tick it asks a model for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). The knob lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
 
-The image sets `CLAUDE_CODE_FORK_SUBAGENT=0` in the "Claude Code env knobs" block. In an interactive session, fork mode is the gate that arms the timer for an ordinary background agent, so turning it off removes the side query — measured with `--debug-file` by counting `[AgentSummary] Forking` lines for one background agent: a fork on every tick with the default, none with the knob. Costs:
+The image sets `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1` in the "Claude Code env knobs" block: upstream's dedicated switch, which closed #86879. It is in the changelog but not yet in the env-vars reference. Fork mode stays on, so Claude can start [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own. The cost is that the agents panel shows no live per-agent label.
 
-- Claude no longer starts [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own; it can again wait for a foreground subagent.
-- The agents panel shows no live per-agent label.
-- Upstream analysis in anthropics/claude-code#86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
+Replaced: `CLAUDE_CODE_FORK_SUBAGENT=0`, which stopped the timer only as a side effect of turning fork mode off. Rejected earlier: a Bun `--preload` that swaps the timer callback for an inert one — third-party code inside the process that holds the OAuth credentials, matched on source-text anchors an update can rename.
 
-Rejected alternative: a Bun `--preload` that swaps the timer callback for an inert one. It keeps fork mode, but runs third-party code inside the process that holds the OAuth credentials and matches on source-text anchors that an update can rename.
+Opt-out per user: `env: {CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES: "0"}` (measured: `0` and an empty value both bring the summaries back) in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction.
 
-Opt-out per user: `env: {CLAUDE_CODE_FORK_SUBAGENT: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction — a stray `"1"` there silently re-enables the summaries, the likely cause of the "knob does not work" report in [#105981](https://github.com/anthropics/claude-code/issues/105981).
+The smoke test (`claude progress summaries off`) asserts the knob, not its effect. Re-measure when the agents panel starts showing live labels again. The timer arms only in an interactive session, so `claude -p` measures nothing:
 
-The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure when the agents panel starts showing live labels again. The timer arms only in an interactive session, so `claude -p` measures nothing:
-
-1. Start one session per setup in a detached tmux pane, from a trusted repo: `tmux new-session -d -s nas-<setup> env <VAR=value…> claude --model haiku --debug-file <log> --allowedTools 'Bash(sleep:*)'`. Compare the image default against `CLAUDE_CODE_FORK_SUBAGENT=1`.
+1. Start one session per setup in a detached tmux pane, from a trusted repo: `tmux new-session -d -s nas-<setup> env <VAR=value…> claude --model haiku --debug-file <log> --allowedTools 'Bash(sleep:*)'`. Compare the image default against `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=0`.
 2. Send the prompt with `tmux send-keys -t nas-<setup> -l '<prompt>'`, then a separate `tmux send-keys -t nas-<setup> Enter` — a prompt passed as the CLI argument sits unsent in the input box. The prompt: launch one background agent on haiku that runs `sleep 20` eight times, then wait for it.
-3. When the agent finishes, count `[AgentSummary] Forking` lines in each log: a fork on every tick means the summaries are back.
+3. When the agent finishes, count `[AgentSummary] Timer fired` and `[AgentSummary] Asking` lines in each log: one per tick without the knob; with it, none, and a single `[AgentSummary] No progress summaries for <agent>: CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES is set`.
 
 ## codegraph optional-locks wrapper
 

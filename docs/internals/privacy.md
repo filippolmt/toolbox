@@ -7,7 +7,7 @@ Maintainer notes on the telemetry and data-exfiltration controls baked into the 
 The image sets:
 
 - `DISABLE_UPDATES=1` — block every CLI update, background and manual (`claude update` prints a refusal instead of failing on the root-only `/usr/local/lib/node_modules`). Upstream's switch for a CLI distributed through its own channel; Renovate drives the version.
-- `FORCE_AUTOUPDATE_PLUGINS=1` — documented escape hatch from the [discover-plugins guide](https://code.claude.com/docs/en/discover-plugins#configure-auto-updates) that keeps plugin updates running even when CLI updates are disabled; the CLI checks it before `DISABLE_UPDATES`.
+- `FORCE_AUTOUPDATE_PLUGINS=1` — documented escape hatch ([when auto-update runs](https://code.claude.com/docs/en/plugins/loading#when-auto-update-runs)) that keeps plugin updates running even when `DISABLE_UPDATES` turns CLI updates off.
 - `DISABLE_FEEDBACK_COMMAND=1`, `DISABLE_ERROR_REPORTING=1`, `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1` — privacy (`/feedback`, `/bug` and `/share` ship conversation data to Anthropic; error reporting ships stack traces; the session survey's follow-up can upload the transcript).
 - `CLAUDE_CONFIG_DIR=/home/toolbox/.claude` — keeps `.credentials.json` and `.claude.json` in the `~/.claude` bind so OAuth survives container recreates.
 - `USE_BUILTIN_RIPGREP=0` — use the apt-pinned system `rg` (base layer) instead of the npm-bundled binary.
@@ -15,7 +15,7 @@ The image sets:
 - `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS` — the default and the ceiling for a foreground Bash call, both raised above upstream's defaults: in-container image builds and test suites routinely outlast them.
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` — opt into agent teams (experimental upstream; the default in-process mode needs no tmux). A subagent Claude names launches as a teammate, so a team can form unasked.
 - `CLAUDE_CODE_NEW_INIT=1` — `/init` asks which files to generate (CLAUDE.md, skills, hooks) before exploring and writing them.
-- `CLAUDE_CODE_FORK_SUBAGENT=0` — fork mode off, which stops the `agent_summary` side query. → [Claude fork mode off](image-build.md#claude-fork-mode-off-agent_summary)
+- `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1` — stops the per-agent progress-summary side query; fork mode stays on. → [Claude progress summaries off](image-build.md#claude-progress-summaries-off)
 
 Host-side (not baked — set per-shell by `sessionplan.shellEnv`): `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=<workspace basename>`. The upstream default is the machine hostname, which inside the container is the container name (`SessionPlan.Hostname`) — every Remote Control session on claude.ai web/mobile would be named after the container rather than the workspace, carrying the `toolbox-` prefix and, on a workspace session, the path hash.
 
