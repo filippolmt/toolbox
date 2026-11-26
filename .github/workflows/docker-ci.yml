@@ -262,7 +262,9 @@ jobs:
               exit 0
             fi
           fi
-          # sed, not head: it reads to the end, so gh never dies of SIGPIPE.
+          # The marker is the script's MARKER: change both, or the next run
+          # posts a second comment. sed, not head: it reads to the end, so gh
+          # never dies of SIGPIPE.
           id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
             --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- claude-env-changes -->"))) | .id' | sed -n 1p)
           # The body goes through stdin: a report near the comment limit can
