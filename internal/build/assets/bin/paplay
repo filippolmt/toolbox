@@ -18,6 +18,7 @@
 
 set -eu
 
+# shellcheck source=bridge-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/bridge-lib.sh
 
 if [ "$#" -ne 1 ]; then
