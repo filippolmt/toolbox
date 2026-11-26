@@ -1925,8 +1925,8 @@ RUN set -eux; \
 #     Per-user opt-out: "env" map in the ~/.claude/settings.json bind
 #     overrides this.
 #   CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES: stops the per-agent
-#     progress-summary side query (anthropics/claude-code#86879) while
-#     leaving fork mode on — measured with --debug-file. Why, opt-out:
+#     progress-summary side query (anthropics/claude-code#86879) —
+#     measured with --debug-file. Why, opt-out:
 #     docs/internals/image-build.md#claude-progress-summaries-off
 ENV DISABLE_UPDATES=1 \
     FORCE_AUTOUPDATE_PLUGINS=1 \
