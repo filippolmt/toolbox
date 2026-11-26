@@ -153,6 +153,7 @@ case "$page:$b" in
 1:boom2-*) echo "[$(pr true other "$tip" 1)]"; exit 0 ;;
 1:nullpage-*) echo null; exit 0 ;;
 1:live-*) echo "[$(pr true "$b" "$tip" 1 "$b")]"; exit 0 ;;
+1:mixed-*) echo "[$(pr true "$b" 0000000000000000000000000000000000000000 1 "$b"),$(pr true "$b" "$tip" 1)]"; exit 0 ;;
 1:merged-*) echo "[$(pr true "$b" "$tip" 1)]"; exit 0 ;;
 1:closed-*) echo "[$(pr false "$b" "$tip" 1)]"; exit 0 ;;
 1:forkonly-*) echo "[$(pr true "$b" "$tip" 2),$(pr true "$b" "$tip" -1),$(pr true other "$tip" 1)]"; exit 0 ;;
@@ -629,7 +630,7 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one", "merged-feat/two", "closed-one", "boom-one",
-				"forkonly-one", "paged-one", "live-one", "nullpage-one", "boom2-one")
+				"forkonly-one", "paged-one", "live-one", "mixed-one", "nullpage-one", "boom2-one")
 			gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=s3cret; }; f")
 			calls := filepath.Join(t.TempDir(), "calls")
 
@@ -639,7 +640,9 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 				"FORGEJO_TOKEN=envtoken", "FORGE_CALLS="+calls)
 
 			left := branches(t, dir)
-			for _, gone := range []string{"merged-one", "merged-feat/two", "paged-one"} {
+			// mixed-one: a live PR of the same name proves nothing either way,
+			// so the deleted-branch PR that covers the tip still settles it.
+			for _, gone := range []string{"merged-one", "merged-feat/two", "paged-one", "mixed-one"} {
 				if strings.Contains(left, gone) {
 					t.Errorf("%s has a merged PR on Forgejo and must go:\n%s", gone, out)
 				}
@@ -806,12 +809,11 @@ func TestGitPruneDeadFindsASignInOnlyForgejo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no forge call recorded: %v", err)
 	}
-	for _, want := range []string{
-		"curl https://forge.example.internal/api/forgejo/v1/version auth=none\n",
-		"curl https://forge.example.internal/api/forgejo/v1/version auth=user me:pw\n",
-	} {
-		if !strings.Contains(string(argv), want) {
-			t.Errorf("want %q among the calls, got:\n%s", want, argv)
-		}
+	// Bare first: a host is sent the credential only after it refused
+	// an anonymous caller.
+	bare := strings.Index(string(argv), "curl https://forge.example.internal/api/forgejo/v1/version auth=none\n")
+	authed := strings.Index(string(argv), "curl https://forge.example.internal/api/forgejo/v1/version auth=user me:pw\n")
+	if bare < 0 || authed < 0 || bare > authed {
+		t.Errorf("want a bare probe, then one with the credential, got:\n%s", argv)
 	}
 }

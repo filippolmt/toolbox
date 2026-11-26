@@ -145,10 +145,11 @@ fi
 # scheme and port when it is an http(s) URL, over HTTPS on the default port
 # otherwise, an SSH port being no web one. Only a JSON version answer marks the
 # host as Forgejo: a catch-all web front answers 200 to any path. The probe
-# goes out bare; an instance with REQUIRE_SIGNIN_VIEW refuses that, so it is
-# retried with the credential git itself sends to that URL — scoped to the
-# host by git's credential helpers, unlike any environment token — and only
-# over https, never in clear text. That credential is asked for without a
+# goes out bare; an instance with REQUIRE_SIGNIN_VIEW refuses that, so a bare
+# probe that fails — on any host, Forgejo or not — is retried with the
+# credential git itself sends to that URL: scoped to that host by git's
+# credential helpers, unlike any environment token, and only over https,
+# never in clear text. That credential is asked for without a
 # prompt, on the host too: GCM_INTERACTIVE=never reaches the bridge shim as
 # no_prompt, and internal/bridge/credential.go silences the host helpers the
 # way the flags below silence the container's. It reaches curl on stdin: on
