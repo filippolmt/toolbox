@@ -719,10 +719,6 @@ check_optional  "claude"    claude   claude --version
 # NB: no nested sh -c: its script would need single quotes inside this body.
 check_optional  "claude DO_NOT_TRACK wrapper" claude grep -c "env -u DO_NOT_TRACK" /usr/local/bin/claude
 check_optional  "claude Orca plugin filter" claude grep -c "ORCA_PANE_KEY" /usr/local/bin/claude
-# Fork mode off stops the agent_summary side query. Asserts the knob, not its
-# effect: if upstream decouples the summaries from fork mode they come back
-# silently. Why: docs/internals/image-build.md#claude-fork-mode-off-agent_summary
-check_optional  "claude fork mode off" claude sh -c "test \"\$CLAUDE_CODE_FORK_SUBAGENT\" = 0 && echo present"
 check_optional  "codex"     codex    codex --version
 check_optional  "pi"        pi       pi --version
 # pi honours neither DO_NOT_TRACK nor the image-wide update-check suppression,

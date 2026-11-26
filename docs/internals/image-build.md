@@ -182,25 +182,19 @@ The same wrapper drops Orca's sideloaded `orca-agent-view` plugin in an Orca pan
 
 Known cost: children spawned by claude's Bash tool inherit the stripped environment, so JS tooling launched *from inside* a claude session loses the opt-out. Accepted trade-off — the alternative (no exemption) breaks Remote Control entirely.
 
-## Claude fork mode off (agent_summary)
+## Claude progress summaries left on
 
-In an interactive session Claude Code arms a timer for every running background agent: on each tick it sends that agent's whole transcript to the agent's own model and asks for a few-word label for the agents panel. The label never reaches the model or the conversation, the requests are not written to the session transcript, and upstream reports put them at a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)). Fork mode is a blunt switch for it; revisit this section once upstream ships a setting for the timer itself. The knob below lives in the image, so a Claude Code run on the host outside the toolbox keeps the side query.
+In an interactive session Claude Code arms a timer for every running background agent: on each tick it asks a model for a few-word label for the agents panel. The label never reaches the model or the conversation, and the requests are not written to the session transcript.
 
-The image sets `CLAUDE_CODE_FORK_SUBAGENT=0` in the "Claude Code env knobs" block. In an interactive session, fork mode is the gate that arms the timer for an ordinary background agent, so turning it off removes the side query — measured with `--debug-file` by counting `[AgentSummary] Forking` lines for one background agent: a fork on every tick with the default, none with the knob. Costs:
+The image leaves them on, and fork mode at upstream's default. Each summary is written from short notes, not from the agent's transcript — on the Anthropic API by the default small fast model; upstream names no model for the cloud providers or gateways — so its cost is marginal next to the agent's own work, and the agents panel shows a live label per agent. When the summaries were built from the whole transcript on the agent's own model they were a large share of all tokens in subagent-heavy sessions ([anthropics/claude-code#86879](https://github.com/anthropics/claude-code/issues/86879)); that is why the image once turned fork mode off to stop them.
 
-- Claude no longer starts [forks](https://code.claude.com/docs/en/sub-agents.md#fork-the-current-conversation) on its own; it can again wait for a foreground subagent.
-- The agents panel shows no live per-agent label.
-- Upstream analysis in anthropics/claude-code#86879 reports that explicit forks and skills with `context: fork` are still summarised; not measured here.
+Opt-out per user, for anyone who still wants them off: `env: {CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. It is upstream's dedicated switch; `0` or an empty value leaves the summaries on.
 
-Rejected alternative: a Bun `--preload` that swaps the timer callback for an inert one. It keeps fork mode, but runs third-party code inside the process that holds the OAuth credentials and matches on source-text anchors that an update can rename.
+Re-measure if a changelog entry says the summaries changed again. The timer arms only in an interactive session, so `claude -p` measures nothing:
 
-Opt-out per user: `env: {CLAUDE_CODE_FORK_SUBAGENT: "1"}` in `.toolbox.yaml` ([env passthrough](../configuration.md#env-passthrough)), or the same key in the `"env"` map of `~/.claude/settings.json`. That map is applied over the shell environment, so an entry there wins over the image in either direction — a stray `"1"` there silently re-enables the summaries, the likely cause of the "knob does not work" report in [#105981](https://github.com/anthropics/claude-code/issues/105981).
-
-The smoke test (`claude fork mode off`) asserts the knob, not its effect. If upstream decouples the summaries from fork mode they come back silently; re-measure when the agents panel starts showing live labels again. The timer arms only in an interactive session, so `claude -p` measures nothing:
-
-1. Start one session per setup in a detached tmux pane, from a trusted repo: `tmux new-session -d -s nas-<setup> env <VAR=value…> claude --model haiku --debug-file <log> --allowedTools 'Bash(sleep:*)'`. Compare the image default against `CLAUDE_CODE_FORK_SUBAGENT=1`.
-2. Send the prompt with `tmux send-keys -t nas-<setup> -l '<prompt>'`, then a separate `tmux send-keys -t nas-<setup> Enter` — a prompt passed as the CLI argument sits unsent in the input box. The prompt: launch one background agent on haiku that runs `sleep 20` eight times, then wait for it.
-3. When the agent finishes, count `[AgentSummary] Forking` lines in each log: a fork on every tick means the summaries are back.
+1. Start one session per setup in a detached tmux pane, from a trusted repo: `tmux new-session -d -s nas-<setup> env <VAR=value…> claude --model haiku --debug-file <log> --allowedTools 'Bash(sleep:*)'`. Compare the image default against `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1`.
+2. Send the prompt with `tmux send-keys -t nas-<setup> -l '<prompt>'`, then a separate `tmux send-keys -t nas-<setup> Enter` — a prompt passed as the CLI argument sits unsent in the input box. The prompt: launch one background agent that runs `sleep 20` eight times, then wait for it.
+3. When the agent finishes, read the `[AgentSummary]` lines in each log: one `Timer fired` / `Asking <model> for summary from <n> characters of notes` pair per tick by default — the model and the note size are what to watch; with the knob, none, and a single `No progress summaries for <agent>: CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES is set`.
 
 ## codegraph optional-locks wrapper
 
