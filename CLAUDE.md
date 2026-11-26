@@ -57,7 +57,13 @@ Code questions go to `codegraph_explore` (CLI: `codegraph explore`, bounded with
 
 ### Change workflow
 
-Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push, handing both axes the `make gates` result: a commit after the review means running it again. The loop ends on a round where neither axis reports an open finding. Close each finding one of three ways: settle one that is wrong with evidence (a test, command output, or a cited line of code or docs, never a preference), handed to the next round, where it stays settled unless that round rebuts the evidence; file one outside the PR's scope as an issue; fix every other one, judgement calls included. If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
+Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push, handing both axes the `make gates` result: a commit after the review means running it again. The loop ends on a round where neither axis reports an open finding. A finding closes in one of three ways:
+
+- **Settled**: shown wrong by evidence — a test, command output, a cited line of code or docs, or the earlier round that asked for the current form — never a preference. Hand that evidence to the next round; the finding stays settled unless that round rebuts it.
+- **Filed**: outside the PR's scope by the issue's text or the user's request, so it becomes an issue.
+- **Fixed**: every other finding, judgement calls included.
+
+If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
 
 ### Issue tracker
 
