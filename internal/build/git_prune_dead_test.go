@@ -479,7 +479,7 @@ func TestGitPruneDeadFallsBackFromAnUnusableOriginHEAD(t *testing.T) {
 // to ask. Asking one anyway — about a host named ".." — could only answer
 // for some other repository.
 func TestGitPruneDeadAsksNoForgeForALocalRemote(t *testing.T) {
-	for _, origin := range []string{"../repo", "/srv/git/repo.git", "./a:b/repo"} {
+	for _, origin := range []string{"../repo", "/srv/git/repo.git", "./a:b/repo", "file:///srv/git/repo.git"} {
 		t.Run(origin, func(t *testing.T) {
 			dir := pruneDeadRepo(t, origin, "merged-one")
 			calls := filepath.Join(t.TempDir(), "calls")
