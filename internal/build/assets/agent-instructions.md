@@ -6,4 +6,4 @@ Create parallel worktrees with Worktrunk, `wt switch -c <branch> --no-cd`, in pl
 
 Before creating an issue, in any tracker, show the user the final title and body and wait for their approval: a draft they have not seen is not approved.
 
-After a PR or MR merges, sync with `git switch <default-branch> && git pull --ff-only && git prune-dead`: it deletes a branch once its upstream is gone and gh or glab reports its PR or MR merged, squash merges included, and keeps an unmerged one. `git branch -d` trusts a branch level with its upstream, so it can delete work that never reached the default branch.
+After a PR or MR merges, sync with `git switch <default-branch> && git pull --ff-only && git prune-dead`: it deletes a branch once its upstream is gone and gh or glab reports a merged PR or MR whose head is, or contains, the local tip, squash merges included, and keeps every other branch, including one with commits made after the merge. `git branch -d` trusts a branch level with its upstream, so it can delete work that never reached the default branch.

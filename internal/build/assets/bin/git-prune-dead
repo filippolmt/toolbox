@@ -7,7 +7,9 @@
 # reachable from the default branch, so locally an abandoned branch and a
 # squash-merged one look identical — both simply lose their remote. Deleting on
 # a gone upstream alone therefore throws away the only copy of unmerged work,
-# which is why every deletion below needs positive proof of a merge.
+# which is why every deletion below needs positive proof of a merge — and the
+# proof has to cover the local tip: the merged PR's head is the tip, or contains
+# it.
 #
 # The forge CLI is picked by asking which one is authenticated for origin's
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
@@ -69,9 +71,23 @@ if [ -n "$host" ]; then
 	done
 fi
 
-# merge_state <branch> — 0 merged, 1 no merged PR, 2 could not tell. Both CLIs
-# answer with a JSON array, so "[]" is the one shape that means "no match";
-# anything else, including a failure, must never be read as "not merged".
+# merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
+# 2 could not tell, 3 merged but the local tip is not covered, 4 a merged PR
+# came back without a head, so whether it covers the tip is unknown. Both
+# CLIs answer with a JSON array of the merged heads, so "[]" is the one shape
+# that means "no match"; anything else, including a failure, must never be
+# read as "not merged".
+#
+# A merged PR proves that its head was merged, not that the local branch was:
+# commits made after the merge, or a name reused after an older merged PR,
+# leave a tip the merge never saw. So the tip must be a merged head or an
+# ancestor of one (more was pushed to the PR from elsewhere): every local commit
+# is then part of what was merged. A head absent locally and different from
+# the tip matches nothing, and is never fetched — not even lazily, by a partial
+# clone's promisor remote. A merged PR whose answer has no head proves nothing
+# either way — it might be the one that covers the tip — so when no head
+# covers it and any PR came back headless, the state is unverified (4), told
+# apart from a forge that could not answer at all (2).
 #
 # Both filters exist to reject a merge that happened on a *fork*: neither CLI
 # scopes its branch filter to the head repository, so `--head fix` on a fork
@@ -83,16 +99,27 @@ fi
 merge_state() {
 	case "$forge" in
 	gh) out=$(gh pr list --repo "$slug" --head "$1" --state merged \
-		--json number,isCrossRepository \
-		--jq '[.[] | select(.isCrossRepository == false)]' 2>/dev/null) || return 2 ;;
+		--json headRefOid,isCrossRepository \
+		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
 	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
-		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id)]' 2>/dev/null) || return 2 ;;
+		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
 	*) return 2 ;;
 	esac
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
 	"" | "[]") return 1 ;;
 	esac
-	return 0
+	# Fails only if the branch vanished since for-each-ref listed it: nothing
+	# left to delete, so the catch-all "unverified" is as far as it goes.
+	tip=$(git rev-parse --verify --quiet "refs/heads/$1") || return 2
+	heads=$(printf '%s' "$out" | grep -oE '[0-9a-f]{40,64}') || return 4
+	for head in $heads; do
+		[ "$head" = "$tip" ] && return 0
+		GIT_NO_LAZY_FETCH=1 git merge-base --is-ancestor "$tip" "$head" 2>/dev/null && return 0
+	done
+	case "$out" in
+	*null* | *'""'*) return 4 ;;
+	esac
+	return 3
 }
 
 delete_branch() {
@@ -132,6 +159,8 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		case $? in
 		0) delete_branch "$name" ;;
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
+		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, a reused name, or a merged head not fetched here)" ;;
+		4) echo "  kept $name (merge state unverified — a merged PR on $forge reports no head)" ;;
 		# Named even with no forge to ask: a branch that survives silently reads
 		# as one that was pruned.
 		*) echo "  kept $name (merge state unverified${forge:+ — $forge could not answer})" ;;
