@@ -57,7 +57,11 @@ Code questions go to `codegraph_explore` (CLI: `codegraph explore`, bounded with
 
 ### Change workflow
 
-Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push, handing both axes the `make gates` result: a commit after the review means running it again, with the findings already settled (fixed, or kept with a reason). A round of only judgement calls already weighed ends the loop. If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so.
+Branches are `feat/<slug>` or `fix/<slug>` (a dependency bump takes `fix/`), enforced by `.github/scripts/check-branch-name.sh`. Unless the user selects a branch, record the starting HEAD and branch before the first commit. Before opening a PR, run `code-review:code-review` (not the built-in `code-review`, which checks neither axis) against that SHA, or the merge-base with `main`, and review the HEAD you push, handing both axes the `make gates` result. If a design session re-scoped the issue, update the issue first — the Spec axis reads the tracker. Without a delegation tool, run the Standards and Spec axes as sequential passes and say so. A commit after the review means running it again. The review loop ends on a round where neither axis reports an open finding. Every round is handed the evidence and issue links collected so far, and a round that settles or files a finding is followed by another. A finding closes in one of three ways:
+
+- **Settled**: shown wrong by evidence (a test, command output, a cited line of code or docs, the issue's text or the user's request), or asking, without such evidence, to reverse a change an earlier round asked for. A later round reopens it only with such evidence.
+- **Filed**: outside the PR's scope by the issue's text or the user's request, so it becomes an issue, whose link keeps it closed.
+- **Fixed**: every other finding, judgement calls included.
 
 ### Issue tracker
 
