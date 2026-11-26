@@ -194,27 +194,32 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 // itself is what gets pinned here.
 func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 	for _, tc := range []struct {
-		cli, origin string
-		want        []string
+		name, cli, origin string
+		want              []string
 	}{
-		{"gh", "https://github.com/example/repo.git", []string{
+		{"gh", "gh", "https://github.com/example/repo.git", []string{
 			"--repo example/repo", // not whatever remote gh would have picked
 			"select(.isCrossRepository == false)",
 			"--json headRefOid,", // the field the projection below reads
 			"| .headRefOid]",
 		}},
-		{"glab", "git@git.example.internal:team/repo.git", []string{
+		{"glab scp form", "glab", "git@git.example.internal:team/repo.git", []string{
 			"--repo team/repo",
 			"select(.source_project_id != null and .source_project_id == .project_id)",
 			"| .sha]",
 		}},
-		// A self-hosted forge often serves SSH on its own port: the port is
-		// part of the host, never the first segment of the repository path.
-		{"glab", "ssh://git@git.example.internal:2222/team/repo.git", []string{
+		// A self-hosted forge often serves SSH or HTTPS on its own port: the
+		// port is part of the host, never the first segment of the
+		// repository path. The trailing space ends the value, so a slug
+		// with a leftover suffix fails too.
+		{"glab ssh with port", "glab", "ssh://git@git.example.internal:2222/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		{"gh https with port", "gh", "https://git.example.internal:8443/team/repo.git", []string{
 			"--repo team/repo ",
 		}},
 	} {
-		t.Run(tc.cli, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one")
 			calls := filepath.Join(t.TempDir(), "calls")
 

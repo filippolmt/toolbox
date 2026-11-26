@@ -37,15 +37,15 @@ current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 # it prefers (an `upstream` on a fork clone) — a different repository from the
 # one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
-bare_url=$(printf '%s\n' "$origin_url" |
-	sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
-host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##')
 # The path starts after the first "/" in the scheme form, where host may carry
 # a :port, and after the first ":" in the scp form, which has no port.
 case $origin_url in
 *://*) path_sep=/ ;;
 *) path_sep=: ;;
 esac
+bare_url=$(printf '%s\n' "$origin_url" |
+	sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
+host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##')
 slug=$(printf '%s\n' "$bare_url" | sed -e "s#^[^$path_sep]*$path_sep##" -e 's#\.git$##' -e 's#/$##')
 
 # The forge CLI is whichever one holds a session for that host — the question
