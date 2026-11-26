@@ -134,7 +134,8 @@ fi
 # host as Forgejo: a catch-all web front answers 200 to any path. The probe
 # carries no credential; the one sent afterwards is what git itself would send
 # to that URL — scoped to the host by git's credential helpers, unlike any
-# environment token, and asked for without a prompt, GCM's included — and only
+# environment token, and asked for without a prompt, GCM's included, on the
+# host too: the bridge forwards GCM_INTERACTIVE=never as no_prompt — and only
 # over https, never in clear text. It reaches curl on stdin: on argv it would
 # show in ps. None at all still reads a public repository. TLS trusts what git
 # trusts for that URL: a self-hosted instance's private CA sits in

@@ -88,6 +88,7 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 			{"RouteCredential", post(RouteCredential)},
 			{"FieldOp", field(FieldOp)},
 			{"FieldInput", field(FieldInput)},
+			{"FieldNoPrompt", field(FieldNoPrompt)},
 			{"FieldOutput", get(FieldOutput)},
 		}},
 	} {
@@ -172,7 +173,7 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[editRequest](), []string{FieldEditor, FieldPath}},
 		{reflect.TypeFor[proximoRequest](), []string{FieldCommand, FieldArgs, FieldHome, FieldCodexHome}},
 		{reflect.TypeFor[proximoResponse](), []string{FieldExit, FieldOutput}},
-		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput}},
+		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput, FieldNoPrompt}},
 		{reflect.TypeFor[credentialResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
 	} {

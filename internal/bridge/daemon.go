@@ -82,7 +82,7 @@ type DaemonOptions struct {
 	// Credential forwards an allowlisted git credential operation to the host
 	// git. Tests override; production callers leave it nil to use
 	// runHostCredential.
-	Credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
+	Credential func(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error)
 	// Sound plays an MP3 payload on the host. It takes no context: the player
 	// outlives the request by design (fire-and-forget), so its deadline is the
 	// implementation's own. Tests override; production callers leave it nil to
@@ -245,7 +245,7 @@ type handlerFns struct {
 	open       func(ctx context.Context, url string) error
 	edit       func(ctx context.Context, editor, path string) error
 	proximo    func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
-	credential func(ctx context.Context, op string, input []byte) (output []byte, exit int, err error)
+	credential func(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error)
 	sound      func(data []byte) error
 }
 
@@ -492,10 +492,13 @@ const maxCredentialBody = 64 << 10
 
 // credentialRequest is the body shape the git-credential-toolbox shim POSTs to
 // /credential. Op is the git helper operation (get|store|erase); Input is the
-// raw credential protocol text git wrote on the shim's stdin.
+// raw credential protocol text git wrote on the shim's stdin. NoPrompt asks
+// the host helpers not to prompt at all (the caller set GCM_INTERACTIVE=never);
+// an older shim omits it, which keeps the host's normal behaviour.
 type credentialRequest struct {
-	Op    string `json:"op"`
-	Input string `json:"input"`
+	Op       string `json:"op"`
+	Input    string `json:"input"`
+	NoPrompt bool   `json:"no_prompt"`
 }
 
 // credentialResponse carries git's stdout and exit code back to the shim,
@@ -524,7 +527,7 @@ func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(credentialTimeout + 10*time.Second))
 	ctx, cancel := context.WithTimeout(r.Context(), credentialTimeout)
 	defer cancel()
-	out, exit, err := h.fns.credential(ctx, req.Op, []byte(req.Input))
+	out, exit, err := h.fns.credential(ctx, req.Op, []byte(req.Input), req.NoPrompt)
 	if err != nil {
 		h.logger.Printf("credential: handler failed: %v op=%q", err, req.Op)
 		http.Error(w, "credential handler failed", http.StatusBadGateway)

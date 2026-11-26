@@ -35,7 +35,7 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 		}
 	}
 	if fns.credential == nil {
-		fns.credential = func(_ context.Context, _ string, _ []byte) ([]byte, int, error) { return nil, 0, nil }
+		fns.credential = func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) { return nil, 0, nil }
 	}
 	if fns.sound == nil {
 		fns.sound = func(_ []byte) error { return nil }
@@ -499,7 +499,7 @@ func TestHandler_ProximoSharesRateLimit(t *testing.T) {
 
 // newCredentialTestHandler builds a handler whose /credential executor is the
 // given fake; open/edit/proximo are inert.
-func newCredentialTestHandler(t *testing.T, fn func(ctx context.Context, op string, input []byte) ([]byte, int, error)) http.Handler {
+func newCredentialTestHandler(t *testing.T, fn func(ctx context.Context, op string, input []byte, noPrompt bool) ([]byte, int, error)) http.Handler {
 	t.Helper()
 	return buildTestHandler(t, handlerFns{credential: fn})
 }
@@ -512,7 +512,7 @@ func credentialBody(op, input string) string {
 func TestHandler_CredentialOK(t *testing.T) {
 	var gotOp string
 	var gotInput []byte
-	h := newCredentialTestHandler(t, func(_ context.Context, op string, input []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, op string, input []byte, _ bool) ([]byte, int, error) {
 		gotOp = op
 		gotInput = input
 		return []byte("username=me\npassword=secret\n"), 0, nil
@@ -536,8 +536,34 @@ func TestHandler_CredentialOK(t *testing.T) {
 	}
 }
 
+// A caller that must not block on a prompt — git prune-dead, asking for a
+// Forgejo credential it can live without — says so, and the host helper
+// hears it; every other request keeps the host's normal behaviour, prompts
+// included, so a first clone can still ask for the password.
+func TestHandler_CredentialForwardsNoPrompt(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want bool
+	}{
+		{`{"op":"get","input":"","no_prompt":true}`, true},
+		{credentialBody("get", ""), false},
+	} {
+		var got bool
+		h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, noPrompt bool) ([]byte, int, error) {
+			got = noPrompt
+			return nil, 0, nil
+		})
+		if rr := doPostTo(t, h, RouteCredential, "tok", tc.body); rr.Code != http.StatusOK {
+			t.Fatalf("code = %d for %s", rr.Code, tc.body)
+		}
+		if got != tc.want {
+			t.Errorf("noPrompt = %v for %s, want %v", got, tc.body, tc.want)
+		}
+	}
+}
+
 func TestHandler_CredentialPropagatesExit(t *testing.T) {
-	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 		return nil, 1, nil
 	})
 	rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("get", ""))
@@ -556,7 +582,7 @@ func TestHandler_CredentialPropagatesExit(t *testing.T) {
 func TestHandler_CredentialRejectUnknownOp(t *testing.T) {
 	for _, op := range []string{"fill", "approve", "delete", "up", ""} {
 		called := false
-		h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+		h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 			called = true
 			return nil, 0, nil
 		})
@@ -572,7 +598,7 @@ func TestHandler_CredentialRejectUnknownOp(t *testing.T) {
 
 func TestHandler_CredentialRejectBadToken(t *testing.T) {
 	called := false
-	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 		called = true
 		return nil, 0, nil
 	})
@@ -588,7 +614,7 @@ func TestHandler_CredentialRejectBadToken(t *testing.T) {
 }
 
 func TestHandler_CredentialExecErrorIs502(t *testing.T) {
-	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 		return nil, 0, io.EOF
 	})
 	rr := doPostTo(t, h, RouteCredential, "tok", credentialBody("store", ""))
@@ -598,7 +624,7 @@ func TestHandler_CredentialExecErrorIs502(t *testing.T) {
 }
 
 func TestHandler_CredentialSeparateRateLimit(t *testing.T) {
-	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 		return nil, 0, nil
 	})
 	// Exhaust the shared /open bucket (burst 5); the 6th /open is throttled.
@@ -618,7 +644,7 @@ func TestHandler_CredentialSeparateRateLimit(t *testing.T) {
 }
 
 func TestHandler_CredentialRateLimited(t *testing.T) {
-	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte) ([]byte, int, error) {
+	h := newCredentialTestHandler(t, func(_ context.Context, _ string, _ []byte, _ bool) ([]byte, int, error) {
 		return nil, 0, nil
 	})
 	// Own burst (fixed test clock → no refill); the next one is throttled.
