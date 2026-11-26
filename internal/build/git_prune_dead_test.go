@@ -288,8 +288,13 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		tree := gitIn(t, dir, "rev-parse", branch+"^{tree}")
 		return gitIn(t, dir, "commit-tree", "-m", "the older PR with this name", tree)
 	}
-	// The reason the script prints when no merged head covers the tip.
-	const uncovered = "no merged PR on gh contains its tip"
+	// The reasons the script prints when no merged head covers the tip, and
+	// when a merged PR came back without one: gh did answer, so not "could
+	// not answer".
+	const (
+		uncovered = "no merged PR on gh contains its tip"
+		headless  = "merge state unverified — a merged PR on gh reports no head"
+	)
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, dir, branch string)
@@ -338,14 +343,14 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, "")
 		},
-		kept: "merge state unverified",
+		kept: headless,
 	}, {
 		// The shape --jq gives when the field is missing altogether.
 		name: "merged PR whose head is null",
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, "null")
 		},
-		kept: "merge state unverified",
+		kept: headless,
 	}, {
 		// The headless PR might be the one that covers the tip, so an
 		// unrelated head beside it cannot settle the question either way.
@@ -353,7 +358,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 		setup: func(t *testing.T, dir, branch string) {
 			forgeHeads(t, dir, branch, "", unrelated(t, dir, branch))
 		},
-		kept: "merge state unverified",
+		kept: headless,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			const branch = "merged-one"
