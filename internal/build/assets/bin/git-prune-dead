@@ -103,7 +103,7 @@ forgejo_merged_heads() {
 	page_heads=
 	live=0
 	while [ "$page_no" -le 100 ]; do
-		resp=$(forgejo_get "$forgejo_api/repos/$slug/pulls?state=closed&head=$head_param&limit=50&page=$page_no") || return 1
+		resp=$(forgejo_get "$forgejo_api/repos/$forgejo_slug/pulls?state=closed&head=$head_param&limit=50&page=$page_no") || return 1
 		page_len=$(printf '%s' "$resp" | jq -e 'if type == "array" then length else error end' 2>/dev/null) || return 1
 		if [ "$page_len" = 0 ]; then
 			heads=$(printf '%s\n' "$page_heads" | jq -sc 'add // []') || return 1
@@ -156,9 +156,14 @@ fi
 # argv it would show in ps. None at all still reads a public repository. TLS
 # trusts what git trusts for that URL: a self-hosted instance's private CA
 # sits in http.<url>.sslCAInfo.
-# shortcut: an instance served under a sub-path (https://host/forgejo/) is not
-# found, derive the API root from the repository URL if one turns up.
+# A Forgejo repository path is always owner/repo, so in an http(s) origin
+# whatever precedes those two segments is the instance's web root — an
+# instance served under a sub-path (https://host/forgejo/owner/repo) is asked
+# there.
+# shortcut: an SSH origin carries no web root, so a sub-path instance reached
+# over SSH is not found, add a per-host setting if one turns up.
 forgejo_api=
+forgejo_slug=$slug
 forgejo_ca=
 forgejo_curl_cfg=
 have_forgejo_tools=
@@ -188,7 +193,14 @@ forgejo_load_credential() {
 
 if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$have_forgejo_tools" ]; then
 	case $origin_url in
-	http://* | https://*) web="${origin_url%%://*}://${bare_url%%/*}" ;;
+	http://* | https://*)
+		web="${origin_url%%://*}://${bare_url%%/*}"
+		web_root=${slug%/*/*}
+		if [ "$web_root" != "$slug" ]; then
+			web="$web/$web_root"
+			forgejo_slug=${slug#"$web_root"/}
+		fi
+		;;
 	*) web="https://$host" ;;
 	esac
 	forgejo_ca=$(git config --get-urlmatch http.sslcainfo "$web/" 2>/dev/null || true)

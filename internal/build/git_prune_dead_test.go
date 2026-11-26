@@ -153,6 +153,7 @@ case "$page:$b" in
 1:boom2-*) echo "[$(pr true other "$tip" 1)]"; exit 0 ;;
 1:nullpage-*) echo null; exit 0 ;;
 1:live-*) echo "[$(pr true "$b" "$tip" 1 "$b")]"; exit 0 ;;
+1:livetip-*) echo "[$(pr true "$b" "$tip" 1 "$b"),$(pr true "$b" 0000000000000000000000000000000000000000 1)]"; exit 0 ;;
 1:mixed-*) echo "[$(pr true "$b" 0000000000000000000000000000000000000000 1 "$b"),$(pr true "$b" "$tip" 1)]"; exit 0 ;;
 1:merged-*) echo "[$(pr true "$b" "$tip" 1)]"; exit 0 ;;
 1:closed-*) echo "[$(pr false "$b" "$tip" 1)]"; exit 0 ;;
@@ -630,7 +631,7 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one", "merged-feat/two", "closed-one", "boom-one",
-				"forkonly-one", "paged-one", "live-one", "mixed-one", "nullpage-one", "boom2-one")
+				"forkonly-one", "paged-one", "live-one", "mixed-one", "livetip-one", "nullpage-one", "boom2-one")
 			gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=s3cret; }; f")
 			calls := filepath.Join(t.TempDir(), "calls")
 
@@ -655,6 +656,9 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 				// commits after the merge included: no proof of a merge, and
 				// said so rather than "never opened".
 				"kept live-one (merged on forgejo, but its branch still exists there",
+				// A live PR's head is never proof, even when it equals the tip:
+				// only the gone branch's head counts, and it does not cover.
+				"kept livetip-one (no merged PR on forgejo contains its tip",
 				// A failure is never "not merged", wherever it lands.
 				"kept nullpage-one (merge state unverified — forgejo could not answer)",
 				"kept boom2-one (merge state unverified — forgejo could not answer)",
@@ -815,5 +819,28 @@ func TestGitPruneDeadFindsASignInOnlyForgejo(t *testing.T) {
 	authed := strings.Index(string(argv), "curl https://forge.example.internal/api/forgejo/v1/version auth=user me:pw\n")
 	if bare < 0 || authed < 0 || bare > authed {
 		t.Errorf("want a bare probe, then one with the credential, got:\n%s", argv)
+	}
+}
+
+// An instance served under a sub-path shows it in an http(s) origin: a
+// Forgejo repository is always owner/repo, so whatever precedes those two
+// segments is the instance's web root, and the API lives under it.
+func TestGitPruneDeadFindsForgejoUnderASubPath(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://forge.example.internal/code/forgejo/team/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FORGE_CALLS="+calls)
+
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a sub-path instance is still Forgejo, so merged-one must go:\n%s", out)
+	}
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	want := "curl https://forge.example.internal/code/forgejo/api/v1/repos/team/repo/pulls?state=closed&head=merged-one&"
+	if !strings.Contains(string(argv), want) {
+		t.Errorf("want %q among the calls, got:\n%s", want, argv)
 	}
 }
