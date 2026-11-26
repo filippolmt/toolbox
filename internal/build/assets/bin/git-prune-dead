@@ -75,7 +75,7 @@ forgejo_get() {
 	req_url=$1
 	set -- -q -fsS --connect-timeout 5 -m 20 --config -
 	[ -n "$forgejo_ca" ] && set -- "$@" --cacert "$forgejo_ca"
-	printf '%s\n' "$forgejo_auth" | curl "$@" "$req_url" 2>/dev/null
+	printf '%s\n' "$forgejo_curl_cfg" | curl "$@" "$req_url" 2>/dev/null
 }
 
 # curl_quote <value> — a curl config value, double-quoted: \ and " escaped,
@@ -94,20 +94,20 @@ curl_quote() {
 # tip, commits after the merge included). Every page must be a JSON array —
 # anything else is a failure, never an empty answer — and since an instance
 # caps limit at its own maximum, only an empty page ends the list.
-# shortcut: 100 pages at most, then unverified; raise the cap if a pre-v16
+# shortcut: 100 pages at most, then unverified, raise the cap if a pre-v16
 # server with more than 5000 closed PRs keeps its branches unverified.
 forgejo_merged_heads() {
 	head_param=$(jq -rn --arg b "$1" '$b | @uri') || return 1
 	page_no=1
-	found=
+	page_heads=
 	while [ "$page_no" -le 100 ]; do
 		resp=$(forgejo_get "$forgejo_api/repos/$slug/pulls?state=closed&head=$head_param&limit=50&page=$page_no") || return 1
 		page_len=$(printf '%s' "$resp" | jq -e 'if type == "array" then length else error end' 2>/dev/null) || return 1
 		if [ "$page_len" = 0 ]; then
-			printf '%s\n' "$found" | jq -sc 'add // []'
+			printf '%s\n' "$page_heads" | jq -sc 'add // []'
 			return
 		fi
-		found="$found$(printf '%s' "$resp" | jq -c --arg b "$1" \
+		page_heads="$page_heads$(printf '%s' "$resp" | jq -c --arg b "$1" \
 			'[.[] | select(.merged == true and .head.label == $b and (.head.ref | startswith("refs/pull/")) and .head.repo_id > 0 and .head.repo_id == .base.repo_id) | .head.sha]') " || return 1
 		page_no=$((page_no + 1))
 	done
@@ -135,18 +135,20 @@ fi
 # carries no credential; the one sent afterwards is what git itself would send
 # to that URL — scoped to the host by git's credential helpers, unlike any
 # environment token, and asked for without a prompt, GCM's included, on the
-# host too: the bridge forwards GCM_INTERACTIVE=never as no_prompt — and only
+# host too: the bridge forwards GCM_INTERACTIVE=never as no_prompt and
+# internal/bridge/credential.go sets the flags below there — and only
 # over https, never in clear text. It reaches curl on stdin: on argv it would
 # show in ps. None at all still reads a public repository. TLS trusts what git
 # trusts for that URL: a self-hosted instance's private CA sits in
 # http.<url>.sslCAInfo.
 # shortcut: an instance served under a sub-path (https://host/forgejo/) is not
-# found; derive the API root from the repository URL if one turns up.
+# found, derive the API root from the repository URL if one turns up.
 forgejo_api=
 forgejo_ca=
-forgejo_auth=
-if [ -z "$forge" ] && [ -n "$host" ] &&
-	command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+forgejo_curl_cfg=
+have_forgejo_tools=
+command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && have_forgejo_tools=1
+if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$have_forgejo_tools" ]; then
 	case $origin_url in
 	http://* | https://*) web="${origin_url%%://*}://${bare_url%%/*}" ;;
 	*) web="https://$host" ;;
@@ -163,7 +165,7 @@ if [ -z "$forge" ] && [ -n "$host" ] &&
 			cred_user=$(printf '%s\n' "$cred" | sed -n 's/^username=//p')
 			cred_pass=$(printf '%s\n' "$cred" | sed -n 's/^password=//p')
 			if [ -n "$cred_user" ] && [ -n "$cred_pass" ]; then
-				forgejo_auth="user = $(curl_quote "$cred_user:$cred_pass")"
+				forgejo_curl_cfg="user = $(curl_quote "$cred_user:$cred_pass")"
 			fi
 			unset cred cred_user cred_pass
 			;;
@@ -280,7 +282,7 @@ else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
-	if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+	if [ -n "$have_forgejo_tools" ]; then
 		echo "  or, on a Forgejo instance: its API must answer /api/forgejo/v1/version on ${host:-HOST}"
 	else
 		echo "  or, on a Forgejo instance: install curl and jq, which its API is asked with"
