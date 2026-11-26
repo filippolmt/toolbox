@@ -1,7 +1,7 @@
 #!/bin/bash
 # Claude Code statusLine — pretty
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 # ┊ branch[*↑↓] ⑂wt ┊ model ⚡effort [FAST] ┊ agent ┊ vim ┊ style ┊ mode ┊ ctx ▰▰▱▱▱ [1M] ┊ ❄ ┊ 5h/7d/$ NN% ↻eta
 # Perf: single jq pass, git cached 5s per session_id (script runs on every tick)

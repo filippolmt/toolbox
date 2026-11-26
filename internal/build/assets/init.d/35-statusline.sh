@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=../bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
 # Force the managed Claude Code statusline on every shell start. The script is

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=../bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
 # Two things, per agent, so an agent running inside a herdr pane can drive herdr

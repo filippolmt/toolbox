@@ -7,9 +7,9 @@
 # one the image ships. Needs jq.
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=agent-topology-lib.sh source-path=SCRIPTDIR
 . "$(dirname "$0")/agent-topology-lib.sh"
-# shellcheck source=bin/worktrunk-markers-lib.sh
+# shellcheck source=worktrunk-markers-lib.sh source-path=SCRIPTDIR
 . "$(dirname "$0")/worktrunk-markers-lib.sh"
 
 file=${1:-/etc/codex/hooks.json}
