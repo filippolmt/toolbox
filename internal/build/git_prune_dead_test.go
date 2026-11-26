@@ -292,7 +292,7 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 	// when a merged PR came back without one: gh did answer, so not "could
 	// not answer".
 	const (
-		uncovered = "no merged PR on gh contains its tip"
+		uncovered = "no merged PR on gh contains its tip — commits after the merge, a reused name, or a merged head not fetched here"
 		headless  = "merge state unverified — a merged PR on gh reports no head"
 	)
 	for _, tc := range []struct {

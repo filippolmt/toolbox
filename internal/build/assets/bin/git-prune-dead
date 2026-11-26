@@ -157,7 +157,7 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		case $? in
 		0) delete_branch "$name" ;;
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
-		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, or a reused name)" ;;
+		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, a reused name, or a merged head not fetched here)" ;;
 		4) echo "  kept $name (merge state unverified — a merged PR on $forge reports no head)" ;;
 		# Named even with no forge to ask: a branch that survives silently reads
 		# as one that was pruned.
