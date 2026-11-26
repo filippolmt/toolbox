@@ -1,7 +1,11 @@
 package build
 
 import (
+	"encoding/json"
 	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -49,6 +53,63 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 			if !strings.Contains(string(body), needle) {
 				t.Errorf("%s: missing %q — shim constant drifted from the Go-side constant", tc.shim, needle)
 			}
+		}
+	}
+}
+
+// The credential shim asks the host helpers not to prompt exactly when the
+// caller set GCM_INTERACTIVE to one of the values Git Credential Manager reads
+// as "never" — git prune-dead does — and sends the request it always did
+// otherwise, so an ordinary clone can still prompt. The shim runs for real,
+// against a stand-in transport that records the payload it would POST.
+func TestCredentialShimSendsNoPromptOnlyWhenGCMMustNotPrompt(t *testing.T) {
+	body, err := fs.ReadFile(Assets, AssetDir+"/bin/git-credential-toolbox")
+	if err != nil {
+		t.Fatalf("read embedded shim: %v", err)
+	}
+	dir := t.TempDir()
+	lib := filepath.Join(dir, "bridge-lib.sh")
+	const fakeLib = `bridge_ready() { return 0; }
+bridge_post() { printf '%s' "$2" > "$PAYLOAD_OUT"; printf '{"output":""}' > "$3"; echo 200; }
+`
+	if err := os.WriteFile(lib, []byte(fakeLib), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(dir, "git-credential-toolbox")
+	src := strings.Replace(string(body), ". "+bridgeLib, ". "+lib, 1)
+	if err := os.WriteFile(shim, []byte(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		gcm  string // "" leaves GCM_INTERACTIVE unset
+		want bool
+	}{{"never", true}, {"Never", true}, {"false", true}, {"0", true}, {"", false}, {"auto", false}} {
+		payload := filepath.Join(t.TempDir(), "payload")
+		cmd := exec.Command("sh", shim, "get")
+		cmd.Stdin = strings.NewReader("protocol=https\nhost=forge.example.internal\n\n")
+		cmd.Env = append(os.Environ(), "PAYLOAD_OUT="+payload, "GIT_CREDENTIAL_BRIDGE=")
+		if tc.gcm != "" {
+			cmd.Env = append(cmd.Env, "GCM_INTERACTIVE="+tc.gcm)
+		} else {
+			cmd.Env = append(cmd.Env, "GCM_INTERACTIVE=")
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("GCM_INTERACTIVE=%q: shim: %v\n%s", tc.gcm, err, out)
+		}
+		raw, err := os.ReadFile(payload)
+		if err != nil {
+			t.Fatalf("GCM_INTERACTIVE=%q: no payload posted: %v", tc.gcm, err)
+		}
+		var req map[string]any
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Fatalf("GCM_INTERACTIVE=%q: payload %q: %v", tc.gcm, raw, err)
+		}
+		if _, got := req["no_prompt"]; got != tc.want {
+			t.Errorf("GCM_INTERACTIVE=%q: no_prompt sent = %v, want %v (payload %s)", tc.gcm, got, tc.want, raw)
+		}
+		if req["op"] != "get" || req["input"] != "protocol=https\nhost=forge.example.internal\n\n" {
+			t.Errorf("GCM_INTERACTIVE=%q: op/input not forwarded as given: %s", tc.gcm, raw)
 		}
 	}
 }
