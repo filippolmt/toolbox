@@ -45,18 +45,19 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 // merged: the oids in <git-dir>/forge-<branch>, one per merged PR, when a test
 // writes them (a file, not a ref, so it can name an object the repository
 // lacks), else the local tip. Every answer is the JSON array shape the
-// script's --jq filter produces.
+// script's --jq filter produces. Every call, auth checks included, is
+// appended to $FORGE_CALLS when set.
 func fakeForgeBin(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
 	const script = `#!/bin/sh
 me=$(basename "$0")
+echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 if [ "${1:-}" = "auth" ]; then
 	[ "${AUTHED_CLI:-}" = "$me" ] || exit 1
 	echo "$me: logged in to ${3:-}"
 	exit 0
 fi
-echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 for a in "$@"; do
 	case "$a" in
 	merged-*)
@@ -194,22 +195,46 @@ func TestGitPruneDeadDeletesOnlyProvablyMergedBranches(t *testing.T) {
 // itself is what gets pinned here.
 func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 	for _, tc := range []struct {
-		cli, origin string
-		want        []string
+		name, cli, origin string
+		want              []string
 	}{
-		{"gh", "https://github.com/example/repo.git", []string{
+		{"gh", "gh", "https://github.com/example/repo.git", []string{
 			"--repo example/repo", // not whatever remote gh would have picked
 			"select(.isCrossRepository == false)",
 			"--json headRefOid,", // the field the projection below reads
 			"| .headRefOid]",
 		}},
-		{"glab", "git@git.example.internal:team/repo.git", []string{
+		{"glab scp form", "glab", "git@git.example.internal:team/repo.git", []string{
 			"--repo team/repo",
 			"select(.source_project_id != null and .source_project_id == .project_id)",
 			"| .sha]",
 		}},
+		// A self-hosted forge often serves SSH or HTTPS on its own port: the
+		// port is part of the host, never the first segment of the
+		// repository path. The trailing space ends the value, so a slug
+		// with a leftover suffix fails too.
+		{"glab ssh with port", "glab", "ssh://git@git.example.internal:2222/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		{"gh https with port", "gh", "https://git.example.internal:8443/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		// The host is what the session is looked up by: a bracketed IPv6
+		// literal stays whole, colons and all.
+		{"glab ipv6 with port", "glab", "ssh://git@[fd00::1]:2222/team/repo.git", []string{
+			"auth status --hostname [fd00::1]\n",
+			"--repo team/repo ",
+		}},
+		// scp form with an absolute path, and a trailing slash after .git:
+		// both spell the same repository.
+		{"glab scp form with absolute path", "glab", "git@git.example.internal:/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		{"gh trailing slash", "gh", "https://git.example.internal/team/repo.git/", []string{
+			"--repo team/repo ",
+		}},
 	} {
-		t.Run(tc.cli, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one")
 			calls := filepath.Join(t.TempDir(), "calls")
 
@@ -381,5 +406,115 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 				t.Errorf("want %q in the output, got:\n%s", want, out)
 			}
 		})
+	}
+}
+
+// origin/HEAD is only refreshed by `git remote set-head`, so it can name a
+// branch fetch --prune has removed — before the run, or during the script's
+// own fetch, the sequence right after a remote default moves. It can also
+// name a branch with no local copy. `git branch --merged` on any of those
+// names dies with "malformed object name", so the default must fall back as
+// if origin/HEAD were unset.
+func TestGitPruneDeadFallsBackFromAnUnusableOriginHEAD(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{{
+		name: "dangling before the run",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+		},
+	}, {
+		// origin/HEAD dangles but a local branch of that name survives:
+		// only the origin/HEAD resolve check keeps it from becoming the
+		// default, which the forge loop would then skip.
+		name: "dangling, with a local branch of that name",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "branch", "old-default")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+		},
+	}, {
+		name: "pruned by the run's own fetch",
+		setup: func(t *testing.T, dir string) {
+			remote := filepath.Join(t.TempDir(), "remote.git")
+			gitIn(t, dir, "clone", "--quiet", "--bare", dir, remote)
+			gitIn(t, remote, "branch", "old-default", "main")
+			gitIn(t, dir, "remote", "set-url", "origin", remote)
+			gitIn(t, dir, "fetch", "--quiet", "origin")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+			// The remote's default moves on and the old one is deleted; this
+			// clone still resolves origin/HEAD until the script fetches.
+			gitIn(t, remote, "branch", "-D", "old-default")
+		},
+	}, {
+		name: "no local branch of that name",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "update-ref", "refs/remotes/origin/develop", "main")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
+			gitIn(t, dir, "branch", "worktree-agent-done")
+			tc.setup(t, dir)
+			gitIn(t, dir, "switch", "--quiet", "-c", "work")
+
+			out := runPruneDead(t, dir, toolPath(t))
+
+			if strings.Contains(out, "malformed object name") {
+				t.Errorf("an unusable origin/HEAD must not reach git as a revision, got:\n%s", out)
+			}
+			if strings.Contains(branches(t, dir), "worktree-agent-done") {
+				t.Errorf("a worktree-agent-* leftover merged into main must go:\n%s", out)
+			}
+			if !strings.Contains(out, "kept main, current work") {
+				t.Errorf("the default must fall back to main, got:\n%s", out)
+			}
+		})
+	}
+}
+
+// A local path is not the scp shorthand: git reads host:path only when a
+// colon comes before the first slash, so ../repo has no host and no forge
+// to ask. Asking one anyway — about a host named ".." — could only answer
+// for some other repository.
+func TestGitPruneDeadAsksNoForgeForALocalRemote(t *testing.T) {
+	for _, origin := range []string{"../repo", "/srv/git/repo.git", "./a:b/repo", "file:///srv/git/repo.git"} {
+		t.Run(origin, func(t *testing.T) {
+			dir := pruneDeadRepo(t, origin, "merged-one")
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=gh", "FORGE_CALLS="+calls)
+
+			if argv, err := os.ReadFile(calls); err == nil {
+				t.Errorf("no forge may be asked about a local remote, got calls:\n%s", argv)
+			}
+			if !strings.Contains(branches(t, dir), "merged-one") {
+				t.Errorf("with no forge to ask no branch may be deleted:\n%s", out)
+			}
+			// Not "log in": no login would make a local path answerable.
+			if !strings.Contains(out, "origin is a local path") || strings.Contains(out, "auth login") {
+				t.Errorf("the run must say origin is a local path, not ask for a login, got:\n%s", out)
+			}
+		})
+	}
+}
+
+// When origin/HEAD names a branch with no local copy, the remote default is
+// still what a worktree-agent-* leftover was merged into: measuring it
+// against a fallback main instead keeps every leftover main has not caught
+// up with.
+func TestGitPruneDeadSweepsAgainstARemoteOnlyDefault(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
+	gitIn(t, dir, "switch", "--quiet", "-c", "worktree-agent-done")
+	gitIn(t, dir, "commit", "--allow-empty", "--quiet", "-m", "merged on develop only")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/develop", "worktree-agent-done")
+	gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	gitIn(t, dir, "switch", "--quiet", "-c", "work", "main")
+
+	out := runPruneDead(t, dir, toolPath(t))
+
+	if strings.Contains(branches(t, dir), "worktree-agent-done") {
+		t.Errorf("a leftover merged into origin's default must go even with no local copy of it:\n%s", out)
 	}
 }

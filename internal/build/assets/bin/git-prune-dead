@@ -31,31 +31,42 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 
 current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
-# Default branch from origin/HEAD (set by `git remote set-head`). When it is
-# unset (no remote, or never fetched) fall back to whichever of main/master
-# exists locally, then to the current branch — so we never compare against a
-# non-existent ref.
-default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
-if [ -z "$default" ]; then
-	for cand in main master; do
-		if git show-ref --verify --quiet "refs/heads/$cand"; then
-			default=$cand
-			break
-		fi
-	done
-fi
-[ -n "$default" ] || default=$current
-
 # Host and owner/repo of origin, from either URL form: scheme://[user@]host/path
 # or the scp shorthand [user@]host:path. The repo is passed to the forge CLI
 # explicitly, because gh otherwise resolves its own repo from whichever remote
 # it prefers (an `upstream` on a fork clone) — a different repository from the
 # one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
-bare_url=$(printf '%s\n' "$origin_url" |
-	sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
-host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##')
-slug=$(printf '%s\n' "$bare_url" | sed -e 's#^[^/:]*[:/]##' -e 's#\.git$##' -e 's#/$##')
+# git reads the scp shorthand only when a colon comes before any slash; any
+# other URL without a scheme is a local path, with no host and no forge to ask.
+host=
+slug=
+case $origin_url in
+*://*) url_form=scheme ;;
+*) case ${origin_url%%/*} in
+	*:*) url_form=scp ;;
+	*) url_form=local ;;
+	esac ;;
+esac
+if [ "$url_form" != local ]; then
+	bare_url=$(printf '%s\n' "$origin_url" |
+		sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
+	# A bracketed IPv6 literal keeps its colons; any other host ends at the
+	# first ":" or "/".
+	case $bare_url in
+	'['*) host="${bare_url%%]*}]" ;;
+	*) host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##') ;;
+	esac
+	# After the host: the scheme form may carry a :port before its first "/";
+	# the scp form has no port, just the ":". Leading and trailing slashes and
+	# a .git suffix spell the same repository.
+	rest=${bare_url#"$host"}
+	case $url_form in
+	scheme) rest=${rest#*/} ;;
+	scp) rest=${rest#:} ;;
+	esac
+	slug=$(printf '%s\n' "$rest" | sed -e 's#^/*##' -e 's#/*$##' -e 's#\.git$##')
+fi
 
 # The forge CLI is whichever one holds a session for that host — the question
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
@@ -142,8 +153,39 @@ else
 	echo "git-prune-dead: no remote configured — skipping fetch"
 fi
 
+# Default branch from origin/HEAD (set by `git remote set-head`), read only
+# after the fetch: its --prune can remove the branch origin/HEAD names, and
+# set-head alone refreshes the symref. The default is a local branch name,
+# the one the guards below compare against. When origin/HEAD is unset,
+# dangling or names no local branch, fall back to whichever of main/master
+# exists locally, then to the current branch — so we never compare against a
+# non-existent ref. merged_into is what the worktree-agent-* sweep measures
+# against: the remote default itself when only origin has it, else the local
+# default.
+default=
+merged_into=
+if git rev-parse --verify --quiet refs/remotes/origin/HEAD >/dev/null; then
+	default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+	if ! git show-ref --verify --quiet "refs/heads/$default"; then
+		merged_into=refs/remotes/origin/HEAD
+		default=
+	fi
+fi
+if [ -z "$default" ]; then
+	for cand in main master; do
+		if git show-ref --verify --quiet "refs/heads/$cand"; then
+			default=$cand
+			break
+		fi
+	done
+fi
+[ -n "$default" ] || default=$current
+[ -n "$merged_into" ] || merged_into=$default
+
 if [ -n "$forge" ]; then
 	echo "git-prune-dead: removing branches merged according to $forge on $host..."
+elif [ -n "$origin_url" ] && [ -z "$host" ]; then
+	echo "git-prune-dead: origin is a local path — no forge to ask, keeping every branch"
 else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
@@ -169,9 +211,9 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 
 # Only meaningful when a default branch could be resolved; skip otherwise so
 # we never run `git branch --merged ''`.
-if [ -n "$default" ]; then
+if [ -n "$merged_into" ]; then
 	echo "git-prune-dead: removing merged worktree-agent-* leftovers..."
-	git branch --merged "$default" --format='%(refname:short)' |
+	git branch --merged "$merged_into" --format='%(refname:short)' |
 		grep '^worktree-agent-' |
 		while read -r name; do
 			delete_branch "$name"
