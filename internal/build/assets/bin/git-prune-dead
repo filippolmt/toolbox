@@ -73,10 +73,10 @@ fi
 
 # merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
 # 2 could not tell, 3 merged but the local tip is not covered, 4 a merged PR
-# came back without a head, so whether it covers the tip is unknown. Both CLIs answer
-# with a JSON array of the merged heads, so "[]" is the one shape that means
-# "no match"; anything else, including a failure, must never be read as "not
-# merged".
+# came back without a head, so whether it covers the tip is unknown. Both
+# CLIs answer with a JSON array of the merged heads, so "[]" is the one shape
+# that means "no match"; anything else, including a failure, must never be
+# read as "not merged".
 #
 # A merged PR proves that its head was merged, not that the local branch was:
 # commits made after the merge, or a name reused after an older merged PR,
@@ -108,6 +108,8 @@ merge_state() {
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
 	"" | "[]") return 1 ;;
 	esac
+	# Fails only if the branch vanished since for-each-ref listed it: nothing
+	# left to delete, so the catch-all "unverified" is as far as it goes.
 	tip=$(git rev-parse --verify --quiet "refs/heads/$1") || return 2
 	heads=$(printf '%s' "$out" | grep -oE '[0-9a-f]{40,64}') || return 4
 	for head in $heads; do
