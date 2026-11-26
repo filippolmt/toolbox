@@ -136,7 +136,7 @@ fi
 # Default branch from origin/HEAD (set by `git remote set-head`), read only
 # after the fetch: its --prune can remove the branch origin/HEAD names, and
 # set-head alone refreshes the symref. The default must also be a local
-# branch, the one kind of name `git branch --merged` below resolves. When
+# branch: the bare name below has to resolve for `git branch --merged`. When
 # origin/HEAD is unset, dangling or names no local branch, fall back to
 # whichever of main/master exists locally, then to the current branch — so
 # we never compare against a non-existent ref.

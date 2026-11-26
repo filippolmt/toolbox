@@ -410,6 +410,15 @@ func TestGitPruneDeadFallsBackFromAnUnusableOriginHEAD(t *testing.T) {
 			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
 		},
 	}, {
+		// The squash-merged branch the old default named still exists
+		// locally: taking it as the default would also shield it from the
+		// forge loop.
+		name: "dangling, with a local branch of that name",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "branch", "old-default")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+		},
+	}, {
 		name: "pruned by the run's own fetch",
 		setup: func(t *testing.T, dir string) {
 			remote := filepath.Join(t.TempDir(), "remote.git")
