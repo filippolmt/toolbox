@@ -227,6 +227,57 @@ jobs:
           IMAGE_TAG: ${{ matrix.tag }}
         run: go test -tags dockergate -count=1 ./internal/container/ ./internal/imagereclaim/
 
+  claude-env-changes:
+    # Informational, never a gate: on a CLAUDE_CODE_VERSION bump, one PR
+    # comment lists the env vars the changelog range names, so a knob worth
+    # enabling, or one that invalidates a privacy-matrix decision, is seen at
+    # the bump that brings it (#1591). Runs on every same-repo PR so a reverted
+    # bump deletes its stale comment; a fork's read-only token cannot comment.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Report Claude Code env-var changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pin() { sed -n 's/^ARG CLAUDE_CODE_VERSION=//p'; }
+          # A pin missing on either side reads empty: the script then refuses
+          # it as "not a dotted version" and the warning below names why.
+          git fetch --quiet --depth=1 origin "$BASE_SHA"
+          old=$(git show "$BASE_SHA:internal/build/assets/Dockerfile" | pin) || old=
+          new=$(pin < internal/build/assets/Dockerfile) || new=
+          report=
+          if [ "$old" != "$new" ]; then
+            if ! report=$(python3 .github/scripts/claude-env-changes.py "$old" "$new"); then
+              echo "::warning::claude-env-changes could not report on '$old' → '$new' (reason in the log above); comment left as is"
+              exit 0
+            fi
+          fi
+          # The marker is the script's MARKER: change both, or the next run
+          # posts a second comment. sed, not head: it reads to the end, so gh
+          # never dies of SIGPIPE.
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- claude-env-changes -->"))) | .id' | sed -n 1p)
+          # The body goes through stdin: a report near the comment limit can
+          # outgrow a single argv string.
+          if [ -n "$report" ] && [ -n "$id" ]; then
+            printf '%s' "$report" | gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@- >/dev/null
+          elif [ -n "$report" ]; then
+            printf '%s' "$report" | gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@- >/dev/null
+          elif [ -n "$id" ]; then
+            gh api -X DELETE "repos/$REPO/issues/comments/$id"
+          fi
+          echo "Claude Code $old → $new: $([ -n "$report" ] && echo reported || echo nothing to report)"
+
   docker-ci:
     # Stable required context. The matrix job does not exist on unrelated PRs,
     # but a required check must always report or GitHub leaves it pending.

@@ -25,4 +25,4 @@ The `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` umbrella flag is likewise NOT set
 
 Remote Control (`claude --remote-control`, pairs the session with claude.ai web/mobile) is outbound-HTTPS-only — no inbound ports, so it works inside the container without `-p` bindings or the loopback bridge. The `/config` toggle "Enable Remote Control for all sessions" persists in the `~/.claude` bind and survives container recreates.
 
-When a plugin is refreshed Claude Code prompts for `/reload-plugins`. Bumping the CLI itself is a Dockerfile concern: `CLAUDE_CODE_VERSION` + image rebuild (Renovate-driven).
+When a plugin is refreshed Claude Code prompts for `/reload-plugins`. Bumping the CLI itself is a Dockerfile concern: `CLAUDE_CODE_VERSION` + image rebuild (Renovate-driven). On such a bump, docker-ci's `claude-env-changes` job comments the env vars the upstream changelog range names, and the lines that touch a variable this section covers: the cue to revisit this matrix. Informational only; the script is `.github/scripts/claude-env-changes.py`.
