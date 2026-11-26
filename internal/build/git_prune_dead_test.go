@@ -208,6 +208,11 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 			"select(.source_project_id != null and .source_project_id == .project_id)",
 			"| .sha]",
 		}},
+		// A self-hosted forge often serves SSH on its own port: the port is
+		// part of the host, never the first segment of the repository path.
+		{"glab", "ssh://git@git.example.internal:2222/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
 	} {
 		t.Run(tc.cli, func(t *testing.T) {
 			dir := pruneDeadRepo(t, tc.origin, "merged-one")
