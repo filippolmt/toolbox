@@ -102,8 +102,11 @@ echo '[]'
 // a merged PR whose branch still exists on the server (head.sha is then that
 // branch's current tip, not what was merged), "nullpage-*" a JSON null where
 // a list belongs, "boom2-*" a failure on page 2. $FAKE_FORGEJO_VERSION, when
-// set, replaces the version probe's body. A head= value is URL-decoded the
-// way the server would.
+// set, replaces the version probe's body; $FAKE_FORGEJO_SIGNIN makes every
+// anonymous request fail, as REQUIRE_SIGNIN_VIEW does. A merged PR's head is
+// the first oid in <git-dir>/forge-<branch> when a test wrote one (see
+// forgeHeads), else the local tip. A head= value is URL-decoded the way the
+// server would.
 const fakeForgejoCurl = `#!/bin/sh
 calls=${FORGE_CALLS:-/dev/null}
 echo "curl-argv $*" >> "$calls"
@@ -125,6 +128,9 @@ echo "curl $url auth=$auth" >> "$calls"
 host=${url#*://}
 host=${host%%/*}
 [ -n "${FORGEJO_HOST:-}" ] && [ "$host" = "$FORGEJO_HOST" ] || exit 22
+# An instance with REQUIRE_SIGNIN_VIEW answers nothing anonymously, the
+# version endpoint included.
+[ -n "${FAKE_FORGEJO_SIGNIN:-}" ] && [ "$auth" = none ] && exit 22
 case "$url" in
 */api/forgejo/v1/version) printf '%s\n' "${FAKE_FORGEJO_VERSION-{\"version\":\"17.0.2+gitea-1.22.0\"}}"; exit 0 ;;
 esac
@@ -138,6 +144,8 @@ for kv in ${url#*\?}; do
 done
 unset IFS
 tip=$(git rev-parse --verify -q "refs/heads/$b")
+f="$(git rev-parse --git-dir)/forge-$b"
+[ -f "$f" ] && tip=$(head -n 1 "$f")
 pr() { printf '{"merged":%s,"head":{"label":"%s","ref":"%s","sha":"%s","repo_id":%s},"base":{"repo_id":1}}' "$1" "$2" "${5:-refs/pull/1/head}" "$3" "$4"; }
 case "$page:$b" in
 *:boom-*) exit 22 ;;
@@ -343,6 +351,10 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 	}
 	if !strings.Contains(out, "auth login") {
 		t.Errorf("the run must say how to log in, got:\n%s", out)
+	}
+	// gh and glab are not the only way out: a Forgejo instance needs no CLI.
+	if !strings.Contains(out, "on a Forgejo instance: its API must answer /api/forgejo/v1/version on github.com") {
+		t.Errorf("the run must name what a Forgejo instance needs, got:\n%s", out)
 	}
 	// Named here too: with no forge to ask, a branch that survives in silence
 	// reads as one that was pruned.
@@ -637,8 +649,9 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 				"kept forkonly-one (no merged PR on forgejo",
 				"kept boom-one (merge state unverified — forgejo could not answer)",
 				// head.sha of a branch still on the server is its tip now,
-				// commits after the merge included: no proof of a merge.
-				"kept live-one (no merged PR on forgejo",
+				// commits after the merge included: no proof of a merge, and
+				// said so rather than "never opened".
+				"kept live-one (merged on forgejo, but its branch still exists there",
 				// A failure is never "not merged", wherever it lands.
 				"kept nullpage-one (merge state unverified — forgejo could not answer)",
 				"kept boom2-one (merge state unverified — forgejo could not answer)",
@@ -683,7 +696,9 @@ func TestGitPruneDeadUsesGitsCredentialAndCAForForgejo(t *testing.T) {
 		config [][2]string
 		want   string
 	}{
-		{"stored credential", [][2]string{{"credential.helper", "!f() { echo username=me; echo password=pw; }; f"}}, "auth=user me:pw"},
+		// The helper echoes GCM_INTERACTIVE back as the password: what it
+		// saw is what the bridge shim turns into no_prompt.
+		{"stored credential", [][2]string{{"credential.helper", "!f() { echo username=me; echo password=gcm-$GCM_INTERACTIVE; }; f"}}, "auth=user me:gcm-never"},
 		{"no credential", nil, "auth=none"},
 		{"private CA", [][2]string{{"http.https://forge.example.internal/.sslCAInfo", "/etc/forge-ca.pem"}}, "curl --cacert /etc/forge-ca.pem"},
 	} {
@@ -751,5 +766,52 @@ func TestGitPruneDeadSendsNoForgejoCredentialOverHTTP(t *testing.T) {
 	}
 	if strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("a public repository still answers anonymously, so merged-one must go:\n%s", out)
+	}
+}
+
+// A merged PR proves its head, not commits made locally after it: the tip
+// must be that head or behind it, the same check gh and glab answers get.
+func TestGitPruneDeadForgejoProofMustCoverTheLocalTip(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	forgeHeads(t, dir, "merged-one", gitIn(t, dir, "rev-parse", "merged-one"))
+	gitIn(t, dir, "switch", "--quiet", "merged-one")
+	gitIn(t, dir, "commit", "--allow-empty", "--quiet", "-m", "after the merge")
+	gitIn(t, dir, "switch", "--quiet", "main")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Fatalf("a commit after the merged head must keep the branch:\n%s", out)
+	}
+	if want := "kept merged-one (no merged PR on forgejo contains its tip"; !strings.Contains(out, want) {
+		t.Errorf("want %q in the output, got:\n%s", want, out)
+	}
+}
+
+// An instance with REQUIRE_SIGNIN_VIEW refuses even its version endpoint to
+// an anonymous caller. The probe goes out bare first; only when that fails
+// does it retry with the credential git already sends to that host.
+func TestGitPruneDeadFindsASignInOnlyForgejo(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=pw; }; f")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FAKE_FORGEJO_SIGNIN=1", "FORGE_CALLS="+calls)
+
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a sign-in-only instance answers with the credential, so merged-one must go:\n%s", out)
+	}
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	for _, want := range []string{
+		"curl https://forge.example.internal/api/forgejo/v1/version auth=none\n",
+		"curl https://forge.example.internal/api/forgejo/v1/version auth=user me:pw\n",
+	} {
+		if !strings.Contains(string(argv), want) {
+			t.Errorf("want %q among the calls, got:\n%s", want, argv)
+		}
 	}
 }

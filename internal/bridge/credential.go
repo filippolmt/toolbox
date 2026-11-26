@@ -37,8 +37,8 @@ var credentialSubcommand = map[string]string{
 // Manager's, off by GCM_INTERACTIVE and credential.interactive) and any
 // askpass program stay shut. Without it a host helper may still prompt — the
 // way a first clone gets its password entered once. The container side sets
-// the same flags in git-prune-dead when it asks for a Forgejo credential; the
-// two move together.
+// the same flags in git-prune-dead's forgejo_load_credential; the two move
+// together.
 func runHostCredential(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error) {
 	sub, ok := credentialSubcommand[op]
 	if !ok {
