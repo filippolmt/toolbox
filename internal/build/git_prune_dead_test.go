@@ -389,26 +389,58 @@ func TestGitPruneDeadProofMustCoverTheLocalTip(t *testing.T) {
 	}
 }
 
-// origin/HEAD is only refreshed by `git remote set-head`, so it can outlive
-// the branch it names: fetch --prune deletes origin/<old-default> and leaves
-// the symref dangling. A default read from it names a ref that resolves to
-// nothing, and `git branch --merged` on it dies with "malformed object name".
-// The default must fall back as if origin/HEAD were unset.
-func TestGitPruneDeadIgnoresADanglingOriginHEAD(t *testing.T) {
-	dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
-	gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
-	gitIn(t, dir, "branch", "worktree-agent-done")
-	gitIn(t, dir, "switch", "--quiet", "-c", "work")
+// origin/HEAD is only refreshed by `git remote set-head`, so it can name a
+// branch fetch --prune has removed — before the run, or during the script's
+// own fetch, the sequence right after a remote default moves. It can also
+// name a branch with no local copy. `git branch --merged` on any of those
+// names dies with "malformed object name", so the default must fall back as
+// if origin/HEAD were unset.
+func TestGitPruneDeadFallsBackFromAnUnusableOriginHEAD(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{{
+		name: "dangling before the run",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+		},
+	}, {
+		name: "pruned by the run's own fetch",
+		setup: func(t *testing.T, dir string) {
+			remote := filepath.Join(t.TempDir(), "remote.git")
+			gitIn(t, dir, "clone", "--quiet", "--bare", dir, remote)
+			gitIn(t, remote, "branch", "old-default", "main")
+			gitIn(t, dir, "remote", "set-url", "origin", remote)
+			gitIn(t, dir, "fetch", "--quiet", "origin")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/old-default")
+			// The remote's default moves on and the old one is deleted; this
+			// clone still resolves origin/HEAD until the script fetches.
+			gitIn(t, remote, "branch", "-D", "old-default")
+		},
+	}, {
+		name: "no local branch of that name",
+		setup: func(t *testing.T, dir string) {
+			gitIn(t, dir, "update-ref", "refs/remotes/origin/develop", "main")
+			gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
+			gitIn(t, dir, "branch", "worktree-agent-done")
+			tc.setup(t, dir)
+			gitIn(t, dir, "switch", "--quiet", "-c", "work")
 
-	out := runPruneDead(t, dir, toolPath(t))
+			out := runPruneDead(t, dir, toolPath(t))
 
-	if strings.Contains(out, "malformed object name") {
-		t.Errorf("a dangling origin/HEAD must not reach git as a revision, got:\n%s", out)
-	}
-	if strings.Contains(branches(t, dir), "worktree-agent-done") {
-		t.Errorf("a worktree-agent-* leftover merged into main must go:\n%s", out)
-	}
-	if !strings.Contains(out, "kept main, current work") {
-		t.Errorf("the default must fall back to main, got:\n%s", out)
+			if strings.Contains(out, "malformed object name") {
+				t.Errorf("an unusable origin/HEAD must not reach git as a revision, got:\n%s", out)
+			}
+			if strings.Contains(branches(t, dir), "worktree-agent-done") {
+				t.Errorf("a worktree-agent-* leftover merged into main must go:\n%s", out)
+			}
+			if !strings.Contains(out, "kept main, current work") {
+				t.Errorf("the default must fall back to main, got:\n%s", out)
+			}
+		})
 	}
 }
