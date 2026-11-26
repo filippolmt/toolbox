@@ -64,7 +64,7 @@ for a in "$@"; do
 		if [ -f "$f" ]; then
 			list=
 			while IFS= read -r h; do
-				case "$h" in null) h=null ;; *) h="\"$h\"" ;; esac
+				case "$h" in null) ;; *) h="\"$h\"" ;; esac # a JSON null stays bare
 				list="$list${list:+,}$h"
 			done < "$f"
 		else
