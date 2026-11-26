@@ -37,16 +37,36 @@ current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 # it prefers (an `upstream` on a fork clone) — a different repository from the
 # one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
-# The path starts after the first "/" in the scheme form, where host may carry
-# a :port, and after the first ":" in the scp form, which has no port.
+# git reads the scp shorthand only when a colon comes before any slash; any
+# other URL without a scheme is a local path, with no host and no forge to ask.
+host=
+slug=
 case $origin_url in
-*://*) path_sep=/ ;;
-*) path_sep=: ;;
+*://*) url_form=scheme ;;
+*) case ${origin_url%%/*} in
+	*:*) url_form=scp ;;
+	*) url_form=local ;;
+	esac ;;
 esac
-bare_url=$(printf '%s\n' "$origin_url" |
-	sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
-host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##')
-slug=$(printf '%s\n' "$bare_url" | sed -e "s#^[^$path_sep]*$path_sep##" -e 's#\.git$##' -e 's#/$##')
+if [ "$url_form" != local ]; then
+	bare_url=$(printf '%s\n' "$origin_url" |
+		sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
+	# A bracketed IPv6 literal keeps its colons; any other host ends at the
+	# first ":" or "/".
+	case $bare_url in
+	'['*) host="${bare_url%%]*}]" ;;
+	*) host=$(printf '%s\n' "$bare_url" | sed 's#[:/].*$##') ;;
+	esac
+	# After the host: the scheme form may carry a :port before its first "/";
+	# the scp form has no port, just the ":". Leading and trailing slashes and
+	# a .git suffix spell the same repository.
+	rest=${bare_url#"$host"}
+	case $url_form in
+	scheme) rest=${rest#*/} ;;
+	scp) rest=${rest#:} ;;
+	esac
+	slug=$(printf '%s\n' "$rest" | sed -e 's#^/*##' -e 's#/*$##' -e 's#\.git$##')
+fi
 
 # The forge CLI is whichever one holds a session for that host — the question
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
@@ -157,6 +177,8 @@ fi
 
 if [ -n "$forge" ]; then
 	echo "git-prune-dead: removing branches merged according to $forge on $host..."
+elif [ -n "$origin_url" ] && [ -z "$host" ]; then
+	echo "git-prune-dead: origin is a local path — no forge to ask, keeping every branch"
 else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"

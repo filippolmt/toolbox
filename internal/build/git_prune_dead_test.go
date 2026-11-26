@@ -45,18 +45,19 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 // merged: the oids in <git-dir>/forge-<branch>, one per merged PR, when a test
 // writes them (a file, not a ref, so it can name an object the repository
 // lacks), else the local tip. Every answer is the JSON array shape the
-// script's --jq filter produces.
+// script's --jq filter produces. Every call, auth checks included, is
+// appended to $FORGE_CALLS when set.
 func fakeForgeBin(t *testing.T) string {
 	t.Helper()
 	bin := t.TempDir()
 	const script = `#!/bin/sh
 me=$(basename "$0")
+echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 if [ "${1:-}" = "auth" ]; then
 	[ "${AUTHED_CLI:-}" = "$me" ] || exit 1
 	echo "$me: logged in to ${3:-}"
 	exit 0
 fi
-echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 for a in "$@"; do
 	case "$a" in
 	merged-*)
@@ -216,6 +217,20 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 			"--repo team/repo ",
 		}},
 		{"gh https with port", "gh", "https://git.example.internal:8443/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		// The host is what the session is looked up by: a bracketed IPv6
+		// literal stays whole, colons and all.
+		{"glab ipv6 with port", "glab", "ssh://git@[fd00::1]:2222/team/repo.git", []string{
+			"auth status --hostname [fd00::1]\n",
+			"--repo team/repo ",
+		}},
+		// scp form with an absolute path, and a trailing slash after .git:
+		// both spell the same repository.
+		{"glab scp form with absolute path", "glab", "git@git.example.internal:/team/repo.git", []string{
+			"--repo team/repo ",
+		}},
+		{"gh trailing slash", "gh", "https://git.example.internal/team/repo.git/", []string{
 			"--repo team/repo ",
 		}},
 	} {
@@ -454,6 +469,32 @@ func TestGitPruneDeadFallsBackFromAnUnusableOriginHEAD(t *testing.T) {
 			}
 			if !strings.Contains(out, "kept main, current work") {
 				t.Errorf("the default must fall back to main, got:\n%s", out)
+			}
+		})
+	}
+}
+
+// A local path is not the scp shorthand: git reads host:path only when a
+// colon comes before the first slash, so ../repo has no host and no forge
+// to ask. Asking one anyway — about a host named ".." — could only answer
+// for some other repository.
+func TestGitPruneDeadAsksNoForgeForALocalRemote(t *testing.T) {
+	for _, origin := range []string{"../repo", "/srv/git/repo.git", "./a:b/repo"} {
+		t.Run(origin, func(t *testing.T) {
+			dir := pruneDeadRepo(t, origin, "merged-one")
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=gh", "FORGE_CALLS="+calls)
+
+			if argv, err := os.ReadFile(calls); err == nil {
+				t.Errorf("no forge may be asked about a local remote, got calls:\n%s", argv)
+			}
+			if !strings.Contains(branches(t, dir), "merged-one") {
+				t.Errorf("with no forge to ask no branch may be deleted:\n%s", out)
+			}
+			// Not "log in": no login would make a local path answerable.
+			if !strings.Contains(out, "origin is a local path") || strings.Contains(out, "auth login") {
+				t.Errorf("the run must say origin is a local path, not ask for a login, got:\n%s", out)
 			}
 		})
 	}
