@@ -499,3 +499,22 @@ func TestGitPruneDeadAsksNoForgeForALocalRemote(t *testing.T) {
 		})
 	}
 }
+
+// When origin/HEAD names a branch with no local copy, the remote default is
+// still what a worktree-agent-* leftover was merged into: measuring it
+// against a fallback main instead keeps every leftover main has not caught
+// up with.
+func TestGitPruneDeadSweepsAgainstARemoteOnlyDefault(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://github.com/example/repo.git")
+	gitIn(t, dir, "switch", "--quiet", "-c", "worktree-agent-done")
+	gitIn(t, dir, "commit", "--allow-empty", "--quiet", "-m", "merged on develop only")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/develop", "worktree-agent-done")
+	gitIn(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	gitIn(t, dir, "switch", "--quiet", "-c", "work", "main")
+
+	out := runPruneDead(t, dir, toolPath(t))
+
+	if strings.Contains(branches(t, dir), "worktree-agent-done") {
+		t.Errorf("a leftover merged into origin's default must go even with no local copy of it:\n%s", out)
+	}
+}
