@@ -39,7 +39,7 @@
 # (no value) immediately above the RUN — not merely inside the stage — that
 # consumes them, so a bump lands in that RUN's cache key and not in every one
 # below it.
-ARG GH_VERSION=2.105.0
+ARG GH_VERSION=2.106.0
 ARG GLAB_VERSION=1.133.0
 ARG GWS_VERSION=0.22.5
 ARG ATUIN_VERSION=18.25.1
