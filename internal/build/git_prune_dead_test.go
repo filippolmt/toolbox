@@ -98,7 +98,12 @@ echo '[]'
 // "closed-*" one closed unmerged, "boom-*" a failed request, "forkonly-*"
 // merged PRs that prove nothing (a fork's same-named branch, a deleted head
 // repository, another branch an old server returns because it ignores
-// head=), "paged-*" its merged PR on page 2 behind a short page 1.
+// head=), "paged-*" its merged PR on page 2 behind a short page 1, "live-*"
+// a merged PR whose branch still exists on the server (head.sha is then that
+// branch's current tip, not what was merged), "nullpage-*" a JSON null where
+// a list belongs, "boom2-*" a failure on page 2. $FAKE_FORGEJO_VERSION, when
+// set, replaces the version probe's body. A head= value is URL-decoded the
+// way the server would.
 const fakeForgejoCurl = `#!/bin/sh
 calls=${FORGE_CALLS:-/dev/null}
 echo "curl-argv $*" >> "$calls"
@@ -121,21 +126,25 @@ host=${url#*://}
 host=${host%%/*}
 [ -n "${FORGEJO_HOST:-}" ] && [ "$host" = "$FORGEJO_HOST" ] || exit 22
 case "$url" in
-*/api/forgejo/v1/version) echo '{"version":"17.0.2+gitea-1.22.0"}'; exit 0 ;;
+*/api/forgejo/v1/version) printf '%s\n' "${FAKE_FORGEJO_VERSION-{\"version\":\"17.0.2+gitea-1.22.0\"}}"; exit 0 ;;
 esac
 b= page=1
 IFS='&'
 for kv in ${url#*\?}; do
 	case "$kv" in
-	head=*) b=${kv#head=} ;;
+	head=*) b=$(printf '%s' "${kv#head=}" | sed 's/%2F/\//g') ;;
 	page=*) page=${kv#page=} ;;
 	esac
 done
 unset IFS
 tip=$(git rev-parse --verify -q "refs/heads/$b")
-pr() { printf '{"merged":%s,"head":{"label":"%s","sha":"%s","repo_id":%s},"base":{"repo_id":1}}' "$1" "$2" "$3" "$4"; }
+pr() { printf '{"merged":%s,"head":{"label":"%s","ref":"%s","sha":"%s","repo_id":%s},"base":{"repo_id":1}}' "$1" "$2" "${5:-refs/pull/1/head}" "$3" "$4"; }
 case "$page:$b" in
 *:boom-*) exit 22 ;;
+2:boom2-*) exit 22 ;;
+1:boom2-*) echo "[$(pr true other "$tip" 1)]"; exit 0 ;;
+1:nullpage-*) echo null; exit 0 ;;
+1:live-*) echo "[$(pr true "$b" "$tip" 1 "$b")]"; exit 0 ;;
 1:merged-*) echo "[$(pr true "$b" "$tip" 1)]"; exit 0 ;;
 1:closed-*) echo "[$(pr false "$b" "$tip" 1)]"; exit 0 ;;
 1:forkonly-*) echo "[$(pr true "$b" "$tip" 2),$(pr true "$b" "$tip" -1),$(pr true other "$tip" 1)]"; exit 0 ;;
@@ -607,14 +616,15 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 		{"https with port", "https://forge.example.internal:8443/team/repo.git", "forge.example.internal:8443", "https://forge.example.internal:8443/api/v1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := pruneDeadRepo(t, tc.origin, "merged-one", "closed-one", "boom-one", "forkonly-one", "paged-one")
+			dir := pruneDeadRepo(t, tc.origin, "merged-one", "merged-feat/two", "closed-one", "boom-one",
+				"forkonly-one", "paged-one", "live-one", "nullpage-one", "boom2-one")
 			calls := filepath.Join(t.TempDir(), "calls")
 
 			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST="+tc.host,
 				"FORGEJO_TOKEN=s3cret", "FORGE_CALLS="+calls)
 
 			left := branches(t, dir)
-			for _, gone := range []string{"merged-one", "paged-one"} {
+			for _, gone := range []string{"merged-one", "merged-feat/two", "paged-one"} {
 				if strings.Contains(left, gone) {
 					t.Errorf("%s has a merged PR on Forgejo and must go:\n%s", gone, out)
 				}
@@ -623,6 +633,12 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 				"kept closed-one (no merged PR on forgejo",
 				"kept forkonly-one (no merged PR on forgejo",
 				"kept boom-one (merge state unverified — forgejo could not answer)",
+				// head.sha of a branch still on the server is its tip now,
+				// commits after the merge included: no proof of a merge.
+				"kept live-one (no merged PR on forgejo",
+				// A failure is never "not merged", wherever it lands.
+				"kept nullpage-one (merge state unverified — forgejo could not answer)",
+				"kept boom2-one (merge state unverified — forgejo could not answer)",
 			} {
 				if !strings.Contains(out, kept) {
 					t.Errorf("want %q in the output, got:\n%s", kept, out)
@@ -635,6 +651,11 @@ func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
 			want := "curl " + tc.api + "/repos/team/repo/pulls?state=closed&head=merged-one&limit=50&page=1 auth=token s3cret"
 			if !strings.Contains(string(argv), want) {
 				t.Errorf("want %q among the calls, got:\n%s", want, argv)
+			}
+			// The token goes only to a host already known to run Forgejo.
+			probe := "curl " + strings.TrimSuffix(tc.api, "/v1") + "/forgejo/v1/version auth=none"
+			if !strings.Contains(string(argv), probe) {
+				t.Errorf("want the probe %q, sent with no credential, got:\n%s", probe, argv)
 			}
 			// On argv the token would show in ps to every local user.
 			for _, line := range strings.Split(string(argv), "\n") {
@@ -682,5 +703,48 @@ func TestGitPruneDeadUsesGitsCredentialAndCAForForgejo(t *testing.T) {
 				t.Errorf("want %q among the calls, got:\n%s", tc.want, argv)
 			}
 		})
+	}
+}
+
+// Only a JSON answer naming a version marks a Forgejo instance: a catch-all
+// web front answers 200 with HTML for any path, and must not be asked about
+// pull requests as if it were one.
+func TestGitPruneDeadProbesForgejoByItsVersionAnswer(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FAKE_FORGEJO_VERSION=<!doctype html><html></html>", "FORGE_CALLS="+calls)
+
+	if strings.Contains(out, "according to forgejo") {
+		t.Errorf("an HTML answer must not mark the host as Forgejo, got:\n%s", out)
+	}
+	if argv, _ := os.ReadFile(calls); strings.Contains(string(argv), "/pulls?") {
+		t.Errorf("no pull request may be asked of a host that is not Forgejo, got:\n%s", argv)
+	}
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("with no forge to ask no branch may be deleted:\n%s", out)
+	}
+}
+
+// Over plain HTTP a credential travels in clear text to whoever answers, so
+// an http:// origin is asked anonymously — a public repository still answers.
+func TestGitPruneDeadSendsNoForgejoCredentialOverHTTP(t *testing.T) {
+	dir := pruneDeadRepo(t, "http://forge.example.internal/team/repo.git", "merged-one")
+	gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=pw; }; f")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FORGEJO_TOKEN=s3cret", "FORGE_CALLS="+calls)
+
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	if strings.Contains(string(argv), "s3cret") || strings.Contains(string(argv), "me:pw") {
+		t.Errorf("no credential may be sent over http, got calls:\n%s", argv)
+	}
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a public repository still answers anonymously, so merged-one must go:\n%s", out)
 	}
 }
