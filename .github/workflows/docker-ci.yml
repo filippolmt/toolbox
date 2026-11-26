@@ -250,22 +250,27 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           pin() { sed -n 's/^ARG CLAUDE_CODE_VERSION=//p'; }
+          # A pin missing on either side reads empty: the script then refuses
+          # it as "not a dotted version" and the warning below names why.
           git fetch --quiet --depth=1 origin "$BASE_SHA"
-          old=$(git show "$BASE_SHA:internal/build/assets/Dockerfile" | pin)
-          new=$(pin < internal/build/assets/Dockerfile)
+          old=$(git show "$BASE_SHA:internal/build/assets/Dockerfile" | pin) || old=
+          new=$(pin < internal/build/assets/Dockerfile) || new=
           report=
           if [ "$old" != "$new" ]; then
             if ! report=$(python3 .github/scripts/claude-env-changes.py "$old" "$new"); then
-              echo "::warning::claude-env-changes could not read upstream for $old → $new; comment left as is"
+              echo "::warning::claude-env-changes could not report on '$old' → '$new' (reason in the log above); comment left as is"
               exit 0
             fi
           fi
+          # sed, not head: it reads to the end, so gh never dies of SIGPIPE.
           id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- claude-env-changes -->"))) | .id' | head -n1)
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- claude-env-changes -->"))) | .id' | sed -n 1p)
+          # The body goes through stdin: a report near the comment limit can
+          # outgrow a single argv string.
           if [ -n "$report" ] && [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$report" >/dev/null
+            printf '%s' "$report" | gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@- >/dev/null
           elif [ -n "$report" ]; then
-            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$report" >/dev/null
+            printf '%s' "$report" | gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@- >/dev/null
           elif [ -n "$id" ]; then
             gh api -X DELETE "repos/$REPO/issues/comments/$id"
           fi
