@@ -143,7 +143,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Run it again](herdr.md#run-it-again)
 - [Stop](herdr.md#stop)
 - [Profiles](herdr.md#profiles)
-- [Agents on the host](herdr.md#agents-on-the-host) — [Before you start](herdr.md#before-you-start) · [From the Mac to the toolbox](herdr.md#from-the-mac-to-the-toolbox) · [From the toolbox to the Mac](herdr.md#from-the-toolbox-to-the-mac) · [Ask your agents to do it](herdr.md#ask-your-agents-to-do-it) · [Turn it off](herdr.md#turn-it-off)
+- [Agents on the host](herdr.md#agents-on-the-host) — [Before you start](herdr.md#before-you-start) · [From the host to the toolbox](herdr.md#from-the-host-to-the-toolbox) · [From the toolbox to the host](herdr.md#from-the-toolbox-to-the-host) · [Ask your agents to do it](herdr.md#ask-your-agents-to-do-it) · [Turn it off](herdr.md#turn-it-off)
 - [Trust boundary](herdr.md#trust-boundary)
 - [Recreate](herdr.md#recreate)
 - [Remove the machine](herdr.md#remove-the-machine)

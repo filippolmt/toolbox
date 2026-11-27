@@ -71,7 +71,7 @@ already excludes shells and dialogs.
   in the host's `~/.toolbox.yaml`, read by the daemon on every request. A
   project layer cannot set it — a repository does not decide for the daemon
   every container shares — and the doctor warns when one tries. Unlike
-  toolbox's other settings, an unreadable file or a non-bool value turns the
+  toolbox's other settings, a file it cannot read or parse, or a non-bool value, turns the
   relay off: a safety switch fails closed, and the refusal names the reason.
 - **The relay rides herdr-core's CLI**: `hc ls/get --json` and the `status`
   object (`app`, `state`) are what the gate reads. A change there makes the

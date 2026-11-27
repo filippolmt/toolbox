@@ -60,7 +60,7 @@ Turns the bridge route behind `hc-host` on or off for every container: the [Host
 host_terminal_relay: false
 ```
 
-The bridge daemon reads it from `~/.toolbox.yaml` on every request, so a change applies at once, with no restart. It reads no other layer: a project `.toolbox.yaml` or a `--config` file setting the key changes nothing, and `toolbox config doctor` warns about it. A `~/.toolbox.yaml` the daemon cannot parse, or a value that is not a bool, turns the relay **off** and the refusal says why: it is a safety switch, so it fails closed. How to use the relay: [Agents on the host](herdr.md#agents-on-the-host).
+The bridge daemon reads it from `~/.toolbox.yaml` on every request, so a change applies at once, with no restart. It reads no other layer: a project `.toolbox.yaml` or a `--config` file setting the key changes nothing, and `toolbox config doctor` warns about it. A `~/.toolbox.yaml` the daemon cannot read or parse, or a value that is not a bool, turns the relay **off** and the refusal says why: it is a safety switch, so it fails closed. How to use the relay: [Agents on the host](herdr.md#agents-on-the-host).
 
 ## `managed_statusline`
 

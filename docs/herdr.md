@@ -63,13 +63,13 @@ removes the Herdr Core Shell. With none running it exits 0 without a word. herdr
 
 ## Agents on the host
 
-An agent in a herdr.app space on the `toolbox` machine and an agent in a space on your Mac can talk to each other: one types a message into the other's prompt and reads its screen. It runs on herdr-core and the toolbox bridge, locally — nothing leaves your machine. Claude Code's own `SendMessage` cannot do this: its session registry and sockets do not cross Docker Desktop's VM.
+An agent in a herdr.app space on the `toolbox` machine and an agent in a space on the host can talk to each other: one types a message into the other's prompt and reads its screen. It runs on herdr-core and the toolbox bridge, locally — nothing leaves your machine. Claude Code's own `SendMessage` cannot do this: its session registry and sockets do not cross Docker Desktop's VM.
 
 It works between **agents in herdr.app spaces** (Claude Code, Codex, pi — any agent herdr-core recognises), not with a session open in Terminal.app or iTerm, and not from an ordinary `toolbox shell`.
 
 ### Before you start
 
-1. herdr-core on the Mac, with `hc` on your `PATH` — the same requirement as [Start](#start).
+1. herdr-core on the host, with `hc` on your `PATH` — the same requirement as [Start](#start).
 2. The bridge installed by this toolbox version. After updating the toolbox CLI, run `toolbox bridge install` again so the daemon knows the relay:
 
    ```sh
@@ -89,11 +89,11 @@ It works between **agents in herdr.app spaces** (Claude Code, Codex, pi — any 
    toolbox herdr ~/projects
    ```
 
-4. In herdr.app, one space on the `toolbox` machine and one on your Mac, each running an agent.
+4. In herdr.app, one space on the `toolbox` machine and one on the host, each running an agent.
 
-### From the Mac to the toolbox
+### From the host to the toolbox
 
-In a terminal (or an agent) on the Mac, the Shell's terminals are `toolbox/<terminal>`:
+In a terminal (or an agent) on the host, the Shell's terminals are `toolbox/<terminal>`:
 
 ```sh
 hc ls                                   # every terminal: toolbox/t2, toolbox/t4, …
@@ -103,39 +103,39 @@ hc send toolbox/t2 "run the test suite and tell me what fails"
 
 `hc send` waits for a person's unfinished draft in that terminal before it types. Under a [profile](#profiles) the machine is `toolbox-<profile>`.
 
-### From the toolbox to the Mac
+### From the toolbox to the host
 
-In a terminal of a space on the `toolbox` machine, `hc-host` reaches the Mac's terminals, addressed without a machine prefix:
+In a terminal of a space on the `toolbox` machine, `hc-host` reaches the host's terminals, addressed without a machine prefix:
 
 ```sh
-hc-host ls                              # the Mac's terminals: address, agent, status
+hc-host ls                              # the host's terminals: address, agent, status
 hc-host read t2 --lines 40
 hc-host send t2 "review the diff in ~/src/app"
 ```
 
-The Mac agent receives `[from toolbox/t3] review the diff in ~/src/app`: the prefix is where to answer, so it replies with `hc send toolbox/t3 "…"` and the answer is typed into your terminal. There is no waiting command: the answer arrives as a message.
+The host agent receives `[from toolbox/t3] review the diff in ~/src/app`: the prefix is where to answer, so it replies with `hc send toolbox/t3 "…"` and the answer is typed into your terminal. There is no waiting command: the answer arrives as a message.
 
 `hc-host send` types only into an agent waiting for input (`idle` or `done` in `hc-host ls`). A shell, a working agent or one showing a question or approval dialog is refused, and nothing is typed. Retry once it is free.
 
 ### Ask your agents to do it
 
-The agents need only the address and the command. For example, to the agent on the Mac:
+The agents need only the address and the command. For example, to the agent on the host:
 
 > Ask the agent in `toolbox/t2` to run the tests: `hc send toolbox/t2 "…"`. Its reply will arrive in this terminal.
 
 And to the agent in the toolbox:
 
-> Ask the Mac agent in `t2` (see `hc-host ls`) to review your diff with `hc-host send t2 "…"`. It replies in this terminal.
+> Ask the host agent in `t2` (see `hc-host ls`) to review your diff with `hc-host send t2 "…"`. It replies in this terminal.
 
 ### Turn it off
 
-The relay is on wherever the bridge is installed, and any toolbox container can use it. To turn it off for every container, set in `~/.toolbox.yaml` on the Mac:
+The relay is on wherever the bridge is installed, and any toolbox container can use it. To turn it off for every container, set in `~/.toolbox.yaml` on the host:
 
 ```yaml
 host_terminal_relay: false
 ```
 
-It applies to the next request, with no restart. `toolbox config ui` sets it too, in the Global scope. Only `~/.toolbox.yaml` counts: in a project's `.toolbox.yaml` the key changes nothing, and `toolbox config doctor` says so. Remove the key, or set it to `true`, to turn the relay back on. The Mac-to-toolbox direction is herdr-core's own and is not affected.
+It applies to the next request, with no restart. `toolbox config ui` sets it too, in the Global scope. Only `~/.toolbox.yaml` counts: in a project's `.toolbox.yaml` the key changes nothing, and `toolbox config doctor` says so. Remove the key, or set it to `true`, to turn the relay back on. The host-to-toolbox direction is herdr-core's own and is not affected.
 
 When something refuses or does not answer, see [`hc-host` refuses or cannot reach the host](troubleshooting.md#hc-host-refuses-or-cannot-reach-the-host). How the bridge gates it: [Host terminals](bridge.md#host-terminals).
 
