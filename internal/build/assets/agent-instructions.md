@@ -7,3 +7,5 @@ Create parallel worktrees with Worktrunk, `wt switch -c <branch> --no-cd`, in pl
 Before creating an issue, in any tracker, show the user the final title and body and wait for their approval: a draft they have not seen is not approved.
 
 After a PR or MR merges, sync with `git switch <default-branch> && git pull --ff-only && git prune-dead`: it deletes a branch once its upstream is gone and the forge (gh, glab, or a Forgejo instance's API) reports a merged PR or MR whose head is, or contains, the local tip, squash merges included, and keeps every other branch, including one with commits made after the merge. `git branch -d` trusts a branch level with its upstream, so it can delete work that never reached the default branch.
+
+In a herdr.app terminal `HC_TERMINAL_ID` is set: you are in the Herdr Core Shell, whatever `HERDR_ENV` says (that variable marks the Herdr TUI). `hc` drives this Shell's terminals, and `hc-host` reaches the agents herdr.app runs on the host; `hc-host` alone prints its usage.

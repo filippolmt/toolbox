@@ -647,6 +647,9 @@ check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr
 # Proximo shim must be the bridge wrapper (bridge-lib marker) — proximo never
 # ships as a real binary in the image; a dropped COPY fails here too.
 check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q bridge-lib.sh /usr/local/bin/proximo && echo present"
+# herdr-core installs hc in ~/.local/bin of the Herdr Core Shell; agents there
+# run it by name, so the dir is on PATH, after every baked bin dir.
+check_required "~/.local/bin last on PATH" sh -c "case \$PATH in *:/home/toolbox/.local/bin) echo last ;; esac"
 # Host Terminal Relay shim: a bridge wrapper too, never the herdr-core hc binary.
 check_required "hc-host shim" sh -c "test -x /usr/local/bin/hc-host && grep -q bridge-lib.sh /usr/local/bin/hc-host && echo present"
 # proximo-hosts owns the /etc/hosts projection (no flag invocation — running it
