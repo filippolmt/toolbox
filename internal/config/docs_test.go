@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestEveryKeyHasAKeyReferenceRow: docs/configuration.md's key reference is the
+// TestEveryKeyHasAKeyReferenceRow: docs/configuration.md's Key reference table is the
 // one table a developer reads to learn which keys exist. A key whose row is
 // missing works but stays undiscovered, and no other test notices; a
 // deprecated alias has no row of its own.
@@ -15,7 +15,11 @@ func TestEveryKeyHasAKeyReferenceRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := string(b)
+	_, doc, ok := strings.Cut(string(b), "\n## Key reference")
+	if !ok {
+		t.Fatal(`docs/configuration.md has no "## Key reference" section`)
+	}
+	doc, _, _ = strings.Cut(doc, "\n## ")
 	for _, k := range Keys() {
 		if k.Kind == KindAlias {
 			continue

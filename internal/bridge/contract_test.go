@@ -220,7 +220,11 @@ func TestBridgeContract_EveryRouteIsInTheSecurityBoundary(t *testing.T) {
 					continue
 				}
 				routes++
-				route, err := strconv.Unquote(vs.Values[i].(*ast.BasicLit).Value)
+				lit, ok := vs.Values[i].(*ast.BasicLit)
+				if !ok {
+					t.Fatalf("%s is not a string literal — read it another way", name.Name)
+				}
+				route, err := strconv.Unquote(lit.Value)
 				if err != nil {
 					t.Fatalf("%s: %v", name.Name, err)
 				}
