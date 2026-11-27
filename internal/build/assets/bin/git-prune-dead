@@ -13,7 +13,10 @@
 #
 # The forge CLI is picked by asking which one is authenticated for origin's
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
-# all resolve without special-casing any domain. No authenticated CLI, an
+# all resolve without special-casing any domain. A Forgejo or Gitea host has
+# no CLI, so it is asked over its REST API, and only once the developer names
+# a token for it: prune-dead.<url>.giteaTokenFile, matched against
+# https://<host> like any git http.<url>.* key. No authenticated CLI, an
 # unreachable forge, or a PR that was closed without merging → the branch is
 # kept and the reason printed. Never deleted either: the current branch and the
 # repository's default branch.
@@ -80,7 +83,46 @@ if [ -n "$host" ]; then
 			break
 		fi
 	done
+	# A configured token file is the Forgejo/Gitea counterpart of a logged-in
+	# CLI. The CA, as for git itself, is http.<url>.sslCAInfo.
+	if [ -z "$forge" ] &&
+		gitea_token_file=$(git config --type=path --get-urlmatch prune-dead.giteaTokenFile "https://$host" 2>/dev/null) &&
+		[ -r "$gitea_token_file" ] &&
+		command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+		forge=gitea
+		gitea_ca=$(git config --type=path --get-urlmatch http.sslCAInfo "https://$host" 2>/dev/null || true)
+	fi
 fi
+
+# gitea_get <path below /api/v1> — the token goes through curl's stdin config,
+# never argv, where any process listing would show it.
+gitea_get() {
+	printf 'header = "Authorization: token %s"\n' "$(cat "$gitea_token_file")" |
+		curl -fsS --max-time 20 -K - ${gitea_ca:+--cacert "$gitea_ca"} \
+			"https://$host/api/v1/$1" 2>/dev/null
+}
+
+# The Gitea API cannot filter pulls by head branch, so the closed ones are
+# listed once, newest first, and every branch is matched against that list.
+# shortcut: only the 1000 most recently updated closed PRs are read; an older
+# merge reads as "no merged PR" and its branch is kept — page further if a
+# repository ever needs it.
+gitea_pulls=
+gitea_listed=
+gitea_list() {
+	gitea_listed=1
+	page=1
+	while [ "$page" -le 20 ]; do
+		body=$(gitea_get "repos/$slug/pulls?state=closed&sort=recentupdate&limit=50&page=$page") || {
+			gitea_listed=failed
+			return
+		}
+		[ "$(printf '%s' "$body" | tr -d ' \n\r\t')" = "[]" ] && return
+		gitea_pulls="$gitea_pulls$body
+"
+		page=$((page + 1))
+	done
+}
 
 # merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
 # 2 could not tell, 3 merged but the local tip is not covered, 4 a merged PR
@@ -114,6 +156,14 @@ merge_state() {
 		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
 	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
 		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
+	# Once the head branch is deleted Forgejo reports head.ref as
+	# refs/pull/<n>/head, leaving the branch name in head.label — which a fork's
+	# PR spells owner:branch, so the label alone already excludes forks.
+	gitea)
+		[ -n "$gitea_listed" ] || gitea_list
+		[ "$gitea_listed" = failed ] && return 2
+		out=$(printf '%s' "$gitea_pulls" | jq -sc --arg b "$1" \
+			'[.[][] | select(.merged == true and (.head.ref == $b or .head.label == $b) and .head.repo_id != null and .head.repo_id == .base.repo_id) | .head.sha]' 2>/dev/null) || return 2 ;;
 	*) return 2 ;;
 	esac
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
@@ -190,6 +240,7 @@ else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
+	echo "  or, on a Forgejo/Gitea instance: git config --global prune-dead.https://${host:-HOST}.giteaTokenFile <token file>"
 fi
 
 git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |

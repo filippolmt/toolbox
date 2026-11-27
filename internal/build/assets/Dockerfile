@@ -2093,7 +2093,8 @@ COPY --link --chmod=0755 bin/paplay /usr/local/bin/paplay
 # Git housekeeping helper. `git-*` on PATH is a git subcommand, so this is
 # invoked as `git prune-dead`: deletes local branches whose tip is, or is an
 # ancestor of, the head of a PR/MR the forge reports as merged (gh or glab,
-# whichever is logged in to origin's host) + merged worktree-agent-* leftovers,
+# whichever is logged in to origin's host, else the Forgejo/Gitea API for a
+# host with a configured token) + merged worktree-agent-* leftovers,
 # then prunes stale worktree entries. A gone upstream alone is never enough — it
 # looks the same for an abandoned branch. Never touches the current or default
 # branch.
