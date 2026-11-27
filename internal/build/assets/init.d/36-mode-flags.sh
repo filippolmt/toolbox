@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=../bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
 # Reconcile behavioral-mode flag files with enabledPlugins in settings.json.

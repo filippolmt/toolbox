@@ -340,6 +340,13 @@ them.
   state remains strict. Pinned by `TestCheckNotRoot`, `TestStateDirOutcome` and
   `TestUninstallSummary`.
 
+- **Credential no-prompt:** the credential shim sends `no_prompt` only when
+  `GCM_INTERACTIVE` says never, and the daemon silences the host helpers for
+  that request alone; an older shim or daemon on either side keeps today's
+  behaviour. Pinned by `TestCredentialShimSendsNoPromptOnlyWhenGCMMustNotPrompt`,
+  `TestHandler_CredentialForwardsNoPrompt` and
+  `TestRunHostCredential_NoPromptSilencesHostHelpers`. → [bridge](../../docs/bridge.md#git-credentials)
+
 - **Credential helper lookup:** resolve plain helper names through git's exec
   path before `PATH`, matching git itself. `TestCheckHostCredentialHelper` and
   `TestLookHelperIn` pin the composition.

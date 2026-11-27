@@ -31,14 +31,28 @@ var credentialSubcommand = map[string]string{
 // that to "no credential" so git falls back to prompting. err is reserved for
 // a missing op, git not being found, or a context deadline. GIT_TERMINAL_PROMPT
 // is forced off: the daemon has no TTY and must never block waiting on one.
-func runHostCredential(ctx context.Context, op string, input []byte) (output []byte, exit int, err error) {
+//
+// noPrompt goes further, for a caller that would rather have no credential
+// than wait on a person: a helper's own GUI or browser flow (Git Credential
+// Manager's, off by GCM_INTERACTIVE and credential.interactive) and any
+// askpass program stay shut. Without it a host helper may still prompt — the
+// way a first clone gets its password entered once. The container side sets
+// the same flags in git-prune-dead's forgejo_load_credential; the two move
+// together.
+func runHostCredential(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error) {
 	sub, ok := credentialSubcommand[op]
 	if !ok {
 		return nil, 0, fmt.Errorf("bridge: unsupported credential op %q", op)
 	}
-	cmd := exec.CommandContext(ctx, "git", "credential", sub)
+	args := []string{"credential", sub}
+	env := []string{"GIT_TERMINAL_PROMPT=0"}
+	if noPrompt {
+		args = append([]string{"-c", "core.askPass=", "-c", "credential.interactive=false"}, args...)
+		env = append(env, "GCM_INTERACTIVE=never", "GIT_ASKPASS=", "SSH_ASKPASS=")
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(cmd.Environ(), env...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	// git credential's diagnostics go to stderr; keep them off the response so

@@ -83,8 +83,86 @@ echo '[]'
 			t.Fatalf("write fake %s: %v", name, err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(fakeForgejoCurl), 0o755); err != nil {
+		t.Fatalf("write fake curl: %v", err)
+	}
 	return bin
 }
+
+// fakeForgejoCurl stands in for curl against a Forgejo instance at
+// $FORGEJO_HOST; any other host fails the way an unreachable or non-Forgejo
+// one does. It records its argv and, apart, the credential its --config
+// stdin carried, so a test can tell the two apart. Pull lists answer from the
+// head= branch name, as the gh/glab fakes do, in the JSON shape of Forgejo's
+// GET /repos/{owner}/{repo}/pulls: "merged-*" one merged PR of that branch,
+// "closed-*" one closed unmerged, "boom-*" a failed request, "forkonly-*"
+// merged PRs that prove nothing (a fork's same-named branch, a deleted head
+// repository, another branch an old server returns because it ignores
+// head=), "paged-*" its merged PR on page 2 behind a short page 1, "live-*"
+// a merged PR whose branch still exists on the server (head.sha is then that
+// branch's current tip, not what was merged), "nullpage-*" a JSON null where
+// a list belongs, "boom2-*" a failure on page 2. $FAKE_FORGEJO_VERSION, when
+// set, replaces the version probe's body; $FAKE_FORGEJO_SIGNIN makes every
+// anonymous request fail, as REQUIRE_SIGNIN_VIEW does. A merged PR's head is
+// the first oid in <git-dir>/forge-<branch> when a test wrote one (see
+// forgeHeads), else the local tip. A head= value is URL-decoded the way the
+// server would.
+const fakeForgejoCurl = `#!/bin/sh
+calls=${FORGE_CALLS:-/dev/null}
+echo "curl-argv $*" >> "$calls"
+url= cfg=
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--config) [ "$2" = - ] && cfg=$(cat); shift ;;
+	--cacert) echo "curl --cacert $2" >> "$calls"; shift ;;
+	http*) url=$1 ;;
+	esac
+	shift
+done
+auth=none
+case "$cfg" in
+*'header = "Authorization: token '*) auth=${cfg#*token }; auth="token ${auth%%\"*}" ;;
+*'user = "'*) auth=${cfg#*user = \"}; auth="user ${auth%%\"*}" ;;
+esac
+echo "curl $url auth=$auth" >> "$calls"
+host=${url#*://}
+host=${host%%/*}
+[ -n "${FORGEJO_HOST:-}" ] && [ "$host" = "$FORGEJO_HOST" ] || exit 22
+# An instance with REQUIRE_SIGNIN_VIEW answers nothing anonymously, the
+# version endpoint included.
+[ -n "${FAKE_FORGEJO_SIGNIN:-}" ] && [ "$auth" = none ] && exit 22
+case "$url" in
+*/api/forgejo/v1/version) printf '%s\n' "${FAKE_FORGEJO_VERSION-{\"version\":\"17.0.2+gitea-1.22.0\"}}"; exit 0 ;;
+esac
+b= page=1
+IFS='&'
+for kv in ${url#*\?}; do
+	case "$kv" in
+	head=*) b=$(printf '%s' "${kv#head=}" | sed 's/%2F/\//g') ;;
+	page=*) page=${kv#page=} ;;
+	esac
+done
+unset IFS
+tip=$(git rev-parse --verify -q "refs/heads/$b")
+f="$(git rev-parse --git-dir)/forge-$b"
+[ -f "$f" ] && tip=$(head -n 1 "$f")
+pr() { printf '{"merged":%s,"head":{"label":"%s","ref":"%s","sha":"%s","repo_id":%s},"base":{"repo_id":1}}' "$1" "$2" "${5:-refs/pull/1/head}" "$3" "$4"; }
+case "$page:$b" in
+*:boom-*) exit 22 ;;
+2:boom2-*) exit 22 ;;
+1:boom2-*) echo "[$(pr true other "$tip" 1)]"; exit 0 ;;
+1:nullpage-*) echo null; exit 0 ;;
+1:live-*) echo "[$(pr true "$b" "$tip" 1 "$b")]"; exit 0 ;;
+1:livetip-*) echo "[$(pr true "$b" "$tip" 1 "$b"),$(pr true "$b" 0000000000000000000000000000000000000000 1)]"; exit 0 ;;
+1:mixed-*) echo "[$(pr true "$b" 0000000000000000000000000000000000000000 1 "$b"),$(pr true "$b" "$tip" 1)]"; exit 0 ;;
+1:merged-*) echo "[$(pr true "$b" "$tip" 1)]"; exit 0 ;;
+1:closed-*) echo "[$(pr false "$b" "$tip" 1)]"; exit 0 ;;
+1:forkonly-*) echo "[$(pr true "$b" "$tip" 2),$(pr true "$b" "$tip" -1),$(pr true other "$tip" 1)]"; exit 0 ;;
+1:paged-*) echo "[$(pr true other "$tip" 1)]"; exit 0 ;;
+2:paged-*) echo "[$(pr true "$b" "$tip" 1)]"; exit 0 ;;
+esac
+echo '[]'
+`
 
 // forgeHeads sets the head commits the fake forge reports for branch's merged
 // PRs, one per PR; an empty oid is a PR whose answer carries no head, and
@@ -138,7 +216,12 @@ func runPruneDead(t *testing.T, dir, path string, env ...string) string {
 	}
 	cmd := exec.Command("sh", script)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "PATH="+path), env...)
+	// The machine's git config could carry a credential helper or CA, and
+	// a real curl on PATH would reach the network: neither may leak in.
+	cmd.Env = append(append(os.Environ(), "PATH="+path,
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"http_proxy=http://127.0.0.1:1", "https_proxy=http://127.0.0.1:1",
+		"HTTPS_PROXY=http://127.0.0.1:1", "NO_PROXY=", "no_proxy="), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git-prune-dead: %v\n%s", err, out)
@@ -270,6 +353,10 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 	}
 	if !strings.Contains(out, "auth login") {
 		t.Errorf("the run must say how to log in, got:\n%s", out)
+	}
+	// gh and glab are not the only way out: a Forgejo instance needs no CLI.
+	if !strings.Contains(out, "on a Forgejo instance: its API must answer /api/forgejo/v1/version on github.com") {
+		t.Errorf("the run must name what a Forgejo instance needs, got:\n%s", out)
 	}
 	// Named here too: with no forge to ask, a branch that survives in silence
 	// reads as one that was pruned.
@@ -516,5 +603,244 @@ func TestGitPruneDeadSweepsAgainstARemoteOnlyDefault(t *testing.T) {
 
 	if strings.Contains(branches(t, dir), "worktree-agent-done") {
 		t.Errorf("a leftover merged into origin's default must go even with no local copy of it:\n%s", out)
+	}
+}
+
+// forgejoPath is forgePath plus jq, which the Forgejo client filters with.
+func forgejoPath(t *testing.T) string {
+	t.Helper()
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Fatalf("look up jq: %v", err)
+	}
+	return forgePath(t) + string(os.PathListSeparator) + filepath.Dir(jq)
+}
+
+// Forgejo has no gh or glab session to find, so its API answers instead,
+// asked about the same thing: merged PRs whose head is this repository's
+// branch. Filtering is the client's job too — a server older than Forgejo
+// v16 ignores head= and returns every closed PR, and a fork's same-named
+// branch or a deleted head repository proves nothing about local work. A
+// page shorter than the limit asked for is not the last one, since an
+// instance caps the limit at its own maximum; only an empty page is.
+func TestGitPruneDeadAsksForgejoOverItsAPI(t *testing.T) {
+	for _, tc := range []struct{ name, origin, host, api string }{
+		// The SSH port is not the web one: the API is asked over HTTPS.
+		{"ssh with port", "ssh://git@forge.example.internal:222/team/repo.git", "forge.example.internal", "https://forge.example.internal/api/v1"},
+		{"https with port", "https://forge.example.internal:8443/team/repo.git", "forge.example.internal:8443", "https://forge.example.internal:8443/api/v1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, tc.origin, "merged-one", "merged-feat/two", "closed-one", "boom-one",
+				"forkonly-one", "paged-one", "live-one", "mixed-one", "livetip-one", "nullpage-one", "boom2-one")
+			gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=s3cret; }; f")
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			// An environment token names no host, so it could reach any
+			// instance the probe finds: it is never sent.
+			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST="+tc.host,
+				"FORGEJO_TOKEN=envtoken", "FORGE_CALLS="+calls)
+
+			left := branches(t, dir)
+			// mixed-one: a live PR of the same name proves nothing either way,
+			// so the deleted-branch PR that covers the tip still settles it.
+			for _, gone := range []string{"merged-one", "merged-feat/two", "paged-one", "mixed-one"} {
+				if strings.Contains(left, gone) {
+					t.Errorf("%s has a merged PR on Forgejo and must go:\n%s", gone, out)
+				}
+			}
+			for _, kept := range []string{
+				"kept closed-one (no merged PR on forgejo",
+				"kept forkonly-one (no merged PR on forgejo",
+				"kept boom-one (merge state unverified — forgejo could not answer)",
+				// head.sha of a branch still on the server is its tip now,
+				// commits after the merge included: no proof of a merge, and
+				// said so rather than "never opened".
+				"kept live-one (merged on forgejo, but its branch still exists there",
+				// A live PR's head is never proof, even when it equals the tip:
+				// only the gone branch's head counts, and it does not cover.
+				"kept livetip-one (no merged PR on forgejo contains its tip",
+				// A failure is never "not merged", wherever it lands.
+				"kept nullpage-one (merge state unverified — forgejo could not answer)",
+				"kept boom2-one (merge state unverified — forgejo could not answer)",
+			} {
+				if !strings.Contains(out, kept) {
+					t.Errorf("want %q in the output, got:\n%s", kept, out)
+				}
+			}
+			argv, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatalf("no forge call recorded: %v", err)
+			}
+			want := "curl " + tc.api + "/repos/team/repo/pulls?state=closed&head=merged-one&limit=50&page=1 auth=user me:s3cret"
+			if !strings.Contains(string(argv), want) {
+				t.Errorf("want %q among the calls, got:\n%s", want, argv)
+			}
+			// The token goes only to a host already known to run Forgejo.
+			probe := "curl " + strings.TrimSuffix(tc.api, "/v1") + "/forgejo/v1/version auth=none"
+			if !strings.Contains(string(argv), probe) {
+				t.Errorf("want the probe %q, sent with no credential, got:\n%s", probe, argv)
+			}
+			if strings.Contains(string(argv), "envtoken") {
+				t.Errorf("FORGEJO_TOKEN must never be sent, got calls:\n%s", argv)
+			}
+			// On argv the credential would show in ps to every local user.
+			for _, line := range strings.Split(string(argv), "\n") {
+				if strings.HasPrefix(line, "curl-argv ") && strings.Contains(line, "s3cret") {
+					t.Errorf("the credential must reach curl on stdin, not argv: %s", line)
+				}
+			}
+		})
+	}
+}
+
+// The credential git itself would use for the instance is the one to send —
+// never prompted for, since the run is not interactive — and none at all
+// still reads a public repository. TLS trusts what git trusts for that URL:
+// a self-hosted instance's private CA lives in git's http.<url>.sslCAInfo.
+func TestGitPruneDeadUsesGitsCredentialAndCAForForgejo(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config [][2]string
+		want   string
+	}{
+		// The helper echoes GCM_INTERACTIVE back as the password: what it
+		// saw is what the bridge shim turns into no_prompt.
+		{"stored credential", [][2]string{{"credential.helper", "!f() { echo username=me; echo password=gcm-$GCM_INTERACTIVE; }; f"}}, "auth=user me:gcm-never"},
+		{"no credential", nil, "auth=none"},
+		{"private CA", [][2]string{{"http.https://forge.example.internal/.sslCAInfo", "/etc/forge-ca.pem"}}, "curl --cacert /etc/forge-ca.pem"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+			for _, kv := range tc.config {
+				gitIn(t, dir, "config", kv[0], kv[1])
+			}
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+				"FORGE_CALLS="+calls)
+
+			if strings.Contains(branches(t, dir), "merged-one") {
+				t.Errorf("a merged PR on Forgejo must delete its branch:\n%s", out)
+			}
+			argv, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatalf("no forge call recorded: %v", err)
+			}
+			if !strings.Contains(string(argv), tc.want) {
+				t.Errorf("want %q among the calls, got:\n%s", tc.want, argv)
+			}
+		})
+	}
+}
+
+// Only a JSON answer naming a version marks a Forgejo instance: a catch-all
+// web front answers 200 with HTML for any path, and must not be asked about
+// pull requests as if it were one.
+func TestGitPruneDeadProbesForgejoByItsVersionAnswer(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FAKE_FORGEJO_VERSION=<!doctype html><html></html>", "FORGE_CALLS="+calls)
+
+	if strings.Contains(out, "according to forgejo") {
+		t.Errorf("an HTML answer must not mark the host as Forgejo, got:\n%s", out)
+	}
+	if argv, _ := os.ReadFile(calls); strings.Contains(string(argv), "/pulls?") {
+		t.Errorf("no pull request may be asked of a host that is not Forgejo, got:\n%s", argv)
+	}
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("with no forge to ask no branch may be deleted:\n%s", out)
+	}
+}
+
+// Over plain HTTP a credential travels in clear text to whoever answers, so
+// an http:// origin is asked anonymously — a public repository still answers.
+func TestGitPruneDeadSendsNoForgejoCredentialOverHTTP(t *testing.T) {
+	dir := pruneDeadRepo(t, "http://forge.example.internal/team/repo.git", "merged-one")
+	gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=pw; }; f")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FORGE_CALLS="+calls)
+
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	if strings.Contains(string(argv), "me:pw") {
+		t.Errorf("no credential may be sent over http, got calls:\n%s", argv)
+	}
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a public repository still answers anonymously, so merged-one must go:\n%s", out)
+	}
+}
+
+// A merged PR proves its head, not commits made locally after it: the tip
+// must be that head or behind it, the same check gh and glab answers get.
+func TestGitPruneDeadForgejoProofMustCoverTheLocalTip(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	forgeHeads(t, dir, "merged-one", gitIn(t, dir, "rev-parse", "merged-one"))
+	gitIn(t, dir, "switch", "--quiet", "merged-one")
+	gitIn(t, dir, "commit", "--allow-empty", "--quiet", "-m", "after the merge")
+	gitIn(t, dir, "switch", "--quiet", "main")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Fatalf("a commit after the merged head must keep the branch:\n%s", out)
+	}
+	if want := "kept merged-one (no merged PR on forgejo contains its tip"; !strings.Contains(out, want) {
+		t.Errorf("want %q in the output, got:\n%s", want, out)
+	}
+}
+
+// An instance with REQUIRE_SIGNIN_VIEW refuses even its version endpoint to
+// an anonymous caller. The probe goes out bare first; only when that fails
+// does it retry with the credential git already sends to that host.
+func TestGitPruneDeadFindsASignInOnlyForgejo(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@forge.example.internal:team/repo.git", "merged-one")
+	gitIn(t, dir, "config", "credential.helper", "!f() { echo username=me; echo password=pw; }; f")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FAKE_FORGEJO_SIGNIN=1", "FORGE_CALLS="+calls)
+
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a sign-in-only instance answers with the credential, so merged-one must go:\n%s", out)
+	}
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	// Bare first: a host is sent the credential only after it refused
+	// an anonymous caller.
+	bare := strings.Index(string(argv), "curl https://forge.example.internal/api/forgejo/v1/version auth=none\n")
+	authed := strings.Index(string(argv), "curl https://forge.example.internal/api/forgejo/v1/version auth=user me:pw\n")
+	if bare < 0 || authed < 0 || bare > authed {
+		t.Errorf("want a bare probe, then one with the credential, got:\n%s", argv)
+	}
+}
+
+// An instance served under a sub-path shows it in an http(s) origin: a
+// Forgejo repository is always owner/repo, so whatever precedes those two
+// segments is the instance's web root, and the API lives under it.
+func TestGitPruneDeadFindsForgejoUnderASubPath(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://forge.example.internal/code/forgejo/team/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=", "FORGEJO_HOST=forge.example.internal",
+		"FORGE_CALLS="+calls)
+
+	if strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a sub-path instance is still Forgejo, so merged-one must go:\n%s", out)
+	}
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	want := "curl https://forge.example.internal/code/forgejo/api/v1/repos/team/repo/pulls?state=closed&head=merged-one&"
+	if !strings.Contains(string(argv), want) {
+		t.Errorf("want %q among the calls, got:\n%s", want, argv)
 	}
 }

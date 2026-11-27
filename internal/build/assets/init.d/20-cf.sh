@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=../bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
 # Seed the cf Claude skill on every shell start. Idempotent: writes only when

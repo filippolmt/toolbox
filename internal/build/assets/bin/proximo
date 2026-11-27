@@ -10,6 +10,7 @@
 
 set -eu
 
+# shellcheck source=bridge-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/bridge-lib.sh
 
 # Proximo Availability Gate: the bind-mounted root CA is the in-container

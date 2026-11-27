@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=../bin/agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
-# shellcheck source=bin/worktrunk-markers-lib.sh
+# shellcheck source=../bin/worktrunk-markers-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/worktrunk-markers-lib.sh
 
 # Seed Codex telemetry-off block in ~/.codex/config.toml. Codex CLI defaults

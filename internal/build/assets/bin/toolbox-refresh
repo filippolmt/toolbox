@@ -15,7 +15,7 @@
 # to. With arguments: only the named tools.
 set -uo pipefail
 
-# shellcheck source=bin/agent-topology-lib.sh
+# shellcheck source=agent-topology-lib.sh source-path=SCRIPTDIR
 . /usr/local/lib/toolbox/agent-topology-lib.sh
 
 # Every skill the image baked is a global skill; nothing else names them.

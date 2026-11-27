@@ -13,10 +13,11 @@
 #
 # The forge CLI is picked by asking which one is authenticated for origin's
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
-# all resolve without special-casing any domain. No authenticated CLI, an
-# unreachable forge, or a PR that was closed without merging → the branch is
-# kept and the reason printed. Never deleted either: the current branch and the
-# repository's default branch.
+# all resolve without special-casing any domain. A host neither CLI holds a
+# session for is asked whether it runs Forgejo, whose API answers over curl.
+# No forge to ask, an unreachable one, or a PR that was closed without
+# merging → the branch is kept and the reason printed. Never deleted either:
+# the current branch and the repository's default branch.
 #
 # The one local proof is still honoured: worktree-agent-* leftovers actually
 # merged into the default branch are deleted without asking the forge.
@@ -68,6 +69,64 @@ if [ "$url_form" != local ]; then
 	slug=$(printf '%s\n' "$rest" | sed -e 's#^/*##' -e 's#/*$##' -e 's#\.git$##')
 fi
 
+# forgejo_get <url> — GET from the Forgejo API, the credential (if any) on
+# stdin. -q first: a ~/.curlrc must not redirect or re-authenticate this.
+forgejo_get() {
+	req_url=$1
+	set -- -q -fsS --connect-timeout 5 -m 20 --config -
+	[ -n "$forgejo_ca" ] && set -- "$@" --cacert "$forgejo_ca"
+	printf '%s\n' "$forgejo_curl_cfg" | curl "$@" "$req_url" 2>/dev/null
+}
+
+# curl_quote <value> — a curl config value, double-quoted: \ and " escaped,
+# and line breaks dropped so the value cannot start a config line of its own.
+curl_quote() {
+	printf '"%s"' "$(printf '%s' "$1" | tr -d '\r\n' | sed 's/[\\"]/\\&/g')"
+}
+
+# forgejo_merged_heads <branch> — the same JSON array of merged same-repo
+# heads gh and glab produce, or "live" when the only merged PRs it found still
+# have their branch on the server. head= filters only from Forgejo v16 — an
+# older server ignores it and lists every closed PR — so the filter is redone
+# here: merged, from this branch (head.label), from this repository (a fork's
+# or a deleted head repository's id differs from base's), and with the branch
+# deleted on the server (head.ref then reads refs/pull/N/head and head.sha is
+# the head that was merged; while the branch lives, head.sha is its current
+# tip, commits after the merge included). Every page must be a JSON array —
+# anything else is a failure, never an empty answer — and since an instance
+# caps limit at its own maximum, only an empty page ends the list.
+# shortcut: 100 pages at most, then unverified, raise the cap if a pre-v16
+# server with more than 5000 closed PRs keeps its branches unverified.
+forgejo_merged_heads() {
+	head_param=$(jq -rn --arg b "$1" '$b | @uri') || return 1
+	page_no=1
+	page_heads=
+	live=0
+	while [ "$page_no" -le 100 ]; do
+		resp=$(forgejo_get "$forgejo_api/repos/$forgejo_slug/pulls?state=closed&head=$head_param&limit=50&page=$page_no") || return 1
+		page_len=$(printf '%s' "$resp" | jq -e 'if type == "array" then length else error end' 2>/dev/null) || return 1
+		if [ "$page_len" = 0 ]; then
+			heads=$(printf '%s\n' "$page_heads" | jq -sc 'add // []') || return 1
+			if [ "$heads" = "[]" ] && [ "$live" -gt 0 ]; then
+				echo live
+			else
+				printf '%s\n' "$heads"
+			fi
+			return
+		fi
+		# Merged PRs of this branch from this repository; .live counts those
+		# whose branch is still on the server.
+		page=$(printf '%s' "$resp" | jq -c --arg b "$1" '
+			[.[] | select(.merged == true and .head.label == $b and .head.repo_id > 0 and .head.repo_id == .base.repo_id)]
+			| {heads: [.[] | select(.head.ref | startswith("refs/pull/")) | .head.sha],
+			   live: [.[] | select(.head.ref | startswith("refs/pull/") | not)] | length}') || return 1
+		page_heads="$page_heads$(printf '%s' "$page" | jq -c .heads) "
+		live=$((live + $(printf '%s' "$page" | jq .live)))
+		page_no=$((page_no + 1))
+	done
+	return 1
+}
+
 # The forge CLI is whichever one holds a session for that host — the question
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
 # they are resolved together, once, rather than per branch.
@@ -82,10 +141,86 @@ if [ -n "$host" ]; then
 	done
 fi
 
+# Forgejo has no CLI session to find; its API is asked on the origin's own
+# scheme and port when it is an http(s) URL, over HTTPS on the default port
+# otherwise, an SSH port being no web one. Only a JSON version answer marks the
+# host as Forgejo: a catch-all web front answers 200 to any path. The probe
+# goes out bare; an instance with REQUIRE_SIGNIN_VIEW refuses that, so a bare
+# probe that fails — on any host, Forgejo or not — is retried with the
+# credential git itself sends to that URL: scoped to that host by git's
+# credential helpers, unlike any environment token, and only over https,
+# never in clear text. That credential is asked for without a
+# prompt, on the host too: GCM_INTERACTIVE=never reaches the bridge shim as
+# no_prompt, and internal/bridge/credential.go silences the host helpers the
+# way the flags below silence the container's. It reaches curl on stdin: on
+# argv it would show in ps. None at all still reads a public repository. TLS
+# trusts what git trusts for that URL: a self-hosted instance's private CA
+# sits in http.<url>.sslCAInfo.
+# A Forgejo repository path is always owner/repo, so in an http(s) origin
+# whatever precedes those two segments is the instance's web root — an
+# instance served under a sub-path (https://host/forgejo/owner/repo) is asked
+# there.
+# shortcut: an SSH origin carries no web root, so a sub-path instance reached
+# over SSH is not found, add a per-host setting if one turns up.
+forgejo_api=
+forgejo_slug=$slug
+forgejo_ca=
+forgejo_curl_cfg=
+have_forgejo_tools=
+command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && have_forgejo_tools=1
+
+# forgejo_answers — the host's version endpoint names a Forgejo version.
+forgejo_answers() {
+	forgejo_get "$web/api/forgejo/v1/version" | jq -e '.version | type == "string"' >/dev/null 2>&1
+}
+
+# forgejo_load_credential — set forgejo_curl_cfg from what git would send to
+# $web; false, and nothing set, over plain http or with no credential.
+forgejo_load_credential() {
+	case $web in https://*) ;; *) return 1 ;; esac
+	cred=$(printf 'url=%s\n\n' "$web" |
+		GIT_ASKPASS='' SSH_ASKPASS='' GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
+			git -c core.askPass= -c credential.interactive=false credential fill 2>/dev/null || true)
+	cred_user=$(printf '%s\n' "$cred" | sed -n 's/^username=//p')
+	cred_pass=$(printf '%s\n' "$cred" | sed -n 's/^password=//p')
+	unset cred
+	if [ -n "$cred_user" ] && [ -n "$cred_pass" ]; then
+		forgejo_curl_cfg="user = $(curl_quote "$cred_user:$cred_pass")"
+	fi
+	unset cred_user cred_pass
+	[ -n "$forgejo_curl_cfg" ]
+}
+
+if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$have_forgejo_tools" ]; then
+	case $origin_url in
+	http://* | https://*)
+		web="${origin_url%%://*}://${bare_url%%/*}"
+		web_root=${slug%/*/*}
+		if [ "$web_root" != "$slug" ]; then
+			web="$web/$web_root"
+			forgejo_slug=${slug#"$web_root"/}
+		fi
+		;;
+	*) web="https://$host" ;;
+	esac
+	forgejo_ca=$(git config --get-urlmatch http.sslcainfo "$web/" 2>/dev/null || true)
+	if forgejo_answers; then
+		forge=forgejo
+		forgejo_load_credential || true
+	elif forgejo_load_credential && forgejo_answers; then
+		forge=forgejo
+	else
+		forgejo_curl_cfg=
+	fi
+	[ "$forge" = forgejo ] && forgejo_api="$web/api/v1"
+fi
+
 # merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
 # 2 could not tell, 3 merged but the local tip is not covered, 4 a merged PR
-# came back without a head, so whether it covers the tip is unknown. Both
-# CLIs answer with a JSON array of the merged heads, so "[]" is the one shape
+# came back without a head, so whether it covers the tip is unknown, 5 merged
+# on Forgejo with the branch still on the server, whose head is then its
+# current tip rather than what was merged. Every
+# forge answers with a JSON array of the merged heads, so "[]" is the one shape
 # that means "no match"; anything else, including a failure, must never be
 # read as "not merged".
 #
@@ -100,7 +235,7 @@ fi
 # covers it and any PR came back headless, the state is unverified (4), told
 # apart from a forge that could not answer at all (2).
 #
-# Both filters exist to reject a merge that happened on a *fork*: neither CLI
+# The filters exist to reject a merge that happened on a *fork*: no forge
 # scopes its branch filter to the head repository, so `--head fix` on a fork
 # workflow matches a stranger's same-named branch — measured on cli/cli, where
 # one branch name returned merged PRs from 30 different owners. Taking that as
@@ -114,6 +249,10 @@ merge_state() {
 		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
 	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
 		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
+	forgejo)
+		out=$(forgejo_merged_heads "$1") || return 2
+		[ "$out" = live ] && return 5
+		;;
 	*) return 2 ;;
 	esac
 	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
@@ -190,6 +329,11 @@ else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
+	if [ -n "$have_forgejo_tools" ]; then
+		echo "  or, on a Forgejo instance: its API must answer /api/forgejo/v1/version on ${host:-HOST}"
+	else
+		echo "  or, on a Forgejo instance: install curl and jq, which its API is asked with"
+	fi
 fi
 
 git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
@@ -203,6 +347,7 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
 		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, a reused name, or a merged head not fetched here)" ;;
 		4) echo "  kept $name (merge state unverified — a merged PR on $forge reports no head)" ;;
+		5) echo "  kept $name (merged on $forge, but its branch still exists there — delete it on the server, then run again)" ;;
 		# Named even with no forge to ask: a branch that survives silently reads
 		# as one that was pruned.
 		*) echo "  kept $name (merge state unverified${forge:+ — $forge could not answer})" ;;

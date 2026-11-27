@@ -37,6 +37,7 @@ const (
 	FieldCodexHome = "codex_home" // proximoRequest
 	FieldOp        = "op"         // credentialRequest
 	FieldInput     = "input"      // credentialRequest
+	FieldNoPrompt  = "no_prompt"  // credentialRequest
 	FieldName      = "name"       // soundRequest
 	FieldData      = "data"       // soundRequest
 
