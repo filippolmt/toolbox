@@ -271,7 +271,7 @@ func TestHandler_ProximoOK(t *testing.T) {
 	if gotCmd != "up" {
 		t.Errorf("command = %q", gotCmd)
 	}
-	var resp proximoResponse
+	var resp commandResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v body=%q", err, rr.Body.String())
 	}
@@ -288,7 +288,7 @@ func TestHandler_ProximoPropagatesExitCode(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}
-	var resp proximoResponse
+	var resp commandResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +530,7 @@ func TestHandler_CredentialOK(t *testing.T) {
 	if string(gotInput) != "protocol=https\nhost=forgejo.example\n\n" {
 		t.Errorf("input = %q", gotInput)
 	}
-	var resp credentialResponse
+	var resp commandResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v body=%q", err, rr.Body.String())
 	}
@@ -573,7 +573,7 @@ func TestHandler_CredentialPropagatesExit(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}
-	var resp credentialResponse
+	var resp commandResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}

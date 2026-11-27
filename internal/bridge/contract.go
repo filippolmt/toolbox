@@ -48,7 +48,7 @@ const (
 	HostAgentHomeEnv = "TOOLBOX_HOST_AGENT_HOME"
 	HostCodexHomeEnv = "TOOLBOX_HOST_CODEX_HOME"
 
-	// Response keys, shared by proximoResponse and credentialResponse.
+	// Response keys of commandResponse.
 	FieldExit   = "exit"
 	FieldOutput = "output"
 )

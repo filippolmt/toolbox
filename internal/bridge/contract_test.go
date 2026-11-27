@@ -191,9 +191,8 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[openRequest](), []string{FieldURL}},
 		{reflect.TypeFor[editRequest](), []string{FieldEditor, FieldPath}},
 		{reflect.TypeFor[proximoRequest](), []string{FieldCommand, FieldArgs, FieldHome, FieldCodexHome}},
-		{reflect.TypeFor[proximoResponse](), []string{FieldExit, FieldOutput}},
+		{reflect.TypeFor[commandResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput, FieldNoPrompt}},
-		{reflect.TypeFor[credentialResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
 	} {
 		t.Run(tc.typ.Name(), func(t *testing.T) {

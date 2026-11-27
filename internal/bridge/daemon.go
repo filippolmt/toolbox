@@ -437,9 +437,10 @@ type proximoRequest struct {
 // while anything approaching this is not a command line a human wrote.
 const proximoBodyLimit = 16384
 
-// proximoResponse carries the host command's combined output and exit code
-// back to the shim, which prints the output and propagates the exit.
-type proximoResponse struct {
+// commandResponse carries a host command's output and exit code back to the
+// shim, which prints the output and propagates the exit: /proximo, /credential
+// and /hc answer with it.
+type commandResponse struct {
 	Exit   int    `json:"exit"`
 	Output string `json:"output"`
 }
@@ -482,7 +483,7 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.Printf("proximo: ok command=%q exit=%d", req.Command, exit)
-	writeJSONOK(w, proximoResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
 }
 
 // credentialTimeout bounds a /credential execution. Above the shared 5s
@@ -504,13 +505,6 @@ type credentialRequest struct {
 	Op       string `json:"op"`
 	Input    string `json:"input"`
 	NoPrompt bool   `json:"no_prompt"`
-}
-
-// credentialResponse carries git's stdout and exit code back to the shim,
-// which writes the output to git and propagates the exit.
-type credentialResponse struct {
-	Exit   int    `json:"exit"`
-	Output string `json:"output"`
 }
 
 func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
@@ -540,7 +534,7 @@ func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	// Never log the exchange body — it carries secrets. Op + exit only.
 	h.logger.Printf("credential: ok op=%q exit=%d", req.Op, exit)
-	writeJSONOK(w, credentialResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
 }
 
 // maxSoundBody caps a /sound request body at 512 KiB. herdr's built-in chimes

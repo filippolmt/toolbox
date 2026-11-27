@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -160,7 +159,7 @@ func (h *handler) handleHC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.Printf("hc: ok command=%q exit=%d", req.Command, exit)
-	writeJSONOK(w, proximoResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
 }
 
 // ErrHCNotInstalled: neither the daemon's PATH nor ~/.local/bin holds hc.
@@ -171,28 +170,18 @@ var ErrHCNotInstalled = errors.New("hc (herdr-core) not found on the host — in
 // service PATH lacks ~/.local/bin, where herdr-core installs hc, and hc finds
 // the user's server from HOME, so both are set from host.
 func launchHC(ctx context.Context, host fsx.Host, argv []string) ([]byte, int, error) {
-	bin, err := host.Look("hc")
+	var candidates []string
+	if host.Home != "" {
+		candidates = []string{host.Join(".local", "bin", "hc")}
+	}
+	bin, err := resolveHostBinary(host, "hc", candidates, ErrHCNotInstalled)
 	if err != nil {
-		bin = host.Join(".local", "bin", "hc")
-		if info, statErr := os.Stat(bin); host.Home == "" || statErr != nil || info.IsDir() {
-			return nil, 0, ErrHCNotInstalled
-		}
+		return nil, 0, err
 	}
 	cmd := exec.CommandContext(ctx, bin, argv...) //nolint:gosec // bin is resolved locally; hcArgv rebuilds argv from an allowlist, positionals after --
 	cmd.Env = os.Environ()
 	if host.Home != "" {
 		cmd.Env = setEnv(cmd.Env, "HOME", host.Home)
 	}
-	cmd.WaitDelay = 2 * time.Second
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return out, 0, fmt.Errorf("run hc %s: %w", argv[0], ctxErr)
-		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			return out, exitErr.ExitCode(), nil
-		}
-		return out, 0, fmt.Errorf("run hc %s: %w", argv[0], err)
-	}
-	return out, 0, nil
+	return runHostCommand(ctx, cmd, "hc "+argv[0])
 }
