@@ -4,7 +4,7 @@
 # ContainerSocket, tokenFile, portFile) — enforced by TestBridgeContract_ShimMatchesGo.
 #
 # Sourced (not executed) by every shim — xdg-open, code/codium, proximo,
-# git-credential-toolbox, paplay — so the state-dir location, the readiness
+# git-credential-toolbox, paplay, hc-host — so the state-dir location, the readiness
 # checks, and the curl POST live in one place. Callers own every
 # user-facing message and exit policy (xdg-open exits 0 so OAuth flows never
 # block; code/proximo exit non-zero), so only the mechanics live here.

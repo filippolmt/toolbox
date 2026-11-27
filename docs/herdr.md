@@ -61,9 +61,13 @@ removes the Herdr Core Shell. With none running it exits 0 without a word. herdr
 
 `--profile work` runs a separate Herdr Core Shell, `toolbox-herdr-work`, with that profile's credentials, its own state volume `toolbox-herdr-data-work`, registered as the machine `toolbox-work`. A profile whose name, once sanitized, looks like a workspace hash (eight hex characters) is refused: `toolbox-herdr-<8hex>` is the container of a directory named `herdr`.
 
+## Agents on the host
+
+Agents in the Shell and agents herdr.app runs on the host can message each other through herdr-core, without Claude Code's `SendMessage` (whose registry and sockets do not cross Docker Desktop's VM). From the host, a terminal in the Shell is `toolbox/t2`: `hc send toolbox/t2 "…"`, `hc read toolbox/t2`. From the Shell, `hc-host ls|get|read|send` reaches the host's terminals through the bridge, under a gate: see [Host terminals](bridge.md#host-terminals).
+
 ## Trust boundary
 
-herdr-core is not a sandbox: whoever reaches its socket controls its terminals. Here that is anyone allowed to `docker exec` into the Shell, the same Docker daemon boundary that already covers every toolbox container. Nothing is published on the network: there is no sshd and no port.
+herdr-core is not a sandbox: whoever reaches its socket controls its terminals. Here that is anyone allowed to `docker exec` into the Shell, the same Docker daemon boundary that already covers every toolbox container. Nothing is published on the network: there is no sshd and no port. The reverse direction, container to host, is narrower on purpose: the host is never registered as a machine in the Shell's herdr-core, which would hand the container a shell on the host; `hc-host` reaches only waiting agents ([ADR 0025](adr/0025-host-terminal-relay.md)).
 
 ## Recreate
 

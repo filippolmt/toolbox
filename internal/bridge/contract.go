@@ -19,6 +19,7 @@ const (
 	RouteProximo    = "/proximo"
 	RouteCredential = "/credential" //nolint:gosec // HTTP route name, not a credential
 	RouteSound      = "/sound"
+	RouteHC         = "/hc"
 	RouteHealth     = "/healthz"
 )
 
@@ -63,3 +64,6 @@ const (
 func AllowedEditors() []string { return slices.Sorted(maps.Keys(editorAllowlist)) }
 
 func AllowedProximoCommands() []string { return slices.Sorted(maps.Keys(proximoAllowlist)) }
+
+// AllowedHCCommands is the Host Terminal Relay's verb gate (hc.go).
+func AllowedHCCommands() []string { return slices.Sorted(maps.Keys(hcAllowlist)) }

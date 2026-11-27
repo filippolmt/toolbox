@@ -2292,6 +2292,32 @@ Why the state is a volume: herdr-core keeps its sockets in its state
 directory when the container has no runtime directory, and a
 [Host Share](#host-share) bind refuses to `chmod` a socket.
 
+### Host Terminal Relay
+
+The bridge route through which an agent in the [Herdr Core Shell](#herdr-core-shell)
+reaches the agents herdr.app runs in the host's own terminals: `hc-host` in the
+Shell, `/hc` in the daemon, the host's `hc` behind it. The other direction is
+not part of it: the host's herdr-core already reaches the Shell as a machine.
+
+Concretely: `bridge.hcArgv` admits `ls [--all]`, `get`, `read [--lines N]` and
+`send` on a host terminal (no `machine/` address) and rebuilds the argv with
+the positionals after `--`; a `send` first runs `hc get` and types only into a
+terminal whose `status` names an agent that is `idle` or `done`
+(`bridge.hcReady`), adding `--if idle` on `idle`. `bridge.launchHC` resolves
+`hc` on the daemon's PATH, else `~/.local/bin`, and sets `HOME`. The shim signs
+a send with `[from <TOOLBOX_HERDR_MACHINE>/<HC_TERMINAL_ID>]`, the address the
+host agent answers with `hc send`; `sessionplan.HerdrMachineEnv` is set on the
+Herdr Core Shell alone, which is where the shim works. Decision and
+alternatives: [ADR 0025](docs/adr/0025-host-terminal-relay.md).
+
+Why the term exists: "agents talking across the VM" reads as Claude Code's
+cross-session messaging, which the [Peer Anchor](#peer-anchor) makes work
+between containers and which cannot reach the host. The relay is a different
+channel — herdr-core terminals, any agent, typed text — and naming it keeps the
+two from being "fixed" into each other. It is also the one bridge route that
+reaches another program's input rather than a fixed host action, which is why
+its gate is about the target's state and not only the verb.
+
 ### Peer Anchor
 
 The toolbox-owned container whose PID namespace every peer-messaging session

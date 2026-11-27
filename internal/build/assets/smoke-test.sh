@@ -647,6 +647,8 @@ check_required "editor shims" sh -c "test -x /usr/local/bin/code && test -L /usr
 # Proximo shim must be the bridge wrapper (bridge-lib marker) — proximo never
 # ships as a real binary in the image; a dropped COPY fails here too.
 check_required "proximo shim" sh -c "test -x /usr/local/bin/proximo && grep -q bridge-lib.sh /usr/local/bin/proximo && echo present"
+# Host Terminal Relay shim: a bridge wrapper too, never the herdr-core hc binary.
+check_required "hc-host shim" sh -c "test -x /usr/local/bin/hc-host && grep -q bridge-lib.sh /usr/local/bin/hc-host && echo present"
 # proximo-hosts owns the /etc/hosts projection (no flag invocation — running it
 # would mutate /etc/hosts). Assert both the effective inventory and legacy label
 # paths ship, so a dropped or stale COPY fails here too.

@@ -2077,6 +2077,11 @@ COPY --link --chmod=0755 bin/code /usr/local/bin/code
 # the daemon's /proximo endpoint and propagates output + exit code. install/uninstall/trust/config need host root and are rejected
 # with a run-on-host hint; the shim self-gates on the proximo CA mount.
 COPY --link --chmod=0755 bin/proximo /usr/local/bin/proximo
+# Host Terminal Relay shim. The Herdr Core Shell's hc reaches no host
+# terminal; this forwards ls/get/read/send to the daemon's /hc endpoint, which
+# runs the host's hc under its own gate, and signs a send with the reply
+# address. See ADR-0025.
+COPY --link --chmod=0755 bin/hc-host /usr/local/bin/hc-host
 # Bridge git credential helper. The container can't reach the host credential
 # store (macOS Keychain / Linux secret-service); this forwards the git
 # credential protocol to the daemon's /credential endpoint, where host `git

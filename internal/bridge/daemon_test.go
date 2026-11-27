@@ -40,6 +40,9 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 	if fns.sound == nil {
 		fns.sound = func(_ []byte) error { return nil }
 	}
+	if fns.hc == nil {
+		fns.hc = func(_ context.Context, _ []string) ([]byte, int, error) { return nil, 0, nil }
+	}
 	h, _ := buildTestHandlerWithLog(t, fns)
 	return h
 }

@@ -16,6 +16,11 @@ import (
 // exists, and a Host Share bind cannot hold one.
 const HerdrCoreStateTarget = "/home/toolbox/.local/state/herdr-core"
 
+// HerdrMachineEnv carries, into the Herdr Core Shell, the machine the host's
+// hc reaches it as: the return address hc-host signs a Host Terminal Relay
+// send with (CONTEXT.md, Host Terminal Relay).
+const HerdrMachineEnv = "TOOLBOX_HERDR_MACHINE"
+
 // HerdrMachineName is the machine a Herdr Core Shell registers as: toolbox,
 // or toolbox-<profile>.
 func HerdrMachineName(container string) string {

@@ -334,6 +334,15 @@ them.
   and `TestPlaySoundLogsWhatThePlayerWroteToStderr`. →
   [Sound Handoff](../../CONTEXT.md#sound-handoff)
 
+- **Host Terminal Relay:** `/hc` runs only `ls`/`get`/`read`/`send` on the
+  host's own terminals, positionals after `--`, and a `send` only into an agent
+  `hc get` reports `idle` or `done` — never `--force`, `--wait`, `machine/`
+  targets or another verb. `hc-host` signs sends from `TOOLBOX_HERDR_MACHINE`,
+  set on the Herdr Core Shell alone. Pinned by `TestHCRelay_ArgvGate`,
+  `TestHCRelay_SendOnlyToAReadyAgent`, `TestBridgeContract_HCAllowlistMatchesShim`
+  and `TestHCHostShimSignsSendsAndNeedsTheHerdrCoreShell`. →
+  [Host Terminal Relay](../../CONTEXT.md#host-terminal-relay)
+
 - **Bridge install context:** install/uninstall refuse root because both service
   managers are per-user. Uninstall treats failure to remove the currently
   mounted state dir as a warning only after token absence is provable; legacy

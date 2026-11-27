@@ -79,6 +79,13 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 			// the gate silently stops gating.
 			{"proximo.CATarget", proximo.CATarget},
 		}},
+		{"hc-host", []struct{ name, literal string }{
+			{"RouteHC", post(RouteHC)},
+			{"FieldCommand", field(FieldCommand)},
+			{"FieldArgs", field(FieldArgs)},
+			{"FieldOutput", get(FieldOutput)},
+			{"FieldExit", get(FieldExit)},
+		}},
 		{"paplay", []struct{ name, literal string }{
 			{"RouteSound", post(RouteSound)},
 			{"FieldName", field(FieldName)},
@@ -110,10 +117,24 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 // leaves a shim still advertising it. Both directions are drift, so this is a
 // set equality, not a containment.
 func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
-	shim := readShim(t, "proximo")
+	assertShimDispatchMatches(t, "proximo", AllowedProximoCommands())
+}
 
-	// The dispatch arm is the single line assigning COMMAND:
-	//   up | down | status) COMMAND="$1" ;;
+// TestBridgeContract_HCAllowlistMatchesShim is the same set equality for the
+// Host Terminal Relay: hc-host's dispatch arm and the daemon's hc verb gate.
+func TestBridgeContract_HCAllowlistMatchesShim(t *testing.T) {
+	assertShimDispatchMatches(t, "hc-host", AllowedHCCommands())
+}
+
+// assertShimDispatchMatches reads the shim's single dispatch arm, the line
+// assigning COMMAND:
+//
+//	up | down | status) COMMAND="$1" ;;
+//
+// and requires it to name exactly the daemon's allowed verbs.
+func assertShimDispatchMatches(t *testing.T, name string, allowed []string) {
+	t.Helper()
+	shim := readShim(t, name)
 	var arm string
 	for line := range strings.SplitSeq(shim, "\n") {
 		if strings.Contains(line, `COMMAND="$1"`) {
@@ -122,22 +143,20 @@ func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
 		}
 	}
 	if arm == "" {
-		t.Fatalf(`shim proximo has no COMMAND="$1" dispatch arm — the allowlist can no longer be read from it`)
+		t.Fatalf(`shim %s has no COMMAND="$1" dispatch arm — the allowlist can no longer be read from it`, name)
 	}
 	got := map[string]struct{}{}
 	for alt := range strings.SplitSeq(strings.Split(arm, ")")[0], "|") {
 		got[strings.TrimSpace(alt)] = struct{}{}
 	}
-
-	allowed := AllowedProximoCommands()
 	for _, cmd := range allowed {
 		if _, ok := got[cmd]; !ok {
-			t.Errorf("AllowedProximoCommands has %q but shim proximo rejects it — the command is unreachable from the container", cmd)
+			t.Errorf("the daemon allows %q but shim %s rejects it — the command is unreachable from the container", cmd, name)
 		}
 	}
 	for cmd := range got {
 		if !slices.Contains(allowed, cmd) {
-			t.Errorf("shim proximo forwards %q but the daemon allowlist rejects it — the daemon answers 400", cmd)
+			t.Errorf("shim %s forwards %q but the daemon allowlist rejects it — the daemon answers 400", name, cmd)
 		}
 	}
 }

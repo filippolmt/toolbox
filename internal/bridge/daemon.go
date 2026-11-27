@@ -210,6 +210,9 @@ func (f handlerFns) withHostDefaults(host fsx.Host, logger *log.Logger) handlerF
 	if f.sound == nil {
 		f.sound = func(data []byte) error { return playSound(logger, data) }
 	}
+	if f.hc == nil {
+		f.hc = func(ctx context.Context, argv []string) ([]byte, int, error) { return launchHC(ctx, host, argv) }
+	}
 	return f
 }
 
@@ -247,6 +250,7 @@ type handlerFns struct {
 	proximo    func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
 	credential func(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error)
 	sound      func(data []byte) error
+	hc         func(ctx context.Context, argv []string) (output []byte, exit int, err error)
 }
 
 // handler is the single HTTP handler the daemon mounts its endpoints on.
@@ -276,6 +280,7 @@ func newHandler(token string, fns handlerFns, logger *log.Logger, now func() tim
 	mux.HandleFunc(RouteProximo, h.handleProximo)
 	mux.HandleFunc(RouteCredential, h.handleCredential)
 	mux.HandleFunc(RouteSound, h.handleSound)
+	mux.HandleFunc(RouteHC, h.handleHC)
 	mux.HandleFunc(RouteHealth, h.handleHealth)
 	return mux
 }

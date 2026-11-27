@@ -23,9 +23,10 @@ func TestPlanHerdrCoreShell(t *testing.T) {
 		profile *mountplan.Profile
 		name    string
 		volume  string
+		machine string
 	}{
-		{"no profile", nil, "toolbox-herdr", "toolbox-herdr-data"},
-		{"profile", &mountplan.Profile{Name: "Work"}, "toolbox-herdr-work", "toolbox-herdr-data-work"},
+		{"no profile", nil, "toolbox-herdr", "toolbox-herdr-data", "toolbox"},
+		{"profile", &mountplan.Profile{Name: "Work"}, "toolbox-herdr-work", "toolbox-herdr-data-work", "toolbox-work"},
 	} {
 		t.Run(tc.label, func(t *testing.T) {
 			plan, err := sessionplan.Plan(sessionplan.PlanInput{Host: planHost, Cfg: testConfig(),
@@ -49,6 +50,11 @@ func TestPlanHerdrCoreShell(t *testing.T) {
 			if got := indexEnv(plan.Env)["TOOLBOX_HOST_WORKSPACE"]; got != workspace {
 				t.Errorf("workspace = %q, want the dir argument %q", got, workspace)
 			}
+			// The Host Terminal Relay's return address: hc-host signs a send
+			// with the machine the host's hc reaches this Shell as.
+			if got := indexEnv(plan.Env)[sessionplan.HerdrMachineEnv]; got != tc.machine {
+				t.Errorf("%s = %q, want %q", sessionplan.HerdrMachineEnv, got, tc.machine)
+			}
 		})
 	}
 }
@@ -63,6 +69,9 @@ func TestPlanOrdinaryShellCarriesNoHerdrCore(t *testing.T) {
 	}
 	if plan.Detached || plan.DataVolume.Name != "" || plan.DataVolume.Init != "" {
 		t.Errorf("ordinary plan: detached %v, herdr-core volume %q, init %q", plan.Detached, plan.DataVolume.Name, plan.DataVolume.Init)
+	}
+	if v, ok := indexEnv(plan.Env)[sessionplan.HerdrMachineEnv]; ok {
+		t.Errorf("ordinary plan sets %s=%q: hc-host would sign sends no reply can reach", sessionplan.HerdrMachineEnv, v)
 	}
 	for _, b := range plan.Binds {
 		if strings.Contains(b.Source, "herdr-core") || strings.Contains(b.Target, "herdr-core") || strings.HasPrefix(b.Source, "toolbox-herdr") {
