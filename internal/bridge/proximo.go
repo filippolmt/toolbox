@@ -194,12 +194,6 @@ func setEnv(env []string, key, value string) []string {
 	return out
 }
 
-// proximoRunFailure wraps an infrastructure failure — a binary that would not
-// run, a deadline — with the binary and verb that were about to execute. Only
-// those: a non-zero exit from proximo itself is data the shim propagates, not
-// an error to wrap.
-const proximoRunFailure = "run %s %s: %w"
-
 // proximoTimeout bounds a /proximo execution. Far above the shared 5s
 // requestTimeout because the first `proximo up` — and `proximo update` —
 // pulls/builds the stack images; status/down complete in seconds.
@@ -307,7 +301,7 @@ func launchProximo(ctx context.Context, host fsx.Host, command string, args []st
 	if command == proximoSkillCommand {
 		agentEnv, err := proximoAgentHomeEnv(host, env, agent)
 		if err != nil {
-			return nil, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
+			return nil, 0, hostRunFailure(bin+" "+command, err)
 		}
 		args, env = proximoSkillArgs(args), agentEnv
 	}

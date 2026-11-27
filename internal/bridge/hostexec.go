@@ -43,10 +43,17 @@ func runHostCommand(ctx context.Context, cmd *exec.Cmd, label string) ([]byte, i
 	// A deadline kill also surfaces as *exec.ExitError — classify it as an
 	// infrastructure failure, not a command exit.
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return out, 0, fmt.Errorf("run %s: %w", label, ctxErr)
+		return out, 0, hostRunFailure(label, ctxErr)
 	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return out, exitErr.ExitCode(), nil
 	}
-	return out, 0, fmt.Errorf("run %s: %w", label, err)
+	return out, 0, hostRunFailure(label, err)
+}
+
+// hostRunFailure wraps an infrastructure failure with what was about to run
+// ("run <label>: …"). Only those: a non-zero exit is the command's answer,
+// which the shim propagates, not an error to wrap.
+func hostRunFailure(label string, err error) error {
+	return fmt.Errorf("run %s: %w", label, err)
 }

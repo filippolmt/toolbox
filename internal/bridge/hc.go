@@ -104,7 +104,7 @@ func hcReady(getJSON []byte) (ready, idle bool) {
 }
 
 // hcTimeout bounds one relay request. A send waits for a person's unfinished
-// draft in the target terminal (hc's draft_wait, 60s by default) before typing.
+// draft in the target terminal (hc's draft_wait setting) before typing.
 const hcTimeout = 90 * time.Second
 
 // hcBodyLimit caps a /hc body: a send carries a whole prompt.
