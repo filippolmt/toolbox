@@ -11,9 +11,9 @@ import (
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
-// InstallTip is the line session start prints while the bridge is not
+// installTip is the line session start prints while the bridge is not
 // installed.
-const InstallTip = "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs, editor opens and agent sounds to the host"
+const installTip = "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs, editor opens and agent sounds to the host"
 
 // refreshWait bounds how long session start waits for a restarted daemon to
 // answer /healthz with the CLI's build identity; a var so tests can shorten it.
@@ -30,7 +30,7 @@ const healthTimeout = time.Second
 // on w: the session always starts.
 func CheckAtSessionStart(host fsx.Host, a Agent, self, cliBuild string, w io.Writer) {
 	if !a.IsInstalled() {
-		_, _ = fmt.Fprintln(w, InstallTip)
+		_, _ = fmt.Fprintln(w, installTip)
 		return
 	}
 	warn := func(format string, args ...any) {
@@ -119,7 +119,8 @@ func daemonVersion(s HostState) (string, error) {
 // The port is reread each time: the restarted daemon rewrites it.
 func waitForVersion(s HostState, want string) error {
 	deadline := time.Now().Add(refreshWait)
-	got, err := "", error(nil)
+	var got string
+	var err error
 	for {
 		if got, err = daemonVersion(s); err == nil && got == want {
 			return nil

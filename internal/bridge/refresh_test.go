@@ -172,7 +172,7 @@ func TestCheckAtSessionStartWithoutTheBridgeOnlyPrintsTheTip(t *testing.T) {
 	var out strings.Builder
 	CheckAtSessionStart(host, fa, self, "1.2.3", &out)
 
-	if out.String() != InstallTip+"\n" || d.probes() != 0 || fa.restartCalls != 0 {
+	if out.String() != installTip+"\n" || d.probes() != 0 || fa.restartCalls != 0 {
 		t.Errorf("stderr = %q, probes = %d, restarts = %d; want only the tip", out.String(), d.probes(), fa.restartCalls)
 	}
 }
