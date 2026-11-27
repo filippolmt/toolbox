@@ -3,8 +3,6 @@ package devrules
 import (
 	"bufio"
 	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,11 +18,7 @@ var envVarName = regexp.MustCompile("`([A-Z][A-Z0-9_]+)(?:=[^`]*)?`")
 func claudeEnvKnobs(t *testing.T) []string {
 	t.Helper()
 	const anchor = "# Claude Code env knobs"
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), "internal", "build", "assets", "Dockerfile"))
-	if err != nil {
-		t.Fatalf("read Dockerfile: %v", err)
-	}
-	body := string(b)
+	body := readRepoFile(t, "internal/build/assets/Dockerfile")
 	start := strings.Index(body, anchor)
 	if start < 0 {
 		t.Fatalf("Dockerfile: cannot find %q — the block was renamed, and a missing anchor must not pass this test empty", anchor)
@@ -53,11 +47,7 @@ func claudeEnvKnobs(t *testing.T) []string {
 func privacyMatrixVars(t *testing.T) []string {
 	t.Helper()
 	const heading = "## Claude Code env-var matrix"
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "internals", "privacy.md"))
-	if err != nil {
-		t.Fatalf("read privacy.md: %v", err)
-	}
-	_, section, ok := strings.Cut(string(b), heading)
+	_, section, ok := strings.Cut(readRepoFile(t, "docs/internals/privacy.md"), heading)
 	if !ok {
 		t.Fatalf("privacy.md: cannot find %q", heading)
 	}
