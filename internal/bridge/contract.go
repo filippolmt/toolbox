@@ -31,8 +31,8 @@ const (
 	FieldURL     = "url"     // openRequest
 	FieldEditor  = "editor"  // editRequest
 	FieldPath    = "path"    // editRequest
-	FieldCommand = "command" // proximoRequest
-	FieldArgs    = "args"    // proximoRequest
+	FieldCommand = "command" // proximoRequest, hcRequest
+	FieldArgs    = "args"    // proximoRequest, hcRequest
 	// The calling session's agent homes, as HOST paths — see proximoAgentHome.
 	FieldHome      = "home"       // proximoRequest
 	FieldCodexHome = "codex_home" // proximoRequest
@@ -53,17 +53,17 @@ const (
 	FieldOutput = "output"
 )
 
-// AllowedEditors and AllowedProximoCommands are the contract's third part,
+// AllowedEditors, AllowedProximoCommands and AllowedHCCommands are the
+// contract's third part,
 // after the paths and the routes/fields: the verbs the container side may
 // send at all. They return a
-// sorted copy rather than the gate itself — docs/bridge.md documents both
+// sorted copy rather than the gate itself — docs/bridge.md documents the
 // sets as fixed ("a client-supplied name never reaches exec without passing
 // this gate"), and an exported map would let any caller widen a security
 // boundary by assignment. The maps stay unexported next to the code that
-// gates on them (editors.go, proximo.go).
+// gates on them (editors.go, proximo.go, hc.go).
 func AllowedEditors() []string { return slices.Sorted(maps.Keys(editorAllowlist)) }
 
 func AllowedProximoCommands() []string { return slices.Sorted(maps.Keys(proximoAllowlist)) }
 
-// AllowedHCCommands is the Host Terminal Relay's verb gate (hc.go).
 func AllowedHCCommands() []string { return slices.Sorted(maps.Keys(hcAllowlist)) }
