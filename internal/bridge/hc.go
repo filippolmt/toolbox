@@ -11,8 +11,6 @@ import (
 	"regexp"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -185,8 +183,8 @@ func hcRelayOff(host fsx.Host) string {
 	if err != nil {
 		return "cannot read " + path + ": " + err.Error()
 	}
-	var doc map[string]any
-	if err := yaml.Unmarshal(b, &doc); err != nil {
+	doc, err := configio.TopLevel(b)
+	if err != nil {
 		return "cannot read " + path + ": " + err.Error()
 	}
 	v, set := doc[config.HostTerminalRelayKey]

@@ -119,16 +119,27 @@ type Key struct {
 	// which is what TestEveryKeyValidatesOrSaysWhyNot demands. This is the old
 	// noValidationKeys list, moved onto the row it classifies.
 	NoValidation string
+	// HostOnly marks a key a host-side process reads from ~/.toolbox.yaml
+	// alone: any other layer setting it changes nothing (HostOnlyKeys).
+	HostOnly bool
 }
 
-// HostTerminalRelayKey is the Host Terminal Relay's off switch. The bridge
-// daemon reads it by this name from the host's ~/.toolbox.yaml alone, so the
-// doctor flags it in any other layer (HostOnlyKeys).
+// HostTerminalRelayKey is the Host Terminal Relay's off switch, a HostOnly
+// row: the bridge daemon reads it by this name from the host's ~/.toolbox.yaml
+// alone.
 const HostTerminalRelayKey = "host_terminal_relay"
 
-// HostOnlyKeys are the keys only ~/.toolbox.yaml can set: a host-side process
-// reads them from that file, never from a project or --config layer.
-func HostOnlyKeys() []string { return []string{HostTerminalRelayKey} }
+// HostOnlyKeys are the rows marked HostOnly: the keys only ~/.toolbox.yaml
+// can set, because a host-side process reads them from that file alone.
+func HostOnlyKeys() []string {
+	var out []string
+	for _, k := range keyRows {
+		if k.HostOnly {
+			out = append(out, k.Name)
+		}
+	}
+	return out
+}
 
 // Keys returns every config key's row, in Config declaration order — which is
 // also the order every surface presents them in.
@@ -296,7 +307,8 @@ var keyRows = []Key{
 			"# for every container. Read by the bridge daemon from ~/.toolbox.yaml only, on\n" +
 			"# each request: a project .toolbox.yaml setting it changes nothing.\n" +
 			"# host_terminal_relay: false\n",
-		Tri: func(c *Config) *bool { return c.HostTerminalRelay },
+		Tri:      func(c *Config) *bool { return c.HostTerminalRelay },
+		HostOnly: true,
 	},
 	{
 		Name:    "proximo",

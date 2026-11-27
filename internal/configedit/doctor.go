@@ -10,6 +10,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
@@ -103,9 +104,9 @@ func lintLayerKeys(label string, b []byte) []Finding {
 // lintHostOnlyKeys flags a host-only key (config.HostOnlyKeys) set in a layer
 // other than ~/.toolbox.yaml, where the host process that reads it never looks.
 func lintHostOnlyKeys(label string, b []byte) []Finding {
-	var m map[string]any
-	if len(b) == 0 || yaml.Unmarshal(b, &m) != nil {
-		return nil
+	m, err := configio.TopLevel(b)
+	if err != nil {
+		return nil // Merge surfaces a parse failure as a proper error
 	}
 	var findings []Finding
 	for _, k := range config.HostOnlyKeys() {
