@@ -17,6 +17,9 @@ var goreleaserStamp = regexp.MustCompile(`-X github\.com/filippolmt/toolbox/inte
 // makeStamp matches one `-X $(VERSION_PKG).<Var>=` ldflag in the Makefile.
 var makeStamp = regexp.MustCompile(`-X \$\(VERSION_PKG\)\.(\w+)=`)
 
+// versionPkg matches the Makefile's VERSION_PKG assignment.
+var versionPkg = regexp.MustCompile(`(?m)^VERSION_PKG\s*:=\s*(\S+)`)
+
 func readRepoFile(t *testing.T, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
@@ -41,6 +44,12 @@ func submatches(re *regexp.Regexp, s string) []string {
 // session-start refresh silently stops firing.
 func TestBuildsStampTheBuildIdentity(t *testing.T) {
 	vars := submatches(versionVar, readRepoFile(t, "internal/version/version.go"))
+
+	// The Makefile names the package once; a drifted value stamps nothing.
+	const pkg = "github.com/filippolmt/toolbox/internal/version"
+	if got := submatches(versionPkg, readRepoFile(t, "Makefile")); !slices.Equal(got, []string{pkg}) {
+		t.Errorf("Makefile VERSION_PKG = %v, want [%s]", got, pkg)
+	}
 
 	for _, tc := range []struct {
 		file string
