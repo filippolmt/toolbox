@@ -75,6 +75,7 @@ func TestDiffLayerCoversSchema(t *testing.T) {
 		HerdrWorkspace:    "~/src",
 		Bridge:            &yes,
 		BrowserBridge:     &yes,
+		HostTerminalRelay: &yes,
 		Proximo:           &yes,
 		ManagedStatusline: &yes,
 		ImageReclaim:      &yes,

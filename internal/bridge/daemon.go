@@ -213,6 +213,9 @@ func (f handlerFns) withHostDefaults(host fsx.Host, logger *log.Logger) handlerF
 	if f.hc == nil {
 		f.hc = func(ctx context.Context, argv []string) ([]byte, int, error) { return launchHC(ctx, host, argv) }
 	}
+	if f.hcOff == nil {
+		f.hcOff = func() string { return hcRelayOff(host) }
+	}
 	return f
 }
 
@@ -251,6 +254,8 @@ type handlerFns struct {
 	credential func(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error)
 	sound      func(data []byte) error
 	hc         func(ctx context.Context, argv []string) (output []byte, exit int, err error)
+	// hcOff reports why the Host Terminal Relay is off, or "" when it is on.
+	hcOff func() string
 }
 
 // handler is the single HTTP handler the daemon mounts its endpoints on.

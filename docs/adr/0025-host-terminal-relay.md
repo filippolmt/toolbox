@@ -33,7 +33,8 @@ The decision:
   agent answers with `hc send`, which lands as a message in the Shell's
   terminal. No `wait` through the bridge: an answer is a message, not a
   request held open for minutes.
-- **Default on** wherever the bridge is installed; the shim works only in the
+- **Default on** wherever the bridge is installed, off with
+  `host_terminal_relay: false` in `~/.toolbox.yaml`; the shim works only in the
   Herdr Core Shell, where an answer can arrive.
 
 ## Considered Options
@@ -65,8 +66,13 @@ already excludes shells and dialogs.
   The daemon cannot tell containers apart (one token, readable in every Shell
   by design), so the shim's Herdr-Core-Shell-only check is convenience, not a
   boundary. A host agent acts with the host's permissions on what a container
-  typed: treat its input like any other untrusted text. Turning the relay off
-  today means uninstalling the bridge.
+  typed: treat its input like any other untrusted text.
+- **The off switch is host-wide and global-only**: `host_terminal_relay: false`
+  in the host's `~/.toolbox.yaml`, read by the daemon on every request. A
+  project layer cannot set it — a repository does not decide for the daemon
+  every container shares — and the doctor warns when one tries. Unlike
+  toolbox's other settings, an unreadable file or a non-bool value turns the
+  relay off: a safety switch fails closed, and the refusal names the reason.
 - **The relay rides herdr-core's CLI**: `hc ls/get --json` and the `status`
   object (`app`, `state`) are what the gate reads. A change there makes the
   gate refuse (an unreadable `get` is not a ready agent), never type more.

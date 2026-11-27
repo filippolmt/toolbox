@@ -41,6 +41,7 @@ Configuration is loaded from (highest priority first):
 | [`bridge`](bridge.md) | bool | `true` | Mount the host bridge state dir (browser / editor / proximo forwarding). |
 | [`browser_bridge`](#browser_bridge-deprecated) | bool | – | **Deprecated** alias of `bridge`. |
 | [`proximo`](proximo.md) | bool | auto | `.test` reachability + CA trust; omitted = auto-detect (on iff proximo's CA exists on the host). |
+| [`host_terminal_relay`](#host_terminal_relay) | bool | `true` | Let the Herdr Core Shell message the agents herdr.app runs on the host. `~/.toolbox.yaml` only. |
 | [`managed_statusline`](#managed_statusline) | bool | `true` | Image-owned Claude Code statusline, re-applied every shell start; `false` keeps your own. |
 | [`image_reclaim`](#image_reclaim) | bool | `true` | Remove the runtime images this CLI pulled that a later image update left nameless; `false` keeps every generation. |
 | [`peer_messaging`](#peer_messaging) | bool | `false` | Let Claude Code sessions in different toolbox containers see and message each other. |
@@ -49,6 +50,17 @@ Configuration is loaded from (highest priority first):
 ## `shell`
 
 Login shell inside the container. Only `zsh` is supported (the default); `bash` is rejected at config load with an explicit migration hint (`config.ValidateShell`).
+
+## `host_terminal_relay`
+
+Turns the bridge route behind `hc-host` on or off for every container: the [Host Terminal Relay](../CONTEXT.md#host-terminal-relay), through which an agent in the Herdr Core Shell messages the agents herdr.app runs on the host. Omitted or `true`, it is on wherever the bridge is installed; `false` turns it off.
+
+```yaml
+# ~/.toolbox.yaml
+host_terminal_relay: false
+```
+
+The bridge daemon reads it from `~/.toolbox.yaml` on every request, so a change applies at once, with no restart. It reads no other layer: a project `.toolbox.yaml` or a `--config` file setting the key changes nothing, and `toolbox config doctor` warns about it. A `~/.toolbox.yaml` the daemon cannot parse, or a value that is not a bool, turns the relay **off** and the refusal says why: it is a safety switch, so it fails closed. How to use the relay: [Agents on the host](herdr.md#agents-on-the-host).
 
 ## `managed_statusline`
 

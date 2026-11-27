@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
@@ -174,5 +175,60 @@ func TestLaunchHC_NoHC(t *testing.T) {
 	_, _, err := launchHC(context.Background(), fsx.Host{Home: t.TempDir()}, []string{"ls", "--json"})
 	if err != ErrHCNotInstalled {
 		t.Errorf("err = %v, want ErrHCNotInstalled", err)
+	}
+}
+
+// TestHCRelayOff_ReadsTheGlobalConfigAlone: host_terminal_relay in the host's
+// ~/.toolbox.yaml is the relay's off switch, read on every request. Unset (or
+// no file) leaves it on; false turns it off; a file or value the daemon cannot
+// read turns it off too and says why — the switch is a safety control, so a
+// broken one fails closed, loudly.
+func TestHCRelayOff_ReadsTheGlobalConfigAlone(t *testing.T) {
+	for _, tc := range []struct {
+		label   string
+		file    string // "" writes no file
+		wantOff string // substring of the reason; "" means on
+	}{
+		{"no config file", "", ""},
+		{"key unset", "shell: zsh\n", ""},
+		{"true", config.HostTerminalRelayKey + ": true\n", ""},
+		{"false", config.HostTerminalRelayKey + ": false\n", config.HostTerminalRelayKey + ": false"},
+		{"not a bool", config.HostTerminalRelayKey + ": maybe\n", "not a bool"},
+		{"broken yaml", "shell: [\n", "cannot read"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			home := t.TempDir()
+			if tc.file != "" {
+				if err := os.WriteFile(filepath.Join(home, ".toolbox.yaml"), []byte(tc.file), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := hcRelayOff(fsx.Host{Home: home})
+			if tc.wantOff == "" && got != "" {
+				t.Errorf("relay off (%q), want on", got)
+			}
+			if tc.wantOff != "" && !strings.Contains(got, tc.wantOff) {
+				t.Errorf("off reason = %q, want it to name %q", got, tc.wantOff)
+			}
+		})
+	}
+}
+
+// TestHCRelay_OffRefusesEveryVerb: with the switch off, /hc answers 403 with
+// the reason and hc never runs, whatever the verb.
+func TestHCRelay_OffRefusesEveryVerb(t *testing.T) {
+	var calls int
+	h := buildTestHandler(t, handlerFns{
+		hc:    func(context.Context, []string) ([]byte, int, error) { calls++; return nil, 0, nil },
+		hcOff: func() string { return config.HostTerminalRelayKey + ": false in ~/.toolbox.yaml" },
+	})
+	for _, body := range []string{hcBody(t, "ls"), hcBody(t, "send", "t2", "hi")} {
+		rr := doPostTo(t, h, RouteHC, "tok", body)
+		if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), config.HostTerminalRelayKey) {
+			t.Errorf("status %d body %q, want 403 naming %s", rr.Code, rr.Body, config.HostTerminalRelayKey)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("hc ran %d times with the relay off", calls)
 	}
 }

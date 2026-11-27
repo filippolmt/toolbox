@@ -2307,7 +2307,10 @@ terminal whose `status` names an agent that is `idle` or `done`
 `hc` on the daemon's PATH, else `~/.local/bin`, and sets `HOME`. The shim signs
 a send with `[from <TOOLBOX_HERDR_MACHINE>/<HC_TERMINAL_ID>]`, the address the
 host agent answers with `hc send`; `sessionplan.HerdrMachineEnv` is set on the
-Herdr Core Shell alone, which is where the shim works. Decision and
+Herdr Core Shell alone, which is where the shim works. The off switch is
+`config.HostTerminalRelayKey`, which `bridge.hcRelayOff` reads from the host's
+`~/.toolbox.yaml` alone on every request (`config.HostOnlyKeys`; the doctor
+warns in any other layer), failing closed. Decision and
 alternatives: [ADR 0025](docs/adr/0025-host-terminal-relay.md).
 
 Why the term exists: "agents talking across the VM" reads as Claude Code's

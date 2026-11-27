@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/fsx"
 )
 
@@ -119,6 +124,11 @@ func (h *handler) handleHC(w http.ResponseWriter, r *http.Request) {
 	if !h.gate("hc", w, r) {
 		return
 	}
+	if off := h.fns.hcOff(); off != "" {
+		h.logger.Printf("hc: rejected (relay off) %s", off)
+		http.Error(w, "the Host Terminal Relay is off on this host: "+off, http.StatusForbidden)
+		return
+	}
 	var req hcRequest
 	if !h.decodeJSON(w, r, hcBodyLimit, &req) {
 		return
@@ -159,6 +169,38 @@ func (h *handler) handleHC(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logger.Printf("hc: ok command=%q exit=%d", req.Command, exit)
 	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
+}
+
+// hcRelayOff reads the relay's off switch, config.HostTerminalRelayKey, from
+// the host's ~/.toolbox.yaml on every request, so a change applies without
+// restarting the daemon. It returns why the relay is off, or "" when it is on:
+// no file or an unset key leaves it on. The switch is a safety control, so a
+// file or value it cannot read turns the relay off and says why, rather than
+// leaving it on behind a setting the developer believes took effect. Only the
+// global file counts: a project layer belongs to a repository, not to the host
+// process every container shares.
+func hcRelayOff(host fsx.Host) string {
+	path := host.Join(".toolbox.yaml")
+	b, _, err := configio.ReadMaybe(path)
+	if err != nil {
+		return "cannot read " + path + ": " + err.Error()
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return "cannot read " + path + ": " + err.Error()
+	}
+	v, set := doc[config.HostTerminalRelayKey]
+	if !set {
+		return ""
+	}
+	on, ok := v.(bool)
+	switch {
+	case !ok:
+		return fmt.Sprintf("%s in %s is %v, not a bool", config.HostTerminalRelayKey, path, v)
+	case !on:
+		return config.HostTerminalRelayKey + ": false in " + path
+	}
+	return ""
 }
 
 // ErrHCNotInstalled: neither the daemon's PATH nor ~/.local/bin holds hc.

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/filippolmt/toolbox/internal/config"
 )
 
 func findingWith(findings []Finding, substr string) *Finding {
@@ -69,6 +71,23 @@ func TestDoctorRetiredWorktreeKeys(t *testing.T) {
 	}
 	if f := findingWith(findings, "unknown top-level key"); f != nil {
 		t.Errorf("retired key reported as unknown: %v", f)
+	}
+}
+
+// host_terminal_relay is read by the host's bridge daemon from
+// ~/.toolbox.yaml alone: a project file setting it changes nothing, and the
+// doctor says so instead of letting the developer believe the relay is off.
+func TestDoctorWarnsAHostOnlyKeyInAProjectLayer(t *testing.T) {
+	host, cwd := writeLayeredFixture(t, config.HostTerminalRelayKey+": false\n", config.HostTerminalRelayKey+": false\n")
+	findings := Doctor(host, cwd, "")
+	var hits []Finding
+	for _, f := range findings {
+		if strings.Contains(f.Message, config.HostTerminalRelayKey) {
+			hits = append(hits, f)
+		}
+	}
+	if len(hits) != 1 || hits[0].Severity != SeverityWarning || !strings.Contains(hits[0].Message, "~/.toolbox.yaml") || strings.HasPrefix(hits[0].Message, "~/.toolbox.yaml") {
+		t.Errorf("findings naming %s = %v, want one warning on the project layer pointing at ~/.toolbox.yaml", config.HostTerminalRelayKey, hits)
 	}
 }
 

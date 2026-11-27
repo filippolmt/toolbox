@@ -121,6 +121,15 @@ type Key struct {
 	NoValidation string
 }
 
+// HostTerminalRelayKey is the Host Terminal Relay's off switch. The bridge
+// daemon reads it by this name from the host's ~/.toolbox.yaml alone, so the
+// doctor flags it in any other layer (HostOnlyKeys).
+const HostTerminalRelayKey = "host_terminal_relay"
+
+// HostOnlyKeys are the keys only ~/.toolbox.yaml can set: a host-side process
+// reads them from that file, never from a project or --config layer.
+func HostOnlyKeys() []string { return []string{HostTerminalRelayKey} }
+
 // Keys returns every config key's row, in Config declaration order — which is
 // also the order every surface presents them in.
 func Keys() []Key { return slices.Clone(keyRows) }
@@ -274,6 +283,20 @@ var keyRows = []Key{
 	{
 		Name: DeprecatedBridgeKey,
 		Kind: KindAlias,
+	},
+	{
+		Name:    HostTerminalRelayKey,
+		Kind:    KindTri,
+		Editor:  EditorTri,
+		Summary: "Let the Herdr Core Shell's hc-host message the agents herdr.app runs on the host. Global only. Tri-state: unset = auto (on).",
+		Default: defaultAutoOn,
+		Example: "# host_terminal_relay — the bridge route hc-host uses to message the agents\n" +
+			"# herdr.app runs on the host (docs/herdr.md, Agents on the host). Tri-state,\n" +
+			"# default AUTO (on) wherever the bridge is installed. Set false to turn it off\n" +
+			"# for every container. Read by the bridge daemon from ~/.toolbox.yaml only, on\n" +
+			"# each request: a project .toolbox.yaml setting it changes nothing.\n" +
+			"# host_terminal_relay: false\n",
+		Tri: func(c *Config) *bool { return c.HostTerminalRelay },
 	},
 	{
 		Name:    "proximo",

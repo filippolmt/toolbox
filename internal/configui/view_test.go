@@ -338,6 +338,13 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },
 		},
 		{
+			key:  "host_terminal_relay",
+			open: chooseValue("false"),
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Bool("host_terminal_relay", boolPtr(false)))
+			},
+		},
+		{
 			key:  "proximo",
 			open: chooseValue("true"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("proximo", boolPtr(true))) },

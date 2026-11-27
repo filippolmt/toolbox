@@ -43,6 +43,9 @@ func buildTestHandler(t *testing.T, fns handlerFns) http.Handler {
 	if fns.hc == nil {
 		fns.hc = func(_ context.Context, _ []string) ([]byte, int, error) { return nil, 0, nil }
 	}
+	if fns.hcOff == nil {
+		fns.hcOff = func() string { return "" }
+	}
 	h, _ := buildTestHandlerWithLog(t, fns)
 	return h
 }
