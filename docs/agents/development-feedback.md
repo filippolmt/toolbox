@@ -130,6 +130,10 @@ the development targets or their scripts. A renamed target or script also
 renames its citations: `TestCitedMakeTargetsAndScriptsExist` (`internal/devrules`)
 fails on any `make <target>` or `.github/scripts/` path the docs still cite.
 
+## Host facts
+
+A fact only the host shows (its LaunchAgent, its `hc`, a file under its home) comes from the developer, or, from a herdr.app terminal of the Herdr Core Shell once the host's bridge serves `/hc`, from an agent on the host: `hc-host ls` to find one, then `hc-host send <terminal> "<command to run and what to report>"`. The answer arrives in your terminal as a message. → [Agents on the host](../herdr.md#agents-on-the-host)
+
 ## Splitting a commit
 
 Commit the behaviour change at green, before the refactor starts: that costs
