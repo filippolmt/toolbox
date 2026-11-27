@@ -1,8 +1,6 @@
 package devrules
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"testing"
@@ -19,15 +17,6 @@ var makeStamp = regexp.MustCompile(`-X \$\(VERSION_PKG\)\.(\w+)=`)
 
 // versionPkg matches the Makefile's VERSION_PKG assignment.
 var versionPkg = regexp.MustCompile(`(?m)^VERSION_PKG\s*:=\s*(\S+)`)
-
-func readRepoFile(t *testing.T, rel string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
-	if err != nil {
-		t.Fatalf("read %s: %v", rel, err)
-	}
-	return string(b)
-}
 
 func submatches(re *regexp.Regexp, s string) []string {
 	var out []string
