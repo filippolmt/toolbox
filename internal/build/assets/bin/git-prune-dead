@@ -17,9 +17,8 @@
 # no CLI, so it is asked over its REST API, and only once the developer names
 # a token for it: prune-dead.<url>.giteaTokenFile, matched against the API
 # base (an https origin's own host[:port], else https://<host>) like any git
-# http.<url>.* key. No authenticated CLI, an
-# unreachable forge, or a PR that was closed without merging → the branch is
-# kept and the reason printed. Never deleted either: the current branch and the
+# http.<url>.* key. No authenticated CLI, an unreachable forge, or a PR that
+# was closed without merging → the branch is kept and the reason printed. Never deleted either: the current branch and the
 # repository's default branch.
 #
 # The one local proof is still honoured: worktree-agent-* leftovers actually
@@ -127,7 +126,7 @@ gitea_per_page=50
 gitea_pulls=
 gitea_listed=
 gitea_list() {
-	gitea_listed=1
+	gitea_listed=complete
 	page=1
 	while [ "$page" -le "$gitea_pages" ]; do
 		body=$(gitea_get "repos/$slug/pulls?state=closed&sort=recentupdate&limit=$gitea_per_page&page=$page") || {
@@ -186,7 +185,8 @@ merge_state() {
 		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
 	# Once the head branch is deleted Forgejo reports head.ref as
 	# refs/pull/<n>/head, leaving the branch name in head.label — which a fork's
-	# PR spells owner:branch, so the label alone already excludes forks.
+	# PR spells owner:branch; the repo_id check excludes forks whatever the
+	# label says.
 	gitea)
 		[ -n "$gitea_listed" ] || gitea_list
 		[ "$gitea_listed" = failed ] && return 2

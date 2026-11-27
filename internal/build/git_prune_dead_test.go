@@ -556,9 +556,9 @@ func giteaPath(t *testing.T) string {
 // giteaRepo is a repository on a Forgejo/Gitea host with a token file
 // configured for it, the opt-in that stands in for a logged-in CLI. It
 // returns the repository and the token's value.
-func giteaRepo(t *testing.T, origin string, branches ...string) (string, string) {
+func giteaRepo(t *testing.T, branches ...string) (string, string) {
 	t.Helper()
-	dir := pruneDeadRepo(t, origin, branches...)
+	dir := pruneDeadRepo(t, giteaOrigin, branches...)
 	const token = "s3cret-token"
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	// CRLF, as an editor on another OS might save it.
@@ -600,7 +600,7 @@ func writeGiteaPage(t *testing.T, prs ...string) string {
 // projection.
 func TestGitPruneDeadAsksAGiteaHostWithAConfiguredToken(t *testing.T) {
 	names := []string{"deleted-head", "live-head", "closed-one", "fork-label", "fork-repo", "gone-fork", "absent"}
-	dir, _ := giteaRepo(t, giteaOrigin, names...)
+	dir, _ := giteaRepo(t, names...)
 	tip := gitIn(t, dir, "rev-parse", "main")
 	page := writeGiteaPage(t,
 		// Forgejo rewrites head.ref once the branch is deleted on merge; the
@@ -648,7 +648,7 @@ func TestGitPruneDeadGiteaQueryShape(t *testing.T) {
 		{"CA from GIT_SSL_CAINFO", "GIT_SSL_CAINFO=/env/ca.pem", "/env/ca.pem"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, token := giteaRepo(t, giteaOrigin, "merged-one", "closed-one")
+			dir, token := giteaRepo(t, "merged-one", "closed-one")
 			gitIn(t, dir, "config", "http.https://git.example.internal.sslCAInfo", "/etc/forge-ca.pem")
 			calls := filepath.Join(t.TempDir(), "calls")
 			stdin := filepath.Join(t.TempDir(), "stdin")
@@ -677,6 +677,7 @@ func TestGitPruneDeadGiteaQueryShape(t *testing.T) {
 			if len(curls) != 2 {
 				t.Fatalf("want the PR list read once (2 pages), got %d calls:\n%s", len(curls), argv)
 			}
+			// limit=50 is the script's gitea_per_page, pinned on purpose.
 			for _, want := range []string{
 				"--cacert " + tc.ca + " ",
 				"https://git.example.internal/api/v1/repos/team/repo/pulls?state=closed&sort=recentupdate&limit=50&page=1",
@@ -722,7 +723,7 @@ func TestGitPruneDeadGiteaBaseFollowsAnHTTPSOrigin(t *testing.T) {
 // An API that cannot answer — a revoked token, an untrusted CA, a host down —
 // means "don't know": every branch stays, named with the reason.
 func TestGitPruneDeadKeepsEverythingWhenTheGiteaAPIFails(t *testing.T) {
-	dir, _ := giteaRepo(t, giteaOrigin, "merged-one")
+	dir, _ := giteaRepo(t, "merged-one")
 
 	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_FAIL=1")
 
@@ -738,7 +739,7 @@ func TestGitPruneDeadKeepsEverythingWhenTheGiteaAPIFails(t *testing.T) {
 // merge on the missing page would read as "no merged PR", so every branch
 // is unverified instead.
 func TestGitPruneDeadKeepsEverythingWhenALaterGiteaPageFails(t *testing.T) {
-	dir, _ := giteaRepo(t, giteaOrigin, "merged-one")
+	dir, _ := giteaRepo(t, "merged-one")
 	tip := gitIn(t, dir, "rev-parse", "main")
 	page := writeGiteaPage(t, giteaPR(true, "merged-one", "merged-one", tip, 5))
 
@@ -756,13 +757,14 @@ func TestGitPruneDeadKeepsEverythingWhenALaterGiteaPageFails(t *testing.T) {
 // cap rather than paging forever, and a branch not found in what was read is
 // kept with that reason, not as "closed, or never opened".
 func TestGitPruneDeadStopsAtTheGiteaPageCap(t *testing.T) {
-	dir, _ := giteaRepo(t, giteaOrigin, "old-merge")
+	dir, _ := giteaRepo(t, "old-merge")
 	calls := filepath.Join(t.TempDir(), "calls")
 	page := writeGiteaPage(t, giteaPR(true, "other", "other", "", 5))
 
 	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_BODY="+page, "CURL_EVERY_PAGE=1", "FORGE_CALLS="+calls)
 
 	argv, _ := os.ReadFile(calls)
+	// 20 is the script's gitea_pages, pinned on purpose.
 	if n := strings.Count(string(argv), "curl "); n != 20 {
 		t.Errorf("want the listing capped at 20 pages, got %d calls", n)
 	}
