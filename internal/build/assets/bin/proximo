@@ -106,7 +106,7 @@ sys.exit(int(resp.get("exit", 0)))
 '
     ;;
 404)
-    echo "proximo: host daemon has no /proximo endpoint — update the host toolbox CLI and rerun 'toolbox bridge install'" >&2
+    echo "proximo: host daemon has no /proximo endpoint — update the host toolbox CLI and start a session ('toolbox shell' or 'toolbox herdr'): it refreshes a bridge running that same binary; one installed from another binary needs 'toolbox bridge install'" >&2
     exit 1
     ;;
 000)
