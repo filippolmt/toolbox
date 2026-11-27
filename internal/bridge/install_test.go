@@ -29,7 +29,7 @@ func (f *fakeAgent) Uninstall() error       { f.uninstallCalled = true; return f
 func (f *fakeAgent) Status() (AgentStatus, error) {
 	return f.status, nil
 }
-func (f *fakeAgent) IsInstalled() bool { return f.status.Installed }
+func (f *fakeAgent) IsInstalled() bool         { return f.status.Installed }
 func (f *fakeAgent) ExecPath() (string, error) { return f.execPath, f.execPathErr }
 func (f *fakeAgent) Restart() error {
 	f.restartCalls++

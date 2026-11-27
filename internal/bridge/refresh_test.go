@@ -1,8 +1,8 @@
 package bridge
 
 import (
-	"errors"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -67,7 +67,7 @@ func startFakeDaemon(t *testing.T, host fsx.Host, version string) *fakeDaemon {
 // writeExe creates an executable file standing in for a toolbox binary.
 func writeExe(t *testing.T, path string) string {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -154,8 +154,9 @@ func TestCheckAtSessionStartNeverRestartsADaemonOfAnotherBinary(t *testing.T) {
 			if got != tc.wantLines {
 				t.Fatalf("stderr = %q, want %d line(s)", out.String(), tc.wantLines)
 			}
-			if got == 1 && !(strings.Contains(out.String(), "0.9.0") && strings.Contains(out.String(), "1.2.3") &&
-				strings.Contains(out.String(), "toolbox bridge install")) {
+			mentionsAll := strings.Contains(out.String(), "0.9.0") && strings.Contains(out.String(), "1.2.3") &&
+				strings.Contains(out.String(), "toolbox bridge install")
+			if got == 1 && !mentionsAll {
 				t.Errorf("stderr = %q, want both versions and 'toolbox bridge install'", out.String())
 			}
 		})
