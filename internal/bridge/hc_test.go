@@ -54,7 +54,6 @@ func TestHCRelay_ArgvGate(t *testing.T) {
 		want    hcCall
 	}{
 		{"ls", "ls", nil, hcCall{"ls", "--json"}},
-		{"ls --all", "ls", []string{"--all"}, hcCall{"ls", "--json", "--all"}},
 		{"get", "get", []string{"t2"}, hcCall{"get", "--json", "--", "t2"}},
 		{"get by name", "get", []string{"reviewer_1"}, hcCall{"get", "--json", "--", "reviewer_1"}},
 		{"read", "read", []string{"t2"}, hcCall{"read", "--", "t2"}},
@@ -82,6 +81,7 @@ func TestHCRelay_ArgvGate(t *testing.T) {
 		{"keys", "keys", []string{"t2", "enter"}},
 		{"machine", "machine", []string{"ls"}},
 		{"wait", "wait", []string{"t2"}},
+		{"ls --all", "ls", []string{"--all"}},
 		{"ls with another flag", "ls", []string{"--label", "a=b"}},
 		{"get on another machine", "get", []string{"spike/t1"}},
 		{"get with a flag for a terminal", "get", []string{"--help"}},

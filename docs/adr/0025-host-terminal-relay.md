@@ -16,7 +16,8 @@ The decision:
 **The bridge gets a `/hc` route that runs the host's `hc`, and the image a
 `hc-host` shim for it** — the [Host Terminal Relay](../../CONTEXT.md#host-terminal-relay).
 
-- **Verbs:** `ls [--all]`, `get`, `read [--lines N]`, `send`. No `run`, `exec`,
+- **Verbs:** `ls`, `get`, `read [--lines N]`, `send` — `--lines` because a
+  bare `read` shows the screen only, without the history above it. No `run`, `exec`,
   `keys`, `file`, `put`, `machine`, `attach`, `wait`, no other flag. The daemon
   rebuilds the argv and puts the positionals after `--`.
 - **Targets:** the host's own terminals only — no `machine/t7`, so the relay

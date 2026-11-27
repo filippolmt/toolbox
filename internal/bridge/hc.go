@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"slices"
 	"time"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -29,7 +28,7 @@ var hcTerminalRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 var hcLinesRe = regexp.MustCompile(`^[0-9]{1,5}$`)
 
 // errHCArgs is every argv the gate refuses; its text is the shim's usage.
-var errHCArgs = errors.New("not bridged — only `ls [--all]`, `get <terminal>`, `read <terminal> [--lines N]` and `send <terminal> <text>` reach the host's hc, on the host's own terminals")
+var errHCArgs = errors.New("not bridged — only `ls`, `get <terminal>`, `read <terminal> [--lines N]` and `send <terminal> <text>` reach the host's hc, on the host's own terminals")
 
 // hcAllowlist is the verbs the relay runs, each with the builder that checks
 // the container's args and returns the argv the host's hc runs, or nil to
@@ -39,10 +38,10 @@ var errHCArgs = errors.New("not bridged — only `ls [--all]`, `get <terminal>`,
 // hold a request open for minutes.
 var hcAllowlist = map[string]func(args []string) []string{
 	"ls": func(args []string) []string {
-		if slices.ContainsFunc(args, func(a string) bool { return a != "--all" }) {
+		if len(args) != 0 {
 			return nil
 		}
-		return append([]string{"ls", "--json"}, args...)
+		return []string{"ls", "--json"}
 	},
 	"get": func(args []string) []string {
 		if len(args) != 1 || !hcTerminal(args[0]) {

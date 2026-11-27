@@ -3,7 +3,7 @@
 # terminals herdr.app opens on the host; the hc in the Herdr Core Shell has no
 # machine that reaches them. This shim forwards ls/get/read/send to the host
 # daemon's /hc endpoint, which runs the host's hc and alone decides what is
-# allowed: no other verb, no hc flag beyond ls --all and read --lines, no
+# allowed: no other verb, no hc flag beyond read --lines, no
 # terminal on another machine, and a send only to an agent waiting for input.
 # A send is signed with this terminal's address on the host, so the agent there
 # answers with `hc send <machine>/<terminal> <text>`. See
@@ -15,7 +15,7 @@ set -eu
 . /usr/local/lib/toolbox/bridge-lib.sh
 
 usage() {
-    echo "usage: hc-host ls [--all] | get <terminal> | read <terminal> [--lines N] | send <terminal> <text>   (the host's herdr.app terminals, through the toolbox bridge)" >&2
+    echo "usage: hc-host ls | get <terminal> | read <terminal> [--lines N] | send <terminal> <text>   (the host's herdr.app terminals, through the toolbox bridge)" >&2
     exit 2
 }
 
