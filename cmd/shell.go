@@ -192,7 +192,7 @@ func checkBridgeAtSessionStart(host fsx.Host) {
 	if err != nil {
 		return
 	}
-	self, _ := os.Executable() // "" never matches the unit: no restart
+	self, _ := os.Executable() // "": CheckAtSessionStart warns, no restart
 	bridge.CheckAtSessionStart(host, a, self, version.Build(), os.Stderr)
 }
 

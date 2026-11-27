@@ -54,6 +54,10 @@ func CheckAtSessionStart(host fsx.Host, a Agent, self, cliBuild string, w io.Wri
 	if running == cliBuild {
 		return
 	}
+	if self == "" {
+		warn("runs %s, CLI is %s; cannot locate this CLI's binary to compare with the unit's", shownVersion(running), cliBuild)
+		return
+	}
 	if !sameFile(unitExe, self) {
 		_, _ = fmt.Fprintf(w, "toolbox: bridge daemon runs %s from %s, this CLI is %s (%s); run 'toolbox bridge install' to switch the bridge to this binary\n",
 			shownVersion(running), unitExe, cliBuild, self)

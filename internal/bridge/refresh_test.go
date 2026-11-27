@@ -213,6 +213,18 @@ func TestCheckAtSessionStartWarnsAndCarriesOn(t *testing.T) {
 			t.Errorf("restart calls = %d, want 0", fa.restartCalls)
 		}
 	})
+	t.Run("own binary unknown", func(t *testing.T) {
+		host := testHost(t)
+		unit := writeExe(t, filepath.Join(t.TempDir(), "toolbox"))
+		startFakeDaemon(t, host, "1.2.2")
+		fa := &fakeAgent{status: AgentStatus{Installed: true}, execPath: unit}
+		var out strings.Builder
+		CheckAtSessionStart(host, fa, "", "1.2.3", &out) // os.Executable failed
+		assertOneWarning(t, out.String(), "cannot locate this CLI's binary")
+		if fa.restartCalls != 0 {
+			t.Errorf("restart calls = %d, want 0", fa.restartCalls)
+		}
+	})
 	t.Run("unit unreadable", func(t *testing.T) {
 		host := testHost(t)
 		startFakeDaemon(t, host, "1.2.2")
