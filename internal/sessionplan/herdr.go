@@ -1,6 +1,8 @@
 package sessionplan
 
 import (
+	"strings"
+
 	"github.com/filippolmt/toolbox/internal/config"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 )
@@ -13,6 +15,12 @@ import (
 // purpose: herdr-core keeps its sockets there when no runtime directory
 // exists, and a Host Share bind cannot hold one.
 const HerdrCoreStateTarget = "/home/toolbox/.local/state/herdr-core"
+
+// HerdrMachineName is the machine a Herdr Core Shell registers as: toolbox,
+// or toolbox-<profile>.
+func HerdrMachineName(container string) string {
+	return "toolbox" + strings.TrimPrefix(container, ContainerNamePrefix+config.HerdrCoreShell.Base)
+}
 
 // HerdrCoreContainerName is `toolbox-herdr`, or `toolbox-herdr-<profile>`.
 func HerdrCoreContainerName(profile *mountplan.Profile) (string, error) {
