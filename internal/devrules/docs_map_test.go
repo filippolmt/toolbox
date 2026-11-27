@@ -62,14 +62,11 @@ func h2Headings(t *testing.T, file string) []string {
 // link. `###` entries stay an editorial choice.
 func TestDocsMapListsEveryGuideSection(t *testing.T) {
 	docs := filepath.Join(repoRoot(t), "docs")
-	readme, err := os.ReadFile(filepath.Join(docs, "README.md"))
-	if err != nil {
-		t.Fatalf("read docs/README.md: %v", err)
-	}
+	readme := readRepoFile(t, "docs/README.md")
 
 	guides := map[string]bool{}
 	anchors := map[string]bool{}
-	for _, m := range docsMapLink.FindAllStringSubmatch(string(readme), -1) {
+	for _, m := range docsMapLink.FindAllStringSubmatch(readme, -1) {
 		guides[m[1]] = true
 		if m[2] != "" {
 			anchors[m[1]+m[2]] = true
