@@ -41,6 +41,16 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
+// readRepoFile returns a repo file, rel to the root, as a string.
+func readRepoFile(t *testing.T, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
+	if err != nil {
+		t.Fatalf("read %s: %v", rel, err)
+	}
+	return string(b)
+}
+
 // ruleFiles returns the path of every rule file under .claude/rules/. Three
 // tests walk the same directory; the shared listing keeps them agreeing on
 // what counts as a rule file.
@@ -581,12 +591,7 @@ func TestEveryPackageIsClaimedByARule(t *testing.T) {
 // from it is a rule nobody opens — and adding the sixth rule file while leaving
 // the list at five is exactly the drift these tests exist to catch.
 func TestRuleFilesAreListedInCLAUDEMd(t *testing.T) {
-	root := repoRoot(t)
-	claudeMd, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-	index := string(claudeMd)
+	index := readRepoFile(t, "CLAUDE.md")
 
 	for _, rule := range ruleFiles(t) {
 		link := ".claude/rules/" + filepath.Base(rule)

@@ -438,8 +438,8 @@ and `--peer` had no worktree flag to resolve at all. Two of those were bugs (a
 worktree session left the state relocation to whichever `toolbox shell` came
 next, and a developer whose every session is a worktree session was never told
 the forwarding they had enabled was not installed). `toolbox worktree` has
-since been retired ([ADR 0018](docs/adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md)),
-leaving `shell` as the one entry point; the seam stays so a second one adds a
+since been retired ([ADR 0018](docs/adr/0018-worktrees-belong-to-worktrunk-not-toolbox.md));
+`shell`, `herdr` and `orca` each open a session by handing `startSession` a
 value, not a copy of the assembly. Each root's helpers were pure and directly
 testable while the assembly calling them was reachable only by driving a cobra
 command through its flag globals — which is the shape the name fixes, because

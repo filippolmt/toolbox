@@ -96,12 +96,9 @@ func markdownDocs(t *testing.T, root string) map[string]string {
 // check-links passes over a stale `make old-name` in CLAUDE.md.
 func TestCitedMakeTargetsAndScriptsExist(t *testing.T) {
 	root := repoRoot(t)
-	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
-	if err != nil {
-		t.Fatalf("read Makefile: %v", err)
-	}
+	makefile := readRepoFile(t, "Makefile")
 	targets := map[string]bool{}
-	for _, m := range makeTargetRule.FindAllStringSubmatch(string(makefile), -1) {
+	for _, m := range makeTargetRule.FindAllStringSubmatch(makefile, -1) {
 		targets[m[1]] = true
 	}
 	if !targets["go-check"] {

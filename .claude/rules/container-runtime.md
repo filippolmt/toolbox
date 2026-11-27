@@ -362,8 +362,9 @@ them.
   Pinned by `TestCheckAtSessionStartNeverRestartsADaemonOfAnotherBinary`,
   `TestCheckAtSessionStartLeavesAMatchingDaemonAlone`,
   `TestCheckAtSessionStartWithoutTheBridgeOnlyPrintsTheTip`,
-  `TestCheckAtSessionStartWarnsAndCarriesOn` and
-  `TestHandler_HealthZReportsTheBuildIdentity`. →
+  `TestCheckAtSessionStartWarnsAndCarriesOn`,
+  `TestHandler_HealthZReportsTheBuildIdentity`, and
+  `TestBuildsStampTheBuildIdentity` for the ldflags that identity relies on. →
   [refresh after an update](../../docs/bridge.md#refresh-after-an-update)
 
 - **Credential no-prompt:** the credential shim sends `no_prompt` only when
