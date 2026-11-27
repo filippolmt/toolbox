@@ -100,6 +100,21 @@ func (a *linuxAgent) IsInstalled() bool {
 	return err == nil
 }
 
+func (a *linuxAgent) ExecPath() (string, error) {
+	body, err := os.ReadFile(a.unitPath)
+	if err != nil {
+		return "", err
+	}
+	return unitExec(string(body))
+}
+
+func (a *linuxAgent) Restart() error {
+	if out, err := exec.Command("systemctl", "--user", "restart", unitName).CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl restart: %v: %s", err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
 func (a *linuxAgent) Status() (AgentStatus, error) {
 	st := AgentStatus{Installed: a.IsInstalled()}
 	out, _ := exec.Command("systemctl", "--user", "is-active", unitName).Output()

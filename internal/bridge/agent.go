@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"text/template"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
@@ -70,12 +72,50 @@ type AgentStatus struct {
 // darwin, systemd --user on linux). Install writes the unit/plist and starts
 // the daemon; Uninstall stops it and removes the file; Status reports full
 // state (may exec launchctl/systemctl); IsInstalled is the cheap stat-only
-// check used by shell-start hot paths.
+// check used by shell-start hot paths. ExecPath reads back the executable the
+// installed unit/plist names (no exec); Restart restarts the running daemon
+// through its supervisor without touching the file.
 type Agent interface {
 	Install(execPath string) error
 	Uninstall() error
 	Status() (AgentStatus, error)
 	IsInstalled() bool
+	ExecPath() (string, error)
+	Restart() error
+}
+
+// plistExecRE captures the first ProgramArguments entry plistTemplate writes.
+var plistExecRE = regexp.MustCompile(`<key>ProgramArguments</key>\s*<array>\s*<string>([^<]+)</string>`)
+
+// plistExec returns the executable a LaunchAgent plist runs. Untagged so the
+// Linux CI exercises the darwin parser too.
+func plistExec(body string) (string, error) {
+	m := plistExecRE.FindStringSubmatch(body)
+	if m == nil {
+		return "", errors.New("plist names no ProgramArguments executable")
+	}
+	return m[1], nil
+}
+
+// unitExec returns the executable a systemd unit's ExecStart runs: the line
+// minus its two trailing arguments (`bridge daemon`, or the pre-rename
+// `browser-bridge daemon`), so a path with spaces survives.
+func unitExec(body string) (string, error) {
+	for line := range strings.Lines(body) {
+		v, ok := strings.CutPrefix(strings.TrimSpace(line), "ExecStart=")
+		if !ok {
+			continue
+		}
+		for range 2 {
+			i := strings.LastIndexByte(v, ' ')
+			if i <= 0 {
+				return "", fmt.Errorf("unexpected ExecStart %q", line)
+			}
+			v = v[:i]
+		}
+		return v, nil
+	}
+	return "", errors.New("unit has no ExecStart line")
 }
 
 // renderTemplate executes tpl with data into a string. Shared by the linux

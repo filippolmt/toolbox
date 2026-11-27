@@ -17,6 +17,11 @@ type fakeAgent struct {
 	uninstallCalled   bool
 	uninstallErr      error
 	status            AgentStatus
+	execPath          string
+	execPathErr       error
+	restartCalls      int
+	restartErr        error
+	onRestart         func()
 }
 
 func (f *fakeAgent) Install(p string) error { f.installCalledWith = p; return f.installErr }
@@ -25,6 +30,14 @@ func (f *fakeAgent) Status() (AgentStatus, error) {
 	return f.status, nil
 }
 func (f *fakeAgent) IsInstalled() bool { return f.status.Installed }
+func (f *fakeAgent) ExecPath() (string, error) { return f.execPath, f.execPathErr }
+func (f *fakeAgent) Restart() error {
+	f.restartCalls++
+	if f.onRestart != nil {
+		f.onRestart()
+	}
+	return f.restartErr
+}
 
 func TestInstall_WritesTokenAndCallsAgent(t *testing.T) {
 	host := testHost(t)

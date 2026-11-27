@@ -127,6 +127,24 @@ func (a *darwinAgent) IsInstalled() bool {
 	return err == nil
 }
 
+func (a *darwinAgent) ExecPath() (string, error) {
+	body, err := os.ReadFile(a.plistPath)
+	if err != nil {
+		return "", err
+	}
+	return plistExec(string(body))
+}
+
+// Restart kills and restarts the loaded job in place (`kickstart -k`); the
+// plist on disk is left as it is.
+func (a *darwinAgent) Restart() error {
+	target := "gui/" + strconv.Itoa(os.Getuid()) + "/" + launchLabel
+	if out, err := exec.Command("launchctl", "kickstart", "-k", target).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl kickstart: %v: %s", err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
 func (a *darwinAgent) Status() (AgentStatus, error) {
 	st := AgentStatus{Installed: a.IsInstalled()}
 	uid := strconv.Itoa(os.Getuid())
