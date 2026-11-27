@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -238,7 +239,8 @@ func (m *Model) toggleScope() {
 }
 
 // openEditor opens the editor the selected key's descriptor names, seeded from
-// that row's typed accessor. Env-sourced and single-value keys open none. The
+// that row's typed accessor. Env-sourced and single-value keys open none, nor
+// does a host-only key in the repo scope. The
 // editor a key gets is no longer a branch to remember: it is the row's kind,
 // looked up in editorSeeds, which TestEveryEditableKeyOpensAnEditor demands for
 // every key the UI lists.
@@ -253,6 +255,10 @@ func (m *Model) openEditor() {
 	}
 	if st.ReadOnly {
 		m.status = fmt.Sprintf("%s has a single supported value (%s) — nothing to edit", st.Key, st.Default)
+		return
+	}
+	if m.scope == ScopeRepo && slices.Contains(config.HostOnlyKeys(), st.Key) {
+		m.status = fmt.Sprintf("%s is read from ~/.toolbox.yaml only — switch to the Global scope (tab) to edit it", st.Key)
 		return
 	}
 	key := st.Key

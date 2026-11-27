@@ -467,6 +467,10 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 	}
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
+	scope := editScope(tc.key)
+	if scope == ScopeGlobal {
+		target = filepath.Join(home, ".toolbox.yaml")
+	}
 	if targetExists {
 		writeFile(t, target, "# existing config\npull: always\n")
 	}
@@ -479,7 +483,7 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 		tc.inCfg(cfg)
 	}
 
-	m := press(Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
+	m := press(Model{cwd: repo, scope: scope, cfg: cfg, target: target,
 		states: []KeyState{{Key: tc.key, ScopeSet: true}}}, "enter")
 	if !m.editing {
 		t.Fatalf("enter did not open an editor for %q (status: %s)", tc.key, m.status)
