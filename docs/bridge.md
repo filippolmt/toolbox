@@ -65,6 +65,17 @@ Per-host supervisor differs by platform — implementation in `internal/bridge/a
 
 Both run the same hidden subcommand `toolbox bridge daemon` in the foreground; the supervisor handles restart-on-crash and login-time start. `toolbox bridge install` writes the unit + token then triggers the bootstrap; `uninstall` reverses both steps. Install/uninstall also retire the pre-rename `browser-bridge` era artifacts: the `com.filippolmt.toolbox.browser` LaunchAgent / `toolbox-browser.service` unit is stopped and removed, and `install` renames a `~/.toolbox/browser` state dir onto the new location (token preserved, so running containers keep authenticating). Stale leftovers go too: the old macOS log file (`toolbox-browser.log`) and any legacy dir recreated by an old binary's CreateIfMissing mount are deleted on the next install / shell start. The `browser-bridge` CLI spelling survives as a deprecated cobra alias — installed units keep invoking it until the user reruns `toolbox bridge install`; drop it only in a major release. Anything else (status reads, log inspection) is read-only on the state dir.
 
+### Refresh after an update
+
+The supervisor restarts the daemon only on a crash or at login, so updating the binary (`brew upgrade`, a rebuilt checkout, a new release) leaves the old daemon running, and routes added since answer 404. Session start (`toolbox shell`, `toolbox herdr`) closes that gap when the bridge is installed: it reads the executable the unit/plist names and asks the daemon's unauthenticated `GET /healthz` for its `version`, the build version `toolbox version` prints. A daemon whose `/healthz` has no `version` predates the field.
+
+- **Versions match:** nothing more; no `launchctl` or `systemctl` runs.
+- **The unit runs this CLI's own binary** (the same file once symlinks are resolved, so the Homebrew `/opt/homebrew/bin/toolbox` symlink counts) **and the version differs or is missing:** the daemon is restarted through its supervisor (`launchctl kickstart -k gui/<uid>/com.filippolmt.toolbox.bridge`, `systemctl --user restart toolbox-bridge.service`), session start waits a few seconds for `/healthz` to report the new version and prints one stderr line saying so. The unit file is not rewritten.
+- **The unit runs another binary** (say a local checkout while `PATH` resolves to the Homebrew cask): the unit is never rewritten or restarted. When that daemon's version differs, one stderr line names both versions and `toolbox bridge install` as the way to switch the bridge to the running binary.
+- **An unreachable daemon, an unreadable unit or a failed restart** is a `toolbox: warning:` line; the session starts anyway.
+
+Without the bridge installed, session start prints only the install tip and probes nothing. Two builds that report the same version (two local `dev` builds) look alike, so after rebuilding a checkout run `toolbox bridge install` yourself.
+
 ## Security boundary
 
 What the bridge may let a Shell reach on the host is judged against the [Containment Boundary](../CONTEXT.md#containment-boundary).

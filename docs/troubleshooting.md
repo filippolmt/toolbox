@@ -216,7 +216,7 @@ The next launch records the directory it started from. Note that this clears a s
 - **"works in the Herdr Core Shell only"**: the Shell has no `TOOLBOX_HERDR_MACHINE`. A Shell created by an older toolbox keeps the env it was created with, and `toolbox herdr` says so when it joins one. Run `toolbox herdr stop`, then `toolbox herdr`.
 - **"send needs a herdr-core terminal"**: `send` runs only from a terminal of a herdr.app space on the Shell's machine (`HC_TERMINAL_ID` set), the only place an answer can arrive. `toolbox herdr shell` is not one.
 - **"is not an agent waiting for input" (HTTP 409)**: the target is a shell, or an agent that is working or showing a dialog. Nothing was typed; check `hc-host ls` and retry when it is `idle` or `done`.
-- **"host daemon has no /hc endpoint"**: the host's toolbox CLI predates the relay. Update it and run `toolbox bridge install` again.
+- **"host daemon has no /hc endpoint"**: the running daemon predates the relay. Update the host's toolbox CLI and start a session (`toolbox herdr` or `toolbox shell`): it restarts a daemon that runs the same binary. When session start instead says the daemon runs another binary, or warns that the restart failed, run `toolbox bridge install` from the toolbox you use. See [refresh after an update](bridge.md#refresh-after-an-update).
 - **"the Host Terminal Relay is off on this host" (HTTP 403)**: `host_terminal_relay: false` in the host's `~/.toolbox.yaml`, or a `~/.toolbox.yaml` the daemon cannot read or parse (the message names which). Remove the key or fix the file; no restart is needed.
 - **"hc (herdr-core) not found on the host"**: the daemon looks on its own PATH and in `~/.local/bin`. Install herdr-core on the host, or link `hc` into `~/.local/bin`.
 

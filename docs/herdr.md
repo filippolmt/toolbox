@@ -70,11 +70,13 @@ It works between **agents in herdr.app spaces** (Claude Code, Codex, pi — any 
 ### Before you start
 
 1. herdr-core on the host, with `hc` on your `PATH` — the same requirement as [Start](#start).
-2. The bridge installed by this toolbox version. After updating the toolbox CLI, run `toolbox bridge install` again so the daemon knows the relay:
+2. The bridge installed:
 
    ```sh
    toolbox bridge install
    ```
+
+   After a toolbox update, the next `toolbox herdr` or `toolbox shell` restarts a daemon that runs the same binary, so it knows the relay. A bridge installed from another binary (a local checkout, say) is left alone: rerun `toolbox bridge install` from the toolbox you use ([refresh after an update](bridge.md#refresh-after-an-update)).
 
 3. A Herdr Core Shell started by this toolbox version:
 
