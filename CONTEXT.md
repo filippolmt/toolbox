@@ -416,7 +416,8 @@ keeps the flag globals; `runShell` resolves the `shell` flags into one intent,
 and everything the command *does* with a session lives past that boundary — consume the
 [Session Reload](#session-reload) handover, resolve the host once, resolve the
 [Proximo Availability Gate](#proximo-availability-gate), migrate
-legacy toolbox state, offer the bridge install tip, construct the Docker
+legacy toolbox state, offer the bridge install tip or refresh an installed
+bridge daemon of another build, construct the Docker
 client, resolve the running image's repo digest, call
 [Session Plan](#session-plan), install
 the signal handler and attach. The intent carries `sessionplan.PlanInput`

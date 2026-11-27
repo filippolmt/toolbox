@@ -8,3 +8,10 @@ var (
 	Commit  = "none"
 	Date    = "unknown"
 )
+
+// Build is the build identity `toolbox version` prints and the bridge's
+// /healthz reports: two builds of one Version (two local `dev` builds) still
+// differ by Commit and Date.
+func Build() string {
+	return Version + " (commit: " + Commit + ", built: " + Date + ")"
+}

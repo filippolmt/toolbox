@@ -355,6 +355,17 @@ them.
   state remains strict. Pinned by `TestCheckNotRoot`, `TestStateDirOutcome` and
   `TestUninstallSummary`.
 
+- **Session-start bridge refresh:** `bridge.CheckAtSessionStart` never
+  rewrites the unit, never restarts a unit that names another binary, makes no
+  launchctl/systemctl call when the `/healthz` build identity matches
+  `version.Build`, and only warns on failure: the session always starts.
+  Pinned by `TestCheckAtSessionStartNeverRestartsADaemonOfAnotherBinary`,
+  `TestCheckAtSessionStartLeavesAMatchingDaemonAlone`,
+  `TestCheckAtSessionStartWithoutTheBridgeOnlyPrintsTheTip`,
+  `TestCheckAtSessionStartWarnsAndCarriesOn` and
+  `TestHandler_HealthZReportsTheBuildIdentity`. →
+  [refresh after an update](../../docs/bridge.md#refresh-after-an-update)
+
 - **Credential no-prompt:** the credential shim sends `no_prompt` only when
   `GCM_INTERACTIVE` says never, and the daemon silences the host helpers for
   that request alone; an older shim or daemon on either side keeps today's

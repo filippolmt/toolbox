@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // buildTestHandler wires fns into a handler with the shared test fixture
@@ -671,6 +673,26 @@ func TestHandler_HealthZ(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("code = %d", rr.Code)
+	}
+}
+
+// TestHandler_HealthZReportsTheBuildIdentity pins the value the session-start
+// refresh compares: the daemon answers, under "version", the build identity
+// `toolbox version` prints, so two builds of one Version (two local `dev`
+// builds) still differ by commit and build time.
+func TestHandler_HealthZReportsTheBuildIdentity(t *testing.T) {
+	oldV, oldC, oldD := version.Version, version.Commit, version.Date
+	version.Version, version.Commit, version.Date = "dev", "abc1234-dirty", "2026-01-02T03:04:05Z"
+	t.Cleanup(func() { version.Version, version.Commit, version.Date = oldV, oldC, oldD })
+	h, _, _ := newTestHandler(t, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, RouteHealth, nil))
+	var body map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := "dev (commit: abc1234-dirty, built: 2026-01-02T03:04:05Z)"; body["version"] != want {
+		t.Errorf("body = %v; want version %q", body, want)
 	}
 }
 

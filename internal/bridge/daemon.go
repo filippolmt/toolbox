@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/filippolmt/toolbox/internal/fsx"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // requestTimeout caps how long the daemon waits for the URL handler to
@@ -300,7 +301,7 @@ func writeJSONOK(w http.ResponseWriter, v any) {
 }
 
 func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSONOK(w, map[string]string{"status": "ok"})
+	writeJSONOK(w, map[string]string{"status": "ok", FieldVersion: version.Build()})
 }
 
 // openRequest is the body shape the wrapper POSTs to /open.

@@ -105,7 +105,7 @@ func startSession(in sessionIntent) error {
 	}
 
 	if in.Plan.Cfg.Bridge != nil && *in.Plan.Cfg.Bridge {
-		printBridgeTipIfNeeded(host)
+		checkBridgeAtSessionStart(host)
 	}
 
 	cli, err := newDockerClient()

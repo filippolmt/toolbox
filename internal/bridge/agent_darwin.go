@@ -127,10 +127,32 @@ func (a *darwinAgent) IsInstalled() bool {
 	return err == nil
 }
 
+func (a *darwinAgent) ExecPath() (string, error) {
+	body, err := os.ReadFile(a.plistPath)
+	if err != nil {
+		return "", err
+	}
+	return plistExec(string(body))
+}
+
+// serviceTarget is the launchd service target of the bridge job,
+// gui/<uid>/<label>, which kickstart and print address.
+func serviceTarget() string {
+	return "gui/" + strconv.Itoa(os.Getuid()) + "/" + launchLabel
+}
+
+// Restart kills and restarts the loaded job in place (`kickstart -k`); the
+// plist on disk is left as it is.
+func (a *darwinAgent) Restart() error {
+	if out, err := exec.Command("launchctl", "kickstart", "-k", serviceTarget()).CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl kickstart: %v: %s", err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
 func (a *darwinAgent) Status() (AgentStatus, error) {
 	st := AgentStatus{Installed: a.IsInstalled()}
-	uid := strconv.Itoa(os.Getuid())
-	out, _ := exec.Command("launchctl", "print", "gui/"+uid+"/"+launchLabel).CombinedOutput()
+	out, _ := exec.Command("launchctl", "print", serviceTarget()).CombinedOutput()
 	text := string(out)
 	switch {
 	case strings.Contains(text, "state = running"):

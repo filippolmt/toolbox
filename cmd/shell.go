@@ -11,6 +11,7 @@ import (
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/sessionplan"
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // oauthToolList renders the supported --oauth tools once for both help
@@ -180,20 +181,19 @@ func warnIfNewProfile(host fsx.Host, p *mountplan.Profile) {
 	}
 }
 
-// printBridgeTipIfNeeded prints a one-line install hint when the
-// host-side bridge is not yet installed. Build tags select an Agent
-// that returns ErrUnsupported on non-darwin/linux, which short-circuits here.
-// Uses IsInstalled (stat-only) instead of Status to keep the shell-start hot
-// path off launchctl/systemctl exec costs.
-func printBridgeTipIfNeeded(host fsx.Host) {
+// checkBridgeAtSessionStart prints the install tip while the bridge is not
+// installed, and refreshes an installed daemon of another build (see
+// bridge.CheckAtSessionStart). Build tags select an Agent that returns
+// ErrUnsupported on non-darwin/linux, which short-circuits here. The common
+// path stays off launchctl/systemctl: a stat, a file read and one loopback
+// /healthz probe.
+func checkBridgeAtSessionStart(host fsx.Host) {
 	a, err := bridge.NewAgent(host)
 	if err != nil {
 		return
 	}
-	if a.IsInstalled() {
-		return
-	}
-	fmt.Fprintln(os.Stderr, "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs, editor opens and agent sounds to the host")
+	self, _ := os.Executable() // "": CheckAtSessionStart warns, no restart
+	bridge.CheckAtSessionStart(host, a, self, version.Build(), os.Stderr)
 }
 
 func init() {
