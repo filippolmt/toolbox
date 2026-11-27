@@ -16,6 +16,14 @@ Prefer removing the unsafe flow. Scope exclusions, such as omitting test
 fixtures, are threat-model decisions and must not be described as false
 positives.
 
+## A behaviour change is driven by a red test
+
+The repo builds test-first (`CLAUDE.md`, the `tdd` skill). A commit that
+changes behaviour carries the test that pins it, or follows a commit whose test
+failed without it. Tests landing in a later commit, green on their first run,
+pin nothing they were seen to catch: name the commit pair. Docs-only and
+pure-refactor commits are exempt.
+
 ## Behaviour changes reach the user-facing docs
 
 A change a developer can observe — a new or removed command, a step that now
