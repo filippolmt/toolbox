@@ -2,7 +2,6 @@ package configui
 
 import (
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -21,7 +20,7 @@ func browsing(scope Scope, cfg *config.Config, st KeyState) Model {
 // editScope is the scope a key's editor opens in: the repo scope, except for a
 // host-only key, which only the Global scope edits.
 func editScope(key string) Scope {
-	if slices.Contains(config.HostOnlyKeys(), key) {
+	if row, _ := config.KeyByName(key); row.HostOnly {
 		return ScopeGlobal
 	}
 	return ScopeRepo

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -257,7 +256,7 @@ func (m *Model) openEditor() {
 		m.status = fmt.Sprintf("%s has a single supported value (%s) — nothing to edit", st.Key, st.Default)
 		return
 	}
-	if m.scope == ScopeRepo && slices.Contains(config.HostOnlyKeys(), st.Key) {
+	if row, _ := config.KeyByName(st.Key); m.scope == ScopeRepo && row.HostOnly {
 		m.status = fmt.Sprintf("%s is read from ~/.toolbox.yaml only — switch to the Global scope (tab) to edit it", st.Key)
 		return
 	}
