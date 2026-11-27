@@ -1,11 +1,13 @@
 package bridge
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
@@ -79,6 +81,13 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 			// the gate silently stops gating.
 			{"proximo.CATarget", proximo.CATarget},
 		}},
+		{"hc-host", []struct{ name, literal string }{
+			{"RouteHC", post(RouteHC)},
+			{"FieldCommand", field(FieldCommand)},
+			{"FieldArgs", field(FieldArgs)},
+			{"FieldOutput", get(FieldOutput)},
+			{"FieldExit", get(FieldExit)},
+		}},
 		{"paplay", []struct{ name, literal string }{
 			{"RouteSound", post(RouteSound)},
 			{"FieldName", field(FieldName)},
@@ -110,10 +119,24 @@ func TestBridgeContract_ShimMatchesGo(t *testing.T) {
 // leaves a shim still advertising it. Both directions are drift, so this is a
 // set equality, not a containment.
 func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
-	shim := readShim(t, "proximo")
+	assertShimDispatchMatches(t, "proximo", AllowedProximoCommands())
+}
 
-	// The dispatch arm is the single line assigning COMMAND:
-	//   up | down | status) COMMAND="$1" ;;
+// TestBridgeContract_HCAllowlistMatchesShim is the same set equality for the
+// Host Terminal Relay: hc-host's dispatch arm and the daemon's hc verb gate.
+func TestBridgeContract_HCAllowlistMatchesShim(t *testing.T) {
+	assertShimDispatchMatches(t, "hc-host", AllowedHCCommands())
+}
+
+// assertShimDispatchMatches reads the shim's single dispatch arm, the line
+// assigning COMMAND:
+//
+//	up | down | status) COMMAND="$1" ;;
+//
+// and requires it to name exactly the daemon's allowed verbs.
+func assertShimDispatchMatches(t *testing.T, name string, allowed []string) {
+	t.Helper()
+	shim := readShim(t, name)
 	var arm string
 	for line := range strings.SplitSeq(shim, "\n") {
 		if strings.Contains(line, `COMMAND="$1"`) {
@@ -122,22 +145,40 @@ func TestBridgeContract_ProximoAllowlistMatchesShim(t *testing.T) {
 		}
 	}
 	if arm == "" {
-		t.Fatalf(`shim proximo has no COMMAND="$1" dispatch arm — the allowlist can no longer be read from it`)
+		t.Fatalf(`shim %s has no COMMAND="$1" dispatch arm — the allowlist can no longer be read from it`, name)
 	}
 	got := map[string]struct{}{}
 	for alt := range strings.SplitSeq(strings.Split(arm, ")")[0], "|") {
 		got[strings.TrimSpace(alt)] = struct{}{}
 	}
-
-	allowed := AllowedProximoCommands()
 	for _, cmd := range allowed {
 		if _, ok := got[cmd]; !ok {
-			t.Errorf("AllowedProximoCommands has %q but shim proximo rejects it — the command is unreachable from the container", cmd)
+			t.Errorf("the daemon allows %q but shim %s rejects it — the command is unreachable from the container", cmd, name)
 		}
 	}
 	for cmd := range got {
 		if !slices.Contains(allowed, cmd) {
-			t.Errorf("shim proximo forwards %q but the daemon allowlist rejects it — the daemon answers 400", cmd)
+			t.Errorf("shim %s forwards %q but the daemon allowlist rejects it — the daemon answers 400", name, cmd)
+		}
+	}
+}
+
+// TestBridgeContract_ShimMaxTimeOutlastsTheDaemon: a shim whose curl gives up
+// before the daemon's execution budget reports "bridge unreachable" for a
+// command still running on the host. Each long-running route's shim waits the
+// daemon's budget plus shimMaxTimeMargin, so moving a timeout moves its shim.
+func TestBridgeContract_ShimMaxTimeOutlastsTheDaemon(t *testing.T) {
+	const shimMaxTimeMargin = 15 * time.Second
+	for _, tc := range []struct {
+		shim, route string
+		budget      time.Duration
+	}{
+		{"proximo", RouteProximo, proximoTimeout},
+		{"hc-host", RouteHC, hcTimeout},
+	} {
+		want := fmt.Sprintf(`bridge_post %s "${PAYLOAD}" "${BODY_FILE}" %d)`, tc.route, int((tc.budget + shimMaxTimeMargin).Seconds()))
+		if shim := readShim(t, tc.shim); !strings.Contains(shim, want) {
+			t.Errorf("shim %s lacks %q: its --max-time must be the daemon's budget plus %v", tc.shim, want, shimMaxTimeMargin)
 		}
 	}
 }
@@ -172,10 +213,10 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[openRequest](), []string{FieldURL}},
 		{reflect.TypeFor[editRequest](), []string{FieldEditor, FieldPath}},
 		{reflect.TypeFor[proximoRequest](), []string{FieldCommand, FieldArgs, FieldHome, FieldCodexHome}},
-		{reflect.TypeFor[proximoResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput, FieldNoPrompt}},
-		{reflect.TypeFor[credentialResponse](), []string{FieldExit, FieldOutput}},
+		{reflect.TypeFor[commandResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
+		{reflect.TypeFor[hcRequest](), []string{FieldCommand, FieldArgs}},
 	} {
 		t.Run(tc.typ.Name(), func(t *testing.T) {
 			if got := tc.typ.NumField(); got != len(tc.tags) {

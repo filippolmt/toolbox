@@ -11,12 +11,12 @@ sections.** Every `##` of a linked guide needs an entry
 | [configuration.md](configuration.md) | reference | All `.toolbox.yaml` keys, loading order, `TOOLBOX_*` env |
 | [mounts.md](mounts.md) | reference | Credential isolation, mount merge, `mounts_root`, profiles, startup hooks |
 | [shells.md](shells.md) | how-to | Named shells / multiple workspaces |
-| [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo forwarding; Claude in Chrome, which bypasses it |
+| [bridge.md](bridge.md) | explanation | Host daemon for browser / editor / proximo / host-terminal forwarding; Claude in Chrome, which bypasses it |
 | [proximo.md](proximo.md) | explanation | `.test` apps + CA trust inside the container |
 | [session-reload.md](session-reload.md) | explanation | `toolbox-reload`: background prefetch, the in-shell banner, and moving a live session onto a newer image |
 | [worktrunk.md](worktrunk.md) | how-to | Parallel agents in one toolbox with the bundled Worktrunk (`wt`) |
 | [orca.md](orca.md) | how-to | Orca's runtime in a detached Orca Shell: start, pair, a terminal in it, stop, profiles, port, log, offline, side effects, the dropped Claude Code plugin |
-| [herdr.md](herdr.md) | how-to | The Herdr desktop app's agents in a detached Herdr Core Shell: start, terminal, run again, stop, profiles, trust boundary, recreate, removing the machine |
+| [herdr.md](herdr.md) | how-to | The Herdr desktop app's agents in a detached Herdr Core Shell: start, terminal, run again, stop, profiles, agents on the host, trust boundary, recreate, removing the machine |
 | [mobile.md](mobile.md) | how-to | Android builds in the toolbox on the host's devices; iOS on the host |
 | [serial-devices.md](serial-devices.md) | how-to | USB serial boards (ESP32, …) on the host, reached from the container over RFC 2217 |
 | [troubleshooting.md](troubleshooting.md) | how-to | Failure modes: symptom → fix |
@@ -47,6 +47,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Loading order](configuration.md#loading-order)
 - [Key reference](configuration.md#key-reference)
 - [shell](configuration.md#shell)
+- [host_terminal_relay](configuration.md#host_terminal_relay)
 - [managed_statusline](configuration.md#managed_statusline)
 - [peer_messaging](configuration.md#peer_messaging)
 - [image_reclaim](configuration.md#image_reclaim)
@@ -87,6 +88,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Editor shims](bridge.md#editor-shims)
 - [Git credentials](bridge.md#git-credentials)
 - [Agent sounds](bridge.md#agent-sounds)
+- [Host terminals](bridge.md#host-terminals)
 - [Mount gating](bridge.md#mount-gating)
 - [Uninstall surface](bridge.md#uninstall-surface)
 - [Claude in Chrome](bridge.md#claude-in-chrome)
@@ -141,6 +143,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [Run it again](herdr.md#run-it-again)
 - [Stop](herdr.md#stop)
 - [Profiles](herdr.md#profiles)
+- [Agents on the host](herdr.md#agents-on-the-host) — [Before you start](herdr.md#before-you-start) · [From the host to the toolbox](herdr.md#from-the-host-to-the-toolbox) · [From the toolbox to the host](herdr.md#from-the-toolbox-to-the-host) · [Ask your agents to do it](herdr.md#ask-your-agents-to-do-it) · [Turn it off](herdr.md#turn-it-off)
 - [Trust boundary](herdr.md#trust-boundary)
 - [Recreate](herdr.md#recreate)
 - [Remove the machine](herdr.md#remove-the-machine)
@@ -185,6 +188,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
 - [The Orca server does not start](troubleshooting.md#the-orca-server-does-not-start)
 - [The Orca server stops with EINVAL on a socket](troubleshooting.md#the-orca-server-stops-with-einval-on-a-socket)
+- [`hc-host` refuses or cannot reach the host](troubleshooting.md#hc-host-refuses-or-cannot-reach-the-host)
 - [herdr-core cannot start: Permission denied](troubleshooting.md#herdr-core-cannot-start-permission-denied)
 - [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable)
 

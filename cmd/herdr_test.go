@@ -322,9 +322,9 @@ func TestHerdrWithoutHCKeepsTheShellAndPrintsTheAddCommand(t *testing.T) {
 
 // joinHerdr runs `toolbox herdr args` against a running Herdr Core Shell on
 // running, through the real attach, and returns what it printed.
-func joinHerdr(t *testing.T, running string, args []string) string {
+func joinHerdr(t *testing.T, running string, args []string, env ...string) string {
 	t.Helper()
-	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: running}, nil }
+	newDockerClient = func() (client.APIClient, error) { return runningOrcaDaemon{workspace: running, env: env}, nil }
 	shellFn = container.Shell
 	var out bytes.Buffer
 	herdrCmd.SetOut(&out)
@@ -346,6 +346,21 @@ func TestHerdrJoinsARunningShellOnItsWorkspace(t *testing.T) {
 	}
 	if strings.Contains(out, "stop first") {
 		t.Errorf("output %q reports a mismatch", out)
+	}
+}
+
+// A Shell created before toolbox herdr set the Host Terminal Relay's return
+// address keeps its create-time env on a join, so hc-host refuses in it: the
+// join says how to recreate it, and says nothing once the address is there.
+func TestHerdrJoinReportsAShellWithoutTheRelayAddress(t *testing.T) {
+	herdrHarness(t, fakeHerdrCore{})
+	ws := sessionWorkspace(t, "src")
+	note := "predates hc-host"
+	if out := joinHerdr(t, ws, nil); !strings.Contains(out, note) {
+		t.Errorf("output %q lacks the %q note", out, note)
+	}
+	if out := joinHerdr(t, ws, nil, sessionplan.HerdrMachineEnv+"=toolbox"); strings.Contains(out, note) {
+		t.Errorf("output %q carries the %q note for a Shell that has the address", out, note)
 	}
 }
 

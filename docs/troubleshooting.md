@@ -211,6 +211,17 @@ The next launch records the directory it started from. Note that this clears a s
 
 **Fix:** `toolbox orca stop`, then `toolbox orca`: the new Orca Shell keeps its data on the `toolbox-orca-data` volume. The desktop app pairs again: nothing is migrated, so the old pairing identity stays behind. The old `~/.toolbox/toolbox/state/orca` (under `~/.toolbox/profiles/<name>/` with a profile, or your `mounts_root`) may still hold that identity and Orca's unencrypted credentials besides `server/`; with the Orca Shell stopped, it is safe to delete whole. See [port and log](orca.md#port-and-log) and [what Orca changes in your toolbox config](orca.md#what-orca-changes-in-your-toolbox-config).
 
+## `hc-host` refuses or cannot reach the host
+
+- **"works in the Herdr Core Shell only"**: the Shell has no `TOOLBOX_HERDR_MACHINE`. A Shell created by an older toolbox keeps the env it was created with, and `toolbox herdr` says so when it joins one. Run `toolbox herdr stop`, then `toolbox herdr`.
+- **"send needs a herdr-core terminal"**: `send` runs only from a terminal of a herdr.app space on the Shell's machine (`HC_TERMINAL_ID` set), the only place an answer can arrive. `toolbox herdr shell` is not one.
+- **"is not an agent waiting for input" (HTTP 409)**: the target is a shell, or an agent that is working or showing a dialog. Nothing was typed; check `hc-host ls` and retry when it is `idle` or `done`.
+- **"host daemon has no /hc endpoint"**: the host's toolbox CLI predates the relay. Update it and run `toolbox bridge install` again.
+- **"the Host Terminal Relay is off on this host" (HTTP 403)**: `host_terminal_relay: false` in the host's `~/.toolbox.yaml`, or a `~/.toolbox.yaml` the daemon cannot read or parse (the message names which). Remove the key or fix the file; no restart is needed.
+- **"hc (herdr-core) not found on the host"**: the daemon looks on its own PATH and in `~/.local/bin`. Install herdr-core on the host, or link `hc` into `~/.local/bin`.
+
+See [Host terminals](bridge.md#host-terminals).
+
 ## herdr-core cannot start: Permission denied
 
 **Symptom:** `toolbox herdr` fails with `herdr-core could not register the machine toolbox: hc machine add: … cannot start core: Permission denied (os error 13)`.

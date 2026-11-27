@@ -210,6 +210,12 @@ func (f handlerFns) withHostDefaults(host fsx.Host, logger *log.Logger) handlerF
 	if f.sound == nil {
 		f.sound = func(data []byte) error { return playSound(logger, data) }
 	}
+	if f.hc == nil {
+		f.hc = func(ctx context.Context, argv []string) ([]byte, int, error) { return launchHC(ctx, host, argv) }
+	}
+	if f.hcOff == nil {
+		f.hcOff = func() string { return hcRelayOff(host) }
+	}
 	return f
 }
 
@@ -247,6 +253,9 @@ type handlerFns struct {
 	proximo    func(ctx context.Context, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error)
 	credential func(ctx context.Context, op string, input []byte, noPrompt bool) (output []byte, exit int, err error)
 	sound      func(data []byte) error
+	hc         func(ctx context.Context, argv []string) (output []byte, exit int, err error)
+	// hcOff reports why the Host Terminal Relay is off, or "" when it is on.
+	hcOff func() string
 }
 
 // handler is the single HTTP handler the daemon mounts its endpoints on.
@@ -276,6 +285,7 @@ func newHandler(token string, fns handlerFns, logger *log.Logger, now func() tim
 	mux.HandleFunc(RouteProximo, h.handleProximo)
 	mux.HandleFunc(RouteCredential, h.handleCredential)
 	mux.HandleFunc(RouteSound, h.handleSound)
+	mux.HandleFunc(RouteHC, h.handleHC)
 	mux.HandleFunc(RouteHealth, h.handleHealth)
 	return mux
 }
@@ -432,9 +442,10 @@ type proximoRequest struct {
 // while anything approaching this is not a command line a human wrote.
 const proximoBodyLimit = 16384
 
-// proximoResponse carries the host command's combined output and exit code
-// back to the shim, which prints the output and propagates the exit.
-type proximoResponse struct {
+// commandResponse carries a host command's output and exit code back to the
+// shim, which prints the output and propagates the exit: /proximo, /credential
+// and /hc answer with it.
+type commandResponse struct {
 	Exit   int    `json:"exit"`
 	Output string `json:"output"`
 }
@@ -477,7 +488,7 @@ func (h *handler) handleProximo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.Printf("proximo: ok command=%q exit=%d", req.Command, exit)
-	writeJSONOK(w, proximoResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
 }
 
 // credentialTimeout bounds a /credential execution. Above the shared 5s
@@ -499,13 +510,6 @@ type credentialRequest struct {
 	Op       string `json:"op"`
 	Input    string `json:"input"`
 	NoPrompt bool   `json:"no_prompt"`
-}
-
-// credentialResponse carries git's stdout and exit code back to the shim,
-// which writes the output to git and propagates the exit.
-type credentialResponse struct {
-	Exit   int    `json:"exit"`
-	Output string `json:"output"`
 }
 
 func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
@@ -535,7 +539,7 @@ func (h *handler) handleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	// Never log the exchange body — it carries secrets. Op + exit only.
 	h.logger.Printf("credential: ok op=%q exit=%d", req.Op, exit)
-	writeJSONOK(w, credentialResponse{Exit: exit, Output: string(out)})
+	writeJSONOK(w, commandResponse{Exit: exit, Output: string(out)})
 }
 
 // maxSoundBody caps a /sound request body at 512 KiB. herdr's built-in chimes

@@ -119,6 +119,26 @@ type Key struct {
 	// which is what TestEveryKeyValidatesOrSaysWhyNot demands. This is the old
 	// noValidationKeys list, moved onto the row it classifies.
 	NoValidation string
+	// HostOnly marks a key a host-side process reads from ~/.toolbox.yaml
+	// alone: any other layer setting it changes nothing (HostOnlyKeys).
+	HostOnly bool
+}
+
+// HostTerminalRelayKey is the Host Terminal Relay's off switch, a HostOnly
+// row: the bridge daemon reads it by this name from the host's ~/.toolbox.yaml
+// alone.
+const HostTerminalRelayKey = "host_terminal_relay"
+
+// HostOnlyKeys are the rows marked HostOnly: the keys only ~/.toolbox.yaml
+// can set, because a host-side process reads them from that file alone.
+func HostOnlyKeys() []string {
+	var out []string
+	for _, k := range keyRows {
+		if k.HostOnly {
+			out = append(out, k.Name)
+		}
+	}
+	return out
 }
 
 // Keys returns every config key's row, in Config declaration order — which is
@@ -274,6 +294,21 @@ var keyRows = []Key{
 	{
 		Name: DeprecatedBridgeKey,
 		Kind: KindAlias,
+	},
+	{
+		Name:    HostTerminalRelayKey,
+		Kind:    KindTri,
+		Editor:  EditorTri,
+		Summary: "Let the Herdr Core Shell's hc-host message the agents herdr.app runs on the host. Global only. Tri-state: unset = auto (on).",
+		Default: defaultAutoOn,
+		Example: "# host_terminal_relay — the bridge route hc-host uses to message the agents\n" +
+			"# herdr.app runs on the host (docs/herdr.md, Agents on the host). Tri-state,\n" +
+			"# default AUTO (on) wherever the bridge is installed. Set false to turn it off\n" +
+			"# for every container. Read by the bridge daemon from ~/.toolbox.yaml only, on\n" +
+			"# each request: a project .toolbox.yaml setting it changes nothing.\n" +
+			"# host_terminal_relay: false\n",
+		Tri:      func(c *Config) *bool { return c.HostTerminalRelay },
+		HostOnly: true,
 	},
 	{
 		Name:    "proximo",

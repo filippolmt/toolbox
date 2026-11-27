@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/filippolmt/toolbox/internal/mountplan"
+	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // bridgeLib is the in-container path of the shared shim transport every
@@ -43,6 +45,7 @@ func TestShimPathsMatchGoConstants(t *testing.T) {
 		{"bin/proximo", []string{sourceLib}},
 		{"bin/git-credential-toolbox", []string{sourceLib}},
 		{"bin/paplay", []string{sourceLib}},
+		{"bin/hc-host", []string{sourceLib, sessionplan.HerdrMachineEnv}},
 	}
 	for _, tc := range cases {
 		body, err := fs.ReadFile(Assets, AssetDir+"/"+tc.shim)
@@ -111,5 +114,68 @@ bridge_post() { printf '%s' "$2" > "$PAYLOAD_OUT"; printf '{"output":""}' > "$3"
 		if req["op"] != "get" || req["input"] != "protocol=https\nhost=forge.example.internal\n\n" {
 			t.Errorf("GCM_INTERACTIVE=%q: op/input not forwarded as given: %s", tc.gcm, raw)
 		}
+	}
+}
+
+// hc-host signs a send with the address the host's agent answers to, and
+// refuses outside a herdr-core terminal of the Herdr Core Shell, where no hc
+// would receive the answer. The shim runs for real, against a stand-in
+// transport that records the payload it would POST.
+func TestHCHostShimSignsSendsAndNeedsTheHerdrCoreShell(t *testing.T) {
+	body, err := fs.ReadFile(Assets, AssetDir+"/bin/hc-host")
+	if err != nil {
+		t.Fatalf("read embedded shim: %v", err)
+	}
+	dir := t.TempDir()
+	lib := filepath.Join(dir, "bridge-lib.sh")
+	const fakeLib = `bridge_ready() { return 0; }
+bridge_post() { printf '%s' "$2" > "$PAYLOAD_OUT"; printf '{"output":"","exit":0}' > "$3"; echo 200; }
+`
+	if err := os.WriteFile(lib, []byte(fakeLib), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(dir, "hc-host")
+	if err := os.WriteFile(shim, []byte(strings.Replace(string(body), ". "+bridgeLib, ". "+lib, 1)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		label    string
+		env      []string
+		args     []string
+		wantArgs []any // nil: refused, nothing posted
+	}{
+		{"send is signed", []string{sessionplan.HerdrMachineEnv + "=toolbox-work", "HC_TERMINAL_ID=t2"},
+			[]string{"send", "t3", "-- review this"}, []any{"t3", "[from toolbox-work/t2] -- review this"}},
+		{"read is forwarded as given", []string{sessionplan.HerdrMachineEnv + "=toolbox"},
+			[]string{"read", "t3", "--lines", "20"}, []any{"t3", "--lines", "20"}},
+		{"outside the Herdr Core Shell", []string{sessionplan.HerdrMachineEnv + "=", "HC_TERMINAL_ID=t2"},
+			[]string{"ls"}, nil},
+		{"send outside a herdr-core terminal", []string{sessionplan.HerdrMachineEnv + "=toolbox", "HC_TERMINAL_ID="},
+			[]string{"send", "t3", "hi"}, nil},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			payload := filepath.Join(t.TempDir(), "payload")
+			cmd := exec.Command("sh", append([]string{shim}, tc.args...)...)
+			cmd.Env = append(append(os.Environ(), "PAYLOAD_OUT="+payload), tc.env...)
+			out, err := cmd.CombinedOutput()
+			raw, readErr := os.ReadFile(payload)
+			if tc.wantArgs == nil {
+				if err == nil || readErr == nil {
+					t.Errorf("shim ran (err %v) and posted %q; want a refusal with nothing posted\n%s", err, raw, out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("shim: %v\n%s", err, out)
+			}
+			var req map[string]any
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Fatalf("payload %q: %v", raw, err)
+			}
+			if got := req["args"].([]any); !slices.Equal(got, tc.wantArgs) || req["command"] != tc.args[0] {
+				t.Errorf("posted %s, want command %q args %q", raw, tc.args[0], tc.wantArgs)
+			}
+		})
 	}
 }

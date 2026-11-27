@@ -70,7 +70,7 @@ func TestEveryCollectionKeyListsItsEntries(t *testing.T) {
 // this test now.
 func TestEveryEditableKeyOpensAnEditor(t *testing.T) {
 	for _, key := range Keys() {
-		m := press(browsing(ScopeRepo, &config.Config{},
+		m := press(browsing(editScope(key), &config.Config{},
 			KeyState{Key: key, ReadOnly: ReadOnlyKey(key)}), "enter")
 		if m.states[0].ReadOnly {
 			if m.editing {
@@ -156,7 +156,7 @@ func TestEveryOpenEditorHasAPendingMutation(t *testing.T) {
 		if ReadOnlyKey(key) {
 			continue
 		}
-		m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: key}), "enter")
+		m := press(browsing(editScope(key), &config.Config{}, KeyState{Key: key}), "enter")
 		if m.pendingMutator() == nil {
 			t.Errorf("key %q opens an editor with no pending mutation behind it", key)
 		}

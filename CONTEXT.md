@@ -109,8 +109,10 @@ summary and human default `config ui` shows, the annotated block
 `Editor` the TUI opens, the typed readers those present the value through
 (`Str` / `Tri` / `List` / `Pairs`), the `Validate` half of the load path's
 validation tail, the `Scalar` fail-fast verdict behind
-`config.ValidateKey`, and the `Effective` fallback behind
-`config.EffectiveValue`. Owned by `internal/config` (`keys.go`).
+`config.ValidateKey`, the `Effective` fallback behind
+`config.EffectiveValue`, and `HostOnly` for a key only `~/.toolbox.yaml` can
+set (the doctor warns in another layer, `config ui` edits it in the Global
+scope alone). Owned by `internal/config` (`keys.go`).
 
 Adding a key is its `Config` field, its row, and the order `TestSchemaKeys`
 pins — nothing else, unless the key brings a *shape* no surface has
@@ -2266,7 +2268,7 @@ create, its workspace reported, a different one requested reported as a
 mismatch. After the create, `toolbox herdr` registers the Shell with the
 host's herdr-core through the `herdrcore.Host` seam (adapter
 `herdrcore.CLI`) as the machine `toolbox` or `toolbox-<profile>`
-(`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
+(`sessionplan.HerdrMachineName`), reached with `docker exec -i <container> sh -c`
 (`herdrcore.Via`, built from the planned container name only) and
 `--install`, so herdr-core copies the host's own `hc` into the container's
 writable layer. A machine herdr-core already knows on the Shell's `--via`
@@ -2291,6 +2293,36 @@ machine per repository.
 Why the state is a volume: herdr-core keeps its sockets in its state
 directory when the container has no runtime directory, and a
 [Host Share](#host-share) bind refuses to `chmod` a socket.
+
+### Host Terminal Relay
+
+The bridge route through which an agent in the [Herdr Core Shell](#herdr-core-shell)
+reaches the agents herdr.app runs in the host's own terminals: `hc-host` in the
+Shell, `/hc` in the daemon, the host's `hc` behind it. The other direction is
+not part of it: the host's herdr-core already reaches the Shell as a machine.
+
+Concretely: `bridge.hcAllowlist` maps each relayed verb to the builder that
+checks its args, on a host terminal only (no `machine/` address), and
+rebuilds the argv with the positionals after `--`; a `send` first runs `hc get` and types only into a
+terminal whose `status` names an agent that is `idle` or `done`
+(`bridge.hcReady`), adding `--if idle` on `idle`. `bridge.launchHC` resolves
+`hc` on the daemon's PATH, else `~/.local/bin`, and sets `HOME`. The shim signs
+a send with `[from <TOOLBOX_HERDR_MACHINE>/<HC_TERMINAL_ID>]`, the address the
+host agent answers with `hc send`; `sessionplan.HerdrMachineEnv` is set on the
+Herdr Core Shell alone, which is where the shim works. The off switch is
+`config.HostTerminalRelayKey`, which `bridge.hcRelayOff` reads from the host's
+`~/.toolbox.yaml` alone on every request (a `HostOnly` [Key Row](#key-row):
+the doctor warns in any other layer and `config ui` refuses the Repo
+scope), failing closed. Decision and
+alternatives: [ADR 0025](docs/adr/0025-host-terminal-relay.md).
+
+Why the term exists: "agents talking across the VM" reads as Claude Code's
+cross-session messaging, which the [Peer Anchor](#peer-anchor) makes work
+between containers and which cannot reach the host. The relay is a different
+channel — herdr-core terminals, any agent, typed text — and naming it keeps the
+two from being "fixed" into each other. It is also the one bridge route that
+reaches another program's input rather than a fixed host action, which is why
+its gate is about the target's state and not only the verb.
 
 ### Peer Anchor
 

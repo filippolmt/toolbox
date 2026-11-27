@@ -131,10 +131,11 @@ var keyDescriptors = map[string]keyDescriptor{
 
 		hint: "(unset)",
 	},
-	"bridge":             {mutator: boolFromChoice},
-	"proximo":            {mutator: boolFromChoice},
-	"managed_statusline": {mutator: boolFromChoice},
-	"image_reclaim":      {mutator: boolFromChoice},
+	"bridge":              {mutator: boolFromChoice},
+	"host_terminal_relay": {mutator: boolFromChoice},
+	"proximo":             {mutator: boolFromChoice},
+	"managed_statusline":  {mutator: boolFromChoice},
+	"image_reclaim":       {mutator: boolFromChoice},
 	// peer_messaging is a plain bool, not a tri-state: the pointer is always
 	// non-nil, so the editor shows true/false and never "auto". Choosing
 	// "unset" removes the key from THIS scope, so it reads back as whatever

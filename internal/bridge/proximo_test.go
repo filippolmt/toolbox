@@ -94,7 +94,7 @@ func TestResolveProximoBinary_FallbackProbes(t *testing.T) {
 	// PATH lookup fails; a fallback candidate exists.
 	dir := fakeProximo(t, "exit 0")
 	bin := filepath.Join(dir, "proximo")
-	got, err := resolveProximoBinary(proximoHost(t, ""), []string{filepath.Join(t.TempDir(), "absent"), bin})
+	got, err := resolveHostBinary(proximoHost(t, ""), "proximo", []string{filepath.Join(t.TempDir(), "absent"), bin}, ErrProximoNotInstalled)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -116,7 +116,7 @@ func TestErrProximoNotInstalled_NamesTheHostCommand(t *testing.T) {
 }
 
 func TestResolveProximoBinary_NotFound(t *testing.T) {
-	_, err := resolveProximoBinary(proximoHost(t, ""), []string{filepath.Join(t.TempDir(), "absent")})
+	_, err := resolveHostBinary(proximoHost(t, ""), "proximo", []string{filepath.Join(t.TempDir(), "absent")}, ErrProximoNotInstalled)
 	if err == nil {
 		t.Fatal("want error when nothing resolves")
 	}

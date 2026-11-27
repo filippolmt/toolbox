@@ -11,9 +11,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-
-	"github.com/filippolmt/toolbox/internal/config"
-	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // Host is the host's herdr-core: the seam `toolbox herdr` registers the Herdr
@@ -115,10 +112,4 @@ func Via(container string) (string, error) {
 		return "", fmt.Errorf("herdr-core: %q is not a container name to reach with docker exec", container)
 	}
 	return "docker exec -i " + container + " sh -c", nil
-}
-
-// MachineName is the machine a Herdr Core Shell registers as: toolbox, or
-// toolbox-<profile>.
-func MachineName(container string) string {
-	return "toolbox" + strings.TrimPrefix(container, sessionplan.ContainerNamePrefix+config.HerdrCoreShell.Base)
 }

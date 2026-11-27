@@ -1,0 +1,90 @@
+#!/bin/sh
+# toolbox Host Terminal Relay shim. The host's herdr-core (hc) runs the
+# terminals herdr.app opens on the host; the hc in the Herdr Core Shell has no
+# machine that reaches them. This shim forwards ls/get/read/send to the host
+# daemon's /hc endpoint, which runs the host's hc and alone decides what is
+# allowed: no other verb, no hc flag beyond read --lines, no
+# terminal on another machine, and a send only to an agent waiting for input.
+# A send is signed with this terminal's address on the host, so the agent there
+# answers with `hc send <machine>/<terminal> <text>`. See
+# docs/adr/0025-host-terminal-relay.md.
+
+set -eu
+
+# shellcheck source=bridge-lib.sh source-path=SCRIPTDIR
+. /usr/local/lib/toolbox/bridge-lib.sh
+
+usage() {
+    echo "usage: hc-host ls | get <terminal> | read <terminal> [--lines N] | send <terminal> <text>   (the host's herdr.app terminals, through the toolbox bridge)" >&2
+    exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+
+case "$1" in
+ls | get | read | send) COMMAND="$1" ;;
+*) usage ;;
+esac
+shift
+
+# Set by toolbox herdr on the Herdr Core Shell only: anywhere else no hc runs
+# to receive the answer. Not a security gate — the daemon cannot tell
+# containers apart.
+if [ -z "${TOOLBOX_HERDR_MACHINE:-}" ]; then
+    echo "hc-host: works in the Herdr Core Shell only (toolbox herdr); a Shell started by an older toolbox lacks TOOLBOX_HERDR_MACHINE — run 'toolbox herdr stop' and 'toolbox herdr' on the host" >&2
+    exit 1
+fi
+
+if [ "${COMMAND}" = "send" ]; then
+    [ "$#" -eq 2 ] || usage
+    if [ -z "${HC_TERMINAL_ID:-}" ]; then
+        echo "hc-host: send needs a herdr-core terminal to sign the reply address — run it from a herdr.app space on the ${TOOLBOX_HERDR_MACHINE} machine" >&2
+        exit 1
+    fi
+    set -- "$1" "[from ${TOOLBOX_HERDR_MACHINE}/${HC_TERMINAL_ID}] $2"
+fi
+
+if ! bridge_ready; then
+    case "${BRIDGE_ERROR}" in
+    not_installed) echo "hc-host: bridge not installed — run 'toolbox bridge install' on the host" >&2 ;;
+    *) echo "hc-host: curl missing in image" >&2 ;;
+    esac
+    exit 1
+fi
+
+PAYLOAD=$(COMMAND="${COMMAND}" python3 -c 'import json, os, sys; print(json.dumps({
+    "command": os.environ["COMMAND"],
+    "args": sys.argv[1:],
+}))' "$@")
+
+BODY_FILE=$(mktemp)
+trap 'rm -f "${BODY_FILE}"' EXIT
+
+# --max-time is the daemon's hcTimeout plus a margin (pinned by
+# TestBridgeContract_ShimMaxTimeOutlastsTheDaemon): a send waits out a
+# person's unfinished draft in the target terminal.
+STATUS=$(bridge_post /hc "${PAYLOAD}" "${BODY_FILE}" 105)
+
+case "${STATUS}" in
+2??)
+    BODY_FILE="${BODY_FILE}" python3 -c '
+import json, os, sys
+with open(os.environ["BODY_FILE"]) as f:
+    resp = json.load(f)
+sys.stdout.write(resp.get("output", ""))
+sys.exit(int(resp.get("exit", 0)))
+'
+    ;;
+404)
+    echo "hc-host: host daemon has no /hc endpoint — update the host toolbox CLI and rerun 'toolbox bridge install'" >&2
+    exit 1
+    ;;
+000)
+    echo "hc-host: bridge unreachable — check 'toolbox bridge status' on the host" >&2
+    exit 1
+    ;;
+*)
+    echo "hc-host: bridge rejected the request (HTTP ${STATUS}): $(cat "${BODY_FILE}")" >&2
+    exit 1
+    ;;
+esac

@@ -68,6 +68,11 @@ type Config struct {
 	// absent. Consumers must read Bridge. Remove in a major release.
 	// The tag string is mirrored by DeprecatedBridgeKey (keep in sync).
 	BrowserBridge *bool `mapstructure:"browser_bridge"`
+	// HostTerminalRelay gates the bridge's /hc route (CONTEXT.md, Host
+	// Terminal Relay). Tri-state, unset = on. Host-wide: the bridge daemon
+	// reads it from ~/.toolbox.yaml alone (HostTerminalRelayKey), so a project
+	// layer setting it changes nothing — the doctor warns.
+	HostTerminalRelay *bool `mapstructure:"host_terminal_relay"`
 	// Proximo controls the proximo (https://github.com/filippolmt/proximo)
 	// local-dev integration. Tri-state:
 	//   - omitted (nil) → auto: enabled iff proximo is set up on this host

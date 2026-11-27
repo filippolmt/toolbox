@@ -338,6 +338,13 @@ func TestPreviewMatchesWriterForEveryEditableKey(t *testing.T) {
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("bridge", boolPtr(false))) },
 		},
 		{
+			key:  "host_terminal_relay",
+			open: chooseValue("false"),
+			save: func(m Model) error {
+				return apply(m.target, m.cwd, configedit.Bool("host_terminal_relay", boolPtr(false)))
+			},
+		},
+		{
 			key:  "proximo",
 			open: chooseValue("true"),
 			save: func(m Model) error { return apply(m.target, m.cwd, configedit.Bool("proximo", boolPtr(true))) },
@@ -460,6 +467,10 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 	}
 	repo := t.TempDir()
 	target := filepath.Join(repo, ".toolbox.yaml")
+	scope := editScope(tc.key)
+	if scope == ScopeGlobal {
+		target = filepath.Join(home, ".toolbox.yaml")
+	}
 	if targetExists {
 		writeFile(t, target, "# existing config\npull: always\n")
 	}
@@ -472,7 +483,7 @@ func openedEditor(t *testing.T, tc previewCase, targetExists bool) (Model, strin
 		tc.inCfg(cfg)
 	}
 
-	m := press(Model{cwd: repo, scope: ScopeRepo, cfg: cfg, target: target,
+	m := press(Model{cwd: repo, scope: scope, cfg: cfg, target: target,
 		states: []KeyState{{Key: tc.key, ScopeSet: true}}}, "enter")
 	if !m.editing {
 		t.Fatalf("enter did not open an editor for %q (status: %s)", tc.key, m.status)

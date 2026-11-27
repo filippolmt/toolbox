@@ -10,6 +10,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/filippolmt/toolbox/internal/config"
+	"github.com/filippolmt/toolbox/internal/configio"
 	"github.com/filippolmt/toolbox/internal/fsx"
 	"github.com/filippolmt/toolbox/internal/mountplan"
 	"github.com/filippolmt/toolbox/internal/proximo"
@@ -47,6 +48,8 @@ func Doctor(host fsx.Host, searchFrom, explicitOverride string) []Finding {
 	findings = append(findings, lintLayerKeys("~/.toolbox.yaml", global)...)
 	findings = append(findings, lintLayerKeys(projectPath, project)...)
 	findings = append(findings, lintLayerKeys(explicitOverride, explicit)...)
+	findings = append(findings, lintHostOnlyKeys(projectPath, project)...)
+	findings = append(findings, lintHostOnlyKeys(explicitOverride, explicit)...)
 
 	cfg, err := config.Merge(global, project, explicit)
 	if err != nil {
@@ -93,6 +96,23 @@ func lintLayerKeys(label string, b []byte) []Finding {
 		if !slices.Contains(known, k) {
 			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
 				"%s: unknown top-level key %q%s", label, k, DidYouMean(k, known))})
+		}
+	}
+	return findings
+}
+
+// lintHostOnlyKeys flags a host-only key (config.HostOnlyKeys) set in a layer
+// other than ~/.toolbox.yaml, where the host process that reads it never looks.
+func lintHostOnlyKeys(label string, b []byte) []Finding {
+	m, err := configio.TopLevel(b)
+	if err != nil {
+		return nil // Merge surfaces a parse failure as a proper error
+	}
+	var findings []Finding
+	for _, k := range config.HostOnlyKeys() {
+		if _, ok := m[k]; ok {
+			findings = append(findings, Finding{SeverityWarning, fmt.Sprintf(
+				"%s: %s is read from ~/.toolbox.yaml only; here it changes nothing — set it in ~/.toolbox.yaml (or `toolbox config ui`, Global scope)", label, k)})
 		}
 	}
 	return findings

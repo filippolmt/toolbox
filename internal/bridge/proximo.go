@@ -194,12 +194,6 @@ func setEnv(env []string, key, value string) []string {
 	return out
 }
 
-// proximoRunFailure wraps an infrastructure failure — a binary that would not
-// run, a deadline — with the binary and verb that were about to execute. Only
-// those: a non-zero exit from proximo itself is data the shim propagates, not
-// an error to wrap.
-const proximoRunFailure = "run %s %s: %w"
-
 // proximoTimeout bounds a /proximo execution. Far above the shared 5s
 // requestTimeout because the first `proximo up` — and `proximo update` —
 // pulls/builds the stack images; status/down complete in seconds.
@@ -290,20 +284,6 @@ func appendPathDirs(env []string, dirs []string) []string {
 	return out
 }
 
-// resolveProximoBinary returns the proximo binary to exec: PATH lookup first,
-// then the given fallback candidates in order.
-func resolveProximoBinary(host fsx.Host, candidates []string) (string, error) {
-	if p, err := host.Look("proximo"); err == nil {
-		return p, nil
-	}
-	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && !info.IsDir() {
-			return c, nil
-		}
-	}
-	return "", ErrProximoNotInstalled
-}
-
 // launchProximo executes one allowlisted proximo subcommand on the host, with
 // the caller's arguments appended verbatim, and returns its combined output
 // and exit code. A non-zero exit is NOT an error (the shim propagates it); err
@@ -311,7 +291,7 @@ func resolveProximoBinary(host fsx.Host, candidates []string) (string, error) {
 // Direct exec, no shell — argv is passed as a slice, so an argument never
 // reaches a word-splitting or globbing context.
 func launchProximo(ctx context.Context, host fsx.Host, command string, args []string, agent proximoAgentHome) (output []byte, exit int, err error) {
-	bin, err := resolveProximoBinary(host, proximoFallbackCandidates(host))
+	bin, err := resolveHostBinary(host, "proximo", proximoFallbackCandidates(host), ErrProximoNotInstalled)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -321,28 +301,12 @@ func launchProximo(ctx context.Context, host fsx.Host, command string, args []st
 	if command == proximoSkillCommand {
 		agentEnv, err := proximoAgentHomeEnv(host, env, agent)
 		if err != nil {
-			return nil, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
+			return nil, 0, hostRunFailure(bin+" "+command, err)
 		}
 		args, env = proximoSkillArgs(args), agentEnv
 	}
 	cmd := exec.CommandContext(ctx, bin, append([]string{command}, args...)...) //nolint:gosec // bin is resolved locally; the handler allowlists verbs and rejects host-writing arguments
 	cmd.Stdin = nil
 	cmd.Env = env
-	// Stop waiting on the stdout/stderr pipes shortly after a deadline kill:
-	// proximo's docker-compose children inherit the pipes and would otherwise
-	// hold CombinedOutput open past proximoTimeout.
-	cmd.WaitDelay = 2 * time.Second
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// A deadline kill also surfaces as *exec.ExitError — classify it as an
-		// infrastructure failure, not a command exit.
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return out, 0, fmt.Errorf(proximoRunFailure, bin, command, ctxErr)
-		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			return out, exitErr.ExitCode(), nil
-		}
-		return out, 0, fmt.Errorf(proximoRunFailure, bin, command, err)
-	}
-	return out, 0, nil
+	return runHostCommand(ctx, cmd, bin+" "+command)
 }

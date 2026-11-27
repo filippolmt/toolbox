@@ -302,6 +302,7 @@ func TestOrcaShellWithoutAnOrcaShellPointsAtToolboxOrca(t *testing.T) {
 type runningOrcaDaemon struct {
 	stubDaemon
 	version, workspace string
+	env                []string // more env on the running container
 }
 
 func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -311,7 +312,7 @@ func (d runningOrcaDaemon) ContainerInspect(context.Context, string, client.Cont
 		State:      &dockercontainer.State{Running: true},
 		Config: &dockercontainer.Config{
 			Labels: runplan.DetachedLabels(),
-			Env:    []string{sessionplan.OrcaVersionEnv + "=" + d.version, sessionplan.HostWorkspaceEnv + "=" + d.workspace},
+			Env:    append([]string{sessionplan.OrcaVersionEnv + "=" + d.version, sessionplan.HostWorkspaceEnv + "=" + d.workspace}, d.env...),
 		},
 	}}, nil
 }

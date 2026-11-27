@@ -17,6 +17,15 @@ func browsing(scope Scope, cfg *config.Config, st KeyState) Model {
 	return Model{scope: scope, cfg: cfg, states: []KeyState{st}}
 }
 
+// editScope is the scope a key's editor opens in: the repo scope, except for a
+// host-only key, which only the Global scope edits.
+func editScope(key string) Scope {
+	if row, _ := config.KeyByName(key); row.HostOnly {
+		return ScopeGlobal
+	}
+	return ScopeRepo
+}
+
 // TestResetInheritedKeyIsNoOp: reset on a key the selected scope does not set
 // reports "nothing to reset" and never touches a file (guarded before any write
 // path, so an empty cwd/target is safe). The layer it inherits from is named in
@@ -61,6 +70,18 @@ func TestEnterOnSingleValuedKeyRefuses(t *testing.T) {
 		t.Error("a single-valued key must not open an editor")
 	}
 	wantInStatus(t, m, "single supported value", "zsh")
+}
+
+// TestEnterOnAHostOnlyKeyInTheRepoScopeRefuses: a host-only key is read from
+// ~/.toolbox.yaml alone, so a repo-scope editor would save a value nothing
+// reads. Enter refuses there and names the scope that works; the Global scope
+// edits it as usual.
+func TestEnterOnAHostOnlyKeyInTheRepoScopeRefuses(t *testing.T) {
+	m := press(browsing(ScopeRepo, &config.Config{}, KeyState{Key: config.HostTerminalRelayKey}), "enter")
+	if m.editing {
+		t.Error("a host-only key must not open an editor in the repo scope")
+	}
+	wantInStatus(t, m, "~/.toolbox.yaml", "Global")
 }
 
 // TestEnterOnAnUnsetKeyWarnsItCreatesAnOverride: opening an editor in a scope

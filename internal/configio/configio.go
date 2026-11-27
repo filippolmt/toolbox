@@ -53,6 +53,17 @@ func ReadMaybe(path string) (data []byte, existed bool, err error) {
 	return b, true, nil
 }
 
+// TopLevel parses a config document's top-level keys without the schema, for a
+// reader that needs one raw key (a host-only switch, a lint) whatever the rest
+// of the file holds. Empty input is an empty map.
+func TopLevel(b []byte) (map[string]any, error) {
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // RenderDocument is the in-memory half of a config write: it parses src
 // (missing/whitespace-only bootstraps an empty document), hands the top-level
 // document mapping to mutate, and returns the re-encoded bytes — the exact
