@@ -171,3 +171,11 @@ func TestPlanHerdrCoreWorkspaceRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestHerdrMachineNameFollowsTheProfile(t *testing.T) {
+	for container, want := range map[string]string{"toolbox-herdr": "toolbox", "toolbox-herdr-work": "toolbox-work"} {
+		if got := sessionplan.HerdrMachineName(container); got != want {
+			t.Errorf("HerdrMachineName(%q) = %q, want %q", container, got, want)
+		}
+	}
+}

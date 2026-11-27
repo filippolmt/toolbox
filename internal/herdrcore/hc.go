@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/filippolmt/toolbox/internal/sessionplan"
 )
 
 // Host is the host's herdr-core: the seam `toolbox herdr` registers the Herdr
@@ -115,7 +114,3 @@ func Via(container string) (string, error) {
 	}
 	return "docker exec -i " + container + " sh -c", nil
 }
-
-// MachineName is the machine a Herdr Core Shell registers as: toolbox, or
-// toolbox-<profile>.
-func MachineName(container string) string { return sessionplan.HerdrMachineName(container) }

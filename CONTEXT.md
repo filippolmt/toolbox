@@ -2266,7 +2266,7 @@ create, its workspace reported, a different one requested reported as a
 mismatch. After the create, `toolbox herdr` registers the Shell with the
 host's herdr-core through the `herdrcore.Host` seam (adapter
 `herdrcore.CLI`) as the machine `toolbox` or `toolbox-<profile>`
-(`herdrcore.MachineName`), reached with `docker exec -i <container> sh -c`
+(`sessionplan.HerdrMachineName`), reached with `docker exec -i <container> sh -c`
 (`herdrcore.Via`, built from the planned container name only) and
 `--install`, so herdr-core copies the host's own `hc` into the container's
 writable layer. A machine herdr-core already knows on the Shell's `--via`

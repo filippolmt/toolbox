@@ -149,7 +149,7 @@ func runningHerdrCoreShellOf(profile *mountplan.Profile) ([]string, error) {
 // connection) is removed: left running, it would be a detached container
 // nothing uses.
 func addHerdrMachine(ctx context.Context, cli client.APIClient, shell string, created bool, w io.Writer) error {
-	machine := herdrcore.MachineName(shell)
+	machine := sessionplan.HerdrMachineName(shell)
 	via, err := herdrcore.Via(shell)
 	if err == nil {
 		// A running Shell was maybe recreated without toolbox herdr (Session

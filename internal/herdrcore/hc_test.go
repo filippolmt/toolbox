@@ -98,11 +98,3 @@ func TestViaIsBuiltFromTheContainerName(t *testing.T) {
 		}
 	}
 }
-
-func TestMachineNameFollowsTheProfile(t *testing.T) {
-	for container, want := range map[string]string{"toolbox-herdr": "toolbox", "toolbox-herdr-work": "toolbox-work"} {
-		if got := MachineName(container); got != want {
-			t.Errorf("MachineName(%q) = %q, want %q", container, got, want)
-		}
-	}
-}
