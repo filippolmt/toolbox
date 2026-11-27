@@ -18,8 +18,9 @@
 # a token for it: prune-dead.<url>.giteaTokenFile, matched against the API
 # base (an https origin's own host[:port], else https://<host>) like any git
 # http.<url>.* key. No authenticated CLI, an unreachable forge, or a PR that
-# was closed without merging → the branch is kept and the reason printed. Never deleted either: the current branch and the
-# repository's default branch.
+# was closed without merging → the branch is kept and the reason printed.
+# Never deleted either: the current branch and the repository's default
+# branch.
 #
 # The one local proof is still honoured: worktree-agent-* leftovers actually
 # merged into the default branch are deleted without asking the forge.

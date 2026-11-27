@@ -714,7 +714,10 @@ func TestGitPruneDeadGiteaBaseFollowsAnHTTPSOrigin(t *testing.T) {
 
 	runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls, "CURL_BODY="+writeGiteaPage(t))
 
-	argv, _ := os.ReadFile(calls)
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
 	if want := "https://git.example.internal:3000/api/v1/repos/team/repo/pulls?"; !strings.Contains(string(argv), want) {
 		t.Errorf("want the API asked at %q, got:\n%s", want, argv)
 	}
@@ -763,7 +766,10 @@ func TestGitPruneDeadStopsAtTheGiteaPageCap(t *testing.T) {
 
 	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_BODY="+page, "CURL_EVERY_PAGE=1", "FORGE_CALLS="+calls)
 
-	argv, _ := os.ReadFile(calls)
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
 	// 20 is the script's gitea_pages, pinned on purpose.
 	if n := strings.Count(string(argv), "curl "); n != 20 {
 		t.Errorf("want the listing capped at 20 pages, got %d calls", n)
