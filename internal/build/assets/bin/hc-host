@@ -60,9 +60,10 @@ PAYLOAD=$(COMMAND="${COMMAND}" python3 -c 'import json, os, sys; print(json.dump
 BODY_FILE=$(mktemp)
 trap 'rm -f "${BODY_FILE}"' EXIT
 
-# --max-time slightly above the daemon's 90s budget: a send waits out a
+# --max-time is the daemon's hcTimeout plus a margin (pinned by
+# TestBridgeContract_ShimMaxTimeOutlastsTheDaemon): a send waits out a
 # person's unfinished draft in the target terminal.
-STATUS=$(bridge_post /hc "${PAYLOAD}" "${BODY_FILE}" 100)
+STATUS=$(bridge_post /hc "${PAYLOAD}" "${BODY_FILE}" 105)
 
 case "${STATUS}" in
 2??)

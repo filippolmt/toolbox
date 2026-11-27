@@ -334,12 +334,13 @@ them.
   and `TestPlaySoundLogsWhatThePlayerWroteToStderr`. →
   [Sound Handoff](../../CONTEXT.md#sound-handoff)
 
-- **Host Terminal Relay:** `/hc` runs only `ls`/`get`/`read`/`send` on the
-  host's own terminals, positionals after `--`, and a `send` only into an agent
-  `hc get` reports `idle` or `done` — never `--force`, `--wait`, `machine/`
-  targets or another verb. `hc-host` signs sends from `TOOLBOX_HERDR_MACHINE`,
+- **Host Terminal Relay:** `/hc` runs only what `bridge.hcAllowlist` builds,
+  on the host's own terminals, positionals after `--`, and a `send` only into
+  an agent `hc get` reports ready (`bridge.hcReady`); widening it adds no hc
+  flag that types into a dialog, waits, or reaches another machine. `hc-host` signs sends from `TOOLBOX_HERDR_MACHINE`,
   set on the Herdr Core Shell alone. Pinned by `TestHCRelay_ArgvGate`,
-  `TestHCRelay_SendOnlyToAReadyAgent`, `TestBridgeContract_HCAllowlistMatchesShim`
+  `TestHCRelay_SendOnlyToAReadyAgent`, `TestBridgeContract_HCAllowlistMatchesShim`,
+  `TestBridgeContract_ShimMaxTimeOutlastsTheDaemon`
   and `TestHCHostShimSignsSendsAndNeedsTheHerdrCoreShell`. →
   [Host Terminal Relay](../../CONTEXT.md#host-terminal-relay)
 

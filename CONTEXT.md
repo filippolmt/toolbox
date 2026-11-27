@@ -2299,9 +2299,9 @@ reaches the agents herdr.app runs in the host's own terminals: `hc-host` in the
 Shell, `/hc` in the daemon, the host's `hc` behind it. The other direction is
 not part of it: the host's herdr-core already reaches the Shell as a machine.
 
-Concretely: `bridge.hcArgv` admits `ls [--all]`, `get`, `read [--lines N]` and
-`send` on a host terminal (no `machine/` address) and rebuilds the argv with
-the positionals after `--`; a `send` first runs `hc get` and types only into a
+Concretely: `bridge.hcAllowlist` maps each relayed verb to the builder that
+checks its args, on a host terminal only (no `machine/` address), and
+rebuilds the argv with the positionals after `--`; a `send` first runs `hc get` and types only into a
 terminal whose `status` names an agent that is `idle` or `done`
 (`bridge.hcReady`), adding `--if idle` on `idle`. `bridge.launchHC` resolves
 `hc` on the daemon's PATH, else `~/.local/bin`, and sets `HOME`. The shim signs

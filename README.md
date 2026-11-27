@@ -81,7 +81,7 @@ Teardown is offloaded to the Docker daemon (the container is created with `AutoR
 | [`toolbox config`](docs/commands.md#toolbox-config) | Inspect and scaffold configuration (`show`, `example`, `path`, `edit`, `set`, `doctor`, `ui`) |
 | [`toolbox mounts`](docs/mounts.md#mounts-cli) | Manage bind-mount entries (`list`, `add`, `disable`, `remove`, `root`) |
 | [`toolbox shells`](docs/shells.md) | Manage named shell shortcuts (`list`, `get`, `add`, `set`, `remove`) |
-| [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo/sound calls (`install`, `uninstall`, `status`) |
+| [`toolbox bridge`](docs/bridge.md) | Manage the host-side daemon forwarding browser/editor/proximo/sound/host-terminal calls (`install`, `uninstall`, `status`) |
 | [`toolbox completion [bash\|zsh\|fish]`](docs/commands.md#toolbox-completion) | Generate shell completions |
 | [`--config <file>`](docs/commands.md#global-flag---config) | Global flag on every command: load exactly this config file |
 
@@ -115,7 +115,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Publishing ports & OAuth callbacks.** `toolbox shell -p <port>` forwards host ports docker-style; `--oauth <tool>` expands the documented recipe for CLIs with OAuth callback listeners (`-B` bridges container-loopback binds). → [docs/commands.md](docs/commands.md#publishing-ports)
 
-**Bridge (browser / editor / proximo / sound).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and an allowlisted set of `proximo` subcommands reach the host's browser, editor, and proximo binary, and herdr's agent chimes reach the host's audio output — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
+**Bridge (browser / editor / proximo / sound / host terminals).** An opt-in per-user host daemon (`toolbox bridge install`) that lets in-container `xdg-open`, `code`/`codium`, and an allowlisted set of `proximo` subcommands reach the host's browser, editor, and proximo binary, herdr's agent chimes reach the host's audio output, and `hc-host` in the Herdr Core Shell message the agents herdr.app runs on the host — token-authenticated, `127.0.0.1`-only. → [docs/bridge.md](docs/bridge.md)
 
 **Agent skills.** Bundled tools that publish an agent skill (gh, glab, herdr, Worktrunk, …) have it installed for Claude Code, Codex and pi at every container start, from the copy matching the bundled version. graphify, codegraph and playwright-cli are per-repo instead: opt a repo in once with `graphify-init`, `codegraph-init` or `pwcli-init` from inside it, and run `toolbox-refresh` there after an image update to bring those installs up to date — nothing writes into a repo on its own. → [shell-start internals](docs/internals/shell-start.md#per-repo-code-graph-skills-graphify-and-codegraph)
 
@@ -123,7 +123,7 @@ Optional, via `~/.toolbox.yaml` (global) or `.toolbox.yaml` in the project direc
 
 **Orca runtime.** `toolbox orca` runs [Orca](https://github.com/stablyai/orca)'s server in a detached Orca Shell at the desktop app's version, on host `127.0.0.1` only, and pairs the desktop app with it, so the agents Orca starts use the bundled CLIs and the isolated credentials. It keeps running until `toolbox orca stop`. → [docs/orca.md](docs/orca.md)
 
-**Herdr desktop app.** `toolbox herdr` hosts herdr-core, the runtime the Herdr desktop app (herdr.app) talks to, in a detached Herdr Core Shell, and registers it with the host's herdr-core as the machine `toolbox`, reached through `docker exec`: no sshd, no published port. Spaces on that machine run their agents in the container until `toolbox herdr stop`. This is separate from the Herdr TUI listed under AI agents, which you run as `herdr` in a toolbox shell; the two coexist. → [docs/herdr.md](docs/herdr.md)
+**Herdr desktop app.** `toolbox herdr` hosts herdr-core, the runtime the Herdr desktop app (herdr.app) talks to, in a detached Herdr Core Shell, and registers it with the host's herdr-core as the machine `toolbox`, reached through `docker exec`: no sshd, no published port. Spaces on that machine run their agents in the container until `toolbox herdr stop`, and those agents and the ones herdr.app runs on the host can message each other (`hc send toolbox/t2` one way, `hc-host send` the other). This is separate from the Herdr TUI listed under AI agents, which you run as `herdr` in a toolbox shell; the two coexist. → [docs/herdr.md](docs/herdr.md)
 
 **Proximo (`.test` apps).** With [proximo](https://github.com/filippolmt/proximo) on the host, `https://<name>.test` URLs work from inside the container with the CA trusted — auto-detected, no per-repo opt-in. → [docs/proximo.md](docs/proximo.md)
 

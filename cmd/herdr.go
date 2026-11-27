@@ -123,7 +123,9 @@ func runHerdr(cmd *cobra.Command, args []string) error {
 }
 
 // reportHerdrJoin says the Herdr Core Shell was already running and on which
-// workspace, and that a different requested workspace needs a stop first.
+// workspace, that a different requested workspace needs a stop first, and
+// that a Shell created without the Host Terminal Relay's return address needs
+// a recreate for hc-host.
 func reportHerdrJoin(w io.Writer, plan *sessionplan.SessionPlan, runningEnv []string) {
 	served := sessionplan.EnvValue(runningEnv, sessionplan.HostWorkspaceEnv)
 	_, _ = fmt.Fprintf(w, "The Herdr Core Shell %s is already running on %s", plan.ContainerName, served)
@@ -131,6 +133,9 @@ func reportHerdrJoin(w io.Writer, plan *sessionplan.SessionPlan, runningEnv []st
 		_, _ = fmt.Fprintf(w, "; it keeps %s; to mount %s, toolbox herdr stop first", served, want)
 	}
 	_, _ = fmt.Fprintln(w, ".")
+	if sessionplan.EnvValue(runningEnv, sessionplan.HerdrMachineEnv) == "" {
+		_, _ = fmt.Fprintf(w, "It predates hc-host (it has no %s): toolbox herdr stop, then toolbox herdr, to reach the host's agents from it.\n", sessionplan.HerdrMachineEnv)
+	}
 }
 
 // runningHerdrCoreShellOf returns the env of the running Herdr Core Shell of

@@ -187,6 +187,7 @@ sections.** Every `##` of a linked guide needs an entry
 - [A herdr agent integration disappears or goes stale](troubleshooting.md#a-herdr-agent-integration-disappears-or-goes-stale)
 - [The Orca server does not start](troubleshooting.md#the-orca-server-does-not-start)
 - [The Orca server stops with EINVAL on a socket](troubleshooting.md#the-orca-server-stops-with-einval-on-a-socket)
+- [`hc-host` refuses or cannot reach the host](troubleshooting.md#hc-host-refuses-or-cannot-reach-the-host)
 - [herdr-core cannot start: Permission denied](troubleshooting.md#herdr-core-cannot-start-permission-denied)
 - [Orca pairing is unavailable](troubleshooting.md#orca-pairing-is-unavailable)
 

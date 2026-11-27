@@ -1,11 +1,13 @@
 package bridge
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/filippolmt/toolbox/internal/proximo"
 )
@@ -161,6 +163,26 @@ func assertShimDispatchMatches(t *testing.T, name string, allowed []string) {
 	}
 }
 
+// TestBridgeContract_ShimMaxTimeOutlastsTheDaemon: a shim whose curl gives up
+// before the daemon's execution budget reports "bridge unreachable" for a
+// command still running on the host. Each long-running route's shim waits the
+// daemon's budget plus shimMaxTimeMargin, so moving a timeout moves its shim.
+func TestBridgeContract_ShimMaxTimeOutlastsTheDaemon(t *testing.T) {
+	const shimMaxTimeMargin = 15 * time.Second
+	for _, tc := range []struct {
+		shim, route string
+		budget      time.Duration
+	}{
+		{"proximo", RouteProximo, proximoTimeout},
+		{"hc-host", RouteHC, hcTimeout},
+	} {
+		want := fmt.Sprintf(`bridge_post %s "${PAYLOAD}" "${BODY_FILE}" %d)`, tc.route, int((tc.budget + shimMaxTimeMargin).Seconds()))
+		if shim := readShim(t, tc.shim); !strings.Contains(shim, want) {
+			t.Errorf("shim %s lacks %q: its --max-time must be the daemon's budget plus %v", tc.shim, want, shimMaxTimeMargin)
+		}
+	}
+}
+
 // TestBridgeContract_EditorAllowlistHasShim pins the editor half: bin/code
 // infers the editor from its own basename, so an allowlisted editor only
 // exists in the container if the image installs a shim under that exact name
@@ -191,8 +213,8 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[openRequest](), []string{FieldURL}},
 		{reflect.TypeFor[editRequest](), []string{FieldEditor, FieldPath}},
 		{reflect.TypeFor[proximoRequest](), []string{FieldCommand, FieldArgs, FieldHome, FieldCodexHome}},
-		{reflect.TypeFor[commandResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput, FieldNoPrompt}},
+		{reflect.TypeFor[commandResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
 	} {
 		t.Run(tc.typ.Name(), func(t *testing.T) {

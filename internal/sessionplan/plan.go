@@ -321,7 +321,7 @@ func Plan(in PlanInput) (*SessionPlan, error) {
 		extraEnv = orcaEnv(in.OrcaVersion)
 	}
 	if in.HerdrCore {
-		extraEnv = []string{HerdrMachineEnv + "=" + HerdrMachineName(single.container)}
+		extraEnv = append(extraEnv, HerdrMachineEnv+"="+HerdrMachineName(single.container))
 	}
 	if v := single.volume; v.Name != "" {
 		// A session input appended after the Mount Plan, like the peer socket

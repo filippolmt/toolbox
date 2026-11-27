@@ -89,8 +89,9 @@ PAYLOAD=$(COMMAND="${COMMAND}" \
 BODY_FILE=$(mktemp)
 trap 'rm -f "${BODY_FILE}"' EXIT
 
-# --max-time slightly above the daemon's 120s execution budget: the first
-# `up`, and `update`, pull the proximo stack images.
+# --max-time is the daemon's proximoTimeout plus a margin (pinned by
+# TestBridgeContract_ShimMaxTimeOutlastsTheDaemon): the first `up`, and
+# `update`, pull the proximo stack images.
 STATUS=$(bridge_post /proximo "${PAYLOAD}" "${BODY_FILE}" 135)
 
 case "${STATUS}" in
