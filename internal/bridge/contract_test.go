@@ -216,6 +216,7 @@ func TestBridgeContract_JSONTagsMatchConstants(t *testing.T) {
 		{reflect.TypeFor[credentialRequest](), []string{FieldOp, FieldInput, FieldNoPrompt}},
 		{reflect.TypeFor[commandResponse](), []string{FieldExit, FieldOutput}},
 		{reflect.TypeFor[soundRequest](), []string{FieldName, FieldData}},
+		{reflect.TypeFor[hcRequest](), []string{FieldCommand, FieldArgs}},
 	} {
 		t.Run(tc.typ.Name(), func(t *testing.T) {
 			if got := tc.typ.NumField(); got != len(tc.tags) {
