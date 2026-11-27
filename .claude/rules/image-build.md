@@ -42,6 +42,7 @@ paths:
 
 ## System setup
 
+- **`~/.local/bin` stays the last `PATH` entry**, in the Homebrew `ENV`. Held by `~/.local/bin last on PATH` in `smoke-test.sh`. → [local-bin](../../docs/internals/image-build.md#localbin-on-path)
 - **Passwordless sudo** via `/etc/sudoers.d/toolbox`, UID-agnostic; the smoke test asserts setuid `sudo`. → [sudo](../../docs/internals/image-build.md#passwordless-sudo)
 - **Homebrew stays at `/home/linuxbrew/.linuxbrew`**, world-writable, with a system `safe.directory`, analytics and auto-update off. `entrypoint.sh` chowns `bin/` alone to the runtime UID at boot — never at build, never recursive. Held by the UID-501 block of `smoke-test.sh`. → [homebrew](../../docs/internals/image-build.md#homebrew)
 - **The omz and Homebrew checkouts keep their updaters' layout**: `fetch-omz` on branch `master`, `fetch-brew` fetching `+refs/heads/*` with `origin/HEAD` set. Held by the UID-501 block of `smoke-test.sh`. → [updatable-checkouts](../../docs/internals/image-build.md#updatable-checkouts)

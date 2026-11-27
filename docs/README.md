@@ -207,6 +207,7 @@ host-CLI primitives, the static-analysis and coverage gates.
 - [Passwordless sudo](internals/image-build.md#passwordless-sudo)
 - [Docker CLI checksum](internals/image-build.md#docker-cli-checksum)
 - [Tool version pinning](internals/image-build.md#tool-version-pinning)
+- [`~/.local/bin` on PATH](internals/image-build.md#localbin-on-path)
 - [Homebrew](internals/image-build.md#homebrew)
 - [Updatable checkouts](internals/image-build.md#updatable-checkouts)
 - [System git settings](internals/image-build.md#system-git-settings)

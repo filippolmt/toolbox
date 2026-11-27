@@ -2001,7 +2001,8 @@ ENV PATH="/home/toolbox/go/bin:/home/toolbox/.local/share/pnpm/bin:/home/toolbox
 # HOMEBREW_PREFIX/MANPATH/INFOPATH. Analytics off for privacy; auto-update off
 # (pin-everything policy —
 # also avoids the shallow-clone `brew update` trip on every install).
-ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}" \
+# ~/.local/bin LAST, for herdr-core's hc — docs/internals/image-build.md.
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}:/home/toolbox/.local/bin" \
     HOMEBREW_NO_ANALYTICS=1 \
     HOMEBREW_NO_AUTO_UPDATE=1
 

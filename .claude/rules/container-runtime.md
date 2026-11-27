@@ -324,7 +324,9 @@ them.
 - **Bridge transports:** Linux prefers the bound Unix socket; TCP fallback runs
   only when curl returns no HTTP status. Editor/proximo shims propagate failure;
   `xdg-open` intentionally does not. Host editor paths are translated in the
-  shim, never in the daemon. → [bridge](../../docs/bridge.md)
+  shim, never in the daemon. Every route the daemon serves is named in
+  `docs/bridge.md`'s Security boundary
+  (`TestBridgeContract_EveryRouteIsInTheSecurityBoundary`). → [bridge](../../docs/bridge.md)
 
 - **Sound handoff:** `paplay` is the probed shim name. Payloads are bytes, one
   player runs at a time, skipped overlap still returns success, and the reaper

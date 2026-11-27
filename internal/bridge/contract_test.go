@@ -2,9 +2,13 @@ package bridge
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +184,58 @@ func TestBridgeContract_ShimMaxTimeOutlastsTheDaemon(t *testing.T) {
 		if shim := readShim(t, tc.shim); !strings.Contains(shim, want) {
 			t.Errorf("shim %s lacks %q: its --max-time must be the daemon's budget plus %v", tc.shim, want, shimMaxTimeMargin)
 		}
+	}
+}
+
+// TestBridgeContract_EveryRouteIsInTheSecurityBoundary: docs/bridge.md's
+// "Security boundary" is where a reader learns what each route lets a
+// container do on the host. A route the daemon serves but that section never
+// names is a host capability nobody reviewed in prose. The routes are read off
+// contract.go's Route* constants, so a new one is covered without editing
+// this test; /healthz grants nothing and is exempt.
+func TestBridgeContract_EveryRouteIsInTheSecurityBoundary(t *testing.T) {
+	src, err := parser.ParseFile(token.NewFileSet(), "contract.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := os.ReadFile("../../docs/bridge.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, section, ok := strings.Cut(string(doc), "## Security boundary")
+	if !ok {
+		t.Fatal(`docs/bridge.md has no "## Security boundary" section`)
+	}
+	section, _, _ = strings.Cut(section, "\n## ")
+	var routes int
+	for _, decl := range src.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs := spec.(*ast.ValueSpec)
+			for i, name := range vs.Names {
+				if !strings.HasPrefix(name.Name, "Route") || name.Name == "RouteHealth" {
+					continue
+				}
+				routes++
+				lit, ok := vs.Values[i].(*ast.BasicLit)
+				if !ok {
+					t.Fatalf("%s is not a string literal — read it another way", name.Name)
+				}
+				route, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("%s: %v", name.Name, err)
+				}
+				if !strings.Contains(section, "`"+route+"`") {
+					t.Errorf("%s (%s) is not named in docs/bridge.md's Security boundary", name.Name, route)
+				}
+			}
+		}
+	}
+	if routes == 0 {
+		t.Fatal("no Route* constants found in contract.go — the parse no longer sees them")
 	}
 }
 

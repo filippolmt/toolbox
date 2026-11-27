@@ -110,6 +110,10 @@ Every external binary in the Dockerfile is pinned by version, and Renovate bumps
 
 There is no per-tool opt-out: every CLI is installed unconditionally. The `ARG INSTALL_<TOOL>` build-arg pattern was removed (see [#276](https://github.com/filippolmt/toolbox/issues/276)). Use `inherit_host_auth:` in `.toolbox.yaml` to share host credentials with the container — see [inherit-host-auth](../configuration.md#inherit-host-auth).
 
+## `~/.local/bin` on PATH
+
+`/home/toolbox/.local/bin` is the **last** `PATH` entry, appended in the Homebrew `ENV`. herdr-core installs its `hc` there in the [Herdr Core Shell](../../CONTEXT.md#herdr-core-shell), and an agent in a herdr.app terminal runs `hc` by name (its own terminals; `hc-host` for the host's). Last, so a binary a tool drops into `~/.local/bin` never shadows a baked one or a deliberate runtime install in the persisted bin dirs ahead of it. The directory itself is not persisted: anything there lives as long as the container. The smoke test asserts the position.
+
 ## Homebrew
 
 Installed via shallow tag clone (`ARG HOMEBREW_VERSION`) at the **default Linux prefix** `/home/linuxbrew/.linuxbrew` — bottles (pre-built binaries) only work there; any other prefix forces source builds, explicitly unsupported upstream ("pick another prefix at your peril"). The official installer script is unusable in a Dockerfile `RUN`: it refuses root and clones unpinned `main`. The layer reproduces the installer's layout manually (repo at `…/Homebrew` + `bin/brew` symlink) and ships the pre-built `_brew` zsh completion from the clone.
