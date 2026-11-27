@@ -676,13 +676,14 @@ func TestHandler_HealthZ(t *testing.T) {
 	}
 }
 
-// TestHandler_HealthZReportsTheCLIVersion pins the field the session-start
-// refresh compares: the daemon answers with the build version `toolbox
-// version` prints, under the "version" key.
-func TestHandler_HealthZReportsTheCLIVersion(t *testing.T) {
-	old := version.Version
-	version.Version = "1.2.3"
-	t.Cleanup(func() { version.Version = old })
+// TestHandler_HealthZReportsTheBuildIdentity pins the value the session-start
+// refresh compares: the daemon answers, under "version", the build identity
+// `toolbox version` prints, so two builds of one Version (two local `dev`
+// builds) still differ by commit and build time.
+func TestHandler_HealthZReportsTheBuildIdentity(t *testing.T) {
+	oldV, oldC, oldD := version.Version, version.Commit, version.Date
+	version.Version, version.Commit, version.Date = "dev", "abc1234-dirty", "2026-01-02T03:04:05Z"
+	t.Cleanup(func() { version.Version, version.Commit, version.Date = oldV, oldC, oldD })
 	h, _, _ := newTestHandler(t, nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, RouteHealth, nil))
@@ -690,8 +691,8 @@ func TestHandler_HealthZReportsTheCLIVersion(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["version"] != "1.2.3" || FieldVersion != "version" {
-		t.Errorf("body = %v, FieldVersion = %q; want version 1.2.3 under \"version\"", body, FieldVersion)
+	if want := "dev (commit: abc1234-dirty, built: 2026-01-02T03:04:05Z)"; body["version"] != want {
+		t.Errorf("body = %v; want version %q", body, want)
 	}
 }
 

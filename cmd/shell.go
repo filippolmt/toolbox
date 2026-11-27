@@ -182,7 +182,7 @@ func warnIfNewProfile(host fsx.Host, p *mountplan.Profile) {
 }
 
 // checkBridgeAtSessionStart prints the install tip while the bridge is not
-// installed, and refreshes an installed daemon older than this CLI (see
+// installed, and refreshes an installed daemon of another build (see
 // bridge.CheckAtSessionStart). Build tags select an Agent that returns
 // ErrUnsupported on non-darwin/linux, which short-circuits here. The common
 // path stays off launchctl/systemctl: a stat, a file read and one loopback
@@ -193,7 +193,7 @@ func checkBridgeAtSessionStart(host fsx.Host) {
 		return
 	}
 	self, _ := os.Executable() // "" never matches the unit: no restart
-	bridge.CheckAtSessionStart(host, a, self, version.Version, os.Stderr)
+	bridge.CheckAtSessionStart(host, a, self, version.Build(), os.Stderr)
 }
 
 func init() {

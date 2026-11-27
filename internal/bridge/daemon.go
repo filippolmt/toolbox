@@ -301,7 +301,7 @@ func writeJSONOK(w http.ResponseWriter, v any) {
 }
 
 func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSONOK(w, map[string]string{"status": "ok", FieldVersion: version.Version})
+	writeJSONOK(w, map[string]string{"status": "ok", FieldVersion: version.Build()})
 }
 
 // openRequest is the body shape the wrapper POSTs to /open.

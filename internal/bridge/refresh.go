@@ -16,19 +16,19 @@ import (
 const InstallTip = "toolbox: tip — run 'toolbox bridge install' to forward in-container URLs, editor opens and agent sounds to the host"
 
 // refreshWait bounds how long session start waits for a restarted daemon to
-// answer /healthz with the CLI's version; a var so tests can shorten it.
+// answer /healthz with the CLI's build identity; a var so tests can shorten it.
 var refreshWait = 5 * time.Second
 
 // healthTimeout bounds one /healthz probe from the host.
 const healthTimeout = time.Second
 
 // CheckAtSessionStart is the bridge's session-start step. Not installed: the
-// install tip, nothing else. Installed: compare the daemon's /healthz version
-// with cliVersion; on a mismatch, restart the daemon through its supervisor
+// install tip, nothing else. Installed: compare the daemon's /healthz build identity
+// with cliBuild; on a mismatch, restart the daemon through its supervisor
 // when the unit runs self (the same file once symlinks are resolved), else
 // leave the unit alone and say which binary it runs. Every failure is a line
 // on w: the session always starts.
-func CheckAtSessionStart(host fsx.Host, a Agent, self, cliVersion string, w io.Writer) {
+func CheckAtSessionStart(host fsx.Host, a Agent, self, cliBuild string, w io.Writer) {
 	if !a.IsInstalled() {
 		_, _ = fmt.Fprintln(w, InstallTip)
 		return
@@ -51,23 +51,23 @@ func CheckAtSessionStart(host fsx.Host, a Agent, self, cliVersion string, w io.W
 		warn("not reachable: %v", err)
 		return
 	}
-	if running == cliVersion {
+	if running == cliBuild {
 		return
 	}
 	if !sameFile(unitExe, self) {
 		_, _ = fmt.Fprintf(w, "toolbox: bridge daemon runs %s from %s, this CLI is %s (%s); run 'toolbox bridge install' to switch the bridge to this binary\n",
-			shownVersion(running), unitExe, cliVersion, self)
+			shownVersion(running), unitExe, cliBuild, self)
 		return
 	}
 	if err := a.Restart(); err != nil {
-		warn("runs %s, CLI is %s; restart failed: %v", shownVersion(running), cliVersion, err)
+		warn("runs %s, CLI is %s; restart failed: %v", shownVersion(running), cliBuild, err)
 		return
 	}
-	if err := waitForVersion(s, cliVersion); err != nil {
+	if err := waitForVersion(s, cliBuild); err != nil {
 		warn("restarted, but %v", err)
 		return
 	}
-	_, _ = fmt.Fprintf(w, "toolbox: bridge daemon refreshed from %s to %s\n", shownVersion(running), cliVersion)
+	_, _ = fmt.Fprintf(w, "toolbox: bridge daemon refreshed from %s to %s\n", shownVersion(running), cliBuild)
 }
 
 // shownVersion names a daemon whose /healthz carries no version.

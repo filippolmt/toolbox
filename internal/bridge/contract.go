@@ -52,8 +52,8 @@ const (
 	FieldExit   = "exit"
 	FieldOutput = "output"
 
-	// Response key of RouteHealth: the daemon's build version, the value
-	// `toolbox version` prints. Absent on a daemon that predates it.
+	// Response key of RouteHealth: the daemon's build identity (version.Build),
+	// what `toolbox version` prints. Absent on a daemon that predates it.
 	FieldVersion = "version"
 )
 

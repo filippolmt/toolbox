@@ -212,8 +212,16 @@ HOST_ARCH  := $(if $(TOOLBOX_HOST_ARCH),$(TOOLBOX_HOST_ARCH),$(shell uname -m | 
 # override it for an Intel one (`make go-build-macos MACOS_ARCH=amd64`).
 MACOS_ARCH ?= arm64
 
+# A local build keeps Version `dev` and stamps the commit (`-dirty` with
+# uncommitted changes) and the UTC build time, so `toolbox version` and the
+# bridge's /healthz tell two rebuilt checkouts apart. Recursive `=`: git and
+# date run only when go-build expands them, not on every make invocation.
+VERSION_PKG  := github.com/filippolmt/toolbox/internal/version
+BUILD_COMMIT  = $(or $(shell git rev-parse --short HEAD 2>/dev/null),none)$(shell git status --porcelain 2>/dev/null | grep -q . && echo -dirty)
+BUILD_DATE    = $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
 go-build: ## Build the Go CLI binary for the host platform
-	$(GO_RUN) env GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -o $(BINARY) .
+	$(GO_RUN) env GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -ldflags "-X $(VERSION_PKG).Commit=$(BUILD_COMMIT) -X $(VERSION_PKG).Date=$(BUILD_DATE)" -o $(BINARY) .
 
 # Delegates to go-build rather than repeating its recipe, so the two can never
 # drift on flags (GOFLAGS, CGO, -o). With TOOLBOX_HOST_OS in the env go-build
