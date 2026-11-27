@@ -51,6 +51,10 @@ const (
 	// Response keys of commandResponse.
 	FieldExit   = "exit"
 	FieldOutput = "output"
+
+	// Response key of RouteHealth: the daemon's build version, the value
+	// `toolbox version` prints. Absent on a daemon that predates it.
+	FieldVersion = "version"
 )
 
 // AllowedEditors, AllowedProximoCommands and AllowedHCCommands are the

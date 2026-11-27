@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/filippolmt/toolbox/internal/version"
 )
 
 // buildTestHandler wires fns into a handler with the shared test fixture
@@ -671,6 +673,25 @@ func TestHandler_HealthZ(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("code = %d", rr.Code)
+	}
+}
+
+// TestHandler_HealthZReportsTheCLIVersion pins the field the session-start
+// refresh compares: the daemon answers with the build version `toolbox
+// version` prints, under the "version" key.
+func TestHandler_HealthZReportsTheCLIVersion(t *testing.T) {
+	old := version.Version
+	version.Version = "1.2.3"
+	t.Cleanup(func() { version.Version = old })
+	h, _, _ := newTestHandler(t, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, RouteHealth, nil))
+	var body map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["version"] != "1.2.3" || FieldVersion != "version" {
+		t.Errorf("body = %v, FieldVersion = %q; want version 1.2.3 under \"version\"", body, FieldVersion)
 	}
 }
 
