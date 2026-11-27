@@ -86,17 +86,20 @@ echo '[]'
 		}
 	}
 	// curl is the Gitea API: page 1 of the closed PRs is the JSON in
-	// $CURL_BODY, any later page the empty one that ends the listing, and
-	// $CURL_FAIL makes every call fail. Its stdin, where the token travels, is
+	// $CURL_BODY, any later page the empty one that ends the listing — or the
+	// same JSON again when $CURL_EVERY_PAGE is set, a repository with more
+	// closed PRs than the script reads. $CURL_FAIL makes every call fail,
+	// $CURL_FAIL_PAGE=<n> only page n. Its stdin, where the token travels, is
 	// appended to $CURL_STDIN. jq is not faked: the real one runs the
 	// script's projection over these pages.
 	const curl = `#!/bin/sh
 echo "curl $*" >> "${FORGE_CALLS:-/dev/null}"
 cat >> "${CURL_STDIN:-/dev/null}"
 [ -z "${CURL_FAIL:-}" ] || exit 22
+case "$*" in *"&page=${CURL_FAIL_PAGE:-none}") exit 22 ;; esac
 case "$*" in
 *'&page=1') cat "${CURL_BODY:-/dev/null}" ;;
-*) echo '[]' ;;
+*) if [ -n "${CURL_EVERY_PAGE:-}" ]; then cat "$CURL_BODY"; else echo '[]'; fi ;;
 esac
 `
 	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(curl), 0o755); err != nil {
@@ -687,8 +690,19 @@ func TestGitPruneDeadGiteaQueryShape(t *testing.T) {
 }
 
 // An HTTPS origin names the web server itself, port included: that is the
-// API base, and the base the token key is matched against.
+// API base, the base the token key is matched against — git's urlmatch reads
+// no port as 443, never as any port — and so the key the hint names.
 func TestGitPruneDeadGiteaBaseFollowsAnHTTPSOrigin(t *testing.T) {
+	t.Run("hint before the key is set", func(t *testing.T) {
+		dir := pruneDeadRepo(t, "https://git.example.internal:3000/team/repo.git", "merged-one")
+
+		out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=")
+
+		if !strings.Contains(out, "prune-dead.https://git.example.internal:3000.giteaTokenFile") {
+			t.Errorf("the hint must name the key with the origin's port, got:\n%s", out)
+		}
+	})
+
 	dir := pruneDeadRepo(t, "https://git.example.internal:3000/team/repo.git", "merged-one")
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tokenFile, []byte("tok\n"), 0o600); err != nil {
@@ -717,6 +731,46 @@ func TestGitPruneDeadKeepsEverythingWhenTheGiteaAPIFails(t *testing.T) {
 	}
 	if !strings.Contains(out, "kept merged-one (merge state unverified — gitea could not answer)") {
 		t.Errorf("the kept branch must be named with the reason, got:\n%s", out)
+	}
+}
+
+// A failure on any page, not only the first, leaves the list partial: a
+// merge on the missing page would read as "no merged PR", so every branch
+// is unverified instead.
+func TestGitPruneDeadKeepsEverythingWhenALaterGiteaPageFails(t *testing.T) {
+	dir, _ := giteaRepo(t, giteaOrigin, "merged-one")
+	tip := gitIn(t, dir, "rev-parse", "main")
+	page := writeGiteaPage(t, giteaPR(true, "merged-one", "merged-one", tip, 5))
+
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_BODY="+page, "CURL_FAIL_PAGE=2")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a partial listing must delete nothing, even a branch it shows as merged:\n%s", out)
+	}
+	if !strings.Contains(out, "kept merged-one (merge state unverified — gitea could not answer)") {
+		t.Errorf("the kept branch must be named with the reason, got:\n%s", out)
+	}
+}
+
+// A repository with more closed PRs than the script reads stops at the page
+// cap rather than paging forever, and a branch not found in what was read is
+// kept with that reason, not as "closed, or never opened".
+func TestGitPruneDeadStopsAtTheGiteaPageCap(t *testing.T) {
+	dir, _ := giteaRepo(t, giteaOrigin, "old-merge")
+	calls := filepath.Join(t.TempDir(), "calls")
+	page := writeGiteaPage(t, giteaPR(true, "other", "other", "", 5))
+
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_BODY="+page, "CURL_EVERY_PAGE=1", "FORGE_CALLS="+calls)
+
+	argv, _ := os.ReadFile(calls)
+	if n := strings.Count(string(argv), "curl "); n != 20 {
+		t.Errorf("want the listing capped at 20 pages, got %d calls", n)
+	}
+	if !strings.Contains(branches(t, dir), "old-merge") {
+		t.Errorf("a branch not found within the cap must survive:\n%s", out)
+	}
+	if !strings.Contains(out, "kept old-merge (no merged PR among the most recent closed PRs on gitea") {
+		t.Errorf("the reason must say older PRs were not read, got:\n%s", out)
 	}
 }
 

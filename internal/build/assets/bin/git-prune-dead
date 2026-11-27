@@ -15,8 +15,9 @@
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
 # all resolve without special-casing any domain. A Forgejo or Gitea host has
 # no CLI, so it is asked over its REST API, and only once the developer names
-# a token for it: prune-dead.<url>.giteaTokenFile, matched against
-# https://<host> like any git http.<url>.* key. No authenticated CLI, an
+# a token for it: prune-dead.<url>.giteaTokenFile, matched against the API
+# base (an https origin's own host[:port], else https://<host>) like any git
+# http.<url>.* key. No authenticated CLI, an
 # unreachable forge, or a PR that was closed without merging → the branch is
 # kept and the reason printed. Never deleted either: the current branch and the
 # repository's default branch.
@@ -89,7 +90,8 @@ if [ -n "$host" ]; then
 	# http.<url>.sslCAInfo.
 	if [ -z "$forge" ]; then
 		# The API base: an https origin's own host[:port], else https://<host>.
-		# shortcut: an ssh origin assumes the web UI on port 443 at the root, no
+		# shortcut: a non-https origin (ssh, or http, whose token would travel in
+		# clear) assumes the web UI over https on port 443 at the root, no
 		# subpath; give the base its own key if an instance ever serves elsewhere.
 		case $origin_url in
 		https://*) gitea_base="https://${bare_url%%/*}" ;;
@@ -114,10 +116,12 @@ gitea_get() {
 }
 
 # The Gitea API cannot filter pulls by head branch, so the closed ones are
-# listed once, newest first, and every branch is matched against that list.
+# listed once, most recently updated first, and every branch is matched
+# against that list.
 # shortcut: only gitea_pages pages of gitea_per_page closed PRs are read (fewer
 # if the server caps the page size lower); an older merge reads as "no merged
-# PR" and its branch is kept — page further if a repository ever needs it.
+# PR among those read" and its branch is kept — page further if a repository
+# ever needs it.
 gitea_pages=20
 gitea_per_page=50
 gitea_pulls=
@@ -130,16 +134,27 @@ gitea_list() {
 			gitea_listed=failed
 			return
 		}
-		[ "$(printf '%s' "$body" | tr -d ' \n\r\t')" = "[]" ] && return
+		no_entries "$body" && return
 		gitea_pulls="$gitea_pulls$body
 "
 		page=$((page + 1))
 	done
+	gitea_listed=capped
+}
+
+# no_entries <json> — true for the forge's "nothing here" answer: an empty
+# array, or no output at all.
+no_entries() {
+	case "$(printf '%s' "$1" | tr -d ' \n\r\t')" in
+	"" | "[]") return 0 ;;
+	esac
+	return 1
 }
 
 # merge_state <branch> — 0 merged with the local tip covered, 1 no merged PR,
 # 2 could not tell, 3 merged but the local tip is not covered, 4 a merged PR
-# came back without a head, so whether it covers the tip is unknown. Both
+# came back without a head, so whether it covers the tip is unknown, 5 no
+# merged PR among the closed PRs a capped Gitea listing read. Both
 # CLIs answer with a JSON array of the merged heads, so "[]" is the one shape
 # that means "no match"; anything else, including a failure, must never be
 # read as "not merged".
@@ -179,9 +194,10 @@ merge_state() {
 			'[.[][] | select(.merged == true and (.head.ref == $b or .head.label == $b) and .head.repo_id != null and .head.repo_id == .base.repo_id) | .head.sha]' 2>/dev/null) || return 2 ;;
 	*) return 2 ;;
 	esac
-	case "$(printf '%s' "$out" | tr -d ' \n\r\t')" in
-	"" | "[]") return 1 ;;
-	esac
+	if no_entries "$out"; then
+		[ "$gitea_listed" = capped ] && return 5
+		return 1
+	fi
 	# Fails only if the branch vanished since for-each-ref listed it: nothing
 	# left to delete, so the catch-all "unverified" is as far as it goes.
 	tip=$(git rev-parse --verify --quiet "refs/heads/$1") || return 2
@@ -255,7 +271,7 @@ else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
-	echo "  or, on a Forgejo/Gitea instance: git config --global prune-dead.https://${host:-HOST}.giteaTokenFile <token file>"
+	echo "  or, on a Forgejo/Gitea instance: git config --global prune-dead.${gitea_base:-https://${host:-HOST}}.giteaTokenFile <token file>"
 fi
 
 git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
@@ -269,6 +285,7 @@ git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ |
 		1) echo "  kept $name (no merged PR on $forge — closed, or never opened)" ;;
 		3) echo "  kept $name (no merged PR on $forge contains its tip — commits after the merge, a reused name, or a merged head not fetched here)" ;;
 		4) echo "  kept $name (merge state unverified — a merged PR on $forge reports no head)" ;;
+		5) echo "  kept $name (no merged PR among the most recent closed PRs on $forge — older ones were not read)" ;;
 		# Named even with no forge to ask: a branch that survives silently reads
 		# as one that was pruned.
 		*) echo "  kept $name (merge state unverified${forge:+ — $forge could not answer})" ;;
