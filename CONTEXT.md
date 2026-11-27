@@ -2312,7 +2312,7 @@ host agent answers with `hc send`; `sessionplan.HerdrMachineEnv` is set on the
 Herdr Core Shell alone, which is where the shim works. The off switch is
 `config.HostTerminalRelayKey`, which `bridge.hcRelayOff` reads from the host's
 `~/.toolbox.yaml` alone on every request (a `HostOnly` [Key Row](#key-row):
-the doctor warns in any other layer and `config ui` refuses the Project
+the doctor warns in any other layer and `config ui` refuses the Repo
 scope), failing closed. Decision and
 alternatives: [ADR 0025](docs/adr/0025-host-terminal-relay.md).
 
