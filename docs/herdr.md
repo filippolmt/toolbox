@@ -63,7 +63,7 @@ removes the Herdr Core Shell. With none running it exits 0 without a word. herdr
 
 ## Agents on the host
 
-An agent in a herdr.app space on the `toolbox` machine and an agent in a space on the host can talk to each other: one types a message into the other's prompt and reads its screen. It runs on herdr-core and the toolbox bridge, locally — nothing leaves your machine. Claude Code's own `SendMessage` cannot do this: its session registry and sockets do not cross Docker Desktop's VM.
+An agent in a herdr.app space on the `toolbox` machine and an agent in a space on the host can talk to each other: one types a message into the other's prompt and reads its screen. It runs on herdr-core and the toolbox bridge, locally — nothing leaves your machine. Claude Code's own `SendMessage` cannot do this: its session registry, sockets and process IDs stay on their side of the container boundary (and, on macOS, of Docker Desktop's VM).
 
 It works between **agents in herdr.app spaces** (Claude Code, Codex, pi — any agent herdr-core recognises), not with a session open in Terminal.app or iTerm, and not from an ordinary `toolbox shell`.
 

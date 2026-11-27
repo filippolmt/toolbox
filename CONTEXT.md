@@ -109,8 +109,10 @@ summary and human default `config ui` shows, the annotated block
 `Editor` the TUI opens, the typed readers those present the value through
 (`Str` / `Tri` / `List` / `Pairs`), the `Validate` half of the load path's
 validation tail, the `Scalar` fail-fast verdict behind
-`config.ValidateKey`, and the `Effective` fallback behind
-`config.EffectiveValue`. Owned by `internal/config` (`keys.go`).
+`config.ValidateKey`, the `Effective` fallback behind
+`config.EffectiveValue`, and `HostOnly` for a key only `~/.toolbox.yaml` can
+set (the doctor warns in another layer, `config ui` edits it in the Global
+scope alone). Owned by `internal/config` (`keys.go`).
 
 Adding a key is its `Config` field, its row, and the order `TestSchemaKeys`
 pins — nothing else, unless the key brings a *shape* no surface has
@@ -2309,8 +2311,9 @@ a send with `[from <TOOLBOX_HERDR_MACHINE>/<HC_TERMINAL_ID>]`, the address the
 host agent answers with `hc send`; `sessionplan.HerdrMachineEnv` is set on the
 Herdr Core Shell alone, which is where the shim works. The off switch is
 `config.HostTerminalRelayKey`, which `bridge.hcRelayOff` reads from the host's
-`~/.toolbox.yaml` alone on every request (`config.HostOnlyKeys`; the doctor
-warns in any other layer), failing closed. Decision and
+`~/.toolbox.yaml` alone on every request (a `HostOnly` [Key Row](#key-row):
+the doctor warns in any other layer and `config ui` refuses the Project
+scope), failing closed. Decision and
 alternatives: [ADR 0025](docs/adr/0025-host-terminal-relay.md).
 
 Why the term exists: "agents talking across the VM" reads as Claude Code's

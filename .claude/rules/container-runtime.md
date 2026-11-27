@@ -342,7 +342,8 @@ them.
   set on the Herdr Core Shell alone. Pinned by `TestHCRelay_ArgvGate`,
   `TestHCRelay_SendOnlyToAReadyAgent`, `TestBridgeContract_HCAllowlistMatchesShim`,
   `TestBridgeContract_ShimMaxTimeOutlastsTheDaemon`, `TestHCRelayOff_ReadsTheGlobalConfigAlone`,
-  `TestHCRelay_OffRefusesEveryVerb`, `TestDoctorWarnsAHostOnlyKeyInAProjectLayer`
+  `TestHCRelay_OffRefusesEveryVerb`, `TestDoctorWarnsAHostOnlyKeyInAProjectLayer`,
+  `TestEnterOnAHostOnlyKeyInTheRepoScopeRefuses`
   and `TestHCHostShimSignsSendsAndNeedsTheHerdrCoreShell`. →
   [Host Terminal Relay](../../CONTEXT.md#host-terminal-relay)
 
