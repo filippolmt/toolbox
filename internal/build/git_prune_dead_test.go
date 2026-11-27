@@ -1,10 +1,12 @@
 package build
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -37,7 +39,7 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 	return dir
 }
 
-// fakeForgeBin writes stand-in `gh` and `glab` binaries, the seam that makes
+// fakeForgeBin writes stand-in `gh`, `glab` and `curl` binaries, the seam that makes
 // the script's decision observable without a network or an account. Only the
 // CLI named by $AUTHED_CLI holds a session, and it answers from the branch
 // name: "merged-*" has a merged PR, "closed-*" has none, "boom-*" makes the
@@ -78,22 +80,22 @@ for a in "$@"; do
 done
 echo '[]'
 `
-	// jq stands in for the Gitea path's projection: it gets the branch as
-	// `--arg b <branch>`, so the same name-driven answers apply.
-	for _, name := range []string{"gh", "glab", "jq"} {
+	for _, name := range []string{"gh", "glab"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
 			t.Fatalf("write fake %s: %v", name, err)
 		}
 	}
-	// curl is the Gitea API: one page of closed PRs, then the empty page that
-	// ends the listing, or a failure when $CURL_FAIL is set. Its stdin, where
-	// the token travels, is appended to $CURL_STDIN.
+	// curl is the Gitea API: page 1 of the closed PRs is the JSON in
+	// $CURL_BODY, any later page the empty one that ends the listing, and
+	// $CURL_FAIL makes every call fail. Its stdin, where the token travels, is
+	// appended to $CURL_STDIN. jq is not faked: the real one runs the
+	// script's projection over these pages.
 	const curl = `#!/bin/sh
 echo "curl $*" >> "${FORGE_CALLS:-/dev/null}"
 cat >> "${CURL_STDIN:-/dev/null}"
 [ -z "${CURL_FAIL:-}" ] || exit 22
 case "$*" in
-*'&page=1') echo '[{"number":1}]' ;;
+*'&page=1') cat "${CURL_BODY:-/dev/null}" ;;
 *) echo '[]' ;;
 esac
 `
@@ -536,102 +538,179 @@ func TestGitPruneDeadSweepsAgainstARemoteOnlyDefault(t *testing.T) {
 	}
 }
 
+// giteaPath is forgePath plus the real jq: the Gitea projection is the
+// filter that keeps a stranger's merge from force-deleting local work, so it
+// runs for real rather than being pinned by its text.
+func giteaPath(t *testing.T) string {
+	t.Helper()
+	jq, err := exec.LookPath("jq")
+	if err != nil {
+		t.Fatalf("jq is needed to run the Gitea projection (in gotest.Dockerfile and the CI runner): %v", err)
+	}
+	return forgePath(t) + string(os.PathListSeparator) + filepath.Dir(jq)
+}
+
 // giteaRepo is a repository on a Forgejo/Gitea host with a token file
 // configured for it, the opt-in that stands in for a logged-in CLI. It
 // returns the repository and the token's value.
-func giteaRepo(t *testing.T, branches ...string) (string, string) {
+func giteaRepo(t *testing.T, origin string, branches ...string) (string, string) {
 	t.Helper()
-	dir := pruneDeadRepo(t, "ssh://git@git.example.internal:222/team/repo.git", branches...)
+	dir := pruneDeadRepo(t, origin, branches...)
 	const token = "s3cret-token"
 	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
+	// CRLF, as an editor on another OS might save it.
+	if err := os.WriteFile(tokenFile, []byte(token+"\r\n"), 0o600); err != nil {
 		t.Fatalf("write token: %v", err)
 	}
 	gitIn(t, dir, "config", "prune-dead.https://git.example.internal.giteaTokenFile", tokenFile)
 	return dir, token
 }
 
-// Forgejo and Gitea have no CLI to hold a session, so a configured token
-// file is what lets the script ask — and it decides on the same proof as
-// for gh and glab: a merged PR, never a gone upstream alone.
-func TestGitPruneDeadAsksAGiteaHostWithAConfiguredToken(t *testing.T) {
-	dir, _ := giteaRepo(t, "merged-one", "closed-one", "boom-one")
+const giteaOrigin = "ssh://git@git.example.internal:222/team/repo.git"
 
-	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=")
+// giteaPR is one closed PR as the Gitea API lists it, reduced to the fields
+// the projection reads. headRepo 0 is a head repository the API reports as
+// null (a deleted fork).
+func giteaPR(merged bool, ref, label, sha string, headRepo int) string {
+	repo := "null"
+	if headRepo != 0 {
+		repo = strconv.Itoa(headRepo)
+	}
+	return fmt.Sprintf(`{"merged":%t,"head":{"ref":%q,"label":%q,"sha":%q,"repo_id":%s},"base":{"ref":"main","label":"main","repo_id":5}}`,
+		merged, ref, label, sha, repo)
+}
+
+// writeGiteaPage writes the JSON array the fake curl serves as page 1.
+func writeGiteaPage(t *testing.T, prs ...string) string {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "page1.json")
+	if err := os.WriteFile(f, []byte("["+strings.Join(prs, ",")+"]\n"), 0o644); err != nil {
+		t.Fatalf("write page: %v", err)
+	}
+	return f
+}
+
+// Forgejo and Gitea have no CLI to hold a session, so a configured token
+// file is what lets the script ask — and it decides on the same proof as for
+// gh and glab: a merged PR of this repository whose head is the local tip.
+// Each branch below meets that proof but for one field, run through the real
+// projection.
+func TestGitPruneDeadAsksAGiteaHostWithAConfiguredToken(t *testing.T) {
+	names := []string{"deleted-head", "live-head", "closed-one", "fork-label", "fork-repo", "gone-fork", "absent"}
+	dir, _ := giteaRepo(t, giteaOrigin, names...)
+	tip := gitIn(t, dir, "rev-parse", "main")
+	page := writeGiteaPage(t,
+		// Forgejo rewrites head.ref once the branch is deleted on merge; the
+		// name survives in head.label.
+		giteaPR(true, "refs/pull/52/head", "deleted-head", tip, 5),
+		giteaPR(true, "live-head", "live-head", tip, 5),
+		giteaPR(false, "closed-one", "closed-one", tip, 5),
+		// A fork's PR: label owner:branch, head in another repository.
+		giteaPR(true, "refs/pull/7/head", "stranger:fork-label", tip, 9),
+		// Same label, other repository: the repo_id check alone rejects it.
+		giteaPR(true, "fork-repo", "fork-repo", tip, 9),
+		giteaPR(true, "gone-fork", "gone-fork", tip, 0),
+	)
+
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_BODY="+page)
 
 	left := branches(t, dir)
-	if strings.Contains(left, "merged-one") {
-		t.Errorf("a branch whose PR was merged must go, still present:\n%s\n%s", left, out)
+	for _, gone := range []string{"deleted-head", "live-head"} {
+		if strings.Contains(left, gone+"\n") {
+			t.Errorf("%s has a merged PR of this repository at its tip, still present:\n%s\n%s", gone, left, out)
+		}
 	}
-	if !strings.Contains(left, "closed-one") || !strings.Contains(left, "boom-one") {
-		t.Errorf("unmerged and unverifiable branches must survive:\n%s\n%s", left, out)
+	for _, kept := range []string{"closed-one", "fork-label", "fork-repo", "gone-fork", "absent"} {
+		if !strings.Contains(left, kept+"\n") {
+			t.Errorf("%s has no merged PR of this repository and must survive:\n%s\n%s", kept, left, out)
+		}
+		if !strings.Contains(out, "kept "+kept+" (no merged PR on gitea") {
+			t.Errorf("%s must be named with its reason, got:\n%s", kept, out)
+		}
 	}
 	if !strings.Contains(out, "merged according to gitea on git.example.internal") {
 		t.Errorf("the run must name the forge and host it asked, got:\n%s", out)
 	}
 }
 
-// The API base is https://<host>, not the ssh port of origin; the token
-// travels on curl's stdin, never in an argv a process listing shows; the CA
-// is git's own http.<url>.sslCAInfo; and the PR list is read once for every
-// branch. The projection is pinned by its text, as for gh and glab: it must
-// keep same-repository merged PRs only, and match a deleted head branch by
-// head.label, since Forgejo then rewrites head.ref to refs/pull/<n>/head.
+// The token travels on curl's stdin, never in an argv a process listing
+// shows, and without the CRLF its file was saved with; the CA is what git
+// trusts, GIT_SSL_CAINFO over http.<url>.sslCAInfo; and the PR list is read
+// once for every branch.
 func TestGitPruneDeadGiteaQueryShape(t *testing.T) {
-	dir, token := giteaRepo(t, "merged-one", "closed-one")
-	gitIn(t, dir, "config", "http.https://git.example.internal.sslCAInfo", "/etc/forge-ca.pem")
+	for _, tc := range []struct {
+		name, env, ca string
+	}{
+		{"CA from git config", "", "/etc/forge-ca.pem"},
+		{"CA from GIT_SSL_CAINFO", "GIT_SSL_CAINFO=/env/ca.pem", "/env/ca.pem"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, token := giteaRepo(t, giteaOrigin, "merged-one", "closed-one")
+			gitIn(t, dir, "config", "http.https://git.example.internal.sslCAInfo", "/etc/forge-ca.pem")
+			calls := filepath.Join(t.TempDir(), "calls")
+			stdin := filepath.Join(t.TempDir(), "stdin")
+
+			runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls, "CURL_STDIN="+stdin,
+				"CURL_BODY="+writeGiteaPage(t, giteaPR(false, "other", "other", "", 5)), tc.env)
+
+			argv, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatalf("no forge call recorded: %v", err)
+			}
+			if strings.Contains(string(argv), token) {
+				t.Errorf("the token must never reach argv, got:\n%s", argv)
+			}
+			if got, _ := os.ReadFile(stdin); !strings.Contains(string(got), "Authorization: token "+token+"\"\n") {
+				t.Errorf("the token must reach curl on stdin, CR stripped, got %q", got)
+			}
+			var curls []string
+			for _, line := range strings.Split(string(argv), "\n") {
+				if strings.HasPrefix(line, "curl ") {
+					curls = append(curls, line)
+				}
+			}
+			// One listed page and the empty page that ends the listing, for
+			// both branches together.
+			if len(curls) != 2 {
+				t.Fatalf("want the PR list read once (2 pages), got %d calls:\n%s", len(curls), argv)
+			}
+			for _, want := range []string{
+				"--cacert " + tc.ca + " ",
+				"https://git.example.internal/api/v1/repos/team/repo/pulls?state=closed&sort=recentupdate&limit=50&page=1",
+			} {
+				if !strings.Contains(curls[0], want) {
+					t.Errorf("curl call %q is missing %q", curls[0], want)
+				}
+			}
+		})
+	}
+}
+
+// An HTTPS origin names the web server itself, port included: that is the
+// API base, and the base the token key is matched against.
+func TestGitPruneDeadGiteaBaseFollowsAnHTTPSOrigin(t *testing.T) {
+	dir := pruneDeadRepo(t, "https://git.example.internal:3000/team/repo.git", "merged-one")
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("tok\n"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	gitIn(t, dir, "config", "prune-dead.https://git.example.internal:3000.giteaTokenFile", tokenFile)
 	calls := filepath.Join(t.TempDir(), "calls")
-	stdin := filepath.Join(t.TempDir(), "stdin")
 
-	runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls, "CURL_STDIN="+stdin)
+	runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls, "CURL_BODY="+writeGiteaPage(t))
 
-	argv, err := os.ReadFile(calls)
-	if err != nil {
-		t.Fatalf("no forge call recorded: %v", err)
-	}
-	if strings.Contains(string(argv), token) {
-		t.Errorf("the token must never reach argv, got:\n%s", argv)
-	}
-	if got, _ := os.ReadFile(stdin); !strings.Contains(string(got), "Authorization: token "+token) {
-		t.Errorf("the token must reach curl on stdin, got %q", got)
-	}
-	var curls []string
-	for _, line := range strings.Split(string(argv), "\n") {
-		if strings.HasPrefix(line, "curl ") {
-			curls = append(curls, line)
-		}
-	}
-	// One listed page and the empty page that ends the listing, for both
-	// branches together.
-	if len(curls) != 2 {
-		t.Fatalf("want the PR list read once (2 pages), got %d calls:\n%s", len(curls), argv)
-	}
-	for _, want := range []string{
-		"--cacert /etc/forge-ca.pem",
-		"https://git.example.internal/api/v1/repos/team/repo/pulls?state=closed&sort=recentupdate&limit=50&page=1",
-	} {
-		if !strings.Contains(curls[0], want) {
-			t.Errorf("curl call %q is missing %q", curls[0], want)
-		}
-	}
-	for _, want := range []string{
-		".merged == true",
-		"(.head.ref == $b or .head.label == $b)",
-		".head.repo_id != null and .head.repo_id == .base.repo_id",
-		"| .head.sha]",
-	} {
-		if !strings.Contains(string(argv), want) {
-			t.Errorf("jq projection is missing %q:\n%s", want, argv)
-		}
+	argv, _ := os.ReadFile(calls)
+	if want := "https://git.example.internal:3000/api/v1/repos/team/repo/pulls?"; !strings.Contains(string(argv), want) {
+		t.Errorf("want the API asked at %q, got:\n%s", want, argv)
 	}
 }
 
 // An API that cannot answer — a revoked token, an untrusted CA, a host down —
 // means "don't know": every branch stays, named with the reason.
 func TestGitPruneDeadKeepsEverythingWhenTheGiteaAPIFails(t *testing.T) {
-	dir, _ := giteaRepo(t, "merged-one")
+	dir, _ := giteaRepo(t, giteaOrigin, "merged-one")
 
-	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=", "CURL_FAIL=1")
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "CURL_FAIL=1")
 
 	if !strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("a failed API call must delete nothing:\n%s", out)
@@ -644,10 +723,10 @@ func TestGitPruneDeadKeepsEverythingWhenTheGiteaAPIFails(t *testing.T) {
 // Without a configured token the Gitea API is never called, even with curl
 // and jq on PATH, and the hint names the key that enables it.
 func TestGitPruneDeadLeavesAnUnconfiguredHostAlone(t *testing.T) {
-	dir := pruneDeadRepo(t, "ssh://git@git.example.internal:222/team/repo.git", "merged-one")
+	dir := pruneDeadRepo(t, giteaOrigin, "merged-one")
 	calls := filepath.Join(t.TempDir(), "calls")
 
-	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls)
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=", "FORGE_CALLS="+calls)
 
 	if argv, _ := os.ReadFile(calls); strings.Contains(string(argv), "curl ") {
 		t.Errorf("no API call without a configured token, got:\n%s", argv)
@@ -657,5 +736,21 @@ func TestGitPruneDeadLeavesAnUnconfiguredHostAlone(t *testing.T) {
 	}
 	if !strings.Contains(out, "prune-dead.https://git.example.internal.giteaTokenFile") {
 		t.Errorf("the hint must name the config key, got:\n%s", out)
+	}
+}
+
+// A token configured but unusable — here its file is missing — must not
+// send the developer to set the key they already set.
+func TestGitPruneDeadNamesAnUnusableGiteaToken(t *testing.T) {
+	dir := pruneDeadRepo(t, giteaOrigin, "merged-one")
+	gitIn(t, dir, "config", "prune-dead.https://git.example.internal.giteaTokenFile", filepath.Join(t.TempDir(), "missing"))
+
+	out := runPruneDead(t, dir, giteaPath(t), "AUTHED_CLI=")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("with no usable forge no branch may be deleted:\n%s", out)
+	}
+	if !strings.Contains(out, "a giteaTokenFile is set for 'git.example.internal'") || strings.Contains(out, "auth login") {
+		t.Errorf("the run must say the configured token is unusable, not ask for a login, got:\n%s", out)
 	}
 }

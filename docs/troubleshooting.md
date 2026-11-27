@@ -116,14 +116,14 @@ See [bridge troubleshooting](bridge.md#troubleshooting) — the usual causes are
 
 **Which forge, and being logged in.** The CLI is chosen by asking `gh` and then `glab` which one holds a session for origin's exact host (`gh auth status --hostname <host>`), so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab all work without the domain name mattering — what counts is where you are logged in. With no session for that host, nothing is deleted and the run tells you to `gh auth login --hostname <host>` (or `glab auth login --hostname <host>`). Both CLIs inherit their host credentials through [`inherit_host_auth`](configuration.md#inherit-host-auth).
 
-**Forgejo and Gitea.** They have no CLI, so the script asks their REST API (`GET /api/v1/repos/<owner>/<name>/pulls?state=closed`, newest first, up to 1000 PRs) — and only for a host you opt in by naming a token file, matched against `https://<host>` the way git matches any `http.<url>.*` key:
+**Forgejo and Gitea.** They have no CLI, so the script asks their REST API (`GET /api/v1/repos/<owner>/<name>/pulls?state=closed`, newest first, up to a fixed number of pages) — and only for a host you opt in by naming a token file, matched against the API base the way git matches any `http.<url>.*` key:
 
 ```sh
 git config --global prune-dead.https://forgejo.example.com.giteaTokenFile ~/.toolbox-state/forgejo/token
 git config --global http.https://forgejo.example.com.sslCAInfo ~/.toolbox-state/forgejo/ca.pem   # private CA only
 ```
 
-The token needs read access to pull requests; it reaches `curl` on stdin, never in its arguments. The API is asked at `https://<host>` whatever port origin's SSH uses. The same proof applies: a merged PR from this repository whose head is, or contains, the local tip. Forgejo rewrites a merged PR's `head.ref` to `refs/pull/<n>/head` once its branch is deleted, so the branch is matched by `head.label` as well. Any API failure keeps every branch as `merge state unverified — gitea could not answer`.
+The token needs read access to pull requests; it reaches `curl` on stdin, never in its arguments. The API base is an HTTPS origin's own `https://<host>[:<port>]`; for an SSH origin it is `https://<host>`, whatever port SSH uses, so an instance serving its web UI on another port or under a subpath is not reached. The CA is the one git trusts: `GIT_SSL_CAINFO`, else `http.<url>.sslCAInfo`. The same proof applies: a merged PR from this repository whose head is, or contains, the local tip. Forgejo rewrites a merged PR's `head.ref` to `refs/pull/<n>/head` once its branch is deleted, so the branch is matched by `head.label` as well. Any API failure keeps every branch as `merge state unverified — gitea could not answer`.
 
 Deletes use `git branch -D` (force), since a squash-merged branch never reads as merged locally. Recover one from the reflog — `git reflog`, then `git branch <name> <sha>` — until it is garbage-collected.
 

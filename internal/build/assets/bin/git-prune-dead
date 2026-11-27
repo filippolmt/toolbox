@@ -75,6 +75,7 @@ fi
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
 # they are resolved together, once, rather than per branch.
 forge=
+gitea_token_file=
 if [ -n "$host" ]; then
 	for cli in gh glab; do
 		if command -v "$cli" >/dev/null 2>&1 &&
@@ -84,36 +85,48 @@ if [ -n "$host" ]; then
 		fi
 	done
 	# A configured token file is the Forgejo/Gitea counterpart of a logged-in
-	# CLI. The CA, as for git itself, is http.<url>.sslCAInfo.
-	if [ -z "$forge" ] &&
-		gitea_token_file=$(git config --type=path --get-urlmatch prune-dead.giteaTokenFile "https://$host" 2>/dev/null) &&
-		[ -r "$gitea_token_file" ] &&
-		command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-		forge=gitea
-		gitea_ca=$(git config --type=path --get-urlmatch http.sslCAInfo "https://$host" 2>/dev/null || true)
+	# CLI. The CA is what git itself would trust: GIT_SSL_CAINFO, else
+	# http.<url>.sslCAInfo.
+	if [ -z "$forge" ]; then
+		# The API base: an https origin's own host[:port], else https://<host>.
+		# shortcut: an ssh origin assumes the web UI on port 443 at the root, no
+		# subpath; give the base its own key if an instance ever serves elsewhere.
+		case $origin_url in
+		https://*) gitea_base="https://${bare_url%%/*}" ;;
+		*) gitea_base="https://$host" ;;
+		esac
+		gitea_token_file=$(git config --type=path --get-urlmatch prune-dead.giteaTokenFile "$gitea_base" 2>/dev/null || true)
+		if [ -n "$gitea_token_file" ] && [ -r "$gitea_token_file" ] &&
+			command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+			forge=gitea
+			gitea_ca=${GIT_SSL_CAINFO:-$(git config --type=path --get-urlmatch http.sslCAInfo "$gitea_base" 2>/dev/null || true)}
+		fi
 	fi
 fi
 
 # gitea_get <path below /api/v1> — the token goes through curl's stdin config,
-# never argv, where any process listing would show it.
+# never argv, where any process listing would show it. A CRLF token file
+# would otherwise end the header with a stray \r.
 gitea_get() {
-	printf 'header = "Authorization: token %s"\n' "$(cat "$gitea_token_file")" |
+	printf 'header = "Authorization: token %s"\n' "$(tr -d '\r\n' <"$gitea_token_file")" |
 		curl -fsS --max-time 20 -K - ${gitea_ca:+--cacert "$gitea_ca"} \
-			"https://$host/api/v1/$1" 2>/dev/null
+			"$gitea_base/api/v1/$1" 2>/dev/null
 }
 
 # The Gitea API cannot filter pulls by head branch, so the closed ones are
 # listed once, newest first, and every branch is matched against that list.
-# shortcut: only the 1000 most recently updated closed PRs are read; an older
-# merge reads as "no merged PR" and its branch is kept — page further if a
-# repository ever needs it.
+# shortcut: only gitea_pages pages of gitea_per_page closed PRs are read (fewer
+# if the server caps the page size lower); an older merge reads as "no merged
+# PR" and its branch is kept — page further if a repository ever needs it.
+gitea_pages=20
+gitea_per_page=50
 gitea_pulls=
 gitea_listed=
 gitea_list() {
 	gitea_listed=1
 	page=1
-	while [ "$page" -le 20 ]; do
-		body=$(gitea_get "repos/$slug/pulls?state=closed&sort=recentupdate&limit=50&page=$page") || {
+	while [ "$page" -le "$gitea_pages" ]; do
+		body=$(gitea_get "repos/$slug/pulls?state=closed&sort=recentupdate&limit=$gitea_per_page&page=$page") || {
 			gitea_listed=failed
 			return
 		}
@@ -236,6 +249,8 @@ if [ -n "$forge" ]; then
 	echo "git-prune-dead: removing branches merged according to $forge on $host..."
 elif [ -n "$origin_url" ] && [ -z "$host" ]; then
 	echo "git-prune-dead: origin is a local path — no forge to ask, keeping every branch"
+elif [ -n "$gitea_token_file" ]; then
+	echo "git-prune-dead: a giteaTokenFile is set for '$host', but $gitea_token_file is unreadable or curl/jq is missing — keeping every branch"
 else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
