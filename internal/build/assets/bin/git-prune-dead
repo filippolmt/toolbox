@@ -155,12 +155,12 @@ if [ -n "$host" ]; then
 fi
 
 # session_hosts <cli> — every host the CLI holds a working session for, from
-# its own JSON listing.
+# its own JSON listing; glab's is read once into glab_listing.
 session_hosts() {
 	case $1 in
 	gh) gh auth status --json hosts 2>/dev/null |
 		jq -r '[.hosts[]?[]? | select(.state == "success") | .host] | unique | .[]' 2>/dev/null ;;
-	glab) glab auth status --all --output json 2>/dev/null |
+	glab) printf '%s' "$glab_listing" |
 		jq -r '[.hosts[]? | select(.state == "success") | .host] | unique | .[]' 2>/dev/null ;;
 	esac
 }
@@ -185,6 +185,7 @@ ssh_url_on() {
 # forge turns up whose https clone host differs from its API host.
 asked_hosts=
 discovery_note=
+glab_listing=
 if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$slug" ]; then
 	case $origin_url in
 	http://* | https://*) ;;
@@ -198,6 +199,9 @@ if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$slug" ]; then
 			set -f
 			for cli in gh glab; do
 				command -v "$cli" >/dev/null 2>&1 || continue
+				# Only once gh found nothing: glab checks each host's token
+				# over the network.
+				[ "$cli" = glab ] && glab_listing=$(glab auth status --all --output json 2>/dev/null)
 				for cand in $(session_hosts "$cli"); do
 					[ "$cand" = "$host" ] && continue
 					asked_hosts="$asked_hosts${asked_hosts:+, }$cli on $cand"
