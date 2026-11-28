@@ -345,8 +345,9 @@ func TestGitPruneDeadKeepsEverythingWhenNoCLIIsLoggedIn(t *testing.T) {
 	dir := pruneDeadRepo(t, "https://github.com/example/repo.git", "merged-one")
 
 	// The fakes are on PATH but neither holds a session: being installed is
-	// not being logged in.
-	out := runPruneDead(t, dir, forgePath(t), "AUTHED_CLI=")
+	// not being logged in. jq comes explicitly: the Forgejo hint below needs
+	// it, and toolPath finds it only where it shares git's directory.
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=")
 
 	if !strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("with no logged-in CLI no branch may be deleted:\n%s", out)
