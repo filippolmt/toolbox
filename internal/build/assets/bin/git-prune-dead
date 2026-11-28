@@ -13,8 +13,10 @@
 #
 # The forge CLI is picked by asking which one is authenticated for origin's
 # host, so github.com, gitlab.com, GitHub Enterprise and a self-hosted GitLab
-# all resolve without special-casing any domain. A host neither CLI holds a
-# session for is asked whether it runs Forgejo, whose API answers over curl.
+# all resolve without special-casing any domain. An SSH host no session is
+# keyed by is matched to the API host whose repository reports that SSH clone
+# URL. A host neither CLI holds a session for is asked whether it runs
+# Forgejo, whose API answers over curl.
 # No forge to ask, an unreachable one, or a PR that was closed without
 # merging → the branch is kept and the reason printed. Never deleted either:
 # the current branch and the repository's default branch.
@@ -39,12 +41,13 @@ current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 # one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
 
-# parse_url <url> — set url_form, bare_url, host and slug from either
+# parse_url <url> — set url_form, bare_url, host, port and slug from either
 # URL form. git reads the scp shorthand only when a colon comes before any
 # slash; any other URL without a scheme is a local path, with no host and no
 # forge to ask.
 parse_url() {
 	host=
+	port=
 	slug=
 	case $1 in
 	*://*) url_form=scheme ;;
@@ -67,7 +70,11 @@ parse_url() {
 	# a .git suffix spell the same repository.
 	rest=${bare_url#"$host"}
 	case $url_form in
-	scheme) rest=${rest#*/} ;;
+	scheme)
+		case $rest in :*) port=${rest#:}; port=${port%%/*} ;; esac
+		# SSH's default port spells the same endpoint as no port at all.
+		case $1 in ssh://*) [ "$port" = 22 ] && port= ;; esac
+		rest=${rest#*/} ;;
 	scp) rest=${rest#:} ;;
 	esac
 	slug=$(printf '%s\n' "$rest" | sed -e 's#^/*##' -e 's#/*$##' -e 's#\.git$##')
@@ -136,6 +143,7 @@ forgejo_merged_heads() {
 # "which forge is this?" and "can I ask it anything?" have the same answer, so
 # they are resolved together, once, rather than per branch.
 forge=
+api_host=$host
 if [ -n "$host" ]; then
 	for cli in gh glab; do
 		if command -v "$cli" >/dev/null 2>&1 &&
@@ -144,6 +152,70 @@ if [ -n "$host" ]; then
 			break
 		fi
 	done
+fi
+
+# session_hosts <cli> — every host the CLI holds a working session for, from
+# its own JSON listing.
+session_hosts() {
+	case $1 in
+	gh) gh auth status --json hosts 2>/dev/null |
+		jq -r '[.hosts[]?[]? | select(.state == "success") | .host] | unique | .[]' 2>/dev/null ;;
+	glab) glab auth status --all --output json 2>/dev/null |
+		jq -r '[.hosts[]? | select(.state == "success") | .host] | unique | .[]' 2>/dev/null ;;
+	esac
+}
+
+# ssh_url_on <cli> <api host> — the SSH clone URL that host's API reports for
+# this repository; empty when it has no such repository or does not answer.
+ssh_url_on() {
+	case $1 in
+	gh) gh api --hostname "$2" "repos/$slug" 2>/dev/null | jq -r '.ssh_url // empty' 2>/dev/null ;;
+	glab) glab api --hostname "$2" "projects/$(printf '%s' "$slug" | jq -sRr @uri)" 2>/dev/null |
+		jq -r '.ssh_url_to_repo // empty' 2>/dev/null ;;
+	esac
+}
+
+# An instance may serve SSH under a name of its own (git-ssh.example) while its
+# API, and so the CLI's session, sit under another: then no session matches
+# origin's SSH host. Each host a CLI is logged in to is asked for this
+# repository, and taken only when the SSH clone URL it reports names origin's
+# host and port — the forge's own answer, never a guess from the name.
+# shortcut: an https origin is never matched this way, since its host is the
+# web one the session is keyed by, add http_url_to_repo / clone_url if a
+# forge turns up whose https clone host differs from its API host.
+asked_hosts=
+discovery_note=
+if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$slug" ]; then
+	case $origin_url in
+	http://* | https://*) ;;
+	*)
+		if ! command -v jq >/dev/null 2>&1; then
+			discovery_note="no API host looked for behind SSH host '$host': install jq, which the sessions are read with"
+		else
+			origin_endpoint="$host:$port"
+			# Split on whitespace, never globbed: an IPv6 host's brackets are
+			# a glob pattern.
+			set -f
+			for cli in gh glab; do
+				command -v "$cli" >/dev/null 2>&1 || continue
+				for cand in $(session_hosts "$cli"); do
+					[ "$cand" = "$host" ] && continue
+					asked_hosts="$asked_hosts${asked_hosts:+, }$cli on $cand"
+					cand_url=$(ssh_url_on "$cli" "$cand")
+					[ -n "$cand_url" ] || continue
+					# A subshell, so origin's parsed fields stay as they are.
+					[ "$(parse_url "$cand_url"; printf '%s:%s' "$host" "$port")" = "$origin_endpoint" ] || continue
+					forge=$cli
+					api_host=$cand
+					break 2
+				done
+			done
+			set +f
+			[ -n "$asked_hosts" ] ||
+				discovery_note="no API host looked for behind SSH host '$host': gh and glab list no session on another host"
+		fi
+		;;
+	esac
 fi
 
 # Forgejo has no CLI session to find; its API is asked on the origin's own
@@ -249,10 +321,10 @@ fi
 # stops sending drops the branch out of the merged set instead of into it.
 merge_state() {
 	case "$forge" in
-	gh) out=$(gh pr list --repo "$host/$slug" --head "$1" --state merged \
+	gh) out=$(gh pr list --repo "$api_host/$slug" --head "$1" --state merged \
 		--json headRefOid,isCrossRepository \
 		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
-	glab) out=$(glab mr list --repo "https://$host/$slug" --source-branch "$1" --merged --output json \
+	glab) out=$(glab mr list --repo "https://$api_host/$slug" --source-branch "$1" --merged --output json \
 		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
 	forgejo)
 		out=$(forgejo_merged_heads "$1") || return 2
@@ -327,11 +399,14 @@ fi
 [ -n "$merged_into" ] || merged_into=$default
 
 if [ -n "$forge" ]; then
-	echo "git-prune-dead: removing branches merged according to $forge on $host..."
+	echo "git-prune-dead: removing branches merged according to $forge on $api_host..."
 elif [ -n "$origin_url" ] && [ -z "$host" ]; then
 	echo "git-prune-dead: origin is a local path — no forge to ask, keeping every branch"
 else
 	echo "git-prune-dead: no CLI logged in to '${host:-no remote}' — keeping every branch"
+	[ -n "$asked_hosts" ] &&
+		echo "  asked $asked_hosts: none reports this repository at SSH host '$host${port:+:$port}'"
+	[ -n "$discovery_note" ] && echo "  $discovery_note"
 	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
 	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
 	if [ -n "$have_forgejo_tools" ]; then

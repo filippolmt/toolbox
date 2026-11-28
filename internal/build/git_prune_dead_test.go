@@ -39,7 +39,8 @@ func pruneDeadRepo(t *testing.T, originURL string, branches ...string) string {
 
 // fakeForgeBin writes stand-in `gh` and `glab` binaries, the seam that makes
 // the script's decision observable without a network or an account. Only the
-// CLI named by $AUTHED_CLI holds a session, and it answers from the branch
+// CLI named by $AUTHED_CLI holds a session — on every host, or only on the
+// space-separated $AUTHED_HOSTS when set — and it answers from the branch
 // name: "merged-*" has a merged PR, "closed-*" has none, "boom-*" makes the
 // query itself fail. A merged PR's head commit is the forge's view of what was
 // merged: the oids in <git-dir>/forge-<branch>, one per merged PR, when a test
@@ -55,7 +56,37 @@ me=$(basename "$0")
 echo "$me $*" >> "${FORGE_CALLS:-/dev/null}"
 if [ "${1:-}" = "auth" ]; then
 	[ "${AUTHED_CLI:-}" = "$me" ] || exit 1
-	echo "$me: logged in to ${3:-}"
+	case " $* " in
+	*" --json "* | *" --all "*)
+		# The session listing, in each CLI's own JSON shape: gh groups the
+		# accounts by host, glab lists one entry per host.
+		list=
+		for h in ${AUTHED_HOSTS:-}; do
+			e="{\"state\":\"success\",\"host\":\"$h\"}"
+			[ "$me" = gh ] && e="\"$h\":[$e]"
+			list="$list${list:+,}$e"
+		done
+		if [ "$me" = gh ]; then echo "{\"hosts\":{$list}}"; else echo "{\"hosts\":[$list]}"; fi
+		exit 0 ;;
+	esac
+	# auth status --hostname H: any host unless $AUTHED_HOSTS names them.
+	case " ${AUTHED_HOSTS:-${4:-}} " in *" ${4:-} "*) ;; *) exit 1 ;; esac
+	echo "$me: logged in to ${4:-}"
+	exit 0
+fi
+# api --hostname H <endpoint>: the repository's SSH clone URL that
+# $FAKE_SSH_URLS ("host=url ...") gives H, under the field each forge names it
+# by, from a host holding a session.
+if [ "${1:-}" = "api" ]; then
+	[ "${AUTHED_CLI:-}" = "$me" ] || exit 1
+	case " ${AUTHED_HOSTS:-} " in *" ${3:-} "*) ;; *) exit 1 ;; esac
+	url=
+	for kv in ${FAKE_SSH_URLS:-}; do
+		case "$kv" in "${3:-}="*) url=${kv#*=} ;; esac
+	done
+	field=ssh_url_to_repo
+	[ "$me" = gh ] && field=ssh_url
+	echo "{\"$field\":\"$url\"}"
 	exit 0
 fi
 for a in "$@"; do
@@ -846,5 +877,133 @@ func TestGitPruneDeadFindsForgejoUnderASubPath(t *testing.T) {
 	want := "curl https://forge.example.internal/code/forgejo/api/v1/repos/team/repo/pulls?state=closed&head=merged-one&"
 	if !strings.Contains(string(argv), want) {
 		t.Errorf("want %q among the calls, got:\n%s", want, argv)
+	}
+}
+
+// An instance can serve SSH under a name of its own (git-ssh.acme.test) while
+// its API, and the CLI's session, live under another (code.acme.test). No CLI
+// holds a session for the SSH name, so each host a CLI is logged in to is
+// asked for this repository, and accepted only when the SSH clone URL it
+// reports has origin's host and port: proof from the forge, not a guess from
+// the name. The merge query then goes to that API host.
+func TestGitPruneDeadFindsTheAPIHostBehindADedicatedSSHHost(t *testing.T) {
+	for _, tc := range []struct {
+		name, cli, origin, sshURL string
+		want                      []string
+	}{
+		{"glab nested group", "glab", "git@git-ssh.acme.test:group/sub/app.git",
+			"git@git-ssh.acme.test:group/sub/app.git", []string{
+				"glab api --hostname code.acme.test projects/group%2Fsub%2Fapp\n",
+				"--repo https://code.acme.test/group/sub/app ",
+			}},
+		{"gh", "gh", "git@git-ssh.acme.test:group/app.git",
+			"git@git-ssh.acme.test:group/app.git", []string{
+				"gh api --hostname code.acme.test repos/group/app\n",
+				"--repo code.acme.test/group/app ",
+			}},
+		// SSH's default port, named or not, is the same endpoint.
+		{"glab explicit default port", "glab", "ssh://git@git-ssh.acme.test:22/group/app.git",
+			"git@git-ssh.acme.test:group/app.git", []string{
+				"--repo https://code.acme.test/group/app ",
+			}},
+		// Any other SSH port is part of the proof: both sides must name it.
+		{"glab ssh with port", "glab", "ssh://git@git-ssh.acme.test:2222/group/app.git",
+			"ssh://git@git-ssh.acme.test:2222/group/app.git", []string{
+				"--repo https://code.acme.test/group/app ",
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, tc.origin, "merged-one", "closed-one")
+			calls := filepath.Join(t.TempDir(), "calls")
+
+			// alt.acme.test, asked first, holds the same path but serves it
+			// over another SSH host: refused, and the search goes on.
+			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI="+tc.cli,
+				"AUTHED_HOSTS=alt.acme.test code.acme.test", "FORGE_CALLS="+calls,
+				"FAKE_SSH_URLS=alt.acme.test=git@ssh.alt.test:group/app.git code.acme.test="+tc.sshURL)
+
+			left := branches(t, dir)
+			if strings.Contains(left, "merged-one") {
+				t.Errorf("the API host proved it serves origin, so the merged branch must go:\n%s", out)
+			}
+			if !strings.Contains(left, "closed-one") {
+				t.Errorf("a branch with no merged PR must survive:\n%s", out)
+			}
+			if !strings.Contains(out, "on code.acme.test") {
+				t.Errorf("the run must name the API host it asked, got:\n%s", out)
+			}
+			argv, err := os.ReadFile(calls)
+			if err != nil {
+				t.Fatalf("no forge call recorded: %v", err)
+			}
+			for _, want := range append(tc.want, " api --hostname alt.acme.test ") {
+				if !strings.Contains(string(argv), want) {
+					t.Errorf("want %q among the calls, got:\n%s", want, argv)
+				}
+			}
+		})
+	}
+}
+
+// A host the CLI is logged in to proves nothing unless the clone URL it
+// reports is origin's: another instance can hold a project at the same path.
+// Nothing proven, nothing deleted — and the run says which hosts it asked.
+func TestGitPruneDeadKeepsEverythingWhenNoSessionHostServesOrigin(t *testing.T) {
+	for _, tc := range []struct{ name, origin, sshURL string }{
+		{"another SSH host", "git@git-ssh.acme.test:group/app.git", "git@ssh.elsewhere.test:group/app.git"},
+		{"another SSH port", "ssh://git@git-ssh.acme.test:2222/group/app.git", "git@git-ssh.acme.test:group/app.git"},
+		{"no answer", "git@git-ssh.acme.test:group/app.git", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := pruneDeadRepo(t, tc.origin, "merged-one")
+
+			out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=glab",
+				"AUTHED_HOSTS=code.acme.test", "FAKE_SSH_URLS=code.acme.test="+tc.sshURL)
+
+			if !strings.Contains(branches(t, dir), "merged-one") {
+				t.Errorf("no host proved it serves origin, so no branch may go:\n%s", out)
+			}
+			if !strings.Contains(out, "no CLI logged in to 'git-ssh.acme.test'") {
+				t.Errorf("the run must still say no CLI is logged in to origin's host, got:\n%s", out)
+			}
+			if !strings.Contains(out, "glab on code.acme.test") {
+				t.Errorf("the run must name the session hosts it asked, got:\n%s", out)
+			}
+		})
+	}
+}
+
+// A CLI logged in to origin's own host answers directly: the session listing
+// and the API are never asked, so the common case costs nothing more.
+func TestGitPruneDeadSkipsDiscoveryWhenOriginsHostHasASession(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@gitlab.example.test:team/repo.git", "merged-one")
+	calls := filepath.Join(t.TempDir(), "calls")
+
+	runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=glab", "FORGE_CALLS="+calls)
+
+	argv, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatalf("no forge call recorded: %v", err)
+	}
+	for _, never := range []string{" --all ", " --json hosts", " api "} {
+		if strings.Contains(string(argv), never) {
+			t.Errorf("a direct session must skip discovery, but %q was called:\n%s", never, argv)
+		}
+	}
+}
+
+// With no session on any host, the API host behind an SSH name is never looked
+// for — and the run says so, rather than leaving it to be guessed.
+func TestGitPruneDeadSaysWhenNoSessionHostWasAsked(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@git-ssh.acme.test:group/app.git", "merged-one")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("with no session no branch may go:\n%s", out)
+	}
+	want := "no API host looked for behind SSH host 'git-ssh.acme.test': gh and glab list no session on another host"
+	if !strings.Contains(out, want) {
+		t.Errorf("want %q in the output, got:\n%s", want, out)
 	}
 }
