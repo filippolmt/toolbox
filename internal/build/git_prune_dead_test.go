@@ -61,8 +61,23 @@ if [ "${1:-}" = "auth" ]; then
 		# The session listing, in each CLI's own JSON shape: gh groups the
 		# accounts by host, glab lists one entry per host.
 		list=
+		# glab also lists, here first, a host whose session fails, with
+		# the ssh_host its config names: $FAKE_EXPIRED_HOSTS
+		# ("host=sshhost ...").
+		if [ "$me" = glab ]; then
+			for kv in ${FAKE_EXPIRED_HOSTS:-}; do
+				e="{\"state\":\"error\",\"host\":\"${kv%%=*}\",\"ssh_host\":\"${kv#*=}\"}"
+				list="$list${list:+,}$e"
+			done
+		fi
 		for h in ${AUTHED_HOSTS:-}; do
-			e="{\"state\":\"success\",\"host\":\"$h\"}"
+			e="{\"state\":\"success\",\"host\":\"$h\""
+			# $FAKE_GLAB_SSH_HOSTS ("host=sshhost ...") gives a host the
+			# ssh_host glab's config names for it.
+			for kv in ${FAKE_GLAB_SSH_HOSTS:-}; do
+				[ "$me" = glab ] && [ "${kv%%=*}" = "$h" ] && e="$e,\"ssh_host\":\"${kv#*=}\""
+			done
+			e="$e}"
 			[ "$me" = gh ] && e="\"$h\":[$e]"
 			list="$list${list:+,}$e"
 		done
@@ -1002,8 +1017,66 @@ func TestGitPruneDeadSaysWhenNoSessionHostWasAsked(t *testing.T) {
 	if !strings.Contains(branches(t, dir), "merged-one") {
 		t.Errorf("with no session no branch may go:\n%s", out)
 	}
-	want := "no API host looked for behind SSH host 'git-ssh.acme.test': gh and glab list no session on another host"
+	for _, want := range []string{
+		"no API host looked for behind SSH host 'git-ssh.acme.test': gh and glab list no session on another host",
+		// A host that serves only SSH takes no login: the way out names the
+		// web host instead.
+		"if 'git-ssh.acme.test' serves only SSH, log in to the instance's web host instead",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in the output, got:\n%s", want, out)
+		}
+	}
+}
+
+// glab's own config may already name origin's host as the ssh_host of an
+// instance whose session has lapsed. That proves nothing about a merge, so
+// nothing is deleted, but it is the host to log in to — not the SSH one.
+func TestGitPruneDeadNamesTheInstanceWhoseSSHHostIsOrigin(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@git-ssh.acme.test:group/app.git", "merged-one")
+
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=glab", "AUTHED_HOSTS=other.acme.test",
+		"FAKE_EXPIRED_HOSTS=code.acme.test=git-ssh.acme.test")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("a lapsed session proves no merge, so no branch may go:\n%s", out)
+	}
+	for _, want := range []string{
+		"glab's config names 'git-ssh.acme.test' the SSH host of code.acme.test, whose session is not valid",
+		"log in with: glab auth login --hostname code.acme.test",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in the output, got:\n%s", want, out)
+		}
+	}
+	// The SSH host is no place to log in, and gh or Forgejo are not the
+	// forge glab just named.
+	for _, never := range []string{"auth login --hostname git-ssh.acme.test", "gh auth login", "Forgejo"} {
+		if strings.Contains(out, never) {
+			t.Errorf("want no %q in the output, got:\n%s", never, out)
+		}
+	}
+}
+
+// Logged in to the instance glab maps origin's SSH host to, yet its API did
+// not report this repository there (no access, or not found): logging in
+// again changes nothing, so the run says what to check instead.
+func TestGitPruneDeadSaysWhenTheMappedInstanceDoesNotConfirm(t *testing.T) {
+	dir := pruneDeadRepo(t, "git@git-ssh.acme.test:group/app.git", "merged-one")
+
+	// alt.acme.test names the same ssh_host with a lapsed session, listed
+	// first: the instance where glab is logged in still wins.
+	out := runPruneDead(t, dir, forgejoPath(t), "AUTHED_CLI=glab", "AUTHED_HOSTS=code.acme.test",
+		"FAKE_GLAB_SSH_HOSTS=code.acme.test=git-ssh.acme.test", "FAKE_EXPIRED_HOSTS=alt.acme.test=git-ssh.acme.test")
+
+	if !strings.Contains(branches(t, dir), "merged-one") {
+		t.Errorf("no host confirmed origin, so no branch may go:\n%s", out)
+	}
+	want := "but code.acme.test did not report this repository there: check your access to it on code.acme.test"
 	if !strings.Contains(out, want) {
 		t.Errorf("want %q in the output, got:\n%s", want, out)
+	}
+	if strings.Contains(out, "auth login") || strings.Contains(out, "serves only SSH") {
+		t.Errorf("a login is no fix for a session that already works, got:\n%s", out)
 	}
 }

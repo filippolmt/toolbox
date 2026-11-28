@@ -155,7 +155,8 @@ if [ -n "$host" ]; then
 fi
 
 # session_hosts <cli> — every host the CLI holds a working session for, from
-# its own JSON listing; glab's is read once into glab_listing.
+# its own JSON listing; glab's is read once into glab_listing, which the login
+# hint below reads too.
 session_hosts() {
 	case $1 in
 	gh) gh auth status --json hosts 2>/dev/null |
@@ -186,6 +187,8 @@ ssh_url_on() {
 asked_hosts=
 discovery_note=
 glab_listing=
+login_host=
+login_state=
 if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$slug" ]; then
 	case $origin_url in
 	http://* | https://*) ;;
@@ -217,6 +220,19 @@ if [ -z "$forge" ] && [ -n "$host" ] && [ -n "$slug" ]; then
 			set +f
 			[ -n "$asked_hosts" ] ||
 				discovery_note="no API host looked for behind SSH host '$host': gh and glab list no session on another host"
+			# glab's config may name origin's host as the ssh_host of an
+			# instance: no proof of a merge, but the host the way out names —
+			# one with a valid session first. The listing is empty when glab
+			# is absent; otherwise the glab pass read it, since the loop
+			# ended without a match.
+			if [ -z "$forge" ]; then
+				login_match=$(printf '%s' "$glab_listing" | jq -r --arg h "$host" \
+					'[.hosts[]? | select(.ssh_host == $h)] | sort_by(.state != "success") | .[0] // empty | "\(.host) \(.state)"' 2>/dev/null)
+				if [ -n "$login_match" ]; then
+					login_host=${login_match%% *}
+					login_state=${login_match#* }
+				fi
+			fi
 		fi
 		;;
 	esac
@@ -411,12 +427,27 @@ else
 	[ -n "$asked_hosts" ] &&
 		echo "  asked $asked_hosts: none reports this repository at SSH host '$host${port:+:$port}'"
 	[ -n "$discovery_note" ] && echo "  $discovery_note"
-	echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
-	echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
-	if [ -n "$have_forgejo_tools" ]; then
-		echo "  or, on a Forgejo instance: its API must answer /api/forgejo/v1/version on ${host:-HOST}"
+	if [ -n "$login_host" ] && [ "$login_state" = success ]; then
+		# Logged in, yet the API did not report this repository at origin's
+		# SSH host: no login fixes that.
+		echo "  glab's config names '$host' the SSH host of $login_host, where glab is logged in"
+		echo "  but $login_host did not report this repository there: check your access to it on $login_host"
+	elif [ -n "$login_host" ]; then
+		echo "  glab's config names '$host' the SSH host of $login_host, whose session is not valid"
+		echo "  a gone upstream does not prove a merge; log in with: glab auth login --hostname $login_host"
 	else
-		echo "  or, on a Forgejo instance: install curl and jq, which its API is asked with"
+		echo "  a gone upstream does not prove a merge; log in with: gh auth login --hostname ${host:-HOST}"
+		echo "  or, on a GitLab instance: glab auth login --hostname ${host:-HOST}"
+		if [ -n "$have_forgejo_tools" ]; then
+			echo "  or, on a Forgejo instance: its API must answer /api/forgejo/v1/version on ${host:-HOST}"
+		else
+			echo "  or, on a Forgejo instance: install curl and jq, which its API is asked with"
+		fi
+		case $origin_url in
+		http://* | https://*) ;;
+		*) [ -n "$host" ] &&
+			echo "  if '$host' serves only SSH, log in to the instance's web host instead" ;;
+		esac
 	fi
 fi
 
