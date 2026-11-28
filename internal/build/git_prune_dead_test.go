@@ -282,13 +282,16 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 		want              []string
 	}{
 		{"gh", "gh", "https://github.com/example/repo.git", []string{
-			"--repo example/repo", // not whatever remote gh would have picked
+			// Not whatever remote gh would have picked, and on the host whose
+			// session was checked: a bare OWNER/REPO goes to the CLI's
+			// default host instead.
+			"--repo github.com/example/repo ",
 			"select(.isCrossRepository == false)",
 			"--json headRefOid,", // the field the projection below reads
 			"| .headRefOid]",
 		}},
 		{"glab scp form", "glab", "git@git.example.internal:team/repo.git", []string{
-			"--repo team/repo",
+			"--repo https://git.example.internal/team/repo ",
 			"select(.source_project_id != null and .source_project_id == .project_id)",
 			"| .sha]",
 		}},
@@ -297,24 +300,24 @@ func TestGitPruneDeadScopesTheQueryToThisRepository(t *testing.T) {
 		// repository path. The trailing space ends the value, so a slug
 		// with a leftover suffix fails too.
 		{"glab ssh with port", "glab", "ssh://git@git.example.internal:2222/team/repo.git", []string{
-			"--repo team/repo ",
+			"--repo https://git.example.internal/team/repo ",
 		}},
 		{"gh https with port", "gh", "https://git.example.internal:8443/team/repo.git", []string{
-			"--repo team/repo ",
+			"--repo git.example.internal/team/repo ",
 		}},
 		// The host is what the session is looked up by: a bracketed IPv6
 		// literal stays whole, colons and all.
 		{"glab ipv6 with port", "glab", "ssh://git@[fd00::1]:2222/team/repo.git", []string{
 			"auth status --hostname [fd00::1]\n",
-			"--repo team/repo ",
+			"--repo https://[fd00::1]/team/repo ",
 		}},
 		// scp form with an absolute path, and a trailing slash after .git:
 		// both spell the same repository.
 		{"glab scp form with absolute path", "glab", "git@git.example.internal:/team/repo.git", []string{
-			"--repo team/repo ",
+			"--repo https://git.example.internal/team/repo ",
 		}},
 		{"gh trailing slash", "gh", "https://git.example.internal/team/repo.git/", []string{
-			"--repo team/repo ",
+			"--repo git.example.internal/team/repo ",
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

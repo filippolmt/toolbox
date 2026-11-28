@@ -249,10 +249,10 @@ fi
 # stops sending drops the branch out of the merged set instead of into it.
 merge_state() {
 	case "$forge" in
-	gh) out=$(gh pr list --repo "$slug" --head "$1" --state merged \
+	gh) out=$(gh pr list --repo "$host/$slug" --head "$1" --state merged \
 		--json headRefOid,isCrossRepository \
 		--jq '[.[] | select(.isCrossRepository == false) | .headRefOid]' 2>/dev/null) || return 2 ;;
-	glab) out=$(glab mr list --repo "$slug" --source-branch "$1" --merged --output json \
+	glab) out=$(glab mr list --repo "https://$host/$slug" --source-branch "$1" --merged --output json \
 		--jq '[.[] | select(.source_project_id != null and .source_project_id == .project_id) | .sha]' 2>/dev/null) || return 2 ;;
 	forgejo)
 		out=$(forgejo_merged_heads "$1") || return 2
