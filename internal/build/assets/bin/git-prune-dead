@@ -38,19 +38,23 @@ current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 # it prefers (an `upstream` on a fork clone) — a different repository from the
 # one whose host we just checked for a session.
 origin_url=$(git remote get-url origin 2>/dev/null || true)
-# git reads the scp shorthand only when a colon comes before any slash; any
-# other URL without a scheme is a local path, with no host and no forge to ask.
-host=
-slug=
-case $origin_url in
-*://*) url_form=scheme ;;
-*) case ${origin_url%%/*} in
-	*:*) url_form=scp ;;
-	*) url_form=local ;;
-	esac ;;
-esac
-if [ "$url_form" != local ]; then
-	bare_url=$(printf '%s\n' "$origin_url" |
+
+# parse_url <url> — set url_form, bare_url, host and slug from either
+# URL form. git reads the scp shorthand only when a colon comes before any
+# slash; any other URL without a scheme is a local path, with no host and no
+# forge to ask.
+parse_url() {
+	host=
+	slug=
+	case $1 in
+	*://*) url_form=scheme ;;
+	*) case ${1%%/*} in
+		*:*) url_form=scp ;;
+		*) url_form=local ;;
+		esac ;;
+	esac
+	[ "$url_form" = local ] && return
+	bare_url=$(printf '%s\n' "$1" |
 		sed -e 's#^[A-Za-z0-9+.-]*://##' -e 's#^[^/@]*@##')
 	# A bracketed IPv6 literal keeps its colons; any other host ends at the
 	# first ":" or "/".
@@ -67,7 +71,8 @@ if [ "$url_form" != local ]; then
 	scp) rest=${rest#:} ;;
 	esac
 	slug=$(printf '%s\n' "$rest" | sed -e 's#^/*##' -e 's#/*$##' -e 's#\.git$##')
-fi
+}
+parse_url "$origin_url"
 
 # forgejo_get <url> — GET from the Forgejo API, the credential (if any) on
 # stdin. -q first: a ~/.curlrc must not redirect or re-authenticate this.
